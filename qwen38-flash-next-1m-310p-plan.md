@@ -103,9 +103,9 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: `tools/qwen38_1m/hw_probe.py` (asc)
 - **description**: Records chip inventory, free NPU bytes per chip, firmware/driver, HCCL device topology incl. within-card vs cross-card links, PCIe gen/width, NUMA map, DDR channels, sustained H2D/D2H bandwidth micro-bench. JSON schema + human summary. Author + CPU-test now; run on target in D1.
 - **validation**: UT with mocked `npu-smi`/`torch.npu` outputs; schema round-trip.
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-15 — Implemented `probe()` assembling a versioned `ProbeReport` (schema v1) from injectable collector callables: chip inventory (id/card/name/firmware/driver/total+free bytes/NUMA), PCIe gen/width, DDR channel population, and a host<->device bandwidth micro-bench. `classify_links()` derives HCCL peer links and tags each within-card vs cross-card from `card_id` (matches the TOBS collective annotation, `CHIPS_PER_300I_DUO_CARD=2`). `min_free_bytes()` surfaces the binding placement constraint (feeds the capacity model / open decision #1). JSON round-trips via `from_dict`; `human_summary()` renders GiB free per chip, link counts, PCIe and bandwidth. The default hardware chip collector raises `NotImplementedError` until finalized against the pinned CANN container on target (D1), so callers must inject real output before then; the module imports no torch-npu at load. 8 UTs green via `pytest --noconftest` using mocked collectors (no NPU); ruff check + format clean. **Note**: loading a `tools/`-path module via importlib requires registering it in `sys.modules` before `exec_module` on Python 3.14 (dataclass annotation resolution) — reused for future `tools/qwen38_1m` UTs.
+- **files edited/created**: `tools/qwen38_1m/hw_probe.py` (new), `tools/qwen38_1m/__init__.py` (new), `tests/ut/qwen38_1m/test_hw_probe.py` (new)
 
 ### T0.4: Long-context corpus and retrieval-probe generator
 - **depends_on**: []
