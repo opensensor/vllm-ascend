@@ -313,6 +313,11 @@ def test_no_npu_or_kernel_import_on_310p_flag_path(monkeypatch):
     monkeypatch.setenv("VLLM_ASCEND_ENABLE_310P", "1")
 
     cfg = _tiny_text_config(num_layers=48)
+    # Snapshot before this test builds/forwards so the assertion is scoped to what
+    # THIS test imports, not modules a sibling test left in the shared interpreter
+    # (e.g. a torch_npu host stub). The package-source grep test is the absolute
+    # no-triton gate; this one guards that the 310P eager path pulls no runtime.
+    pre_modules = set(sys.modules)
     model = _build(cfg)
     _load_dummy_weights(model, seed=0)
     seq_len = 8
@@ -320,10 +325,11 @@ def test_no_npu_or_kernel_import_on_310p_flag_path(monkeypatch):
     positions = torch.arange(seq_len, dtype=torch.int64)
     _greedy_step(model, input_ids, positions)
 
-    # No NPU runtime is pulled onto the host 310P path.
-    assert "torch_npu" not in sys.modules
+    newly_imported = set(sys.modules) - pre_modules
+    # Building + forwarding on the host 310P path pulls no NPU runtime.
+    assert not any(name == "torch_npu" or name.startswith("torch_npu.") for name in newly_imported)
     # The GDN eager backend never pulls the fla (chunk/recurrent) kernel modules.
-    assert not any(name.startswith("vllm_ascend._310p.ops.fla") for name in sys.modules)
+    assert not any(name.startswith("vllm_ascend._310p.ops.fla") for name in newly_imported)
 
 
 def test_package_source_has_no_triton_import():
