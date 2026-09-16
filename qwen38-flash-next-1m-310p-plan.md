@@ -157,9 +157,9 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: `vllm_ascend/_310p/worker/v2/model_state.py` (new `Ascend310PQwen4ExpModelState`), `vllm_ascend/worker/v2/model_states/__init__.py`
 - **description**: Port `Qwen4ExpModelState(MambaHybridModelState)` onto `Ascend310PMambaHybridModelState`: n-gram context buffer maintenance, EOS padding, `ple_query_start_loc`, rollback safety; shapes fixed for graph-capture compatibility even in eager. PP=1 enforcement retained.
 - **validation**: CPU UT on fake input batches: n-gram context correctness at chunk boundaries, EOS padding, after rejected-speculative rollback (S=0 degenerate first), dummy-inputs path.
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-15 (commit 4d895e714) — Ported fork `Qwen4ExpModelState` PLE n-gram context onto `Ascend310PQwen4ExpModelState(Ascend310PMambaHybridModelState)`: rollback-safe context buffer (rebuilt from `num_computed_tokens` each step, no stale carryover), EOS-padded leading tokens, fixed-shape `ple_query_start_loc`/`ngram_context` for graph capture, PP=1 enforced (PP>1 and ngram_size=1 rejected). Wired via worker dispatch `model_states/__init__.py`: the model `get_model_state_cls()` hook still wins, but since T1.2's hook currently raises NotImplementedError it falls through and a 310P hybrid advertising `ple_layer_ids` routes to the new state (model.py left untouched — in scope). Covers chunk boundary, EOS pad, rollback incl. S=0 degenerate-first, dummy-inputs, oversized 310P `max+2` start-loc buffer. Test installs minimal host stubs then removes `torch_npu` so sibling "no torch_npu" asserts still pass. 19 UTs; full qwen38_1m suite 373 passed (orchestrator-verified), ruff clean. Unblocks T5.2, T1.5, T4.3.
+- **files edited/created**: `vllm_ascend/_310p/worker/v2/model_state.py` (+state class), `vllm_ascend/worker/v2/model_states/__init__.py` (+dispatch), `tests/ut/qwen38_1m/test_qwen4exp_model_state.py` (new)
 
 ### T1.4 [asc]: Materialize Qwen4Exp KV-cache specs on 310P
 - **depends_on**: [T1.2]
@@ -238,9 +238,9 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: `vllm_ascend/models/qwen4_exp/qwen4exp_gdn.py` (adapter over `QwenGatedDeltaNetAttention` or subclass), `_310p/ops/fla/*`, `patch_idex_310.py` precedent
 - **description**: Wire Qwen4Exp GDN layers (conv + recurrent state shapes/dtype for hidden 2560 config) to existing Triton-free 310P fla kernels; verify partial-rotary/short-conv params from HF config; eager path only (no ACLGraph).
 - **validation**: CPU parity UT vs T0.6 chunked/unchunked GDN; state shape/dtype assertions == Qwen4Exp config-derived expectations.
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-15 (commit 1fcc9cc25) — Config/dtype-policy-driven adapter over the Triton-free 310P fla kernels: `Qwen4ExpGDNParams.from_hf_config` derives geometry (head_dim 256×0.25→rotary_dim 64, conv kernel 4); conv/recurrent state shapes mirror `MambaStateShapeCalculator` (ssm `(32,128,128)`, conv `(8192,3)`); dtypes from T1.2 policy (conv fp16, ssm fp32). Delta rule dispatches `fla_pytorch` (real fused_recurrent/chunk) / `ascend_npu` (chunk_gated_delta_rule_310) / `eager`. **Finding (documented, plan-anticipated)**: stock fla PyTorch fallbacks are float32-internal so they miss the T0.6 float64 tolerances (out ~6.6e-8 / chunk ~4.0e-7 vs 1e-8/1e-9) — added a dtype-honoring eager path reaching ~1e-16..4e-15 at fp64 and reproducing the stock kernels at fp32; a RED test pins the stock-kernel gap. chunked==unchunked incl. grouped-value Hv=2·Hk. State lifecycle left to T5.2 (clean hooks). 50 UTs; ruff clean.
+- **files edited/created**: `vllm_ascend/models/qwen4_exp/qwen4exp_gdn.py` (new), `tests/ut/qwen38_1m/test_gdn_wiring.py` (new)
 
 ### T5.2: GDN state lifecycle across prefill/decode/preemption/reuse
 - **depends_on**: [T5.1, T1.3]
