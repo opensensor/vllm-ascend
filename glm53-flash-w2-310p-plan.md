@@ -64,3 +64,15 @@ Naive RTN W2 is **provisional** (the W2 sensitivity finding applies to GLM exper
 
 ## Device wave
 Same as DeepSeek: D1 probe/freeze → D1.5 component parity → D2 real-weight 8K → D3 quant/perplexity gate → long context. Needs the 4×310P hardware.
+
+### G-ref: Eager KDA linear-attention reference — COMPLETED (2026-09-16, commit 0dddfcbdd)
+Pure-PyTorch (CPU, NO NPU, NO Triton) parity oracle for GLM-5.3-Flash KDA (Kimi Delta Attention), mirroring the shipped 910/Triton path `vllm_ascend/models/glm5next/kda.py` + `vllm_ascend/ops/triton/kda/*`. New `tools/glm_w2/kda_reference.py` + `tests/ut/glm_w2/test_kda_reference.py` (22 UTs, RED→GREEN proven by removing the module for the RED run).
+
+**Math implemented (fp32, matches shipped semantics step-for-step):**
+1. `short_conv1d_causal` — depthwise causal conv1d (`F.conv1d`, `groups=dim`, `padding=width-1` truncated to seqlen) + SiLU, per `ops/causal_conv1d.py::causal_conv1d_ref` (short_conv_kernel_size=4).
+2. `kda_safe_gate` — bounded log-decay `g = lower_bound * sigmoid(exp(A_log) * (raw_g + dt_bias))` (`ops/triton/kda/gate.py::apply_kda_gate`, safe_gate=True, lower_bound=-5.0). **Cross-checked bit-identical (0.0 max abs diff) against the shipped `apply_kda_gate`.**
+3. `kda_recurrent_reference` — the required sequential oracle, mirroring `fused_recurrent_kda.py` `IS_KDA=True` inner loop per head with state `S[V,K]=[128,128]`: L2-norm(q,k) eps 1e-6 → `q*=scale (K**-0.5)` → `S*=exp(g)[None,:]` (decay along K) → `u=(v - S@k)*beta` (delta rule, per-head scalar beta=sigmoid(beta_raw)) → `S+=outer(u,k)` → `o=S@q`.
+4. `gated_rmsnorm` — sigmoid-gated RMSNorm (eps 1e-5) per `FusedRMSNormGated(activation="sigmoid").forward_native` (`x_normed*weight*sigmoid(g)`), the `o_norm` before `o_proj`.
+Plus `kda_chunked_reference` (state-carry chunked driver; consistency oracle — must equal the recurrence) and `kda_layer_reference` (end-to-end conv→gate→recurrence→o_norm, stops before o_proj).
+
+**Assumptions/ambiguities for G4 to reconcile:** (a) L2-norm eps=1e-6, o_norm eps=1e-5, scale=K**-0.5 — all defaults read from the shipped kda wrapper/kernels. (b) beta is a per-head **scalar** for GLM (`IS_BETA_HEADWISE=False`, since `beta.ndim==3 != v.ndim==4`); a head-wise-beta checkpoint would need beta shape [T,H,V]. (c) The chunked *prefill* Triton path (`chunk_kda_with_fused_gate`) does log-space cumulative sums and may reorder fp32 adds vs. this strict left-to-right recurrence — small numeric drift there is expected; the **sequential recurrent form is the authoritative oracle** (the decode path `fused_recurrent_kda` is the exact structural match). (d) Bounded gate saturates to exactly 0.0 / lower_bound in fp32 at the extremes → decay∈[e^lb,1] with inclusive bounds (documented in the gate-bounds test). No NPU hardware needed to run the oracle; `python3 -m pytest -q --noconftest tests/ut/glm_w2/test_kda_reference.py` → 22 passed.
