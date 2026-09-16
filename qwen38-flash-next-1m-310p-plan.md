@@ -301,9 +301,9 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: asc serving config, admission validation UT
 - **description**: Enforce 1,048,060 input + 512 output + 4 draft ≤ 1,048,576; report accepted-prompt tokens (no truncation, R10); admission and execution concurrency = 1 for 1M path; explicit errors instead of truncation.
 - **validation**: UT: boundary accept/reject cases; response metadata includes accepted token count.
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-16 (commit f496a91c9) — Self-contained host module `context_budget.py`: `check_context_budget()` enforces 1,048,060 input + 512 output + 4 draft = 1,048,576 (ceiling imported from T7.1 `rope.py` `MAX_EXTENDED_POSITION_EMBEDDINGS`, split verified to sum exactly). No truncation (R10): over-budget prompts raise `ContextBudgetExceededError`; `ContextBudgetDecision.to_metadata()` reports `accepted_prompt_tokens` (verbatim) + `truncated: False`. Concurrency=1 via fail-closed thread-safe `Qwen4Exp1MAdmissionController` (2nd concurrent 1M admit → `ConcurrencyLimitExceededError`; over-budget admits consume no slot; `admission_slot()` context manager; 1-of-8 race test). RED→GREEN 19 UTs; full qwen38_1m suite **541 passed**; ruff clean.
+- **files edited/created**: `vllm_ascend/models/qwen4_exp/context_budget.py` (new), `tests/ut/qwen38_1m/test_context_budget.py` (new)
 
 ### T1.5: Full-model assembly with eager fallback (dummy-weight boot)
 - **depends_on**: [T1.2, T1.3, T1.4, T0.6]
