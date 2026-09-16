@@ -27,13 +27,25 @@ torch-fallback metadata builder advances the ring / compressed side caches one
 chunk at a time, bit-identically to a whole pass); the chunk-size knob and the
 preemption-aware recompute policy live in :mod:`.chunk_config` and are attached
 here as :attr:`AscendQwen4ExpQSAAttention.chunk_prefill_policy` for the T6.4
-decoder assembly to read. End-to-end decoder assembly (T6.4) is out of scope;
-this module exposes the projection + attention seams they wire together.
+decoder assembly to read.
+
+End-to-end decoder-layer assembly (plan T6.4) is :func:`run_qsa_decoder_attention`:
+the single composition -- project (Q/K/V/gate + indexer Q/K) -> indexer select ->
+sparse GQA attention with the output gate -> out-projection -- that every one of
+the model's 12 QSA layers runs. The full-model assembly's ``_QSAAttention`` owns
+the projection weights, the indexer and the attention module, and delegates its
+forward to this function so all QSA layers exercise identical code. It reproduces
+the T0.6 composite reference (``qsa_indexer_reference`` + ``qsa_attention_reference``
+composed) at rounding level under a float64 policy (see
+``tests/ut/qwen38_1m/test_qsa_decoder_e2e.py``).
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 from .chunk_config import QSAChunkPrefillPolicy
@@ -259,4 +271,101 @@ class AscendQwen4ExpQSAAttention(nn.Module):
         return out.to(self.qsa_dtype)
 
 
-__all__ = ["AscendQwen4ExpQSAAttention"]
+@dataclass(frozen=True)
+class QSADecoderProjections:
+    """The seven projection weights of one QSA decoder layer (``[out, hidden]``).
+
+    Held by the full-model assembly's ``_QSAAttention`` and handed to
+    :func:`run_qsa_decoder_attention`; the composition never owns parameters, so
+    the assembly's state dict is unchanged by routing through it.
+    """
+
+    q_proj: torch.Tensor
+    k_proj: torch.Tensor
+    v_proj: torch.Tensor
+    gate_proj: torch.Tensor
+    index_q_proj: torch.Tensor
+    index_k_proj: torch.Tensor
+    out_proj: torch.Tensor
+
+
+def run_qsa_decoder_attention(
+    block_input: torch.Tensor,
+    positions: torch.Tensor,
+    *,
+    projections: QSADecoderProjections,
+    indexer: nn.Module,
+    attention: AscendQwen4ExpQSAAttention,
+    num_query_heads: int,
+    num_kv_heads: int,
+    head_dim: int,
+    index_n_heads: int,
+    index_head_dim: int,
+    store_dtype: torch.dtype,
+    compute_dtype: torch.dtype,
+) -> torch.Tensor:
+    """Full QSA decoder-layer attention path (plan T6.4).
+
+    The single composition every QSA layer runs::
+
+        project (Q/K/V/gate + indexer Q/K)
+          -> indexer select (T6.1)
+          -> Q/K GemmaRMSNorm + partial RoPE -> sparse GQA attention (T6.2)
+             with the ``out * sigmoid(gate)`` output gate
+          -> out-projection
+
+    Projections and the out-projection run in ``compute_dtype`` (the policy
+    accumulation dtype) regardless of the stored (fp16) weight dtype, then the
+    indexer / attention inputs are cast to ``store_dtype`` (the QSA main dtype),
+    mirroring the storage/accumulation split pinned in ``dtype_policy``.
+
+    Args:
+        block_input: ``[T, hidden]`` mixed block input for this layer.
+        positions: ``[T]`` logical positions of the query tokens.
+        projections: the layer's seven projection weights.
+        indexer: the weight-free QSA indexer (T6.1); called
+            ``indexer(index_q, index_k, positions)`` -> selection.
+        attention: the QSA sparse attention module (T6.2).
+        num_query_heads, num_kv_heads, head_dim: attention geometry.
+        index_n_heads, index_head_dim: indexer geometry.
+        store_dtype: QSA main (storage) dtype for indexer / attention inputs.
+        compute_dtype: accumulation dtype for the (out-)projections.
+
+    Returns:
+        ``[T, hidden]`` attention block output in ``store_dtype``.
+    """
+    seq_len = block_input.shape[0]
+
+    def _linear(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
+        return F.linear(x.to(compute_dtype), weight.to(compute_dtype))
+
+    query = _linear(block_input, projections.q_proj).view(seq_len, num_query_heads, head_dim)
+    key = _linear(block_input, projections.k_proj).view(seq_len, num_kv_heads, head_dim)
+    value = _linear(block_input, projections.v_proj).view(seq_len, num_kv_heads, head_dim)
+    gate = _linear(block_input, projections.gate_proj).view(seq_len, num_query_heads, head_dim)
+    index_q = _linear(block_input, projections.index_q_proj).view(seq_len, index_n_heads, index_head_dim)
+    index_k = _linear(block_input, projections.index_k_proj)
+
+    selection = indexer(
+        index_q.to(store_dtype),
+        index_k.to(store_dtype),
+        positions,
+    )
+    out = attention(
+        query.to(store_dtype),
+        key.to(store_dtype),
+        value.to(store_dtype),
+        gate.to(store_dtype),
+        positions,
+        selection.token_indices,
+        selection.valid_counts,
+    )
+    out = out.reshape(seq_len, num_query_heads * head_dim)
+    return _linear(out, projections.out_proj).to(store_dtype)
+
+
+__all__ = [
+    "AscendQwen4ExpQSAAttention",
+    "QSADecoderProjections",
+    "run_qsa_decoder_attention",
+]

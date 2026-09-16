@@ -87,7 +87,11 @@ from .kv_cache import (
 )
 from .ngram_embedding import AscendPLEPinnedHostEmbeddingMethod
 from .ple_layer import AscendQwen4ExpPLELayer
-from .qsa import AscendQwen4ExpQSAAttention
+from .qsa import (
+    AscendQwen4ExpQSAAttention,
+    QSADecoderProjections,
+    run_qsa_decoder_attention,
+)
 from .qwen4exp_gdn import (
     QWEN4EXP_GDN_CHUNK_SIZE,
     Qwen4ExpGDNParams,
@@ -331,7 +335,13 @@ class _GDNAttention(nn.Module):
 
 
 class _QSAAttention(nn.Module):
-    """Wire the real QSA indexer (T6.1) + sparse GQA attention (T6.2)."""
+    """Wire the real QSA indexer (T6.1) + sparse GQA attention (T6.2).
+
+    Owns the layer's projection weights, indexer and attention module, and runs
+    the full QSA decoder-layer path through the single shared composition entry
+    point :func:`~vllm_ascend.models.qwen4_exp.qsa.run_qsa_decoder_attention`
+    (plan T6.4), so every one of the 12 QSA layers exercises identical code.
+    """
 
     def __init__(self, *, config: object, layer_idx: int, dtype_policy: Qwen4ExpDtypePolicy) -> None:
         super().__init__()
@@ -358,32 +368,28 @@ class _QSAAttention(nn.Module):
         self.attn = AscendQwen4ExpQSAAttention(config=config, layer_idx=layer_idx, dtype_policy=dtype_policy)
 
     def forward(self, block_input: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
-        seq_len = block_input.shape[0]
-        query = _linear(block_input, self.q_proj, self.compute_dtype).view(seq_len, self.num_heads, self.head_dim)
-        key = _linear(block_input, self.k_proj, self.compute_dtype).view(seq_len, self.num_kv_heads, self.head_dim)
-        value = _linear(block_input, self.v_proj, self.compute_dtype).view(seq_len, self.num_kv_heads, self.head_dim)
-        gate = _linear(block_input, self.gate_proj, self.compute_dtype).view(seq_len, self.num_heads, self.head_dim)
-        index_q = _linear(block_input, self.iq_proj, self.compute_dtype).view(
-            seq_len, self.index_n_heads, self.index_head_dim
-        )
-        index_k = _linear(block_input, self.ik_proj, self.compute_dtype)
-
-        selection = self.indexer(
-            index_q.to(self.params_dtype),
-            index_k.to(self.params_dtype),
+        return run_qsa_decoder_attention(
+            block_input,
             positions,
+            projections=QSADecoderProjections(
+                q_proj=self.q_proj,
+                k_proj=self.k_proj,
+                v_proj=self.v_proj,
+                gate_proj=self.gate_proj,
+                index_q_proj=self.iq_proj,
+                index_k_proj=self.ik_proj,
+                out_proj=self.o_proj,
+            ),
+            indexer=self.indexer,
+            attention=self.attn,
+            num_query_heads=self.num_heads,
+            num_kv_heads=self.num_kv_heads,
+            head_dim=self.head_dim,
+            index_n_heads=self.index_n_heads,
+            index_head_dim=self.index_head_dim,
+            store_dtype=self.params_dtype,
+            compute_dtype=self.compute_dtype,
         )
-        out = self.attn(
-            query.to(self.params_dtype),
-            key.to(self.params_dtype),
-            value.to(self.params_dtype),
-            gate.to(self.params_dtype),
-            positions,
-            selection.token_indices,
-            selection.valid_counts,
-        )
-        out = out.reshape(seq_len, self.num_heads * self.head_dim)
-        return _linear(out, self.o_proj, self.compute_dtype).to(self.params_dtype)
 
 
 class _EagerMLP(nn.Module):
