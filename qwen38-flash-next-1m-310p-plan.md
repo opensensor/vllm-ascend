@@ -166,9 +166,9 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: `vllm_ascend/core/kv_cache_interface.py`, `vllm_ascend/utils.py`, `vllm_ascend/patch/platform/patch_kv_cache_utils.py`, `_310p` kv-config path
 - **description**: Support `CircularBufferSpec` (QSA raw ring, capacity must divide/align attention block size → scheduler LCM) and `MLAAttentionSpec(tokens_per_state=compress_ratio)` (compressed index) alongside GDN `MambaSpec` and full-attention groups; hybrid group packaging, block-size LCM, granularity/bytes calc for 310P. Ensure `QSAStateBackend` (name `QWEN4_EXP_EXP_QSA_STATE`) pages allocate on NPU without Triton.
 - **validation**: CPU UT on `kv_cache_utils`: spec set from tiny Qwen4Exp config yields a `KVCacheConfig` with correct groups/block sizes; 1M-token block math exact (report bytes/chip table for BF16/C8 layout — feeds T8.x).
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-15 (commit c98860dc8) — QSA KV-cache specs on the 310P host lane: key-only `AscendQSARawRingSpec` (ring cap 4, page 1024 B) + `MLAAttentionSpec(compress_ratio=4)` compressed index, packaged in hybrid groups beside GDN MambaSpec/full-attn. **EXACT 1M bytes/QSA-layer** (element sizes from dtype policy: fp16=2 B, fp8_e4m3=1 B) — BF16: ring 1,024 B + compressed 67,108,864 B (64 MiB) = 67,109,888 B; C8: ring 1,024 B + compressed 33,554,432 B (32 MiB) = 33,555,456 B (C8 compressed exactly ½ BF16); scales linearly by QSA-layer count → feeds T8.x. Ring capacity divides scheduler LCM (128); non-dividing ratios raise it (ratio-3→384). `AscendQSAStateBackend` (`QWEN4_EXP_EXP_QSA_STATE`, `uses_triton()==False`) via pure-torch slot-mapping fallback. **DEVIATION (documented)**: installed vLLM 0.22.0 lacks `CircularBufferSpec`/`num_states` API and its generic `AttentionSpec` doubles for a V tensor → introduced a key-only Ascend ring spec + LCM handling in `patch_kv_cache_utils` (guarded to only fire when a QSA ring group is present — verified non-invasive for other models; runner tensor-alloc wiring stays NPU-side). Shared-file edits purely additive (+13/+26/+13). 15 CPU UTs green, ruff + py_compile clean.
+- **files edited/created**: `vllm_ascend/models/qwen4_exp/kv_cache.py` (new), `tests/ut/qwen38_1m/test_kv_cache_specs.py` (new), `vllm_ascend/core/kv_cache_interface.py` (+register), `vllm_ascend/patch/platform/patch_kv_cache_utils.py` (+LCM), `vllm_ascend/utils.py` (+helper)
 
 ### T3.1: W8A8 tensor mapping and load-time rejection
 - **depends_on**: [T0.1]
@@ -202,9 +202,9 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: `vllm_ascend/models/qwen4_exp/ngram_embedding.py` (`AscendPLEEmbeddingMethod` subclassing in-tree ABC `Qwen4ExpPLEEmbedding`), `EngramConfig` usage (asc ascend_config surface)
 - **description**: One logical FP16 host table shared across 4 worker processes. **Ship BOTH transports behind one interface** with a config switch, because the winner can only be settled on hardware in D1: (a) `is_uva_available`/`get_accelerator_view_from_cpu_tensor` pinned-UVA path (mirrors `Qwen4ExpPLEPinnedHostEmbedding`), (b) file-backed shared mmap + registered transfer windows + batched row gather. The switch defaults to (a) with auto-fallback and is exercised by a D1-runnable micro-benchmark whose result is a D2 entry criterion. **Never** allow ×rank copies; fail-fast host accounting vs 48 GiB OS/transfer reserve (PRD §6). Pin only measured regions.
 - **validation**: UT with /dev/shm tables: 4 processes observe same physical pages (rss proves sharing), row reads correct, host byte accounting exact; no 95 GiB pin attempted by default; transport-switch micro-bench script ships with the task for D1.
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-15 (commit 3e0ef5791) — Dual-transport host PLE table behind one interface `AscendPLEEmbeddingMethod`: (a) pinned-UVA (device calls guarded/injectable, D1-verified) mirroring fork `Qwen4ExpPLEPinnedHostEmbedding`, and (b) /dev/shm MAP_SHARED mmap with `register_transfer_window()` (pins only measured regions) + batched `gather_rows()` (fully host-tested). `create_ple_embedding_method()` defaults to (a), auto-falls back to (b) when UVA absent, forced to (b) on `EngramConfig.dp_shared_memory` (no new env var). Single shared copy enforced via T0.5 `MemoryAccountant` (`PLE_HOST_TABLE`, `host_table_bytes()` rejects ×rank); 48 GiB reserve fail-fast (`HostByteBudgetError`, no file created); whole-table pin raises. 4-process fork test proves one physical copy (all workers see all 4 sentinels; mmap_length==table_bytes). Dtypes only from policy `cast_site("ngram_embedding")` — T1.2 dtype-literal test still passes. 26 UTs green (T4.1+dtype+registration, no regression), ruff clean. Fork ABC not importable host-only → contract mirrored, documented D1-composed. Async prefetch left as hook for T4.4. Unblocks T4.3 (needs T1.3) and T4.4.
+- **files edited/created**: `vllm_ascend/models/qwen4_exp/ngram_embedding.py` (filled T1.2 stub), `tools/qwen38_1m/ple_transport_bench.py` (new), `tests/ut/qwen38_1m/test_ple_host_method.py` (new)
 
 ### T4.2: Exact n-gram hashing and EOS boundary tests
 - **depends_on**: [T0.1]
@@ -256,9 +256,9 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: `vllm_ascend/models/qwen4_exp/indexer_qsa.py` + `ops/`
 - **description**: Port `nvidia/indexer_qsa.py` + `ops/qsa_indexer.py`/`qsa_pre_indexer.py` to torch/NPU ops: 4 q-heads, 1 k-head, dim 128, compression ratio 4, budget 2,048; raw ring write (per token) and compressed history (1 row/4 tokens) via `common.qsa_cache` slot mappings (use `_build_qsa_metadata_torch` fallback, no Triton). Deterministic top-k.
 - **validation**: CPU parity UT vs T0.6 brute-force at boundary lengths (1, ratio-1, ratio, ratio+1, partial group, exactly-2048, 2049+), repeated-block selection, final token; selection sets identical to reference.
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-15 (commit 17fce870b) — Ported the weight-free QSA indexer to torch (Triton/CUDA/NPU-free). New `models/qwen4_exp/ops/` package: `qsa_indexer` (mean-pool compress, fp32 relu-summed block scores, deterministic top-k, causal-tail expand) and `qsa_cache` (ports of ring/compressed slot mappings + `_build_qsa_metadata_torch` fallback + scatter/gather — fork `common/qsa_cache.py` not importable host-only, so logic ported). Deterministic top-k = `argsort(descending, stable)`, ties by ascending block index (matches reference). Critical path uses cache slot-mapping: raw-ring write per token (retains open-group suffix), compressed history 1 row/completed group, compressed keys gathered through the cache before scoring. Dtypes from policy (fp16 storage / fp32 accum, no literals — T1.2 scan still passes). Selection sets IDENTICAL to T0.6 at every boundary length + over-budget/repeated/final-token; bitwise-deterministic across runs. Exposes packed selection buffer (indices + valid-count column) for T6.2. 19 UTs green (+7 dtype sibling), ruff clean.
+- **files edited/created**: `vllm_ascend/models/qwen4_exp/indexer_qsa.py` (filled stub), `vllm_ascend/models/qwen4_exp/ops/{__init__,qsa_indexer,qsa_cache}.py` (new), `tests/ut/qwen38_1m/test_qsa_indexer.py` (new)
 
 ### T6.2: QSA sparse attention kernel (BF16) on 310P
 - **depends_on**: [T6.1, T1.4]
