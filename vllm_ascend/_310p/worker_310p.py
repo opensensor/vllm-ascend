@@ -48,6 +48,42 @@ class NPUWorker310(NPUWorker):
 
         init_workspace_manager(self.device, num_ubatches=1)
         self.model_runner = self._create_model_runner()
+        self._maybe_emit_qwen4exp_runlog()
+
+    def _is_qwen4exp_model(self) -> bool:
+        """True when this worker is serving the Qwen4Exp (Qwen3.8-Flash-Next) model."""
+        architectures = getattr(self.model_config, "architectures", None) or []
+        return any("Qwen4Exp" in arch or "qwen4_exp" in arch.lower() for arch in architectures)
+
+    def _maybe_emit_qwen4exp_runlog(self) -> None:
+        """Additive, guarded Qwen4Exp run-log hook (plan TOBS, R13).
+
+        Emits the machine-readable run-log summary (rank identity + token limits)
+        only on the Qwen4Exp path. Fully wrapped in try/except so it never regresses
+        worker init; a failure here is logged and swallowed.
+        """
+        try:
+            if not self._is_qwen4exp_model():
+                return
+            from vllm_ascend.observability.qwen38_runlog import RankIdentity, RunLog
+
+            rank = getattr(self, "rank", 0)
+            world_size = getattr(self.parallel_config, "world_size", 1)
+            local_rank = getattr(self, "local_rank", None)
+            runlog = RunLog(run_id=f"qwen4exp-rank{rank}", world_size=world_size, rank=rank)
+            runlog.set_rank_identity(
+                RankIdentity(rank=rank, world_size=world_size, local_rank=local_rank)
+            )
+            max_model_len = getattr(self.model_config, "max_model_len", None)
+            if max_model_len is not None:
+                runlog.set_token_limits(
+                    max_model_len=max_model_len,
+                    max_num_batched_tokens=getattr(self.scheduler_config, "max_num_batched_tokens", None),
+                    max_num_seqs=getattr(self.scheduler_config, "max_num_seqs", None),
+                )
+            logger.info_once("Qwen4Exp run-log:\n%s", runlog.human_summary(), scope="local")
+        except Exception as exc:  # noqa: BLE001 - diagnostic hook must never fail init
+            logger.warning("Qwen4Exp run-log hook failed (non-fatal): %s", exc)
 
     def save_sharded_state(
         self,
