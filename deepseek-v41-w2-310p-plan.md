@@ -93,7 +93,8 @@ Follow-on: GLM 5.3 753B (bounded expert cache/offload), MTP decode, vision, 1M.
 - **location**: `tests/ut/deepseek_w2/reference/`
 - **description**: Pure-PyTorch FP64/FP32 references: W2 pack/unpack + INT8 grouped-QDQ MoE (per-block W2 scale, per-token act quant); DeepSeek MLA (q_lora/kv_lora down/up, decoupled rope, latent KV); sparse-attention indexer scoring/selection (CSA2 compression); Engram hash + gather + projection. Tolerances declared before any final comparison. Reuse the Qwen `w8a8_reference`/`qsa_*_reference` where shapes allow.
 - **validation**: self-consistency UTs (W2 round-trip within bound; MLA vs dense-latent; indexer vs brute force).
-- **status**: Not Completed
+- **status**: Completed (2026-09-16, commits 8ff7e26df W2+Engram, 2791496c6 MLA+indexer) — all 4 pure-torch references under `tests/ut/deepseek_w2/reference/`, 106 self-consistency UTs, ruff clean. **W2 reference contract**: signed int2 codes `{-2,-1,0,1}` packed 4/byte + per-`[32,32]`-block FP scale (round-trip ≤ scale/2), `unpack_w2_to_int8` + grouped==per-token MoE (reuses the qwen38_1m W8A8 per-token quantizer); skew + unrouted-skip covered. **Engram**: rolling-XOR n-gram hash (exact int64, prime-bucket + per-layer multipliers) with pad/dead-token blocking, int8×ue8m0 gather, signed-sqrt sigmoid gated projection. **MLA**: absorbed-latent vs dense oracle (q/kv lora, decoupled RoPE on 64-dim tail). **Indexer/CSA2**: mean-pool compression + Lightning-Indexer scoring + top-k, vs brute force at boundaries. Tolerances declared in `tolerances.py` before all asserts. NOTE for E1.2/E1.3: this file is the W2 pack/scale contract — reconcile the E1.1 converter format against it.
+- **files**: `tests/ut/deepseek_w2/reference/{__init__,tolerances,w2_moe_reference,engram_reference,mla_reference,indexer_reference}.py` + 4 `test_*_selfconsistency.py` (new)
 
 ### E0.5 [asc]: Per-rank memory accounting extension
 - **depends_on**: []
