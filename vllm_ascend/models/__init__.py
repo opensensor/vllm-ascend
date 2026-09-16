@@ -112,5 +112,5 @@ def register_model():
     )
     ModelRegistry.register_model(
         "DeepSeekV41MTPModel",
-        "vllm_ascend.models.deepseek_v41.model:DeepSeekV41MTP",
+        "vllm_ascend.models.deepseek_v41.mtp:DeepSeekV41MTP",
     )

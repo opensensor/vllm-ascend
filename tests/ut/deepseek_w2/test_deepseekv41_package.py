@@ -33,7 +33,7 @@ _EXPECTED_V41_REGISTRATIONS = {
     "DeepseekV41ForConditionalGeneration": (
         "vllm_ascend.models.deepseek_v41.model:AscendDeepseekV41ForConditionalGeneration"
     ),
-    "DeepSeekV41MTPModel": "vllm_ascend.models.deepseek_v41.model:DeepSeekV41MTP",
+    "DeepSeekV41MTPModel": "vllm_ascend.models.deepseek_v41.mtp:DeepSeekV41MTP",
 }
 
 # The shipped DeepSeek V4 registrations that MUST remain intact (additive-only).
