@@ -130,9 +130,9 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: `tests/ut/qwen38_1m/reference/` (asc)
 - **description**: Pure-PyTorch (FP64/FP32) reference implementations of: Qwen4Exp QSA indexer scoring + block selection + 2,048-token budget semantics; QSA sparse attention with partial rotary, Q/K norm, output gate, causal, selection-count semantics; GDN conv+recurrent (chunk and unchunked); Qwen n-gram hashing with EOS boundaries; PLE projection/conv; W8A8 dynamic INT8 QDQ (per-token act scale, checkpoint weight scale/offset). Derived from `nvidia/ops/*` Triton kernels (port kernel formulas, do not import Triton). Tolerances declared per op BEFORE first comparison of final results, per PRD §8.1.
 - **validation**: self-consistency UTs (chunked vs unchunked GDN, index hash vs brute force).
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-15 (commit fb3ee0749) — Eager CPU reference harness under `tests/ut/qwen38_1m/reference/`. All 6 pure-PyTorch (FP64/FP32, no-Triton) references complete + self-consistency tested (184 UTs green via `--noconftest`). GDN ships both chunked (self-derived UT/WY block) and unchunked (recurrent, matches fused sigmoid-gating kernel) — chunked==unchunked ~1e-16. QSA indexer covers compression/scoring/top-k/2048-budget at all required boundary lengths (1, ratio-1, ratio, ratio+1, partial, exactly-2048, 2049+); QSA attention (24q/2kv/dim256, partial RoPE, QK-norm, output gate) sparse==dense-masked. n-gram exact vs brute-force incl. EOS boundary + history advance. W8A8 per-token act QDQ + per-channel weight scale/offset with correct `(q-offset)*scale` order (wrong-order regression guard). Tolerances declared in `tolerances.py` BEFORE all asserts (per-op, each with rationale). Gotcha: W8A8 round-trip bounded absolutely by scale/2 per-element (relative bound meaningless near zero). This unblocks T3.3, T4.3, T5.1, T6.1, T6.2, T1.5.
+- **files edited/created**: `tests/ut/qwen38_1m/reference/{__init__,tolerances,gdn_reference,ngram_hash_reference,ple_reference,qsa_indexer_reference,qsa_attention_reference,w8a8_reference}.py` + `test_{gdn,ngram_hash,ple,qsa_indexer,qsa_attention,w8a8}_selfconsistency.py` (all new)
 
 ### T1.1 [fork]: Backend-safe qwen4_exp dispatch
 - **depends_on**: []
