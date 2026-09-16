@@ -60,6 +60,33 @@ _KDA_EXPORTS = (
 )
 
 
+# G6 routed-expert W2 MoE (host router -> E1.3 W2 method -> eager combine) +
+# multi-head hyper-connection ops. Lazily forwarded from the local ``.moe``
+# module (Triton-free: reuses the DeepSeek E1.2/E1.3 W2 kernel + combine). Kept
+# lazy so importing this package init pulls neither ``.moe`` nor the E1.3 method
+# (which needs torch_npu) until first access.
+_MOE_EXPORTS = (
+    "Glm5NextW2MoE",
+    "glm_route_topk",
+    "eager_moe_combine",
+    "hc_pre",
+    "hc_post",
+    "hc_expand",
+    "hc_contract",
+)
+
+# G6 weight mapping: name -> W2 destination classification, expert fusion, and
+# coverage validation for the streamed loader. Lazily forwarded from ``.weight_mapping``.
+_WEIGHT_MAPPING_EXPORTS = (
+    "classify_tensor",
+    "map_expert_tensor",
+    "validate_weight_map",
+    "moe_block_ids",
+    "estimate_per_chip_bytes",
+    "iter_artifact_tensor_metas",
+)
+
+
 def __getattr__(name: str):  # PEP 562 module-level lazy attribute
     if name in _W2_FORWARD_EXPORTS:
         from vllm_ascend.models import deepseek_v41 as _dsv41
@@ -73,11 +100,28 @@ def __getattr__(name: str):  # PEP 562 module-level lazy attribute
         from . import kda as _kda
 
         return getattr(_kda, name)
+    if name in _MOE_EXPORTS:
+        from . import moe as _moe
+
+        return getattr(_moe, name)
+    if name in _WEIGHT_MAPPING_EXPORTS:
+        from . import weight_mapping as _wm
+
+        return getattr(_wm, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def __dir__() -> list[str]:
-    return sorted([*globals().keys(), *_W2_FORWARD_EXPORTS, *_DSA_EXPORTS, *_KDA_EXPORTS])
+    return sorted(
+        [
+            *globals().keys(),
+            *_W2_FORWARD_EXPORTS,
+            *_DSA_EXPORTS,
+            *_KDA_EXPORTS,
+            *_MOE_EXPORTS,
+            *_WEIGHT_MAPPING_EXPORTS,
+        ]
+    )
 
 
 __all__ = [
@@ -91,4 +135,8 @@ __all__ = [
     *_DSA_EXPORTS,
     # G4 KDA linear-attention path (lazy; local .kda module)
     *_KDA_EXPORTS,
+    # G6 routed W2 MoE + hyper-connection (lazy; local .moe module)
+    *_MOE_EXPORTS,
+    # G6 weight mapping (lazy; local .weight_mapping module)
+    *_WEIGHT_MAPPING_EXPORTS,
 ]
