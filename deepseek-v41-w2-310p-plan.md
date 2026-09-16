@@ -21,6 +21,16 @@ Deliver a 310P execution path for DeepSeek V4.1 (`DeepseekV41ForCausalLM`: 40 la
 - The vLLM fork has `vllm/models/deepseek_v41/` — `common/engram.py`, `nvidia/{model,model_state,engram}.py`, `attention.py`, `sparse_mla.py`, `compressor.py`, `quant_config.py` — the authoritative V4.1 port source (like `qwen4_exp/nvidia/*`).
 - **Consequence**: E2.1/E3.1/E3.2/E4.1/E4.2 are **ADAPT existing code into a Triton-free 310P variant** (mirror the Qwen `_310p` pattern), not port-from-scratch. The genuinely-new critical path is the **W2 arithmetic** (E0.1, E0.4-W2, E1.1, E1.2, E1.3) + the 310P Triton-free wiring. Re-examine deepseek_v4 / fork deepseek_v41 before writing any MLA/indexer/engram/assembly code.
 
+## QUALITY CORRECTION (2026-09-16, from the W2 sensitivity harness — commit decb018d5)
+
+The host proxy (`tools/deepseek_w2/w2_quality.py`) shows **naive round-to-nearest (RTN) 2-bit is quality-risky**: per-expert SwiGLU output vs the FP4 source has median rel-MSE ≈0.98 (cosine ≈0.58); W3 ≈0.26, W4 ≈0.046; ~22% of experts poor even at W4. Engram W4 is fine (0.019). The packed-W2 **format is correct** (error == exact scale/2 bound) — the loss is intrinsic to 2-bit RTN, not a bug. **Caveat**: isolated per-expert *weight* error only — excludes INT8 activations, the top-6/384 routing average (MoE is quant-robust), residual scale, and task accuracy, so end-to-end may be softer.
+
+**Corrections (do NOT discard infra — format/unpack/method/loader/assembly are quant-algorithm-agnostic):**
+1. Treat the current RTN-W2 artifact as **provisional** (a bring-up vehicle, not a quality claim).
+2. Add **E-CAL: calibrated 2-bit** (GPTQ/AWQ-style — minimize expert *output* error with calibration data; emits the SAME packed-W2 codes our pipeline consumes). Calibration runs on a GPU (RTX 6000 PRO or rental) or the cards once up. Depends on E0.4/E1.1.
+3. Add an **end-to-end perplexity gate** (once E4.1 assembly runs on the cards, D3/G2): measure the REAL W2 delta before trusting it — the routing average may rescue much of the per-expert loss. Same gate applies to GLM.
+4. **W4 fallback** for the most sensitive experts / capacity-permitting models is documented (mixed-bit), though W4 does not fit DeepSeek 552B on 4×310P.
+
 **Documentation policy**: op availability (int4pack, antiquant, MLA fused, sub-INT8 unpack) MUST be verified against the pinned CANN container, not assumed.
 
 ## Prerequisites
