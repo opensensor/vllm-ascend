@@ -85,9 +85,9 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: external ModelSlim conversion run; record pointers in `artifacts/qwen38-1m/checkpoint-manifest.json`
 - **description**: Monitor conversion run to completion (49 stages; `progress.json` canonical). Produce manifest: shard list + SHA256, tensor names for expert/scale/offset mapping, `ple_layer_ids`, `ngram_size`, EOS id, rope config, held-out perplexity report (finite/complete). Freeze the G2 accuracy threshold from before/after report **before** any Ascend output is inspected (PRD §8.1).
 - **validation**: manifest JSON validates; 49/49 stages done; perplexity finite; threshold recorded with date.
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Partially Completed (manifest done; SHA256 running; perplexity/G2 need runtime)
+- **log**: 2026-09-16 — Checkpoint located at `/run/media/matteius/3cbe076a-.../models/ascend/Qwen3.8-Flash-Next-W8A8-DYNAMIC-300i` (224 GB, 254 shards, 222,746 tensors). Built `tools/qwen38_1m/build_manifest.py` → `artifacts/qwen38-1m/checkpoint-manifest.json`: arch `Qwen4ExpForConditionalGeneration`; conversion_report (source 239.39 GB / export 239.96 GB / 73,728 quantized_linears — all match the runtime-requirements doc). **Observed export dtypes (from safetensors headers, authoritative over config's source `bfloat16`)**: non-expert/PLE/embed/lm_head/GDN/QSA all **F16**; experts **I8** + F32 per-channel `weight_scale`+`weight_offset` `[out,1]` — **matches the T1.2 dtype policy**. Component counts: 73,728 expert weight/scale/offset each, 128 PLE n-gram shards, gdn 324, qsa_attn 78, qsa_indexer 39, shared_expert 196. EOS `[248046,248044]`. **Reconciliations captured**: `ple_layer_ids` config=[2] but PLE tensors live at `layers.1` (both recorded); real GDN `linear_num_value_heads=48 / key=16` (tests used 32); native rope `default`+mrope `[11,11,10]` theta 10M (T7.1 YaRN is extension-only); indexer 2048/4/128/1/4 + partial_rotary 0.25 + output_gate sigmoid all match T6.x. **Deferred**: per-shard SHA256 running in background; held-out perplexity + frozen G2 threshold require a runtime (export `ascend_inference_validated=false`) → device wave.
+- **files edited/created**: `tools/qwen38_1m/build_manifest.py` (new), `artifacts/qwen38-1m/checkpoint-manifest.json` (new)
 
 ### T0.2: Environment freeze and revision recorder
 - **depends_on**: []
