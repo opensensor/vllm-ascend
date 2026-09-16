@@ -50,6 +50,16 @@ _DSA_EXPORTS = (
 )
 
 
+# G4 KDA (Kimi Delta Attention) linear-attention 310P path. Lazily forwarded
+# from the local ``.kda`` module (Triton-free eager gated-delta recurrence,
+# validated against the tools/glm_w2 parity oracle). Kept lazy so this package
+# init stays light -- ``.kda`` pulls torch (+ optional guarded torch_npu) only
+# on first access.
+_KDA_EXPORTS = (
+    "Glm5NextW2KDA",
+)
+
+
 def __getattr__(name: str):  # PEP 562 module-level lazy attribute
     if name in _W2_FORWARD_EXPORTS:
         from vllm_ascend.models import deepseek_v41 as _dsv41
@@ -59,11 +69,15 @@ def __getattr__(name: str):  # PEP 562 module-level lazy attribute
         from . import dsa as _dsa
 
         return getattr(_dsa, name)
+    if name in _KDA_EXPORTS:
+        from . import kda as _kda
+
+        return getattr(_kda, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def __dir__() -> list[str]:
-    return sorted([*globals().keys(), *_W2_FORWARD_EXPORTS, *_DSA_EXPORTS])
+    return sorted([*globals().keys(), *_W2_FORWARD_EXPORTS, *_DSA_EXPORTS, *_KDA_EXPORTS])
 
 
 __all__ = [
@@ -75,4 +89,6 @@ __all__ = [
     *_W2_FORWARD_EXPORTS,
     # G5 DSA sparse-attention path (lazy; local .dsa module)
     *_DSA_EXPORTS,
+    # G4 KDA linear-attention path (lazy; local .kda module)
+    *_KDA_EXPORTS,
 ]
