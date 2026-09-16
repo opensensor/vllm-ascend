@@ -73,7 +73,8 @@ Follow-on: GLM 5.3 753B (bounded expert cache/offload), MTP decode, vision, 1M.
 - **location**: extend `tools/qwen38_1m/build_manifest.py` (or new `tools/deepseek_w2/build_manifest.py`); `artifacts/deepseek-v41-w2/manifest.json`
 - **description**: Parse the FP8 source config/index + safetensors headers → manifest: layer/expert/Engram/indexer/MLA tensor families + counts, observed dtypes (FP8 weights, FP4 experts, scales), Engram table shapes, EOS, MTP layers, `weight_block_size`/`scale_fmt`. Reserve the frozen G2 threshold (pending runtime). Record source rev + intended per-family target precision (W2 experts, ~W4 Engram, FP16 rest).
 - **validation**: manifest validates; expert/Engram/indexer families enumerated; dtype map matches headers.
-- **status**: Not Completed
+- **status**: Completed (2026-09-16, commit 93e85b9a2) — `tools/deepseek_w2/build_manifest.py` → `artifacts/deepseek-v41-w2/manifest.json` (96085 tensors, 48 shards, 21 families, header-authoritative dtypes). **Real source scheme**: routed experts `layers.{L}.ffn.experts.{E}.{w1,w2,w3}.weight` = **I8 (FP4 packed)** + `.scale` = **F8_E8M0 (ue8m0)**, `weight_block_size [32,32]` (47,232 weights + 47,232 scales incl. MTP; main block 46080); **Engram** (layers 1,14) `embed.weight` F8_E4M3 `[~384M,256]` + `embed.scale` F8_E8M0 `[~384M,8]`, `wkv` F8_E4M3, `q/k` BF16; **MLA** `attn.{wq_a,wq_b,q_norm,wkv,kv_norm,wo_a,wo_b,attn_sink(F32)}` (687) + `mla_compressor` (11, BF16); **indexer** `attn.indexer.{wq_b,wk,k_norm,weights_proj}` (32); shared_expert F8_E4M3; embed/lm_head/norms BF16; vision recorded but text-only. No generation_config → EOS=1/BOS=0/PAD=2 from config. Target precision recorded per family (W2 experts / ~W4 Engram / FP16 rest); g2 threshold pending. 8 UTs; ruff clean.
+- **files**: `tools/deepseek_w2/{build_manifest.py,__init__.py}` (new), `tests/ut/deepseek_w2/test_build_manifest.py` (new), `artifacts/deepseek-v41-w2/manifest.json` (new)
 
 ### E0.2 [asc]: Environment freeze (reuse)
 - **depends_on**: []
@@ -99,7 +100,8 @@ Follow-on: GLM 5.3 753B (bounded expert cache/offload), MTP decode, vision, 1M.
 - **location**: extend `vllm_ascend/observability/qwen38_mem_accounting.py` (add `W2_EXPERT`, `ENGRAM_HOST` (~W4), `UNPACK_CACHE` components) or a thin DeepSeek wrapper
 - **description**: Track W2 packed experts (HBM), the INT8 unpack cache (HBM), and the ~W4 Engram host table (counted once, host-resident, excluded from device totals). Same 5% imbalance guard.
 - **validation**: UT: component sums vs a synthetic W2/Engram trace; Engram not ×rank.
-- **status**: Not Completed
+- **status**: Completed (2026-09-16, commit 90cf438fe) — `observability/deepseek_w2_mem_accounting.py`: thin layer importing (not editing) the Qwen accountant. `DeepSeekW2MemComponent` adds `W2_EXPERT`/`UNPACK_CACHE` (device, under the 5% imbalance guard) and `ENGRAM_HOST` (host); `DEEPSEEK_HOST_COMPONENTS` unions with the Qwen `PLE_HOST_TABLE` so `DeepSeekW2RankMemoryReport` excludes Engram from device totals and `host_table_bytes()` counts it once (raises on cross-rank divergence). 20 UTs green; ruff clean.
+- **files**: `vllm_ascend/observability/deepseek_w2_mem_accounting.py` (new), `tests/ut/deepseek_w2/test_mem_accounting.py` (new)
 
 ### E1.1 [x]: Packed W2 format + streaming converter
 - **depends_on**: [E0.1]
