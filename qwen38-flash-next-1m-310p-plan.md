@@ -274,9 +274,9 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: QSA layer/metadata wiring; scheduler config validation (asc)
 - **description**: Route `QSAMetadataBuilder` torch fallback through 310P MRV2; chunk-boundary correctness: ring/compressed state advances identically across chunk splits; make chunk size a config knob; preemption-aware recompute policy.
 - **validation**: CPU UT: full-sequence vs chunked(4096, ragged last chunk, chunk==block_size edge) outputs equal within pre-declared tolerance.
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-15 (commit fa8f3bb0b) — Routed the QSA torch metadata fallback through a 310P MRV2 per-chunk driver (`plan_qsa_prefill_chunks` + `build_qsa_prefill_chunk_metadata` + `run_qsa_prefill` in `ops/qsa_cache.py`): each chunk gets single-request `query_start_loc=[0,chunk_len]` and `seq_lens=[chunk_start+chunk_len]` so logical positions resolve to ABSOLUTE `chunk_start+arange` (ring slots `pos%ring`, compressed `pos//ratio`). Whole-vs-chunked cache state **bit-identical** (`ATOL==0`): compressed is chunk-agnostic; ring identity holds for chunk_size≥ring_capacity (enforced by `QSAChunkPrefillPolicy.validate_for_ring`; default 4096≫ring 4). Verified ragged-last, exact-multiple, chunk==block_size (ragged+exact), chunk==ring, ragged-tail<ring. Chunk-size knob `QSA_DEFAULT_PREFILL_CHUNK_SIZE=4096` in new `chunk_config.py` (dataclass, not env var — future VLLM_ASCEND_* wiring deferred to envs.py). Fail-closed preemption recompute (`resume_offset→0`, mirrors GDN preempt). RED (11 fail on injected chunk_start bug) → GREEN 17; T6.2 attention still 19 (keyword-only backward-compatible ctor change). ruff clean.
+- **files edited/created**: `vllm_ascend/models/qwen4_exp/ops/qsa_cache.py` (+chunk driver), `vllm_ascend/models/qwen4_exp/chunk_config.py` (new), `vllm_ascend/models/qwen4_exp/qsa.py` (+policy attach), `tests/ut/qwen38_1m/test_qsa_chunked_prefill.py` (new)
 
 ### T6.4: End-to-end QSA decoder layer assembly and short-context parity
 - **depends_on**: [T6.1, T6.2, T6.3, T1.5]
