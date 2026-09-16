@@ -96,3 +96,21 @@ def register_model():
         "Qwen4ExpMTP",
         "vllm_ascend.models.qwen4_exp.mtp:AscendQwen4ExpMTP",
     )
+    # DeepSeek V4.1 (552B, 2-bit / W2 experts) on Ascend 310P (plan E2.1). An
+    # ADAPT of the shipped deepseek_v4: the CausalLM subclasses
+    # AscendDeepseekV4ForCausalLM; the ConditionalGeneration alias rejects
+    # multimodal at the first gate (text-only); DeepSeekV41MTPModel points at a
+    # registration-only MTP-3 stub wired in E4.2. All rows are additive -- the
+    # shipped DeepseekV4* registrations above are untouched.
+    ModelRegistry.register_model(
+        "DeepseekV41ForCausalLM",
+        "vllm_ascend.models.deepseek_v41.model:AscendDeepseekV41ForCausalLM",
+    )
+    ModelRegistry.register_model(
+        "DeepseekV41ForConditionalGeneration",
+        "vllm_ascend.models.deepseek_v41.model:AscendDeepseekV41ForConditionalGeneration",
+    )
+    ModelRegistry.register_model(
+        "DeepSeekV41MTPModel",
+        "vllm_ascend.models.deepseek_v41.model:DeepSeekV41MTP",
+    )
