@@ -283,9 +283,9 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: `vllm_ascend/models/qwen4_exp/qsa.py`, model assembly
 - **description**: Plug full QSA path (project→indexer→select→sparse attn→gate) into the decoder layer replacing the T1.5 eager fallback; 12 QSA layers exercise identical code. Logit parity vs reference model at 8K for fixed seeds.
 - **validation**: CPU parity UT full-forward tiny model vs T0.6 composite reference; deterministic greedy outputs on 8K synthetic equal across two runs.
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-15 (commit d489acb5b) — Consolidated the full QSA decoder-layer path into one shared entry point `run_qsa_decoder_attention` (+`QSADecoderProjections`) in `qsa.py`: project (Q/K/V/gate + indexer Q/K) → T6.1 indexer select → Q/K GemmaRMSNorm + partial RoPE → T6.2 sparse GQA with `out*sigmoid(gate)` → out-proj. `_QSAAttention` keeps its projection weights (state dict unchanged) but delegates its forward here, so all 12 QSA layers run identical code (T1.5 already wired the real path — no eager fallback remained). Parity: composition + wired module both reproduce the T0.6 composite reference (indexer+attention composed) at rounding level — max abs err ≈2.4e-17 vs tol 1e-8/1e-9 — across dense (below-budget) and pruned/sparse (several×-budget) selection; sparse case stands in for 8K (O(T·Hq·S) f64 reference loop intractable at 8K on CPU; branches length-independent). Full tiny-model greedy logits bitwise-identical across two forwards + fresh same-seed model; parity has teeth (fails if output gate dropped). Full qwen38_1m suite **480 passed** (+6); ruff clean. Unblocks T8.1/T8.2.
+- **files edited/created**: `vllm_ascend/models/qwen4_exp/qsa.py` (+entry point), `vllm_ascend/models/qwen4_exp/model.py` (`_QSAAttention` delegates), `tests/ut/qwen38_1m/test_qsa_decoder_e2e.py` (new)
 
 ### T7.1: Explicit long-context RoPE/YaRN configuration
 - **depends_on**: []
