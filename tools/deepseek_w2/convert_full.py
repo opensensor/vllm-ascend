@@ -557,11 +557,30 @@ def _provenance_entry(stem_items: list[ConvItem], stats: ConversionStats | None)
 
 
 # --- atomic shard IO ---------------------------------------------------------
+def _drop_page_cache(path: Path) -> None:
+    """Advise the OS to drop this file's cached pages.
+
+    Streaming hundreds of GB through mmap otherwise balloons the (reclaimable)
+    page cache, which collapses ``free`` and can trip an out-of-memory watchdog
+    on a host smaller than the 256 GB target. ``POSIX_FADV_DONTNEED`` releases
+    the resident pages once we are done with a source/output shard.
+    """
+    try:
+        fd = os.open(str(path), os.O_RDONLY)
+        try:
+            os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+        finally:
+            os.close(fd)
+    except OSError:
+        pass
+
+
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for block in iter(lambda: handle.read(16 << 20), b""):
             digest.update(block)
+    _drop_page_cache(path)
     return digest.hexdigest()
 
 
@@ -687,7 +706,13 @@ def run(
         sha, nbytes = _save_shard_atomic(out_dir, shard_file, tensors)
         progress_shards[shard_file] = {"done": True, "sha256": sha, "bytes": nbytes}
         result.shard_status[shard_file] = "converted"
+        src_shards_used = {weight_map[items[idx].weight_name] for idx in item_indices}
         del tensors, readers
+        # Release the source + output shard pages from the page cache so `free`
+        # does not collapse while streaming the full 476 GB source.
+        for src_shard in src_shards_used:
+            _drop_page_cache(source_dir / src_shard)
+        _drop_page_cache(out_dir / shard_file)
         peak_rss = max(peak_rss, current_rss_bytes())
         _write_json_atomic(
             out_dir / PROGRESS_FILE,
