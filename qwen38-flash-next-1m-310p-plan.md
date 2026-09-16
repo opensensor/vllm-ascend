@@ -310,9 +310,9 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: `vllm_ascend/models/qwen4_exp/model.py`
 - **description**: Assemble 48-layer model (PLE layer 1 position per `ple_layer_ids`, 36 GDN, 12 QSA, MoE incl. shared expert, gated residual/hyperconnection) using correct components where already wired and pure-eager reference math (from T0.6) as stubs for GDN/QSA/PLE internals so the whole graph constructs and runs on meta/CPU. Dummy-weights forward on CPU (tiny config) exercises control flow, `ParallelLMHead`/embedding tie, and kv-cache spec materialization end-to-end.
 - **validation**: CPU: tiny random model loads dummy weights, forwards, samples a token; KV-group report matches T1.4 expectations; two fixed-seed greedy forwards produce identical tokens (determinism smoke, pre-stages device determinism); no CUDA/Triton import on 310P flag path.
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-15 (commit eecdbc153; test-isolation follow-up 4e6814a06) — Filled the T1.2 skeleton into the 48-layer assembly (36 GDN, 12 QSA, PLE@ple_layer_ids, MoE+shared expert, gated-residual hyperconnection, ParallelLMHead+embedding tie, final RMSNorm, KV specs). Wired REAL components: GDN (T5.x eager backend), QSA indexer→attention (T6.x), PLE gather→project→gate→conv (T4.x via host-safe pinned method), KV specs (T1.4), state cls (T1.3 via `get_model_state_cls`). Eager stubs (tagged): hyperconnection/gated-residual mix (ported fork math), MoE routed+shared experts (`TODO(T3.x)`, W8A8 checkpoint-blocked), dense attn for non-QSA layers, n-gram id hashing (`TODO(T1.3)`). KV-group report `{MambaSpec:36, AscendQSARawRingSpec:12, MLAAttentionSpec:12}`→3 merged groups (ring 1024 B / compressed 8192 B). Dummy-weight CPU boot forwards+samples; two greedy forwards bitwise-identical; reload w/ same seed reproduces. Orchestrator fixed one order-dependent test (global `torch_npu not in sys.modules` → delta-scoped to the test's own imports). 8 assembly UTs; **full qwen38_1m suite 474 passed**; ruff clean. Unblocks T6.4. Note: TP collectives shimmed to identity for single-process host test (real runner supplies TP group).
+- **files edited/created**: `vllm_ascend/models/qwen4_exp/model.py` (assembly), `tests/ut/qwen38_1m/test_qwen4exp_assembly.py` (new)
 
 ### TOBS: Run artifacts, memory reports and first-fatal-rank observability (R13)
 - **depends_on**: [T0.5, T4.4]
