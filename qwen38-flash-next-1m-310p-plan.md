@@ -319,9 +319,9 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: `vllm_ascend/observability/qwen38_runlog.py` + integration in `_310p/worker_310p.py`, logger
 - **description**: Every server run writes machine-readable JSON + human log: revisions (T0.2), topology/rank identity, token limits, per-rank component memory, host PLE/pinned/RSS/swap/NUMA, chunk progress, tokens/s, PLE/QSA transfer+hit metrics, hybrid-state lifecycle events, first fatal error + rank (traceback preserved, not "worker died"). Long-prefill progress heartbeat for 1M runs. **Includes per-collective link-class tracing (R3): annotate HCCL collective traffic as within-card vs cross-card so D4 can compare Candidate A vs B collective cost by link.**
 - **validation**: UT: inject synthetic failure in one rank → artifact names the rank and root exception; metrics sections present; collective trace entries carry a within/cross-card classification derived from D1 topology.
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-15 (commit df36f1c13) — Pure-Python `RunLog` aggregator composes prereq sub-reports by duck-typing `to_dict()` (imports no T0.5/T0.2/T0.3/T4.4 module code at load; T4.4 schema imported lazily via `ple_metric_schema()`). `to_dict()` carries revisions, topology, token_limits, per-rank memory, host PLE/pinned/RSS/swap/NUMA, ple_metrics, qsa_metrics, collective_trace+summary, lifecycle_events, chunk_progress, heartbeats, first_fatal. `record_fatal(rank,exc)` preserves the full traceback, FIRST capture wins (never "worker died"). `record_collective()` auto-classifies within_card/cross_card/unknown via `classify_link()` on per-chip `card_id` (matches T0.3 `hw_probe.classify_links`); `collective_summary()` aggregates count+bytes by link class for the D4 A/B comparison (R3). Long-prefill heartbeat + tokens/s chunk progress. Additive guarded hook in `_310p/worker_310p.py` (gates on Qwen4Exp arch, try/except, never fails init). 14 UTs green, ruff + py_compile clean.
+- **files edited/created**: `vllm_ascend/observability/qwen38_runlog.py` (new), `tests/ut/qwen38_1m/test_runlog.py` (new), `vllm_ascend/_310p/worker_310p.py` (+guarded hook)
 
 ### T8.1: Candidate A prototype — C8 QSA cache
 - **depends_on**: [T6.4]
