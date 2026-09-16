@@ -85,6 +85,11 @@ from .kv_cache import (
     make_qsa_compressed_spec,
     make_qsa_raw_ring_spec,
 )
+from .moe import (
+    route_topk,
+    swiglu_gate_up,
+    w8a8_grouped_experts,
+)
 from .ngram_embedding import AscendPLEPinnedHostEmbeddingMethod
 from .ple_layer import AscendQwen4ExpPLELayer
 from .qsa import (
@@ -98,6 +103,13 @@ from .qwen4exp_gdn import (
     gdn_delta_rule,
     gdn_gating,
     gdn_short_conv,
+)
+from .weight_mapping import (
+    TensorDtypeError,
+    TensorShapeError,
+    WeightMappingError,
+    map_expert_tensor,
+    validate_expert_weight_map,
 )
 
 # ``VllmConfig`` is only needed for typing; keep import light.
@@ -409,11 +421,21 @@ class _EagerMLP(nn.Module):
 
 
 class _EagerSparseMoE(nn.Module):
-    """Eager routed-expert + shared-expert MoE (TODO(T3.x)).
+    """Routed-expert (W8A8) + shared-expert (F16) MoE block (T3.x, stub closed).
 
-    Control-flow stand-in for the upstream ``Qwen3NextSparseMoeBlock`` with the
-    real fused-expert W8A8 path (checkpoint-blocked). Router runs in the policy
-    ``router_dtype`` (fp32); experts in the main dtype.
+    Ports the upstream ``Qwen3NextSparseMoeBlock`` control flow onto the real
+    Ascend 310P W8A8_DYNAMIC fused-expert path. The routed experts are held in
+    the :class:`AscendW8A8DynamicFusedMoEMethod310` fused layout
+    (``w13_*``/``w2_*``, gate+up column-fused) and evaluated with the
+    T3.3-validated grouped QDQ math from :mod:`vllm_ascend.models.qwen4_exp.moe`
+    (per-token INT8 activation quant, per-channel ``(q - offset) * scale`` weight
+    dequant -- real experts are symmetric so ``offset == 0``). The router runs in
+    the policy ``router_dtype`` (fp32) with ``norm_topk_prob`` renormalization;
+    the shared expert stays non-quantized F16 (per the T3.1 mapping contract) and
+    is applied densely + unweighted.
+
+    The class name is retained so the assembly imports/isinstance checks keep
+    working; the ``experts_*`` eager stub is replaced by the fused W8A8 params.
     """
 
     def __init__(self, *, config: object, dtype_policy: Qwen4ExpDtypePolicy) -> None:
@@ -422,14 +444,43 @@ class _EagerSparseMoE(nn.Module):
         self.compute_dtype = dtype_policy.accumulation_dtype
         self.params_dtype = dtype_policy.main_dtype
         hidden = int(config.hidden_size)
+        self.hidden_size = hidden
         self.num_experts = int(getattr(config, "num_experts", 0) or 0)
         self.top_k = min(int(getattr(config, "num_experts_per_tok", 2)), self.num_experts)
         moe_inter = int(getattr(config, "moe_intermediate_size", getattr(config, "intermediate_size", hidden)))
+        self.moe_intermediate_size = moe_inter
+        # Router renorm + optional routed scaling (fork ``norm_topk_prob`` /
+        # ``routed_scaling_factor``; default: renorm on, scale 1.0).
+        self.renormalize = bool(getattr(config, "norm_topk_prob", True))
+        self.routed_scaling_factor = float(getattr(config, "routed_scaling_factor", 1.0) or 1.0)
+
+        # Router gate stays F16 (non-quantized).
         self.gate = nn.Parameter(torch.zeros(self.num_experts, hidden, dtype=self.params_dtype))
-        self.experts_gate_up = nn.Parameter(
-            torch.zeros(self.num_experts, 2 * moe_inter, hidden, dtype=self.params_dtype)
+
+        # Routed experts in the AscendW8A8DynamicFusedMoEMethod310 fused layout:
+        #   w13_weight        int8    [E, 2*moe, hidden]   gate rows [0,moe), up [moe,2moe)
+        #   w2_weight         int8    [E, hidden, moe]
+        #   w13_weight_scale  float32 [E, 2*moe, 1]  (offset likewise, symmetric == 0)
+        #   w2_weight_scale   float32 [E, hidden, 1]
+        # int8 params never require grad (only float/complex tensors may).
+        self.w13_weight = nn.Parameter(
+            torch.zeros(self.num_experts, 2 * moe_inter, hidden, dtype=torch.int8), requires_grad=False
         )
-        self.experts_down = nn.Parameter(torch.zeros(self.num_experts, hidden, moe_inter, dtype=self.params_dtype))
+        self.w2_weight = nn.Parameter(
+            torch.zeros(self.num_experts, hidden, moe_inter, dtype=torch.int8), requires_grad=False
+        )
+        self.w13_weight_scale = nn.Parameter(
+            torch.zeros(self.num_experts, 2 * moe_inter, 1, dtype=self.compute_dtype), requires_grad=False
+        )
+        self.w13_weight_offset = nn.Parameter(
+            torch.zeros(self.num_experts, 2 * moe_inter, 1, dtype=self.compute_dtype), requires_grad=False
+        )
+        self.w2_weight_scale = nn.Parameter(
+            torch.zeros(self.num_experts, hidden, 1, dtype=self.compute_dtype), requires_grad=False
+        )
+        self.w2_weight_offset = nn.Parameter(
+            torch.zeros(self.num_experts, hidden, 1, dtype=self.compute_dtype), requires_grad=False
+        )
 
         shared_inter = int(getattr(config, "shared_expert_intermediate_size", 0) or 0)
         self.has_shared_expert = shared_inter > 0
@@ -437,32 +488,29 @@ class _EagerSparseMoE(nn.Module):
             self.shared_gate_up = nn.Parameter(torch.zeros(2 * shared_inter, hidden, dtype=self.params_dtype))
             self.shared_down = nn.Parameter(torch.zeros(hidden, shared_inter, dtype=self.params_dtype))
 
-    def _expert_ffn(self, x: torch.Tensor, gate_up_w: torch.Tensor, down_w: torch.Tensor) -> torch.Tensor:
-        gate_up = torch.einsum("th,thi->ti", x, gate_up_w.transpose(-1, -2))
-        gate, up = gate_up.chunk(2, dim=-1)
-        act = F.silu(gate) * up
-        return torch.einsum("ti,thi->th", act, down_w)
-
     def forward(self, block_input: torch.Tensor) -> torch.Tensor:
-        seq_len = block_input.shape[0]
-        x = block_input.to(self.compute_dtype)
-        router_logits = F.linear(x.to(self.router_dtype), self.gate.to(self.router_dtype))
-        probs = torch.softmax(router_logits, dim=-1)
-        top_vals, top_idx = torch.topk(probs, self.top_k, dim=-1)
-        top_vals = (top_vals / top_vals.sum(dim=-1, keepdim=True)).to(self.compute_dtype)
-
-        out = torch.zeros(seq_len, block_input.shape[-1], dtype=self.compute_dtype, device=x.device)
-        gate_up_w = self.experts_gate_up.to(self.compute_dtype)
-        down_w = self.experts_down.to(self.compute_dtype)
-        for slot in range(self.top_k):
-            expert_ids = top_idx[:, slot]
-            per_token_out = self._expert_ffn(x, gate_up_w[expert_ids], down_w[expert_ids])
-            out = out + top_vals[:, slot : slot + 1] * per_token_out
+        router_logits = F.linear(block_input.to(self.router_dtype), self.gate.to(self.router_dtype))
+        topk_weights, topk_ids = route_topk(
+            router_logits,
+            self.top_k,
+            renormalize=self.renormalize,
+            routed_scaling_factor=self.routed_scaling_factor,
+        )
+        out = w8a8_grouped_experts(
+            block_input,
+            topk_weights,
+            topk_ids,
+            self.w13_weight,
+            self.w13_weight_scale,
+            self.w13_weight_offset,
+            self.w2_weight,
+            self.w2_weight_scale,
+            self.w2_weight_offset,
+        )
 
         if self.has_shared_expert:
             shared_gate_up = _linear(block_input, self.shared_gate_up, self.compute_dtype)
-            sg, su = shared_gate_up.chunk(2, dim=-1)
-            out = out + _linear(F.silu(sg) * su, self.shared_down, self.compute_dtype)
+            out = out + _linear(swiglu_gate_up(shared_gate_up), self.shared_down, self.compute_dtype)
         return out.to(self.params_dtype)
 
 
@@ -923,29 +971,106 @@ class AscendQwen4ExpForCausalLM(
     def get_expert_mapping(self) -> list[tuple[str, str, int, str]]:
         """Fused-expert weight-mapping hook.
 
-        TODO(T3.1): return the fused-expert param mapping so ``load_weights``
-        can remap serialized per-expert tensors onto the fused MoE weights. The
-        eager assembly MoE loads per-expert dummy weights directly by name.
+        The 310P path streams the real per-expert W8A8 tensors through the T3.1
+        mapper directly inside :meth:`load_weights` (rather than the generic vLLM
+        FusedMoE ``expert_params_mapping`` remap), so this hook is intentionally
+        empty; the mapping authority is :mod:`weight_mapping`.
         """
         return []
 
-    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
-        """Dummy-weight loader for the CPU boot.
+    def _expert_geometry(self) -> dict[str, int]:
+        """Frozen W8A8 geometry driven from the model config (T3.1 contract)."""
+        config = self.config
+        hidden = int(config.hidden_size)
+        moe_inter = int(getattr(config, "moe_intermediate_size", getattr(config, "intermediate_size", hidden)))
+        return {
+            "num_hidden_layers": int(config.num_hidden_layers),
+            "num_experts": int(getattr(config, "num_experts", 0) or 0),
+            "moe_intermediate_size": moe_inter,
+            "hidden_size": hidden,
+        }
 
-        Copies each incoming tensor into the matching named parameter by name and
-        shape (after applying ``hf_to_vllm_mapper``). The fused-expert remap for
-        real serialized checkpoints is TODO(T3.1); this generic path is what the
-        dummy-weight boot exercises.
+    def _place_expert_tensor(self, params, mapping, weight: torch.Tensor) -> str:
+        """Copy one source expert tensor into its fused-MoE param slot (streamed).
+
+        ``mapping`` is the T3.1 :class:`ExpertTensorMapping`; the destination is
+        ``model.layers.{L}.mlp.{target_param}`` at ``[expert_index,
+        row_start:row_stop]`` (the same slice for weight/scale/offset, and for w2
+        the slice spans the full output dim). Rejects a dtype/shape mismatch with
+        the mapper's own error taxonomy before any copy.
         """
+        target_name = f"model.layers.{mapping.layer}.mlp.{mapping.target_param}"
+        param = params.get(target_name)
+        if param is None:
+            raise WeightMappingError(
+                f"no fused-MoE parameter {target_name!r} for expert tensor "
+                f"{mapping.source_name!r}; layer {mapping.layer} is not a W8A8 MoE layer",
+                tensors=[mapping.source_name],
+            )
+        if weight.dtype != mapping.expected_dtype:
+            kind_label = "quantized weight" if mapping.kind == "weight" else mapping.kind.replace("_", " ")
+            raise TensorDtypeError(
+                f"{mapping.source_name!r}: expert {kind_label} must be {mapping.expected_dtype}, got {weight.dtype}",
+                tensors=[mapping.source_name],
+            )
+        if tuple(weight.shape) != mapping.expected_shape:
+            raise TensorShapeError(
+                f"{mapping.source_name!r}: expected shape {mapping.expected_shape} for "
+                f"{mapping.proj}.{mapping.kind}, got {tuple(weight.shape)}",
+                tensors=[mapping.source_name],
+            )
+        with torch.no_grad():
+            param[mapping.expert_index, mapping.row_start : mapping.row_stop].copy_(weight.to(param.dtype))
+        return target_name
+
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load a real (or round-trip) checkpoint into the assembled model.
+
+        Two tensor namespaces are handled in a single streaming pass (no full
+        512-expert bank is ever materialized, matching the T3.2 loader):
+
+        * **Per-expert W8A8 tensors** -- any name containing ``.mlp.experts.`` is
+          routed through the T3.1 mapper (:func:`map_expert_tensor`) and copied
+          into its fused ``w13_*``/``w2_*`` slot as it streams off the iterator.
+          After the pass, the provided expert index is validated against the
+          frozen geometry (:func:`validate_expert_weight_map`), rejecting missing,
+          extra, wrong-dtype or wrong-shape expert tensors.
+        * **Non-expert F16 tensors** (router / shared expert / attention / PLE /
+          norms / lm_head / embeddings) load by name+shape after the
+          ``hf_to_vllm_mapper`` prefix rewrite.
+
+        A state-dict round-trip (fused params by name, no per-expert tensors) is
+        also supported: with no ``.mlp.experts.`` names present the expert-set
+        validation is skipped and the fused params load directly by name.
+        """
+        geometry = self._expert_geometry()
+        has_experts = geometry["num_experts"] > 0
         params = dict(self.named_parameters())
         loaded: set[str] = set()
-        for name, weight in self.hf_to_vllm_mapper.apply(weights):
-            param = params.get(name)
-            if param is None or tuple(param.shape) != tuple(weight.shape):
+        # Metadata only (name -> {dtype, shape}); payloads are placed + released as
+        # they stream, so this stays tiny even for the full 224 GB checkpoint.
+        expert_index: dict[str, dict[str, object]] = {}
+
+        for raw_name, weight in weights:
+            if has_experts and ".mlp.experts." in raw_name:
+                mapping = map_expert_tensor(raw_name, geometry)
+                target = self._place_expert_tensor(params, mapping, weight)
+                expert_index[raw_name] = {"dtype": weight.dtype, "shape": tuple(weight.shape)}
+                loaded.add(target)
                 continue
-            with torch.no_grad():
-                param.copy_(weight.to(param.dtype))
-            loaded.add(name)
+            # Non-expert tensor: rewrite prefix, then load by name + shape.
+            for name, tensor in self.hf_to_vllm_mapper.apply([(raw_name, weight)]):
+                param = params.get(name)
+                if param is None or tuple(param.shape) != tuple(tensor.shape):
+                    continue
+                with torch.no_grad():
+                    param.copy_(tensor.to(param.dtype))
+                loaded.add(name)
+
+        # Reject an incomplete / malformed expert set -- only when the checkpoint
+        # actually carried per-expert tensors (a by-name round-trip carries none).
+        if expert_index:
+            validate_expert_weight_map(expert_index, geometry)
         return loaded
 
     def compute_logits(self, hidden_states: torch.Tensor) -> torch.Tensor | None:
