@@ -22,8 +22,8 @@ W2 format/pack (`tools/deepseek_w2/w2_format.py`), unpack kernel + 310P method (
 ### G1: W2 manifest + FP8→W2 converter — COMPLETED (2026-09-16, commit 75f3b273b)
 `tools/glm_w2/{build_manifest,convert_full}.py` + `tests/ut/glm_w2/` (35 UTs). New `dequant_fp8_e4m3_f32block` (F8_E4M3 × plain F32 [128,128] block, validated bit-exact — `0xE8`→-64.0 × 1.918e-4 = -0.012277). GLM routing: routed experts→W2, 186 non-routed F8→FP16-dequant, rest BF16/F32→FP16, vision excluded. Manifest `artifacts/glm-5.3-flash-w2/manifest.json` (76,108 tensors, 62 shards). Estimated output **~97.3 GB** (W2 ~79.1 + FP16 ~18.2). Reuses the DeepSeek convert_full (sharding/resume/fadvise/sha256). **Flag**: router `e_score_correction_bias` + `hc_*` gates + `A_log`/`dt_bias` (genuine F32) are cast to FP16 — revisit if accuracy needs F32.
 
-### G2: Run full conversion + verify — IN PROGRESS
-Full FP8→W2 launched to `/run/media/matteius/20TB-drive/models/GLM-5.3-Flash-W2-310p` (resumable). Verify on completion: tensor counts vs manifest, per-family precision, per-shard SHA256, total size, peak RSS.
+### G2: Run full conversion + verify — COMPLETED (2026-09-16)
+Full FP8→W2 done → `/run/media/matteius/20TB-drive/models/GLM-5.3-Flash-W2-310p`: **19 shards, 97.4 GB, peak RSS 26.7 GB (bounded), 347 vision excluded, ~37 min**. Verified: W2=37152 (==manifest routed experts), FP16=1271; in-shard dtypes codes=U8/scale=F32/plain=F16; all 19 shard sha256 recorded, shards 1/10/19 re-hashed OK. Fits 4×310P with ample headroom (W2 experts ~20 GB/chip, no host Engram table).
 
 ### G3–G7: Glm5Next 310P W2 adaptation (LIGHTER than DeepSeek — no Engram/indexer)
 Mirror DeepSeek E2–E4 against the shipped `Glm5Next`: package + dtype policy + registration; MLA/attention (adapt); MoE→E1.3 W2 method (swap FusedMoE, replace any Triton op); W2 weight-mapping/streamed load; assembly + dummy-weight CPU boot; MTP-1. No Engram, no sparse indexer → fewer components than DeepSeek.
