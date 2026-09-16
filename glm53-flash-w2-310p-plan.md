@@ -39,6 +39,26 @@ glm5_next is a HYBRID: `layer_types` = 34 **KDA** linear-attention layers (`kda_
 - **G6** MoE→E1.3 W2 method (swap FusedMoEFactory, top-8/288, scaling 2.5) + hyperconnection + W2 weight-mapping. dep: G3,E1.3.
 - **G7** assembly + dummy-weight CPU boot + MTP-1. dep: G4,G5,G6.
 
+### G3: package + dtype policy + registration — COMPLETED (2026-09-16, commit 948332f3b)
+
+**Status**: DONE, TDD RED→GREEN, 11/11 UTs pass (`python3 -m pytest -q --noconftest tests/ut/glm_w2/test_glm5next_w2_package.py`). DeepSeek V4.1 E2.1 package test still 11/11 (additive, no regression). ruff clean.
+
+**Work log** (ADAPT mirroring `deepseek_v41` E2.1):
+- New additive package `vllm_ascend/models/glm5next_w2/` — does NOT touch the shipped `glm5next/`.
+- `dtype_policy.py`: `Glm5NextW2DtypePolicy` (frozen) + `ASCEND_GLM5NEXT_W2_DTYPE_POLICY` singleton + `REQUIRED_CAST_SITES`. W2 experts `expert_weight`=uint8 / `expert_activation`=int8 / `expert_accumulation`=fp32; fp16 for `kda`,`dsa`,`dense`,`shared_expert`,`lm_head`,`main` (+ `mla`/`indexer` companions); fp32 for `accumulation`,`router`,`logits`. **No Engram sites** (GLM has none — dropped vs DeepSeek). `from_vllm_config(None)` pins fp16 main; honors a `torch.dtype` KV override only.
+- `model.py`: PEP-562-lazy `AscendGlm5NextW2ForCausalLM` (subclasses shipped `glm5next.model.Glm5NextForCausalLM`, base resolved LAZILY via `_shipped_causal_lm_base()` so the import path stays Triton-free) + `AscendGlm5NextW2ForConditionalGeneration` (alias, `_reject_multimodal` first gate rejecting `vision_config`/`multimodal_config` — GLM `model.visual.*` excluded). Staged no-op W2 hooks `_swap_kda_to_eager` (G4) / `_override_dsa_indexer` (G5) / `_swap_moe_to_w2` (G6). Registration-only MTP-1 stub `Glm5NextW2MTP` (fails fast on construct).
+- `__init__.py`: eager dtype-policy export; PEP-562-lazy forward of the reused DeepSeek E1.2/E1.3 W2 host-math (`w2_active_moe_forward` etc. from `deepseek_v41`) — expresses "GLM reuses the DeepSeek W2 kernel" without pulling anything heavy at import.
+- Additive registration in `vllm_ascend/models/__init__.py`: `Glm5NextW2ForCausalLM` / `Glm5NextW2ForConditionalGeneration` / `Glm5NextW2MTPModel` → the new classes. Shipped `Glm5Next*` rows untouched (test asserts intact).
+
+**Config-contract constants** (in `model.py`, all VERIFIED against `/run/media/matteius/20TB-drive/models/GLM-5.3-Flash-FP8/config.json` `text_config`): `GLM5NEXT_NUM_HIDDEN_LAYERS=45`, `N_ROUTED_EXPERTS=288`, `NUM_EXPERTS_PER_TOK=8`, `FIRST_K_DENSE_REPLACE=3`, `FULL_ATTN_LAYERS=(3,7,11,15,19,23,27,31,35,39,43)` (11 DSA; other 34 KDA), `KDA_NUM_HEADS=64`, `KDA_HEAD_DIM=128`, `ROUTED_SCALING_FACTOR=2.5`, `NUM_NEXTN_PREDICT_LAYERS=1`. **No deltas** from the task brief — every stated constant matched the source config exactly. Also captured: `hidden_size=4096`, `n_shared_experts=1`, `moe_intermediate_size=2048`, `vocab_size=154880`, `short_conv_kernel_size=4` (`KDA_SHORT_CONV_KERNEL_SIZE`), `KDA_LAYERS` (derived 34-tuple). NB source config `model_type` is `glm5_next` (top) / `glm5_next_text` (text_config).
+
+**Gotchas**:
+- Shipped `glm5next.model` pulls Triton via `glm5next.kda` → `vllm_ascend.ops.triton.kda.kda` (the G4 swap target) AND `FusedMoEFactory` (G6). Import-hygiene test greps the W2 source for triton AND asserts a fresh-interpreter import of the W2 package+model pulls neither `vllm_ascend.models.glm5next.model` nor `vllm_ascend.ops.triton.kda.kda` (analogue of DeepSeek's `mul_add` gate; KDA op path substituted).
+- New files must be `git add`-ed explicitly before a pathspec commit (`git commit -- <files>` won't stage untracked). Used explicit `git add <files>` (never `-A`/`.`).
+- MTP registration points at the `model:Glm5NextW2MTP` stub (self-contained in G3, like DeepSeek's original E2.1 `model:DeepSeekV41MTP` stub); G7 repoints to the real drafter.
+
+**Files**: `vllm_ascend/models/glm5next_w2/{__init__,dtype_policy,model}.py`, `vllm_ascend/models/__init__.py` (additive block), `tests/ut/glm_w2/test_glm5next_w2_package.py`.
+
 ## Quality note (same correction as DeepSeek)
 Naive RTN W2 is **provisional** (the W2 sensitivity finding applies to GLM experts too); the algorithm-agnostic infra is reused; a calibrated-2-bit path + an end-to-end perplexity gate (on the cards) settle quality. FP8→W2 (vs DeepSeek's FP4→W2) starts from a higher-precision source, so GLM's W2 quality should be no worse.
 
