@@ -38,17 +38,32 @@ _W2_FORWARD_EXPORTS = (
     "w2_group_qdq_linear",
 )
 
+# G5 DSA (deepseek_sparse_attention) 310P path. Lazily forwarded from the local
+# ``.dsa`` module (Triton-free: it reuses the deepseek_v41 indexer *selection*
+# and adds GLM's NoPE MLA core). Kept lazy so this package init stays light --
+# ``.dsa`` pulls torch + the deepseek_v41 indexer only on first access.
+_DSA_EXPORTS = (
+    "AscendGlm5NextW2DSA",
+    "Glm5NextW2DsaIndexer",
+    "DsaIndexerResult",
+    "DsaSelection",
+)
+
 
 def __getattr__(name: str):  # PEP 562 module-level lazy attribute
     if name in _W2_FORWARD_EXPORTS:
         from vllm_ascend.models import deepseek_v41 as _dsv41
 
         return getattr(_dsv41, name)
+    if name in _DSA_EXPORTS:
+        from . import dsa as _dsa
+
+        return getattr(_dsa, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def __dir__() -> list[str]:
-    return sorted([*globals().keys(), *_W2_FORWARD_EXPORTS])
+    return sorted([*globals().keys(), *_W2_FORWARD_EXPORTS, *_DSA_EXPORTS])
 
 
 __all__ = [
@@ -58,4 +73,6 @@ __all__ = [
     "Glm5NextW2DtypePolicy",
     # W2 host-math kernel (reused from DeepSeek E1.2/E1.3; lazy)
     *_W2_FORWARD_EXPORTS,
+    # G5 DSA sparse-attention path (lazy; local .dsa module)
+    *_DSA_EXPORTS,
 ]
