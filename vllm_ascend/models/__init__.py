@@ -81,3 +81,18 @@ def register_model():
     ModelRegistry.register_model(
         "LlamaForCausalLMEagle3", "vllm_ascend.models.llama_eagle3:AscendEagle3LlamaForCausalLM"
     )
+    # Qwen4Exp (Qwen3.8-Flash-Next) on Ascend 310P. All three arch names route
+    # to the Ascend classes; the ConditionalGeneration alias rejects multimodal
+    # at the first gate, and Qwen4ExpMTP is registered here but wired in S2.
+    ModelRegistry.register_model(
+        "Qwen4ExpForCausalLM",
+        "vllm_ascend.models.qwen4_exp.model:AscendQwen4ExpForCausalLM",
+    )
+    ModelRegistry.register_model(
+        "Qwen4ExpForConditionalGeneration",
+        "vllm_ascend.models.qwen4_exp.model:AscendQwen4ExpForConditionalGeneration",
+    )
+    ModelRegistry.register_model(
+        "Qwen4ExpMTP",
+        "vllm_ascend.models.qwen4_exp.mtp:AscendQwen4ExpMTP",
+    )
