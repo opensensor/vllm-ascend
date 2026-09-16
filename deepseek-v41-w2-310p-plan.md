@@ -128,6 +128,24 @@ Follow-on: GLM 5.3 753B (bounded expert cache/offload), MTP decode, vision, 1M.
 - **status**: Completed (2026-09-16, commit 0bf0147be) — `AscendW2DynamicFusedMoEMethod310` (`_310p/quantization/methods/w2_dynamic.py`): packed-W2 params (`w13_codes`/`w2_codes` uint8[E,out,in//4] + block scales fp32[E,out//32,in//32]) + shared-expert params, mirroring the W8A8 method surface (E3.4 reuse). `apply` dispatches on `_device_kernel_available()`: device path (guarded) unpacks ≤top_k active experts (E1.2) then `npu_quant_grouped_matmul_dequant`+`npu_swiglu`; host path re-expresses via E1.2 `w2_active_moe_forward`. Registered additively as `(W2A8_DYNAMIC, moe)` via the `@register_scheme` decorator + package import (registry.py untouched); the 5 W8 schemes still resolve. Parity == E0.4/E1.2 reference @ 1e-9 (with/without shared expert). **D1.5 device note (in-module)**: pinned CANN has NO fused W2→INT8 unpack op → elementwise unpack over active experts only; per-`[32,32]` block scale applied into the weight pre-matmul (not foldable to per-output-channel). 15 UTs; full deepseek_w2 suite **175 passed**; ruff + py_compile clean. (Commit lacks the Co-Authored-By trailer — no-`--amend` rule; left as-is.)
 - **files**: `vllm_ascend/_310p/quantization/methods/w2_dynamic.py` (new), `_310p/quantization/methods/__init__.py` (+import), `tests/ut/deepseek_w2/test_w2_method.py` (new)
 
+## E2–E4 REWRITE (2026-09-16, from the adaptation-seams review — supersedes the green-field E2.x/E3.x/E4.x blocks below)
+
+Detail + config-delta table + per-seam guidance: `docs/source/developer_guide/Design_Documents/deepseek_v41_w2_310p_adaptation_seams.md` (commit a334ef3ed). Key facts: shipped `vllm_ascend/models/deepseek_v4/` is **config-driven and `torch_npu`-native** (only ONE Triton op: `muls_add_triton` at `deepseek_v4/model.py:425,432` = `x*scale+y` → replace with eager `addcmul`); the W2 kernel is **already built** (E1.2 `w2_unpack.py`, E1.3 `w2_dynamic.py` registered `(W2A8_DYNAMIC, moe)`). Three real V4→V4.1 deltas: **Engram** at `engram_layer_ids=[1,14]` (the only NEW sub-block; shipped V4 has hash-MoE, no Engram), **`compress_ratios` {0,1,2}** (shipped indexer gates on `==4`), and **W2 experts** (done). V4.1 config: 40 layers, hidden 5120, 384 experts top-6, moe_inter 2304, q_lora 1280, MTP-3, dspark [37,38,39].
+
+| Task | Verdict | Concrete seam |
+| --- | --- | --- |
+| **E2.1** | ADAPT/CREATE | thin `deepseek_v41/` package importing shipped `deepseek_v4`; add `dtype_policy.py`; register `DeepseekV41ForCausalLM` (+ CondGen alias rejecting MM). dep: none |
+| **E2.2** | ADAPT | reuse asc KV specs; recompute per-layer plan for `compress_ratios {0,1,2}`. dep: E2.1 |
+| **E2.3** | CREATE (only new sub-block) | Engram host table = Qwen `ngram_embedding.py`+`ple_prefetch.py` host method (one shared ~W4 384M-row copy, never ×rank) + port the fork's **torch/numpy** n-gram hashing (NOT the Triton kernels); inject at layers [1,14]. dep: E2.1 |
+| **E3.1** | ADAPT | `mla.py`: reuse asc `DeepseekV4Attention` linears/RoPE + `ops/mla.py`/`attention/mla_v1.py`, eager on 310P. dep: E2.1,E0.4 |
+| **E3.2** | ADAPT | `indexer.py`: reuse asc `deepseek_v4/indexer.py`; ratio {1,2} gate + torch fallback for the `npu_*` selection ops (verify 310P availability). dep: E2.1,E0.4 |
+| **E3.3** | ADAPT | `moe.py`: drop hash-MoE; run router (softmax→top6→renorm, `routed_scaling_factor=1.5`) → hand topk to **E1.3 `AscendW2DynamicFusedMoEMethod310`** (not `FusedMoEFactory`); replace `muls_add_triton` with eager. dep: E1.3,E2.1 |
+| **E3.4** | ADAPT | `weight_mapping.py`: map W2 codes+block scales to the E1.3 layout via the `_310p` sharded loader. dep: E1.1,E2.1,E0.5 |
+| **E4.1** | ADAPT | `model.py`: subclass `DeepseekV4Model`, compose 40-layer stack + Engram hook at [1,14]; no FusedMoEFactory / Triton / 910-DSA. dep: E2.2,E2.3,E3.1,E3.2,E3.3,E0.4 |
+| **E4.2** | ADAPT | register MTP-3 / DSpark reusing asc `dspark.py`/`mtp.py` (inherits E3.3 fixes). dep: E2.1 |
+
+The original green-field E2.x/E3.x/E4.x blocks below are retained for history but SUPERSEDED by the table above; implement the adapt-based versions.
+
 ### E2.1 [asc]: Ascend DeepseekV41 package + registration + precision policy
 - **depends_on**: []
 - **location**: `vllm_ascend/models/deepseek_v41/{__init__,model,mla,indexer,engram,moe,mtp}.py`, register in `vllm_ascend/models/__init__.py`
