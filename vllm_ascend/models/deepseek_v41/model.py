@@ -167,24 +167,147 @@ def _build_causal_lm_cls() -> type:
             self._override_mla_indexer()  # E3.1 / E3.2
 
         def _swap_moe_to_w2(self) -> None:
-            """TODO(E3.3): swap each ``DeepseekV4MoE`` routed-expert path from
-            ``FusedMoEFactory`` to the E1.3 ``AscendW2DynamicFusedMoEMethod310``
-            (``W2A8_DYNAMIC``/``moe``), run the router (softmax->top-6->renorm,
-            ``routed_scaling_factor=1.5``) host-side, and replace the shipped
-            ``muls_add_triton`` MoE combine with an eager ``routed*scale +
-            shared``. No-op at E2.1."""
+            """E3.3: swap each ``DeepseekV4MoE`` routed path to the E1.3 W2 method.
+
+            Builds one :class:`DeepseekV41W2MoE` per routed layer (host router:
+            softmax -> top-6 -> renorm, ``routed_scaling_factor=1.5``) that routes
+            to ``AscendW2DynamicFusedMoEMethod310`` (``W2A8_DYNAMIC``/``moe``) and
+            finishes with the eager ``routed*scale + shared`` combine that replaces
+            ``muls_add_triton``. The seam is attached as ``layer.mlp_w2`` (the E3.4
+            loader populates its packed W2 bank + FP16 shared expert); the shipped
+            ``deepseek_v4`` base is device-only, so this runs at on-device build.
+
+            Component wired: :mod:`vllm_ascend.models.deepseek_v41.moe`. The heavy
+            import is deferred to keep the package import path Triton-free (E2.1).
+            """
+            from .moe import DeepseekV41W2MoE
+
+            config = self._v41_text_config
+            for layer in getattr(getattr(self, "model", None), "layers", []) or []:
+                mlp = getattr(layer, "mlp", None)
+                if mlp is None:
+                    continue
+                shared = getattr(mlp, "shared_experts", None)
+                layer.mlp_w2 = DeepseekV41W2MoE.from_config(
+                    config,
+                    shared_expert=(shared.forward if shared is not None else None),
+                    dtype_policy=self.dtype_policy,
+                )
 
         def _inject_engram(self) -> None:
-            """TODO(E2.3): inject the two ~W4 host-table Engram lookups into the
-            residual stream at ``engram_layer_ids=[1,14]`` (Qwen host-table
-            transport; not the fork's Triton kernels). No-op at E2.1."""
+            """E2.3: inject the two ~W4 host-table Engram lookups at ``[1, 14]``.
+
+            Builds the shared Engram hash layout + single-shared-copy ~W4 host
+            tables (Qwen host-table transport, not the fork's Triton kernels) and
+            attaches one :class:`AscendDeepseekV41Engram` sub-block plus the shared
+            :class:`DeepseekEngramHasher` to each backbone layer whose index is in
+            ``engram_layer_ids``. No-op if the config carries no Engram geometry.
+
+            Component wired: :mod:`vllm_ascend.models.deepseek_v41.engram`.
+            """
+            from .engram import (
+                AscendDeepseekV41Engram,
+                DeepseekEngramHasher,
+                _layout_from_config,
+                create_engram_host_tables,
+            )
+
+            config = self._v41_text_config
+            engram_layer_ids = tuple(getattr(config, "engram_layer_ids", ()) or DEEPSEEKV41_ENGRAM_LAYER_IDS)
+            if not engram_layer_ids:
+                return
+            layout = _layout_from_config(config)
+            self._engram_layout = layout
+            self._engram_hasher = DeepseekEngramHasher(layout)
+            self._engram_tables = create_engram_host_tables(layout, dtype_policy=self.dtype_policy)
+            layer_to_hash = {layer_id: idx for idx, layer_id in enumerate(engram_layer_ids)}
+            layers = getattr(getattr(self, "model", None), "layers", []) or []
+            for layer_idx, layer in enumerate(layers):
+                hash_index = layer_to_hash.get(layer_idx)
+                if hash_index is None:
+                    continue
+                layer.engram = AscendDeepseekV41Engram(
+                    config=config,
+                    host_table=self._engram_tables[hash_index],
+                    layer_hash_index=hash_index,
+                    layout=layout,
+                    dtype_policy=self.dtype_policy,
+                )
 
         def _override_mla_indexer(self) -> None:
-            """TODO(E3.1/E3.2): drive the dense MLA through the generic
-            ``ops/mla.py`` wrapper (not the 910 DSA backend) and instantiate the
-            indexer/compressor on ``compress_ratio in {1, 2}`` (shipped gate is
-            ``== 4``) with deterministic torch fallbacks for missing ``npu_*``
-            ops on 310P. No-op at E2.1."""
+            """E3.1/E3.2: drive the dense MLA + the ratio-{1,2} indexer eagerly.
+
+            Attaches an eager :class:`AscendDeepseekV41MLA` (the generic host MLA,
+            not the 910 DSA backend) to every layer and an
+            :class:`AscendDeepseekV41Indexer` on ``compress_ratio in {1, 2}``
+            layers (the shipped gate is ``== 4``), each with deterministic torch
+            fallbacks for the missing ``npu_*`` ops on 310P.
+
+            Components wired: :mod:`vllm_ascend.models.deepseek_v41.mla` and
+            :mod:`vllm_ascend.models.deepseek_v41.indexer`.
+            """
+            from .indexer import ACTIVE_COMPRESS_RATIOS, AscendDeepseekV41Indexer
+            from .mla import AscendDeepseekV41MLA
+
+            config = self._v41_text_config
+            compress_ratios = list(getattr(config, "compress_ratios", ()) or ())
+            layers = getattr(getattr(self, "model", None), "layers", []) or []
+            for layer_idx, layer in enumerate(layers):
+                layer.mla = AscendDeepseekV41MLA.from_config(config, dtype_policy=self.dtype_policy)
+                ratio = compress_ratios[layer_idx] if layer_idx < len(compress_ratios) else 0
+                if ratio in ACTIVE_COMPRESS_RATIOS:
+                    layer.indexer = AscendDeepseekV41Indexer(config, compress_ratio=ratio, policy=self.dtype_policy)
+
+        # -- KV-cache spec materialization (E2.2) --------------------------
+
+        def get_kv_cache_groups(self) -> list:
+            """Materialize the hybrid KV-cache groups from the E2.2 per-layer plan.
+
+            Delegates to :mod:`vllm_ascend.models.deepseek_v41.kv`: one MLA-latent
+            cache per layer plus a per-ratio indexer compressed-history cache on
+            ratio-{1,2} layers, packaged into merged ``KVCacheGroupSpec`` groups.
+            """
+            from .kv import build_deepseekv41_kv_cache_groups, build_deepseekv41_layer_plan
+
+            plan = build_deepseekv41_layer_plan(self._v41_text_config, dtype_policy=self.dtype_policy)
+            return build_deepseekv41_kv_cache_groups(plan)
+
+        def kv_group_report(self) -> dict:
+            """MLA-latent + indexer layer/group counts for the E2.2 KV plan."""
+            from .kv import build_deepseekv41_layer_plan
+
+            plan = build_deepseekv41_layer_plan(self._v41_text_config, dtype_policy=self.dtype_policy)
+            groups = self.get_kv_cache_groups()
+            return {
+                "num_layers": len(plan),
+                "mla_latent_layers": len(plan),
+                "indexer_layers": sum(1 for entry in plan if entry.has_indexer),
+                "num_groups": len(groups),
+            }
+
+        # -- weight load (E3.4) --------------------------------------------
+
+        def _expert_geometry(self) -> dict:
+            """Frozen W2 expert geometry from the V4.1 text config (E3.4 schema)."""
+            config = self._v41_text_config
+            return {
+                "hidden_size": int(getattr(config, "hidden_size", DEEPSEEKV41_HIDDEN_SIZE)),
+                "moe_intermediate_size": int(
+                    getattr(config, "moe_intermediate_size", DEEPSEEKV41_MOE_INTERMEDIATE_SIZE)
+                ),
+                "num_hidden_layers": int(getattr(config, "num_hidden_layers", DEEPSEEKV41_NUM_HIDDEN_LAYERS)),
+                "n_routed_experts": int(getattr(config, "n_routed_experts", DEEPSEEKV41_N_ROUTED_EXPERTS)),
+                "num_nextn_predict_layers": int(
+                    getattr(config, "num_nextn_predict_layers", DEEPSEEKV41_NUM_NEXTN_PREDICT_LAYERS)
+                ),
+                "dspark_n_routed_experts": int(
+                    getattr(
+                        config,
+                        "dspark_n_routed_experts",
+                        getattr(config, "n_routed_experts", DEEPSEEKV41_N_ROUTED_EXPERTS),
+                    )
+                ),
+            }
 
     AscendDeepseekV41ForCausalLM.__module__ = __name__
     AscendDeepseekV41ForCausalLM.__qualname__ = "AscendDeepseekV41ForCausalLM"
