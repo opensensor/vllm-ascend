@@ -65,6 +65,14 @@ The device weight footprint is ~1 GiB/chip larger than planned. That reduces per
 by the same amount and tightens the 1M cache decision (plan D4). All arithmetic downstream of
 PRD §6 (plan T3.2, T8.3) must use the measured 31.88 GiB/chip figure, not 30.81.
 
+**Refinement (2026-09-16, plan T3.2 from the checkpoint manifest)**: simulating placement
+directly from the exported checkpoint's weight index gives **32.01 GiB/chip** non-PLE (128.06 GiB
+aggregate / 4), ~0.13 GiB/chip above the 31.88 estimate. The difference is the W8A8 quant
+scales, which aggregate to ~0.70 GiB (F32 `[out,1]` per projection × 73,728) rather than the
+~0.19 GB first attributed. PLE stays 95.43 GiB host-resident (counted once, not ×4). This
+manifest-derived 32.01 GiB/chip is the authoritative model figure; it shifts the T8.3 per-chip
+projection by ~0.13 GiB (A ≈ 35.83, B ≈ 38.83 GiB/chip) and changes no pass/fail conclusion.
+
 ## 6. Per-chip headroom and the 1M cache problem
 
 Headroom after loading the non-PLE weights depends on the *actual* free bytes per chip, which is a
