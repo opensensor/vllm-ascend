@@ -1,0 +1,17 @@
+{
+  "_comment": "OpenAI-compatible request template for Qwen4Exp 1M NIAH probes (plan T0.4). Send the corpus_gen prompt as the user message; do not let the server truncate it, and require prompt-token accounting (R10).",
+  "model": "qwen4exp-1m",
+  "messages": [
+    {
+      "role": "user",
+      "content": "<REPLACE WITH BuiltPrompt.text FROM tools/qwen38_1m/corpus_gen.py>"
+    }
+  ],
+  "max_tokens": 256,
+  "temperature": 0.0,
+  "seed": 1234,
+  "stream": false,
+  "truncate_prompt_tokens": null,
+  "stream_options": { "include_usage": true },
+  "_verify_r10": "Assert response.usage.prompt_tokens == BuiltPrompt.token_count to confirm the full context was accepted with no truncation."
+}

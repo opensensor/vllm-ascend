@@ -1,0 +1,25 @@
+# Long-context serving config for Qwen4Exp 1M NIAH probes on Ascend 310P (plan T0.4).
+# Purpose: serve the full 1M-token prompt WITHOUT input truncation and surface the
+# accepted prompt-token count so the harness can verify no truncation (R10).
+
+model: /models/qwen4exp            # replace with the on-device checkpoint path
+served_model_name: qwen4exp-1m
+
+# --- Context window: admit the full 1M prompt, do not silently shrink it. ---
+max_model_len: 1048576             # full 1M window; prompts target 1048576 - 516
+# Do NOT truncate over-long inputs; fail loudly instead so truncation can never
+# be mistaken for a successful full-context ingest.
+disable_input_truncation: true     # vLLM: --no-enable-prompt-truncation equivalent
+truncate_prompt_tokens: null       # never trim the prompt to fit
+
+# --- R10: report the accepted / prompt token count on every response. ---
+# The OpenAI-compatible server returns `usage.prompt_tokens`; keep usage enabled
+# and disabled-log-stats OFF so accepted-token accounting is always emitted.
+disable_log_stats: false
+return_tokens_as_token_ids: false
+
+# --- 310P / long-context memory knobs (tune during the device wave, plan D1). ---
+gpu_memory_utilization: 0.92       # NPU HBM fraction reserved for KV + weights
+enforce_eager: false
+max_num_seqs: 1                    # 1M-context runs are single-sequence
+max_num_batched_tokens: 1048576    # allow the whole prompt in one prefill budget
