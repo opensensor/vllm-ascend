@@ -78,6 +78,25 @@ def register_model():
         "Glm5NextMTPModel",
         "vllm_ascend.models.glm5next.mtp:Glm5NextMTP",
     )
+    # GLM-5.3-Flash (glm5_next, 288 experts at 2-bit / W2) on Ascend 310P (plan
+    # G3). An ADAPT of the shipped glm5next: the CausalLM subclasses the shipped
+    # Glm5NextForCausalLM; the ConditionalGeneration alias rejects multimodal at
+    # the first gate (text-only; GLM's model.visual.* tower is excluded);
+    # Glm5NextW2MTPModel points at a registration-only MTP-1 stub wired in G7.
+    # All rows are additive -- the shipped Glm5Next* registrations above are
+    # untouched.
+    ModelRegistry.register_model(
+        "Glm5NextW2ForCausalLM",
+        "vllm_ascend.models.glm5next_w2.model:AscendGlm5NextW2ForCausalLM",
+    )
+    ModelRegistry.register_model(
+        "Glm5NextW2ForConditionalGeneration",
+        "vllm_ascend.models.glm5next_w2.model:AscendGlm5NextW2ForConditionalGeneration",
+    )
+    ModelRegistry.register_model(
+        "Glm5NextW2MTPModel",
+        "vllm_ascend.models.glm5next_w2.model:Glm5NextW2MTP",
+    )
     ModelRegistry.register_model(
         "LlamaForCausalLMEagle3", "vllm_ascend.models.llama_eagle3:AscendEagle3LlamaForCausalLM"
     )
