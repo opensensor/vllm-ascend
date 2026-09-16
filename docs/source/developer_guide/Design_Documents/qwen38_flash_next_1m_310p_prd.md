@@ -109,15 +109,25 @@ At PRD creation, the full conversion had committed 9 of 49 durable sequential
 stages. The canonical current status is the conversion run's `progress.json`,
 not this snapshot.
 
+**Update (2026-09-15): quantization and native Ascend checkpoint export are
+complete.** The measured compressed-checkpoint breakdown, placement math and the
+measured-vs-estimate deltas are recorded in
+`qwen38_flash_next_1m_runtime_requirements.md`. The exported checkpoint is
+239.96 GB on disk (239.39 GB tensors + ~0.57 GB export packaging); the FP16 PLE
+table is 95.43 GiB (host) and the accelerator-resident non-PLE weights are
+127.53 GiB aggregate / 31.88 GiB per chip under TP4.
+
 ## 6. Capacity model
 
-All binary figures below are planning estimates and must be replaced with actual
-allocator measurements. The checkpoint accounting excludes MTP unless stated.
+The device/host weight rows below are now **measured from the exported
+checkpoint** (see `qwen38_flash_next_1m_runtime_requirements.md`); the cache rows
+remain planning estimates and must still be replaced with actual allocator
+measurements on the target. The checkpoint accounting excludes MTP unless stated.
 
 | Component | Aggregate | Ideal per chip | Notes |
 | --- | ---: | ---: | --- |
-| Accelerator-resident W8A8 main model | 123.25 GiB | 30.81 GiB | Requires balanced TP4/EP4 placement |
-| Host FP16 PLE | 95.37 GiB | N/A | One shared host copy is required |
+| Accelerator-resident non-PLE model (measured) | 127.53 GiB | 31.88 GiB | W8A8 routed + shared experts, FP16 other tensors, scales; balanced TP4/EP4 placement |
+| Host FP16 PLE (measured) | 95.43 GiB | N/A | One shared host copy is required |
 | Logical BF16 QSA K/V at 1M | 24.00 GiB | 6.00 GiB | Assumes sequence sharding, no TP duplication |
 | Conventional TP4 BF16 QSA K/V | 48.00 GiB | 12.00 GiB | Two KV heads are duplicated across four ranks |
 | Conventional TP4 8-bit QSA K/V | 24.00 GiB | 6.00 GiB | Requires new C8-capable QSA kernels |
