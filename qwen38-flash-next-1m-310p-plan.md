@@ -265,9 +265,9 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: `vllm_ascend/models/qwen4_exp/qsa.py` + `ops/`
 - **description**: Gather selected ≤2,048 rows + compressed rows from caches; attention with Q/K norm, partial rotary, output gate, causal, selection-count semantics; main-cache dtype follows the T1.2 dtype policy (planning baseline BF16 — matches PRD §6; C8 int8 variant is T8.1); write path reserves the quant hook for Candidate A. Deterministic. Torch-eager implementation sized for correctness; structure permits later kernel replacement.
 - **validation**: CPU deterministic UTs vs T0.6 for same boundary lengths + full-block selection + zero-selection first token; run-to-run bitwise stability test.
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-15 (commit d33f52b22) — Torch-eager Triton-free QSA sparse GQA: per-head Q/K GemmaRMSNorm (`x*rsqrt(mean(x²)+eps)*(1+w)`) → partial neox RoPE (rotary_dim=64=256×0.25, tail passthrough) → gather indexer-selected rows via T6.1 `qsa_gather_rows` → softmax GQA (scale head_dim⁻⁰·⁵, 24q/2kv/256) over the selected set → `out*sigmoid(gate)` applied last. Selection-count semantics honored (only first `valid_count` packed entries; `-1` padding dropped; zero-selection first token → exactly 0). Dtypes from policy (fp16 storage/fp32 accum, no literals). Parity vs T0.6 at fp64: max err ~1.9e-15 (tol 1e-8/1e-9); full-block op-vs-dense-oracle 3.3e-16; bitwise deterministic on the fp16/fp32 path. **C8 quant hook reserved** in `qsa_write_kv_to_cache(quant_hook=)` / `kv_write_quant_hook` (unset — C8 is T8.1). Seams left for T6.3 (chunked prefill) / T6.4 (assembly). Did not touch `ops/__init__.py`. 19 UTs (+19 T6.1 sibling still green), ruff clean.
+- **files edited/created**: `vllm_ascend/models/qwen4_exp/qsa.py` (filled stub), `vllm_ascend/models/qwen4_exp/ops/qsa_attention.py` (new), `tests/ut/qwen38_1m/test_qsa_attention.py` (new)
 
 ### T6.3: Chunked prefill for QSA (configurable chunk size, default 4096)
 - **depends_on**: [T1.4, T6.2]
