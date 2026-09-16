@@ -175,9 +175,9 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: `vllm_ascend/models/qwen4_exp/weight_mapping.py`, `vllm_ascend/_310p/quantization/modelslim_config.py` extension; UT in `tests/ut/qwen38_1m/test_weight_mapping.py`
 - **description**: Explicit map: source fused expert tensors + ModelSlim per-expert scale/offset tensors → `AscendW8A8DynamicFusedMoEMethod310` weight layout; router/shared/attention/LM-head as FP16. Reject missing, extra, duplicate, incompatible-shape/dtype tensors with actionable errors. Drive from T0.1 manifest. **Run under the T1.2 dtype policy.**
 - **validation**: CPU UT with manifest + synthetic safetensors index: happy path covers all 73,728 expert projections; each rejection class fires once; every tensor checked against the frozen dtype policy before mapping.
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-16 (commit a009aeb04) — `weight_mapping.py` maps per-expert W8A8 tensors into the `AscendW8A8DynamicFusedMoEMethod310` layout: gate_proj+up_proj fuse column-wise into `w13_*` (gate rows [0,moe), up rows [moe,2·moe)), down_proj→`w2_*`; `weight_scale`/`weight_offset`→`w13_/w2_weight_scale/offset`. Ground-truth verified vs real shard headers: weight I8 [out,in], scale/offset F32 [out,1] (gate/up [640,2560], down [2560,640]). Router/shared/attention/LM-head/embed/PLE stay F16, recorded but not mapped. Expected 73,728-projection set driven from the manifest geometry (48×512×3), all layers 0–47 / experts 0–511 covered, cross-checked vs manifest component_counts — no 224 GB load. Rejects missing/extra/duplicate/wrong-shape/wrong-dtype (`WeightMappingError` subclasses); every tensor checked vs the T1.2 dtype policy before mapping. Additive `AscendModelSlimConfig310.validate_qwen4exp_w8a8_index` hook. 14 UTs. (Commit carries Signed-off-by but not the Co-Authored-By trailer due to a concurrent-commit amend race — content correct, not rewritten.) **Companion real-config validation (commit 91a74a710)**: `test_real_config.py` (9 tests) checks every module's `from_hf_config` vs the REAL config — GDN 48/16 heads, indexer 2048/4/128/1/4, PLE placement `(layer_idx+1) in ple_layer_ids`→layer 1, layer_types→36 GDN+12 QSA, native rope default/theta 1e7 — all already correct EXCEPT one real bug fixed: `qsa.py` read a top-level `rope_theta` (default 1e4) but the checkpoint nests `rope_theta=1e7` under `rope_parameters`; now falls back correctly. Full suite **610 passed**, ruff clean.
+- **files edited/created**: `vllm_ascend/models/qwen4_exp/weight_mapping.py` (new), `vllm_ascend/_310p/quantization/modelslim_config.py` (+hook), `tests/ut/qwen38_1m/test_weight_mapping.py` (new); recon: `tests/ut/qwen38_1m/test_real_config.py` (new), `vllm_ascend/models/qwen4_exp/qsa.py` (rope_theta fix)
 
 ### T3.2: Streamed sharded loading and EP/TP placement accounting
 - **depends_on**: [T0.1, T0.5]
@@ -211,9 +211,9 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: `tests/ut/qwen38_1m/test_ngram_hash.py`
 - **description**: Port Qwen n-gram hashing (hash fn, vocab parallel sharding columns, EOS padding of first tokens, history advance). Verify against the checkpoint's embedding table directly: sample token windows → hashed row identities equal a brute-force re-derivation from the safetensors index/table.
 - **validation**: UT exact-match on sampled + boundary windows (sequence start, EOS, across TP shard boundaries; shard col mapping per manifest).
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-16 (commit 98c7758c0) — Verified n-gram hashing against the REAL checkpoint (3 layers): (1) T0.6 reference == an in-test port of the fork's production `compute_ngram_ids` (`_shift_precompute`/`_shift_apply` EOS-crossing + query_start_loc/ngram_context layout) on random + boundary windows (EOS-padded start, across-EOS severing, history-advance/chunked equivalence); (2) computed multipliers from `make_layer_multipliers(seed=1234, ple_dense_layer_id=0)` == the checkpoint's stored `layer_multipliers` `[23703573157769, 20109073645365, 8052911324071]`; vocab layout pins `padded_vocab=128×2500012=320001536`, head_dim `2560/16=160`; all 128 real shard headers == `[2500012,160]` F16; (3) resolved rows read from real safetensors by mmap seek (no whole-shard load): same window→byte-identical rows, different windows→different rows, `id→(shard,row)=divmod(id,2500012)`, 16 heads span ≥8 shards, across-EOS tail resolves identically. 46 UTs; ruff clean. **Gap flagged**: asc `AscendQwen4ExpNGramEmbedding.forward` is still a stub (`NotImplementedError`, no `compute_ngram_ids`) — real hashing not yet wired into production (deferred, tracked by `test_asc_t41_hash_is_still_a_stub`); this test is the verified reference it must match.
+- **files edited/created**: `tests/ut/qwen38_1m/test_ngram_hash.py` (new, test-only)
 
 ### T4.3: PLE layer port (projection/gather/combine) + parity
 - **depends_on**: [T0.6, T1.3, T4.1]
