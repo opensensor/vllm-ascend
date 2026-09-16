@@ -121,9 +121,9 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: `vllm_ascend/observability/qwen38_mem_accounting.py` (asc)
 - **description**: Hooks weight-load and cache-allocation to report per-rank bytes by component (embedding, non-expert FP16, expert W8A8, QSA main KV, indexer ring/compressed, GDN state, PLE host table, workspaces, free, peak). Fails startup when per-rank placement imbalance >5% w/o approved reason. Host-testable via fake device stats.
 - **validation**: UT: component sums match a synthetic allocation trace; imbalance violation raises.
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-15 — Implemented `MemoryAccountant`/`RankMemoryReport` with a `MemComponent` enum covering all required components (embedding, non-expert FP16, expert W8A8, quant scales, QSA main KV, indexer ring/compressed, GDN state, workspaces, PLE host table). Pure stdlib (no torch/torch-npu) so it is fully host-testable via injected device stats; the harness never queries the accelerator. Device-vs-host split via `HOST_COMPONENTS` keeps the shared 95.43 GiB PLE table out of per-rank device totals and the imbalance check, and `host_table_bytes()` raises if ranks report divergent host bytes (guards against ×rank PLE copies). `validate_balance()` raises `PlacementImbalanceError` above the 5% `MAX_PLACEMENT_IMBALANCE` unless an approved reason is passed. Emits machine-readable JSON (`to_dict`/`to_json`, feeds TOBS) and a GiB human summary. 13 UTs green via `pytest --noconftest` (shared `tests/ut/conftest.py` fails to import in this env due to an unrelated installed-vLLM `is_weak_contiguous` mismatch — the module itself imports cleanly). ruff check + format clean. Test fixtures use the measured 31.88 GiB/chip / 95.43 GiB-PLE figures from the runtime-requirements doc.
+- **files edited/created**: `vllm_ascend/observability/qwen38_mem_accounting.py` (new), `tests/ut/qwen38_1m/__init__.py` (new), `tests/ut/qwen38_1m/test_mem_accounting.py` (new)
 
 ### T0.6: Eager reference harness (CPU) for GDN, QSA, indexer, PLE, MoE QDQ
 - **depends_on**: []
