@@ -328,9 +328,9 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: `vllm_ascend/models/qwen4_exp/qsa_c8.py`, `tests/ut/qwen38_1m/test_qsa_c8.py`, spec hook in T1.4
 - **description**: Signed-INT8 main K/V with documented per-? scale granularity; fused write/read quant paths in the eager impl; accuracy harness comparing C8-vs-BF16 selection sets and short-context logits; memory math for 1M (PRD table row "8-bit QSA K/V 6.00 GiB/chip").
 - **validation**: host UTs: round-trip identity tolerances; selection-set agreement % vs BF16 on T0.4 short probes above a pre-declared bar; spec materializes in T1.4 UT.
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-15 (commit e2840efae) — Per-(token,head) signed symmetric INT8 main K/V: `scale=amax(head-vec)/127` (streaming-computable at paged write; per-head independent; mirrors 310P W8A8 dynamic), fp32 out-of-band scale companion (1/head_dim overhead) so payload is exactly ½ BF16. Fused write via T6.2's reserved `qsa_write_kv_to_cache(quant_hook=)` seam (`make_c8_kv_quant_hook`; qsa_attention.py untouched); `C8QSAMainKVCache` quant-on-scatter/dequant-on-gather. Accuracy harness on T0.4-seeded probes: round-trip `|err|≤scale/2+1e-4` (met exactly); selection-agreement bar 0.90 → measured mean ~0.995 (worst per-token 0.94); short-context logits rel-err bar 0.05 → measured ~0.008. **1M math**: BF16 6.00 GiB/chip (PRD §6 logical row); sequence-sharded C8 = 3.00 GiB/chip (int8 page exactly half). Additive kv_cache.py spec (`make_qsa_main_kv_spec`, bytes table). RED→GREEN 34/34; full qwen38_1m suite **514 passed**; ruff clean. **Prototype only — D4 decides A vs B on hardware.**
+- **files edited/created**: `vllm_ascend/models/qwen4_exp/qsa_c8.py` (new), `tests/ut/qwen38_1m/test_qsa_c8.py` (new), `vllm_ascend/models/qwen4_exp/kv_cache.py` (additive C8 main-KV spec)
 
 ### T8.2: Candidate B prototype — QSA-aware DCP4
 - **depends_on**: [T6.4, T0.5]
