@@ -44,8 +44,13 @@ RUN pip config set global.index-url ${PIP_INDEX_URL} && \
     python3 -m pip cache purge
 
 # Install vLLM
-ARG VLLM_REPO=https://github.com/vllm-project/vllm.git
-ARG VLLM_TAG=v0.28.0
+# Default to the opensensor vLLM fork carrying the Qwen4Exp (Qwen3.8-Flash-Next)
+# 310P core changes — backend-safe qwen4_exp dispatch (no nvidia import on NPU)
+# and the explicit long-context RoPE/YaRN config + guard. The branch is based on
+# upstream vllm commit 381c61e (not the v0.28.0 tag). To build against a different
+# vLLM, override VLLM_REPO/VLLM_TAG, or pin an exact commit via VLLM_COMMIT.
+ARG VLLM_REPO=https://github.com/opensensor/vllm.git
+ARG VLLM_TAG=qwen4exp-310p-dispatch-rope
 ARG VLLM_COMMIT=""
 RUN if [ -n "$VLLM_COMMIT" ]; then \
       git init /vllm-workspace/vllm && \
