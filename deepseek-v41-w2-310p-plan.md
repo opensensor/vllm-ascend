@@ -16,6 +16,11 @@ Deliver a 310P execution path for DeepSeek V4.1 (`DeepseekV41ForCausalLM`: 40 la
 - A W4A16 fused-MoE exists but is NOT 310P-registered and its 310P op support is unverified: `vllm_ascend/quantization/methods/wna16/w4a16.py` (`AscendW4A16FusedMoEMethod`, `npu_convert_weight_to_int4pack` + `npu_grouped_matmul` antiquant). No W2 anywhere.
 - Reuse surface (all under `vllm_ascend/`): `_310p/sharded_state_loader_310p.py`, `observability/qwen38_mem_accounting.py`, `models/qwen4_exp/{ngram_embedding,ple_prefetch,weight_mapping,moe,indexer_qsa,qsa,kv_cache,dtype_policy}.py`, `tools/qwen38_1m/{build_manifest,hw_probe,env_freeze}.py`, `observability/qwen38_runlog.py`.
 
+**SCOPE UPDATE (2026-09-16, recon)**: the DeepSeek architecture is NOT green-field.
+- vllm-ascend already ships `vllm_ascend/models/deepseek_v4/` — full model + `compressor.py` (CSA2), `indexer.py` (sparse attn), `dspark.py`, `mtp.py`, `vision.py`, `vl_model.py` — but it is the **910/A2 Triton path** (`ops/triton/mul_add.muls_add_triton`, general `FusedMoEFactory`/`QuantizationConfig`), NOT the 310P Triton-free W8 grouped-matmul path. Also present: `ops/mla.py`, `attention/{mla_v1,sparse_flash_mla}.py`, `attention/context_parallel/mla_cp.py`, `models/deepseek_mtp.py`.
+- The vLLM fork has `vllm/models/deepseek_v41/` — `common/engram.py`, `nvidia/{model,model_state,engram}.py`, `attention.py`, `sparse_mla.py`, `compressor.py`, `quant_config.py` — the authoritative V4.1 port source (like `qwen4_exp/nvidia/*`).
+- **Consequence**: E2.1/E3.1/E3.2/E4.1/E4.2 are **ADAPT existing code into a Triton-free 310P variant** (mirror the Qwen `_310p` pattern), not port-from-scratch. The genuinely-new critical path is the **W2 arithmetic** (E0.1, E0.4-W2, E1.1, E1.2, E1.3) + the 310P Triton-free wiring. Re-examine deepseek_v4 / fork deepseek_v41 before writing any MLA/indexer/engram/assembly code.
+
 **Documentation policy**: op availability (int4pack, antiquant, MLA fused, sub-INT8 unpack) MUST be verified against the pinned CANN container, not assumed.
 
 ## Prerequisites
@@ -74,13 +79,13 @@ Follow-on: GLM 5.3 753B (bounded expert cache/offload), MTP decode, vision, 1M.
 - **depends_on**: []
 - **location**: reuse `tools/qwen38_1m/env_freeze.py`
 - **description**: Add DeepSeek source rev + W2 converter rev to the frozen record. UT reuses the T0.2 pattern.
-- **status**: Not Completed
+- **status**: Reuse-complete (2026-09-16) — `tools/qwen38_1m/env_freeze.py` (T0.2) is generic; add the DeepSeek source rev + W2 converter rev as recorded fields when E1.1 lands. No new code required now.
 
 ### E0.3 [asc]: Hardware probe (reuse as-is)
 - **depends_on**: []
 - **location**: `tools/qwen38_1m/hw_probe.py` (unchanged)
 - **description**: Runs on target at D1; no code change expected (within/cross-card classification already fits the 2×300I-Duo topology).
-- **status**: Not Completed
+- **status**: Reuse-complete (2026-09-16) — `tools/qwen38_1m/hw_probe.py` (T0.3) reused as-is; no code change. Runs on target at D1.
 
 ### E0.4 [asc]: Eager reference harness (W2 QDQ, MLA, indexer, Engram)
 - **depends_on**: []
