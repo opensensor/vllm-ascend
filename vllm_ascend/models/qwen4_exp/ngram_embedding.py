@@ -559,15 +559,126 @@ def create_ple_embedding_method(
 
 
 class AscendQwen4ExpNGramEmbedding(nn.Module):
-    """N-gram embedding (skeleton).
+    """N-gram PLE embedding for Ascend 310P (host-only, Triton-free).
 
-    Materializes n-gram embeddings in ``policy.ngram_embedding_dtype``.
+    Ports the CPU path of the NVIDIA fork ``Qwen4ExpNGramEmbedding``
+    (``vllm/models/qwen4_exp/nvidia/ngram_embedding.py``): the deterministic
+    SplitMix64 multiplier construction, the prime per-head vocab layout, and the
+    ``query_start_loc`` / ``ngram_context`` packed hashing with EOS-crossing
+    (``_shift_precompute`` / ``_shift_apply``). The resulting per-head global row
+    ids are gathered from the single host-resident PLE table through the T4.1
+    :class:`AscendPLEEmbeddingMethod` (``gather_rows``) and assembled into
+    ``[num_tokens, ple_embed_dim]`` embeddings (``ngram_heads * head_dim``).
+
+    Hashing is byte-for-byte identical to the T0.6/T4.2-verified reference (which
+    is itself verified against the real Qwen3.8-Flash-Next checkpoint). All
+    dtypes read from :data:`ASCEND_QWEN4EXP_DTYPE_POLICY`
+    (``ngram_embedding`` == float16); no dtype literal is spelled here.
     """
+
+    _MASK64 = (1 << 64) - 1
+    _SPLITMIX_GAMMA = 0x9E3779B97F4A7C15
+    _SPLITMIX_M1 = 0xBF58476D1CE4E5B9
+    _SPLITMIX_M2 = 0x94D049BB133111EB
+    _PLE_LAYER_PRIME = 10007
+    _DEFAULT_SEED = 1234
+
+    @classmethod
+    def _splitmix64(cls, value: int) -> int:
+        """Mix an integer into a deterministic unsigned 64-bit value."""
+        value = (value + cls._SPLITMIX_GAMMA) & cls._MASK64
+        value = ((value ^ (value >> 30)) * cls._SPLITMIX_M1) & cls._MASK64
+        value = ((value ^ (value >> 27)) * cls._SPLITMIX_M2) & cls._MASK64
+        return (value ^ (value >> 31)) & cls._MASK64
+
+    @staticmethod
+    def _is_prime_64(value: int) -> bool:
+        """Deterministic Miller-Rabin primality test for 64-bit integers."""
+        if value < 2:
+            return False
+        for prime in (2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37):
+            if value % prime == 0:
+                return value == prime
+        exponent = value - 1
+        shifts = 0
+        while exponent % 2 == 0:
+            exponent //= 2
+            shifts += 1
+        for base in (2, 325, 9375, 28178, 450775, 9780504, 1795265022):
+            if base % value == 0:
+                continue
+            witness = pow(base, exponent, value)
+            if witness in (1, value - 1):
+                continue
+            for _ in range(shifts - 1):
+                witness = pow(witness, 2, value)
+                if witness == value - 1:
+                    break
+            else:
+                return False
+        return True
+
+    @classmethod
+    def _nth_prime_after(cls, start: int, count: int) -> int:
+        """Return the ``count``-th prime strictly greater than ``start``."""
+        prime = int(start)
+        for _ in range(count):
+            candidate = prime + 1
+            if candidate <= 2:
+                prime = 2
+                continue
+            if candidate % 2 == 0:
+                candidate += 1
+            while not cls._is_prime_64(candidate):
+                candidate += 2
+            prime = candidate
+        return prime
+
+    @classmethod
+    def _make_layer_multipliers(
+        cls,
+        *,
+        ngram_size: int,
+        unigram_vocab_size: int,
+        seed: int,
+        ple_dense_layer_id: int,
+    ) -> list[int]:
+        """Build deterministic hash multipliers for one PLE layer."""
+        max_multiplier = ((1 << 63) - 1) // unigram_vocab_size
+        half_bound = max(1, max_multiplier // 2)
+        base_seed = seed + cls._PLE_LAYER_PRIME * ple_dense_layer_id
+        multipliers = []
+        for index in range(ngram_size):
+            value = base_seed + cls._SPLITMIX_GAMMA * (index + 1)
+            multipliers.append(2 * (cls._splitmix64(value) % half_bound) + 1)
+        return multipliers
+
+    @classmethod
+    def _make_vocab_layout(
+        cls,
+        *,
+        ngram_vocab_size_base: int,
+        ngram_heads: int,
+        ple_dense_layer_id: int,
+    ) -> tuple[list[int], list[int], int]:
+        """Build per-head vocabulary sizes, offsets, and total row count."""
+        sizes: list[int] = []
+        offsets: list[int] = []
+        offset = 0
+        for local_head in range(ngram_heads):
+            global_head = ple_dense_layer_id * ngram_heads + local_head
+            size = cls._nth_prime_after(ngram_vocab_size_base - 1, global_head + 1)
+            sizes.append(size)
+            offsets.append(offset)
+            offset += size
+        return sizes, offsets, offset
 
     def __init__(
         self,
         *,
         config: object,
+        ple_method: AscendPLEEmbeddingMethod | None = None,
+        ple_dense_layer_id: int = 0,
         dtype_policy: Qwen4ExpDtypePolicy = ASCEND_QWEN4EXP_DTYPE_POLICY,
         prefix: str = "",
     ) -> None:
@@ -575,11 +686,203 @@ class AscendQwen4ExpNGramEmbedding(nn.Module):
         self.config = config
         self.dtype_policy = dtype_policy
         self.embedding_dtype = dtype_policy.cast_site("ngram_embedding")
-        # TODO(T1.3): build the n-gram hashing + PLE vocab-parallel embedding
-        # reading dtypes from ``dtype_policy``.
+        self.prefix = prefix
+        self.ple_method = ple_method
+        self.ple_dense_layer_id = int(ple_dense_layer_id)
 
-    def forward(self, *args: object, **kwargs: object) -> torch.Tensor:
-        raise NotImplementedError("TODO(T1.3): AscendQwen4ExpNGramEmbedding.forward is implemented in a later task.")
+        self.ngram_size = int(config.ngram_size)
+        self.heads_per_ngram = int(config.heads_per_ngram)
+        if self.ngram_size < 2:
+            raise ValueError(f"ngram_size must be >= 2, got {self.ngram_size}")
+        if self.heads_per_ngram <= 0:
+            raise ValueError(f"heads_per_ngram must be > 0, got {self.heads_per_ngram}")
+        self.ngram_heads = (self.ngram_size - 1) * self.heads_per_ngram
+
+        self.ple_embed_dim = int(config.ple_embed_dim)
+        if self.ple_embed_dim % self.ngram_heads:
+            raise ValueError(
+                f"ple_embed_dim ({self.ple_embed_dim}) must be divisible by the total n-gram heads ({self.ngram_heads})"
+            )
+        self.head_dim = self.ple_embed_dim // self.ngram_heads
+
+        self.eos_token_id = int(config.eos_token_id)
+        self.unigram_vocab_size = int(config.vocab_size)
+
+        multipliers = self._make_layer_multipliers(
+            ngram_size=self.ngram_size,
+            unigram_vocab_size=self.unigram_vocab_size,
+            seed=int(getattr(config, "seed", self._DEFAULT_SEED)),
+            ple_dense_layer_id=self.ple_dense_layer_id,
+        )
+        sizes, offsets, self.total_vocab_size = self._make_vocab_layout(
+            ngram_vocab_size_base=int(config.ngram_vocab_size_base),
+            ngram_heads=self.ngram_heads,
+            ple_dense_layer_id=self.ple_dense_layer_id,
+        )
+        self.register_buffer(
+            "layer_multipliers",
+            torch.tensor(multipliers, dtype=torch.long),
+            persistent=True,
+        )
+        self.register_buffer(
+            "ngram_heads_vocab_sizes",
+            torch.tensor(sizes, dtype=torch.long),
+            persistent=True,
+        )
+        self.register_buffer(
+            "ngram_heads_offsets",
+            torch.tensor(offsets, dtype=torch.long),
+            persistent=True,
+        )
+
+    # -- hashing (fork-faithful CPU path) ---------------------------------- #
+
+    @staticmethod
+    def _shift_precompute(tokens: torch.Tensor, eos_token_id: int) -> tuple[torch.Tensor, torch.Tensor]:
+        """Positions and per-token distance from the previous in-segment EOS."""
+        if tokens.dim() != 2:
+            raise ValueError("tokens must be a 2D tensor")
+        batch_size, seq_len = tokens.shape
+        positions = torch.arange(seq_len, device=tokens.device, dtype=torch.int64)
+        eos_positions = torch.where(tokens == eos_token_id, positions, -1)
+        previous_eos_inclusive = torch.cummax(eos_positions, dim=1).values
+        previous_eos = torch.cat(
+            [
+                eos_positions.new_full((batch_size, 1), -1),
+                previous_eos_inclusive[:, :-1],
+            ],
+            dim=1,
+        )
+        return positions, positions.unsqueeze(0) - previous_eos - 1
+
+    @staticmethod
+    def _shift_apply(
+        tokens: torch.Tensor,
+        positions: torch.Tensor,
+        position_in_segment: torch.Tensor,
+        shift: int,
+        eos_token_id: int,
+    ) -> torch.Tensor:
+        """Gather the ``shift``-back predecessor, EOS-filling across boundaries."""
+        if shift == 0:
+            return tokens
+        source = positions - shift
+        gather_indices = source.clamp_min(0).unsqueeze(0).expand(tokens.shape[0], -1)
+        shifted = tokens.gather(1, gather_indices)
+        valid = (source.unsqueeze(0) >= 0) & (position_in_segment >= shift)
+        return torch.where(valid, shifted, tokens.new_full((), eos_token_id))
+
+    def compute_ngram_ids(
+        self,
+        input_ids: torch.Tensor,
+        query_start_loc: torch.Tensor,
+        ngram_context: torch.Tensor,
+        output: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Compute per-head global PLE row ids for the packed request layout.
+
+        Args:
+            input_ids: ``[num_tokens]`` flat token ids across all requests.
+            query_start_loc: ``[num_reqs + 1]`` cumulative token offsets.
+            ngram_context: ``[num_reqs, ngram_size - 1]`` per-request history
+                (EOS-padded for a fresh segment).
+            output: accepted for fork signature parity; unused on the host path.
+
+        Returns:
+            ``[num_tokens, ngram_heads]`` int64 global row ids into the padded
+            PLE table.
+        """
+        del output  # host path returns a fresh tensor; no in-place output.
+        input_ids = input_ids.reshape(-1).long()
+        query_start_loc = query_start_loc.reshape(-1).long()
+        num_reqs = query_start_loc.numel() - 1
+        num_tokens = input_ids.shape[0]
+
+        positions = torch.arange(num_tokens, device=input_ids.device, dtype=torch.int64)
+        packed = torch.full(
+            (num_reqs, num_tokens),
+            self.eos_token_id,
+            device=input_ids.device,
+            dtype=torch.int64,
+        )
+        request_indices = torch.searchsorted(query_start_loc, positions, right=True) - 1
+        request_indices.clamp_(max=num_reqs - 1)
+        columns = (positions - query_start_loc[request_indices]).clamp(0, packed.shape[1] - 1)
+        packed[request_indices, columns] = input_ids
+
+        ngram_context = ngram_context[:num_reqs].to(device=input_ids.device, dtype=torch.long)
+        context = torch.cat([ngram_context, packed], dim=-1)
+        positions_2d, position_in_segment = self._shift_precompute(context, self.eos_token_id)
+        shifted = [context]
+        for shift in range(1, self.ngram_size):
+            shifted.append(
+                self._shift_apply(
+                    context,
+                    positions_2d,
+                    position_in_segment,
+                    shift,
+                    self.eos_token_id,
+                )
+            )
+
+        adjusted_columns = columns + self.ngram_size - 1
+        id_blocks = []
+        for ngram in range(2, self.ngram_size + 1):
+            start = (ngram - 2) * self.heads_per_ngram
+            end = start + self.heads_per_ngram
+            mixed = shifted[0] * self.layer_multipliers[0]
+            for index in range(1, ngram):
+                mixed = torch.bitwise_xor(mixed, shifted[index] * self.layer_multipliers[index])
+            sizes = self.ngram_heads_vocab_sizes[start:end]
+            offsets = self.ngram_heads_offsets[start:end]
+            ids = torch.remainder(mixed.unsqueeze(-1), sizes) + offsets
+            id_blocks.append(ids[request_indices, adjusted_columns])
+        return torch.cat(id_blocks, dim=-1)
+
+    # -- gather ------------------------------------------------------------- #
+
+    def gather_embeddings(self, ngram_ids: torch.Tensor) -> torch.Tensor:
+        """Batched PLE row gather -> ``[num_tokens, ple_embed_dim]``.
+
+        ``ngram_ids`` is ``[num_tokens, ngram_heads]`` of global row indices.
+        Every ``(token, head)`` row is fetched in ONE batched call through the
+        T4.1 host method (no per-row sync); head ``h`` of token ``t`` fills
+        columns ``[h * head_dim, (h + 1) * head_dim)``.
+        """
+        if self.ple_method is None:
+            raise RuntimeError("AscendQwen4ExpNGramEmbedding.forward requires a PLE embedding method (T4.1)")
+        if ngram_ids.ndim != 2:
+            raise ValueError("ngram_ids must be [num_tokens, ngram_heads]")
+        num_tokens, heads = ngram_ids.shape
+        if heads != self.ngram_heads:
+            raise ValueError(f"ngram_ids has {heads} heads, expected {self.ngram_heads}")
+        rows = self.ple_method.gather_rows(ngram_ids.reshape(-1))
+        per_head_dim = rows.shape[-1]
+        if per_head_dim != self.head_dim:
+            raise ValueError(
+                f"PLE table row dim ({per_head_dim}) * n-gram heads ({heads}) != ple_embed_dim ({self.ple_embed_dim})"
+            )
+        return rows.reshape(num_tokens, heads * per_head_dim)
+
+    # -- forward ------------------------------------------------------------ #
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        input_ids: torch.Tensor,
+        query_start_loc: torch.Tensor,
+        ngram_context: torch.Tensor,
+    ) -> torch.Tensor:
+        """Produce ``[num_tokens, ple_embed_dim]`` n-gram PLE embeddings.
+
+        Signature mirrors the fork ``Qwen4ExpNGramEmbedding.forward`` so the
+        ``model.py`` call site stays stable. ``hidden_states`` is accepted for
+        parity (the fork uses it only on the device prefetch path) and is unused
+        on the host gather path.
+        """
+        del hidden_states  # parity-only; host path hashes ids + gathers rows.
+        ngram_ids = self.compute_ngram_ids(input_ids, query_start_loc, ngram_context)
+        return self.gather_embeddings(ngram_ids)
 
 
 __all__ = [

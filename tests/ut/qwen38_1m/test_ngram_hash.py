@@ -539,23 +539,41 @@ def test_eos_boundary_row_resolution_matches_reference():
 
 
 # =========================================================================== #
-# Gap tracking: the asc T4.1 hash is not implemented yet (deferred to T1.3).
+# T1.3 landed: the asc n-gram hash now reproduces the fork/reference exactly.
 # =========================================================================== #
-def test_asc_t41_hash_is_still_a_stub():
-    """Document that asc lacks an n-gram hash to assert agreement against.
+def test_asc_t13_hash_matches_fork_and_reference():
+    """The asc ``compute_ngram_ids`` == fork == T0.6 reference (stub closed).
 
-    ``AscendQwen4ExpNGramEmbedding`` (T4.1) ships as a stub -- its ``forward``
-    raises ``NotImplementedError`` and it exposes no ``compute_ngram_ids``. The
-    fork port in this file is the reference the future T1.3 asc implementation
-    must reproduce (multipliers/vocab layout already verified vs. the real
-    checkpoint above). If this assertion ever fails, asc grew a hash and this
-    test must be upgraded to assert asc == fork == real table.
+    ``AscendQwen4ExpNGramEmbedding`` (T4.1 stub) grew its T1.3 hash: it now
+    exposes ``compute_ngram_ids`` over the ``query_start_loc`` / ``ngram_context``
+    layout. For a single EOS-padded request it must match both the embedded fork
+    oracle and the T0.6 reference (multipliers/vocab layout already verified vs.
+    the real checkpoint above), including across an internal EOS boundary.
     """
+    from types import SimpleNamespace
+
     from vllm_ascend.models.qwen4_exp.ngram_embedding import (
         AscendQwen4ExpNGramEmbedding,
     )
 
-    assert not hasattr(AscendQwen4ExpNGramEmbedding, "compute_ngram_ids")
-    module = AscendQwen4ExpNGramEmbedding(config=object())
-    with pytest.raises(NotImplementedError):
-        module.forward()
+    assert hasattr(AscendQwen4ExpNGramEmbedding, "compute_ngram_ids")
+
+    cfg = _small_cfg(ngram_size=4, heads_per_ngram=2)
+    config = SimpleNamespace(
+        ngram_size=cfg.ngram_size,
+        heads_per_ngram=cfg.heads_per_ngram,
+        eos_token_id=cfg.eos_token_id,
+        vocab_size=cfg.unigram_vocab_size,
+        ngram_vocab_size_base=cfg.ngram_vocab_size_base,
+        seed=cfg.seed,
+        ple_embed_dim=cfg.ngram_heads * 4,
+    )
+    module = AscendQwen4ExpNGramEmbedding(config=config, ple_dense_layer_id=cfg.ple_dense_layer_id)
+
+    toks = torch.cat([torch.tensor([101, 202, cfg.eos_token_id]), torch.tensor([11, 22, 33, 44, 55])])
+    qsl = torch.tensor([0, toks.numel()], dtype=torch.long)
+    ctx = torch.full((1, cfg.ngram_size - 1), cfg.eos_token_id, dtype=torch.long)
+
+    asc = module.compute_ngram_ids(toks, qsl, ctx)
+    assert torch.equal(asc, compute_ngram_ids(toks, cfg))
+    assert torch.equal(asc, fork_compute_ngram_ids(toks, cfg))
