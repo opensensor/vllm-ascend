@@ -28,6 +28,17 @@ Full FP8→W2 done → `/run/media/matteius/20TB-drive/models/GLM-5.3-Flash-W2-3
 ### G3–G7: Glm5Next 310P W2 adaptation — ADAPT existing package (recon 2026-09-16)
 **vllm-ascend already ships a FULL `vllm_ascend/models/glm5next/` package** — `model.py`, `kv_cache.py`, `cache_config.py`, **`kda.py`** (KDA linear attention — glm5_next is a HYBRID: KDA linear-attn + full-attn layers, like Qwen4Exp GDN/QSA), `mtp.py`, `multimodal.py`, `processor.py`, `ops/`, + `patch/platform/patch_glm5next_config.py`; registered `Glm5NextForCausalLM`/`ForConditionalGeneration`/`Glm5NextMTPModel`. So G3–G7 is an ADAPT (like DeepSeek's deepseek_v4→deepseek_v41), with MORE reuse (attention/KDA/kv/mtp exist). **Next: a Glm5Next delta review** (Triton/910 vs 310P-ready? which MoE method?) then the adaptation wave: package/dtype-policy override, MoE→E1.3 W2 method (swap FusedMoE + any Triton op), W2 weight-mapping/streamed load, assembly + dummy-weight CPU boot. No Engram, no sparse indexer.
 
+## G3–G7 breakdown (from the glm5next recon)
+
+glm5_next is a HYBRID: `layer_types` = 34 **KDA** linear-attention layers (`kda_layers`) + 11 **DSA** deepseek-sparse-attention layers (`full_attn_layers` [3,7,...,43]); `first_k_dense_replace=3` (first 3 dense, rest MoE 288/top-8, `routed_scaling_factor=2.5`); KDA cfg 64 heads/head_dim 128/short_conv 4. Shipped `glm5next/model.py` uses `FusedMoEFactory`+`QuantizationConfig`+Triton KDA (910 path) — NO `_310p` glm5next. Reuse: **DSA ≈ deepseek_v41 indexer (E3.2)**, **MoE→E1.3 `AscendW2DynamicFusedMoEMethod310`**, hyperconnection (`mhc`) ≈ Qwen; the one NEW component is **KDA** (gated-delta linear attn, ~like Qwen GDN — reuse `_310p/ops/fla/*` or eager).
+
+- **G3** package + dtype policy + registration (adapt shipped glm5next → 310P W2 variant; text-only alias). dep: none.
+- **G-ref** eager KDA reference (new) + reuse DeepSeek indexer/W2 refs for DSA/MoE. dep: none.
+- **G4** KDA linear attn on 310P (Triton-free — adapt kda.py, reuse `_310p/ops/fla` GDN kernels or eager) + parity. dep: G3,G-ref.
+- **G5** DSA sparse attention on 310P — REUSE the deepseek_v41 `indexer.py`/`mla`-style path. dep: G3.
+- **G6** MoE→E1.3 W2 method (swap FusedMoEFactory, top-8/288, scaling 2.5) + hyperconnection + W2 weight-mapping. dep: G3,E1.3.
+- **G7** assembly + dummy-weight CPU boot + MTP-1. dep: G4,G5,G6.
+
 ## Quality note (same correction as DeepSeek)
 Naive RTN W2 is **provisional** (the W2 sensitivity finding applies to GLM experts too); the algorithm-agnostic infra is reused; a calibrated-2-bit path + an end-to-end perplexity gate (on the cards) settle quality. FP8→W2 (vs DeepSeek's FP4→W2) starts from a higher-precision source, so GLM's W2 quality should be no worse.
 
