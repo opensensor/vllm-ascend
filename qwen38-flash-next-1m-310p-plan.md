@@ -451,6 +451,18 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **log**:
 - **files edited/created**:
 
+## Production forward paths closed (post-checkpoint, 2026-09-16)
+
+After the checkpoint landed, the three remaining production stubs (used as eager
+references during the host wave) were wired to real code so a D2 real-weight boot
+is a bring-up, not a debug session:
+
+- **Real `load_weights`** (commit 894806ef4): streams per-expert W8A8 tensors through the T3.1 mapper into the `AscendW8A8DynamicFusedMoEMethod310` fused layout (`w13_*`/`w2_*` + scale/offset), loads non-expert F16 by name, no full-bank materialization (T3.2 semantics); rejects missing/extra/duplicate/wrong-shape/dtype; fused-param round-trip back-compat preserved.
+- **Real W8A8 MoE forward** (commit 894806ef4, new `moe.py`): `_EagerSparseMoE` runs the T3.3-validated math (router top-10 renorm→routed_scaling_factor, per-token INT8 act quant, per-channel `(q-offset)*scale` dequant — real experts symmetric offset==0, grouped one-GEMM-per-expert, shared expert F16). Parity vs T3.3 reference.
+- **Real n-gram hashing** (commit ffe68c5e2 impl + ec29c0a3b wiring): `AscendQwen4ExpNGramEmbedding.compute_ngram_ids`/`forward` (SplitMix64, T4.2-verified vs the checkpoint's `layer_multipliers`) wired into `_PLEInjection`; real configs hash for real, tiny duck configs fall back to a deterministic id stub for the control-flow boot; the real 128-shard gather remains the load_weights/D2 path. Real-config integration smoke (`test_assembly_real_config_integration.py`) confirms end-to-end.
+
+Full `tests/ut/qwen38_1m/` suite: **694 passed**. Remaining work is the device wave (D1–D9), which requires the 4×310P hardware.
+
 ## Follow-on stubs (explicitly out of scope; each needs its own gated plan)
 
 - **S1** Hybrid prefix caching (WP11): cache-key binding, all-state save/restore at consistent boundary, measured pool sizing — after D8.
