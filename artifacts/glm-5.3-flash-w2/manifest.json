@@ -1,0 +1,745 @@
+{
+  "schema_version": 1,
+  "source_dir": "/run/media/matteius/20TB-drive/models/GLM-5.3-Flash-FP8",
+  "architectures": [
+    "Glm5NextForConditionalGeneration"
+  ],
+  "model_type": "glm5_next",
+  "geometry": {
+    "model_type": "glm5_next_text",
+    "vocab_size": 154880,
+    "hidden_size": 4096,
+    "intermediate_size": 12288,
+    "moe_intermediate_size": 2048,
+    "num_hidden_layers": 45,
+    "num_attention_heads": 64,
+    "num_key_value_heads": 64,
+    "head_dim": 0,
+    "hidden_act": "silu",
+    "max_position_embeddings": 1048576,
+    "n_routed_experts": 288,
+    "n_shared_experts": 1,
+    "num_experts_per_tok": 8,
+    "first_k_dense_replace": 3,
+    "n_group": 1,
+    "topk_group": 1,
+    "scoring_func": "sigmoid",
+    "norm_topk_prob": true,
+    "routed_scaling_factor": 2.5,
+    "rms_norm_eps": 1e-05,
+    "tie_word_embeddings": false,
+    "kv_lora_rank": 512,
+    "q_lora_rank": 1536,
+    "index_topk": 2048,
+    "index_n_heads": 32,
+    "index_head_dim": 128,
+    "num_nextn_predict_layers": 1,
+    "layer_types": [
+      "linear_attention",
+      "linear_attention",
+      "linear_attention",
+      "deepseek_sparse_attention",
+      "linear_attention",
+      "linear_attention",
+      "linear_attention",
+      "deepseek_sparse_attention",
+      "linear_attention",
+      "linear_attention",
+      "linear_attention",
+      "deepseek_sparse_attention",
+      "linear_attention",
+      "linear_attention",
+      "linear_attention",
+      "deepseek_sparse_attention",
+      "linear_attention",
+      "linear_attention",
+      "linear_attention",
+      "deepseek_sparse_attention",
+      "linear_attention",
+      "linear_attention",
+      "linear_attention",
+      "deepseek_sparse_attention",
+      "linear_attention",
+      "linear_attention",
+      "linear_attention",
+      "deepseek_sparse_attention",
+      "linear_attention",
+      "linear_attention",
+      "linear_attention",
+      "deepseek_sparse_attention",
+      "linear_attention",
+      "linear_attention",
+      "linear_attention",
+      "deepseek_sparse_attention",
+      "linear_attention",
+      "linear_attention",
+      "linear_attention",
+      "deepseek_sparse_attention",
+      "linear_attention",
+      "linear_attention",
+      "linear_attention",
+      "deepseek_sparse_attention",
+      "linear_attention"
+    ],
+    "mlp_layer_types": [
+      "dense",
+      "dense",
+      "dense",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse",
+      "sparse"
+    ]
+  },
+  "quantization": {
+    "quant_method": "fp8",
+    "activation_scheme": "dynamic",
+    "fmt": "e4m3",
+    "weight_block_size": [
+      128,
+      128
+    ],
+    "scale_fmt": null,
+    "scale_dtype": "F32 (plain per-block float32 scale; NOT ue8m0)"
+  },
+  "eos_token_id": null,
+  "bos_token_id": null,
+  "pad_token_id": null,
+  "image_token_id": 154854,
+  "mtp": {
+    "num_nextn_predict_layers": 1,
+    "mtp_layer_index": 45,
+    "tensor_count": 1760
+  },
+  "vision": {
+    "present": true,
+    "included_in_deployment": false,
+    "reason": "text-only W2-on-310P deployment; vision tower recorded but not loaded",
+    "tensor_count": 347,
+    "config_present": true
+  },
+  "tensor_total": 76108,
+  "block_counts": {
+    "main": 74001,
+    "mtp": 1760,
+    "vision": 347
+  },
+  "family_counts": {
+    "attn_scale": 48,
+    "dense_mlp_scale": 9,
+    "dense_mlp_weight": 9,
+    "embed_tokens": 1,
+    "final_norm": 1,
+    "hyper_connection": 270,
+    "layer_norm": 92,
+    "lm_head": 1,
+    "mla_indexer": 84,
+    "mtp_extra": 4,
+    "routed_expert_scale": 37152,
+    "routed_expert_weight": 37152,
+    "router_gate": 86,
+    "self_attn": 594,
+    "shared_expert_scale": 129,
+    "shared_expert_weight": 129,
+    "vision": 347
+  },
+  "family_counts_by_block": {
+    "main": {
+      "attn_scale": 44,
+      "dense_mlp_scale": 9,
+      "dense_mlp_weight": 9,
+      "embed_tokens": 1,
+      "final_norm": 1,
+      "hyper_connection": 270,
+      "layer_norm": 90,
+      "lm_head": 1,
+      "mla_indexer": 77,
+      "routed_expert_scale": 36288,
+      "routed_expert_weight": 36288,
+      "router_gate": 84,
+      "self_attn": 587,
+      "shared_expert_scale": 126,
+      "shared_expert_weight": 126
+    },
+    "mtp": {
+      "attn_scale": 4,
+      "layer_norm": 2,
+      "mla_indexer": 7,
+      "mtp_extra": 4,
+      "routed_expert_scale": 864,
+      "routed_expert_weight": 864,
+      "router_gate": 2,
+      "self_attn": 7,
+      "shared_expert_scale": 3,
+      "shared_expert_weight": 3
+    },
+    "vision": {
+      "vision": 347
+    }
+  },
+  "family_dtypes": {
+    "attn_scale": {
+      "F32": 48
+    },
+    "dense_mlp_scale": {
+      "F32": 9
+    },
+    "dense_mlp_weight": {
+      "F8_E4M3": 9
+    },
+    "embed_tokens": {
+      "BF16": 1
+    },
+    "final_norm": {
+      "BF16": 1
+    },
+    "hyper_connection": {
+      "BF16": 90,
+      "F32": 180
+    },
+    "layer_norm": {
+      "BF16": 92
+    },
+    "lm_head": {
+      "BF16": 1
+    },
+    "mla_indexer": {
+      "BF16": 84
+    },
+    "mtp_extra": {
+      "BF16": 4
+    },
+    "routed_expert_scale": {
+      "F32": 37152
+    },
+    "routed_expert_weight": {
+      "F8_E4M3": 37152
+    },
+    "router_gate": {
+      "BF16": 43,
+      "F32": 43
+    },
+    "self_attn": {
+      "BF16": 478,
+      "F32": 68,
+      "F8_E4M3": 48
+    },
+    "shared_expert_scale": {
+      "F32": 129
+    },
+    "shared_expert_weight": {
+      "F8_E4M3": 129
+    },
+    "vision": {
+      "BF16": 347
+    }
+  },
+  "family_samples": {
+    "attn_scale": {
+      "tensor": "model.language_model.layers.45.self_attn.kv_a_proj_with_mqa.weight_scale_inv",
+      "dtype": "F32",
+      "shape": [
+        4,
+        32
+      ]
+    },
+    "dense_mlp_scale": {
+      "tensor": "model.language_model.layers.0.mlp.down_proj.weight_scale_inv",
+      "dtype": "F32",
+      "shape": [
+        32,
+        96
+      ]
+    },
+    "dense_mlp_weight": {
+      "tensor": "model.language_model.layers.0.mlp.down_proj.weight",
+      "dtype": "F8_E4M3",
+      "shape": [
+        4096,
+        12288
+      ]
+    },
+    "embed_tokens": {
+      "tensor": "model.language_model.embed_tokens.weight",
+      "dtype": "BF16",
+      "shape": [
+        154880,
+        4096
+      ]
+    },
+    "final_norm": {
+      "tensor": "model.language_model.norm.weight",
+      "dtype": "BF16",
+      "shape": [
+        4096
+      ]
+    },
+    "hyper_connection": {
+      "tensor": "model.language_model.layers.0.hc_attn_base",
+      "dtype": "F32",
+      "shape": [
+        24
+      ]
+    },
+    "layer_norm": {
+      "tensor": "model.language_model.layers.45.input_layernorm.weight",
+      "dtype": "BF16",
+      "shape": [
+        4096
+      ]
+    },
+    "lm_head": {
+      "tensor": "lm_head.weight",
+      "dtype": "BF16",
+      "shape": [
+        154880,
+        4096
+      ]
+    },
+    "mla_indexer": {
+      "tensor": "model.language_model.layers.45.self_attn.indexer.index_kpool_compress_ape",
+      "dtype": "BF16",
+      "shape": [
+        4,
+        128
+      ]
+    },
+    "mtp_extra": {
+      "tensor": "model.language_model.layers.45.eh_proj.weight",
+      "dtype": "BF16",
+      "shape": [
+        4096,
+        8192
+      ]
+    },
+    "routed_expert_scale": {
+      "tensor": "model.language_model.layers.45.mlp.experts.0.down_proj.weight_scale_inv",
+      "dtype": "F32",
+      "shape": [
+        32,
+        16
+      ]
+    },
+    "routed_expert_weight": {
+      "tensor": "model.language_model.layers.45.mlp.experts.0.down_proj.weight",
+      "dtype": "F8_E4M3",
+      "shape": [
+        4096,
+        2048
+      ]
+    },
+    "router_gate": {
+      "tensor": "model.language_model.layers.45.mlp.gate.e_score_correction_bias",
+      "dtype": "F32",
+      "shape": [
+        288
+      ]
+    },
+    "self_attn": {
+      "tensor": "model.language_model.layers.45.self_attn.kv_a_layernorm.weight",
+      "dtype": "BF16",
+      "shape": [
+        512
+      ]
+    },
+    "shared_expert_scale": {
+      "tensor": "model.language_model.layers.45.mlp.shared_experts.down_proj.weight_scale_inv",
+      "dtype": "F32",
+      "shape": [
+        32,
+        16
+      ]
+    },
+    "shared_expert_weight": {
+      "tensor": "model.language_model.layers.45.mlp.shared_experts.down_proj.weight",
+      "dtype": "F8_E4M3",
+      "shape": [
+        4096,
+        2048
+      ]
+    },
+    "vision": {
+      "tensor": "model.visual.blocks.0.attn.k_norm.weight",
+      "dtype": "BF16",
+      "shape": [
+        64
+      ]
+    }
+  },
+  "target_precision": {
+    "attn_scale": "consumed (F32 block scale, fed to dequant)",
+    "dense_mlp_scale": "consumed (F32 block scale, fed to dequant)",
+    "dense_mlp_weight": "FP16 (first_k_dense_replace MLP; dequant F8_E4M3 + F32 block scale)",
+    "embed_tokens": "FP16 (token embedding)",
+    "final_norm": "FP16 (final norm)",
+    "hyper_connection": "FP16 (hyper-connection base/fn/scale params)",
+    "layer_norm": "FP16 (block norms)",
+    "lm_head": "FP16 (LM head)",
+    "mla_indexer": "FP16 (sparse-attention indexer; BF16 source)",
+    "mtp_extra": "FP16 (MTP eh_proj / enorm / hnorm / shared_head)",
+    "routed_expert_scale": "consumed (plain F32 per-[128,128]-block scale, fed to dequant)",
+    "routed_expert_weight": "W2 (2-bit routed experts; source F8_E4M3 + F32 [128,128] block scale)",
+    "router_gate": "FP16 (router gate + e_score_correction_bias)",
+    "self_attn": "FP16 (MLA + linear-attention projections; F8_E4M3 dequant or BF16/F32 cast)",
+    "shared_expert_scale": "consumed (F32 block scale, fed to dequant)",
+    "shared_expert_weight": "FP16 (dense shared expert; dequant F8_E4M3 + F32 block scale)",
+    "vision": "n/a (text-only deployment; vision tower excluded)"
+  },
+  "routed_expert_example": {
+    "gate_proj": {
+      "weight": {
+        "tensor": "model.language_model.layers.3.mlp.experts.0.gate_proj.weight",
+        "dtype": "F8_E4M3",
+        "shape": [
+          2048,
+          4096
+        ]
+      },
+      "weight_scale_inv": {
+        "tensor": "model.language_model.layers.3.mlp.experts.0.gate_proj.weight_scale_inv",
+        "dtype": "F32",
+        "shape": [
+          16,
+          32
+        ]
+      }
+    },
+    "up_proj": {
+      "weight": {
+        "tensor": "model.language_model.layers.3.mlp.experts.0.up_proj.weight",
+        "dtype": "F8_E4M3",
+        "shape": [
+          2048,
+          4096
+        ]
+      },
+      "weight_scale_inv": {
+        "tensor": "model.language_model.layers.3.mlp.experts.0.up_proj.weight_scale_inv",
+        "dtype": "F32",
+        "shape": [
+          16,
+          32
+        ]
+      }
+    },
+    "down_proj": {
+      "weight": {
+        "tensor": "model.language_model.layers.3.mlp.experts.0.down_proj.weight",
+        "dtype": "F8_E4M3",
+        "shape": [
+          4096,
+          2048
+        ]
+      },
+      "weight_scale_inv": {
+        "tensor": "model.language_model.layers.3.mlp.experts.0.down_proj.weight_scale_inv",
+        "dtype": "F32",
+        "shape": [
+          32,
+          16
+        ]
+      }
+    }
+  },
+  "naming_scheme": {
+    "routed_expert": "model.language_model.layers.{L}.mlp.experts.{E}.{gate_proj|up_proj|down_proj}.{weight|weight_scale_inv}",
+    "shared_expert": "model.language_model.layers.{L}.mlp.shared_experts.{gate_proj|up_proj|down_proj}.{weight|weight_scale_inv}",
+    "dense_mlp": "model.language_model.layers.{L}.mlp.{gate_proj|up_proj|down_proj}.{weight|weight_scale_inv} (first_k_dense_replace layers)",
+    "router": "model.language_model.layers.{L}.mlp.gate.{weight|e_score_correction_bias}",
+    "self_attn": "model.language_model.layers.{L}.self_attn.{...}.{weight|weight_scale_inv}",
+    "embed_tokens": "model.language_model.embed_tokens.weight",
+    "lm_head": "lm_head.weight",
+    "final_norm": "model.language_model.norm.weight",
+    "mtp": "model.language_model.layers.{num_hidden_layers}.{eh_proj|enorm|hnorm|shared_head...}"
+  },
+  "num_shards": 62,
+  "shards": [
+    {
+      "file": "model-00001-of-00062.safetensors",
+      "bytes": 5365306704
+    },
+    {
+      "file": "model-00002-of-00062.safetensors",
+      "bytes": 5320647824
+    },
+    {
+      "file": "model-00003-of-00062.safetensors",
+      "bytes": 5363467432
+    },
+    {
+      "file": "model-00004-of-00062.safetensors",
+      "bytes": 5364342296
+    },
+    {
+      "file": "model-00005-of-00062.safetensors",
+      "bytes": 5363915920
+    },
+    {
+      "file": "model-00006-of-00062.safetensors",
+      "bytes": 5361809384
+    },
+    {
+      "file": "model-00007-of-00062.safetensors",
+      "bytes": 5364342528
+    },
+    {
+      "file": "model-00008-of-00062.safetensors",
+      "bytes": 5364342304
+    },
+    {
+      "file": "model-00009-of-00062.safetensors",
+      "bytes": 5364169856
+    },
+    {
+      "file": "model-00010-of-00062.safetensors",
+      "bytes": 5361982080
+    },
+    {
+      "file": "model-00011-of-00062.safetensors",
+      "bytes": 5363915912
+    },
+    {
+      "file": "model-00012-of-00062.safetensors",
+      "bytes": 5364342288
+    },
+    {
+      "file": "model-00013-of-00062.safetensors",
+      "bytes": 5361809408
+    },
+    {
+      "file": "model-00014-of-00062.safetensors",
+      "bytes": 5364342504
+    },
+    {
+      "file": "model-00015-of-00062.safetensors",
+      "bytes": 5364342304
+    },
+    {
+      "file": "model-00016-of-00062.safetensors",
+      "bytes": 5361809176
+    },
+    {
+      "file": "model-00017-of-00062.safetensors",
+      "bytes": 5364084560
+    },
+    {
+      "file": "model-00018-of-00062.safetensors",
+      "bytes": 5364342304
+    },
+    {
+      "file": "model-00019-of-00062.safetensors",
+      "bytes": 5364342272
+    },
+    {
+      "file": "model-00020-of-00062.safetensors",
+      "bytes": 5361809528
+    },
+    {
+      "file": "model-00021-of-00062.safetensors",
+      "bytes": 5364342376
+    },
+    {
+      "file": "model-00022-of-00062.safetensors",
+      "bytes": 5363915936
+    },
+    {
+      "file": "model-00023-of-00062.safetensors",
+      "bytes": 5361809264
+    },
+    {
+      "file": "model-00024-of-00062.safetensors",
+      "bytes": 5364342640
+    },
+    {
+      "file": "model-00025-of-00062.safetensors",
+      "bytes": 5364342304
+    },
+    {
+      "file": "model-00026-of-00062.safetensors",
+      "bytes": 5364342272
+    },
+    {
+      "file": "model-00027-of-00062.safetensors",
+      "bytes": 5361809560
+    },
+    {
+      "file": "model-00028-of-00062.safetensors",
+      "bytes": 5363915976
+    },
+    {
+      "file": "model-00029-of-00062.safetensors",
+      "bytes": 5364342304
+    },
+    {
+      "file": "model-00030-of-00062.safetensors",
+      "bytes": 5361809296
+    },
+    {
+      "file": "model-00031-of-00062.safetensors",
+      "bytes": 5364341544
+    },
+    {
+      "file": "model-00032-of-00062.safetensors",
+      "bytes": 5363915232
+    },
+    {
+      "file": "model-00033-of-00062.safetensors",
+      "bytes": 5364342272
+    },
+    {
+      "file": "model-00034-of-00062.safetensors",
+      "bytes": 5361809552
+    },
+    {
+      "file": "model-00035-of-00062.safetensors",
+      "bytes": 5363915984
+    },
+    {
+      "file": "model-00036-of-00062.safetensors",
+      "bytes": 5364342304
+    },
+    {
+      "file": "model-00037-of-00062.safetensors",
+      "bytes": 5361809288
+    },
+    {
+      "file": "model-00038-of-00062.safetensors",
+      "bytes": 5364342624
+    },
+    {
+      "file": "model-00039-of-00062.safetensors",
+      "bytes": 5364342296
+    },
+    {
+      "file": "model-00040-of-00062.safetensors",
+      "bytes": 5363915912
+    },
+    {
+      "file": "model-00041-of-00062.safetensors",
+      "bytes": 5361809552
+    },
+    {
+      "file": "model-00042-of-00062.safetensors",
+      "bytes": 5364342368
+    },
+    {
+      "file": "model-00043-of-00062.safetensors",
+      "bytes": 5364342296
+    },
+    {
+      "file": "model-00044-of-00062.safetensors",
+      "bytes": 5361809312
+    },
+    {
+      "file": "model-00045-of-00062.safetensors",
+      "bytes": 5364342600
+    },
+    {
+      "file": "model-00046-of-00062.safetensors",
+      "bytes": 5363915368
+    },
+    {
+      "file": "model-00047-of-00062.safetensors",
+      "bytes": 5364341072
+    },
+    {
+      "file": "model-00048-of-00062.safetensors",
+      "bytes": 5361809576
+    },
+    {
+      "file": "model-00049-of-00062.safetensors",
+      "bytes": 5364342344
+    },
+    {
+      "file": "model-00050-of-00062.safetensors",
+      "bytes": 5364342312
+    },
+    {
+      "file": "model-00051-of-00062.safetensors",
+      "bytes": 5361809336
+    },
+    {
+      "file": "model-00052-of-00062.safetensors",
+      "bytes": 5364342576
+    },
+    {
+      "file": "model-00053-of-00062.safetensors",
+      "bytes": 5363915936
+    },
+    {
+      "file": "model-00054-of-00062.safetensors",
+      "bytes": 5364342272
+    },
+    {
+      "file": "model-00055-of-00062.safetensors",
+      "bytes": 5361808304
+    },
+    {
+      "file": "model-00056-of-00062.safetensors",
+      "bytes": 5364341080
+    },
+    {
+      "file": "model-00057-of-00062.safetensors",
+      "bytes": 5364341048
+    },
+    {
+      "file": "model-00058-of-00062.safetensors",
+      "bytes": 5361808088
+    },
+    {
+      "file": "model-00059-of-00062.safetensors",
+      "bytes": 5363914912
+    },
+    {
+      "file": "model-00060-of-00062.safetensors",
+      "bytes": 5364341064
+    },
+    {
+      "file": "model-00061-of-00062.safetensors",
+      "bytes": 5303993768
+    },
+    {
+      "file": "model-00062-of-00062.safetensors",
+      "bytes": 1261584968
+    }
+  ],
+  "sha256_present": false
+}
