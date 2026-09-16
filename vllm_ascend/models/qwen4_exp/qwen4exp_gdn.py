@@ -37,6 +37,7 @@ picks the AscendC kernels on NPU and the eager path on host.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
@@ -70,13 +71,20 @@ __all__ = [
     "QWEN4EXP_GDN_L2NORM_EPS",
     "QWEN4EXP_GDN_SOFTPLUS_BETA",
     "QWEN4EXP_GDN_SOFTPLUS_THRESHOLD",
+    "GDNStateCopySpec",
     "Qwen4ExpGDNParams",
+    "Qwen4ExpGDNStateLayout",
+    "Qwen4ExpGDNStatePool",
+    "gdn_conv_copy_spec",
     "gdn_conv_state_shape",
     "gdn_delta_rule",
     "gdn_gating",
+    "gdn_prefill_in_chunks",
     "gdn_recurrent_state_shape",
     "gdn_short_conv",
+    "gdn_state_copy_funcs",
     "gdn_state_dtypes",
+    "gdn_temporal_copy_spec",
 ]
 
 
@@ -199,6 +207,215 @@ def gdn_state_dtypes(
     lifecycle task, not the config-derived expectation reported here.)
     """
     return (policy.mamba_conv_cache_dtype, policy.mamba_ssm_cache_dtype)
+
+
+# ---------------------------------------------------------------------------
+# State lifecycle: block layout, no-alias slot pool, copy-func semantics.
+#
+# These host-side twins of the fork state-copy machinery
+# (``MambaStateCopyFuncCalculator.gated_delta_net_state_copy_func`` in
+# ``vllm/model_executor/layers/mamba/mamba_utils.py`` -- the
+# ``(get_conv_copy_spec, get_temporal_copy_spec)`` pair keyed by
+# ``MambaAttentionBackendEnum.GDN_ATTN``) let the 310P Triton-free model state
+# manage GDN conv + recurrent (SSM) state across prefill / decode / preemption /
+# reuse. State is *replicated per TP rank* (one pool per rank); the pool here
+# manages a single rank's physical blocks and guarantees no aliasing between
+# live requests and zero stale carryover on reuse.
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class GDNStateCopySpec:
+    """Memory-copy parameters for one GDN state slice.
+
+    Host twin of ``vllm.model_executor.layers.mamba.mamba_utils.MambaCopySpec``:
+    a ``(start_addr, num_elements)`` view onto the source block used when
+    slot-remapping state across block boundaries.
+    """
+
+    start_addr: int
+    num_elements: int
+
+
+def gdn_conv_copy_spec(
+    state: torch.Tensor,
+    block_ids: list[int],
+    cur_block_idx: int,
+    num_accepted_tokens: int,
+) -> GDNStateCopySpec:
+    """Copy-spec for the GDN short-conv state (twin of ``get_conv_copy_spec``).
+
+    310P uses the dim-first ("DS") conv layout, matching the fork assertion that
+    ``num_accepted_tokens - 1 == 0`` for DS (a non-zero offset is a fused
+    postprocess-kernel concern, not a plain block copy). The whole block is the
+    source slice.
+    """
+    offset = num_accepted_tokens - 1
+    if offset != 0:
+        raise ValueError(
+            "DS GDN conv state with num_accepted_tokens > 1 must be handled by "
+            "the fused postprocess path, not gdn_conv_copy_spec."
+        )
+    src_state = state[block_ids[cur_block_idx]]
+    return GDNStateCopySpec(start_addr=src_state.data_ptr(), num_elements=src_state.numel())
+
+
+def gdn_temporal_copy_spec(
+    state: torch.Tensor,
+    block_ids: list[int],
+    cur_block_idx: int,
+    num_accepted_tokens: int,
+) -> GDNStateCopySpec:
+    """Copy-spec for the GDN recurrent/SSM state (twin of ``get_temporal_copy_spec``)."""
+    src_block_id = block_ids[cur_block_idx + num_accepted_tokens - 1]
+    src_state = state[src_block_id]
+    return GDNStateCopySpec(start_addr=src_state.data_ptr(), num_elements=src_state.numel())
+
+
+def gdn_state_copy_funcs() -> tuple[Callable[..., GDNStateCopySpec], Callable[..., GDNStateCopySpec]]:
+    """``(conv, recurrent)`` copy funcs, mirroring the fork GDN_ATTN copy-func pair."""
+    return (gdn_conv_copy_spec, gdn_temporal_copy_spec)
+
+
+@dataclass(frozen=True)
+class Qwen4ExpGDNStateLayout:
+    """Per-rank GDN state geometry (conv + recurrent), config/policy derived."""
+
+    conv_shape: tuple[int, int]
+    recurrent_shape: tuple[int, int, int]
+    conv_dtype: torch.dtype
+    recurrent_dtype: torch.dtype
+    tp_size: int
+
+    @classmethod
+    def from_params(
+        cls,
+        params: Qwen4ExpGDNParams,
+        *,
+        tp_size: int = 1,
+        num_spec: int = 0,
+        policy: Qwen4ExpDtypePolicy = ASCEND_QWEN4EXP_DTYPE_POLICY,
+        layout: GDNConvStateLayout = "DS",
+    ) -> Qwen4ExpGDNStateLayout:
+        conv_dtype, recurrent_dtype = gdn_state_dtypes(policy)
+        return cls(
+            conv_shape=gdn_conv_state_shape(params, tp_size, num_spec, layout),
+            recurrent_shape=gdn_recurrent_state_shape(params, tp_size),
+            conv_dtype=conv_dtype,
+            recurrent_dtype=recurrent_dtype,
+            tp_size=tp_size,
+        )
+
+
+class Qwen4ExpGDNStatePool:
+    """Host-side GDN state pool for one TP rank with no-alias slot management.
+
+    Owns ``num_blocks`` physical conv + recurrent state blocks shared by the
+    live requests on this rank. Invariants enforced (fail-closed on violation):
+
+    * **no aliasing** -- two live requests never map to the same block; a
+      double-allocate or an exhausted pool raises rather than silently sharing;
+    * **clean reuse** -- a block is zeroed on free *and* on allocate, so a new
+      request never inherits stale state from a completed/preempted one;
+    * **preemption / resume** -- :meth:`preempt` frees the block (fail-closed):
+      the request is no longer resident, so the caller must re-seed it (a fresh
+      :meth:`allocate` + recompute) on resume, which -- because GDN state is a
+      deterministic function of the tokens seen -- reproduces the exact state,
+      keeping a preempted run bit-identical to an unpreempted one.
+
+    State is replicated per rank, so a full TP world uses one pool per rank; the
+    invariants hold independently and identically on each.
+    """
+
+    def __init__(
+        self,
+        num_blocks: int,
+        layout: Qwen4ExpGDNStateLayout,
+        *,
+        device: torch.device | str = "cpu",
+    ) -> None:
+        if num_blocks <= 0:
+            raise ValueError(f"GDN state pool needs num_blocks >= 1, got {num_blocks}.")
+        self.num_blocks = num_blocks
+        self.layout = layout
+        self.device = torch.device(device)
+        self.conv = torch.zeros((num_blocks, *layout.conv_shape), dtype=layout.conv_dtype, device=self.device)
+        self.recurrent = torch.zeros(
+            (num_blocks, *layout.recurrent_shape), dtype=layout.recurrent_dtype, device=self.device
+        )
+        self._free_blocks: list[int] = list(range(num_blocks))
+        self._req_to_block: dict[int, int] = {}
+        self._block_to_req: dict[int, int] = {}
+
+    # -- residency -------------------------------------------------------
+    def is_resident(self, request_id: int) -> bool:
+        return request_id in self._req_to_block
+
+    def block_of(self, request_id: int) -> int | None:
+        return self._req_to_block.get(request_id)
+
+    def active_blocks(self) -> dict[int, int]:
+        """``request_id -> block_id`` for every live request (aliasing audit)."""
+        return dict(self._req_to_block)
+
+    # -- allocation ------------------------------------------------------
+    def allocate(self, request_id: int) -> int:
+        """Assign a fresh, zeroed block to ``request_id`` (no aliasing)."""
+        if request_id in self._req_to_block:
+            raise ValueError(f"GDN state for request {request_id} is already resident (would alias).")
+        if not self._free_blocks:
+            raise RuntimeError("GDN state pool exhausted: no free block to allocate (fail-closed).")
+        block_id = self._free_blocks.pop(0)
+        self._req_to_block[request_id] = block_id
+        self._block_to_req[block_id] = request_id
+        # Zero on allocate as well as free: defends against any external write
+        # to a free block and makes reuse provably free of stale carryover.
+        self.conv[block_id].zero_()
+        self.recurrent[block_id].zero_()
+        return block_id
+
+    def _release(self, request_id: int) -> None:
+        block_id = self._req_to_block.pop(request_id)
+        del self._block_to_req[block_id]
+        self.conv[block_id].zero_()
+        self.recurrent[block_id].zero_()
+        self._free_blocks.append(block_id)
+
+    def free(self, request_id: int) -> None:
+        """Return a completed request's block to the pool (zeroed)."""
+        if request_id not in self._req_to_block:
+            raise KeyError(f"GDN state for request {request_id} is not resident; cannot free.")
+        self._release(request_id)
+
+    def preempt(self, request_id: int) -> None:
+        """Fail-closed preemption: drop the block; resume must re-seed."""
+        if request_id not in self._req_to_block:
+            raise KeyError(f"GDN state for request {request_id} is not resident; cannot preempt.")
+        self._release(request_id)
+
+    # -- state access ----------------------------------------------------
+    def _require_block(self, request_id: int) -> int:
+        block_id = self._req_to_block.get(request_id)
+        if block_id is None:
+            raise KeyError(
+                f"GDN state for request {request_id} is not resident "
+                "(completed or preempted); allocate + recompute before use (fail-closed)."
+            )
+        return block_id
+
+    def recurrent_state(self, request_id: int) -> torch.Tensor:
+        """View of the request's recurrent (SSM) state block ``[Hv, V, K]``."""
+        return self.recurrent[self._require_block(request_id)]
+
+    def conv_state(self, request_id: int) -> torch.Tensor:
+        """View of the request's short-conv state block."""
+        return self.conv[self._require_block(request_id)]
+
+    def write_recurrent(self, request_id: int, state: torch.Tensor) -> None:
+        block = self._require_block(request_id)
+        self.recurrent[block].copy_(state.to(self.recurrent.dtype))
+
+    def write_conv(self, request_id: int, state: torch.Tensor) -> None:
+        block = self._require_block(request_id)
+        self.conv[block].copy_(state.to(self.conv.dtype))
 
 
 # ---------------------------------------------------------------------------
@@ -602,3 +819,62 @@ def _delta_rule_ascend_npu(
         "AscendC recurrent (decode) GDN wiring requires the T5.2 state-lifecycle "
         "metadata (cu_seqlens / ssm_state_indices); use backend='eager' on host."
     )
+
+
+def gdn_prefill_in_chunks(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    g: torch.Tensor,
+    beta: torch.Tensor,
+    *,
+    split_points: list[int],
+    initial_state: torch.Tensor | None = None,
+    chunked: bool = True,
+    chunk_size: int = QWEN4EXP_GDN_CHUNK_SIZE,
+    scale: float | None = None,
+    use_qk_l2norm: bool = True,
+    compute_dtype: torch.dtype | None = None,
+    backend: GDNBackend = "eager",
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Run one sequence's GDN prefill split across block boundaries.
+
+    Models the prefill/decode state lifecycle: a sequence processed in several
+    steps (chunked prefill, then per-token decode) must carry its recurrent
+    state across the boundaries via the state block. Each segment consumes the
+    previous segment's ``final_state`` as its ``initial_state`` -- exactly the
+    slot-remap semantics :class:`Qwen4ExpGDNStatePool` provides on device.
+
+    ``split_points`` are ascending token boundaries in ``(0, T)``; the segments
+    are ``[0:s0], [s0:s1], ..., [s_last:T]``. Returns the concatenated output
+    and the final state, which must equal a single-shot run over the whole
+    sequence (chunk-vs-unchunked / carry-across-boundary invariant).
+    """
+    seq_len = q.shape[0]
+    bounds = [0, *split_points, seq_len]
+    if any(b < 0 or b > seq_len for b in bounds) or any(bounds[i] > bounds[i + 1] for i in range(len(bounds) - 1)):
+        raise ValueError(f"split_points {split_points} must be ascending within (0, {seq_len}).")
+
+    outputs: list[torch.Tensor] = []
+    state = initial_state
+    for start, stop in zip(bounds[:-1], bounds[1:]):
+        if start == stop:
+            continue
+        out, state = gdn_delta_rule(
+            q[start:stop],
+            k[start:stop],
+            v[start:stop],
+            g[start:stop],
+            beta[start:stop],
+            initial_state=state,
+            chunked=chunked,
+            chunk_size=chunk_size,
+            scale=scale,
+            use_qk_l2norm=use_qk_l2norm,
+            compute_dtype=compute_dtype,
+            backend=backend,
+        )
+        outputs.append(out)
+    if not outputs:
+        raise ValueError("gdn_prefill_in_chunks received an empty sequence.")
+    return torch.cat(outputs, dim=0), state

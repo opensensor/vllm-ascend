@@ -16,6 +16,18 @@ from vllm.v1.worker.utils import AttentionGroup
 from vllm_ascend._310p.ops.rotary_embedding import prepare_mrope_cos_sin_slices_from_runner
 from vllm_ascend._310p.worker.v2.rope import Ascend310PRopeState, get_310p_rope_state
 from vllm_ascend.device.device_op import DeviceOperator
+from vllm_ascend.models.qwen4_exp.dtype_policy import (
+    ASCEND_QWEN4EXP_DTYPE_POLICY,
+    Qwen4ExpDtypePolicy,
+)
+from vllm_ascend.models.qwen4_exp.qwen4exp_gdn import (
+    GDNBackend,
+    GDNConvStateLayout,
+    Qwen4ExpGDNParams,
+    Qwen4ExpGDNStateLayout,
+    Qwen4ExpGDNStatePool,
+    gdn_delta_rule,
+)
 from vllm_ascend.worker.v2.input_batch import AscendInputBatch
 from vllm_ascend.worker.v2.model_states.default import AscendModelState
 from vllm_ascend.worker.v2.model_states.mamba_hybrid import AscendMambaHybridModelState
@@ -449,3 +461,108 @@ class Ascend310PQwen4ExpModelState(Ascend310PMambaHybridModelState):
             ngram_context=ngram_context,
         )
         return model_inputs
+
+    # ------------------------------------------------------------------
+    # GDN state lifecycle (plan T5.2)
+    #
+    # Prefill / decode / preemption / reuse for the Gated DeltaNet conv +
+    # recurrent (SSM) state. State is REPLICATED PER TP RANK, so one
+    # ``Qwen4ExpGDNStatePool`` is created per rank; the copy / slot-remap
+    # semantics (no aliasing, clean reuse, fail-closed preemption) live in the
+    # pool and mirror the fork ``MambaAttentionBackendEnum.GDN_ATTN`` copy-func
+    # pair. These thin methods fan a lifecycle event across all ranks.
+    # ------------------------------------------------------------------
+    def _init_gdn_state_pools(
+        self,
+        params: Qwen4ExpGDNParams,
+        *,
+        num_blocks: int,
+        tp_size: int = 1,
+        num_ranks: int = 1,
+        num_spec: int = 0,
+        layout: GDNConvStateLayout = "DS",
+        policy: Qwen4ExpDtypePolicy = ASCEND_QWEN4EXP_DTYPE_POLICY,
+        device: torch.device | str | None = None,
+    ) -> list[Qwen4ExpGDNStatePool]:
+        """Build one per-rank GDN state pool (state replicated per TP rank)."""
+        if num_ranks <= 0:
+            raise ValueError(f"num_ranks must be >= 1, got {num_ranks}.")
+        self.gdn_state_layout = Qwen4ExpGDNStateLayout.from_params(
+            params, tp_size=tp_size, num_spec=num_spec, policy=policy, layout=layout
+        )
+        self.gdn_num_ranks = num_ranks
+        pool_device = device if device is not None else self.device
+        self._gdn_state_pools = [
+            Qwen4ExpGDNStatePool(num_blocks, self.gdn_state_layout, device=pool_device) for _ in range(num_ranks)
+        ]
+        return self._gdn_state_pools
+
+    def gdn_pool(self, rank: int = 0) -> Qwen4ExpGDNStatePool:
+        return self._gdn_state_pools[rank]
+
+    def gdn_begin_request(self, request_id: int) -> list[int]:
+        """Allocate a fresh (zeroed, non-aliasing) state block on every rank."""
+        return [pool.allocate(request_id) for pool in self._gdn_state_pools]
+
+    def gdn_complete_request(self, request_id: int) -> None:
+        """Free a completed request's blocks on every rank (zeroed for reuse)."""
+        for pool in self._gdn_state_pools:
+            pool.free(request_id)
+
+    def gdn_preempt_request(self, request_id: int) -> None:
+        """Fail-closed preemption on every rank; resume must re-seed + recompute."""
+        for pool in self._gdn_state_pools:
+            pool.preempt(request_id)
+
+    def gdn_is_resident(self, request_id: int) -> bool:
+        return all(pool.is_resident(request_id) for pool in self._gdn_state_pools)
+
+    def gdn_active_blocks(self, rank: int = 0) -> dict[int, int]:
+        """``request_id -> block_id`` on ``rank`` (for aliasing audits)."""
+        return self._gdn_state_pools[rank].active_blocks()
+
+    def gdn_recurrent_state(self, request_id: int, rank: int = 0) -> torch.Tensor:
+        return self._gdn_state_pools[rank].recurrent_state(request_id)
+
+    def gdn_write_recurrent(self, request_id: int, state: torch.Tensor, rank: int = 0) -> None:
+        self._gdn_state_pools[rank].write_recurrent(request_id, state)
+
+    def gdn_step(
+        self,
+        request_id: int,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        g: torch.Tensor,
+        beta: torch.Tensor,
+        *,
+        rank: int = 0,
+        chunked: bool,
+        scale: float | None = None,
+        use_qk_l2norm: bool = True,
+        compute_dtype: torch.dtype | None = None,
+        backend: GDNBackend = "eager",
+    ) -> torch.Tensor:
+        """Advance one request's GDN state by a prefill chunk or a decode step.
+
+        Reads the request's resident recurrent state (fail-closed if the request
+        was preempted/completed and not re-seeded), runs the gated delta rule
+        continuing from it, then writes the new state back into the same block.
+        """
+        pool = self._gdn_state_pools[rank]
+        initial_state = pool.recurrent_state(request_id)
+        out, new_state = gdn_delta_rule(
+            q,
+            k,
+            v,
+            g,
+            beta,
+            initial_state=initial_state,
+            chunked=chunked,
+            scale=scale,
+            use_qk_l2norm=use_qk_l2norm,
+            compute_dtype=compute_dtype,
+            backend=backend,
+        )
+        pool.write_recurrent(request_id, new_state)
+        return out
