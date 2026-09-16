@@ -17,6 +17,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -131,3 +133,35 @@ class AscendModelSlimConfig310(AscendModelSlimConfig):
 
         logger.debug("No quant method matched for %s, falling back to base", prefix)
         return super().get_quant_method(layer, prefix)
+
+    @staticmethod
+    def validate_qwen4exp_w8a8_index(
+        weight_index: Any,
+        geometry: Any,
+    ) -> Any:
+        """Validate a Qwen4Exp W8A8 checkpoint index before streaming weights.
+
+        Delegates to :func:`vllm_ascend.models.qwen4_exp.weight_mapping.
+        validate_expert_weight_map`, which drives the expected per-expert tensor
+        set from the checkpoint-manifest ``geometry`` and rejects a missing,
+        extra, duplicate, wrong-shape or wrong-dtype tensor with an actionable
+        error (all subclasses of ``WeightMappingError``). ``weight_index`` is a
+        safetensors-style ``name -> {"dtype", "shape"}`` mapping (or a sequence of
+        such pairs); ``geometry`` is the manifest geometry block (or the parsed
+        manifest / its path).
+
+        This is imported lazily so the mapping module (host-side, torch-only) is
+        only pulled in when a W8A8 Qwen4Exp checkpoint is actually loaded.
+        """
+        from vllm_ascend.models.qwen4_exp.weight_mapping import (
+            geometry_from_manifest,
+            validate_expert_weight_map,
+        )
+
+        geometry_keys = ("num_hidden_layers", "num_experts", "moe_intermediate_size", "hidden_size")
+        needs_extraction = isinstance(geometry, (str, Path)) or (
+            isinstance(geometry, Mapping) and not all(key in geometry for key in geometry_keys)
+        )
+        if needs_extraction:
+            geometry = geometry_from_manifest(geometry)
+        return validate_expert_weight_map(weight_index, geometry)
