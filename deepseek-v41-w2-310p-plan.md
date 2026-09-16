@@ -164,7 +164,7 @@ Detail + config-delta table + per-seam guidance: `docs/source/developer_guide/De
 
 The original green-field E2.x/E3.x/E4.x blocks below are retained for history but SUPERSEDED by the table above; implement the adapt-based versions.
 
-**Wave progress (2026-09-16):** E2.1 ✅ 2bee1bdd4 · E2.2 ✅ 7ce364b68 (MLA latent KV, ~85× smaller than MHA) · E3.1 ✅ e4cd6097a (MLA, parity 1e-9) · E3.2 ✅ 4311e2e8c (indexer ratio {0,1,2}) · E3.3 ✅ 777996d65 (MoE→E1.3 W2 method, Triton op→addcmul) · E2.3 (Engram) + E3.4 (W2 weight-map) running → then E4.1 assembly wires all component modules into model.py hooks, E4.2 MTP/DSpark. Each component built as its own module; model.py hooks (`_swap_moe_to_w2`/`_inject_engram`/`_override_mla_indexer`) filled by E4.1.
+**Wave progress (2026-09-16):** E2.1 ✅ 2bee1bdd4 · E2.2 ✅ 7ce364b68 (MLA latent KV, ~85× smaller than MHA) · E3.1 ✅ e4cd6097a (MLA, parity 1e-9) · E3.2 ✅ 4311e2e8c (indexer ratio {0,1,2}) · E3.3 ✅ 777996d65 (MoE→E1.3 W2 method, Triton op→addcmul) · E2.3 ✅ 838ea0b6a (Engram host ~W4, hash+gather+gated proj) · E3.4 ✅ d157568f5 (W2 weight-map; **real-artifact placement = 36.95 GiB/chip < 40 GiB budget, imbalance 0, Engram 92.42 GiB host once**). ALL 6 components done; full deepseek_w2 suite 377 passed. E4.1 (assembly + dummy-weight boot, wiring the hooks) running → E4.2 MTP/DSpark next. Each component built as its own module; model.py hooks (`_swap_moe_to_w2`/`_inject_engram`/`_override_mla_indexer`) filled by E4.1.
 
 ### E2.1 [asc]: Ascend DeepseekV41 package + registration + precision policy
 - **depends_on**: []
