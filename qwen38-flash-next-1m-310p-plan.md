@@ -94,9 +94,9 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: `tools/qwen38_1m/env_freeze.py` (asc), `docs/.../qwen38_flash_next_1m_env.md`
 - **description**: Script that captures and pins revisions for vLLM, vllm-ascend, torch-npu, CANN, Transformers, tokenizers, ModelSlim, checkpoint hash; asserts server imports resolve to `/vllm-workspace/vllm` and `/vllm-workspace/vllm-ascend`. Emits JSON consumed by every run artifact (R1, R13).
 - **validation**: UT: given a fake env dict, emits all required keys; `import_check` fails loudly on wrong paths.
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-15 (commit 2688288ac) — Added an injectable-collector environment freeze recorder that pins vLLM/vllm-ascend/torch-npu/CANN/Transformers/tokenizers/ModelSlim revisions + checkpoint hash into schema-versioned JSON, with a loud `import_check` asserting the pinned `/vllm-workspace` import paths (prefixes parameterized for testability). No torch-npu import at load; defaults read package metadata/container env, tests inject fakes. 11 host UTs green (`--noconftest`), ruff clean. Matches the T0.3 `hw_probe.py` conventions (dataclass report, SCHEMA_VERSION, to_dict/to_json/from_dict, human_summary). Gotcha: shared conftest import fails in this env, so tests must run with `--noconftest`.
+- **files edited/created**: `tools/qwen38_1m/env_freeze.py` (new), `docs/source/developer_guide/Design_Documents/qwen38_flash_next_1m_env.md` (new), `tests/ut/qwen38_1m/test_env_freeze.py` (new)
 
 ### T0.3: Hardware/topology probe tool (WP1)
 - **depends_on**: []
@@ -112,9 +112,9 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: `tools/qwen38_1m/corpus_gen.py` (asc), `tests/e2e/long_context/`
 - **description**: Deterministic (seeded) prompt builders at 8K/128K/262144/524288/1,048,576-minus-516 total tokens. Embeds 8 distributed needle/retrieval records near beginning, quarter, middle, three-quarter, end + 1 adversarial no-answer case. Records exact token counts via the checkpoint tokenizer. Server-side config snippets to disable input truncation and report accepted token count (R10).
 - **validation**: UT: token counts exact at all sizes; probes deterministic across runs; expected answer keys extractable.
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-15 (commit d29ac2b66) — Added deterministic seeded NIAH corpus generator with an injectable tokenizer (`TokenizerLike`: encode + eos_id); exact token counts at all 5 sizes (8192/131072/262144/524288/1048060) hit via a re-encode padding convergence loop, so it is tokenizer-agnostic. 8 answerable needles across beginning/quarter/middle/three-quarter/end + 1 adversarial no-answer (NO_ANSWER sentinel); `expected_answers()` yields the grading map. e2e snippets (server-config.yaml, request-template.json) disable truncation and require accepted-token reporting (R10). 14 host UTs green (`--noconftest`), ruff clean. **Deferred**: real-tokenizer exact-count validation → device wave (D1); the Qwen4Exp checkpoint tokenizer is not on this host.
+- **files edited/created**: `tools/qwen38_1m/corpus_gen.py` (new), `tests/ut/qwen38_1m/test_corpus_gen.py` (new), `tests/e2e/long_context/{README.md,server-config.yaml,request-template.json}` (new)
 
 ### T0.5: Per-rank memory accounting harness (R2, R13)
 - **depends_on**: []
@@ -139,18 +139,18 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: `vllm/models/qwen4_exp/__init__.py` (fork)
 - **description**: Replace the `else: import nvidia` fallthrough with explicit `is_cuda()`/`is_rocm()` branches; unknown platforms get a structured `NotImplementedError` naming the platform, unless an out-of-tree override is registered. Must not regress CUDA/ROCm. Keep XPU/TPU messages. Also harden the JIT-warmup path `vllm/model_executor/warmup/qwen4_exp_qsa_warmup.py` (dynamically imports Triton kernels at worker init, currently guarded only by `sys.modules.get` + JIT flag) so it is skipped before ever touching `qwen4_exp.nvidia` on non-CUDA platforms.
 - **validation**: fork UT: simulating an NPU platform never imports `vllm.models.qwen4_exp.nvidia` — including a worker-init simulation with JIT warmup enabled that asserts `vllm.models.qwen4_exp.nvidia` never enters `sys.modules`; CUDA/ROCm dispatch unchanged (existing tests).
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-15 (fork commit 6a4da62) — Replaced qwen4_exp `__getattr__` implicit nvidia fallthrough with explicit `is_rocm()`→amd / `is_cuda()`→nvidia branches; unsupported platforms raise a platform-naming `NotImplementedError`. OOT override preserved by resolving `ModelRegistry.models[name]` first, skipping the self-referential in-tree lazy entry (module_name/`__module__` checks) to avoid recursion. Hardened QSA warmup with an early `is_cuda()` skip so worker init never imports the nvidia backend on NPU. New `tests/models/qwen4_exp/test_dispatch.py` (7 subprocess-isolated tests) proves NPU never imports nvidia (incl. warmup sim), OOT override wins, CUDA/ROCm unchanged; `test_config.py` still 9 passed. Orchestrator re-ran: 7 passed (42s) under `VLLM_TARGET_DEVICE=cpu --noconftest` (fork conftest needs tblib/compiled libs absent here). Fork repo was already detached-HEAD; not pushed.
+- **files edited/created**: fork: `vllm/models/qwen4_exp/__init__.py`, `vllm/model_executor/warmup/qwen4_exp_qsa_warmup.py`, `tests/models/qwen4_exp/test_dispatch.py` (new)
 
 ### T1.2 [asc]: Ascend Qwen4Exp package and registration
 - **depends_on**: []
 - **location**: `vllm_ascend/models/qwen4_exp/{__init__,model,ple_layer,qsa,indexer_qsa,ngram_embedding,mtp}.py`, `vllm_ascend/models/__init__.py`
 - **description**: Create `AscendQwen4ExpForCausalLM` (+ `ForConditionalGeneration` alias rejecting multimodal inputs at first gate; `Qwen4ExpMTP` registration left to S2). Reuse `common.hyperconnection`, `common.qsa_cache`, `common.ple`, upstream `Qwen3NextSparseMoeBlock`, `QwenGatedDeltaNetAttention` with Ascend wiring. No Triton/CUDA imports on 310P (guard via `_310p.ops` + `device_op`). Model classes expose `get_model_state_cls`, mamba state shape/dtype hooks (mirror `nvidia/model.py:746-830`), and per-component `load_weights` with fused-expert mapping hooks (T3.1). **Also own the dtype policy** (PRD §5.3/R4): pin `dtype` (`float16`), `mamba_ssm_cache_dtype`, QSA main/indexer/`kv_cache_dtype` and every required FP16/FP32 cast site (attention, router, shared expert, PLE projection, gated residual, LM head); record the table in the task log and propagate to T0.5/T8.3 byte math — 310P kernel dtype support must be checked against the pinned CANN here, not assumed. Include `ParallelLMHead` + embedding tie consistent with vocab parallelism and AscendSampler integration (R3 determinism). Register all three arch names in `vllm_ascend/models/__init__.py`; note: OOT `ModelRegistry.register_model` overwrites the single in-tree dict entry and this override is process-global via the `vllm.general_plugins` entry point (`vllm_ascend:register_model`).
 - **validation**: CPU UT: import under faked NPU platform, build tiny random Qwen4Exp config, model constructs on meta device; server-side `--model` resolution picks Ascend class and the fork's `Qwen4Exp*Config` validators (`vllm/model_executor/models/config.py:858-916`) pass unmodified for Ascend launches (same arch names → same config contract); plugin-ordering UT incl. `VLLM_PLUGINS` exclusion behavior; grep-gate: no `triton` import reachable from package on 310P flag; dtype-policy table exists and every QSA/GDN/PLE module reads it (no local dtype literals).
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-15 (commit d64064d87) — Created importable/registered `vllm_ascend/models/qwen4_exp/` package + authoritative `Qwen4ExpDtypePolicy` (float16 main + fp32 accumulation; fp32 SSM cache; float16 KV/conv/QSA/indexer/PLE-projection/gated-residual/LM-head/embedding; fp32 router/logits/PLE-norm-accum/gated-residual-accum). Access via `ASCEND_QWEN4EXP_DTYPE_POLICY` or `.from_vllm_config()`; `REQUIRED_CAST_SITES` + `policy.cast_site(name)`; frozen dataclass, `dtype_policy.py` is the ONLY file with dtype literals (source-scan test forbids bare literals elsewhere; grep-gate confirms no triton import in package). `AscendQwen4ExpForCausalLM` constructs on meta (ParallelLMHead + VocabParallelEmbedding + tie; state-cls/mamba-dtype/load_weights/get_expert_mapping hooks); `AscendQwen4ExpForConditionalGeneration` rejects multimodal at first gate. Registered all 3 arch names in `models/__init__.py` (additive lazy-string, verified non-breaking). **Adaptation**: installed host vLLM is 0.22.0 and lacks the fork's `Qwen4ExpTextConfig`, so the skeleton duck-types on `hf_text_config` (downstream ports from fork `nvidia/*` still reference the fork tree). **CANN dtype support (float16 main + fp32 accum) is a documented assumption to verify on hardware** — override in `dtype_policy.py`, not call sites. Stubs: forwards→T4.x/T5.x/T6.1; load_weights/fused-expert→T3.1; state-cls & mamba shape hooks→later; ple_layer→T1.3, qsa→T1.4, indexer_qsa→T1.5, ngram_embedding→T1.3; MTP registered, wired in S2. 13 new UTs green (`--noconftest`), ruff clean.
+- **files edited/created**: `vllm_ascend/models/qwen4_exp/{__init__,dtype_policy,model,ple_layer,qsa,indexer_qsa,ngram_embedding,mtp}.py` (new), `vllm_ascend/models/__init__.py` (registration), `tests/ut/qwen38_1m/{test_qwen4exp_registration,test_qwen4exp_dtype_policy}.py` (new)
 
 ### T1.3 [asc]: 310P Qwen4Exp model state (PLE n-gram context)
 - **depends_on**: [T1.2]
@@ -292,9 +292,9 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: fork `vllm/transformers_utils/configs/qwen4_exp.py` handling + `vllm/model_executor/models/config.py`, asc `_310p/worker/v2/rope.py`, `vllm/config` docs snippets
 - **description**: Native 262,144 mode unchanged. Add explicit, validated extension config (rope_type/scaling + max positions) supplied via deployment metadata; refuse `max_model_len > 262,144` without it (no silent raise). Implement/verify yarn (or Qwen-specified) scaling up to 1,048,576 against Qwen reference formula on CPU; publish the authoritative parameter set (PRD open decision #5 → record in plan log when fixed).
 - **validation**: CPU UT: cos/sin tables at positions {0, 262143, 262144, 524288, 1048575} equal reference formula within FP tolerance; startup guard UT rejects bare max_model_len bump.
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-15 (asc commit 83c8ea1ed, fork commit 3ab5dda) — Native 262,144 window unchanged; added an explicit, validated YaRN extension path that REFUSES `max_model_len > 262144` without a valid config (no silent auto-scale), enforced in both the fork config validation (`Qwen4ExpForConditionalGenerationConfig.verify_and_update_config`) and the 310P worker rope module. **Authoritative 1M RoPE set (resolves open decision #5)**: rope_type="yarn", rope_theta=10_000_000.0, factor=4.0, original_max_position_embeddings=262_144, beta_fast=32, beta_slow=1, mscale=yarn_get_mscale(4.0)≈1.13863, partial_rotary_factor=0.25 (rotary_dim=64); extends to 1_048_576. CPU cos/sin verified at {0,262143,262144,524288,1048575} against an independent reference and vLLM's canonical YaRN at atol=rtol=1e-4. 14 asc UTs green (`--noconftest`); ruff clean. Fork guard verified by loading fork `config.py` standalone (fork conftest can't collect here — missing compiled libs). Two disjoint fork commits (T1.1 6a4da62, T7.1 3ab5dda) landed cleanly in sequence.
+- **files edited/created**: asc: `vllm_ascend/_310p/worker/v2/rope.py` (extended), `tests/ut/qwen38_1m/test_rope_yarn.py` (new); fork: `vllm/model_executor/models/config.py` (extended), `tests/models/qwen4_exp/test_config.py` (extended)
 
 ### T7.2: Context-window budgeting (input + output + drafts)
 - **depends_on**: [T7.1]
@@ -500,6 +500,6 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 2. C8 accuracy viability with BF16 index keys (T8.1/D4).
 3. DCP row-exchange vs C8 dequant cost on real topology (D4).
 4. PLE physical sharing vs row-partitioned owners (T4.1/D1).
-5. Authoritative 1M RoPE parameter set (T7.1).
+5. Authoritative 1M RoPE parameter set (T7.1). **RESOLVED (T7.1, 2026-09-15)**: yarn, theta=10_000_000.0, factor=4.0, orig_max_pos=262_144, beta_fast=32, beta_slow=1, mscale≈1.13863, partial_rotary_factor=0.25 → 1_048_576.
 6. Frozen G2 quality threshold (T0.1).
 7. Supported CANN/vllm-ascend deployment baseline (T0.2).
