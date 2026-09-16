@@ -164,7 +164,13 @@ class AscendQwen4ExpQSAAttention(nn.Module):
         self.rotary_dim = int(self.head_dim * partial_rotary_factor)
         if self.rotary_dim % 2:
             raise ValueError("partial rotary_dim must be even")
-        self.rope_theta = float(getattr(config, "rope_theta", _DEFAULT_ROPE_THETA))
+        # Real Qwen4Exp configs nest ``rope_theta`` under ``rope_parameters``
+        # (checkpoint value 1e7); older/tiny configs carry a top-level key. Read
+        # the top-level key first, then fall back to ``rope_parameters``.
+        rope_parameters = getattr(config, "rope_parameters", None) or {}
+        self.rope_theta = float(
+            getattr(config, "rope_theta", None) or rope_parameters.get("rope_theta") or _DEFAULT_ROPE_THETA
+        )
         self.rms_norm_eps = float(getattr(config, "rms_norm_eps", _DEFAULT_RMS_NORM_EPS))
 
         # Per-head GemmaRMSNorm weights (applied as ``1 + weight``); zero-init is
