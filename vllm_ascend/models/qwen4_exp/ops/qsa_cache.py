@@ -285,10 +285,178 @@ def build_qsa_indexer_metadata(
     )
 
 
+# =========================================================================
+# Chunked prefill (plan T6.3)
+# =========================================================================
+# The QSA side caches are advanced one scheduler chunk at a time during prefill.
+# The 310P MRV2 metadata builder invokes :func:`build_qsa_indexer_metadata` (the
+# Triton-free ``_build_qsa_metadata_torch`` fallback) once per chunk with that
+# chunk's ``query_start_loc`` / ``seq_lens``. The helpers below plan the chunk
+# split, build the per-chunk metadata, and advance the ring / compressed caches
+# so the final cache state is *bit-identical* whether a sequence is processed
+# whole or split into chunks (see :func:`run_qsa_prefill`).
+
+# Convenience re-export of the chunk-size knob (authoritative default lives in
+# ``vllm_ascend.models.qwen4_exp.chunk_config``).
+QSA_DEFAULT_PREFILL_CHUNK_SIZE = 4096
+
+
+def plan_qsa_prefill_chunks(
+    seq_len: int,
+    chunk_size: int,
+    *,
+    resume_from: int = 0,
+) -> list[tuple[int, int]]:
+    """Split ``[resume_from, seq_len)`` into ``(chunk_start, chunk_len)`` tiles.
+
+    Chunks are ``chunk_size`` tokens each with a (possibly) ragged final chunk.
+    ``resume_from`` is the preemption-aware recompute offset (0 recomputes the
+    whole side cache on resume, the fail-closed default).
+    """
+    if seq_len < 0:
+        raise ValueError("seq_len must be non-negative")
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be positive")
+    if not 0 <= resume_from <= seq_len:
+        raise ValueError("resume_from must lie in [0, seq_len]")
+    chunks: list[tuple[int, int]] = []
+    start = resume_from
+    while start < seq_len:
+        length = min(chunk_size, seq_len - start)
+        chunks.append((start, length))
+        start += length
+    return chunks
+
+
+def build_qsa_prefill_chunk_metadata(
+    block_table: torch.Tensor,
+    chunk_start: int,
+    chunk_len: int,
+    *,
+    compress_ratio: int,
+    ring_size: int,
+    storage_block_size: int,
+    req_index: int = 0,
+) -> QSAIndexerMetadata:
+    """Build QSA metadata for one prefill chunk of a single request.
+
+    Presents the chunk to :func:`build_qsa_indexer_metadata` exactly as the MRV2
+    metadata builder would: a single-request ``query_start_loc = [0, chunk_len]``
+    and ``seq_lens = [chunk_start + chunk_len]`` so the logical positions resolve
+    to the *absolute* ``chunk_start + arange(chunk_len)``. Slot mappings are thus
+    keyed by absolute position and address the same physical rows a whole-sequence
+    build would.
+    """
+    if chunk_len <= 0:
+        raise ValueError("chunk_len must be positive")
+    if chunk_start < 0:
+        raise ValueError("chunk_start must be non-negative")
+    if block_table.ndim != 2:
+        raise ValueError("block_table must be two-dimensional")
+    device = block_table.device
+    req_block_table = block_table[req_index : req_index + 1]
+    query_start_loc = torch.tensor([0, chunk_len], dtype=torch.int32, device=device)
+    seq_lens = torch.tensor([chunk_start + chunk_len], dtype=torch.int32, device=device)
+    return build_qsa_indexer_metadata(
+        query_start_loc,
+        seq_lens,
+        req_block_table,
+        chunk_len,
+        compress_ratio=compress_ratio,
+        ring_size=ring_size,
+        storage_block_size=storage_block_size,
+    )
+
+
+def advance_qsa_prefill_caches(
+    ring_cache_flat: torch.Tensor,
+    compressed_cache_flat: torch.Tensor,
+    metadata: QSAIndexerMetadata,
+    chunk_keys: torch.Tensor,
+) -> None:
+    """Scatter one chunk's keys into the ring + compressed caches in place.
+
+    The raw-key ring keeps the open group's suffix (one physical row per retained
+    token); the compressed history keeps one row per completed compression group.
+    Both writes are masked scatters, so tokens the metadata marks
+    :data:`PAD_SLOT_ID` are skipped -- matching the paged store kernels.
+    """
+    qsa_scatter_rows(ring_cache_flat, metadata.ring_slot_mapping, chunk_keys)
+    qsa_scatter_rows(compressed_cache_flat, metadata.compressed_slot_mapping, chunk_keys)
+
+
+def _cdiv_int(a: int, b: int) -> int:
+    """Ceil division for positive ints (local, keeps this module import-light)."""
+    return -(-a // b)
+
+
+def _qsa_prefill_block_table(seq_len: int, storage_block_size: int, device: torch.device) -> torch.Tensor:
+    """Identity single-request block table covering ``seq_len`` compressed rows.
+
+    Physical block ``i`` maps to logical block ``i`` (``block_table = arange``),
+    so a compressed group at logical position ``p`` lands at flat slot ``p``
+    regardless of chunking. Column 0 doubles as the ring's fixed physical block.
+    """
+    num_compressed_rows = max(seq_len, 1)  # <= one compressed row per token
+    num_cols = _cdiv_int(num_compressed_rows, storage_block_size)
+    return torch.arange(num_cols, dtype=torch.int32, device=device).unsqueeze(0)
+
+
+def run_qsa_prefill(
+    keys: torch.Tensor,
+    *,
+    chunk_size: int,
+    compress_ratio: int,
+    ring_size: int,
+    storage_block_size: int,
+    resume_from: int = 0,
+    block_table: torch.Tensor | None = None,
+    ring_cache: torch.Tensor | None = None,
+    compressed_cache: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Advance the QSA ring + compressed caches over one request's prefill.
+
+    Splits ``keys`` (``[seq_len, head_dim]``) into ``chunk_size`` chunks, builds
+    per-chunk metadata and scatters each chunk into the side caches. The returned
+    ``(ring_cache, compressed_cache)`` are *bit-identical* to a single whole
+    sequence pass (``chunk_size >= seq_len``), which is the chunk-boundary
+    invariant T6.3 guarantees. ``resume_from`` supports the preemption-aware
+    recompute policy (recompute from 0 by default).
+    """
+    if keys.ndim != 2:
+        raise ValueError("keys must be [seq_len, head_dim]")
+    seq_len, head_dim = keys.shape
+    device = keys.device
+    if block_table is None:
+        block_table = _qsa_prefill_block_table(seq_len, storage_block_size, device)
+    if ring_cache is None:
+        ring_cache = torch.zeros((ring_size, head_dim), dtype=keys.dtype, device=device)
+    if compressed_cache is None:
+        num_blocks = int(block_table.shape[1])
+        compressed_cache = torch.zeros((num_blocks * storage_block_size, head_dim), dtype=keys.dtype, device=device)
+    for chunk_start, chunk_len in plan_qsa_prefill_chunks(seq_len, chunk_size, resume_from=resume_from):
+        metadata = build_qsa_prefill_chunk_metadata(
+            block_table,
+            chunk_start,
+            chunk_len,
+            compress_ratio=compress_ratio,
+            ring_size=ring_size,
+            storage_block_size=storage_block_size,
+        )
+        chunk_keys = keys[chunk_start : chunk_start + chunk_len]
+        advance_qsa_prefill_caches(ring_cache, compressed_cache, metadata, chunk_keys)
+    return ring_cache, compressed_cache
+
+
 __all__ = [
     "PAD_SLOT_ID",
+    "QSA_DEFAULT_PREFILL_CHUNK_SIZE",
     "QSAIndexerMetadata",
+    "advance_qsa_prefill_caches",
     "build_qsa_indexer_metadata",
+    "build_qsa_prefill_chunk_metadata",
+    "plan_qsa_prefill_chunks",
+    "run_qsa_prefill",
     "circular_qsa_slot_mapping",
     "compressed_qsa_slot_mapping",
     "qsa_gather_rows",

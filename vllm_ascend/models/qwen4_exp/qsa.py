@@ -22,7 +22,12 @@ float64 accumulation reproduces it within the declared QSA attention tolerance.
 No Triton/CUDA kernel is imported on the 310P path; the inner tile loop is a
 clean seam a fused NPU kernel replaces later.
 
-Chunked prefill (T6.3) and end-to-end decoder assembly (T6.4) are out of scope;
+Chunked prefill (T6.3) is wired through :mod:`.ops.qsa_cache` (the MRV2
+torch-fallback metadata builder advances the ring / compressed side caches one
+chunk at a time, bit-identically to a whole pass); the chunk-size knob and the
+preemption-aware recompute policy live in :mod:`.chunk_config` and are attached
+here as :attr:`AscendQwen4ExpQSAAttention.chunk_prefill_policy` for the T6.4
+decoder assembly to read. End-to-end decoder assembly (T6.4) is out of scope;
 this module exposes the projection + attention seams they wire together.
 """
 
@@ -31,6 +36,7 @@ from __future__ import annotations
 import torch
 from torch import nn
 
+from .chunk_config import QSAChunkPrefillPolicy
 from .dtype_policy import ASCEND_QWEN4EXP_DTYPE_POLICY, Qwen4ExpDtypePolicy
 from .ops.qsa_attention import (
     QSAKVQuantHook,
@@ -117,6 +123,7 @@ class AscendQwen4ExpQSAAttention(nn.Module):
         config: object,
         layer_idx: int,
         dtype_policy: Qwen4ExpDtypePolicy = ASCEND_QWEN4EXP_DTYPE_POLICY,
+        chunk_prefill_policy: QSAChunkPrefillPolicy | None = None,
         prefix: str = "",
     ) -> None:
         super().__init__()
@@ -124,6 +131,11 @@ class AscendQwen4ExpQSAAttention(nn.Module):
         self.layer_idx = layer_idx
         self.prefix = prefix
         self.dtype_policy = dtype_policy
+        # T6.3 chunked-prefill knob + preemption-aware recompute policy. Prefill
+        # runs the ring / compressed side caches one chunk at a time via
+        # ``ops.qsa_cache.run_qsa_prefill``; this layer's ``forward`` is chunk
+        # agnostic (it attends over whatever context it is handed).
+        self.chunk_prefill_policy = chunk_prefill_policy or QSAChunkPrefillPolicy()
         self.qsa_dtype = dtype_policy.cast_site("qsa")
         self.kv_cache_dtype = dtype_policy.cast_site("kv_cache")
         self.accumulation_dtype = dtype_policy.cast_site("attention_accumulation")
