@@ -337,18 +337,18 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: `vllm_ascend/models/qsa_dcp/` (asc; may reuse `worker/dcp_utils.py`, `attention/context_parallel`), UTs
 - **description**: Sequence-shard main QSA K/V across 4 ranks; indexer history stays replicated. Map selected global positions → (owner rank, local slot); exchange **only** selected rows (no all-gather of 1M cache); deterministic top-k and output reduction across ranks. Validate purely on host with 4-process `gloo` simulation using the T6.4 eager layers.
 - **validation**: host multi-rank UT: 4-way DCP output equals single-rank BF16 reference within tolerance; transfer accounting proves only selected rows moved; determinism test across reruns.
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-16 (commit 741ec9f16) — New host-only package `vllm_ascend/models/qsa_dcp/`: sequence-shard main QSA K/V across 4 DCP ranks (round-robin/interleave-1, matching `get_dcp_local_seq_lens`); indexer history replicated so all ranks derive identical selection. Selected global positions → (owner rank, local slot); each rank gathers ONLY its owned selected rows, computes a local partial `(m,l,acc)`, partials combined by fixed-order online-softmax (exact = single softmax over the union; bitwise-stable). Validated vs T6.2/T6.4 single-rank eager reference: 4-way parity in-process AND a 4-process **gloo** sim within QSA tol (1e-8/1e-9, f64) incl. dense/sparse/zero-selection; **transfer accounting proves bytes_moved == selected_rows×row_bytes (K+V) ≪ whole-cache** (e.g. 3328 vs 10240 B — no 1M all-gather); determinism bitwise across reruns and two gloo spawns. RED→GREEN (naive non-rescaled merge caught by parity); 8 UTs; full suite **522 passed**; ruff clean; imports (never edits) qwen4_exp components. **Prototype only — D4 decides A vs B on hardware.** ⚠ Concurrency incident: a T8.1 commit swept these staged files in the shared index; the agent split history cleanly (T8.1 plan-doc recommitted b6a56cd0f, this commit 741ec9f16) — orchestrator verified tree byte-identical and no work lost.
+- **files edited/created**: `vllm_ascend/models/qsa_dcp/{__init__,sharding,transfer,attention,decoder,runtime}.py` (new), `tests/ut/qwen38_1m/test_qsa_dcp.py` (new)
 
 ### T8.3: 1M allocation projection and candidate decision record
 - **depends_on**: [T8.1, T8.2, T3.2]
 - **location**: `docs/source/developer_guide/Design_Documents/qwen38_flash_next_1m_cache_decision.md` (asc)
 - **description**: Combine manifest-derived model bytes (T3.2), cache layouts (T8.1/T8.2), workspace/fragmentation allowances into a per-chip projection table for both candidates at 1M; define exactly what D4 must measure and encode PRD §13 stop rules as acceptance formulas. **D4 (with hardware) is the sole decision authority — this task pre-decides nothing.**
 - **validation**: doc review; arithmetic reproduces PRD §6 baselines; each candidate's measured-vs-projected acceptance formula explicit.
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-16 (orchestrator-authored doc) — Wrote `qwen38_flash_next_1m_cache_decision.md` combining the MEASURED model bytes (31.88 GiB/chip) with T8.1 (C8 main 3.00 GiB/chip) / T8.2 (DCP4 BF16 main 6.00 GiB/chip) / T1.4 (indexer 0.75 GiB/chip) into a per-chip 1M projection: model+persistent cache = **A 35.70 GiB/chip, B 38.70 GiB/chip**. Headroom vs the 8 GiB floor across the 3 D1 free-per-chip scenarios (42.84/44.70/46.00 GiB): **Candidate B below floor in ALL scenarios; Candidate A clears only at ≥~44 GiB free/chip** — a projection finding (NOT a decision) that tightens the PRD §13 fallback-C risk under measured (+1.07 GiB/chip) bytes. Encoded PRD §13 stop rules as explicit A (accuracy-stop) / B (communication-stop) acceptance formulas and the exact D4 measurement list. **D4 remains sole decision authority.** **T3.2 relaxation**: doc uses measured exported model bytes in lieu of T3.2's checkpoint-blocked manifest simulation (which supersedes an estimate anyway); T3.2's peak-RSS/no-double-instantiation guarantee remains a separate checkpoint-blocked verification, noted in the doc. Authored by orchestrator (not a subagent) to avoid a shared-index commit race with T8.1/T8.2; arithmetic reproduced by script.
+- **files edited/created**: `docs/source/developer_guide/Design_Documents/qwen38_flash_next_1m_cache_decision.md` (new)
 
 ## Device wave (run only when the 4-chip host is available; strictly serial D1→D8 except D9)
 
