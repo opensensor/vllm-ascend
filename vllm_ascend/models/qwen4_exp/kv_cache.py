@@ -52,6 +52,7 @@ from vllm.utils.math_utils import cdiv
 from vllm.utils.torch_utils import get_dtype_size
 from vllm.v1.kv_cache_interface import (
     AttentionSpec,
+    FullAttentionSpec,
     KVCacheConfig,
     KVCacheGroupSpec,
     KVCacheSpec,
@@ -87,6 +88,25 @@ QWEN4EXP_MAX_MODEL_LEN_1M = QWEN4EXP_NATIVE_MAX_POSITION * 4  # 1_048_576
 # The C8 (8-bit) compressed-index layout uses e4m3 (1 byte) — permitted by the
 # QSA state backend's supported_kv_cache_dtypes. The raw ring stays 2-byte.
 QSA_C8_DTYPE = torch.float8_e4m3fn
+
+# --- Candidate A (plan T8.1): C8 *main* QSA K/V ---------------------------
+# The main QSA K/V cache is the full-context key/value store that sparse
+# attention reads (distinct from the compressed *indexer* history above). For
+# the Candidate A C8 layout it is stored in **signed symmetric INT8** (1 byte),
+# exactly half the fp16 main dtype (2 bytes). INT8 (not e4m3) is used here
+# because the quant is a dynamic per-(token, head) affine-free grid computed at
+# cache-write time — see :mod:`vllm_ascend.models.qwen4_exp.qsa_c8`.
+QSA_C8_MAIN_DTYPE = torch.int8
+
+# Main QSA sparse-attention geometry (mirrors
+# tests/ut/qwen38_1m/reference/qsa_attention_reference.py): 2 KV heads,
+# head dim 256. The exported model has 12 QSA layers (models/qwen4_exp/model.py).
+QSA_MAIN_KV_HEADS = 2
+QSA_MAIN_HEAD_DIM = 256
+QWEN4EXP_NUM_QSA_LAYERS = 12
+# PRD §6 footprint assumption: sequence-sharded across 4 ranks, no TP
+# duplication of the main K/V.
+QSA_SEQUENCE_SHARD_RANKS = 4
 
 # Out-of-band caches address their own pages; PAD marks an unmapped slot.
 _PAD_SLOT_ID = -1
@@ -243,6 +263,126 @@ def make_qsa_compressed_spec(
         dtype=_qsa_state_dtype(dtype_policy, c8=c8),
         **_mla_compression_kwarg(compress_ratio),
     )
+
+
+# =========================================================================
+# Candidate A (T8.1): main QSA K/V spec + byte-math (ADDITIVE hook)
+# =========================================================================
+def _qsa_main_kv_dtype(dtype_policy: Qwen4ExpDtypePolicy, *, c8: bool) -> torch.dtype:
+    """Element dtype for the *main* QSA K/V cache.
+
+    BF16 layout reads the authoritative ``qsa_main_dtype`` (fp16 on 310P,
+    2 bytes); the Candidate A C8 layout stores signed INT8 (1 byte).
+    """
+    if c8:
+        return QSA_C8_MAIN_DTYPE
+    return dtype_policy.qsa_main_dtype
+
+
+def make_qsa_main_kv_spec(
+    *,
+    dtype_policy: Qwen4ExpDtypePolicy = ASCEND_QWEN4EXP_DTYPE_POLICY,
+    attention_block_size: int = DEFAULT_ATTENTION_BLOCK_SIZE,
+    num_kv_heads: int = QSA_MAIN_KV_HEADS,
+    head_size: int = QSA_MAIN_HEAD_DIM,
+    c8: bool = False,
+) -> FullAttentionSpec:
+    """Materialize the main QSA K/V cache spec (full-context key/value store).
+
+    ``c8`` selects the Candidate A signed-INT8 layout (1 byte/element); its page
+    is exactly half the fp16 (``c8=False``) page. A ``FullAttentionSpec`` is used
+    because the main K/V stores both K and V over the full context (unlike the
+    key-only raw ring and the ratio-compressed indexer cache).
+    """
+    return FullAttentionSpec(
+        block_size=attention_block_size,
+        num_kv_heads=num_kv_heads,
+        head_size=head_size,
+        dtype=_qsa_main_kv_dtype(dtype_policy, c8=c8),
+    )
+
+
+def qsa_main_kv_bytes_per_chip(
+    *,
+    max_model_len: int = QWEN4EXP_MAX_MODEL_LEN_1M,
+    dtype_policy: Qwen4ExpDtypePolicy = ASCEND_QWEN4EXP_DTYPE_POLICY,
+    attention_block_size: int = DEFAULT_ATTENTION_BLOCK_SIZE,
+    num_kv_heads: int = QSA_MAIN_KV_HEADS,
+    head_size: int = QSA_MAIN_HEAD_DIM,
+    num_qsa_layers: int = QWEN4EXP_NUM_QSA_LAYERS,
+    shard_ranks: int = QSA_SEQUENCE_SHARD_RANKS,
+    c8: bool = False,
+) -> dict[str, Any]:
+    """Exact main-QSA-K/V footprint for one 1M request (BF16 or C8 layout).
+
+    Values are computed from the materialized ``FullAttentionSpec``'s
+    ``page_size_bytes`` (K+V) so the table validates spec materialization, not
+    just hand arithmetic. ``per_chip_bytes`` divides the aggregate over
+    ``shard_ranks`` sequence-sharded ranks (PRD §6: no TP duplication).
+
+    PRD §6 reconciliation (1M, 12 QSA layers, block 128, 2 KV heads, dim 256):
+      * BF16 page (K+V) = 2*128*2*256*2 = 262_144 B; per layer = 262_144 * 8_192
+        = 2.00 GiB; aggregate = 24.00 GiB; per chip (/4) = 6.00 GiB -> matches
+        the "Logical BF16 QSA K/V at 1M" row.
+      * C8 (INT8) halves every figure: 1.00 GiB/layer, 12.00 GiB aggregate,
+        3.00 GiB/chip sequence-sharded. (The PRD "8-bit ... 6.00 GiB/chip" row
+        is the *TP4-duplicated* comparison; Candidate A's sequence-sharded C8 is
+        the 3.00 GiB/chip win.)
+    """
+    if shard_ranks <= 0:
+        raise ValueError("shard_ranks must be positive")
+    spec = make_qsa_main_kv_spec(
+        dtype_policy=dtype_policy,
+        attention_block_size=attention_block_size,
+        num_kv_heads=num_kv_heads,
+        head_size=head_size,
+        c8=c8,
+    )
+    num_blocks = cdiv(max_model_len, attention_block_size)
+    per_layer_bytes = num_blocks * spec.page_size_bytes
+    aggregate_bytes = per_layer_bytes * num_qsa_layers
+    return {
+        "layout": "C8" if c8 else "BF16",
+        "max_model_len": max_model_len,
+        "attention_block_size": attention_block_size,
+        "num_kv_heads": num_kv_heads,
+        "head_size": head_size,
+        "num_qsa_layers": num_qsa_layers,
+        "shard_ranks": shard_ranks,
+        "state_dtype": str(_qsa_main_kv_dtype(dtype_policy, c8=c8)),
+        "element_size_bytes": get_dtype_size(_qsa_main_kv_dtype(dtype_policy, c8=c8)),
+        "page_bytes": spec.page_size_bytes,
+        "num_blocks": num_blocks,
+        "per_layer_bytes": per_layer_bytes,
+        "aggregate_bytes": aggregate_bytes,
+        "per_chip_bytes": aggregate_bytes // shard_ranks,
+    }
+
+
+def qsa_main_kv_bytes_table(
+    *,
+    max_model_len: int = QWEN4EXP_MAX_MODEL_LEN_1M,
+    dtype_policy: Qwen4ExpDtypePolicy = ASCEND_QWEN4EXP_DTYPE_POLICY,
+    attention_block_size: int = DEFAULT_ATTENTION_BLOCK_SIZE,
+    num_kv_heads: int = QSA_MAIN_KV_HEADS,
+    head_size: int = QSA_MAIN_HEAD_DIM,
+    num_qsa_layers: int = QWEN4EXP_NUM_QSA_LAYERS,
+    shard_ranks: int = QSA_SEQUENCE_SHARD_RANKS,
+) -> dict[str, dict[str, Any]]:
+    """The BF16-vs-C8 main-QSA-K/V byte table for ``max_model_len``."""
+    common = dict(
+        max_model_len=max_model_len,
+        dtype_policy=dtype_policy,
+        attention_block_size=attention_block_size,
+        num_kv_heads=num_kv_heads,
+        head_size=head_size,
+        num_qsa_layers=num_qsa_layers,
+        shard_ranks=shard_ranks,
+    )
+    return {
+        "BF16": qsa_main_kv_bytes_per_chip(c8=False, **common),
+        "C8": qsa_main_kv_bytes_per_chip(c8=True, **common),
+    }
 
 
 # =========================================================================
@@ -603,9 +743,14 @@ __all__ = [
     "INDEXER_N_HEADS",
     "INDEXER_TOKEN_BUDGET",
     "QSA_C8_DTYPE",
+    "QSA_C8_MAIN_DTYPE",
+    "QSA_MAIN_HEAD_DIM",
+    "QSA_MAIN_KV_HEADS",
+    "QSA_SEQUENCE_SHARD_RANKS",
     "QSA_STATE_BACKEND_NAME",
     "QWEN4EXP_MAX_MODEL_LEN_1M",
     "QWEN4EXP_NATIVE_MAX_POSITION",
+    "QWEN4EXP_NUM_QSA_LAYERS",
     "build_qsa_metadata_torch",
     "build_qwen4exp_kv_cache_config",
     "build_qwen4exp_kv_cache_groups",
@@ -613,9 +758,12 @@ __all__ = [
     "circular_qsa_slot_mapping",
     "compressed_qsa_slot_mapping",
     "make_qsa_compressed_spec",
+    "make_qsa_main_kv_spec",
     "make_qsa_raw_ring_spec",
     "qsa_cache_bytes_per_chip",
     "qsa_cache_bytes_table",
+    "qsa_main_kv_bytes_per_chip",
+    "qsa_main_kv_bytes_table",
     "qsa_ring_capacity",
     "qsa_scheduler_block_size",
 ]
