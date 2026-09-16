@@ -303,3 +303,16 @@ def register_ascend_kv_cache_specs() -> None:
         manager_class=SlidingWindowManager,
         uniform_type_base_spec=SlidingWindowMLASpec,
     )
+
+    # Qwen4Exp QSA raw index-key ring (plan T1.4). The pinned vLLM lane lacks
+    # CircularBufferSpec, so the ring is materialized as a key-only Ascend spec
+    # (its own uniform group). The compressed QSA index rides the upstream
+    # MLAAttentionSpec (already registered). Import lazily to keep this core
+    # module free of the model package's heavier imports at register time.
+    from vllm_ascend.models.qwen4_exp.kv_cache import AscendQSARawRingSpec
+
+    KVCacheSpecRegistry.register(
+        kvcache_spec_cls=AscendQSARawRingSpec,
+        manager_class=FullAttentionManager,
+        uniform_type_base_spec=AscendQSARawRingSpec,
+    )

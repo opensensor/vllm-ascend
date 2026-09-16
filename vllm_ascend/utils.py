@@ -650,6 +650,19 @@ def get_kv_cache_tensor_layers(kv_cache_tensor) -> list[str]:
     return kv_cache_tensor.layers
 
 
+def qsa_state_pages_use_triton() -> bool:
+    """Whether Qwen4Exp QSA side-cache pages/metadata use a Triton kernel.
+
+    Always ``False`` on Ascend (plan T1.4): the 310P path has no Triton QSA
+    kernel (the fork's kernel targets CUDA), so QSA raw-ring / compressed-index
+    pages and their slot mapping are built with the pure-torch fallback
+    (``build_qsa_metadata_torch``) advertised by ``AscendQSAStateBackend``.
+    """
+    from vllm_ascend.models.qwen4_exp.kv_cache import AscendQSAStateBackend
+
+    return AscendQSAStateBackend.uses_triton()
+
+
 def get_max_hidden_layers(hf_config) -> int:
     cfg_dict = hf_config.to_dict()
     layer_counts = []

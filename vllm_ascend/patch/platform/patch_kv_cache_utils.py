@@ -105,7 +105,33 @@ def _ascend_resolve_kv_cache_block_sizes(
         hash_block_size = math.gcd(*group_block_sizes)
         return scheduler_block_size, hash_block_size
 
+    # Qwen4Exp QSA (plan T1.4): the raw index-key ring is a CircularBufferSpec
+    # analogue whose block_size is its ring capacity (e.g. 4, or 8 with
+    # speculative lookahead), which is smaller than and must divide the
+    # attention block size. DEVIATION: the pinned vLLM lane's
+    # resolve_kv_cache_block_sizes does not account for such sub-attention-block
+    # ring groups, so when a QSA ring group is present we set the scheduler
+    # block size to lcm(all group block sizes) so every ring capacity aligns to
+    # the scheduler grid (see qsa_scheduler_block_size).
+    if _has_qwen4exp_qsa_ring_group(groups):
+        scheduler_block_size = math.lcm(*group_block_sizes)
+        if not cache_config.enable_prefix_caching:
+            return scheduler_block_size, scheduler_block_size
+        hash_block_size = math.gcd(*group_block_sizes)
+        return scheduler_block_size, hash_block_size
+
     return _orig_resolve_kv_cache_block_sizes(kv_cache_config, vllm_config)
+
+
+def _has_qwen4exp_qsa_ring_group(groups: list[KVCacheGroupSpec]) -> bool:
+    """Whether any group is a Qwen4Exp QSA raw-ring (key-only ring buffer)."""
+    try:
+        from vllm_ascend.models.qwen4_exp.kv_cache import AscendQSARawRingSpec
+    except Exception:  # pragma: no cover - model package optional at patch time
+        return False
+    return any(
+        isinstance(group.kv_cache_spec, AscendQSARawRingSpec) for group in groups
+    )
 
 
 def _get_kimi_k3_dspark_mixed_kv_cache_groups(
