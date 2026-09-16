@@ -220,9 +220,9 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: `vllm_ascend/models/qwen4_exp/ple_layer.py`, `ops/`
 - **description**: Port `Qwen4ExpPLELayer` from `nvidia/ple_layer.py`: row gather via the T4.1 host PLE method interface, projection (FP16/FP32 per T1.2 dtype policy), integration point in decoder layer. Because T4.3 both consumes T4.1 and is a prerequisite of D1's transport pick, order inside the task is: land against transport (b) first (CPU-testable), then re-run parity against (a); D1 re-measures both. CPU eager path. No device hot-path `.item()`; batched lookups only.
 - **validation**: CPU parity UT vs T0.6 reference at short context (declared tolerances); PLE row identity test feeds T4.2 rows.
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-15 (commit 03d889547) — Ported `Qwen4ExpPLELayer` to a Triton-free host path: `AscendQwen4ExpPLELayer` does batched T4.1 `gather_rows` (one lookup over `[T, num_ngram_heads]`, no per-row sync) → merged K/V projection (`ple_embed_dim→[hc_hidden,hidden]`, TP-replicated, `ple_projection_dtype`) → gate → dilated causal short-conv + residual. New `ops/ple.py` (`ple_gate`, `ple_short_conv`, `ple_grouped_rmsnorm`) accumulates in `promote_types(input, ple_norm_accumulation_dtype)` — fp32 device / fp64 parity. All dtypes from policy (no literals). Parity vs T0.6 `ple_reference`: **max abs err 0.0** (bitwise, fp64; tol 1e-12/1e-10) at T=1/3/8/16; row-identity exact (feeds T4.2) via both transports (b) /dev/shm and (a) pinned-UVA mocked. Stateful decode/spec short-conv routing left to the runner (stateless full-seq conv here). Did not touch `ops/__init__.py`. 11 UTs (+13 PLE-host sibling green), ruff clean.
+- **files edited/created**: `vllm_ascend/models/qwen4_exp/ple_layer.py` (filled stub), `vllm_ascend/models/qwen4_exp/ops/ple.py` (new), `tests/ut/qwen38_1m/test_ple_layer.py` (new)
 
 ### T4.4: Async row prefetch, dedup and PLE metrics
 - **depends_on**: [T4.1, T4.3]
@@ -247,9 +247,9 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: state ops in `_310p/worker/v2/model_state.py`, `vllm_ascend/models/qwen4_exp/` , UT `tests/ut/qwen38_1m/test_gdn_lifecycle.py`
 - **description**: Copy/slot-remap semantics across 4 ranks (per-rank state replicated per TP rules — no aliasing between requests, block reuse, preemption→resume with correct state or explicit fail-closed, request completion). Reuse `MambaAttentionBackendEnum` copy-func pattern (`nvidia/model.py:802`).
 - **validation**: CPU UT: chunked-vs-unchunked identical outputs; interleaved 2-request sequence + forced preemption keeps outputs equal to unpreempted run; aliasing test (two requests never point to same state block).
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-15 (commit 9347e0f28) — Host-safe GDN copy/slot-remap machinery: `GDNStateCopySpec` + conv/temporal copy funcs mirroring the fork `MambaStateCopyFuncCalculator.gated_delta_net_state_copy_func()` keyed by `MambaAttentionBackendEnum.GDN_ATTN`; `Qwen4ExpGDNStateLayout.from_params` (per-rank conv/recurrent shapes+dtypes from T1.2 policy: ssm fp32, conv fp16); `Qwen4ExpGDNStatePool` — no-alias slot pool that zeroes on free AND allocate (clean reuse), fail-closed on double-allocate/exhaustion, `preempt()` drops the block (resume must re-seed). Wired per-TP-rank pools + lifecycle fan-out (`gdn_begin/complete/preempt_request`, `gdn_step`) into `Ascend310PQwen4ExpModelState`. UT (fp64, rtol 1e-10/atol 1e-12): chunked==unchunked (both engines), interleaved preemption==unpreempted (B force-preempted→recompute; A untouched, B non-aliasing), no-alias across churn + per-rank. 20 UTs; siblings still green (89 total across lifecycle+wiring+model_state), ruff clean.
+- **files edited/created**: `vllm_ascend/models/qwen4_exp/qwen4exp_gdn.py` (+lifecycle), `vllm_ascend/_310p/worker/v2/model_state.py` (+per-rank pools/fan-out), `tests/ut/qwen38_1m/test_gdn_lifecycle.py` (new)
 
 ### T6.1: QSA indexer on 310P
 - **depends_on**: [T1.2, T0.6]
