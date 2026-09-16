@@ -37,8 +37,9 @@ Pure-eager reference math stands in for internals not yet wired, each tagged:
   path is TODO(T3.x), checkpoint-blocked).
 * **dense full attention** -- eager causal GQA (used only when a layer is
   ``full_attention`` without an indexer config).
-* **n-gram id hashing** -- a deterministic stub feeding real PLE row gather
-  (real SplitMix64 hashing is TODO(T1.3) in ``AscendQwen4ExpNGramEmbedding``).
+* **n-gram id hashing** -- real SplitMix64 hashing via
+  ``AscendQwen4ExpNGramEmbedding.compute_ngram_ids`` (T4.2-verified); ids feed the
+  real PLE row gather (bounded to a synthetic table on the host boot path).
 
 Every dtype is read from the authoritative :mod:`dtype_policy`. No Triton/CUDA
 module is imported on the 310P path (the GDN ``eager`` backend and the
@@ -90,7 +91,7 @@ from .moe import (
     swiglu_gate_up,
     w8a8_grouped_experts,
 )
-from .ngram_embedding import AscendPLEPinnedHostEmbeddingMethod
+from .ngram_embedding import AscendPLEPinnedHostEmbeddingMethod, AscendQwen4ExpNGramEmbedding
 from .ple_layer import AscendQwen4ExpPLELayer
 from .qsa import (
     AscendQwen4ExpQSAAttention,
@@ -514,13 +515,46 @@ class _EagerSparseMoE(nn.Module):
         return out.to(self.params_dtype)
 
 
+def _scalar_eos(config: object) -> int:
+    """A single EOS id from a config that may omit it or store a list.
+
+    The real Qwen4Exp text config carries ``eos_token_id`` as an int, but the
+    generation config / some duck configs store a ``[primary, alt]`` list, and
+    tiny random test configs omit it entirely.
+    """
+    eos = getattr(config, "eos_token_id", 0)
+    if isinstance(eos, (list, tuple)):
+        eos = eos[0] if eos else 0
+    return int(eos or 0)
+
+
+class _NGramConfigProxy:
+    """Config proxy guaranteeing a scalar ``eos_token_id`` for the n-gram hasher.
+
+    ``AscendQwen4ExpNGramEmbedding`` reads ``config.eos_token_id`` directly; this
+    proxy supplies a scalar (real configs pass through unchanged) so construction
+    is robust to list-valued or omitted EOS on duck/tiny configs.
+    """
+
+    def __init__(self, base: object, eos_token_id: int) -> None:
+        self._base = base
+        self._eos_token_id = eos_token_id
+
+    def __getattr__(self, name: str) -> object:
+        if name == "eos_token_id":
+            return self._eos_token_id
+        return getattr(self._base, name)
+
+
 class _PLEInjection(nn.Module):
     """Wire the real PLE injection layer (T4.x) with a host-safe pinned table.
 
-    The n-gram id hashing is stubbed here (TODO(T1.3): real SplitMix64 hashing
-    lands in ``AscendQwen4ExpNGramEmbedding`` and matches the T0.6
-    ``ngram_hash_reference``); the row gather, projection, gate and dilated
-    short-conv are the real ``AscendQwen4ExpPLELayer`` component.
+    The n-gram id hashing is REAL: ``AscendQwen4ExpNGramEmbedding.compute_ngram_ids``
+    (SplitMix64, T4.2-verified against the checkpoint's ``layer_multipliers``). The
+    row gather, projection, gate and dilated short-conv are the real
+    ``AscendQwen4ExpPLELayer`` component. On the host eager-boot path the global row
+    ids are reduced modulo a synthetic table; the real 128-shard gather is the
+    load_weights / device (D2) path.
     """
 
     # Rows in the stubbed PLE table. Sized generously above vocab so the stub
@@ -530,12 +564,25 @@ class _PLEInjection(nn.Module):
     def __init__(self, *, config: object, layer_idx: int, dtype_policy: Qwen4ExpDtypePolicy) -> None:
         super().__init__()
         self.dtype_policy = dtype_policy
-        self.eos_token_id = int(getattr(config, "eos_token_id", 0) or 0)
+        self.eos_token_id = _scalar_eos(config)
         self.ple = AscendQwen4ExpPLELayer(config=config, layer_idx=layer_idx, dtype_policy=dtype_policy)
         self.num_ngram_heads = self.ple.num_ngram_heads
         self.per_head_dim = self.ple.per_head_dim
         self.ngram_size = int(config.ngram_size)
         self._ple_method: AscendPLEPinnedHostEmbeddingMethod | None = None
+        # Real SplitMix64 n-gram hashing (T4.2-verified). Constructed without a
+        # ple_method: only ``compute_ngram_ids`` is used here (no gather), so the
+        # global row ids match the checkpoint's layer_multipliers exactly. A tiny
+        # duck config that omits the full n-gram vocab layout (e.g. the meta-boot
+        # smoke) falls back to the deterministic id stub for control flow only.
+        try:
+            self.ngram: AscendQwen4ExpNGramEmbedding | None = AscendQwen4ExpNGramEmbedding(
+                config=_NGramConfigProxy(config, self.eos_token_id),
+                ple_dense_layer_id=0,
+                dtype_policy=dtype_policy,
+            )
+        except (AttributeError, ValueError):
+            self.ngram = None
 
     def _ensure_ple_method(self, device: torch.device) -> None:
         if self.ple.ple_method is not None:
@@ -557,12 +604,28 @@ class _PLEInjection(nn.Module):
         self.ple.ple_method = method
         self._ple_method = method
 
-    def _stub_ngram_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
-        """Deterministic n-gram id stub (TODO(T1.3): real SplitMix64 hashing).
+    def _real_ngram_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Real SplitMix64 n-gram row ids for a single eager-boot request.
 
-        Combines each token with its predecessors (EOS-padded before position 0)
-        per head, then reduces modulo the stub table size. Produces valid,
-        deterministic table rows so the real gather/gate/short-conv runs.
+        Uses ``AscendQwen4ExpNGramEmbedding.compute_ngram_ids`` (T4.2-verified to
+        match the checkpoint's ``layer_multipliers``). The eager-boot path has no
+        model state, so we present one request (``query_start_loc=[0, seq_len]``)
+        with an EOS-padded history (``ngram_context``). The returned ids index the
+        full 320M-row padded vocab; for the host boot we reduce them modulo the
+        synthetic table (the real 128-shard gather is the load_weights/D2 path).
+        """
+        seq_len = int(input_ids.shape[0])
+        device = input_ids.device
+        query_start_loc = torch.tensor([0, seq_len], dtype=torch.int64, device=device)
+        ngram_context = torch.full((1, self.ngram_size - 1), self.eos_token_id, dtype=torch.int64, device=device)
+        global_ids = self.ngram.compute_ngram_ids(input_ids, query_start_loc, ngram_context)
+        return global_ids.remainder(self._STUB_TABLE_ROWS)
+
+    def _stub_ngram_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Deterministic id fallback for a tiny duck config with no n-gram vocab.
+
+        Only used by the dummy-weight control-flow boot when the real SplitMix64
+        hasher could not be constructed; real configs use :meth:`_real_ngram_ids`.
         """
         seq_len = input_ids.shape[0]
         tokens = input_ids.to(torch.int64)
@@ -580,7 +643,7 @@ class _PLEInjection(nn.Module):
 
     def forward(self, hidden_states: torch.Tensor, input_ids: torch.Tensor) -> torch.Tensor:
         self._ensure_ple_method(hidden_states.device)
-        ngram_ids = self._stub_ngram_ids(input_ids)
+        ngram_ids = self._real_ngram_ids(input_ids) if self.ngram is not None else self._stub_ngram_ids(input_ids)
         return self.ple(hidden_states, ngram_ids)
 
 
