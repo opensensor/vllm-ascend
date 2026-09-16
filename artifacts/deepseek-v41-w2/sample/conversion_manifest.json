@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "converter": "tools/deepseek_w2/w2_convert.py (E1.1)",
+  "source_dir": "/run/media/matteius/20TB-drive/models/dealignai/DeepSeek-V4.1-Flash-UNCENSORED-FP8",
+  "source_expert_format": {
+    "weight_dtype": "I8 (FP4 E2M1, 2 codes/byte, low-nibble-first)",
+    "scale_dtype": "F8_E8M0 (ue8m0, value=2**(byte-127))",
+    "group_size": 32
+  },
+  "target_format": "packed-W2 (tools/deepseek_w2/w2_format.py)",
+  "tensors": [
+    {
+      "tensor": "layers.6.ffn.experts.0.w1.weight",
+      "source_dtype": "I8",
+      "source_shape": [
+        2304,
+        2560
+      ],
+      "source_format": "mxfp4",
+      "source_dequant": "fp4_value * 2**(ue8m0_byte-127)",
+      "target_precision": "W2 (2-bit routed expert)",
+      "packing": {
+        "n_bits": 2,
+        "codes_per_byte": 4,
+        "grid": "signed two's-complement, symmetric",
+        "block_rows": 32,
+        "block_cols": 32,
+        "endianness": "little-endian by field index within byte"
+      },
+      "out_features": 2304,
+      "in_features": 5120,
+      "n_chunks": 9,
+      "peak_float_tile_bytes": 5242880,
+      "full_float_bytes": 47185920
+    },
+    {
+      "tensor": "layers.6.ffn.experts.0.w2.weight",
+      "source_dtype": "I8",
+      "source_shape": [
+        5120,
+        1152
+      ],
+      "source_format": "mxfp4",
+      "source_dequant": "fp4_value * 2**(ue8m0_byte-127)",
+      "target_precision": "W2 (2-bit routed expert)",
+      "packing": {
+        "n_bits": 2,
+        "codes_per_byte": 4,
+        "grid": "signed two's-complement, symmetric",
+        "block_rows": 32,
+        "block_cols": 32,
+        "endianness": "little-endian by field index within byte"
+      },
+      "out_features": 5120,
+      "in_features": 2304,
+      "n_chunks": 20,
+      "peak_float_tile_bytes": 2359296,
+      "full_float_bytes": 47185920
+    },
+    {
+      "tensor": "layers.6.ffn.experts.0.w3.weight",
+      "source_dtype": "I8",
+      "source_shape": [
+        2304,
+        2560
+      ],
+      "source_format": "mxfp4",
+      "source_dequant": "fp4_value * 2**(ue8m0_byte-127)",
+      "target_precision": "W2 (2-bit routed expert)",
+      "packing": {
+        "n_bits": 2,
+        "codes_per_byte": 4,
+        "grid": "signed two's-complement, symmetric",
+        "block_rows": 32,
+        "block_cols": 32,
+        "endianness": "little-endian by field index within byte"
+      },
+      "out_features": 2304,
+      "in_features": 5120,
+      "n_chunks": 9,
+      "peak_float_tile_bytes": 5242880,
+      "full_float_bytes": 47185920
+    }
+  ]
+}
