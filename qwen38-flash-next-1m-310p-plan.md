@@ -229,9 +229,9 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **location**: `vllm_ascend/models/qwen4_exp/ple_prefetch.py`
 - **description**: Batch/dedup requested rows; async H2D on dedicated stream(s) overlapped with compute; decode-loop must not sync per row. Metrics: host bytes, page faults, transfer bytes/step, hit rate, lookup latency (→TOBS schema).
 - **validation**: CPU-sim UT: dedup ratio on realistic access trace; decode step function completes without sync-point in simulated stream timeline; metrics emitted.
-- **status**: Not Completed
-- **log**:
-- **files edited/created**:
+- **status**: Completed
+- **log**: 2026-09-15 (commit dd982d559) — `AscendRowPrefetcher` wraps T4.1 `gather_rows` (duck-typed, no T4.1/T4.3 edits): per step flatten `[T,num_ngram_heads]` ids → `torch.unique` (batch+dedup) → split resident-cache hits vs page-fault misses → ONE batched async gather of misses on an injectable `PrefetchStream` → return handle immediately (compute overlaps) → single batched `wait()` join installs rows into an LRU resident cache and reassembles via inverse index. `SimulatedStream` models the NPU side stream host-side (timeline/wait_count/pending_count assertable). Evidence: dedup_ratio exact on repeated trace; 64 rows → wait_count==1; waits==steps over 12 steps; transfer pending during compute then 1 join. **TOBS metrics schema** `PLE_PREFETCH_METRIC_FIELDS = (host_bytes, page_faults, transfer_bytes, hit_rate, lookup_latency, requested_rows, unique_rows, cache_hits, dedup_ratio)` on per-step + aggregate dicts (aggregate adds steps, mean/list transfer_bytes_per_step). 12 UTs green, ruff clean. Unblocks TOBS.
+- **files edited/created**: `vllm_ascend/models/qwen4_exp/ple_prefetch.py` (new), `tests/ut/qwen38_1m/test_ple_prefetch.py` (new)
 
 ### T5.1: GDN wiring on 310P
 - **depends_on**: [T1.2, T0.6]
