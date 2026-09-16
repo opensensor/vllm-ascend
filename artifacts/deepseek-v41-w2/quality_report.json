@@ -1,0 +1,2354 @@
+{
+  "harness": "tools/deepseek_w2/w2_quality.py",
+  "proxy_note": "Host-side float SwiGLU proxy of the routed-expert MoE; identical seeded activations through FP4-source vs W2-artifact experts isolate the weight-quantisation error. Not the real Ascend fused-MoE kernel: final quality still needs a runtime/rental to confirm.",
+  "activation_note": "Plain float32 activations (no per-token INT8 act quant); both paths share them so the output delta is purely the weight-quant effect.",
+  "config": {
+    "source_dir": "/run/media/matteius/20TB-drive/models/dealignai/DeepSeek-V4.1-Flash-UNCENSORED-FP8",
+    "artifact_dir": "/run/media/matteius/20TB-drive/models/DeepSeek-V4.1-W2-310p",
+    "sample_layers": [
+      0,
+      8,
+      16,
+      24,
+      32,
+      39
+    ],
+    "sample_experts": [
+      0,
+      128,
+      383
+    ],
+    "seed": 0,
+    "profiles": [
+      {
+        "name": "unit_normal",
+        "tokens": 8,
+        "scale": 1.0
+      },
+      {
+        "name": "wide_normal",
+        "tokens": 8,
+        "scale": 3.0
+      },
+      {
+        "name": "narrow_normal",
+        "tokens": 8,
+        "scale": 0.25
+      }
+    ],
+    "rel_mse_budget": 0.05
+  },
+  "headline": {
+    "worst_expert": {
+      "layer": 24,
+      "expert": 128,
+      "w2_rel_mse": 1.1808328444627902,
+      "w2_cosine": 0.6052433127953935,
+      "w3_rel_mse": 0.2656739006100353,
+      "w3_cosine": 0.911684771487859,
+      "escalation": {
+        "3": 0.2656739006100353,
+        "4": 0.04553305092258882
+      }
+    },
+    "best_expert": {
+      "layer": 0,
+      "expert": 128,
+      "w2_rel_mse": 0.8372752029520253,
+      "w2_cosine": 0.6113945949943443,
+      "w3_rel_mse": 0.22759116135501245,
+      "w3_cosine": 0.9236982901132428,
+      "escalation": {
+        "3": 0.22759116135501245,
+        "4": 0.038720618957475805
+      }
+    },
+    "w2_rel_mse_median": 0.9770205922451807,
+    "w2_rel_mse_mean": 0.9997030065477589,
+    "w2_cosine_median": 0.5783822278392342,
+    "escalation_rel_mse_median_by_bits": {
+      "3": 0.26374682100887675,
+      "4": 0.045753013798780134
+    },
+    "engram_w4_rel_mse_mean": 0.018729832905893633
+  },
+  "ranking": [
+    {
+      "layer": 24,
+      "expert": 128,
+      "w2_rel_mse": 1.1808328444627902,
+      "w2_cosine": 0.6052433127953935,
+      "w3_rel_mse": 0.2656739006100353,
+      "w3_cosine": 0.911684771487859,
+      "escalation": {
+        "3": 0.2656739006100353,
+        "4": 0.04553305092258882
+      }
+    },
+    {
+      "layer": 24,
+      "expert": 0,
+      "w2_rel_mse": 1.1406357383270522,
+      "w2_cosine": 0.586904200565854,
+      "w3_rel_mse": 0.26946451878036254,
+      "w3_cosine": 0.9105564066194356,
+      "escalation": {
+        "3": 0.26946451878036254,
+        "4": 0.045972976674971446
+      }
+    },
+    {
+      "layer": 32,
+      "expert": 128,
+      "w2_rel_mse": 1.116704213919838,
+      "w2_cosine": 0.555342964279517,
+      "w3_rel_mse": 0.29803973491044355,
+      "w3_cosine": 0.9050347378034097,
+      "escalation": {
+        "3": 0.29803973491044355,
+        "4": 0.05132296958530316
+      }
+    },
+    {
+      "layer": 24,
+      "expert": 383,
+      "w2_rel_mse": 1.0752405503597053,
+      "w2_cosine": 0.5716819222554884,
+      "w3_rel_mse": 0.2714028729266936,
+      "w3_cosine": 0.9117049835788542,
+      "escalation": {
+        "3": 0.2714028729266936,
+        "4": 0.04749872470486555
+      }
+    },
+    {
+      "layer": 16,
+      "expert": 0,
+      "w2_rel_mse": 1.069246618403161,
+      "w2_cosine": 0.5817370980353068,
+      "w3_rel_mse": 0.26060439209161995,
+      "w3_cosine": 0.9123916468098271,
+      "escalation": {
+        "3": 0.26060439209161995,
+        "4": 0.04550076746888556
+      }
+    },
+    {
+      "layer": 32,
+      "expert": 0,
+      "w2_rel_mse": 1.0545406170996376,
+      "w2_cosine": 0.5505799808821106,
+      "w3_rel_mse": 0.28775248620278926,
+      "w3_cosine": 0.9060279419810658,
+      "escalation": {
+        "3": 0.28775248620278926,
+        "4": 0.05049504264513499
+      }
+    },
+    {
+      "layer": 32,
+      "expert": 383,
+      "w2_rel_mse": 1.0435585706617576,
+      "w2_cosine": 0.558562880806943,
+      "w3_rel_mse": 0.27273405553733276,
+      "w3_cosine": 0.9090774026970477,
+      "escalation": {
+        "3": 0.27273405553733276,
+        "4": 0.047457127108857265
+      }
+    },
+    {
+      "layer": 8,
+      "expert": 128,
+      "w2_rel_mse": 1.0318702075963737,
+      "w2_cosine": 0.5565488772522519,
+      "w3_rel_mse": 0.27234869189214,
+      "w3_cosine": 0.9112270694541021,
+      "escalation": {
+        "3": 0.27234869189214,
+        "4": 0.04733920638475597
+      }
+    },
+    {
+      "layer": 8,
+      "expert": 383,
+      "w2_rel_mse": 0.9878246469287847,
+      "w2_cosine": 0.5750273576431616,
+      "w3_rel_mse": 0.2618197414077182,
+      "w3_cosine": 0.9152030501376288,
+      "escalation": {
+        "3": 0.2618197414077182,
+        "4": 0.04500385768443044
+      }
+    },
+    {
+      "layer": 39,
+      "expert": 383,
+      "w2_rel_mse": 0.9662165375615768,
+      "w2_cosine": 0.48234871568216625,
+      "w3_rel_mse": 0.2849620330002214,
+      "w3_cosine": 0.9032417148698896,
+      "escalation": {
+        "3": 0.2849620330002214,
+        "4": 0.05734061482332679
+      }
+    },
+    {
+      "layer": 16,
+      "expert": 383,
+      "w2_rel_mse": 0.9633174699157182,
+      "w2_cosine": 0.5978002856549409,
+      "w3_rel_mse": 0.25326226902877863,
+      "w3_cosine": 0.9146621231857427,
+      "escalation": {
+        "3": 0.25326226902877863,
+        "4": 0.04376520455319965
+      }
+    },
+    {
+      "layer": 39,
+      "expert": 0,
+      "w2_rel_mse": 0.9599188092094236,
+      "w2_cosine": 0.5183241484527864,
+      "w3_rel_mse": 0.2743862640070695,
+      "w3_cosine": 0.907231646146068,
+      "escalation": {
+        "3": 0.2743862640070695,
+        "4": 0.05099594180957671
+      }
+    },
+    {
+      "layer": 0,
+      "expert": 383,
+      "w2_rel_mse": 0.9252246272053498,
+      "w2_cosine": 0.6236876366556466,
+      "w3_rel_mse": 0.23329550617423653,
+      "w3_cosine": 0.9217495893760059,
+      "escalation": {
+        "3": 0.23329550617423653,
+        "4": 0.04026658407365649
+      }
+    },
+    {
+      "layer": 16,
+      "expert": 128,
+      "w2_rel_mse": 0.9226646309138727,
+      "w2_cosine": 0.6196609439159351,
+      "w3_rel_mse": 0.24126463665424525,
+      "w3_cosine": 0.9190903338123602,
+      "escalation": {
+        "3": 0.24126463665424525,
+        "4": 0.040935635488299066
+      }
+    },
+    {
+      "layer": 8,
+      "expert": 0,
+      "w2_rel_mse": 0.9209915613834623,
+      "w2_cosine": 0.5838105442499636,
+      "w3_rel_mse": 0.24386586627062687,
+      "w3_cosine": 0.917811750564646,
+      "escalation": {
+        "3": 0.24386586627062687,
+        "4": 0.04192889182795189
+      }
+    },
+    {
+      "layer": 0,
+      "expert": 0,
+      "w2_rel_mse": 0.9181489459056165,
+      "w2_cosine": 0.6432932224230378,
+      "w3_rel_mse": 0.22113913704495558,
+      "w3_cosine": 0.9252835945385808,
+      "escalation": {
+        "3": 0.22113913704495558,
+        "4": 0.03774530113498601
+      }
+    },
+    {
+      "layer": 39,
+      "expert": 128,
+      "w2_rel_mse": 0.8804423250535168,
+      "w2_cosine": 0.532660883747378,
+      "w3_rel_mse": 0.24563378567084015,
+      "w3_cosine": 0.9123772982759784,
+      "escalation": {
+        "3": 0.24563378567084015,
+        "4": 0.047847893637160716
+      }
+    },
+    {
+      "layer": 0,
+      "expert": 128,
+      "w2_rel_mse": 0.8372752029520253,
+      "w2_cosine": 0.6113945949943443,
+      "w3_rel_mse": 0.22759116135501245,
+      "w3_cosine": 0.9236982901132428,
+      "escalation": {
+        "3": 0.22759116135501245,
+        "4": 0.038720618957475805
+      }
+    }
+  ],
+  "per_expert": [
+    {
+      "layer": 0,
+      "expert": 0,
+      "w2_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.9207758038443817,
+            "cosine": 0.6346934058810716
+          },
+          "wide_normal": {
+            "rel_mse": 0.9260886102612663,
+            "cosine": 0.6464167483360637
+          },
+          "narrow_normal": {
+            "rel_mse": 0.9075824236112013,
+            "cosine": 0.6487695130519782
+          }
+        },
+        "rel_mse_mean": 0.9181489459056165,
+        "cosine_mean": 0.6432932224230378
+      },
+      "w3_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.21837659231173523,
+            "cosine": 0.9263651356777352
+          },
+          "wide_normal": {
+            "rel_mse": 0.2252068782868284,
+            "cosine": 0.925340715244539
+          },
+          "narrow_normal": {
+            "rel_mse": 0.21983394053630317,
+            "cosine": 0.9241449326934683
+          }
+        },
+        "rel_mse_mean": 0.22113913704495558,
+        "cosine_mean": 0.9252835945385808
+      },
+      "escalation": {
+        "3": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.21837659231173523,
+              "cosine": 0.9263651356777352
+            },
+            "wide_normal": {
+              "rel_mse": 0.2252068782868284,
+              "cosine": 0.925340715244539
+            },
+            "narrow_normal": {
+              "rel_mse": 0.21983394053630317,
+              "cosine": 0.9241449326934683
+            }
+          },
+          "rel_mse_mean": 0.22113913704495558,
+          "cosine_mean": 0.9252835945385808
+        },
+        "4": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.036027020485561,
+              "cosine": 0.985306179103014
+            },
+            "wide_normal": {
+              "rel_mse": 0.03802951787126681,
+              "cosine": 0.9844330153324323
+            },
+            "narrow_normal": {
+              "rel_mse": 0.03917936504813023,
+              "cosine": 0.9844879115239229
+            }
+          },
+          "rel_mse_mean": 0.03774530113498601,
+          "cosine_mean": 0.984742368653123
+        }
+      },
+      "tensor_recon": {
+        "w1": {
+          "max_abs_err": 0.0416666716337204,
+          "rms_err": 0.013718125597042203,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w2": {
+          "max_abs_err": 0.0833333283662796,
+          "rms_err": 0.013408419021902335,
+          "half_step_bound_max": 0.0833333358168602,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w3": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.013561446041639629,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        }
+      }
+    },
+    {
+      "layer": 0,
+      "expert": 128,
+      "w2_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.8202316114970755,
+            "cosine": 0.6173186472830868
+          },
+          "wide_normal": {
+            "rel_mse": 0.8487557173451774,
+            "cosine": 0.6126795737035889
+          },
+          "narrow_normal": {
+            "rel_mse": 0.8428382800138225,
+            "cosine": 0.6041855639963571
+          }
+        },
+        "rel_mse_mean": 0.8372752029520253,
+        "cosine_mean": 0.6113945949943443
+      },
+      "w3_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.22820969226115514,
+            "cosine": 0.9251991413701519
+          },
+          "wide_normal": {
+            "rel_mse": 0.23467876724066702,
+            "cosine": 0.920597477699154
+          },
+          "narrow_normal": {
+            "rel_mse": 0.21988502456321518,
+            "cosine": 0.9252982512704223
+          }
+        },
+        "rel_mse_mean": 0.22759116135501245,
+        "cosine_mean": 0.9236982901132428
+      },
+      "escalation": {
+        "3": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.22820969226115514,
+              "cosine": 0.9251991413701519
+            },
+            "wide_normal": {
+              "rel_mse": 0.23467876724066702,
+              "cosine": 0.920597477699154
+            },
+            "narrow_normal": {
+              "rel_mse": 0.21988502456321518,
+              "cosine": 0.9252982512704223
+            }
+          },
+          "rel_mse_mean": 0.22759116135501245,
+          "cosine_mean": 0.9236982901132428
+        },
+        "4": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.03840090493640087,
+              "cosine": 0.9824029067934654
+            },
+            "wide_normal": {
+              "rel_mse": 0.03876512508353558,
+              "cosine": 0.981981889242266
+            },
+            "narrow_normal": {
+              "rel_mse": 0.03899582685249097,
+              "cosine": 0.9818390637345529
+            }
+          },
+          "rel_mse_mean": 0.038720618957475805,
+          "cosine_mean": 0.982074619923428
+        }
+      },
+      "tensor_recon": {
+        "w1": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.014348259880268516,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w2": {
+          "max_abs_err": 0.0833333283662796,
+          "rms_err": 0.01445355459367889,
+          "half_step_bound_max": 0.0833333358168602,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w3": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.014347541348467798,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        }
+      }
+    },
+    {
+      "layer": 0,
+      "expert": 383,
+      "w2_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.8988038023101879,
+            "cosine": 0.6310879237589159
+          },
+          "wide_normal": {
+            "rel_mse": 0.9036144189329167,
+            "cosine": 0.6324929061992632
+          },
+          "narrow_normal": {
+            "rel_mse": 0.9732556603729446,
+            "cosine": 0.6074820800087606
+          }
+        },
+        "rel_mse_mean": 0.9252246272053498,
+        "cosine_mean": 0.6236876366556466
+      },
+      "w3_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.22715841498909956,
+            "cosine": 0.9234065923493974
+          },
+          "wide_normal": {
+            "rel_mse": 0.23950381606941593,
+            "cosine": 0.9219739932839766
+          },
+          "narrow_normal": {
+            "rel_mse": 0.2332242874641941,
+            "cosine": 0.9198681824946442
+          }
+        },
+        "rel_mse_mean": 0.23329550617423653,
+        "cosine_mean": 0.9217495893760059
+      },
+      "escalation": {
+        "3": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.22715841498909956,
+              "cosine": 0.9234065923493974
+            },
+            "wide_normal": {
+              "rel_mse": 0.23950381606941593,
+              "cosine": 0.9219739932839766
+            },
+            "narrow_normal": {
+              "rel_mse": 0.2332242874641941,
+              "cosine": 0.9198681824946442
+            }
+          },
+          "rel_mse_mean": 0.23329550617423653,
+          "cosine_mean": 0.9217495893760059
+        },
+        "4": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.03911338503511953,
+              "cosine": 0.9833191292489742
+            },
+            "wide_normal": {
+              "rel_mse": 0.040098085931227045,
+              "cosine": 0.9827167753200811
+            },
+            "narrow_normal": {
+              "rel_mse": 0.04158828125462289,
+              "cosine": 0.9824576609927795
+            }
+          },
+          "rel_mse_mean": 0.04026658407365649,
+          "cosine_mean": 0.9828311885206116
+        }
+      },
+      "tensor_recon": {
+        "w1": {
+          "max_abs_err": 0.0416666716337204,
+          "rms_err": 0.013834088054387628,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w2": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.014026436052184028,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w3": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.01367786505880723,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        }
+      }
+    },
+    {
+      "layer": 8,
+      "expert": 0,
+      "w2_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.9539205645206336,
+            "cosine": 0.5765773741908429
+          },
+          "wide_normal": {
+            "rel_mse": 0.9041432198815097,
+            "cosine": 0.5927894695889697
+          },
+          "narrow_normal": {
+            "rel_mse": 0.9049108997482438,
+            "cosine": 0.5820647889700782
+          }
+        },
+        "rel_mse_mean": 0.9209915613834623,
+        "cosine_mean": 0.5838105442499636
+      },
+      "w3_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.2559710469718833,
+            "cosine": 0.917088757228294
+          },
+          "wide_normal": {
+            "rel_mse": 0.238155715272855,
+            "cosine": 0.9185250544596913
+          },
+          "narrow_normal": {
+            "rel_mse": 0.23747083656714235,
+            "cosine": 0.9178214400059532
+          }
+        },
+        "rel_mse_mean": 0.24386586627062687,
+        "cosine_mean": 0.917811750564646
+      },
+      "escalation": {
+        "3": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.2559710469718833,
+              "cosine": 0.917088757228294
+            },
+            "wide_normal": {
+              "rel_mse": 0.238155715272855,
+              "cosine": 0.9185250544596913
+            },
+            "narrow_normal": {
+              "rel_mse": 0.23747083656714235,
+              "cosine": 0.9178214400059532
+            }
+          },
+          "rel_mse_mean": 0.24386586627062687,
+          "cosine_mean": 0.917811750564646
+        },
+        "4": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.04387963518362063,
+              "cosine": 0.9791057660434985
+            },
+            "wide_normal": {
+              "rel_mse": 0.04131819073093948,
+              "cosine": 0.980688611686468
+            },
+            "narrow_normal": {
+              "rel_mse": 0.04058884956929555,
+              "cosine": 0.9808383269315677
+            }
+          },
+          "rel_mse_mean": 0.04192889182795189,
+          "cosine_mean": 0.9802109015538448
+        }
+      },
+      "tensor_recon": {
+        "w1": {
+          "max_abs_err": 0.0416666716337204,
+          "rms_err": 0.015420430374322051,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w2": {
+          "max_abs_err": 0.0625,
+          "rms_err": 0.01381078108585608,
+          "half_step_bound_max": 0.0625,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w3": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.014541696960370457,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        }
+      }
+    },
+    {
+      "layer": 8,
+      "expert": 128,
+      "w2_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 1.0284674909683578,
+            "cosine": 0.5551500876491156
+          },
+          "wide_normal": {
+            "rel_mse": 1.0312224148584772,
+            "cosine": 0.5581920493156162
+          },
+          "narrow_normal": {
+            "rel_mse": 1.0359207169622866,
+            "cosine": 0.5563044947920239
+          }
+        },
+        "rel_mse_mean": 1.0318702075963737,
+        "cosine_mean": 0.5565488772522519
+      },
+      "w3_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.27812729413877685,
+            "cosine": 0.912151327891574
+          },
+          "wide_normal": {
+            "rel_mse": 0.2777836796284491,
+            "cosine": 0.9096439987123013
+          },
+          "narrow_normal": {
+            "rel_mse": 0.26113510190919403,
+            "cosine": 0.911885881758431
+          }
+        },
+        "rel_mse_mean": 0.27234869189214,
+        "cosine_mean": 0.9112270694541021
+      },
+      "escalation": {
+        "3": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.27812729413877685,
+              "cosine": 0.912151327891574
+            },
+            "wide_normal": {
+              "rel_mse": 0.2777836796284491,
+              "cosine": 0.9096439987123013
+            },
+            "narrow_normal": {
+              "rel_mse": 0.26113510190919403,
+              "cosine": 0.911885881758431
+            }
+          },
+          "rel_mse_mean": 0.27234869189214,
+          "cosine_mean": 0.9112270694541021
+        },
+        "4": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.046866861397298606,
+              "cosine": 0.9779508810820736
+            },
+            "wide_normal": {
+              "rel_mse": 0.047419619558737684,
+              "cosine": 0.9774651258226745
+            },
+            "narrow_normal": {
+              "rel_mse": 0.04773113819823162,
+              "cosine": 0.9774852788868624
+            }
+          },
+          "rel_mse_mean": 0.04733920638475597,
+          "cosine_mean": 0.9776337619305369
+        }
+      },
+      "tensor_recon": {
+        "w1": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.01488033631474462,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w2": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.014502249752277626,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w3": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.014831213940812708,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        }
+      }
+    },
+    {
+      "layer": 8,
+      "expert": 383,
+      "w2_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 1.042944789380985,
+            "cosine": 0.5627996232369655
+          },
+          "wide_normal": {
+            "rel_mse": 0.9430100287961991,
+            "cosine": 0.5831033608168348
+          },
+          "narrow_normal": {
+            "rel_mse": 0.9775191226091704,
+            "cosine": 0.5791790888756847
+          }
+        },
+        "rel_mse_mean": 0.9878246469287847,
+        "cosine_mean": 0.5750273576431616
+      },
+      "w3_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.2800882174900343,
+            "cosine": 0.911123926300715
+          },
+          "wide_normal": {
+            "rel_mse": 0.2459497162367421,
+            "cosine": 0.9175194957623777
+          },
+          "narrow_normal": {
+            "rel_mse": 0.2594212904963781,
+            "cosine": 0.9169657283497938
+          }
+        },
+        "rel_mse_mean": 0.2618197414077182,
+        "cosine_mean": 0.9152030501376288
+      },
+      "escalation": {
+        "3": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.2800882174900343,
+              "cosine": 0.911123926300715
+            },
+            "wide_normal": {
+              "rel_mse": 0.2459497162367421,
+              "cosine": 0.9175194957623777
+            },
+            "narrow_normal": {
+              "rel_mse": 0.2594212904963781,
+              "cosine": 0.9169657283497938
+            }
+          },
+          "rel_mse_mean": 0.2618197414077182,
+          "cosine_mean": 0.9152030501376288
+        },
+        "4": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.047077038284708494,
+              "cosine": 0.9780163704683822
+            },
+            "wide_normal": {
+              "rel_mse": 0.04344519351614796,
+              "cosine": 0.9793064553489788
+            },
+            "narrow_normal": {
+              "rel_mse": 0.04448934125243485,
+              "cosine": 0.9792057491617415
+            }
+          },
+          "rel_mse_mean": 0.04500385768443044,
+          "cosine_mean": 0.9788428583263675
+        }
+      },
+      "tensor_recon": {
+        "w1": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.014770196147137303,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w2": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.014380927092829923,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w3": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.014707054458175719,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        }
+      }
+    },
+    {
+      "layer": 16,
+      "expert": 0,
+      "w2_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 1.1237646840839113,
+            "cosine": 0.5716942706789948
+          },
+          "wide_normal": {
+            "rel_mse": 1.0076258367154751,
+            "cosine": 0.5939791453319058
+          },
+          "narrow_normal": {
+            "rel_mse": 1.0763493344100963,
+            "cosine": 0.5795378780950197
+          }
+        },
+        "rel_mse_mean": 1.069246618403161,
+        "cosine_mean": 0.5817370980353068
+      },
+      "w3_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.27675505620618,
+            "cosine": 0.9095651464612584
+          },
+          "wide_normal": {
+            "rel_mse": 0.2466199101363848,
+            "cosine": 0.9141313698237159
+          },
+          "narrow_normal": {
+            "rel_mse": 0.25843820993229494,
+            "cosine": 0.9134784241445071
+          }
+        },
+        "rel_mse_mean": 0.26060439209161995,
+        "cosine_mean": 0.9123916468098271
+      },
+      "escalation": {
+        "3": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.27675505620618,
+              "cosine": 0.9095651464612584
+            },
+            "wide_normal": {
+              "rel_mse": 0.2466199101363848,
+              "cosine": 0.9141313698237159
+            },
+            "narrow_normal": {
+              "rel_mse": 0.25843820993229494,
+              "cosine": 0.9134784241445071
+            }
+          },
+          "rel_mse_mean": 0.26060439209161995,
+          "cosine_mean": 0.9123916468098271
+        },
+        "4": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.04609003664556827,
+              "cosine": 0.9797376575934148
+            },
+            "wide_normal": {
+              "rel_mse": 0.04440374582918334,
+              "cosine": 0.9800657568853307
+            },
+            "narrow_normal": {
+              "rel_mse": 0.046008519931905044,
+              "cosine": 0.9799877880433979
+            }
+          },
+          "rel_mse_mean": 0.04550076746888556,
+          "cosine_mean": 0.9799304008407145
+        }
+      },
+      "tensor_recon": {
+        "w1": {
+          "max_abs_err": 0.0416666716337204,
+          "rms_err": 0.014172184700123531,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w2": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.014266505351024868,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w3": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.014372417219837378,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        }
+      }
+    },
+    {
+      "layer": 16,
+      "expert": 128,
+      "w2_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.8991477366913482,
+            "cosine": 0.6352036994822089
+          },
+          "wide_normal": {
+            "rel_mse": 0.8994160250999197,
+            "cosine": 0.6157786445816804
+          },
+          "narrow_normal": {
+            "rel_mse": 0.9694301309503499,
+            "cosine": 0.6080004876839158
+          }
+        },
+        "rel_mse_mean": 0.9226646309138727,
+        "cosine_mean": 0.6196609439159351
+      },
+      "w3_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.2415510623434329,
+            "cosine": 0.9194387310727465
+          },
+          "wide_normal": {
+            "rel_mse": 0.23826824219675913,
+            "cosine": 0.9202367479211113
+          },
+          "narrow_normal": {
+            "rel_mse": 0.2439746054225437,
+            "cosine": 0.9175955224432226
+          }
+        },
+        "rel_mse_mean": 0.24126463665424525,
+        "cosine_mean": 0.9190903338123602
+      },
+      "escalation": {
+        "3": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.2415510623434329,
+              "cosine": 0.9194387310727465
+            },
+            "wide_normal": {
+              "rel_mse": 0.23826824219675913,
+              "cosine": 0.9202367479211113
+            },
+            "narrow_normal": {
+              "rel_mse": 0.2439746054225437,
+              "cosine": 0.9175955224432226
+            }
+          },
+          "rel_mse_mean": 0.24126463665424525,
+          "cosine_mean": 0.9190903338123602
+        },
+        "4": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.040514522757713535,
+              "cosine": 0.9822220678346887
+            },
+            "wide_normal": {
+              "rel_mse": 0.040440180672686336,
+              "cosine": 0.9817643352433547
+            },
+            "narrow_normal": {
+              "rel_mse": 0.04185220303449733,
+              "cosine": 0.9816647986549855
+            }
+          },
+          "rel_mse_mean": 0.040935635488299066,
+          "cosine_mean": 0.9818837339110096
+        }
+      },
+      "tensor_recon": {
+        "w1": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.014023106267189734,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w2": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.014068598920986547,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w3": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.014190181748093214,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        }
+      }
+    },
+    {
+      "layer": 16,
+      "expert": 383,
+      "w2_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.9542381185274778,
+            "cosine": 0.5887154399436267
+          },
+          "wide_normal": {
+            "rel_mse": 0.9859498308683042,
+            "cosine": 0.6058429358854371
+          },
+          "narrow_normal": {
+            "rel_mse": 0.9497644603513725,
+            "cosine": 0.5988424811357588
+          }
+        },
+        "rel_mse_mean": 0.9633174699157182,
+        "cosine_mean": 0.5978002856549409
+      },
+      "w3_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.25115783899037564,
+            "cosine": 0.9164650993393756
+          },
+          "wide_normal": {
+            "rel_mse": 0.25321870783968775,
+            "cosine": 0.9123840366392604
+          },
+          "narrow_normal": {
+            "rel_mse": 0.2554102602562724,
+            "cosine": 0.915137233578592
+          }
+        },
+        "rel_mse_mean": 0.25326226902877863,
+        "cosine_mean": 0.9146621231857427
+      },
+      "escalation": {
+        "3": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.25115783899037564,
+              "cosine": 0.9164650993393756
+            },
+            "wide_normal": {
+              "rel_mse": 0.25321870783968775,
+              "cosine": 0.9123840366392604
+            },
+            "narrow_normal": {
+              "rel_mse": 0.2554102602562724,
+              "cosine": 0.915137233578592
+            }
+          },
+          "rel_mse_mean": 0.25326226902877863,
+          "cosine_mean": 0.9146621231857427
+        },
+        "4": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.04153451571729649,
+              "cosine": 0.9808793464936453
+            },
+            "wide_normal": {
+              "rel_mse": 0.046335274914531925,
+              "cosine": 0.9792019172263204
+            },
+            "narrow_normal": {
+              "rel_mse": 0.04342582302777053,
+              "cosine": 0.9798814086195903
+            }
+          },
+          "rel_mse_mean": 0.04376520455319965,
+          "cosine_mean": 0.9799875574465187
+        }
+      },
+      "tensor_recon": {
+        "w1": {
+          "max_abs_err": 0.0416666716337204,
+          "rms_err": 0.014277344484774872,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w2": {
+          "max_abs_err": 0.0625,
+          "rms_err": 0.01392033061469938,
+          "half_step_bound_max": 0.0625,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w3": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.01472537736555622,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        }
+      }
+    },
+    {
+      "layer": 24,
+      "expert": 0,
+      "w2_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 1.2067541324159354,
+            "cosine": 0.5796090285637931
+          },
+          "wide_normal": {
+            "rel_mse": 1.02191655214584,
+            "cosine": 0.597697321329022
+          },
+          "narrow_normal": {
+            "rel_mse": 1.1932365304193813,
+            "cosine": 0.5834062518047469
+          }
+        },
+        "rel_mse_mean": 1.1406357383270522,
+        "cosine_mean": 0.586904200565854
+      },
+      "w3_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.28161620401615317,
+            "cosine": 0.9083096965509041
+          },
+          "wide_normal": {
+            "rel_mse": 0.25469874748666815,
+            "cosine": 0.9133752376792885
+          },
+          "narrow_normal": {
+            "rel_mse": 0.2720786048382661,
+            "cosine": 0.9099842856281143
+          }
+        },
+        "rel_mse_mean": 0.26946451878036254,
+        "cosine_mean": 0.9105564066194356
+      },
+      "escalation": {
+        "3": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.28161620401615317,
+              "cosine": 0.9083096965509041
+            },
+            "wide_normal": {
+              "rel_mse": 0.25469874748666815,
+              "cosine": 0.9133752376792885
+            },
+            "narrow_normal": {
+              "rel_mse": 0.2720786048382661,
+              "cosine": 0.9099842856281143
+            }
+          },
+          "rel_mse_mean": 0.26946451878036254,
+          "cosine_mean": 0.9105564066194356
+        },
+        "4": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.047816177240648294,
+              "cosine": 0.9800391562314844
+            },
+            "wide_normal": {
+              "rel_mse": 0.042995599857427486,
+              "cosine": 0.9813996112398696
+            },
+            "narrow_normal": {
+              "rel_mse": 0.04710715292683855,
+              "cosine": 0.9801288881455624
+            }
+          },
+          "rel_mse_mean": 0.045972976674971446,
+          "cosine_mean": 0.9805225518723054
+        }
+      },
+      "tensor_recon": {
+        "w1": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.01362752254882321,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w2": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.013590913125944515,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w3": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.014253359508230416,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        }
+      }
+    },
+    {
+      "layer": 24,
+      "expert": 128,
+      "w2_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 1.2170608107321137,
+            "cosine": 0.5971811878968735
+          },
+          "wide_normal": {
+            "rel_mse": 1.1485731839558286,
+            "cosine": 0.6121997177756309
+          },
+          "narrow_normal": {
+            "rel_mse": 1.1768645387004286,
+            "cosine": 0.606349032713676
+          }
+        },
+        "rel_mse_mean": 1.1808328444627902,
+        "cosine_mean": 0.6052433127953935
+      },
+      "w3_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.2641408455129237,
+            "cosine": 0.9118681257506419
+          },
+          "wide_normal": {
+            "rel_mse": 0.27447460773738,
+            "cosine": 0.9109361639605335
+          },
+          "narrow_normal": {
+            "rel_mse": 0.25840624857980227,
+            "cosine": 0.9122500247524017
+          }
+        },
+        "rel_mse_mean": 0.2656739006100353,
+        "cosine_mean": 0.911684771487859
+      },
+      "escalation": {
+        "3": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.2641408455129237,
+              "cosine": 0.9118681257506419
+            },
+            "wide_normal": {
+              "rel_mse": 0.27447460773738,
+              "cosine": 0.9109361639605335
+            },
+            "narrow_normal": {
+              "rel_mse": 0.25840624857980227,
+              "cosine": 0.9122500247524017
+            }
+          },
+          "rel_mse_mean": 0.2656739006100353,
+          "cosine_mean": 0.911684771487859
+        },
+        "4": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.04508101716191276,
+              "cosine": 0.9818066999122688
+            },
+            "wide_normal": {
+              "rel_mse": 0.04618714441508641,
+              "cosine": 0.9810521565135814
+            },
+            "narrow_normal": {
+              "rel_mse": 0.04533099119076729,
+              "cosine": 0.9819009084136289
+            }
+          },
+          "rel_mse_mean": 0.04553305092258882,
+          "cosine_mean": 0.9815865882798263
+        }
+      },
+      "tensor_recon": {
+        "w1": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.01317392064035414,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w2": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.013825827934450348,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w3": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.013788174204999587,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        }
+      }
+    },
+    {
+      "layer": 24,
+      "expert": 383,
+      "w2_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 1.1032823063548165,
+            "cosine": 0.57056571582385
+          },
+          "wide_normal": {
+            "rel_mse": 1.0880689343101264,
+            "cosine": 0.5759559063193742
+          },
+          "narrow_normal": {
+            "rel_mse": 1.0343704104141727,
+            "cosine": 0.5685241446232411
+          }
+        },
+        "rel_mse_mean": 1.0752405503597053,
+        "cosine_mean": 0.5716819222554884
+      },
+      "w3_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.27302640706263226,
+            "cosine": 0.9115796378989022
+          },
+          "wide_normal": {
+            "rel_mse": 0.27285760316727603,
+            "cosine": 0.9101662319066133
+          },
+          "narrow_normal": {
+            "rel_mse": 0.26832460855017254,
+            "cosine": 0.9133690809310473
+          }
+        },
+        "rel_mse_mean": 0.2714028729266936,
+        "cosine_mean": 0.9117049835788542
+      },
+      "escalation": {
+        "3": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.27302640706263226,
+              "cosine": 0.9115796378989022
+            },
+            "wide_normal": {
+              "rel_mse": 0.27285760316727603,
+              "cosine": 0.9101662319066133
+            },
+            "narrow_normal": {
+              "rel_mse": 0.26832460855017254,
+              "cosine": 0.9133690809310473
+            }
+          },
+          "rel_mse_mean": 0.2714028729266936,
+          "cosine_mean": 0.9117049835788542
+        },
+        "4": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.04761813171873959,
+              "cosine": 0.9784203919150452
+            },
+            "wide_normal": {
+              "rel_mse": 0.0490164206124414,
+              "cosine": 0.978220456490812
+            },
+            "narrow_normal": {
+              "rel_mse": 0.04586162178341567,
+              "cosine": 0.9795567791537172
+            }
+          },
+          "rel_mse_mean": 0.04749872470486555,
+          "cosine_mean": 0.9787325425198582
+        }
+      },
+      "tensor_recon": {
+        "w1": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.014031122155659267,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w2": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.014452293592826728,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w3": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.01439167510268142,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        }
+      }
+    },
+    {
+      "layer": 32,
+      "expert": 0,
+      "w2_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 1.0657571099366312,
+            "cosine": 0.5510518870139025
+          },
+          "wide_normal": {
+            "rel_mse": 1.0337774161972006,
+            "cosine": 0.5544270926154379
+          },
+          "narrow_normal": {
+            "rel_mse": 1.0640873251650809,
+            "cosine": 0.5462609630169912
+          }
+        },
+        "rel_mse_mean": 1.0545406170996376,
+        "cosine_mean": 0.5505799808821106
+      },
+      "w3_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.29261055398826546,
+            "cosine": 0.9061033866259837
+          },
+          "wide_normal": {
+            "rel_mse": 0.2778723159716836,
+            "cosine": 0.9079776293170194
+          },
+          "narrow_normal": {
+            "rel_mse": 0.29277458864841865,
+            "cosine": 0.9040028100001942
+          }
+        },
+        "rel_mse_mean": 0.28775248620278926,
+        "cosine_mean": 0.9060279419810658
+      },
+      "escalation": {
+        "3": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.29261055398826546,
+              "cosine": 0.9061033866259837
+            },
+            "wide_normal": {
+              "rel_mse": 0.2778723159716836,
+              "cosine": 0.9079776293170194
+            },
+            "narrow_normal": {
+              "rel_mse": 0.29277458864841865,
+              "cosine": 0.9040028100001942
+            }
+          },
+          "rel_mse_mean": 0.28775248620278926,
+          "cosine_mean": 0.9060279419810658
+        },
+        "4": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.051517668294567553,
+              "cosine": 0.9760523728066266
+            },
+            "wide_normal": {
+              "rel_mse": 0.04834073760416015,
+              "cosine": 0.9771729855107442
+            },
+            "narrow_normal": {
+              "rel_mse": 0.05162672203667727,
+              "cosine": 0.9758486245857183
+            }
+          },
+          "rel_mse_mean": 0.05049504264513499,
+          "cosine_mean": 0.9763579943010297
+        }
+      },
+      "tensor_recon": {
+        "w1": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.014576089254072519,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w2": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.014802865898825327,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w3": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.015169736217224557,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        }
+      }
+    },
+    {
+      "layer": 32,
+      "expert": 128,
+      "w2_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 1.180590135004905,
+            "cosine": 0.5519935534810827
+          },
+          "wide_normal": {
+            "rel_mse": 1.0763517924169768,
+            "cosine": 0.5604796141248184
+          },
+          "narrow_normal": {
+            "rel_mse": 1.0931707143376321,
+            "cosine": 0.55355572523265
+          }
+        },
+        "rel_mse_mean": 1.116704213919838,
+        "cosine_mean": 0.555342964279517
+      },
+      "w3_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.31685714490569017,
+            "cosine": 0.9015412024597811
+          },
+          "wide_normal": {
+            "rel_mse": 0.28259427151597,
+            "cosine": 0.9045587375756373
+          },
+          "narrow_normal": {
+            "rel_mse": 0.2946677883096705,
+            "cosine": 0.9090042733748109
+          }
+        },
+        "rel_mse_mean": 0.29803973491044355,
+        "cosine_mean": 0.9050347378034097
+      },
+      "escalation": {
+        "3": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.31685714490569017,
+              "cosine": 0.9015412024597811
+            },
+            "wide_normal": {
+              "rel_mse": 0.28259427151597,
+              "cosine": 0.9045587375756373
+            },
+            "narrow_normal": {
+              "rel_mse": 0.2946677883096705,
+              "cosine": 0.9090042733748109
+            }
+          },
+          "rel_mse_mean": 0.29803973491044355,
+          "cosine_mean": 0.9050347378034097
+        },
+        "4": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.05229992591980856,
+              "cosine": 0.9760097810901328
+            },
+            "wide_normal": {
+              "rel_mse": 0.05257970459667927,
+              "cosine": 0.975903755847592
+            },
+            "narrow_normal": {
+              "rel_mse": 0.049089278239421656,
+              "cosine": 0.9774048525925632
+            }
+          },
+          "rel_mse_mean": 0.05132296958530316,
+          "cosine_mean": 0.9764394631767627
+        }
+      },
+      "tensor_recon": {
+        "w1": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.014279199543177903,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w2": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.014558035854319055,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w3": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.014931981242429797,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        }
+      }
+    },
+    {
+      "layer": 32,
+      "expert": 383,
+      "w2_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 1.0208959437697516,
+            "cosine": 0.556572301981264
+          },
+          "wide_normal": {
+            "rel_mse": 1.0928236745579996,
+            "cosine": 0.5620803606680249
+          },
+          "narrow_normal": {
+            "rel_mse": 1.016956093657521,
+            "cosine": 0.5570359797715403
+          }
+        },
+        "rel_mse_mean": 1.0435585706617576,
+        "cosine_mean": 0.558562880806943
+      },
+      "w3_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.2692755345732307,
+            "cosine": 0.9090494756530753
+          },
+          "wide_normal": {
+            "rel_mse": 0.2763431547945023,
+            "cosine": 0.9092300731702758
+          },
+          "narrow_normal": {
+            "rel_mse": 0.27258347724426524,
+            "cosine": 0.9089526592677919
+          }
+        },
+        "rel_mse_mean": 0.27273405553733276,
+        "cosine_mean": 0.9090774026970477
+      },
+      "escalation": {
+        "3": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.2692755345732307,
+              "cosine": 0.9090494756530753
+            },
+            "wide_normal": {
+              "rel_mse": 0.2763431547945023,
+              "cosine": 0.9092300731702758
+            },
+            "narrow_normal": {
+              "rel_mse": 0.27258347724426524,
+              "cosine": 0.9089526592677919
+            }
+          },
+          "rel_mse_mean": 0.27273405553733276,
+          "cosine_mean": 0.9090774026970477
+        },
+        "4": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.04697689925670302,
+              "cosine": 0.9781050659123909
+            },
+            "wide_normal": {
+              "rel_mse": 0.04856516786524185,
+              "cosine": 0.9770701792726239
+            },
+            "narrow_normal": {
+              "rel_mse": 0.04682931420462692,
+              "cosine": 0.9780134836147962
+            }
+          },
+          "rel_mse_mean": 0.047457127108857265,
+          "cosine_mean": 0.9777295762666037
+        }
+      },
+      "tensor_recon": {
+        "w1": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.01443564628147881,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w2": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.014429664824417937,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w3": {
+          "max_abs_err": 0.0416666716337204,
+          "rms_err": 0.014853886996148053,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        }
+      }
+    },
+    {
+      "layer": 39,
+      "expert": 0,
+      "w2_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.9304975428253718,
+            "cosine": 0.5215911442503278
+          },
+          "wide_normal": {
+            "rel_mse": 0.9572775000374433,
+            "cosine": 0.5255240562068962
+          },
+          "narrow_normal": {
+            "rel_mse": 0.9919813847654558,
+            "cosine": 0.5078572449011352
+          }
+        },
+        "rel_mse_mean": 0.9599188092094236,
+        "cosine_mean": 0.5183241484527864
+      },
+      "w3_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.27493337304421284,
+            "cosine": 0.9071604359359737
+          },
+          "wide_normal": {
+            "rel_mse": 0.27119711699512183,
+            "cosine": 0.907543556491692
+          },
+          "narrow_normal": {
+            "rel_mse": 0.2770283019818739,
+            "cosine": 0.9069909460105379
+          }
+        },
+        "rel_mse_mean": 0.2743862640070695,
+        "cosine_mean": 0.907231646146068
+      },
+      "escalation": {
+        "3": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.27493337304421284,
+              "cosine": 0.9071604359359737
+            },
+            "wide_normal": {
+              "rel_mse": 0.27119711699512183,
+              "cosine": 0.907543556491692
+            },
+            "narrow_normal": {
+              "rel_mse": 0.2770283019818739,
+              "cosine": 0.9069909460105379
+            }
+          },
+          "rel_mse_mean": 0.2743862640070695,
+          "cosine_mean": 0.907231646146068
+        },
+        "4": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.05076911126113798,
+              "cosine": 0.974486270541249
+            },
+            "wide_normal": {
+              "rel_mse": 0.05029053682795319,
+              "cosine": 0.9746619011610196
+            },
+            "narrow_normal": {
+              "rel_mse": 0.05192817733963897,
+              "cosine": 0.9741950595715638
+            }
+          },
+          "rel_mse_mean": 0.05099594180957671,
+          "cosine_mean": 0.9744477437579441
+        }
+      },
+      "tensor_recon": {
+        "w1": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.015499518621009269,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w2": {
+          "max_abs_err": 0.1499999761581421,
+          "rms_err": 0.01624595386063783,
+          "half_step_bound_max": 0.15000000596046448,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w3": {
+          "max_abs_err": 0.0625,
+          "rms_err": 0.015876773546225128,
+          "half_step_bound_max": 0.0625,
+          "max_err_over_bound": 1.0000000894069645
+        }
+      }
+    },
+    {
+      "layer": 39,
+      "expert": 128,
+      "w2_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.8364711762414971,
+            "cosine": 0.5562513833743795
+          },
+          "wide_normal": {
+            "rel_mse": 0.902045604067793,
+            "cosine": 0.5254841962034662
+          },
+          "narrow_normal": {
+            "rel_mse": 0.90281019485126,
+            "cosine": 0.516247071664288
+          }
+        },
+        "rel_mse_mean": 0.8804423250535168,
+        "cosine_mean": 0.532660883747378
+      },
+      "w3_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.2359552977502127,
+            "cosine": 0.9181733800578834
+          },
+          "wide_normal": {
+            "rel_mse": 0.244967253676912,
+            "cosine": 0.9117826737645127
+          },
+          "narrow_normal": {
+            "rel_mse": 0.25597880558539576,
+            "cosine": 0.9071758410055392
+          }
+        },
+        "rel_mse_mean": 0.24563378567084015,
+        "cosine_mean": 0.9123772982759784
+      },
+      "escalation": {
+        "3": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.2359552977502127,
+              "cosine": 0.9181733800578834
+            },
+            "wide_normal": {
+              "rel_mse": 0.244967253676912,
+              "cosine": 0.9117826737645127
+            },
+            "narrow_normal": {
+              "rel_mse": 0.25597880558539576,
+              "cosine": 0.9071758410055392
+            }
+          },
+          "rel_mse_mean": 0.24563378567084015,
+          "cosine_mean": 0.9123772982759784
+        },
+        "4": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.04478969204602126,
+              "cosine": 0.9775419828979273
+            },
+            "wide_normal": {
+              "rel_mse": 0.04892426561719247,
+              "cosine": 0.975329707289381
+            },
+            "narrow_normal": {
+              "rel_mse": 0.049829723248268405,
+              "cosine": 0.9747375176469697
+            }
+          },
+          "rel_mse_mean": 0.047847893637160716,
+          "cosine_mean": 0.9758697359447593
+        }
+      },
+      "tensor_recon": {
+        "w1": {
+          "max_abs_err": 0.0416666716337204,
+          "rms_err": 0.015711264299721986,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w2": {
+          "max_abs_err": 0.25,
+          "rms_err": 0.018062224935948595,
+          "half_step_bound_max": 0.25,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w3": {
+          "max_abs_err": 0.0416666641831398,
+          "rms_err": 0.015250544860767452,
+          "half_step_bound_max": 0.0416666679084301,
+          "max_err_over_bound": 1.0000000894069645
+        }
+      }
+    },
+    {
+      "layer": 39,
+      "expert": 383,
+      "w2_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.976693832310693,
+            "cosine": 0.48555715833190694
+          },
+          "wide_normal": {
+            "rel_mse": 0.9421498864485555,
+            "cosine": 0.48797969350048354
+          },
+          "narrow_normal": {
+            "rel_mse": 0.9798058939254817,
+            "cosine": 0.47350929521410823
+          }
+        },
+        "rel_mse_mean": 0.9662165375615768,
+        "cosine_mean": 0.48234871568216625
+      },
+      "w3_functional": {
+        "per_profile": {
+          "unit_normal": {
+            "rel_mse": 0.2993840963124453,
+            "cosine": 0.8999253421176888
+          },
+          "wide_normal": {
+            "rel_mse": 0.2653727329353477,
+            "cosine": 0.9069049794578588
+          },
+          "narrow_normal": {
+            "rel_mse": 0.29012926975287123,
+            "cosine": 0.9028948230341212
+          }
+        },
+        "rel_mse_mean": 0.2849620330002214,
+        "cosine_mean": 0.9032417148698896
+      },
+      "escalation": {
+        "3": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.2993840963124453,
+              "cosine": 0.8999253421176888
+            },
+            "wide_normal": {
+              "rel_mse": 0.2653727329353477,
+              "cosine": 0.9069049794578588
+            },
+            "narrow_normal": {
+              "rel_mse": 0.29012926975287123,
+              "cosine": 0.9028948230341212
+            }
+          },
+          "rel_mse_mean": 0.2849620330002214,
+          "cosine_mean": 0.9032417148698896
+        },
+        "4": {
+          "per_profile": {
+            "unit_normal": {
+              "rel_mse": 0.05876233652732444,
+              "cosine": 0.9704512154312332
+            },
+            "wide_normal": {
+              "rel_mse": 0.055879137529058875,
+              "cosine": 0.9715921646138439
+            },
+            "narrow_normal": {
+              "rel_mse": 0.057380370413597066,
+              "cosine": 0.9710065256157832
+            }
+          },
+          "rel_mse_mean": 0.05734061482332679,
+          "cosine_mean": 0.9710166352202867
+        }
+      },
+      "tensor_recon": {
+        "w1": {
+          "max_abs_err": 0.0833333432674408,
+          "rms_err": 0.016571308998907665,
+          "half_step_bound_max": 0.0833333358168602,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w2": {
+          "max_abs_err": 0.19999998807907104,
+          "rms_err": 0.016951788885525853,
+          "half_step_bound_max": 0.20000000298023224,
+          "max_err_over_bound": 1.0000000894069645
+        },
+        "w3": {
+          "max_abs_err": 0.04999999701976776,
+          "rms_err": 0.016645472165979894,
+          "half_step_bound_max": 0.05000000074505806,
+          "max_err_over_bound": 1.0000000894069645
+        }
+      }
+    }
+  ],
+  "engram_w4": {
+    "layer": 1,
+    "num_rows": 64,
+    "per_row": [
+      {
+        "row": 1051600,
+        "rel_mse": 0.011811992756485963
+      },
+      {
+        "row": 2055447,
+        "rel_mse": 0.01894768297098723
+      },
+      {
+        "row": 3181226,
+        "rel_mse": 0.020662427426391954
+      },
+      {
+        "row": 6346714,
+        "rel_mse": 0.038866577500674605
+      },
+      {
+        "row": 8487285,
+        "rel_mse": 0.012666375075240037
+      },
+      {
+        "row": 10874928,
+        "rel_mse": 0.015866924574719176
+      },
+      {
+        "row": 12897068,
+        "rel_mse": 0.01657570323671039
+      },
+      {
+        "row": 15734086,
+        "rel_mse": 0.020439735902495464
+      },
+      {
+        "row": 28892679,
+        "rel_mse": 0.03298045817317421
+      },
+      {
+        "row": 30873960,
+        "rel_mse": 0.019357114930524166
+      },
+      {
+        "row": 34286662,
+        "rel_mse": 0.026388119044440012
+      },
+      {
+        "row": 47725545,
+        "rel_mse": 0.021545734341990933
+      },
+      {
+        "row": 67303722,
+        "rel_mse": 0.030868326243223266
+      },
+      {
+        "row": 67452843,
+        "rel_mse": 0.02335138230921578
+      },
+      {
+        "row": 98804709,
+        "rel_mse": 0.016790385029726098
+      },
+      {
+        "row": 103599764,
+        "rel_mse": 0.017544941068228806
+      },
+      {
+        "row": 106502978,
+        "rel_mse": 0.01682471281765246
+      },
+      {
+        "row": 115091216,
+        "rel_mse": 0.017412004349109687
+      },
+      {
+        "row": 118208399,
+        "rel_mse": 0.0229832090304437
+      },
+      {
+        "row": 145739309,
+        "rel_mse": 0.018345774669483443
+      },
+      {
+        "row": 147334550,
+        "rel_mse": 0.01780960992812363
+      },
+      {
+        "row": 149348228,
+        "rel_mse": 0.027339509485590344
+      },
+      {
+        "row": 151355719,
+        "rel_mse": 0.020922099307802224
+      },
+      {
+        "row": 154846065,
+        "rel_mse": 0.01688456223974723
+      },
+      {
+        "row": 162314503,
+        "rel_mse": 0.014754869419007105
+      },
+      {
+        "row": 176996737,
+        "rel_mse": 0.018767960475567568
+      },
+      {
+        "row": 184730546,
+        "rel_mse": 0.018034884085383708
+      },
+      {
+        "row": 193395867,
+        "rel_mse": 0.015607041281146554
+      },
+      {
+        "row": 196279565,
+        "rel_mse": 0.01937466089620666
+      },
+      {
+        "row": 201840466,
+        "rel_mse": 0.017115484922088444
+      },
+      {
+        "row": 207924452,
+        "rel_mse": 0.02319817980417655
+      },
+      {
+        "row": 208755354,
+        "rel_mse": 0.01852432678315301
+      },
+      {
+        "row": 212860352,
+        "rel_mse": 0.0197989394274157
+      },
+      {
+        "row": 215011757,
+        "rel_mse": 0.018814168746236933
+      },
+      {
+        "row": 232951884,
+        "rel_mse": 0.017632981719040382
+      },
+      {
+        "row": 236311683,
+        "rel_mse": 0.017833471943030487
+      },
+      {
+        "row": 242795891,
+        "rel_mse": 0.017160003584076503
+      },
+      {
+        "row": 244597221,
+        "rel_mse": 0.015610842906493647
+      },
+      {
+        "row": 248524769,
+        "rel_mse": 0.016700284264343446
+      },
+      {
+        "row": 249379658,
+        "rel_mse": 0.01802358101379122
+      },
+      {
+        "row": 249780379,
+        "rel_mse": 0.016520504322678528
+      },
+      {
+        "row": 257523917,
+        "rel_mse": 0.016237353914331516
+      },
+      {
+        "row": 257620736,
+        "rel_mse": 0.01727669455651567
+      },
+      {
+        "row": 263252355,
+        "rel_mse": 0.01430256794800118
+      },
+      {
+        "row": 264367796,
+        "rel_mse": 0.017154402897758988
+      },
+      {
+        "row": 270340751,
+        "rel_mse": 0.027168661043275835
+      },
+      {
+        "row": 280131184,
+        "rel_mse": 0.017057111271492557
+      },
+      {
+        "row": 280192197,
+        "rel_mse": 0.01615773490506592
+      },
+      {
+        "row": 293401807,
+        "rel_mse": 0.01800313015116195
+      },
+      {
+        "row": 293722454,
+        "rel_mse": 0.01614755494161963
+      },
+      {
+        "row": 309120814,
+        "rel_mse": 0.016446334216848338
+      },
+      {
+        "row": 312300794,
+        "rel_mse": 0.0162506239657318
+      },
+      {
+        "row": 313292803,
+        "rel_mse": 0.0167012415340193
+      },
+      {
+        "row": 322684764,
+        "rel_mse": 0.0139364535725036
+      },
+      {
+        "row": 325090120,
+        "rel_mse": 0.016862783042759243
+      },
+      {
+        "row": 326644956,
+        "rel_mse": 0.017231116420854464
+      },
+      {
+        "row": 329248537,
+        "rel_mse": 0.01934203975493082
+      },
+      {
+        "row": 331466037,
+        "rel_mse": 0.018506617941819646
+      },
+      {
+        "row": 336065365,
+        "rel_mse": 0.017475460259505977
+      },
+      {
+        "row": 350503778,
+        "rel_mse": 0.012992149789027204
+      },
+      {
+        "row": 359073585,
+        "rel_mse": 0.014472292875643977
+      },
+      {
+        "row": 364844389,
+        "rel_mse": 0.013637676529344386
+      },
+      {
+        "row": 376646827,
+        "rel_mse": 0.023985940845252175
+      },
+      {
+        "row": 382934774,
+        "rel_mse": 0.01470581559371094
+      }
+    ],
+    "rel_mse_mean": 0.018729832905893633,
+    "rel_mse_max": 0.038866577500674605
+  },
+  "mixed_bit_proposal": {
+    "rel_mse_budget": 0.05,
+    "sampled_experts": 18,
+    "num_over_budget": 18,
+    "fraction_over_budget": 1.0,
+    "escalation_fraction_by_bits": {
+      "4": 0.7777777777777778
+    },
+    "num_unresolved_by_any_probe": 4,
+    "budget_met_by_escalation": false,
+    "worst_10pct_experts": [
+      {
+        "layer": 24,
+        "expert": 128,
+        "w2_rel_mse": 1.1808328444627902
+      },
+      {
+        "layer": 24,
+        "expert": 0,
+        "w2_rel_mse": 1.1406357383270522
+      }
+    ],
+    "model_routed_experts": 15360,
+    "model_routed_expert_elements": 557171343360,
+    "model_routed_w2_bytes": 139292835840.0,
+    "model_routed_w2_gib": 129.7265625,
+    "mean_extra_bits_per_weight": 2.0,
+    "escalation_byte_delta_bytes": 139292835840.0,
+    "escalation_byte_delta_gib": 129.7265625,
+    "escalation_note": "byte delta assumes a bit-tight store (k bits/weight); today's pack_codes writes W3 at 2 codes/byte (4 bits/weight) and W4 at 2 codes/byte (4 bits/weight), so a W3 escalation costs the same on-disk bytes as W4 with the current packer."
+  }
+}
