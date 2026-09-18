@@ -509,3 +509,77 @@ the dataset is swappable behind the harness.
   (96 total across the three files). `ruff check
   vllm_ascend/system_one/constrained_decode.py tests/ut/system_one/test_constrained_decode.py`
   → clean.
+
+### T2.4 — Post-hoc calibration module — DONE (2026-09-18)
+
+**Status**: complete. RED→GREEN, ruff clean, committed (pathspec).
+
+**Files**
+- `vllm_ascend/system_one/calibrate.py` — the calibrator (pure Python, stdlib only).
+- `tests/ut/system_one/test_calibrate.py` — 18 UTs (loaded by file path).
+
+**What it does (PRD §6.2 calibrated confidence — measured ECE, not asserted)**
+- Maps raw model confidences → calibrated probabilities, FIT on a held-out split,
+  reducing ECE. Two methods, in the PRD's order.
+- **Temperature scaling** (`TemperatureScaler`): `p_cal = sigmoid(logit(p) / T)`.
+  `T` fit on held-out `(confidence, correct)` pairs by minimizing binary NLL of
+  `sigmoid(z / T)`; the NLL is convex in `w = 1/T`, so a deterministic
+  golden-section search finds the global optimum (no numpy/torch). `T > 1` softens
+  over-confident logits, `T < 1` sharpens under-confident ones, `T ≈ 1` is a no-op.
+- **Platt scaling** (`PlattScaler`): `p_cal = sigmoid(a·logit(p) + b)` — the
+  2-param generalization (temperature is `b=0, a=1/T`), fit by convex coordinate
+  descent (alternating golden-section on `a`, `b`).
+- **Conformal prediction** (`ConformalCalibrator`): split-conformal, the
+  coverage-guarantee method. `fit(scores)` stores held-out nonconformity scores
+  `s = 1 - p_true`; `predict_set(field_probs, alpha)` returns `{ y : 1 - p(y) ≤
+  qhat }` where `qhat` is the `ceil((n+1)(1-alpha))`-th smallest score (`+inf` ⇒
+  trivial full set when the rank exceeds `n`). Marginal-coverage guarantee
+  `1-alpha ≤ P(y_true ∈ C) ≤ 1-alpha + 1/(n+1)` **under exchangeability** of the
+  calibration and test points (documented in the class docstring); distribution-
+  free, model-agnostic. `empirical_coverage(...)` checks it on a stream.
+- `calibration_report(before, after, correct, n_bins=10)` returns before/after ECE
+  + `delta_ece`, using **byte-identical** binned-ECE math to the T0.3 harness
+  (`tools/system_one/bench.py`); a unit test cross-checks equality with the harness.
+
+**Interfaces (T3.1 abstain rule + T2.5 assembly consume these)**
+- `Calibrator` protocol: `fit(confidences, correct)` + `transform(...)` (scalers);
+  conformal exposes `fit(scores)` + `predict_set(field_probs, alpha)`.
+- `TemperatureScaler().fit(confidences, correct, *, is_logit=False) -> self`,
+  `.transform(confidences, *, is_logit=False)`, fitted attr `.T`. `transform`
+  accepts a `Sequence[float]` (→ list) OR a `Mapping` of IR leaf path → confidence
+  (→ dict, same keys) — the per-field surface for T2.5/T3.1.
+- `PlattScaler().fit(...) -> self`, `.transform(...)`, attrs `.a`, `.b`.
+- `ConformalCalibrator().fit(scores) -> self`, `.predict_set(field_probs, alpha)
+  -> set`, `.quantile(alpha)`, `.empirical_coverage(probs_list, labels, alpha)`,
+  staticmethod `.nonconformity(field_probs, true_label) -> 1 - p(true_label)`.
+- Module helpers: `sigmoid`, `logit` (numerically stable),
+  `expected_calibration_error(confidences, correct, n_bins)`.
+
+**Measured evidence (synthetic, known temperature distortion `k`)**
+- Over-confident (`k=2.5`): ECE **0.1011 → 0.0151** (Δ=0.086), fitted **T=2.62** (>1).
+- Under-confident (`k=0.4`): fitted **T=0.42** (<1), ECE 0.150 → 0.015.
+- Already calibrated (`k=1.0`): **T=1.05** (no-op), ECE 0.016 → 0.015.
+- Conformal coverage on held-out (n_cal=2000, n_test=4000): alpha=0.1 →
+  coverage **0.903** ≥ 0.90; sets grow monotonically as alpha shrinks
+  (avg |set| 2.43 @0.2 → 3.35 @0.1 → 3.92 @0.05).
+
+**Decisions / gotchas (downstream must know)**
+- Pure Python, stdlib only — **no numpy/torch/torch_npu/triton**. Fitting uses a
+  golden-section 1-D minimizer (convex objective), so it is deterministic and
+  host-clean. Import-hygiene `ast`-gate test asserts no `torch`/`torch_npu`/
+  `triton`/`vllm` imports.
+- `transform`/`predict_set` before `fit` raise `RuntimeError`.
+- Conformal `qhat = +inf` (too-small calibration set for the requested coverage)
+  degrades to the trivial full set rather than crashing; single-class / all-correct
+  / all-wrong edge cases are covered.
+- Does **not** import `schema_ir`/`validate`/`bench` — it operates on
+  confidence/score sequences and per-field probability maps, so it stays decoupled;
+  the ECE math is reproduced locally and pinned equal to T0.3 by a cross-check test.
+
+**RED→GREEN evidence**
+- RED (before `calibrate.py`): collection error
+  `FileNotFoundError: .../vllm_ascend/system_one/calibrate.py`.
+- GREEN: `python3 -m pytest -q --noconftest tests/ut/system_one/test_calibrate.py`
+  → `18 passed`. Regression: `test_bench.py` + `test_schema_ir.py` → `44 passed`
+  (62 total). `ruff check vllm_ascend/system_one/calibrate.py
+  tests/ut/system_one/test_calibrate.py` → clean.
