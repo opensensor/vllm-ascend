@@ -241,3 +241,66 @@ the dataset is swappable behind the harness.
 - Final task family + dataset (T0.3).
 - First calibration method to ship (temperature vs. conformal) given coverage needs.
 - Whether T3.4 (calibration-aware training) is in the first release.
+
+---
+
+## Completion log
+
+### T0.1 — Schema → decoding-constraint IR — DONE (2026-09-18)
+
+**Status**: complete. RED→GREEN, ruff clean, committed (pathspec).
+
+**Files**
+- `vllm_ascend/system_one/__init__.py` (new subpackage; host-side, CPU-only, Triton-free).
+- `vllm_ascend/system_one/schema_ir.py` — the compiler.
+- `tests/ut/system_one/__init__.py`, `tests/ut/system_one/test_schema_ir.py` — 28 UTs.
+
+**IR shape (what downstream tasks consume)**
+- `compile_schema(schema: dict) -> SchemaIR`. Root must be an `object` with
+  `properties`; anything else raises loudly.
+- `SchemaIR(fields: tuple[FieldIR, ...], path: str)` — immutable (frozen dataclass);
+  `iter_fields()` (top-level, declaration order), `leaf_fields()` (depth-first,
+  descends into nested objects, objects themselves are **not** leaves),
+  `field_paths()`, `validator_descriptors()`.
+- `FieldIR(name, path, kind, domain, required)` — `path` is JSON-pointer-ish, root
+  `"$"`, nested `"$.user.role"`. `is_leaf()` = not OBJECT.
+  `validator_descriptor()` flattens a field back to a dict carrying
+  `path/name/kind/required` + the domain keys (the T0.2 round-trip contract).
+- `FieldKind`: `ENUM / STRING / INTEGER / NUMBER / BOOLEAN / OBJECT` (str-mixin enum).
+- Domain descriptors (all frozen, `.describe()` → dict):
+  `EnumDomain(members)`, `StringDomain(max_length, pattern)`,
+  `NumericDomain(minimum, maximum, integral)`, `BooleanDomain()`,
+  `ObjectDomain(schema: SchemaIR)`.
+- Exceptions: `SchemaCompileError(ValueError)` base with `.path`;
+  `UnsupportedSchemaError(SchemaCompileError)` for out-of-subset constructs.
+
+**Supported subset / decisions (downstream must know)**
+- `enum`: non-empty list of `str`/`int`. **`bool` members rejected** (bool is an
+  int subclass; kept distinct from the BOOLEAN kind).
+- `string`: **`maxLength` required** (unbounded string rejected). `pattern` is
+  *recorded but not enforced* by the IR (T1.1/T0.2 may enforce).
+- `integer`/`number`: **both `minimum` and `maximum` required** (unbounded numeric
+  rejected) so Phase-2 heads can size the range. `integral` flag distinguishes int
+  vs number.
+- `object`: must declare `properties`; `required` is validated against declared
+  field names (naming an unknown field → `SchemaCompileError`). Field/property
+  **order is preserved** (dict insertion order) — heads and grammars can rely on it.
+- Rejected loudly with the offending path: `oneOf/anyOf/allOf/not`, `$ref`,
+  list-valued (union) `type`, `array`, unknown/`null` type, field with neither
+  `type` nor `enum`, non-object root, object without `properties`.
+
+**Gotchas**
+- Tests load `schema_ir.py` **by file path** (importlib) instead of
+  `import vllm_ascend...` to avoid the package `__init__` pulling in torch/vLLM;
+  keeps the UT truly host-side. The loader must register the module in
+  `sys.modules` **before** `exec_module` or Python 3.12+ dataclass forward-ref
+  resolution of the nested `SchemaIR` reference fails with an `AttributeError`.
+- Import-hygiene gate is `ast`-based (flags real `import`/`from` statements only)
+  so the module docstring may legitimately name `torch_npu`/`triton` in prose.
+- Ruff (0.15.x) enforces `X | Y` unions and unquoted forward refs under
+  `from __future__ import annotations`; the module is written that way.
+
+**RED→GREEN evidence**
+- RED (before `schema_ir.py`): collection error `FileNotFoundError: .../schema_ir.py`.
+- GREEN: `python3 -m pytest -q --noconftest tests/ut/system_one/test_schema_ir.py`
+  → `28 passed`. `ruff check vllm_ascend/system_one/ tests/ut/system_one/` → clean.
