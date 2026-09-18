@@ -304,3 +304,60 @@ the dataset is swappable behind the harness.
 - RED (before `schema_ir.py`): collection error `FileNotFoundError: .../schema_ir.py`.
 - GREEN: `python3 -m pytest -q --noconftest tests/ut/system_one/test_schema_ir.py`
   → `28 passed`. `ruff check vllm_ascend/system_one/ tests/ut/system_one/` → clean.
+
+### T0.2 — Structured-validity checker + property harness — DONE (2026-09-18)
+
+**Status**: complete. RED→GREEN, ruff clean, committed (pathspec).
+
+**Files**
+- `vllm_ascend/system_one/validate.py` — the validity oracle.
+- `tests/ut/system_one/test_validate.py` — 30 UTs (host-side, `--noconftest`).
+
+**API shape (what T1.1/T1.3/T2.1 consume)**
+- `validate_value(ir: SchemaIR, value, *, strict=True) -> ValidationResult`.
+- `is_valid(ir, value, *, strict=True) -> bool` (convenience).
+- `ValidationResult(ok: bool, violations: tuple[Violation, ...])` — frozen; also
+  `.path` / `.reason` (first offending violation, or `None` when valid) and
+  `__bool__` → `ok`. `Violation(path, reason)` — frozen; `path` is the IR's
+  JSON-pointer-ish path (`"$.user.role"`).
+- Violations are ordered by schema declaration order, depth-first into nested
+  objects; missing/invalid declared fields precede unknown-extra-key violations,
+  so `.path` is the first offending field in schema order.
+
+**Per-kind checks (driven only by the IR domains)**
+- ENUM → membership in `domain.members`; STRING → `str` type, `len ≤ max_length`,
+  pattern; INTEGER → `int` (not bool) in `[min, max]`; NUMBER → `int`/`float`
+  (not bool) in `[min, max]` (int accepted); BOOLEAN → `bool`; OBJECT → value
+  must be `dict`, recurse into the nested `SchemaIR`.
+- Required-field presence checked per record; nested records recurse with correct
+  nested paths.
+
+**Decisions (downstream must know)**
+- **Strict by default**: unknown/extra keys are a violation (`strict=True`). This
+  is the safer oracle for the "100% schema-valid" gate. `strict=False` gives a lax
+  mode that tolerates unknown keys but still enforces every declared field's domain.
+- **`bool` is not int/number/enum-int**: although `bool` subclasses `int`,
+  `True`/`False` are rejected for INTEGER/NUMBER fields and for enum int members;
+  valid only for BOOLEAN fields. (Mirrors T0.1 rejecting bool enum members.)
+- **Patterns ARE enforced** (T0.1 records-not-enforces; the oracle enforces).
+  `re.search` semantics (JSON-Schema `pattern`: match somewhere unless anchored);
+  an un-compilable pattern is treated as unsatisfiable (value rejected).
+- **Consumes ONLY the IR**: dispatch is on the `str`-valued `FieldKind` plus the
+  domain descriptors; `validate.py` does **not** import `schema_ir`, so it stays
+  pure-Python/host-side and in lockstep with T0.1's contract.
+
+**Gotchas**
+- Tests load both `schema_ir.py` and `validate.py` **by file path** (importlib),
+  registering each in `sys.modules` before `exec_module`, to avoid the package
+  `__init__` pulling in torch/vLLM. `validate.py` importing no `schema_ir` keeps
+  that clean (no cross-module resolution needed).
+- Import-hygiene gate is `ast`-based; the module docstring may name
+  `torch_npu`/`triton` in prose.
+
+**RED→GREEN evidence**
+- RED (before `validate.py`): collection error
+  `FileNotFoundError: .../validate.py`.
+- GREEN: `python3 -m pytest -q --noconftest tests/ut/system_one/test_validate.py`
+  → `30 passed`. Regression: `test_schema_ir.py` → `28 passed`.
+  `ruff check vllm_ascend/system_one/validate.py tests/ut/system_one/test_validate.py`
+  → clean.
