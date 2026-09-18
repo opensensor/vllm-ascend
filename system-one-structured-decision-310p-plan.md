@@ -431,3 +431,81 @@ the dataset is swappable behind the harness.
 - GREEN: `python3 -m pytest -q --noconftest tests/ut/system_one/test_bench.py`
   → `16 passed`. Regression: `test_schema_ir.py` → `28 passed`.
   `ruff check tools/system_one/ tests/ut/system_one/test_bench.py` → clean.
+
+### T1.1 — Grammar-guided constrained decoder (interim path) — DONE (2026-09-18)
+
+**Status**: complete. RED→GREEN, ruff clean, committed (pathspec).
+
+**Files**
+- `vllm_ascend/system_one/constrained_decode.py` — the interim constrained-AR
+  masking engine (compiles the T0.1 IR to a character NFA + token mask).
+- `tests/ut/system_one/test_constrained_decode.py` — 38 UTs (host-side,
+  `--noconftest`), incl. the 100%-validity corpus under adversarial + random logits.
+
+**What it does**
+- Compiles the T0.1 constraint IR into a **token-level decoding constraint**: an
+  incremental character NFA (Thompson-style build over `Lit`/`Alt`/`Seq`/bounded
+  repeat) whose language is exactly the canonical-JSON documents that pass the
+  T0.2 oracle. Applied step-by-step over a decoder's logits, disallowed tokens are
+  **hard-masked to `-inf`** (never merely penalized) and the argmax over what
+  remains is taken — so every emitted value is schema-valid **by construction**.
+
+**API shape (what T1.2 / T1.3 consume)**
+- `compile_constraint(ir) -> GrammarNFA` — IR → compiled character NFA.
+- `ConstraintEngine(nfa)` — stateful matcher: `allowed_token_mask(vocab) ->
+  list[bool]`, `advance(vocab, token_id)`, `advance_str(surface)`,
+  `is_complete() -> bool`, `allowed_chars() -> frozenset[str]`, `text() -> str`.
+- `constrained_decode(ir, logits_stream, tokenizer, *, max_steps=10_000) -> value`
+  — argmax-over-allowed greedy driver; returns the parsed typed value.
+- `apply_mask(logits, mask) -> list[float]` — pure, non-mutating; disallowed → `-inf`.
+- **Token/vocab abstraction** (`SimpleVocab(tokens, eos_id)` + `char_vocab(alphabet)`):
+  `tokens[i]` is the surface string token `i` emits; `tokens[eos_id]` is the stop
+  token. The engine is charset-/token-agnostic — single-char *or* multi-char
+  fragment vocabs both work (tested). This is the seam T1.2 adapts a real
+  tokenizer to (and where XGrammar/llguidance/outlines later swap in).
+- `logits_stream` is normalized (`_logits_source`) to accept a `callable(step) ->
+  vector`, a single constant vector (reused each step), a sequence of per-step
+  vectors, or an iterator of vectors.
+
+**Termination / completeness**
+- The EOS token is allowed **iff** `is_complete()` (the NFA accept state is live,
+  i.e. a full `{...}` document has been emitted). The driver stops only when EOS
+  wins the masked argmax, so it can never stop at a partial document, and required
+  fields (structurally forced, no "absent" branch) are always present. Optional
+  fields have an absent branch and may be skipped.
+
+**Domain enforcement — token-wise vs. value-close (as required by the task)**
+- **enum / boolean** — literal alternation; only members reachable, value-exact.
+- **integer** — **enumerated** over `[ceil(min), floor(max)]` (bounded by
+  `MAX_ENUM_LITERALS = 100_000`; a larger range raises `ConstraintCompileError`);
+  range holds **exactly**, not digit-wise.
+- **number** — enumerated candidate set: the integers in range plus the exact
+  `minimum`/`maximum` literals; range holds exactly. The interim path does **not**
+  synthesize arbitrary reals — full real-line coverage is deferred to the
+  structured-head path (documented limitation).
+- **string length** — enforced **token-wise**: the NFA admits at most `max_length`
+  content chars (from a safe, escaping-free alphabet), then only the closing quote.
+- **string pattern** — enforced by **enumerating bounded matching witnesses**
+  (`re.search`-satisfying, length-bounded); the field becomes an alternation over
+  those literals, so each already satisfies the T0.2 pattern + length checks.
+
+**Decisions / gotchas (downstream must know)**
+- Output surface is **canonical, whitespace-free JSON**, root fields in declaration
+  order; nested objects recurse. `json.loads` on the finished string is the only
+  parse and cannot fail (the grammar only accepts valid JSON).
+- Does **not** import `schema_ir` / `validate`: duck-types the IR (dispatch on the
+  `str`-valued `FieldKind`) so it stays host-side and in lockstep with T0.1.
+- Import-hygiene: `ast`-gate test asserts no `torch`/`torch_npu`/`triton`/`vllm`
+  imports. Pure Python, stdlib only.
+- Numeric/pattern enumeration guarantees **validity** but limits *reachability*
+  (e.g. NUMBER cannot emit every real); acceptable for the interim shippable path,
+  replaced by structured heads / a digit-wise grammar later.
+
+**RED→GREEN evidence**
+- RED (before `constrained_decode.py`): collection error
+  `FileNotFoundError: .../constrained_decode.py`.
+- GREEN: `python3 -m pytest -q --noconftest tests/ut/system_one/test_constrained_decode.py`
+  → `38 passed`. Regression: `test_schema_ir.py` + `test_validate.py` → `58 passed`
+  (96 total across the three files). `ruff check
+  vllm_ascend/system_one/constrained_decode.py tests/ut/system_one/test_constrained_decode.py`
+  → clean.
