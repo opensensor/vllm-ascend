@@ -361,3 +361,73 @@ the dataset is swappable behind the harness.
   → `30 passed`. Regression: `test_schema_ir.py` → `28 passed`.
   `ruff check vllm_ascend/system_one/validate.py tests/ut/system_one/test_validate.py`
   → clean.
+
+### T0.3 — Benchmark harness + task-family loader — DONE (2026-09-18)
+
+**Status**: complete. RED→GREEN, ruff clean (check + format), committed (pathspec).
+
+**Files**
+- `tools/system_one/__init__.py`, `tools/system_one/bench.py` — the harness.
+- `tests/ut/system_one/test_bench.py` — 16 UTs.
+
+**What it does (four PRD §7/§8 metric families on a PLUGGABLE runtime)**
+- `run_benchmark(runtime, records, *, n_bins=10, timer=None) -> dict` times each
+  `runtime.predict(context, schema)` call and emits a JSON-serializable report:
+  `latency` (median/p95/mean/n), `accuracy` (exact-match + `per_field`),
+  `validity` (valid_fraction + which validator ran), `calibration` (ECE +
+  reliability bins). This report is the contract T0.4/T1.3/T2.6/T3.3 consume.
+- **Latency**: `latency_stats(durations)` — `statistics.median`, nearest-rank p95
+  (`rank = ceil(0.95·N)`), mean. `timer` is injectable so latency is deterministic
+  under test.
+- **Accuracy**: whole-record `exact_match` + `per_field_accuracy` keyed by IR leaf
+  path (navigates nested value dicts by `$.a.b` path).
+- **Validity**: prefers the T0.2 checker when importable, else an IR-driven
+  fallback; report `validity.validator` is `"t0.2"` or `"fallback"`.
+- **Calibration**: `expected_calibration_error(confidences, correct, n_bins)` and
+  `reliability_bins(...)` implemented from scratch (equal-width bins over [0,1];
+  ECE = Σ (|Bₘ|/N)·|acc−conf|). Calibration points are per **leaf field** per
+  record (confidence vs field-matched-gold).
+
+**Interfaces (downstream consumes these)**
+- `Record(context: str, schema: dict, gold: dict)` — the `(context, schema,
+  gold_value)` datum.
+- `Prediction(value: dict, confidences: dict[str, float])` — `confidences` maps a
+  leaf field **path** (`"$.tool"`) to a probability in [0,1] (scalar runtimes map
+  every path to one value).
+- `Runtime` protocol: `predict(context, schema) -> Prediction`.
+- `StubRuntime(records, *, overrides=..., confidences=..., correct_conf=0.9,
+  wrong_conf=0.3)` — deterministic gold-with-noise reference; matched by
+  `context`; exercises all four metrics.
+- `TaskFamily` protocol + `register_task_family(name, loader)` /
+  `load_task_family(name) -> Iterator[Record]` (name validated eagerly).
+
+**Task family / dataset decision (P0.3)**
+- Shipped default: the in-repo synthetic **`intent_routing`** family (typed
+  function-call / intent routing): unstructured context text + a tool/arg schema
+  (enum tool id, bounded-int arg count, boolean confirm flag, bounded-string
+  query) + the gold typed call. Fully offline, 6 fixture records; every schema
+  compiles via T0.1 and every gold validates.
+- A real dataset (BFCL-style function-calling, or a JSON-Schema extraction set)
+  swaps in behind `register_task_family` by yielding `Record`s; the loader owns
+  any download/caching — **the harness never fetches anything**.
+
+**T0.2 consumption**
+- The soft dependency is live: T0.2 `validate.py` landed concurrently and the
+  harness auto-detected it (`validate_value(ir, value) -> ValidationResult`,
+  adapted via its `__bool__`/`.path`); the report labels `validator: "t0.2"`.
+  With `validate.py` absent the IR-driven fallback runs unchanged.
+
+**Gotchas**
+- The T0.1 IR compiler is loaded **by file path** (importlib, registered in
+  `sys.modules` before `exec_module`), never `import vllm_ascend...`, so the
+  harness stays pure-Python/host-side. Tests load `bench.py` the same way.
+- Import-hygiene gate is `ast`-based; no `torch`/`torch_npu`/`triton`/`vllm` on
+  the import path.
+- `load_task_family` validates the name eagerly (before returning the iterator)
+  so an unknown family raises `KeyError` at call time, not on first `next()`.
+
+**RED→GREEN evidence**
+- RED (before `bench.py`): collection error `FileNotFoundError: .../bench.py`.
+- GREEN: `python3 -m pytest -q --noconftest tests/ut/system_one/test_bench.py`
+  → `16 passed`. Regression: `test_schema_ir.py` → `28 passed`.
+  `ruff check tools/system_one/ tests/ut/system_one/test_bench.py` → clean.
