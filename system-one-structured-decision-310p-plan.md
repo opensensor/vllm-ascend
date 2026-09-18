@@ -651,3 +651,68 @@ the dataset is swappable behind the harness.
   → `16 passed`. Regression: `test_constrained_decode.py` + `test_validate.py` +
   `test_schema_ir.py` → `96 passed`. `ruff check vllm_ascend/system_one/serve.py
   tests/ut/system_one/test_serve.py` → clean.
+
+### T3.1 — Abstain rule + risk–coverage tuner — DONE (2026-09-18)
+
+**Status**: complete. RED→GREEN, ruff clean, committed (pathspec).
+
+**Files**
+- `vllm_ascend/system_one/select.py` — selective prediction (pure Python, stdlib only).
+- `tests/ut/system_one/test_select.py` — 23 UTs (loaded by file path).
+
+**API (T3.2 router consumes this)**
+- `AbstainRule(threshold, *, aggregation="min").decide(prediction) ->
+  AbstainDecision`. `prediction` is duck-typed: an object with `.confidences`
+  (T0.3 `Prediction`), a `Mapping` of IR leaf path → confidence (T2.4/T2.5
+  surface), a bare scalar, or a sequence. `aggregation` ∈ {`"min"`, `"mean"`}.
+- `AbstainDecision(accept: bool, reason: str, min_confidence, aggregate_confidence,
+  max_set_size, field)`. Reasons: `"accept"`, `"below_threshold"`,
+  `"no_confidence"`, `"conformal_set_gt_1"`, `"conformal_empty_set"`.
+- `ConformalAbstainRule(calibrator, alpha).decide(field_probs_by_path) ->
+  AbstainDecision`. Duck-typed on `calibrator.predict_set(field_probs, alpha) ->
+  set` (T2.4 `ConformalCalibrator`), so `calibrate` is **not** imported. Abstains
+  when **any** field's prediction set is not a singleton (size > 1, or empty).
+- `risk_coverage_curve(scores, correct) -> list[RiskCoveragePoint(coverage, risk,
+  threshold)]` — ascending-threshold, coverage non-increasing, selective risk
+  non-increasing on well-separated data. Endpoints always present: threshold `0.0`
+  → coverage `1.0` (full risk); threshold `+inf` → coverage `0.0` (risk `0.0` by
+  convention when nothing is accepted).
+- `tune_threshold(scores, correct, *, target_risk=None, target_coverage=None) ->
+  float` — exactly one target. `target_risk`: max coverage with selective
+  risk ≤ target (abstain-all `+inf` always qualifies → always returns a
+  threshold). `target_coverage`: nearest coverage, plateau ties → lower threshold.
+
+**Field-aggregation decision (downstream must know)**
+- Threshold rule aggregates fields by **min** by default: a record is only as
+  trustworthy as its **weakest** leaf, so one low-confidence field abstains the
+  whole record. `"mean"` is offered as the less-conservative alternative.
+  `min_confidence` (weakest field) is always reported regardless of aggregation.
+- Conformal rule aggregates by **any-field-set > 1**: any ambiguous (or empty)
+  field abstains the record; `max_set_size` / `field` name the worst field.
+
+**Measured evidence (synthetic, correctness = step at confidence 0.5; n=100)**
+- `target_risk=0.0` → threshold **0.500**, coverage **0.500**, selective risk **0.0000**.
+- `target_risk=0.1` → threshold **0.450**, coverage **0.550**, selective risk **0.0909** (≤ 0.1).
+- `target_coverage=0.70` → threshold **0.300**, coverage **0.700**, selective risk 0.2857.
+- Curve: 101 points, endpoints `(coverage=1.0, risk=0.5, threshold=0.0)` and
+  `(coverage=0.0, risk=0.0, threshold=inf)`; coverage + risk both monotone
+  non-increasing.
+- Edge cases covered: all-correct (risk 0 at any coverage → keeps everything),
+  all-wrong (only abstain-all hits risk 0 → threshold `+inf`), single record.
+
+**Decisions / gotchas**
+- Pure Python, stdlib only — **no numpy/torch/torch_npu/triton**; import-hygiene
+  `ast`-gate asserts no `torch`/`torch_npu`/`triton`/`vllm` imports.
+- Does **not** import `calibrate`/`bench`/`schema_ir` — operates on confidence
+  sequences and per-field probability maps (conformal calibrator is duck-typed),
+  so it stays decoupled and off the heavy import path.
+- Curve includes an explicit `+inf` (abstain-all) endpoint so `tune_threshold`
+  can always meet a `target_risk` (returns `+inf` when even that is required).
+
+**RED→GREEN evidence**
+- RED (before `select.py`): collection error
+  `FileNotFoundError: .../vllm_ascend/system_one/select.py`.
+- GREEN: `python3 -m pytest -q --noconftest tests/ut/system_one/test_select.py`
+  → `23 passed`. Regression: `test_calibrate.py` + `test_bench.py` → `34 passed`.
+  `ruff check vllm_ascend/system_one/select.py tests/ut/system_one/test_select.py`
+  → clean.
