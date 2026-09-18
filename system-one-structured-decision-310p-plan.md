@@ -583,3 +583,71 @@ the dataset is swappable behind the harness.
   → `18 passed`. Regression: `test_bench.py` + `test_schema_ir.py` → `44 passed`
   (62 total). `ruff check vllm_ascend/system_one/calibrate.py
   tests/ut/system_one/test_calibrate.py` → clean.
+
+### T1.2 — Serving entry (schema in → typed value out) — DONE (2026-09-18)
+
+**Status**: complete. RED→GREEN, ruff clean, committed (pathspec).
+
+**Files**
+- `vllm_ascend/system_one/serve.py` — the serving seam (PRD §6.4).
+- `tests/ut/system_one/test_serve.py` — 16 UTs (host-side, `--noconftest`).
+
+**What it does**
+- `SystemOneServer(backend, *, strict=True).decide(context, schema) -> Decision`:
+  compiles the schema at the **gate** (T0.1 `compile_schema`), drives a pluggable
+  `DecodeBackend`, **defensively validates** the produced value through the T0.2
+  oracle (`validate_value`), and returns a stable `Decision`. Module-level
+  `serve(context, schema, backend, *, strict=True) -> Decision` is the one-shot
+  convenience. This is the seam the Phase-2 single-forward head swaps into
+  **without a call-site change**.
+
+**API shape (T2.5 assembly + T3.2 router consume this)**
+- `DecodeBackend` protocol (`@runtime_checkable`): `decode(ir, context) -> value`
+  — the single abstraction over *how a value is produced*. The constrained-AR
+  path implements it now; the T2.x structured head implements the same signature
+  later (one forward, no grammar), swapping in transparently.
+- `ConstrainedARBackend(logits_fn, tokenizer, *, max_steps=DEFAULT_MAX_STEPS)` —
+  wraps T1.1's `constrained_decode` over an injected `logits_fn(context, step)
+  -> vector` (mockable) + a `SimpleVocab` tokenizer; value is schema-valid by
+  construction. Adapts `(context, step)` to the driver's `step -> vector` stream.
+- `MockBackend(*, value=..., value_fn=...)` — test/stub backend (fixed value or
+  `value_fn(ir, context)`); also stands in for the Phase-2 head in shape tests.
+- `Decision(value, confidences, escalate=False)` — frozen. `value` is
+  T0.2-valid by contract; `confidences` is a **per-leaf-path placeholder**
+  mapping (`{path: PLACEHOLDER_CONFIDENCE=None}` via `ir.field_paths()`) that
+  **T2.5 fills** with T2.4-calibrated probabilities; `escalate` defaults `False`
+  and the **T3.2 router** sets it. Shape is stable across the swaps.
+- `ServingError(RuntimeError)` (with `.path`) — the clean gate error. A malformed
+  / unsupported schema surfaces T0.1's `SchemaCompileError` as `ServingError` at
+  `decide` *before the backend is driven*; a backend that emits a schema-invalid
+  value is caught by the defensive T0.2 assertion (same exception type).
+- Re-exports `SimpleVocab` / `char_vocab` so callers get the vocab seam without
+  reaching past `serve`.
+
+**Phase-2 head swap-in (the whole point)**
+- The head backend (T2.x) implements `DecodeBackend.decode(ir, context) -> value`
+  emitting all fields in one forward; `SystemOneServer` / `serve` / the gate /
+  the defensive validation / the `Decision` shape are unchanged. T2.5 assembly
+  then supplies real `confidences` in place of the placeholders; T3.2 sets
+  `escalate`. No call-site edit anywhere.
+
+**Decisions / gotchas (downstream must know)**
+- Pure Python, stdlib only — **no torch/torch_npu/triton/vllm** on the import
+  path (`ast`-gate test asserts it). To stay host-side, `serve.py` loads its
+  siblings (`schema_ir` / `validate` / `constrained_decode`) **by file path**
+  (`_load_sibling`, keyed off `__file__`, cached in `sys.modules`) rather than
+  `import vllm_ascend...` — which would drag in the heavyweight package
+  `__init__`. It prefers an already-imported `vllm_ascend.system_one.<stem>` when
+  present (normal in-package case) and otherwise loads the exact same source
+  file; the value returned is plain JSON (dict) so cross-module class identity
+  never matters.
+- `strict=True` by default (rejects unknown keys — the safe oracle); pass
+  `strict=False` for the lax mode. Backend value validity is enforced regardless.
+
+**RED→GREEN evidence**
+- RED (before `serve.py`): collection error
+  `FileNotFoundError: .../vllm_ascend/system_one/serve.py`.
+- GREEN: `python3 -m pytest -q --noconftest tests/ut/system_one/test_serve.py`
+  → `16 passed`. Regression: `test_constrained_decode.py` + `test_validate.py` +
+  `test_schema_ir.py` → `96 passed`. `ruff check vllm_ascend/system_one/serve.py
+  tests/ut/system_one/test_serve.py` → clean.
