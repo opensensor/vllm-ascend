@@ -231,18 +231,17 @@ class Glm5NextW2KDA(nn.Module):
         """
         x_float = x.to(self.compute_dtype)
         variance = x_float.pow(2).mean(dim=-1, keepdim=True)
-        # FIX (KDA under-contribution): the KDA recurrence output is
-        # intrinsically tiny -- q is scaled by head_dim**-0.5 (~0.088) and
-        # the trained short conv attenuates q/k/v ~40x -- so the core output
-        # is O(1e-5) with a per-head variance ~1e-10. That sits FAR below the
-        # FusedRMSNormGated default eps (o_norm_eps=1e-5). With variance << eps
-        # the RMSNorm stops being scale-invariant and degenerates into a fixed
-        # multiply by rsqrt(eps)~316 instead of dividing by the true RMS
-        # (~1e5), so the KDA contribution collapses ~100x (o_proj out ~1e-3)
-        # and the 34/45 KDA layers become near-no-ops -> incoherent logits.
-        # Use a negligible eps so o_norm renormalises the tiny KDA output to
-        # O(1) as designed (still guards genuine all-zero rows).
-        rms_eps = min(self.o_norm_eps, 1e-12)
+        # Match the reference FusedRMSNormGated eps (o_norm_eps, 1e-5). The KDA
+        # recurrence output is intrinsically tiny (per-head variance ~1e-10,
+        # far below eps), so this norm acts as a near-constant ~rsqrt(1e-5)~316x
+        # scale rather than a full per-row renormalisation -- that is BY DESIGN:
+        # the GPU NVFP4 golden (NVIDIA-validated, cosine 0.9999 vs HF) shows KDA
+        # attn_out RMS ~0.0075 at L0. A prior "under-contribution fix" forced
+        # eps=1e-12, which renormalises each row to O(1) and inflated the KDA
+        # output ~15x (Ascend RMS 0.116 vs golden 0.0075 -> cos cascade to ~0 by
+        # L2, incoherent logits). Keeping eps=o_norm_eps restores the golden
+        # magnitude (rsqrt still guards genuine all-zero rows).
+        rms_eps = self.o_norm_eps
         x_normed = x_float * torch.rsqrt(variance + rms_eps)
         if weight is not None:
             x_normed = x_normed * weight.to(self.compute_dtype)
