@@ -25,7 +25,10 @@ from vllm.v1.attention.backends.gdn_attn import GDNAttentionMetadata
 from vllm.v1.attention.backends.utils import PAD_SLOT_ID
 
 from vllm_ascend._310p.ops.fla.chunk_gated_delta_rule import chunk_gated_delta_rule_310
-from vllm_ascend._310p.ops.fla.fused_gdn_gating import fused_gdn_gating_pytorch
+from vllm_ascend._310p.ops.fla.fused_gdn_gating import (
+    fused_gdn_gating_pytorch,
+    gdn_gating_constants,
+)
 from vllm_ascend._310p.ops.fla.l2norm import l2norm_310p
 from vllm_ascend.ascend_forward_context import _EXTRA_CTX
 from vllm_ascend.attention.utils import maybe_save_kv_layer_to_connector
@@ -181,6 +184,28 @@ def _merge_spec_and_non_spec_outputs_310(
     out[non_spec_token_indx] = non_spec_out
 
 
+def _cached_gating_constants(layer: torch.nn.Module) -> tuple[torch.Tensor, torch.Tensor]:
+    """Cache the weight-only half of the GDN gate on ``layer``.
+
+    ``-exp(A_log)`` and the fp32 ``dt_bias`` are pure functions of loaded
+    weights, but recomputing them inline costs four NPU kernels on
+    ``[num_heads]`` tensors for every layer of every decode step -- 310P decode
+    is dominated by kernel count, not by the bytes these touch.
+
+    This is a module-level function on purpose: ``_forward_core`` is copied as a
+    plain function onto the upstream ``QwenGatedDeltaNetAttention`` class, so at
+    runtime ``self`` is not an ``AscendGatedDeltaNetAttention310`` and cannot
+    reach methods defined on it. The identity check reloads the constants if the
+    weights are ever replaced, e.g. by ``process_weights_after_loading``.
+    """
+    cached = getattr(layer, "_gdn_gating_cache", None)
+    if cached is not None and cached[0] is layer.A_log and cached[1] is layer.dt_bias:
+        return cached[2]
+    constants = gdn_gating_constants(layer.A_log, layer.dt_bias)
+    layer._gdn_gating_cache = (layer.A_log, layer.dt_bias, constants)
+    return constants
+
+
 class AscendGatedDeltaNetAttention310(GatedDeltaNetAttention):
     get_state_dtype = _310p_get_state_dtype
 
@@ -312,7 +337,7 @@ class AscendGatedDeltaNetAttention310(GatedDeltaNetAttention):
         query_spec, key_spec, value_spec = self.rearrange_mixed_qkv(mixed_qkv_spec)
         query_non_spec, key_non_spec, value_non_spec = self.rearrange_mixed_qkv(mixed_qkv_non_spec)
 
-        g, beta = fused_gdn_gating_pytorch(self.A_log, a, b, self.dt_bias)
+        g, beta = fused_gdn_gating_pytorch(self.A_log, a, b, self.dt_bias, constants=_cached_gating_constants(self))
         if attn_metadata.num_prefills > 0 or spec_sequence_masks is not None:
             if spec_sequence_masks is not None:
                 if attn_metadata.num_prefills == 0 and attn_metadata.num_decodes == 0:
