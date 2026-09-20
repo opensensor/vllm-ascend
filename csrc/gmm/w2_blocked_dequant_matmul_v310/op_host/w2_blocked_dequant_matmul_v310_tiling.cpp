@@ -46,7 +46,9 @@ static ge::graphStatus W2BlockedDequantMatmulTilingFunc(gert::TilingContext *con
     const int64_t T = xShape.GetDim(0);
     const int64_t K = xShape.GetDim(1);
     const int64_t N = codesShape.GetDim(0);
-    OP_CHECK_IF(codesShape.GetDim(1) != K, OP_LOGE(context, "codes.shape[1] must equal x.shape[1] (K)"),
+    // codes is now PACKED uint8 [N, K/4] (4 two-bit codes per byte); full K comes from x.
+    OP_CHECK_IF(codesShape.GetDim(1) * 4 != K,
+                OP_LOGE(context, "codes.shape[1]*4 must equal x.shape[1] (K); codes is packed uint8 [N, K/4]"),
                 return ge::GRAPH_FAILED);
     OP_CHECK_IF(T <= 0 || N <= 0 || K <= 0, OP_LOGE(context, "T/N/K must be positive"), return ge::GRAPH_FAILED);
     OP_CHECK_IF(N % BLK != 0 || K % BLK != 0, OP_LOGE(context, "N and K must be multiples of 32"),
@@ -66,10 +68,16 @@ static ge::graphStatus W2BlockedDequantMatmulTilingFunc(gert::TilingContext *con
     // GetUserWorkspace(workspace) returns (workspace + GetLibApiWorkSpaceSize()),
     // so the reported size must include that system reserve or the kernel writes
     // run past the allocation (invalid GM address).
+    // Per-core de-interleaved x workspace: each core builds its own field-major
+    // copy of x[mAligned, K] so the on-chip unpack can store the weight
+    // field-major and skip the per-weight-row gather (x is de-interleaved once
+    // per core instead).
+    const size_t xfmBytes = static_cast<size_t>(coreNum) * static_cast<size_t>(mAligned)
+                            * static_cast<size_t>(K) * sizeof(uint16_t);
     const size_t sysRsv = ascendcPlatform.GetLibApiWorkSpaceSize();
     size_t *currentWorkspace = context->GetWorkspaceSizes(1);
     OP_CHECK_NULL_WITH_CONTEXT(context, currentWorkspace);
-    currentWorkspace[0] = sysRsv + wdqBytes + yfBytes;
+    currentWorkspace[0] = sysRsv + wdqBytes + yfBytes + xfmBytes;
 
     const int64_t nBlocks = (N + 127) / 128;
     uint32_t blockDim = (nBlocks < static_cast<int64_t>(coreNum)) ? static_cast<uint32_t>(nBlocks) : coreNum;

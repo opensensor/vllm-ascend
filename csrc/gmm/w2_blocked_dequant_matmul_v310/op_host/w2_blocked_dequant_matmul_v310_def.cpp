@@ -28,7 +28,7 @@ public:
             .AutoContiguous();
         this->Input("codes")
             .ParamType(REQUIRED)
-            .DataType({ge::DT_INT8})
+            .DataType({ge::DT_UINT8})
             .FormatList({ge::FORMAT_ND})
             .AutoContiguous();
         this->Input("blockScale")
