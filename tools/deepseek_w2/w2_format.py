@@ -101,6 +101,8 @@ def compute_block_scales(
     n_bits: int = W2_BITS,
     block_rows: int = W2_BLOCK_ROWS,
     block_cols: int = W2_BLOCK_COLS,
+    method: str = "minmax",
+    mse_num_candidates: int = 48,
 ) -> torch.Tensor:
     """Per-block scales for a weight matrix, one scalar per ``[32, 32]`` block.
 
@@ -108,6 +110,17 @@ def compute_block_scales(
         w: ``[out, in]`` float weights; both dims multiples of the block size.
         n_bits: code width (2 for W2, 4 for W4).
         block_rows, block_cols: block shape.
+        method: ``"minmax"`` (default, the original scale = ``max(pos_max/pos_cover,
+            neg_absmax/neg_cover)`` -- sizes the scale so no value clips) or
+            ``"mse"`` (per-block scale that MINIMISES the round-trip reconstruction
+            MSE of the actual ``round -> clamp -> dequant`` grid). ``minmax`` wastes
+            code resolution on rare block outliers; for W2 (only 4 levels) it caps
+            weight cosine at ~0.83 vs the fp8 reference, while ``mse`` (optimum near
+            ~0.30*absmax for W2) reaches ~0.92 at zero extra memory -- same code
+            format, same kernels, just a better scale value. Measured on
+            GLM-5.3-Flash experts against the fp8 source. ``mse`` also helps W4
+            slightly (the ceiling is already ~0.99 there).
+        mse_num_candidates: number of scale candidates searched per block (``mse``).
 
     Returns:
         ``[out // block_rows, in // block_cols]`` float64 per-block scales.
@@ -116,17 +129,45 @@ def compute_block_scales(
     out_features, in_features = w.shape
     if out_features % block_rows or in_features % block_cols:
         raise ValueError(f"weight shape {tuple(w.shape)} must tile [{block_rows}, {block_cols}] blocks exactly.")
-    _, _, _, pos_cover, neg_cover = _grid(n_bits)
+    code_min, code_max, _, pos_cover, neg_cover = _grid(n_bits)
     blocks = w.view(
         out_features // block_rows,
         block_rows,
         in_features // block_cols,
         block_cols,
     ).permute(0, 2, 1, 3)  # [Br, Bc, block_rows, block_cols]
-    pos_max = blocks.clamp_min(0).amax(dim=(-2, -1))
-    neg_absmax = blocks.clamp_max(0).abs().amax(dim=(-2, -1))
-    scale = torch.maximum(pos_max / pos_cover, neg_absmax / neg_cover)
-    return scale.clamp_min(SCALE_FLOOR)
+    if method == "minmax":
+        pos_max = blocks.clamp_min(0).amax(dim=(-2, -1))
+        neg_absmax = blocks.clamp_max(0).abs().amax(dim=(-2, -1))
+        scale = torch.maximum(pos_max / pos_cover, neg_absmax / neg_cover)
+        return scale.clamp_min(SCALE_FLOOR)
+    if method != "mse":
+        raise ValueError(f"unknown scale method {method!r}; expected 'minmax' or 'mse'")
+
+    # MSE-optimal per-block scale: search scale = frac * absmax over a grid and
+    # keep, per block, the frac that minimises the reconstruction error of the
+    # real quantiser (round(w/scale).clamp(code_min, code_max) * scale). Fully
+    # vectorised over blocks; one pass per candidate frac.
+    n_br, n_bc = out_features // block_rows, in_features // block_cols
+    bflat = blocks.reshape(n_br, n_bc, block_rows * block_cols)  # [Br, Bc, B]
+    absmax = bflat.abs().amax(dim=-1)  # [Br, Bc]
+    # The minmax scale is the largest sensible candidate (frac ~ 1/pos_cover);
+    # the MSE optimum for coarse grids sits well below it, so search (0, ~1].
+    fracs = torch.linspace(1.0 / mse_num_candidates, 1.0, mse_num_candidates, dtype=w.dtype)
+    best_err = None
+    best_scale = None
+    for frac in fracs.tolist():
+        s = (absmax * frac).clamp_min(SCALE_FLOOR)  # [Br, Bc]
+        s_e = s.unsqueeze(-1)
+        codes = torch.round(bflat / s_e).clamp(code_min, code_max)
+        err = ((codes * s_e - bflat) ** 2).sum(dim=-1)  # [Br, Bc]
+        if best_err is None:
+            best_err, best_scale = err, s
+        else:
+            better = err < best_err
+            best_scale = torch.where(better, s, best_scale)
+            best_err = torch.where(better, err, best_err)
+    return best_scale.clamp_min(SCALE_FLOOR)
 
 
 def broadcast_block_scales(
@@ -149,8 +190,15 @@ def quantize_weight(
     n_bits: int = W2_BITS,
     block_rows: int = W2_BLOCK_ROWS,
     block_cols: int = W2_BLOCK_COLS,
+    method: str = "minmax",
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Quantise float weights to signed int codes + per-block scales.
+
+    ``method`` selects the block-scale rule (see :func:`compute_block_scales`):
+    ``"minmax"`` (default, no-clip) or ``"mse"`` (reconstruction-MSE-optimal,
+    strongly recommended for W2 -- lifts weight cosine ~0.83 -> ~0.92 at no memory
+    cost). The output format is identical either way, so ``mse``-quantised weights
+    are a drop-in for the same dequant path and kernels.
 
     Returns ``(codes, block_scale)`` with ``codes`` int8 in
     ``[code_min, code_max]`` shaped ``[out, in]`` and ``block_scale`` float64
@@ -159,7 +207,7 @@ def quantize_weight(
     w = w.double()
     out_features, in_features = w.shape
     code_min, code_max, _, _, _ = _grid(n_bits)
-    block_scale = compute_block_scales(w, n_bits, block_rows, block_cols)
+    block_scale = compute_block_scales(w, n_bits, block_rows, block_cols, method=method)
     full_scale = broadcast_block_scales(block_scale, out_features, in_features, block_rows, block_cols)
     codes = torch.round(w / full_scale).clamp(code_min, code_max).to(torch.int8)
     return codes, block_scale

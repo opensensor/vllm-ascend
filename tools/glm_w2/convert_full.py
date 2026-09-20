@@ -49,6 +49,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -347,7 +348,13 @@ def _convert_packed_range(
         padded_height = math.ceil(height / W2_BLOCK_ROWS) * W2_BLOCK_ROWS
         if padded_height != height:
             tile = torch.cat([tile, torch.zeros(padded_height - height, in_features, dtype=tile.dtype)], dim=0)
-        codes, scale = quantize_weight(tile, W2_BITS, W2_BLOCK_ROWS, W2_BLOCK_COLS)
+        # MSE-optimal per-block scale (default) lifts W2 weight cosine ~0.83 -> ~0.92
+        # vs the fp8 source at zero memory cost (same code format/kernels). Set
+        # GLM_W2_SCALE_METHOD=minmax to reproduce the original no-clip scale.
+        codes, scale = quantize_weight(
+            tile, W2_BITS, W2_BLOCK_ROWS, W2_BLOCK_COLS,
+            method=os.environ.get("GLM_W2_SCALE_METHOD", "mse"),
+        )
         dst = c0 - item.row0
         packed[dst : dst + padded_height] = pack_codes(codes, W2_BITS)
         block_scale[dst // W2_BLOCK_ROWS : dst // W2_BLOCK_ROWS + padded_height // W2_BLOCK_ROWS] = scale.to(
