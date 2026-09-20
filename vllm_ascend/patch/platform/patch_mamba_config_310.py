@@ -39,7 +39,21 @@ def verify_and_update_config(cls, vllm_config) -> None:
 
     # get attention page size (for 1 token)
     if model_config.use_mla:
-        raise RuntimeError("MLA is not supported on 310P currently.")
+        # MLA is gated off on 310P by default. When the experimental bring-up
+        # flag is set we fall through: `FullAttentionSpec` below uses the MLA
+        # cache head size (kv_lora_rank + qk_rope_head_dim, e.g. 512 + 0 for
+        # NoPE GLM) that `model_config.get_head_size()` already returns for MLA
+        # models, so the page-size math is well defined. NOTE: with a 512-wide
+        # latent head the 310P kernel constraint block_size * head_size <= 16384
+        # forces block_size <= 32; verify the resolved block size on hardware.
+        from vllm_ascend import envs as ascend_envs
+
+        if not ascend_envs.VLLM_ASCEND_310P_ENABLE_MLA:
+            raise RuntimeError(
+                "MLA is not supported on 310P currently. "
+                "Set VLLM_ASCEND_310P_ENABLE_MLA=1 to attempt the experimental "
+                "decomposed MLA path (bring-up only, unverified on hardware)."
+            )
     kernel_block_alignment_size = 128
     attn_page_size_1_token = FullAttentionSpec(
         block_size=1,

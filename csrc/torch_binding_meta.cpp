@@ -647,6 +647,15 @@ at::Tensor npu_causal_conv1d_310_meta(
     return output;
 }
 
+at::Tensor npu_w2_blocked_dequant_matmul_310_meta(
+    const at::Tensor& x,
+    const at::Tensor& codes,
+    const at::Tensor& block_scale)
+{
+    at::Tensor output = at::empty_symint({x.sym_size(0), codes.sym_size(0)}, x.options());
+    return output;
+}
+
 at::Tensor npu_recurrent_gated_delta_rule_310_meta(
     const at::Tensor& query,
     const at::Tensor& key,
@@ -2053,6 +2062,8 @@ namespace {
 TORCH_LIBRARY_IMPL_EXPAND(CONCAT(_C, _ascend), Meta, ops) {
     // causal_conv1d_310
     ops.impl("npu_causal_conv1d_310", &vllm_ascend::meta::npu_causal_conv1d_310_meta);
+    // npu_w2_blocked_dequant_matmul_310
+    ops.impl("npu_w2_blocked_dequant_matmul_310", &vllm_ascend::meta::npu_w2_blocked_dequant_matmul_310_meta);
     // npu_recurrent_gated_delta_rule_310
     ops.impl("npu_recurrent_gated_delta_rule_310", &vllm_ascend::meta::npu_recurrent_gated_delta_rule_310_meta);
     // chunk_gated_delta_rule_fwd_h

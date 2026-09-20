@@ -69,6 +69,7 @@ from tools.deepseek_w2.w2_format import (
     W2_BLOCK_COLS,
     W2_BLOCK_ROWS,
     W2_CODES_PER_BYTE,
+    unpack_w2_codes,
 )
 from vllm_ascend.models.deepseek_v41.w2_unpack import (
     swiglu_gate_up,
@@ -103,6 +104,55 @@ def _device_kernel_available() -> bool:
     so the CPU UT deterministically takes the host math path.
     """
     return torch_npu is not None and hasattr(torch_npu, _W2_DEVICE_KERNEL)
+
+
+def _w2_dequant_fp32(
+    packed: torch.Tensor,
+    block_scale: torch.Tensor,
+    out_f: int,
+    in_f: int,
+) -> torch.Tensor:
+    """Dequantize one packed W2 projection to a dense fp32 weight ``[out_f, in_f]``.
+
+    Widens the 2-bit codes (``{-2,-1,0,1}``) and multiplies by the COMPACT
+    ``[out_f//32, in_f//32]`` per-block scale via a tiled view-multiply, i.e.
+    each ``[32, 32]`` code tile is scaled by its single block scale. This is
+    bit-identical to ``codes * broadcast_block_scales(block_scale, ...)`` but
+    never materializes the full-size scale and never touches float64 -- 310P has
+    no native fp64, so the old broadcast path emitted an emulated cast per op and
+    dominated the MoE step time.
+    """
+    codes = unpack_w2_codes(packed, in_f).to(torch.float32)  # [out_f, in_f]
+    bs = block_scale.to(torch.float32)  # [out_f // 32, in_f // 32]
+    tiled = codes.view(out_f // W2_BLOCK_ROWS, W2_BLOCK_ROWS, in_f // W2_BLOCK_COLS, W2_BLOCK_COLS)
+    scaled = tiled * bs.view(out_f // W2_BLOCK_ROWS, 1, in_f // W2_BLOCK_COLS, 1)
+    return scaled.reshape(out_f, in_f)
+
+
+_W2_BLOCKED_MM_OP: Any = None
+
+
+def _w2_blocked_mm_op():
+    """The fused 310P Cube kernel ``npu_w2_blocked_dequant_matmul_310`` if built.
+
+    Computes ``out[T,N] = x[T,K] @ (codes ⊙ block_scale)^T`` on the Cube with the
+    per-[32,32] block dequant fused into the weight load (arch20 catlass MMAD),
+    ~2.4x faster than the eager fp32 dequant+matmul and with no fp-weight HBM
+    materialization. Resolved lazily (the custom-op vendor lib is loaded during
+    worker init); returns ``None`` when the op is unavailable so the eager fp32
+    path stays a correct fallback.
+    """
+    global _W2_BLOCKED_MM_OP
+    # Escape hatch to force the eager fp32 fallback (isolate kernel vs model bugs).
+    import os as _os
+    if _os.environ.get("VLLM_ASCEND_W2_DISABLE_CUBE", "0") == "1":
+        return None
+    if _W2_BLOCKED_MM_OP is None:
+        try:
+            _W2_BLOCKED_MM_OP = torch.ops._C_ascend.npu_w2_blocked_dequant_matmul_310
+        except (AttributeError, RuntimeError):
+            _W2_BLOCKED_MM_OP = None
+    return _W2_BLOCKED_MM_OP
 
 
 @register_scheme("W2A8_DYNAMIC", "moe")
@@ -314,57 +364,77 @@ class AscendW2DynamicFusedMoEMethod310(AscendMoEScheme):
     ) -> torch.Tensor:  # pragma: no cover - device-only wave (D1.5)
         """Device grouped matmul over the ``<= top_k`` active experts.
 
-        Widens only the active experts from packed W2 (E1.2) and hands each
-        active-expert group to ``torch_npu.npu_quant_grouped_matmul_dequant``
-        (fused INT8 grouped matmul + per-token dequant + SwiGLU), exactly as the
-        W8 method's ``apply_gmm1_act_quant`` / ``apply_gmm2`` do. The precise
-        per-``[32, 32]`` block-scale layout ingested by the pinned CANN kernel is
-        finalized in D1.5 (see module docstring); this branch is import-guarded
-        and never runs host-side.
-        """
-        cache = unpack_active_experts(experts, topk_ids)
+        Widens only the active experts from packed W2 (E1.2), then runs each
+        active-expert group eagerly on the NPU: the packed 2-bit codes are
+        dequantized to fp32 (``codes * per-block scale``) and matmul'd in fp32.
 
+        The pinned CANN fused kernel
+        (``torch_npu.npu_quant_grouped_matmul_dequant``) requires the quantized
+        weight pre-tiled into a 5-D fractal-NZ layout ``(G, K//32, N//16, 16, 32)``
+        that the W2 unpack does not yet emit (raised ``EZ1001`` /
+        ``aclnnQuantGroupedMatmulDequant`` error ``161002`` on 310P); producing
+        that exact layout is the D1.5 optimization. Until then this eager fp32
+        path is the working device path -- same math as :meth:`_apply_host` but
+        without the ``.double()`` (310P matmul supports only fp16/fp32, not fp64
+        or bf16). The weight is reconstructed exactly; activations stay fp32
+        (strictly >= the fused kernel's per-token INT8 activation quant).
+        """
         num_tokens = x.shape[0]
+        hidden = x.shape[1]
         top_k = topk_ids.shape[1]
         pair_expert = topk_ids.reshape(-1)
-        pair_weight = topk_weights.reshape(-1, 1)
+        pair_weight = topk_weights.reshape(-1, 1).to(torch.float32)
         pair_token = torch.arange(num_tokens, device=x.device).unsqueeze(1).expand(num_tokens, top_k).reshape(-1)
-        pair_x = x[pair_token]
+        pair_x = x[pair_token].to(torch.float32)
 
-        order = torch.argsort(pair_expert, stable=True)
+        # ArgSort has no int32/int64 AiCore kernel on 310P (falls back to AiCPU,
+        # which dominated the eager MoE cost); sort on an fp32 key instead -- the
+        # expert ids (< 2**24) are exact in fp32, so the ordering is identical.
+        order = torch.argsort(pair_expert.to(torch.float32), stable=True)
         sorted_expert = pair_expert[order]
         sorted_x = pair_x[order]
         sorted_weight = pair_weight[order]
         sorted_token = pair_token[order]
 
         uniq_expert, counts = torch.unique_consecutive(sorted_expert, return_counts=True)
-        out = torch.zeros_like(x)
+        out = torch.zeros(num_tokens, hidden, dtype=torch.float32, device=x.device)
 
+        w2_op = _w2_blocked_mm_op()
         start = 0
         for expert_id, count in zip(uniq_expert.tolist(), counts.tolist()):
             stop = start + count
-            weight = cache[expert_id]
+            e = experts[expert_id]
             group_x = sorted_x[start:stop]
-            group_list = torch.tensor([stop - start], device=x.device)
-            gate_up = torch_npu.npu_quant_grouped_matmul_dequant(
-                x=group_x,
-                quantized_weight=weight.w13_codes,
-                weight_scale=weight.w13_scale,
-                group_list=group_list,
-                quant_mode="pertoken",
-            )
-            hidden_act = torch_npu.npu_swiglu(gate_up)
-            y = torch_npu.npu_quant_grouped_matmul_dequant(
-                x=hidden_act,
-                quantized_weight=weight.w2_codes,
-                weight_scale=weight.w2_scale,
-                group_list=group_list,
-                quant_mode="pertoken",
-            )
+            inter = int(e.inter)
+            if w2_op is not None:
+                # Fast path: fused 310P Cube kernel (arch20 catlass MMAD with the
+                # per-[32,32] block dequant fused into the weight load). ~2.4x over
+                # eager and no fp-weight HBM materialization. The kernel takes fp16
+                # x + widened int8 codes [out,in] + compact fp32 block scale, and
+                # returns fp16; chain gate -> SwiGLU -> down through it.
+                # The Cube op now takes the PACKED uint8 codes and unpacks the
+                # 2-bit values on-chip (removing ~816 unpack_w2_codes launches per
+                # decode token), so pass the packed bank tensors directly.
+                gx = group_x.to(torch.float16)
+                gate = w2_op(gx, e.gate_packed, e.gate_scale.to(torch.float32))
+                up = w2_op(gx, e.up_packed, e.up_scale.to(torch.float32))
+                hidden_act = (torch.nn.functional.silu(gate.to(torch.float32)) * up.to(torch.float32)).to(torch.float16)
+                y = w2_op(hidden_act, e.down_packed, e.down_scale.to(torch.float32)).to(torch.float32)
+            else:
+                # Fallback: native-fp32 dequant from the packed bank (compact
+                # [out//32,in//32] block scale via tiled view-multiply, no fp64),
+                # then fp32 matmul. Correct but ~2.4x slower than the Cube kernel.
+                gate_w = _w2_dequant_fp32(e.gate_packed, e.gate_scale, inter, hidden)
+                up_w = _w2_dequant_fp32(e.up_packed, e.up_scale, inter, hidden)
+                gate = torch.matmul(group_x, gate_w.t())
+                up = torch.matmul(group_x, up_w.t())
+                hidden_act = torch.nn.functional.silu(gate) * up
+                down_w = _w2_dequant_fp32(e.down_packed, e.down_scale, hidden, inter)
+                y = torch.matmul(hidden_act, down_w.t())
             y = y * sorted_weight[start:stop]
             out.index_add_(0, sorted_token[start:stop], y)
             start = stop
 
         if shared_expert is not None:
-            out = out + shared_expert.forward(x)
+            out = out + shared_expert.forward(x).to(torch.float32)
         return out

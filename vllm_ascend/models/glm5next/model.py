@@ -419,6 +419,13 @@ class Glm5NextDecoderLayer(nn.Module):
         if post is None:
             if self.layer_idx == 0:
                 x = hc_expand(x, self.n)
+            # Carry the mHC multi-stream residual accumulator in fp32. The 310P
+            # has no bf16; in fp16 the residual saturates at 65504 across the
+            # 45 layers (mhc_post accumulation) and corrupts the final norm.
+            # fp32 has ample range; the mHC ops normalize + downcast the
+            # per-layer `layer_input`/submodule I/O back to the fp16 compute
+            # dtype, so only the accumulator itself rides fp32.
+            x = x.to(torch.float32)
             residual = x
             post, comb, x = self.hc_pre(
                 x,
@@ -663,7 +670,22 @@ class Glm5NextModel(nn.Module):
         if self.is_sequence_parallel:
             hidden_states = sp_all_gather(hidden_states)[:full_num_tokens]
 
-        hidden_states = self.norm(hidden_states)
+        # The mHC residual accumulator rides fp32 on the 310P (no bf16; fp16
+        # saturates at 65504 across 45 layers). The fused NPU RMSNorm kernel
+        # expects the input to match the fp16 norm weight, so when the final
+        # hidden state is still fp32 do the final RMSNorm in fp32 and downcast
+        # the (already O(1)) normalized result to the LM-head compute dtype.
+        if hidden_states.dtype == torch.float32 and not isinstance(self.norm, PPMissingLayer):
+            _w = self.norm.weight
+            _eps = self.norm.variance_epsilon
+            _var = hidden_states.pow(2).mean(dim=-1, keepdim=True)
+            _normed = hidden_states * torch.rsqrt(_var + _eps)
+            hidden_states = (_normed * _w.float()).to(_w.dtype)
+            _bias = getattr(self.norm, "bias", None)
+            if _bias is not None and getattr(self.norm, "bias_loaded", False):
+                hidden_states = hidden_states + _bias
+        else:
+            hidden_states = self.norm(hidden_states)
         return hidden_states
 
     # Entries are (name, weight) or (name, weight, kwargs); the optional third

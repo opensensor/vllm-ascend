@@ -231,7 +231,19 @@ class Glm5NextW2KDA(nn.Module):
         """
         x_float = x.to(self.compute_dtype)
         variance = x_float.pow(2).mean(dim=-1, keepdim=True)
-        x_normed = x_float * torch.rsqrt(variance + self.o_norm_eps)
+        # FIX (KDA under-contribution): the KDA recurrence output is
+        # intrinsically tiny -- q is scaled by head_dim**-0.5 (~0.088) and
+        # the trained short conv attenuates q/k/v ~40x -- so the core output
+        # is O(1e-5) with a per-head variance ~1e-10. That sits FAR below the
+        # FusedRMSNormGated default eps (o_norm_eps=1e-5). With variance << eps
+        # the RMSNorm stops being scale-invariant and degenerates into a fixed
+        # multiply by rsqrt(eps)~316 instead of dividing by the true RMS
+        # (~1e5), so the KDA contribution collapses ~100x (o_proj out ~1e-3)
+        # and the 34/45 KDA layers become near-no-ops -> incoherent logits.
+        # Use a negligible eps so o_norm renormalises the tiny KDA output to
+        # O(1) as designed (still guards genuine all-zero rows).
+        rms_eps = min(self.o_norm_eps, 1e-12)
+        x_normed = x_float * torch.rsqrt(variance + rms_eps)
         if weight is not None:
             x_normed = x_normed * weight.to(self.compute_dtype)
         return x_normed * torch.sigmoid(g.to(self.compute_dtype))

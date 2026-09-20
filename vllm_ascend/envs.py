@@ -87,6 +87,18 @@ env_variables: dict[str, Callable[[], Any]] = {
     # (safe for Ascend 910B/A3). Set to a positive value to override when
     # auto-detection is unavailable or for debugging UB overflow issues.
     "VLLM_ASCEND_ROPE_UB_SIZE_KB": lambda: int(os.getenv("VLLM_ASCEND_ROPE_UB_SIZE_KB") or 0),
+    # Experimental: allow Multi-head Latent Attention (MLA) models (e.g. the
+    # DeepSeek-lineage GLM-5.x family) to initialize and run on Ascend 310P.
+    # MLA is disabled on 310P by default because the optimized front-end kernels
+    # (`mla_preprocess`, `npu_mla_prolog_v3` / MlaPrologV3) are compiled only for
+    # the STANDARD hardware family (910B/950/A5) and the fused attention core
+    # (`npu_fused_infer_attention_score`) has not been validated on ascend310p1.
+    # When set to 1 the three hard 310P MLA guards become a gated fall-through so
+    # the decomposed / NoPE MLA path (plain projection matmuls + bmm weight
+    # absorption + a 310P-supported attention core) can be attempted. This is a
+    # bring-up flag only; leave it at 0 (default) for all production 310P runs
+    # until MLA has been verified on hardware. Valid values: 0 or 1.
+    "VLLM_ASCEND_310P_ENABLE_MLA": lambda: bool(int(os.getenv("VLLM_ASCEND_310P_ENABLE_MLA", "0"))),
 }
 
 # end-env-vars-definition

@@ -67,6 +67,19 @@ _NGRAM_GRAPH_UNIFORM_DECODE_QUERY_LEN = 1
 _ATTENTION_BLOCK_SIZE_LIMIT = 128 * 128
 
 
+def _concrete_size(v):
+    """Concrete int from a kernel block-size / head-size that may be a vLLM
+    ``MultipleOf`` alignment constraint rather than a plain int.
+
+    Newer vLLM pads an MLA spec's ``head_size`` to a ``MultipleOf(base)``
+    (``vllm.v1.attention.backend.MultipleOf`` has only a ``.base`` int), which
+    the 310P page-attention block-size check below multiplies by an int -- hence
+    ``TypeError: unsupported operand type(s) for *: 'MultipleOf' and 'int'``.
+    Duck-type on ``.base`` so a plain int passes through unchanged.
+    """
+    return getattr(v, "base", v)
+
+
 class NPUModelRunner310(NPUModelRunner):
     """
     310P model runner with a distinct ACL graph capture/replay contract from 910B:
@@ -89,6 +102,13 @@ class NPUModelRunner310(NPUModelRunner):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # NoPE MLA models (GLM-5.3-Flash) have no extended/decoupled (xdrope)
+        # rope; the base runner references these attributes without ever
+        # initializing them on this path, so default them to 0.
+        if not hasattr(self, "uses_xdrope_dim"):
+            self.uses_xdrope_dim = 0
+        if not hasattr(self, "draft_uses_xdrope_dim"):
+            self.draft_uses_xdrope_dim = 0
         self.input_batch = NPUInputBatch(
             max_num_reqs=self.max_num_reqs,
             max_model_len=max(self.model_config.max_model_len, self.max_encoder_len),
@@ -705,8 +725,20 @@ class NPUModelRunner310(NPUModelRunner):
             logger.error("Deepseek Sparse Attention is not supported.")
             raise ValueError("Deepseek Sparse Attention is not supported for 310P.")
         if self.model_config.use_mla:
-            logger.error("MLAAttention is not supported.")
-            raise ValueError("MLAAttention is not supported for 310P.")
+            # Gated bring-up path. With the experimental flag the MLA layers use
+            # AscendMLABackend310 (see platform.get_attn_backend_cls) and their
+            # KV cache is allocated as an MLA latent cache by the standard
+            # _allocate_kv_cache_tensors path below. Keep the hard guard for all
+            # default 310P runs until MLA is verified on hardware.
+            from vllm_ascend import envs as ascend_envs
+
+            if not ascend_envs.VLLM_ASCEND_310P_ENABLE_MLA:
+                logger.error("MLAAttention is not supported.")
+                raise ValueError("MLAAttention is not supported for 310P.")
+            logger.warning(
+                "VLLM_ASCEND_310P_ENABLE_MLA=1: initializing experimental MLA "
+                "KV cache on 310P via AscendMLABackend310 (unverified on hardware)."
+            )
         # Initialize the memory buffer for KV cache
         kv_caches = self._allocate_kv_cache_tensors(kv_cache_config)
         # Set up cross-layer KV cache sharing
@@ -735,8 +767,22 @@ class NPUModelRunner310(NPUModelRunner):
         # get kv cache spec for each layer
         layer_kv_cache_spec: dict[str, KVCacheSpec] = {}
         for group_kv_cache_spec in kv_cache_config.kv_cache_groups:
-            for layer_name in group_kv_cache_spec.layer_names:
-                layer_kv_cache_spec[layer_name] = group_kv_cache_spec.kv_cache_spec
+            group_spec = group_kv_cache_spec.kv_cache_spec
+            if isinstance(group_spec, UniformTypeKVCacheSpecs):
+                # GLM-5.3-Flash groups its per-layer KV specs into a
+                # UniformTypeKVCacheSpecs wrapper (glm5next/cache_config.py); map
+                # each layer to its *underlying* MambaSpec/AttentionSpec so the
+                # spec-type dispatch below can route it (the wrapper is neither).
+                for layer_name, sub_spec in group_spec.kv_cache_specs.items():
+                    layer_kv_cache_spec[layer_name] = sub_spec
+                # Layers present in the group but absent from the wrapper's
+                # per-layer map fall back to the representative spec.
+                representative = next(iter(group_spec.kv_cache_specs.values()), group_spec)
+                for layer_name in group_kv_cache_spec.layer_names:
+                    layer_kv_cache_spec.setdefault(layer_name, representative)
+            else:
+                for layer_name in group_kv_cache_spec.layer_names:
+                    layer_kv_cache_spec[layer_name] = group_spec
         # Allocate kv cache buffers according to the kv_cache_config and kv_cache_spec
         for kv_cache_tensor in kv_cache_config.kv_cache_tensors:
             shared_names = get_kv_cache_tensor_layers(kv_cache_tensor)
@@ -744,9 +790,13 @@ class NPUModelRunner310(NPUModelRunner):
                 layer_name = shared_names[idx]
                 if layer_name in self.runner_only_attn_layers:
                     continue
-                if "linear_attn" in layer_name and layer_name not in kv_cache:
-                    cache_spec = layer_kv_cache_spec[layer_name]
-                    assert isinstance(cache_spec, MambaSpec)
+                cache_spec = layer_kv_cache_spec[layer_name]
+                # Dispatch by KV-cache spec *type*, not layer-name substring:
+                # GLM-5.3-Flash names both its KDA (linear attention, MambaSpec)
+                # and DSA (MLA, AttentionSpec) layers ``self_attn``, so a name
+                # match ("linear_attn"/"attn") misroutes the KDA state cache into
+                # the attention branch and trips ``assert isinstance(..., AttentionSpec)``.
+                if isinstance(cache_spec, MambaSpec) and layer_name not in kv_cache:
                     # vLLM #51718 packs all group layers into one tensor on main;
                     # MambaSpec.page_size_bytes is per-layer, so num_blocks times
                     # it is the per-layer byte count (matching v0.28.0's size).
@@ -771,13 +821,13 @@ class NPUModelRunner310(NPUModelRunner):
                             start_idx = target_idx
                             state_tensors.append(tensor)
                         for layer_name_inner in shared_names:
-                            if "linear_attn" in layer_name_inner:
+                            if isinstance(layer_kv_cache_spec.get(layer_name_inner), MambaSpec):
                                 kv_cache[layer_name_inner] = state_tensors
                     else:
                         # main: every layer owns its own region; allocate private
                         # state tensors per layer so blocks don't collide.
                         for layer_name_inner in shared_names:
-                            if "linear_attn" in layer_name_inner:
+                            if isinstance(layer_kv_cache_spec.get(layer_name_inner), MambaSpec):
                                 raw_tensor = torch.zeros(per_layer_size, dtype=torch.int8, device=self.device)
                                 state_tensors = []
                                 target_idx = 0
@@ -789,9 +839,8 @@ class NPUModelRunner310(NPUModelRunner):
                                     start_idx = target_idx
                                     state_tensors.append(tensor)
                                 kv_cache[layer_name_inner] = state_tensors
-                elif "attn" in layer_name and layer_name not in kv_cache:
-                    kv_cache_spec = layer_kv_cache_spec[layer_name]
-                    assert isinstance(kv_cache_spec, AttentionSpec)
+                elif isinstance(cache_spec, AttentionSpec) and layer_name not in kv_cache:
+                    kv_cache_spec = cache_spec
                     assert kv_cache_tensor.size % kv_cache_spec.page_size_bytes == 0
                     num_blocks = kv_cache_tensor.size // kv_cache_spec.page_size_bytes
                     if not vllm_version_is("0.28.0"):
@@ -803,7 +852,7 @@ class NPUModelRunner310(NPUModelRunner):
                     supported_sizes = [
                         support_size
                         for support_size in self.attn_backend.get_supported_kernel_block_sizes()
-                        if support_size * kv_cache_spec.head_size <= _ATTENTION_BLOCK_SIZE_LIMIT
+                        if _concrete_size(support_size) * _concrete_size(kv_cache_spec.head_size) <= _ATTENTION_BLOCK_SIZE_LIMIT
                     ]
                     if supported_sizes:
                         block_size = supported_sizes[0]
@@ -831,13 +880,13 @@ class NPUModelRunner310(NPUModelRunner):
                         )
                         for layer_name_inner in shared_names:
                             # shared the kvcache between the self_attn specs in the same group
-                            if "attn" in layer_name_inner and "linear_attn" not in layer_name_inner:
+                            if isinstance(layer_kv_cache_spec.get(layer_name_inner), AttentionSpec):
                                 kv_cache[layer_name_inner] = (k_cache, v_cache)
                     else:
                         # main: every layer owns its own region; give each layer a
                         # private (k, v) so block indices don't collide across layers.
                         for layer_name_inner in shared_names:
-                            if "attn" in layer_name_inner and "linear_attn" not in layer_name_inner:
+                            if isinstance(layer_kv_cache_spec.get(layer_name_inner), AttentionSpec):
                                 kv_cache[layer_name_inner] = (
                                     torch_npu.empty_with_format(
                                         size=k_shape, dtype=dtype, device=self.device, acl_format=self._acl_format
@@ -980,9 +1029,9 @@ class NPUModelRunner310(NPUModelRunner):
                     backend = attn_groups[0].backend
                     # Page attention operation on 310P limits block_size * head_size <= 128 * 128
                     supported_sizes = [
-                        support_size
+                        _concrete_size(support_size)
                         for support_size in backend.get_supported_kernel_block_sizes()
-                        if support_size * kv_cache_spec.head_size <= _ATTENTION_BLOCK_SIZE_LIMIT
+                        if _concrete_size(support_size) * _concrete_size(kv_cache_spec.head_size) <= _ATTENTION_BLOCK_SIZE_LIMIT
                     ]
                     kernel_block_size_list = supported_sizes if supported_sizes else [self.cache_config.block_size]
                 except IndexError:

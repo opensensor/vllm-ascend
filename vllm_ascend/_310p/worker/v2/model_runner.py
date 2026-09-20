@@ -84,7 +84,14 @@ class NPUModelRunner310V2(NPUModelRunner):
         # Qwen3-VL (multimodal + MRoPE) and Qwen3.5 (hybrid + GDN + MRoPE) are
         # in scope for 310P MRv2. MLA / sleep remain unsupported.
         if model_config.use_mla:
-            raise NotImplementedError("MLA is not supported by model runner v2 on 310P.")
+            # Gated bring-up: MRv2 MLA on 310P is only reachable with the
+            # experimental flag. The decomposed MLA path is currently wired
+            # through MRv1 (model_runner_310p); keep MRv2 blocked unless the
+            # operator opts in explicitly.
+            from vllm_ascend import envs as ascend_envs
+
+            if not ascend_envs.VLLM_ASCEND_310P_ENABLE_MLA:
+                raise NotImplementedError("MLA is not supported by model runner v2 on 310P.")
         if getattr(model_config, "enable_sleep_mode", False):
             raise NotImplementedError("Sleep mode is not supported by model runner v2 on 310P.")
 

@@ -242,9 +242,14 @@ try:
     from vllm.model_executor.layers import mhc as _mhc_mod
 
     def _mhc_rms_norm(x, weight, eps):
+        # `x` (the mHC layer_input) may arrive in fp32 because the residual
+        # accumulator rides fp32 on the 310P. RMSNorm normalizes away the
+        # magnitude, so downcast the result to the norm weight's compute dtype
+        # (fp16) for the attn/MLP submodules; the fp32 accumulator is carried
+        # separately by mhc_post and is never touched here.
         xf = x.float()
         var = xf.square().mean(dim=-1, keepdim=True)
-        return (xf * _t.rsqrt(var + eps) * weight.float()).to(x.dtype)
+        return (xf * _t.rsqrt(var + eps) * weight.float()).to(weight.dtype)
 
     def _mhc_pre_npu(
         self,

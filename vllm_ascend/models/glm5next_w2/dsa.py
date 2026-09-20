@@ -90,6 +90,30 @@ GLM_QK_ROPE_HEAD_DIM = 0
 INDEXER_KNORM_EPS = 1e-6
 
 
+def _get_tp_world_size_and_rank() -> tuple[int, int]:
+    """Return ``(tp_size, tp_rank)`` of the vLLM tensor-parallel group.
+
+    Defaults to ``(1, 0)`` when the tensor-parallel group is not initialized --
+    i.e. on the CPU host and in the unit tests -- so this module stays importable
+    and behaves identically at ``tp_size == 1`` (single-rank / CPU). ``vllm``'s
+    ``get_tensor_model_parallel_world_size()`` asserts when the group is absent,
+    which is caught here. Imported lazily to keep the package Triton-free and
+    distributed-runtime-free on import.
+    """
+    try:  # pragma: no cover - the CPU-test path always hits the except branch
+        from vllm.distributed import (
+            get_tensor_model_parallel_rank,
+            get_tensor_model_parallel_world_size,
+        )
+
+        return (
+            get_tensor_model_parallel_world_size(),
+            get_tensor_model_parallel_rank(),
+        )
+    except Exception:
+        return 1, 0
+
+
 # ===========================================================================
 # Small eager building blocks (formula-identical across fp16/fp32/fp64)
 # ===========================================================================
@@ -219,7 +243,7 @@ class Glm5NextW2DsaIndexer(nn.Module):
         gen = torch.Generator().manual_seed(0 if seed is None else seed)
 
         def fill(p: nn.Parameter, scale: float, bias: float = 0.0) -> None:
-            vals = torch.randn(p.shape, generator=gen, dtype=torch.float64) * scale + bias
+            vals = torch.randn(p.shape, generator=gen, dtype=torch.float64, device="cpu") * scale + bias
             with torch.no_grad():
                 p.copy_(vals.to(p.dtype))
 
@@ -345,6 +369,30 @@ class AscendGlm5NextW2DSA(nn.Module):
     ``[qk_nope_head_dim | v_head_dim]``, ``o_proj``), with ``qk_rope_head_dim==0``
     (NoPE) so there is no rope tail. Attention is restricted to the indexer's
     selected tokens (+ local pool window).
+
+    Tensor-parallel sharding (mirrors the shipped MLA parallel layers)
+    -----------------------------------------------------------------
+    The head-axis projections are sharded across the tensor-parallel group so
+    each rank owns only ``num_local_heads = num_attention_heads // tp_size``
+    heads -- exactly what the shipped ``Glm5NextMLAAttention`` does with
+    ``ColumnParallelLinear`` (``q_b_proj`` / ``kv_b_proj``, output = head axis)
+    and ``RowParallelLinear`` (``o_proj``, input = head axis + all-reduce):
+
+    * ``w_uq``  -> ``[num_local_heads * qk_head_dim, q_lora_rank]``  (ColumnParallel)
+    * ``w_ukv`` -> ``[num_local_heads * (qk_nope+v), kv_lora_rank]`` (ColumnParallel)
+    * ``w_o``   -> ``[hidden_size, num_local_heads * v_head_dim]``   (RowParallel;
+      each rank produces a partial ``[T, hidden]`` sum over its local heads that
+      is **all-reduced** across ranks in :meth:`_attend`).
+
+    The down-projections (``w_dq`` / ``w_dkv``) and the kpool indexer produce
+    non-head-dimensioned latents and are kept **replicated** (mirroring the
+    shipped ``fused_qkv_a_proj`` / ``ReplicatedLinear`` / ``disable_tp`` indexer
+    projections). Sizing the eager head-axis params to the per-rank head count
+    (a) removes the ~4x replication that OOMs HBM at TP4 and (b) makes the eager
+    param shapes match the shipped, checkpoint-loaded *sharded* MLA/indexer
+    weights so :func:`_bind_shipped_mla_weights` binds them instead of silently
+    leaving them random-init. At ``tp_size == 1`` (CPU / single rank) the shapes,
+    init and forward are byte-for-byte identical to the pre-sharding behavior.
     """
 
     def __init__(
@@ -374,6 +422,19 @@ class AscendGlm5NextW2DSA(nn.Module):
 
         self.hidden_size = hidden_size
         self.num_heads = num_attention_heads
+        # Tensor-parallel head sharding: each rank owns num_heads // tp_size
+        # heads on the head-axis projections (w_uq / w_ukv / w_o), mirroring the
+        # shipped ColumnParallel/RowParallel MLA layers. Defaults to (1, 0) on the
+        # CPU host so tp_size==1 behavior is identical to pre-sharding.
+        tp_size, tp_rank = _get_tp_world_size_and_rank()
+        if num_attention_heads % tp_size != 0:
+            raise ValueError(
+                f"num_attention_heads ({num_attention_heads}) must be divisible by "
+                f"tensor-parallel size ({tp_size})"
+            )
+        self.tp_size = tp_size
+        self.tp_rank = tp_rank
+        self.num_local_heads = num_attention_heads // tp_size
         self.q_lora_rank = q_lora_rank
         self.kv_lora_rank = kv_lora_rank
         self.qk_nope_head_dim = qk_nope_head_dim
@@ -383,19 +444,27 @@ class AscendGlm5NextW2DSA(nn.Module):
         self.eps = rms_norm_eps
         self.softmax_scale = self.qk_head_dim**-0.5
 
-        H = self.num_heads
+        # Head-axis params are sharded to the per-rank head count; the down
+        # projections and norms stay replicated (non-head-dimensioned latents).
+        H_local = self.num_local_heads
         factory = {"dtype": self.param_dtype, "device": device}
         # q low-rank down + norm + up (NoPE: up dim == qk_nope_head_dim).
+        # w_dq / q_a_norm are replicated (q-LoRA latent, not head-axis).
         self.w_dq = nn.Parameter(torch.empty(q_lora_rank, hidden_size, **factory))
         self.q_a_norm = nn.Parameter(torch.empty(q_lora_rank, **factory))
-        self.w_uq = nn.Parameter(torch.empty(H * self.qk_head_dim, q_lora_rank, **factory))
-        # shared kv down + norm (NoPE: no rope tail, so kv_lora_rank only).
+        # w_uq: ColumnParallel (output = local head axis).
+        self.w_uq = nn.Parameter(torch.empty(H_local * self.qk_head_dim, q_lora_rank, **factory))
+        # shared kv down + norm (NoPE: no rope tail, so kv_lora_rank only) --
+        # w_dkv / kv_a_norm replicated (kv-latent, not head-axis).
         self.w_dkv = nn.Parameter(torch.empty(kv_lora_rank, hidden_size, **factory))
         self.kv_a_norm = nn.Parameter(torch.empty(kv_lora_rank, **factory))
-        # kv_b_proj: latent -> per-head [qk_nope_head_dim (K) | v_head_dim (V)].
-        self.w_ukv = nn.Parameter(torch.empty(H * (qk_nope_head_dim + v_head_dim), kv_lora_rank, **factory))
-        # output projection.
-        self.w_o = nn.Parameter(torch.empty(hidden_size, H * v_head_dim, **factory))
+        # kv_b_proj: latent -> per-head [qk_nope_head_dim (K) | v_head_dim (V)];
+        # ColumnParallel (output = local head axis).
+        self.w_ukv = nn.Parameter(
+            torch.empty(H_local * (qk_nope_head_dim + v_head_dim), kv_lora_rank, **factory)
+        )
+        # output projection: RowParallel (input = local head axis, all-reduced).
+        self.w_o = nn.Parameter(torch.empty(hidden_size, H_local * v_head_dim, **factory))
 
         # Reused-selection kpool indexer (shares hidden + q-LoRA rank).
         indexer_dtype = self.param_dtype if is_fp64 else None
@@ -447,7 +516,7 @@ class AscendGlm5NextW2DSA(nn.Module):
         gen = torch.Generator().manual_seed(0 if seed is None else seed)
 
         def fill(p: nn.Parameter, scale: float, bias: float = 0.0) -> None:
-            vals = torch.randn(p.shape, generator=gen, dtype=torch.float64) * scale + bias
+            vals = torch.randn(p.shape, generator=gen, dtype=torch.float64, device="cpu") * scale + bias
             with torch.no_grad():
                 p.copy_(vals.to(p.dtype))
 
@@ -469,14 +538,14 @@ class AscendGlm5NextW2DSA(nn.Module):
         index query off the shared q-LoRA rank).
         """
         q_latent = _rms_norm(hidden @ self.w_dq.t(), self.q_a_norm, self.eps, self.accum_dtype)
-        q = (q_latent @ self.w_uq.t()).view(-1, self.num_heads, self.qk_head_dim)
+        q = (q_latent @ self.w_uq.t()).view(-1, self.num_local_heads, self.qk_head_dim)
         return q, q_latent
 
     def _project_kv(self, hidden: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """hidden -> (k_nope [T,H,nope], v [T,H,v_head]) via shared latent + kv_b_proj."""
         c = _rms_norm(hidden @ self.w_dkv.t(), self.kv_a_norm, self.eps, self.accum_dtype)
         kv = (c.to(self.accum_dtype) @ self.w_ukv.t().to(self.accum_dtype)).view(
-            -1, self.num_heads, self.qk_nope_head_dim + self.v_head_dim
+            -1, self.num_local_heads, self.qk_nope_head_dim + self.v_head_dim
         )
         k_nope = kv[..., : self.qk_nope_head_dim]
         v = kv[..., self.qk_nope_head_dim :]
@@ -489,12 +558,19 @@ class AscendGlm5NextW2DSA(nn.Module):
         k = k.to(self.accum_dtype)
         v = v.to(self.accum_dtype)
         scores = torch.einsum("thd,shd->ths", q, k) * self.softmax_scale
-        additive = torch.where(mask, 0.0, float("-inf")).to(self.accum_dtype)
+        additive = torch.where(mask.to(device=scores.device), 0.0, float("-inf")).to(self.accum_dtype)
         scores = scores + additive[:, None, :]
         probs = torch.softmax(scores, dim=-1)
-        context = torch.einsum("ths,shv->thv", probs, v)  # [T,H,v]
+        context = torch.einsum("ths,shv->thv", probs, v)  # [T,H_local,v]
         num_q = q.shape[0]
+        # RowParallel o_proj: each rank contributes a partial [T, hidden] sum over
+        # its local heads; all-reduce recovers the full projection. Guarded so the
+        # CPU / single-rank path (tp_size==1) is an exact no-op.
         out = context.reshape(num_q, -1) @ self.w_o.t().to(self.accum_dtype)
+        if self.tp_size > 1:  # pragma: no cover - requires an initialized TP group
+            from vllm.distributed import tensor_model_parallel_all_reduce
+
+            out = tensor_model_parallel_all_reduce(out)
         return out
 
     def attend_with_mask(self, hidden_states: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:

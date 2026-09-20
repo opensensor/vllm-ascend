@@ -114,6 +114,64 @@ GLM5NEXT_TOPK_GROUP = 1
 # group-limited routing (top-2 scores per group). Trivial for GLM (n_group=1).
 _GROUP_SCORE_TOPK = 2
 
+
+# ---------------------------------------------------------------------------
+# Expert parallelism (EP). The 288 2-bit routed experts do not fit replicated
+# on every 310P chip (~78GB total), so under TP>1 we run the TP group as an
+# *expert-parallel* group: each rank owns a contiguous slice of the experts,
+# computes only its slice's weighted contribution, and the ranks sum their
+# partial routed outputs with an all-reduce. Because the router runs on the
+# (replicated) full logits and the top-k weights are already globally
+# renormalized, masking each rank to its local experts and summing across ranks
+# reproduces the replicated result bit-for-bit (every non-local pair contributes
+# ``weight * expert == 0`` via the method's per-pair ``y * weight`` scatter).
+# ---------------------------------------------------------------------------
+
+
+def _ep_rank_size() -> tuple[int, int]:
+    """``(rank, size)`` of the TP group reused as the expert-parallel group.
+
+    Falls back to ``(0, 1)`` off-device / before TP init (CPU parity tests),
+    where the full bank is owned locally and no all-reduce is needed.
+    """
+    try:
+        from vllm.distributed import (
+            get_tensor_model_parallel_rank,
+            get_tensor_model_parallel_world_size,
+        )
+
+        return get_tensor_model_parallel_rank(), get_tensor_model_parallel_world_size()
+    except Exception:
+        return 0, 1
+
+
+def ep_expert_range(ep_rank: int, ep_size: int, n_experts: int) -> tuple[int, int]:
+    """The ``[lo, hi)`` global expert-id range owned by ``ep_rank``.
+
+    Contiguous ceil-blocks so a non-divisible expert count still tiles the ranks
+    (the last rank gets the short block). ``ep_size <= 1`` owns everything. The
+    same formula is used by the streamed loader (``model.py:_place_streamed_expert``)
+    so the bank each rank fills matches the ids it will be asked to unpack.
+    """
+    if ep_size <= 1:
+        return 0, n_experts
+    per = (n_experts + ep_size - 1) // ep_size
+    lo = min(ep_rank * per, n_experts)
+    return lo, min(lo + per, n_experts)
+
+
+def _all_reduce_routed(routed: torch.Tensor) -> torch.Tensor:
+    """Sum the per-rank routed-expert outputs across the EP (=TP) group.
+
+    HCCL AllReduce has no fp64 kernel on 310P, so an fp64 routed tensor (the
+    host method's accumulation dtype) is reduced in fp32 and cast back.
+    """
+    from vllm.distributed import tensor_model_parallel_all_reduce
+
+    if routed.dtype == torch.float64:
+        return tensor_model_parallel_all_reduce(routed.to(torch.float32)).to(torch.float64)
+    return tensor_model_parallel_all_reduce(routed)
+
 # GLM multi-head hyper-connection: number of residual streams. Derived from the
 # checkpoint's ``hc_*_base`` width (``(2 + n) * n = 24`` -> ``n = 4``).
 GLM5NEXT_MHC_NUM_RESIDUAL_STREAMS = 4
@@ -476,8 +534,25 @@ class Glm5NextW2MoE(nn.Module):
                 "Glm5NextW2MoE.routed_experts_forward requires the packed W2 expert bank; "
                 "set `w2_experts` (populated by the streamed W2 loader) or pass `experts=`."
             )
+        ep_rank, ep_size = _ep_rank_size()
+        if ep_size > 1:
+            # Expert-parallel: this rank's bank holds only experts [lo, hi).
+            # Mask the router selection to local experts -- zero the non-local
+            # pairs' weight and remap their id to a valid local id (``lo``) so
+            # the E1.3 method only unpacks *filled* local bank entries; the zero
+            # weight makes those remapped pairs contribute exactly 0. The full
+            # routed output is recovered by summing across ranks below. (Requires
+            # ep_size <= num_experts, i.e. every rank owns >= 1 expert -- always
+            # true for GLM's 288 experts on <= 4 chips.)
+            lo, hi = ep_expert_range(ep_rank, ep_size, self.num_experts)
+            is_local = (topk_ids >= lo) & (topk_ids < hi)
+            topk_weights = topk_weights * is_local.to(topk_weights.dtype)
+            topk_ids = torch.where(is_local, topk_ids, torch.full_like(topk_ids, lo))
         method_layer = types.SimpleNamespace(w2_experts=experts, w2_shared_expert=None)
-        return self.method.apply(method_layer, hidden_states, topk_weights, topk_ids, None, None)
+        routed = self.method.apply(method_layer, hidden_states, topk_weights, topk_ids, None, None)
+        if ep_size > 1:
+            routed = _all_reduce_routed(routed)
+        return routed
 
     # -- eager combine ------------------------------------------------------
 

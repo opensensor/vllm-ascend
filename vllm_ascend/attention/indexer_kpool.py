@@ -209,10 +209,18 @@ class AscendIndexerKPoolMetadataBuilder(AttentionMetadataBuilder):
         logical_width = expanded_block_table.shape[1] // split
         expanded_width = logical_width * self.indexer_blocks_per_logical_block
         if expanded_width > self._block_table_buffer.shape[1]:
-            raise ValueError(
-                "GLM-Next indexer block table exceeds its persistent buffer: "
-                f"required={expanded_width}, capacity="
-                f"{self._block_table_buffer.shape[1]}."
+            # The __init__ estimate (max_model_len / logical_block_size) can be
+            # too narrow: the 310P page-attention limit (block_size*head_size
+            # <= 16384) forces the DSA KV cache into 32-wide kernel blocks, so
+            # the scheduler block table is split/expanded beyond the logical
+            # estimate. Grow the persistent buffer to fit (grows once to the
+            # widest build; safe under enforce_eager -- no captured-graph
+            # address pinning).
+            self._block_table_buffer = torch.empty(
+                self._block_table_buffer.shape[0],
+                expanded_width,
+                dtype=self._block_table_buffer.dtype,
+                device=self._block_table_buffer.device,
             )
         block_table = self._block_table_buffer[:num_reqs, :expanded_width]
         # The common full-group table is expanded for the C128 SFA kernel:

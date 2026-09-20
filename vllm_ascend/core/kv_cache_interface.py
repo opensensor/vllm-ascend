@@ -73,6 +73,15 @@ class AscendMLAAttentionSpec(MLAAttentionSpec):
             return self.block_size // self.compress_ratio
         return self.block_size // self.tokens_per_state
 
+    @storage_block_size.setter
+    def storage_block_size(self, value: int) -> None:
+        # vLLM main re-added ``storage_block_size`` as an AttentionSpec field,
+        # so the frozen-dataclass __init__ assigns it (object.__setattr__ still
+        # invokes this data descriptor). The Ascend spec keeps the value
+        # computed from block_size / tokens_per_state, so accept and ignore the
+        # field-init assignment.
+        pass
+
     @property
     def real_page_size_bytes(self) -> int:
         return (

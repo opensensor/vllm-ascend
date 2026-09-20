@@ -141,6 +141,11 @@ def _record_cos_and_sin_cache_interleaved(cos_sin_cache):
     global _sin_cache
     if _cos_cache is not None or _sin_cache is not None:
         return
+    # NoPE / zero-width rope (e.g. GLM-5.3-Flash qk_rope_head_dim=0): the
+    # cos/sin cache is empty, so there is nothing to interleave. Guard the
+    # degenerate reshape (view(-1, 2, 0) on 0 elements is ambiguous).
+    if cos_sin_cache is None or cos_sin_cache.numel() == 0 or cos_sin_cache.shape[-1] == 0:
+        return
     hidden_dim = cos_sin_cache.shape[-1] // 2
     cos_cache, sin_cache = cos_sin_cache.view(-1, 2, hidden_dim).repeat(1, 1, 2).chunk(2, dim=1)
     _cos_cache = cos_cache.squeeze(1)

@@ -1,0 +1,28 @@
+diff --git a/vllm/model_executor/kernels/mhc/torch.py b/vllm/model_executor/kernels/mhc/torch.py
+index 9c57cc1..4d2f914 100644
+--- a/vllm/model_executor/kernels/mhc/torch.py
++++ b/vllm/model_executor/kernels/mhc/torch.py
+@@ -78,8 +78,12 @@ def mhc_pre_torch(
+         layer_input: shape (..., hidden_size), dtype torch.bfloat16
+     """
+ 
+-    # Validate shapes
+-    assert residual.dtype == torch.bfloat16
++    # Validate shapes. float32 is permitted so the 310P GLM-5.3-Flash path can
++    # carry the mHC residual accumulator in fp32 (no bf16 on 310P; fp16
++    # saturates at 65504). All internal math is already fp32; layer_input is
++    # returned in residual.dtype and downcast to the compute dtype by the
++    # caller's RMSNorm.
++    assert residual.dtype in (torch.bfloat16, torch.float16, torch.float32)
+     assert fn.dtype == torch.float32
+     assert hc_scale.dtype == torch.float32
+     assert hc_base.dtype == torch.float32
+@@ -125,7 +129,7 @@ def mhc_pre_torch(
+ 
+     layer_input = torch.sum(
+         pre_mix.unsqueeze(-1) * residual_flat.to(torch.float32), dim=1
+-    ).to(torch.bfloat16)
++    ).to(residual.dtype)
+     return (
+         post_mix.view(*outer_shape, hc_mult, 1),
+         comb_mix.view(*outer_shape, hc_mult, hc_mult),

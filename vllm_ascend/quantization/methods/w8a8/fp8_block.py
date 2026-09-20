@@ -89,18 +89,27 @@ def resolve_block_scales(
             "`weight_scale_inv` are mismatched or unpaired."
         )
 
-    resolved = torch.empty((out_features, in_features), dtype=out_dtype, device=weight.device)
+    # Ascend 310P has no fp8 (e4m3) compute/copy support: casting or copying a
+    # float8_e4m3fn tensor on-device fails (aclnnInplaceCopy 561103). Do the
+    # fp8->float32 dequant on CPU (torch supports fp8 there) and move only the
+    # dense out_dtype result back to the weight's device. One-time load cost.
+    target_device = weight.device
+    # 310P has no fp8 compute: dequant each row-chunk on CPU and write it
+    # straight into the NPU output, freeing the CPU staging immediately so the
+    # host-RAM peak stays ~one chunk (not the whole fp16 weight x4 workers).
+    resolved = torch.empty((out_features, in_features), dtype=out_dtype, device=target_device)
     rows_per_step = max(block_n, _ROWS_PER_DEQUANT_STEP // block_n * block_n)
     for row_start in range(0, out_features, rows_per_step):
         row_end = min(row_start + rows_per_step, out_features)
-        # Keep dtype conversion on the weight device so a CPU-resident scale
-        # cannot multiply an NPU weight. Same-device `.to()` is a no-op.
+        w_cpu = weight[row_start:row_end].to("cpu")
         row_scales = scale_inv[row_start // block_n : cdiv(row_end, block_n)].to(
-            device=weight.device, dtype=torch.float32
+            device="cpu", dtype=torch.float32
         )
         row_scales = row_scales.repeat_interleave(block_n, dim=0)[: row_end - row_start]
         row_scales = row_scales.repeat_interleave(block_k, dim=1)[:, :in_features]
-        resolved[row_start:row_end] = weight[row_start:row_end].to(torch.float32) * row_scales
+        block = (w_cpu.to(torch.float32) * row_scales).to(out_dtype)
+        resolved[row_start:row_end].copy_(block)
+        del w_cpu, row_scales, block
     return resolved
 
 

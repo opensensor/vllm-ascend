@@ -254,10 +254,19 @@ class NPUPlatform(Platform):
                 False,
                 False,
             ): "vllm_ascend._310p.attention.attention_v1.AscendAttentionBackend310",
-            # TODO If MLA/SFA is supported in the future, consider implementing the logic described in these comments.
-            # (True, False): "...AscendMLABackend310",
-            # (True, True):  "...AscendSFABackend310",
+            # (True, True):  "...AscendSFABackend310",  # DeepSeek sparse (SFA) on 310P: not yet implemented.
         }
+        # Experimental 310P MLA bring-up. GLM-5.x is NoPE MLA and its sparse
+        # indexer runs in "full" mode (index_topk covers the served context),
+        # so use_sparse is forced False upstream and (True, False) is the MLA
+        # key we must serve. Only wire the 310P MLA backend when the operator
+        # opts in; otherwise the hard guards raised earlier keep MLA disabled.
+        from vllm_ascend import envs as ascend_envs
+
+        if ascend_envs.VLLM_ASCEND_310P_ENABLE_MLA:
+            compatibility_backend_map[(True, False)] = (
+                "vllm_ascend._310p.attention.mla_v1_310.AscendMLABackend310"
+            )
 
         if get_current_hardware_profile().attention_backend_family is AttentionBackendFamily.COMPATIBILITY:
             return compatibility_backend_map.get(key, compatibility_backend_map[(False, False)])
