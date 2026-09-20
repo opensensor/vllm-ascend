@@ -24,6 +24,11 @@ if HAS_TRITON:
     import vllm_ascend.patch.worker.patch_v2.patch_triton  # noqa
 
 
+# mHC per-sublayer input RMSNorm: applied UNCONDITIONALLY (no Triton dep).
+# Must NOT be gated behind `if HAS_TRITON` -- the 310P has no Triton, and the
+# mHC norm patch previously lived in patch_triton.py, so it never loaded and
+# every mHC layer ran without its input RMSNorm (activation blow-up).
+import vllm_ascend.patch.worker.patch_mhc_norm  # noqa
 import vllm_ascend.patch.worker.patch_distributed  # noqa
 import vllm_ascend.patch.worker.patch_minimax_m2  # noqa
 import vllm_ascend.patch.worker.patch_mamba_utils  # noqa
