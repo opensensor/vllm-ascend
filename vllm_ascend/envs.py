@@ -99,6 +99,12 @@ env_variables: dict[str, Callable[[], Any]] = {
     # bring-up flag only; leave it at 0 (default) for all production 310P runs
     # until MLA has been verified on hardware. Valid values: 0 or 1.
     "VLLM_ASCEND_310P_ENABLE_MLA": lambda: bool(int(os.getenv("VLLM_ASCEND_310P_ENABLE_MLA", "0"))),
+    # Experimental: quantize the large FLOAT Qwen GDN qkvz projection weights
+    # to per-output-channel INT8 at load time on Ascend 310P. The b/a gate and
+    # output projections remain FLOAT to limit accuracy risk.
+    # Disabled by default until accuracy and throughput have been validated on
+    # 310P hardware. Valid values: 0 or 1. This variable is not sensitive.
+    "VLLM_ASCEND_310P_GDN_W8A8": lambda: _strict_binary_env("VLLM_ASCEND_310P_GDN_W8A8"),
 }
 
 # end-env-vars-definition

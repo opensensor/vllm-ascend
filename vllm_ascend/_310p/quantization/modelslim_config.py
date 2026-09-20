@@ -31,6 +31,7 @@ from vllm.model_executor.layers.vocab_parallel_embedding import (
     VocabParallelEmbedding,
 )
 
+from vllm_ascend import envs
 from vllm_ascend._310p.quantization.methods.registry import (
     get_scheme_class,
 )
@@ -100,6 +101,15 @@ class AscendModelSlimConfig310(AscendModelSlimConfig):
 
         if isinstance(layer, LinearBase):
             if quant_type is None:
+                if envs.VLLM_ASCEND_310P_GDN_W8A8:
+                    from vllm_ascend._310p.quantization.methods.gdn_shared_w8a8 import (
+                        AscendGDNW8A8LinearMethod310,
+                        is_gdn_quantized_projection,
+                    )
+
+                    if is_gdn_quantized_projection(prefix):
+                        logger.debug("Select GDN W8A8 method for %s", prefix)
+                        return AscendGDNW8A8LinearMethod310()
                 from vllm_ascend.ops.linear import AscendUnquantizedLinearMethod
 
                 logger.debug("Select AscendUnquantizedLinearMethod for %s (layer=%s)", prefix, "LinearBase")
