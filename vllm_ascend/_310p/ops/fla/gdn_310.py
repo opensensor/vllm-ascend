@@ -26,8 +26,9 @@ from vllm.v1.attention.backends.utils import PAD_SLOT_ID
 
 from vllm_ascend._310p.ops.fla.chunk_gated_delta_rule import chunk_gated_delta_rule_310
 from vllm_ascend._310p.ops.fla.fused_gdn_gating import (
-    fused_gdn_gating_pytorch,
+    fused_gdn_gating_310,
     gdn_gating_constants,
+    gdn_gating_tiled_constants,
 )
 from vllm_ascend._310p.ops.fla.l2norm import l2norm_310p
 from vllm_ascend.ascend_forward_context import _EXTRA_CTX
@@ -200,10 +201,11 @@ def _cached_gating_constants(layer: torch.nn.Module) -> tuple[torch.Tensor, torc
     """
     cached = getattr(layer, "_gdn_gating_cache", None)
     if cached is not None and cached[0] is layer.A_log and cached[1] is layer.dt_bias:
-        return cached[2]
+        return cached[2], cached[3]
     constants = gdn_gating_constants(layer.A_log, layer.dt_bias)
-    layer._gdn_gating_cache = (layer.A_log, layer.dt_bias, constants)
-    return constants
+    tiled = gdn_gating_tiled_constants(layer.A_log, layer.dt_bias)
+    layer._gdn_gating_cache = (layer.A_log, layer.dt_bias, constants, tiled)
+    return constants, tiled
 
 
 class AscendGatedDeltaNetAttention310(GatedDeltaNetAttention):
@@ -337,7 +339,10 @@ class AscendGatedDeltaNetAttention310(GatedDeltaNetAttention):
         query_spec, key_spec, value_spec = self.rearrange_mixed_qkv(mixed_qkv_spec)
         query_non_spec, key_non_spec, value_non_spec = self.rearrange_mixed_qkv(mixed_qkv_non_spec)
 
-        g, beta = fused_gdn_gating_pytorch(self.A_log, a, b, self.dt_bias, constants=_cached_gating_constants(self))
+        gating_constants, gating_tiled = _cached_gating_constants(self)
+        g, beta = fused_gdn_gating_310(
+            self.A_log, a, b, self.dt_bias, constants=gating_constants, tiled_constants=gating_tiled
+        )
         if attn_metadata.num_prefills > 0 or spec_sequence_masks is not None:
             if spec_sequence_masks is not None:
                 if attn_metadata.num_prefills == 0 and attn_metadata.num_decodes == 0:
