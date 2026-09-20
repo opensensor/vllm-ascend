@@ -104,6 +104,36 @@ def _mask_padded_recurrent_accepted_tokens(
     ).contiguous()
 
 
+def _cached_recurrent_step_meta(attn_metadata, slot, cu_seqlens, ssm_state_indices, total_tokens):
+    """Per-step inputs for the recurrent GDN op, derived once instead of per layer.
+
+    ``flat_state_indices`` and ``actual_seq_lengths`` are functions of
+    ``cu_seqlens`` and ``ssm_state_indices`` alone -- both per-STEP metadata that
+    every one of the 48 GDN layers receives unchanged. Deriving them inside the
+    op wrapper therefore repeats roughly seven NPU launches 47 times per decoded
+    token, and 310P decode is bound by launch count rather than by the bytes
+    these tiny tensors touch.
+
+    Memoising on ``attn_metadata`` is safe because the builder constructs a fresh
+    ``GDNAttentionMetadata`` every step, so a cache can never outlive the tensors
+    it was derived from. Graph padding rewrites those tensors inside ``build()``,
+    before any layer runs, so the first layer already observes the padded values.
+    """
+    cache = getattr(attn_metadata, "_gdn_recurrent_step_meta", None)
+    if cache is None:
+        cache = {}
+        attn_metadata._gdn_recurrent_step_meta = cache
+    key = (slot, total_tokens)
+    derived = cache.get(key)
+    if derived is None:
+        flat_state_indices = _flatten_state_indices(ssm_state_indices, cu_seqlens, total_tokens)
+        flat_state_indices = torch.clamp_min(flat_state_indices, 0).contiguous()
+        actual_seq_lengths = (cu_seqlens[1:] - cu_seqlens[:-1]).to(torch.int32).contiguous()
+        derived = (flat_state_indices, actual_seq_lengths)
+        cache[key] = derived
+    return derived
+
+
 def npu_recurrent_gated_delta_rule_310(
     q: torch.Tensor,
     k: torch.Tensor,
@@ -115,18 +145,22 @@ def npu_recurrent_gated_delta_rule_310(
     ssm_state_indices: torch.Tensor,
     num_accepted_tokens: torch.Tensor | None = None,
     use_qk_l2norm_in_kernel: bool = True,
+    step_meta: tuple[torch.Tensor, torch.Tensor] | None = None,
 ) -> torch.Tensor:
     if use_qk_l2norm_in_kernel:
         q = l2norm_310p(q)
         k = l2norm_310p(k)
 
     total_tokens = v.shape[1]
-    flat_state_indices = _flatten_state_indices(ssm_state_indices, cu_seqlens, total_tokens)
-    actual_seq_lengths = (cu_seqlens[1:] - cu_seqlens[:-1]).to(torch.int32).contiguous()
-    flat_state_indices = torch.clamp_min(
-        flat_state_indices,
-        0,
-    ).contiguous()
+    if step_meta is not None:
+        flat_state_indices, actual_seq_lengths = step_meta
+    else:
+        flat_state_indices = _flatten_state_indices(ssm_state_indices, cu_seqlens, total_tokens)
+        actual_seq_lengths = (cu_seqlens[1:] - cu_seqlens[:-1]).to(torch.int32).contiguous()
+        flat_state_indices = torch.clamp_min(
+            flat_state_indices,
+            0,
+        ).contiguous()
     accepted_tokens = None
     if num_accepted_tokens is not None:
         accepted_tokens = _mask_padded_recurrent_accepted_tokens(
@@ -365,6 +399,8 @@ class AscendGatedDeltaNetAttention310(GatedDeltaNetAttention):
 
             # 2.1: Process the multi-query part
             if spec_sequence_masks is not None:
+                spec_cu = spec_query_start_loc[: attn_metadata.num_spec_decodes + 1]
+                spec_idx = spec_state_indices_tensor[: attn_metadata.num_spec_decodes]
                 core_attn_out_spec = npu_recurrent_gated_delta_rule_310(
                     q=query_spec,
                     k=key_spec,
@@ -372,10 +408,13 @@ class AscendGatedDeltaNetAttention310(GatedDeltaNetAttention):
                     g=g_spec,
                     beta=beta_spec,
                     state=ssm_state,
-                    cu_seqlens=spec_query_start_loc[: attn_metadata.num_spec_decodes + 1],
-                    ssm_state_indices=spec_state_indices_tensor[: attn_metadata.num_spec_decodes],
+                    cu_seqlens=spec_cu,
+                    ssm_state_indices=spec_idx,
                     num_accepted_tokens=spec_causal_conv1d_meta.num_accepted_tokens,
                     use_qk_l2norm_in_kernel=True,
+                    step_meta=_cached_recurrent_step_meta(
+                        attn_metadata, "spec", spec_cu, spec_idx, value_spec.shape[1]
+                    ),
                 )
             else:
                 core_attn_out_spec = None
@@ -404,6 +443,8 @@ class AscendGatedDeltaNetAttention310(GatedDeltaNetAttention):
                 ssm_state[non_spec_state_indices_tensor] = last_recurrent_state.to(ssm_state.dtype)
             elif attn_metadata.num_decodes > 0:
                 num_decodes = attn_metadata.num_decodes
+                decode_cu = non_spec_query_start_loc[: num_decodes + 1]
+                decode_idx = non_spec_state_indices_tensor[:num_decodes]
                 core_attn_out_non_spec = npu_recurrent_gated_delta_rule_310(
                     q=query_non_spec[:, :num_decodes],
                     k=key_non_spec[:, :num_decodes],
@@ -411,15 +452,18 @@ class AscendGatedDeltaNetAttention310(GatedDeltaNetAttention):
                     g=g_non_spec[:, :num_decodes],
                     beta=beta_non_spec[:, :num_decodes],
                     state=ssm_state,
-                    cu_seqlens=non_spec_query_start_loc[: num_decodes + 1],
-                    ssm_state_indices=non_spec_state_indices_tensor[:num_decodes],
+                    cu_seqlens=decode_cu,
+                    ssm_state_indices=decode_idx,
                     use_qk_l2norm_in_kernel=True,
+                    step_meta=_cached_recurrent_step_meta(attn_metadata, "decode", decode_cu, decode_idx, num_decodes),
                 )
             else:
                 core_attn_out_non_spec = None
 
         elif attn_metadata.num_decodes > 0:
             num_decodes = attn_metadata.num_decodes
+            decode_cu = non_spec_query_start_loc[: num_decodes + 1]
+            decode_idx = non_spec_state_indices_tensor[:num_decodes]
             core_attn_out_non_spec = npu_recurrent_gated_delta_rule_310(
                 q=query_non_spec[:, :num_decodes],
                 k=key_non_spec[:, :num_decodes],
@@ -427,9 +471,10 @@ class AscendGatedDeltaNetAttention310(GatedDeltaNetAttention):
                 g=g[:, :num_decodes],
                 beta=beta[:, :num_decodes],
                 state=ssm_state,
-                cu_seqlens=non_spec_query_start_loc[: num_decodes + 1],
-                ssm_state_indices=non_spec_state_indices_tensor[:num_decodes],
+                cu_seqlens=decode_cu,
+                ssm_state_indices=decode_idx,
                 use_qk_l2norm_in_kernel=True,
+                step_meta=_cached_recurrent_step_meta(attn_metadata, "decode", decode_cu, decode_idx, num_decodes),
             )
         # 3. Merge core attention output
         if spec_sequence_masks is not None and core_attn_out_non_spec is not None:
