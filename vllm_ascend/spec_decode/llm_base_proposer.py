@@ -114,6 +114,11 @@ def _is_glm_model(model_config) -> bool:
 
 class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
     _runnable: ACLGraphWrapper | Callable
+    # Models without extended/decoupled (xdrope) rope never set these, but
+    # the proposer reads them unconditionally. Mirror the defaults that
+    # NPUModelRunner310.__init__ applies to the runner for the same reason.
+    uses_xdrope_dim: int = 0
+    draft_uses_xdrope_dim: int = 0
 
     def _create_draft_vllm_config(self) -> VllmConfig:
         """Expose the draft runner type during model construction.
