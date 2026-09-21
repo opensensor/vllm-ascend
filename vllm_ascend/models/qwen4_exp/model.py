@@ -156,6 +156,120 @@ def _resolve_checkpoint_dir(vllm_config: object) -> str | None:
     return None
 
 
+def _remap_non_expert(name: str, config: object) -> list[tuple[str, slice | None, int | None]] | None:
+    """Map a prefix-rewritten non-expert tensor name to target param placements.
+
+    ``name`` is the checkpoint tensor name with ``model.language_model.`` already
+    rewritten to ``model.``. Returns a list of ``(target_param_name, source_slice,
+    target_row_offset)`` tuples (a 1-element list for the common case), or
+    ``None`` to skip the tensor:
+
+    * ``source_slice`` slices the source tensor's dim 0 (used to split a packed
+      source across two params, e.g. the QSA indexer ``index_qk_proj``).
+    * ``target_row_offset`` writes the (sliced) source into a contiguous row
+      range of the fused target param (shared-expert gate/up, GDN a/b, PLE
+      key/value), instead of a whole-param copy.
+
+    Skipped (``None``) tensors are the checkpoint's derived n-gram buffers
+    (recomputed deterministically at init), the 128 lazy-shard PLE rows (read on
+    demand by the lazy transport), and the small set of eager stand-in params the
+    Ascend modules do not yet own (shared-expert gate, GDN ``in_proj_z``/``norm``,
+    QSA indexer layernorms).
+    """
+    hidden = int(config.hidden_size)
+    hc_hidden = int(getattr(config, "hc_count", 2)) * hidden
+    shared_inter = int(getattr(config, "shared_expert_intermediate_size", 0) or 0)
+    gdn_num_v = int(getattr(config, "linear_num_value_heads", 0) or 0)
+    index_rows = int(getattr(config, "indexer_n_heads", 4)) * int(getattr(config, "indexer_head_dim", 128))
+
+    def plain(target: str) -> list[tuple[str, slice | None, int | None]]:
+        return [(target, None, None)]
+
+    # Top-level mixer + per-layer hyperconnections (eager _GatedResidual params).
+    if name.endswith(".hc_norm.weight"):
+        return plain(name[: -len(".hc_norm.weight")] + ".hc_norm_weight")
+    if name.endswith(".input_mix_weight_down.weight"):
+        return plain(name[: -len(".weight")])
+    if name.endswith(".input_mix_weight_up.weight"):
+        return plain(name[: -len(".weight")])
+    if name.endswith(".block_inject_weight.weight"):
+        return plain(name[: -len(".weight")])
+
+    # PLE n-gram table (buffers + lazy shards): nothing to place.
+    if ".ple.ple_embedding." in name:
+        return None
+
+    # MoE router gate + fused shared expert.
+    if name.endswith(".mlp.gate.weight"):
+        return plain(name[: -len(".weight")])
+    if name.endswith(".mlp.shared_expert.gate_proj.weight"):
+        return [(name[: -len(".mlp.shared_expert.gate_proj.weight")] + ".mlp.shared_gate_up", None, 0)]
+    if name.endswith(".mlp.shared_expert.up_proj.weight"):
+        return [(name[: -len(".mlp.shared_expert.up_proj.weight")] + ".mlp.shared_gate_up", None, shared_inter)]
+    if name.endswith(".mlp.shared_expert.down_proj.weight"):
+        return plain(name[: -len(".mlp.shared_expert.down_proj.weight")] + ".mlp.shared_down")
+    if ".mlp.shared_expert_gate" in name:
+        return None  # eager stand-in has no shared-expert gate scalar
+
+    # GDN linear-attention projections (checkpoint `linear_attn` -> model `attention`).
+    if ".linear_attn." in name:
+        base = name.replace(".linear_attn.", ".attention.")
+        if base.endswith(".in_proj_qkv.weight"):
+            return plain(base[: -len(".weight")])
+        if base.endswith(".conv1d.weight"):
+            return plain(base[: -len(".conv1d.weight")] + ".conv_weight")
+        if base.endswith(".in_proj_a.weight"):
+            return [(base[: -len(".in_proj_a.weight")] + ".in_proj_ba", None, 0)]
+        if base.endswith(".in_proj_b.weight"):
+            return [(base[: -len(".in_proj_b.weight")] + ".in_proj_ba", None, gdn_num_v)]
+        if base.endswith(".A_log") or base.endswith(".dt_bias"):
+            return plain(base)
+        if base.endswith(".out_proj.weight"):
+            return plain(base[: -len(".weight")])
+        # in_proj_z / norm are not yet owned by the eager GDN stand-in.
+        return None
+
+    # QSA sparse attention (checkpoint `self_attn` -> model `attention`).
+    if ".self_attn." in name:
+        base = name.replace(".self_attn.", ".attention.")
+        if base.endswith(".q_proj.weight"):
+            return plain(base[: -len(".weight")])
+        if base.endswith(".k_proj.weight"):
+            return plain(base[: -len(".weight")])
+        if base.endswith(".v_proj.weight"):
+            return plain(base[: -len(".weight")])
+        if base.endswith(".o_proj.weight"):
+            return plain(base[: -len(".weight")])
+        if base.endswith(".q_norm.weight"):
+            return plain(base[: -len(".q_norm.weight")] + ".attn.q_norm_weight")
+        if base.endswith(".k_norm.weight"):
+            return plain(base[: -len(".k_norm.weight")] + ".attn.k_norm_weight")
+        if base.endswith(".indexer.index_qk_proj.weight"):
+            stem = base[: -len(".indexer.index_qk_proj.weight")]
+            return [(stem + ".iq_proj", slice(0, index_rows), None), (stem + ".ik_proj", slice(index_rows, None), None)]
+        # indexer layernorms are not yet owned by the eager QSA indexer.
+        return None
+
+    # PLE projection layer (checkpoint `ple.*` -> model `ple.ple.*`).
+    if ".ple." in name:
+        base = name.replace(".ple.", ".ple.ple.", 1)
+        if base.endswith(".conv1d.weight"):
+            return plain(base[: -len(".conv1d.weight")] + ".conv_weight")
+        if base.endswith(".key_proj.weight"):
+            return [(base[: -len(".key_proj.weight")] + ".kv_proj_weight", None, 0)]
+        if base.endswith(".value_proj.weight"):
+            return [(base[: -len(".value_proj.weight")] + ".kv_proj_weight", None, hc_hidden)]
+        if base.endswith(".norm_query.weight"):
+            return plain(base[: -len(".weight")] + "_weight")
+        if base.endswith(".norm_key.weight"):
+            return plain(base[: -len(".weight")] + "_weight")
+        if base.endswith(".norm_conv.weight"):
+            return plain(base[: -len(".weight")] + "_weight")
+        return None
+
+    return None
+
+
 def _gdn_params_from_config(config: object) -> Qwen4ExpGDNParams:
     """Build GDN geometry, tolerating a duck-typed tiny config (getattr defaults).
 
@@ -1318,11 +1432,35 @@ class AscendQwen4ExpForCausalLM(
                     self.lm_head.weight_loader(param, tensor)
                     loaded.add(name)
                     continue
-                if tuple(param.shape) != tuple(tensor.shape):
+                # Round-trip / already-mapped names (a state-dict by fused param
+                # name): strict full-shape copy before any checkpoint remap.
+                if tuple(param.shape) == tuple(tensor.shape):
+                    with torch.no_grad():
+                        param.copy_(tensor.to(param.dtype))
+                    loaded.add(name)
                     continue
-                with torch.no_grad():
-                    param.copy_(tensor.to(param.dtype))
-                loaded.add(name)
+                # Eager-param remap: renames, fusions (shared expert / GDN a+b /
+                # PLE key+value), the QSA index_qk split, and documented skips.
+                placements = _remap_non_expert(name, self.model.config)
+                if placements is None:
+                    continue
+                for target_name, src_slice, target_offset in placements:
+                    target = params.get(target_name)
+                    if target is None:
+                        continue
+                    source = tensor if src_slice is None else tensor[src_slice]
+                    with torch.no_grad():
+                        if target_offset is None:
+                            if tuple(target.shape) != tuple(source.shape):
+                                continue
+                            target.copy_(source.to(target.dtype))
+                        else:
+                            if target_offset + source.shape[0] > target.shape[0]:
+                                continue
+                            if tuple(source.shape[1:]) != tuple(target.shape[1:]):
+                                continue
+                            target[target_offset : target_offset + source.shape[0]].copy_(source.to(target.dtype))
+                    loaded.add(target_name)
 
         # Reject an incomplete / malformed expert set -- only when the checkpoint
         # actually carried per-expert tensors (a by-name round-trip carries none).
