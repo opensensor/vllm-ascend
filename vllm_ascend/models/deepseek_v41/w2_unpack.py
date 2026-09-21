@@ -54,6 +54,7 @@ from tools.deepseek_w2.w2_format import (
     W2_BLOCK_COLS,
     W2_BLOCK_ROWS,
     broadcast_block_scales,
+    unpack_codes,
     unpack_w2_codes,
 )
 
@@ -106,7 +107,10 @@ def _unpack_w2_operand(
     (``tools/deepseek_w2/w2_format.py``) so it is bit-identical to the E0.4
     reference unpack.
     """
-    codes = unpack_w2_codes(packed, in_features)
+    # Infer code width from the packed layout (W2 = 4 codes/byte, W4 = 2), so
+    # mixed-precision W2/W4 expert banks unpack correctly with no extra plumbing.
+    bits = 8 // (in_features // int(packed.shape[-1]))
+    codes = unpack_codes(packed, in_features, bits)
     scale = broadcast_block_scales(block_scale, out_features, in_features, W2_BLOCK_ROWS, W2_BLOCK_COLS)
     return codes, scale
 

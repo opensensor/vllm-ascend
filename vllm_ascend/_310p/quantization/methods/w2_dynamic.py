@@ -69,8 +69,17 @@ from tools.deepseek_w2.w2_format import (
     W2_BLOCK_COLS,
     W2_BLOCK_ROWS,
     W2_CODES_PER_BYTE,
+    unpack_codes,
     unpack_w2_codes,
 )
+
+
+def _infer_bits(packed: torch.Tensor, in_features: int) -> int:
+    """Code width (2 or 4) from a packed operand: W2 packs 4 codes/byte
+    (last dim = in//4), W4 packs 2 codes/byte (in//2). Lets the runtime handle
+    mixed-precision W2/W4 expert banks with no config plumbing."""
+    codes_per_byte = in_features // int(packed.shape[-1])
+    return 8 // codes_per_byte
 from vllm_ascend.models.deepseek_v41.w2_unpack import (
     swiglu_gate_up,
     unpack_active_experts,
@@ -122,7 +131,8 @@ def _w2_dequant_fp32(
     no native fp64, so the old broadcast path emitted an emulated cast per op and
     dominated the MoE step time.
     """
-    codes = unpack_w2_codes(packed, in_f).to(torch.float32)  # [out_f, in_f]
+    bits = _infer_bits(packed, in_f)  # 2 (W2) or 4 (W4); mixed banks supported
+    codes = unpack_codes(packed, in_f, bits).to(torch.float32)  # [out_f, in_f]
     bs = block_scale.to(torch.float32)  # [out_f // 32, in_f // 32]
     tiled = codes.view(out_f // W2_BLOCK_ROWS, W2_BLOCK_ROWS, in_f // W2_BLOCK_COLS, W2_BLOCK_COLS)
     scaled = tiled * bs.view(out_f // W2_BLOCK_ROWS, 1, in_f // W2_BLOCK_COLS, 1)
@@ -406,7 +416,10 @@ class AscendW2DynamicFusedMoEMethod310(AscendMoEScheme):
             e = experts[expert_id]
             group_x = sorted_x[start:stop]
             inter = int(e.inter)
-            if w2_op is not None:
+            # The Cube kernel unpacks 2-bit codes on-chip -> W2 only. W4 experts
+            # (mixed-precision banks) MUST take the eager fp32 path below.
+            use_cube = w2_op is not None and _infer_bits(e.gate_packed, int(e.hidden)) == 2
+            if use_cube:
                 # Fast path: fused 310P Cube kernel (arch20 catlass MMAD with the
                 # per-[32,32] block dequant fused into the weight load). ~2.4x over
                 # eager and no fp-weight HBM materialization. The kernel takes fp16
