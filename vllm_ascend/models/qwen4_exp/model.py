@@ -192,7 +192,6 @@ def _remap_non_expert(name: str, config: object) -> list[tuple[str, slice | None
     """
     hidden = int(config.hidden_size)
     hc_hidden = int(getattr(config, "hc_count", 2)) * hidden
-    shared_inter = int(getattr(config, "shared_expert_intermediate_size", 0) or 0)
     gdn_num_v = int(getattr(config, "linear_num_value_heads", 0) or 0)
     index_rows = int(getattr(config, "indexer_n_heads", 4)) * int(getattr(config, "indexer_head_dim", 128))
     qsa_q_rows = int(getattr(config, "num_attention_heads", 24)) * int(getattr(config, "head_dim", 256))
@@ -217,12 +216,15 @@ def _remap_non_expert(name: str, config: object) -> list[tuple[str, slice | None
     # MoE router gate + fused shared expert.
     if name.endswith(".mlp.gate.weight"):
         return plain(name[: -len(".weight")])
-    if name.endswith(".mlp.shared_expert.gate_proj.weight"):
-        return [(name[: -len(".mlp.shared_expert.gate_proj.weight")] + ".mlp.shared_gate_up", None, 0)]
-    if name.endswith(".mlp.shared_expert.up_proj.weight"):
-        return [(name[: -len(".mlp.shared_expert.up_proj.weight")] + ".mlp.shared_gate_up", None, shared_inter)]
-    if name.endswith(".mlp.shared_expert.down_proj.weight"):
-        return plain(name[: -len(".mlp.shared_expert.down_proj.weight")] + ".mlp.shared_down")
+    # Shared-expert gate/up/down are TP-sharded and placed by the dedicated
+    # `_place_shared_expert_tensor` handler in load_weights (column/row
+    # parallel on the intermediate dim), so skip them here.
+    if (
+        ".mlp.shared_expert.gate_proj" in name
+        or ".mlp.shared_expert.up_proj" in name
+        or ".mlp.shared_expert.down_proj" in name
+    ):
+        return None
     if ".mlp.shared_expert_gate" in name:
         return None  # eager stand-in has no shared-expert gate scalar
 
@@ -807,9 +809,19 @@ class _EagerSparseMoE(nn.Module):
 
         shared_inter = int(getattr(config, "shared_expert_intermediate_size", 0) or 0)
         self.has_shared_expert = shared_inter > 0
+        self.local_shared_inter = 0
         if self.has_shared_expert:
-            self.shared_gate_up = nn.Parameter(torch.zeros(2 * shared_inter, hidden, dtype=self.params_dtype))
-            self.shared_down = nn.Parameter(torch.zeros(hidden, shared_inter, dtype=self.params_dtype))
+            # TP-shard the shared expert's intermediate dim: gate/up are
+            # column-parallel (split 2*shared_inter) and down is row-parallel
+            # (split shared_inter), matching the routed-expert all-reduce.
+            tp = self.expert_tp_size
+            if shared_inter % tp:
+                raise ValueError(f"shared_expert_intermediate_size={shared_inter} not divisible by TP {tp}")
+            self.local_shared_inter = shared_inter // tp
+            self.shared_gate_up = nn.Parameter(
+                torch.zeros(2 * self.local_shared_inter, hidden, dtype=self.params_dtype)
+            )
+            self.shared_down = nn.Parameter(torch.zeros(hidden, self.local_shared_inter, dtype=self.params_dtype))
 
     def forward(self, block_input: torch.Tensor) -> torch.Tensor:
         router_logits = F.linear(block_input.to(self.router_dtype), self.gate.to(self.router_dtype))
@@ -843,7 +855,15 @@ class _EagerSparseMoE(nn.Module):
 
         if self.has_shared_expert:
             shared_gate_up = _linear(block_input, self.shared_gate_up, self.compute_dtype)
-            out = out + _linear(swiglu_gate_up(shared_gate_up), self.shared_down, self.compute_dtype)
+            shared_partial = _linear(swiglu_gate_up(shared_gate_up), self.shared_down, self.compute_dtype)
+            if self.expert_tp_size > 1:
+                if self._tp_reduce is None:
+                    raise RuntimeError(
+                        "Qwen4Exp shared-expert TP needs an all-reduce: "
+                        "tensor_model_parallel_all_reduce was not importable."
+                    )
+                shared_partial = self._tp_reduce(shared_partial)
+            out = out + shared_partial
         return out.to(self.params_dtype)
 
 
@@ -1582,6 +1602,54 @@ class AscendQwen4ExpForCausalLM(
             param[mapping.expert_index, mapping.row_start : mapping.row_stop].copy_(weight.to(param.dtype))
         return target_name
 
+    def _place_shared_expert_tensor(
+        self,
+        params: dict[str, torch.Tensor],
+        name: str,
+        tensor: torch.Tensor,
+        tp_rank: int,
+        tp_size: int,
+    ) -> str | None:
+        """Place one TP-sliced shared-expert tensor into its local param slot.
+
+        gate/up are column-parallel (split the intermediate dim across the rows
+        of the fused ``shared_gate_up``); down is row-parallel (split across the
+        columns of ``shared_down``). Returns the target param name, or ``None``
+        to fall through to the generic remap path.
+        """
+        del tp_size
+        if name.endswith(".mlp.shared_expert.gate_proj.weight"):
+            target_name = name[: -len(".mlp.shared_expert.gate_proj.weight")] + ".mlp.shared_gate_up"
+            target = params.get(target_name)
+            if target is None:
+                return None
+            local = target.shape[0] // 2
+            src = tensor[tp_rank * local : (tp_rank + 1) * local]
+            with torch.no_grad():
+                target[0:local].copy_(src.to(target.dtype))
+            return target_name
+        if name.endswith(".mlp.shared_expert.up_proj.weight"):
+            target_name = name[: -len(".mlp.shared_expert.up_proj.weight")] + ".mlp.shared_gate_up"
+            target = params.get(target_name)
+            if target is None:
+                return None
+            local = target.shape[0] // 2
+            src = tensor[tp_rank * local : (tp_rank + 1) * local]
+            with torch.no_grad():
+                target[local : 2 * local].copy_(src.to(target.dtype))
+            return target_name
+        if name.endswith(".mlp.shared_expert.down_proj.weight"):
+            target_name = name[: -len(".mlp.shared_expert.down_proj.weight")] + ".mlp.shared_down"
+            target = params.get(target_name)
+            if target is None:
+                return None
+            local = target.shape[1]
+            src = tensor[:, tp_rank * local : (tp_rank + 1) * local]
+            with torch.no_grad():
+                target.copy_(src.to(target.dtype))
+            return target_name
+        return None
+
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         """Load a real (or round-trip) checkpoint into the assembled model.
 
@@ -1646,6 +1714,14 @@ class AscendQwen4ExpForCausalLM(
                     self.lm_head.weight_loader(param, tensor)
                     loaded.add(name)
                     continue
+                # Shared expert (dense MLP) is TP-sharded on its intermediate dim:
+                # gate/up are column-parallel (split 2*shared_inter), down is
+                # row-parallel (split shared_inter). Load this rank's local slice.
+                if ".mlp.shared_expert." in name:
+                    shared_target = self._place_shared_expert_tensor(params, name, tensor, tp_rank, tp_size)
+                    if shared_target is not None:
+                        loaded.add(shared_target)
+                        continue
                 # Round-trip / already-mapped names (a state-dict by fused param
                 # name): strict full-shape copy before any checkpoint remap.
                 if param is not None and tuple(param.shape) == tuple(tensor.shape):
