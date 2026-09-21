@@ -152,11 +152,17 @@ def _cached_chunk_plan(attn_metadata, cu_seqlens):
     :func:`_cached_recurrent_step_meta` -- the builder makes a fresh one every
     step, so the cache cannot outlive the tensor it came from.
     """
-    plan = getattr(attn_metadata, "_gdn_chunk_plan", None)
-    if plan is None:
+    cache = getattr(attn_metadata, "_gdn_chunk_plan", None)
+    # Keyed on the tensor itself rather than just memoised, so that a second
+    # call in the same step with a different cu_seqlens can never be handed the
+    # first one's layout. Today there is only one call site, but a wrong plan
+    # would corrupt prefill silently rather than raise.
+    key = (cu_seqlens.data_ptr(), cu_seqlens.shape[0])
+    if cache is None or cache[0] != key:
         plan = build_varlen_chunk_plan(cu_seqlens.to(torch.int64).cpu(), CHUNK_SIZE)
-        attn_metadata._gdn_chunk_plan = plan
-    return plan
+        attn_metadata._gdn_chunk_plan = (key, plan)
+        return plan
+    return cache[1]
 
 
 def npu_recurrent_gated_delta_rule_310(
