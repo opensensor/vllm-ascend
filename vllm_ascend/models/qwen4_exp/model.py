@@ -55,6 +55,7 @@ from typing import TYPE_CHECKING
 import torch
 import torch.nn.functional as F
 from torch import nn
+from vllm.config import get_current_vllm_config_or_none
 from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.layers.mamba.abstract import MambaBase
@@ -428,6 +429,26 @@ class _GatedResidual(nn.Module):
         return out.flatten(-2).to(self.params_dtype)
 
 
+def _register_in_static_forward_context(prefix: str, module: nn.Module) -> None:
+    """Register an eager attention stub in the compile ``static_forward_context``.
+
+    The concrete vLLM ``Attention`` registers itself during ``__init__``, but the
+    eager Qwen4Exp attention stubs are bare ``AttentionLayerBase``/``MambaBase``
+    subclasses, so they must register manually (mirroring ``Attention.__init__``).
+    Registration is what lets the v1 runner resolve backends and bind KV caches
+    by layer name (``model.layers.{idx}.attention``).
+    """
+    if not prefix:
+        return
+    vllm_config = get_current_vllm_config_or_none()
+    if vllm_config is None:
+        return
+    compilation_config = vllm_config.compilation_config
+    if prefix in compilation_config.static_forward_context:
+        raise ValueError(f"Duplicate layer name: {prefix}")
+    compilation_config.static_forward_context[prefix] = module
+
+
 class _EagerDenseAttention(nn.Module, AttentionLayerBase):
     """Eager causal GQA (used for ``full_attention`` layers without an indexer).
 
@@ -438,8 +459,9 @@ class _EagerDenseAttention(nn.Module, AttentionLayerBase):
     (the eager forward does not yet read/write that cache).
     """
 
-    def __init__(self, *, config: object, dtype_policy: Qwen4ExpDtypePolicy) -> None:
+    def __init__(self, *, config: object, dtype_policy: Qwen4ExpDtypePolicy, prefix: str = "") -> None:
         super().__init__()
+        _register_in_static_forward_context(prefix, self)
         self.compute_dtype = dtype_policy.attention_accumulation_dtype
         self.params_dtype = dtype_policy.attention_dtype
         hidden = int(config.hidden_size)
@@ -492,8 +514,9 @@ class _GDNAttention(nn.Module, MambaBase):
     not read/written by the eager math.
     """
 
-    def __init__(self, *, config: object, dtype_policy: Qwen4ExpDtypePolicy) -> None:
+    def __init__(self, *, config: object, dtype_policy: Qwen4ExpDtypePolicy, prefix: str = "") -> None:
         super().__init__()
+        _register_in_static_forward_context(prefix, self)
         self.compute_dtype = dtype_policy.accumulation_dtype
         self.params_dtype = dtype_policy.main_dtype
         self.mamba_conv_dtype = dtype_policy.mamba_conv_cache_dtype
@@ -561,8 +584,9 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
     cache is currently allocated but not the eager forward's read/write target.
     """
 
-    def __init__(self, *, config: object, layer_idx: int, dtype_policy: Qwen4ExpDtypePolicy) -> None:
+    def __init__(self, *, config: object, layer_idx: int, dtype_policy: Qwen4ExpDtypePolicy, prefix: str = "") -> None:
         super().__init__()
+        _register_in_static_forward_context(prefix, self)
         self.compute_dtype = dtype_policy.accumulation_dtype
         self.params_dtype = dtype_policy.qsa_main_dtype
         hidden = int(config.hidden_size)
@@ -1015,15 +1039,18 @@ class AscendQwen4ExpDecoderLayer(nn.Module):
         )
 
         # Attention: GDN linear attention, QSA sparse attention, or dense.
+        attn_prefix = f"{prefix}.attention"
         self.uses_qsa = False
         if layer_type == _LAYER_TYPE_LINEAR:
-            self.attention: nn.Module = _GDNAttention(config=config, dtype_policy=dtype_policy)
+            self.attention: nn.Module = _GDNAttention(config=config, dtype_policy=dtype_policy, prefix=attn_prefix)
         else:
             if getattr(config, "indexer_n_heads", None) is not None:
                 self.uses_qsa = True
-                self.attention = _QSAAttention(config=config, layer_idx=layer_idx, dtype_policy=dtype_policy)
+                self.attention = _QSAAttention(
+                    config=config, layer_idx=layer_idx, dtype_policy=dtype_policy, prefix=attn_prefix
+                )
             else:
-                self.attention = _EagerDenseAttention(config=config, dtype_policy=dtype_policy)
+                self.attention = _EagerDenseAttention(config=config, dtype_policy=dtype_policy, prefix=attn_prefix)
 
         # MoE (routed + shared expert) vs. dense MLP.
         num_experts = int(getattr(config, "num_experts", 0) or 0)
