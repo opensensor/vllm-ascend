@@ -114,11 +114,18 @@ private:
         WaitFlag<HardEvent::S_V>(eventSV);
         Muls(xLocalFp32, xLocalFp32, rstdLocalTemp, this->numLastDim); // xLocalFp32 <- x * rstd
         PipeBarrier<PIPE_V>();
-        LocalTensor<float> gammaLocal = xLocalFp32[this->numLastDimAligned];
-
-        inRowsQue.FreeTensor(iputLocal);
-        Mul(xLocalFp32, xLocalFp32, gammaLocal, this->numLastDim); // xLocalFp32 <- x * rstd * gamma
+        // gamma rides in the upper half of the input tile and still has to be
+        // widened to fp32. xBufFp32 is only one row long, so reading it back as
+        // xLocalFp32[numLastDimAligned] ran off the end of that buffer and
+        // picked up the spent square-sum scratch instead. The reduction has
+        // finished with yLocalFp32 by now, so cast gamma there -- the same
+        // place the Normal and AddRmsNorm kernels put it.
+        Cast(yLocalFp32, iputLocal[this->numLastDimAligned], RoundMode::CAST_NONE, this->numLastDim);
         PipeBarrier<PIPE_V>();
+
+        Mul(xLocalFp32, xLocalFp32, yLocalFp32, this->numLastDim); // xLocalFp32 <- x * rstd * gamma
+        PipeBarrier<PIPE_V>();
+        inRowsQue.FreeTensor(iputLocal);
         if (this->betaFlag == 1) {
             CopyInBeta();
             LocalTensor<T> betaLocal = inRowsQue.template DeQue<T>();
