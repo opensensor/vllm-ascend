@@ -36,7 +36,30 @@ from vllm_ascend.ascend_config import AscendCompilationConfig, get_ascend_config
 from vllm_ascend.utils import COMPILATION_PASS_KEY
 
 
+def _disable_autograd_cache() -> None:
+    """Keep AOTAutograd from trying to cache this backend's output.
+
+    From torch 2.13 the bundled autograd cache expects the forward compiler to
+    hand back an OutputCode. The fusion-only path below returns a GraphModule,
+    which is uncacheable, and unwrap_output_code trips over it. The cache buys
+    nothing here either way, so turn it off -- guarded by hasattr because these
+    knobs did not all exist on 2.10, and torch's config modules reject unknown
+    attributes.
+    """
+    import torch._dynamo.config as dynamo_config
+    import torch._functorch.config as functorch_config
+
+    for config, name in (
+        (functorch_config, "enable_autograd_cache"),
+        (functorch_config, "bundled_autograd_cache"),
+        (dynamo_config, "caching_precompile"),
+    ):
+        if hasattr(config, name):
+            setattr(config, name, False)
+
+
 def compile_fx(graph: GraphModule, example_inputs: list, inner_compile: Callable, decompositions: dict) -> Callable:
+    _disable_autograd_cache()
     recursive_compile_fx = functools.partial(compile_fx, inner_compile=inner_compile, decompositions=decompositions)
 
     if not graph_returns_tuple(graph):
