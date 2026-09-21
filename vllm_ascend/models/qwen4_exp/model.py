@@ -55,7 +55,9 @@ from typing import TYPE_CHECKING
 import torch
 import torch.nn.functional as F
 from torch import nn
+from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
+from vllm.model_executor.layers.mamba.abstract import MambaBase
 from vllm.model_executor.layers.mamba.mamba_utils import MambaStateCopyFuncCalculator
 from vllm.model_executor.layers.vocab_parallel_embedding import (
     ParallelLMHead,
@@ -68,6 +70,7 @@ if TYPE_CHECKING:
         MambaStateCopyFunc,
         MambaStateCopyFuncsByType,
     )
+    from vllm.v1.attention.backend import AttentionBackend
 from vllm.model_executor.models.interfaces import (
     HasInnerState,
     IsHybrid,
@@ -425,12 +428,14 @@ class _GatedResidual(nn.Module):
         return out.flatten(-2).to(self.params_dtype)
 
 
-class _EagerDenseAttention(nn.Module):
+class _EagerDenseAttention(nn.Module, AttentionLayerBase):
     """Eager causal GQA (used for ``full_attention`` layers without an indexer).
 
     A plain softmax attention seam so the graph runs; a real dense-attention
     backend is not part of the 1M QSA path (QSA replaces it when
-    ``indexer_n_heads`` is configured).
+    ``indexer_n_heads`` is configured). Registered as an ``AttentionLayerBase``
+    so the v1 runner can allocate a standard full-attention KV cache for it
+    (the eager forward does not yet read/write that cache).
     """
 
     def __init__(self, *, config: object, dtype_policy: Qwen4ExpDtypePolicy) -> None:
@@ -448,6 +453,20 @@ class _EagerDenseAttention(nn.Module):
         self.v_proj = nn.Parameter(torch.zeros(self.num_kv_heads * self.head_dim, hidden, dtype=self.params_dtype))
         self.o_proj = nn.Parameter(torch.zeros(hidden, self.num_heads * self.head_dim, dtype=self.params_dtype))
 
+    def get_attn_backend(self) -> type[AttentionBackend]:
+        from vllm.v1.attention.selector import get_attn_backend as _select
+
+        return _select(head_size=self.head_dim, dtype=self.params_dtype, kv_cache_dtype=None)
+
+    def get_kv_cache_spec(self, vllm_config: object) -> FullAttentionSpec:
+        del vllm_config
+        return FullAttentionSpec(
+            block_size=DEFAULT_ATTENTION_BLOCK_SIZE,
+            num_kv_heads=self.num_kv_heads,
+            head_size=self.head_dim,
+            dtype=self.params_dtype,
+        )
+
     def forward(self, block_input: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
         del positions  # rope omitted on the eager stub path
         seq_len = block_input.shape[0]
@@ -463,14 +482,22 @@ class _EagerDenseAttention(nn.Module):
         return _linear(ctx, self.o_proj, self.compute_dtype).to(self.params_dtype)
 
 
-class _GDNAttention(nn.Module):
+class _GDNAttention(nn.Module, MambaBase):
     """Wire the real GDN adapter (T5.x): in_proj -> short conv -> gating ->
-    gated delta rule (eager backend) -> out_proj."""
+    gated delta rule (eager backend) -> out_proj.
+
+    Registered as a ``MambaBase`` so the v1 runner allocates the GDN
+    conv + recurrent state; the eager forward uses the GDN state pool (model
+    state) rather than this KV cache, so the cache is currently allocated but
+    not read/written by the eager math.
+    """
 
     def __init__(self, *, config: object, dtype_policy: Qwen4ExpDtypePolicy) -> None:
         super().__init__()
         self.compute_dtype = dtype_policy.accumulation_dtype
         self.params_dtype = dtype_policy.main_dtype
+        self.mamba_conv_dtype = dtype_policy.mamba_conv_cache_dtype
+        self.mamba_ssm_dtype = dtype_policy.mamba_ssm_cache_dtype
         self.params = _gdn_params_from_config(config)
         hidden = int(config.hidden_size)
         p = self.params
@@ -480,6 +507,17 @@ class _GDNAttention(nn.Module):
         self.A_log = nn.Parameter(torch.zeros(p.num_v_heads, dtype=self.params_dtype))
         self.dt_bias = nn.Parameter(torch.zeros(p.num_v_heads, dtype=self.params_dtype))
         self.out_proj = nn.Parameter(torch.zeros(hidden, p.value_dim, dtype=self.params_dtype))
+
+    @property
+    def mamba_type(self) -> MambaAttentionBackendEnum:
+        return MambaAttentionBackendEnum.GDN_ATTN
+
+    def get_state_shape(self) -> tuple[tuple[int, ...], ...]:
+        p = self.params
+        return ((p.conv_dim, p.conv_kernel_size - 1), (p.num_v_heads, p.head_v_dim, p.head_k_dim))
+
+    def get_state_dtype(self) -> tuple[torch.dtype, ...]:
+        return (self.mamba_conv_dtype, self.mamba_ssm_dtype)
 
     def forward(self, block_input: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
         del positions  # GDN applies no rotary
@@ -509,13 +547,18 @@ class _GDNAttention(nn.Module):
         return _linear(out, self.out_proj, self.compute_dtype).to(self.params_dtype)
 
 
-class _QSAAttention(nn.Module):
+class _QSAAttention(nn.Module, AttentionLayerBase):
     """Wire the real QSA indexer (T6.1) + sparse GQA attention (T6.2).
 
     Owns the layer's projection weights, indexer and attention module, and runs
     the full QSA decoder-layer path through the single shared composition entry
     point :func:`~vllm_ascend.models.qwen4_exp.qsa.run_qsa_decoder_attention`
     (plan T6.4), so every one of the 12 QSA layers exercises identical code.
+
+    Registered as an ``AttentionLayerBase`` so the v1 runner allocates the
+    full-attention KV cache for it; the eager indexer/attention manage the QSA
+    raw ring + compressed side-cache out of band (T6.x), so the standard KV
+    cache is currently allocated but not the eager forward's read/write target.
     """
 
     def __init__(self, *, config: object, layer_idx: int, dtype_policy: Qwen4ExpDtypePolicy) -> None:
@@ -541,6 +584,20 @@ class _QSAAttention(nn.Module):
 
         self.indexer = AscendQwen4ExpQSAIndexer(config=config, layer_idx=layer_idx, dtype_policy=dtype_policy)
         self.attn = AscendQwen4ExpQSAAttention(config=config, layer_idx=layer_idx, dtype_policy=dtype_policy)
+
+    def get_attn_backend(self) -> type[AttentionBackend]:
+        from vllm.v1.attention.selector import get_attn_backend as _select
+
+        return _select(head_size=self.head_dim, dtype=self.params_dtype, kv_cache_dtype=None)
+
+    def get_kv_cache_spec(self, vllm_config: object) -> FullAttentionSpec:
+        del vllm_config
+        return FullAttentionSpec(
+            block_size=DEFAULT_ATTENTION_BLOCK_SIZE,
+            num_kv_heads=self.num_kv_heads,
+            head_size=self.head_dim,
+            dtype=self.params_dtype,
+        )
 
     def forward(self, block_input: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
         return run_qsa_decoder_attention(
