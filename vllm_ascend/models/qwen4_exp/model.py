@@ -591,6 +591,7 @@ class _GDNAttention(nn.Module, MambaBase):
             shapes=self.get_state_shape(),
             dtypes=self.get_state_dtype(),
             block_size=DEFAULT_ATTENTION_BLOCK_SIZE,
+            mamba_type=MambaAttentionBackendEnum.GDN_ATTN,
         )
 
     def forward(self, block_input: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
@@ -1448,12 +1449,14 @@ class AscendQwen4ExpForCausalLM(
                 shapes=cls.get_gdn_mamba_state_shape_from_config(vllm_config),
                 dtypes=cls.get_gdn_mamba_state_dtype_from_config(vllm_config),
                 block_size=-1,
+                mamba_type=MambaAttentionBackendEnum.GDN_ATTN,
             ),
             MambaSpec(
                 shapes=cls.get_ple_mamba_state_shape_from_config(vllm_config),
                 dtypes=cls.get_ple_mamba_state_dtype_from_config(vllm_config),
                 block_size=-1,
                 tp_replicated=True,
+                mamba_type=MambaAttentionBackendEnum.SHORT_CONV,
             ),
         )
 
@@ -1495,6 +1498,7 @@ class AscendQwen4ExpForCausalLM(
                     ),
                     dtypes=(policy.mamba_conv_cache_dtype, policy.mamba_ssm_cache_dtype),
                     block_size=DEFAULT_ATTENTION_BLOCK_SIZE,
+                    mamba_type=MambaAttentionBackendEnum.GDN_ATTN,
                 )
             else:
                 spec[name] = FullAttentionSpec(
@@ -1540,6 +1544,7 @@ class AscendQwen4ExpForCausalLM(
                     ),
                     dtypes=(policy.mamba_conv_cache_dtype, policy.mamba_ssm_cache_dtype),
                     block_size=DEFAULT_ATTENTION_BLOCK_SIZE,
+                    mamba_type=MambaAttentionBackendEnum.GDN_ATTN,
                 )
             elif layer_type == _LAYER_TYPE_FULL and uses_qsa:
                 qsa_raw_ring_layers[f"{name}.self_attn.qsa.ring"] = make_qsa_raw_ring_spec(
