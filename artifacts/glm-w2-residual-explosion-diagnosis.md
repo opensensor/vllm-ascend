@@ -163,3 +163,70 @@ input/output RMS + topk_weights (`moe_probe_log.json`). Findings:
    step, not necessarily the final fix.
 
 Both need the box + a re-convert (~75 min) + a capture. W4 is the likely endgame.
+
+## UPDATE 4 (2026-09-21, attn-INPUT tap on W4early — the residual is HEALTHY; drift is directional; high-gain DSA amplifies it)
+
+Ran the missing tap: a `forward_pre_hook` on `self_attn` (whose `.forward` is
+rebound to the eager KDA/DSA core) captures the **attention input**. Prior
+captures hooked a nonexistent `input_layernorm`, so the attention input had
+NEVER been recorded on either side. Capture: `golden_ascend_activations_attnin.npz`
+(W4early no-clip, TP4 eager, 67-token parity prompt), taps at all 11 DSA layers
++ KDA neighbours. Next token still `' the'` (279), unchanged.
+
+**Decisive result — the input into L7 is NOT corrupted in magnitude/conditioning:**
+
+| L | type | attn_in rms | attn_in cond (max/rms) | attn_out rms | g:attn cos | g:expert cos |
+|---|---|---|---|---|---|---|
+| 3 | DSA | 0.0161 | 6.32 | 0.328 (gold 0.331) | **0.998** | 0.918 |
+| 4 | kda | 0.136 | 5.56 | 0.014 | 0.955 | 0.863 |
+| 7 | DSA | 0.0163 | 5.25 | 0.299 (gold 0.209) | **0.624** | 0.302 |
+| 11| DSA | 0.0200 | 5.61 | 0.404 | — | — |
+| 43| DSA | 0.0299 | 9.34 | 0.444 | — | — |
+| 44| kda | 0.214 | 7.23 | 0.159 | 0.408 | 0.127 |
+
+- **L3 and L7 attention inputs are essentially identical**: rms 0.0161 vs 0.0163,
+  conditioning 6.3 vs 5.3, both bounded and well-conditioned. Yet L3→cos 0.998,
+  L7→cos 0.624. So the L7 divergence is **NOT** a residual magnitude blow-up or
+  ill-conditioning (that theme, from the MSE era, is fully closed by no-clip W4:
+  attn_in conditioning stays 5–9 at every depth; residual only grows gently,
+  L44 layer_out rms 9.95 vs the MSE 525).
+- **The DSA has ~20x gain** (0.016 input → 0.3–0.5 output). A high-gain map
+  amplifies a small *directional* input error into a large output error — so a
+  modest residual direction drift (invisible in rms/cond) at L7's input suffices
+  to produce cos 0.624.
+- **L7 expert is W4** (W4early = W4 on L3–L26, W2 on L27–45; verified from code
+  widths: down_proj_codes [4096,1024]=W4 vs [4096,512]=W2). Its weights are
+  ~0.9935 cos, yet expert_out is 0.302 — because the expert INPUT is the drifted
+  0.624 attention output. **So L7's expert error is a SYMPTOM of the attention
+  divergence, not an expert-bit problem.** Root = the attention.
+
+**Ruled out this pass (code-level, both cheap and clean):**
+- DSA softmax scale: eager `qk_head_dim**-0.5 = 256**-0.5` == reference
+  `Glm5NextMLAAttention.scaling`; GLM is NoPE (`qk_rope_head_dim=0`) so the YARN
+  `mscale**2` branch does NOT run (reference takes the `rotary_emb=None` else).
+- Indexer sparsity: `block_topk = index_topk//kpool = 512` ≫ ~17 blocks for a
+  67-token prompt → ALL blocks selected → L3 and L7 run identical DENSE causal
+  MLA-NoPE. Selection is not the differentiator.
+
+**Remaining single question:** is L7's attention divergence (a) high-gain
+amplification of an **upstream directional residual drift** (accumulated from the
+MoE contributions — the dominant residual terms — whose per-layer cos is only
+~0.86–0.92 even with clean input + W4 weights), or (b) a **DSA compute/weight
+issue** that only bites at L7? L3 DSA (same code) is perfect, which argues for (a).
+The 43% magnitude inflation of L7 attn_out (0.299 vs gold 0.209) is the one datum
+that also admits (b). **This cannot be settled without the golden attention-INPUT
+direction at L3/L7** — which the local (free, non-borrowed) RTX PRO 6000 can
+capture by re-running the GPU golden with the same `self_attn` pre-hook, then
+diffing against the Ascend attn_in we now have. Alternatively an on-box DSA
+input-swap test (L3-weights on L7-input and vice-versa) isolates weights-vs-input
+without the golden.
+
+**Most-probable root (working hypothesis):** the per-layer MoE output fidelity
+floor (~0.92 cos vs the NVFP4 golden, even with clean input + W4 weights — likely
+the W4 block-scale scheme being coarser than NVFP4's fp8-e4m3 per-16 block scales,
+plus the router topk_ids 0.97 overlap flipping near-tie experts) injects a small
+directional error into the dominant residual term every layer; it accumulates and
+the high-gain DSA layers amplify it into incoherence. Path to test/fix: (1) golden
+attn_in diff to confirm residual drift; (2) raise W4 expert fidelity toward NVFP4
+(match its scale structure) — the golden is itself 4-bit and coherent, so 4-bit is
+sufficient IF the per-layer fidelity matches.
