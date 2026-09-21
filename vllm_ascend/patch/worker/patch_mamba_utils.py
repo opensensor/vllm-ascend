@@ -37,7 +37,7 @@ def _can_launch_triton_batch_memcpy() -> bool:
 
 def _get_mamba_groups(
     kv_cache_config: KVCacheConfig,
-) -> tuple[list[int], MambaSpec]:
+) -> dict[MambaSpec, list[int]]:
     """Find Mamba groups, including uniform worker-side group wrappers."""
     mamba_group_ids: list[int] = []
     mamba_specs: list[MambaSpec] = []
@@ -57,7 +57,10 @@ def _get_mamba_groups(
 
     assert mamba_group_ids, "no mamba layers in the model"
     assert all(mamba_specs[0] == spec for spec in mamba_specs)
-    return mamba_group_ids, mamba_specs[0]
+    # Mirrors vllm.v1.worker.mamba_utils.get_mamba_groups, which this replaces:
+    # its callers iterate the result for MambaSpec keys and hand it to
+    # validate_mamba_state_copy_funcs, both of which want the mapping form.
+    return {mamba_specs[0]: sorted(mamba_group_ids)}
 
 
 def _batch_memcpy_triton(src_ptrs, dst_ptrs, sizes):

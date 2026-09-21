@@ -40,9 +40,8 @@ def test_uniform_mamba_groups_are_visible_to_all_mamba_buffers() -> None:
         kv_cache_groups=groups,
     )
 
-    group_ids, resolved_spec = _get_mamba_groups(kv_cache_config)
-    assert group_ids == [0, 1, 2]
-    assert resolved_spec == mamba_spec
+    mamba_groups = _get_mamba_groups(kv_cache_config)
+    assert mamba_groups == {mamba_spec: [0, 1, 2]}
 
     def make_buffer(n: int, dtype: torch.dtype) -> SimpleNamespace:
         return SimpleNamespace(n=n, dtype=dtype)
@@ -50,7 +49,7 @@ def test_uniform_mamba_groups_are_visible_to_all_mamba_buffers() -> None:
     copy_bufs = MambaCopyBuffers.create(
         max_num_reqs=2,
         kv_cache_config=kv_cache_config,
-        copy_funcs=(object(), object()),
+        copy_funcs={mamba_spec.mamba_type: (object(), object())},
         make_buffer=make_buffer,
     )
     assert copy_bufs.mamba_group_ids == [0, 1, 2]
