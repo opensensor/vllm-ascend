@@ -39,13 +39,17 @@ hook here.
 from __future__ import annotations
 
 import abc
+import json
 import logging
 import mmap
 import os
+import struct
 from collections.abc import Callable
 from enum import Enum
+from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
+import numpy as np
 import torch
 from torch import nn
 
@@ -70,6 +74,26 @@ OS_TRANSFER_RESERVE_BYTES = 48 * (1024**3)
 # pages resident and lets co-located workers share one physical copy.
 DEFAULT_PLE_SHM_DIR = "/dev/shm"
 
+# Lazy per-shard transport (c): the PLE table is read straight out of the
+# checkpoint's 128 ``...ngram_embedding.shard_{s}.weight`` tensors (each
+# ``[shard_rows, head_dim]`` F16), scattered across the safetensors shard files.
+DEFAULT_SHARD_TENSOR_FMT = "model.language_model.layers.1.ple.ple_embedding.ngram_embedding.shard_{shard}.weight"
+DEFAULT_SPLIT_NGRAM_PARTS = 128
+DEFAULT_SAFETENSORS_INDEX = "quant_model_weights.safetensors.index.json"
+
+# safetensors header dtype tokens -> little-endian numpy dtypes (the checkpoint
+# is written little-endian; the 310P host is little-endian too).
+_SAFETENSORS_DTYPES = {
+    "F64": np.dtype("<f8"),
+    "F32": np.dtype("<f4"),
+    "F16": np.dtype("<f2"),
+    "I64": np.dtype("<i8"),
+    "I32": np.dtype("<i4"),
+    "I16": np.dtype("<i2"),
+    "I8": np.dtype("<i1"),
+    "U8": np.dtype("u1"),
+}
+
 
 class AscendPLETransport(str, Enum):
     """Host PLE table transport selector (decided on hardware at D1)."""
@@ -77,6 +101,7 @@ class AscendPLETransport(str, Enum):
     AUTO = "auto"
     PINNED_UVA = "pinned_uva"
     SHARED_MMAP = "shared_mmap"
+    LAZY_SHARD = "lazy_shard"
 
 
 class HostByteBudgetError(RuntimeError):
@@ -468,6 +493,167 @@ class AscendPLEPinnedHostEmbeddingMethod(AscendPLEEmbeddingMethod):
         self._uva_weight = None
 
 
+class AscendPLELazyShardEmbeddingMethod(AscendPLEEmbeddingMethod):
+    """Transport (c): lazy per-shard mmap of the checkpoint n-gram shards.
+
+    The PLE table is never materialized as one 95.43 GiB host copy. The 128
+    checkpoint shard tensors (``...ngram_embedding.shard_{s}.weight``, each
+    ``[shard_rows, head_dim]`` F16) are located through the safetensors index and
+    read on demand: :meth:`gather_rows` maps each global padded-table row id to
+    ``(shard, row) = divmod(id, shard_rows)`` and gathers the requested rows
+    straight out of a per-shard read-only :class:`numpy.memmap` (OS demand
+    paging -- only touched rows become resident).
+
+    Because the table lives on disk (checkpoint files), not in host RAM, this
+    transport overrides :meth:`verify_host_budget` to a no-op and reports a
+    negligible :attr:`physical_bytes` (the in-memory shard index only). It never
+    pins, never writes, and never replicates the table.
+    """
+
+    transport: ClassVar[AscendPLETransport] = AscendPLETransport.LAZY_SHARD
+    supports_prefetch: ClassVar[bool] = False
+
+    def __init__(
+        self,
+        num_embeddings: int,
+        embedding_dim: int,
+        *,
+        checkpoint_dir: str | Path | None,
+        shard_tensor_fmt: str = DEFAULT_SHARD_TENSOR_FMT,
+        split_ngram_parts: int = DEFAULT_SPLIT_NGRAM_PARTS,
+        dtype_policy: Qwen4ExpDtypePolicy = ASCEND_QWEN4EXP_DTYPE_POLICY,
+        world_size: int = 1,
+        host_total_bytes: int | None = None,
+        reserve_bytes: int = OS_TRANSFER_RESERVE_BYTES,
+        prefix: str = "",
+    ) -> None:
+        if checkpoint_dir is None:
+            raise PLETransportUnavailableError("lazy-shard PLE transport requires checkpoint_dir")
+        if split_ngram_parts <= 0:
+            raise ValueError("split_ngram_parts must be positive")
+        self._checkpoint_dir = Path(checkpoint_dir)
+        self._shard_tensor_fmt = shard_tensor_fmt
+        self._split_ngram_parts = int(split_ngram_parts)
+        self.shard_rows = -(-int(num_embeddings) // self._split_ngram_parts)  # ceil
+        self._weight_map: dict[str, str] | None = None
+        self._shard_memmaps: dict[int, np.memmap] = {}
+        self._shard_files: dict[int, Path] = {}
+        super().__init__(
+            num_embeddings,
+            embedding_dim,
+            dtype_policy=dtype_policy,
+            world_size=world_size,
+            host_total_bytes=None,  # budget is overridden: table is disk-resident
+            reserve_bytes=reserve_bytes,
+            prefix=prefix,
+        )
+        del host_total_bytes  # unused on the disk-resident path (kept for interface parity)
+
+    # -- host budget / accounting: disk-resident, nothing to reserve --------- #
+
+    def verify_host_budget(self, host_total_bytes: int | None = None) -> None:
+        """No-op: the table is not host-resident (only the shard index is held)."""
+        return None
+
+    @property
+    def physical_bytes(self) -> int:
+        """Physically resident host bytes: the shard index, not the table."""
+        return 0
+
+    def record_host_bytes(self, accountant: MemoryAccountant, rank: int) -> None:
+        """The lazy transport holds no host-resident table; record nothing."""
+        return None
+
+    # -- shard resolution --------------------------------------------------- #
+
+    @staticmethod
+    def _parse_st_header(path: Path) -> tuple[dict, int]:
+        """Parse only the 8-byte length + JSON header of a safetensors file."""
+        with open(path, "rb") as handle:
+            header_len = struct.unpack("<Q", handle.read(8))[0]
+            header = json.loads(handle.read(header_len))
+        return header, 8 + header_len
+
+    def _load_weight_map(self) -> dict[str, str]:
+        if self._weight_map is None:
+            index = self._checkpoint_dir / DEFAULT_SAFETENSORS_INDEX
+            with open(index) as handle:
+                data = json.load(handle)
+            self._weight_map = dict(data.get("weight_map", data))
+        return self._weight_map
+
+    def _shard_memmap(self, shard_index: int) -> np.memmap:
+        """Resolve + mmap one shard lazily (cached; only first access parses)."""
+        mem = self._shard_memmaps.get(shard_index)
+        if mem is not None:
+            return mem
+        name = self._shard_tensor_fmt.format(shard=shard_index)
+        weight_map = self._load_weight_map()
+        filename = weight_map.get(name)
+        if filename is None:
+            raise PLETransportUnavailableError(
+                f"PLE shard tensor {name!r} not found in safetensors index "
+                f"{self._checkpoint_dir / DEFAULT_SAFETENSORS_INDEX}"
+            )
+        path = self._checkpoint_dir / filename
+        header, data_base = self._parse_st_header(path)
+        entry = header.get(name)
+        if entry is None:
+            raise PLETransportUnavailableError(f"safetensors {path!r} header lacks tensor {name!r}")
+        rows, cols = entry["shape"]
+        if cols != self.embedding_dim:
+            raise ValueError(f"PLE shard {shard_index} has {cols} columns, expected {self.embedding_dim}")
+        if entry["dtype"] not in _SAFETENSORS_DTYPES:
+            raise PLETransportUnavailableError(f"unsupported safetensors dtype {entry['dtype']!r}")
+        dtype = _SAFETENSORS_DTYPES[entry["dtype"]]
+        start, _end = entry["data_offsets"]
+        tensor_start = data_base + start
+        mem = np.memmap(path, dtype=dtype, mode="r", offset=tensor_start, shape=(rows, cols))
+        self._shard_memmaps[shard_index] = mem
+        return mem
+
+    # -- gather ------------------------------------------------------------- #
+
+    def allocate_embedding_weight(self) -> torch.Tensor | None:
+        """No single host table is allocated; shards are mmap'd on demand."""
+        return None
+
+    def gather_rows(self, ids: torch.Tensor) -> torch.Tensor:
+        """Batched row gather from the checkpoint shards (demand-paged).
+
+        ``ids`` are global padded-table row ids; each is resolved to
+        ``(shard, row)`` and read from that shard's read-only mmap. Only the
+        touched rows are read from disk (no whole-shard or whole-table load).
+        """
+        ids = ids.reshape(-1).long().cpu()
+        if ids.numel() == 0:
+            return torch.empty((0, self.embedding_dim), dtype=self.dtype)
+        arr = ids.numpy()
+        if int(arr.max()) >= self.num_embeddings or int(arr.min()) < 0:
+            raise IndexError(
+                f"PLE row id out of range [0, {self.num_embeddings}): got {int(arr.min())}..{int(arr.max())}"
+            )
+        shard = arr // self.shard_rows
+        row = arr % self.shard_rows
+        out = np.empty((arr.size, self.embedding_dim), dtype=np.float16)
+        for s in np.unique(shard):
+            mask = shard == s
+            rows = row[mask]
+            mm = self._shard_memmap(int(s))
+            if rows.size and int(rows.max()) >= mm.shape[0]:
+                raise IndexError(f"PLE row id {int(rows.max())} resolves past shard {int(s)} ({mm.shape[0]} rows)")
+            out[mask] = mm[rows]
+        return torch.from_numpy(out)
+
+    def close(self) -> None:
+        for mem in self._shard_memmaps.values():
+            raw = getattr(mem, "_mmap", None)
+            if raw is not None:
+                raw.close()
+        self._shard_memmaps.clear()
+        self._weight_map = None
+
+
 def _default_uva_probe() -> bool:
     """Probe UVA availability via vLLM, guarded for the host-only dev path."""
     try:
@@ -499,6 +685,9 @@ def create_ple_embedding_method(
     uva_probe: Callable[[], bool] | None = None,
     pinned_allocator: Callable[[int, int, torch.dtype], torch.Tensor] | None = None,
     accelerator_view_fn: Callable[[torch.Tensor], torch.Tensor] | None = None,
+    checkpoint_dir: str | Path | None = None,
+    shard_tensor_fmt: str = DEFAULT_SHARD_TENSOR_FMT,
+    split_ngram_parts: int = DEFAULT_SPLIT_NGRAM_PARTS,
 ) -> AscendPLEEmbeddingMethod:
     """Build the host PLE table method for the selected transport.
 
@@ -509,6 +698,9 @@ def create_ple_embedding_method(
       falls back to (b).
     * An explicit ``PINNED_UVA`` request falls back to (b) if UVA / pinning is
       unavailable rather than crashing.
+    * ``LAZY_SHARD`` (transport c) reads rows on demand from the checkpoint's
+      n-gram shard tensors via per-shard mmap; it needs ``checkpoint_dir`` and
+      never materializes the full host table.
     """
     common = dict(
         dtype_policy=dtype_policy,
@@ -538,6 +730,19 @@ def create_ple_embedding_method(
             accelerator_view_fn=accelerator_view_fn,
             **common,  # type: ignore[arg-type]
         )
+
+    def _build_lazy_shard() -> AscendPLELazyShardEmbeddingMethod:
+        return AscendPLELazyShardEmbeddingMethod(
+            num_embeddings,
+            embedding_dim,
+            checkpoint_dir=checkpoint_dir,
+            shard_tensor_fmt=shard_tensor_fmt,
+            split_ngram_parts=split_ngram_parts,
+            **common,  # type: ignore[arg-type]
+        )
+
+    if transport == AscendPLETransport.LAZY_SHARD:
+        return _build_lazy_shard()
 
     if engram_config is not None and getattr(engram_config, "dp_shared_memory", False):
         return _build_mmap()
@@ -887,7 +1092,11 @@ class AscendQwen4ExpNGramEmbedding(nn.Module):
 
 __all__ = [
     "OS_TRANSFER_RESERVE_BYTES",
+    "DEFAULT_SAFETENSORS_INDEX",
+    "DEFAULT_SHARD_TENSOR_FMT",
+    "DEFAULT_SPLIT_NGRAM_PARTS",
     "AscendPLEEmbeddingMethod",
+    "AscendPLELazyShardEmbeddingMethod",
     "AscendPLEPinnedHostEmbeddingMethod",
     "AscendPLESharedMmapEmbeddingMethod",
     "AscendPLETransport",
