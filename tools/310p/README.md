@@ -96,15 +96,15 @@ agrees.)
 **The INT8 GEMMs have no headroom.** 48-60 TOP/s against a ~70 TOPS peak is
 68-86% of the hardware. 1.53 s/step of the budget is essentially irreducible.
 
-**`dynamic_quant` costs 0.312 s/step to do no arithmetic, and cannot be fused
-on this SoC.** 128 calls at [T x hidden] plus 64 at [T x inter/TP], converting
+**`dynamic_quant` costs 0.312 s/step to do no arithmetic, and fusing it does
+not help.** 128 calls at [T x hidden] plus 64 at [T x inter/TP], converting
 activations to INT8 before each W8A8 matmul at ~38% of memory bandwidth. (An
 earlier revision said 0.523 s/step from 256 hidden-width calls. The per-call
 time was measured but the count was assumed at four per layer; the real sites
 are mlp.gate_up x64, the *merged* gdn in_proj_qkvz x48 and attn qkv x16, so 128.
 Count the call sites, do not assume them from the layer count.)
 
-Both fusion routes are closed, checked on the box:
+Both torch_npu routes are closed, checked on the box:
 
 - `npu_rms_norm_quant` / `_v2` take `scale` as a required input, i.e. static
   quantization. This checkpoint is W8A8_DYNAMIC, per-token. Wrong scheme.
@@ -118,6 +118,67 @@ Both fusion routes are closed, checked on the box:
 torch_npu's Python surface is SoC-agnostic, so an op appearing in `dir()` says
 nothing about whether it runs here. Fusing this would need a custom AscendC
 kernel, for at most 0.312 s/step of an ~8.6 s step.
+
+**That custom kernel now exists. It is correct and it is free, but it wins
+nothing.** CANN's own `RmsNormDynamicQuant` / `AddRmsNormDynamicQuant` sources
+were ported to 310P (`csrc/attention/{add_,}rms_norm_dynamic_quant`) and wired
+into the 80 W8A8 sites whose activation comes straight out of an RMSNorm --
+`mlp.gate_up` x64 and `self_attn.qkv` x16. The 48 `gdn in_proj_qkvz` calls were
+left alone: `quant_model_description.json` lists every `linear_attn.*` tensor as
+FLOAT, so those layers carry no W8A8 linear method to hand a pre-quantized
+activation to.
+
+It matches `npu_add_rms_norm` + `npu_dynamic_quant` to within one int8 step and
+greedy output is identical. Per call, fp16, after hoisting the loop-invariant
+gamma out of the SingleRow row loop (it was re-reading gamma from GM for every
+token -- as many bytes as x itself):
+
+| shape | tiling | add_rms_norm + dynamic_quant | fused | ratio |
+|---|---|---|---|---|
+| [4096, 5120] | SingleRow | 1.751 ms | 1.702 ms | 0.97x |
+| [512, 5120] | SingleRow | 0.208 ms | 0.186 ms | 0.90x |
+| [4096, 2048] | SingleRow | 0.610 ms | 1.000 ms | 1.64x |
+| [4096, 1536] | Normal | 0.504 ms | 0.854 ms | 1.70x |
+| [4096, 512] | Normal | 0.274 ms | 0.449 ms | 1.63x |
+
+So at the 27B's hidden size it is now slightly faster than the pair, and end to
+end that is exactly nothing: 983.2 tok/s prefill with it against 984.0 without
+(9023-token prompt, six trials per config, interleaved, and the groups overlap
+-- 982.8-983.9 against 982.5-985.3). Before the gamma hoist it cost 1.2%.
+
+The reason the kernel wins nothing is that it is nowhere near what a fusion
+should cost. `add_rms_norm` alone is 0.980 ms at [4096, 5120]; quantizing ought
+to be nearly free once the row is in UB, so the fused kernel should land near
+1.0 ms, not 1.70. It captures about 6% of the 0.77 ms that is actually on the
+table. The gamma hoist -- a 40% cut in GM traffic -- bought only 5%, which says
+the kernel is not bandwidth-bound: SingleRow walks one row at a time and pays
+three scalar round trips per row (the square sum for rstd, then the row max and
+the scale in ScaleTensor), each of which drains the vector pipe. `BUFFER_NUM`
+is 1, so its copy-in, compute and copy-out do not overlap either. That per-row
+overhead is roughly fixed, which is why the fusion only breaks even once the
+hidden size is large enough to amortise it -- it is still 1.6x slower than the
+pair at hidden 512-2048.
+
+Closing the rest means restructuring SingleRow to reduce across many rows in
+one `WholeReduceSum` / `WholeReduceMax` and keep rstd and the quant scale in
+vector registers instead of round-tripping each row through a scalar, plus
+double-buffering the row loop. That is a kernel rewrite, and the whole prize is
+the ~1.6% of prefill this fusion could deliver if it were free.
+
+It ships behind `VLLM_ASCEND_ENABLE_FUSED_NORM_QUANT`, default 0, which
+installs no patch at all when unset.
+
+Two traps worth writing down:
+
+- 310P has no `DataCopyPad`. CANN's dav_m200 implementation is a stub that
+  expands to nothing in a release build, so a 910B kernel ported unchanged
+  launches, moves no data, and reports no error -- it just returns with its
+  output untouched.
+- `patch_qwen3_5.py` does **not** load on 310P. `patch/worker/__init__.py`
+  gates it behind `STANDARD_WORKER_PATCHES`, which is False here, and the
+  `else` branch loads `patch_idex_310.py` instead. Model patches for 310P go
+  there; anything added to the `if` branch silently never runs, and an A/B
+  against it measures nothing.
 
 **`out_proj` in fp16 costs 0.373 s/step at 47% of FP16 peak.** INT8 would be
 roughly 0.11 s. It is fp16 on purpose -- quantizing it corrupted prose -- so
