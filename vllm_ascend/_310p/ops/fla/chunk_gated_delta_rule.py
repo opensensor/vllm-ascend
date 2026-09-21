@@ -470,28 +470,33 @@ def _inv_unit_lower_triangular(m: torch.Tensor, block: int = _UT_INVERSE_BLOCK) 
         return _inv_unit_lower_recursive(m, block)
 
     lead = m.shape[:-2]
-    # Every diagonal block at once: [..., num_blocks, block, block].
-    diag = torch.diagonal(m.reshape(*lead, num_blocks, block, num_blocks, block), dim1=-4, dim2=-2)
+    # Flatten the batch to a single dimension first. The blocking below adds two
+    # dimensions of its own, and the grouped WY path already hands us a 6D
+    # `attn`, which would make these matmuls 7D -- aclnnMatmul fails on that.
+    flat = m.reshape(-1, n, n)
+
+    # Every diagonal block at once: [N, num_blocks, block, block].
+    diag = torch.diagonal(flat.reshape(-1, num_blocks, block, num_blocks, block), dim1=-4, dim2=-2)
     inv = _inv_small_unit_lower(diag.movedim(-1, -3).contiguous())
 
     size = block
     while size < n:
         half = n // (2 * size)
-        a_inv = inv[..., 0::2, :, :]
-        b_inv = inv[..., 1::2, :, :]
+        a_inv = inv[:, 0::2]
+        b_inv = inv[:, 1::2]
         # The lower-left quadrant of each 2*size diagonal block is the C that
         # couples the pair being merged.
-        pairs = torch.diagonal(m.reshape(*lead, half, 2 * size, half, 2 * size), dim1=-4, dim2=-2)
+        pairs = torch.diagonal(flat.reshape(-1, half, 2 * size, half, 2 * size), dim1=-4, dim2=-2)
         c = pairs.movedim(-1, -3)[..., size:, :size]
 
-        merged = torch.zeros(*lead, half, 2 * size, 2 * size, dtype=m.dtype, device=m.device)
+        merged = torch.zeros(flat.shape[0], half, 2 * size, 2 * size, dtype=m.dtype, device=m.device)
         merged[..., :size, :size] = a_inv
         merged[..., size:, size:] = b_inv
         merged[..., size:, :size] = -b_inv @ c @ a_inv
         inv = merged
         size *= 2
 
-    return inv[..., 0, :, :]
+    return inv[:, 0].reshape(*lead, n, n)
 
 
 def _ut_transform(attn: torch.Tensor, chunk_size: int) -> torch.Tensor:

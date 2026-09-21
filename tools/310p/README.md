@@ -130,10 +130,12 @@ Same server config throughout (TP4, MTP k=5, GDN W8A8), one knob at a time,
 | before GDN W8A8 and the blocked inverse | ~714 | ~707 |
 | row-wise WY substitution | 806 | 784 |
 | blocked UT inverse (default) | 823 | 823 |
-| + grouped WY gram (default) | **852** | **845** |
+| + grouped WY gram (default) | 852 | 845 |
+| + batched-diagonal inverse, one-pass decay | **953** | **928** |
 
-So the blocked inverse is worth 2-5% and the grouped gram another 3.5%, and
-both agree with the per-op budget above. Rollback knobs, both exact:
+So the blocked inverse is worth 2-5%, the grouped gram another 3.5%, and the
+batched-diagonal inverse plus the one-pass decay another 10-12%. All of them
+agree with the per-op budget above. Overall 707 -> 940 tok/s, about +32%. Rollback knobs, both exact:
 
 - `VLLM_ASCEND_GDN_UT_BLOCKED=0` -- the row-wise WY substitution the blocked
   inverse replaced (1.810 s/step against 1.479).

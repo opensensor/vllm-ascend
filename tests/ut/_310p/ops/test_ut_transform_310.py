@@ -112,3 +112,30 @@ def test_agrees_with_substitution_even_when_ill_conditioned():
 
     rel = (expected - actual).abs().max() / expected.abs().max()
     assert rel < 1e-12
+
+
+def test_inverse_handles_every_rank_its_callers_produce():
+    """Including 6D, which is what the grouped WY gram path hands it.
+
+    The blocking inside the inverse adds two dimensions of its own, so a 6D
+    `attn` used to produce 7D matmuls, and aclnnMatmul fails on those -- the
+    server came up and then died on the first request with "the current working
+    operator name is aclnnMatmul". A microbenchmark missed it by flattening
+    `attn` to 5D before the call, which the live path does not do.
+    """
+    import torch
+
+    from vllm_ascend._310p.ops.fla.chunk_gated_delta_rule import (
+        _inv_unit_lower_recursive,
+        _inv_unit_lower_triangular,
+    )
+
+    torch.manual_seed(0)
+    for lead in [(4,), (3, 5), (1, 12, 128), (1, 4, 3, 128)]:
+        strictly_lower = (torch.randn(*lead, 64, 64, dtype=torch.float64) * 0.15).tril(-1)
+        mat = torch.eye(64, dtype=torch.float64) + strictly_lower
+
+        got = _inv_unit_lower_triangular(mat)
+
+        assert got.shape == mat.shape, lead
+        assert torch.equal(got, _inv_unit_lower_recursive(mat, 8)), lead
