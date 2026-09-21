@@ -91,6 +91,7 @@ __all__ = [
     "expert_tensor_is_local",
     "expected_expert_tensor_names",
     "geometry_from_manifest",
+    "is_expert_tensor_name",
     "local_expert_range",
     "map_expert_tensor",
     "validate_expert_weight_map",
@@ -118,6 +119,19 @@ _EXPERT_RE = re.compile(
     r"\.(?P<proj>gate_proj|up_proj|down_proj)"
     r"\.(?P<kind>weight|weight_scale|weight_offset)$"
 )
+
+
+def is_expert_tensor_name(name: str) -> bool:
+    """Whether ``name`` is a per-expert W8A8 source tensor.
+
+    Matches the exact ``model.language_model.layers.{L}.mlp.experts.{E}.\
+{proj}.{kind}`` layout. The MTP drafter's fused ``mtp.layers.*.mlp.experts.*``
+tensors (a separate speculative model, wired in S2) are intentionally excluded
+so ``load_weights`` routes them to the non-expert path (where they are skipped
+for having no matching parameter).
+    """
+    return _EXPERT_RE.match(name) is not None
+
 
 # safetensors header dtype strings -> torch.dtype.
 _ST_DTYPE_TO_TORCH: dict[str, torch.dtype] = {

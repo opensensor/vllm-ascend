@@ -115,6 +115,7 @@ from .weight_mapping import (
     TensorShapeError,
     WeightMappingError,
     expert_tensor_is_local,
+    is_expert_tensor_name,
     map_expert_tensor,
     validate_expert_weight_map,
 )
@@ -1291,7 +1292,7 @@ class AscendQwen4ExpForCausalLM(
         expert_index: dict[str, dict[str, object]] = {}
 
         for raw_name, weight in weights:
-            if has_experts and ".mlp.experts." in raw_name:
+            if has_experts and is_expert_tensor_name(raw_name):
                 if not expert_tensor_is_local(raw_name, geometry, tp_size, tp_rank):
                     continue  # peer-owned expert: placed (and read) by its owner
                 mapping = map_expert_tensor(raw_name, geometry, tp_size, tp_rank)

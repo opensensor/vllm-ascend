@@ -30,6 +30,7 @@ from vllm_ascend.models.qwen4_exp.weight_mapping import (
     WeightMappingError,
     expected_expert_tensor_names,
     geometry_from_manifest,
+    is_expert_tensor_name,
     map_expert_tensor,
     validate_expert_weight_map,
 )
@@ -127,6 +128,19 @@ def test_expected_set_counts_match_manifest(manifest, geometry):
     assert len(weights) == _EXPECTED_PROJECTIONS == manifest["component_counts"]["expert_weight"]
     assert len(scales) == _EXPECTED_PROJECTIONS == manifest["component_counts"]["expert_weight_scale"]
     assert len(offsets) == _EXPECTED_PROJECTIONS == manifest["component_counts"]["expert_weight_offset"]
+
+
+def test_is_expert_tensor_name_routes_only_language_model_experts():
+    # Real per-expert W8A8 sources match.
+    assert is_expert_tensor_name("model.language_model.layers.0.mlp.experts.5.gate_proj.weight")
+    assert is_expert_tensor_name("model.language_model.layers.47.mlp.experts.511.down_proj.weight_scale")
+    # MTP drafter fused experts (S2, not loaded by the main model) must NOT match.
+    assert not is_expert_tensor_name("mtp.layers.0.mlp.experts.gate_up_proj")
+    assert not is_expert_tensor_name("mtp.layers.0.mlp.experts.down_proj")
+    # Router gate / shared expert / non-expert names are not expert sources.
+    assert not is_expert_tensor_name("model.language_model.layers.0.mlp.gate.weight")
+    assert not is_expert_tensor_name("model.language_model.layers.0.mlp.shared_expert.gate_proj.weight")
+    assert not is_expert_tensor_name("model.language_model.embed_tokens.weight")
 
 
 # --------------------------------------------------------------------------- #
