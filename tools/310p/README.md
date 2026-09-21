@@ -50,6 +50,48 @@ section lands, so an interrupted run still leaves what it had.
 reboot. `prefill_session.sh` traps SIGTERM, stops the server gracefully and
 restores production before exiting.
 
+## The measured budget
+
+Per chip, per 8192-token step, from `prefill_budget.py` on 2026-09-21. The step
+itself is ~10.1 s (8192 tok at the 813 tok/s the probe measures end to end), so
+these account for about 45% of it:
+
+| item | s/step | rate | vs peak |
+| --- | ---: | --- | --- |
+| UT transform (blocked) | 1.479 | | |
+| MLP gate+up int8 | 0.828 | 56.4 TOP/s | 81% |
+| WY attn build (fp32) | 0.601 | | |
+| dynamic_quant [T x hidden] | 0.421 | 76.6 GB/s | ~38% |
+| MLP down int8 | 0.389 | 60.1 TOP/s | 86% |
+| GDN out_proj fp16 | 0.373 | 16.6 TFLOP/s | 47% |
+| GDN in_proj_qkv int8 | 0.188 | 54.8 TOP/s | 78% |
+| GDN in_proj_z int8 | 0.129 | 47.8 TOP/s | 68% |
+| dynamic_quant [T x inter/TP] | 0.102 | 67.4 GB/s | ~33% |
+
+Peaks are per chip: ~70 TOPS INT8, ~35 TFLOPS FP16 (Atlas 300I Duo, 2 chips per
+card). What the table says:
+
+**The GDN WY prefix is the biggest thing in prefill, not a rounding error.**
+The UT transform plus the attn build is 2.08 s/step, about a fifth of the step
+and more than the whole MLP. Counting its FLOPs badly understates it -- it runs
+in fp32, and fp32 matmul is a slow path on 310P. (The tell was that CANN needed
+~10 minutes to compile these shapes on first call.) An earlier revision of this
+file called the WY prefix ~0.25% of step FLOPs and told you not to bother with
+it; that was arithmetic, not measurement, and it was wrong.
+
+**The INT8 GEMMs have no headroom.** 48-60 TOP/s against a ~70 TOPS peak is
+68-86% of the hardware. 1.53 s/step of the budget is essentially irreducible.
+
+**`dynamic_quant` costs 0.523 s/step to do no arithmetic.** 256 standalone calls
+per step -- four per layer -- converting activations to INT8 before each matmul,
+at ~38% of memory bandwidth. `vllm_ascend/compilation/passes/norm_quant_fusion_pass.py`
+already fuses this into `npu_add_rms_norm_quant`, but only under torch.compile,
+and the box serves with `--enforce-eager`, so none of it fires.
+
+**`out_proj` in fp16 costs 0.373 s/step at 47% of FP16 peak.** INT8 would be
+roughly 0.11 s. It is fp16 on purpose -- quantizing it corrupted prose -- so
+this needs finer-grained quantization, not a flag.
+
 ## What is already ruled out
 
 Measured on this box, so do not re-investigate without new evidence:
@@ -59,16 +101,17 @@ Measured on this box, so do not re-investigate without new evidence:
   the first. Raising `--max-num-batched-tokens` buys nothing.
 - **Slow ND weight layout.** The 310P hardware profile is `FORCE_NZ`.
 - **Big GEMMs running unquantized.** 22.8 B of 24.3 B non-embedding params run
-  INT8. Only GDN `out_proj` is fp16, and deliberately -- quantizing it corrupted
-  prose.
-- **The GDN WY prefix.** ~0.25% of step FLOPs. Worth low single digits at best.
+  INT8. Only GDN `out_proj` is fp16.
+- **INT8 Cube utilization.** 68-86% of peak, measured. Nothing to win.
 
 ## Opt-in knobs these scripts A/B
 
 Both are exact and both are off by default:
 
 - `VLLM_ASCEND_GDN_UT_BLOCKED=0` -- back to the row-wise WY substitution the
-  blocked inverse replaced. For attribution, and as a rollback.
+  blocked inverse replaced. Measured: the row loop is 1.810 s/step against the
+  blocked inverse's 1.479 s/step, so the blocked form is worth 0.331 s/step.
+  Kept as a rollback.
 - `VLLM_ASCEND_GDN_WY_GROUPED_GRAM=1` -- build the WY gram matrix once per K
   head rather than once per V head. Exact to 1 fp16 ULP on CPU, but it needs
   torch_npu to broadcast a 6D matmul, which is unverified on Ascend.

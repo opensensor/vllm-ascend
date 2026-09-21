@@ -151,9 +151,13 @@ def main():
     if args.collective:
         import torch, torch_npu  # noqa: F401
         import torch.distributed as dist
+        # set_device BEFORE init_process_group: HCCL builds its communicator on
+        # the current device context, and without one ProcessGroupHCCL dies in
+        # AclrtSetOpWaitTimeout with "the context is empty" (error 107002).
+        local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+        torch.npu.set_device(local_rank)
         dist.init_process_group(backend="hccl")
         rank, world = dist.get_rank(), dist.get_world_size()
-        torch.npu.set_device(rank)
         for label, shape in (("[T x hidden] fp16", (T, HIDDEN)),
                              ("[T/2 x hidden] fp16", (T // 2, HIDDEN))):
             x = torch.randn(*shape, dtype=torch.float16, device="npu")
