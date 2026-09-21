@@ -438,8 +438,17 @@ class NPUModelRunner310V2(NPUModelRunner):
             torch.npu.current_stream().synchronize()
 
     def get_kv_cache_spec(self) -> dict[str, KVCacheSpec]:
-        """Restore linear-attention specs omitted by some upstream V2 versions."""
+        """Restore linear-attention specs omitted by some upstream V2 versions.
+
+        The eager Qwen4Exp attention modules are plain ``nn.Module`` (not
+        ``AttentionLayerBase``), so ``super()`` finds none of them; take the
+        per-layer spec dict straight from the model when it provides one, then
+        top up any ``linear_attn`` layer the model missed.
+        """
         kv_cache_spec = super().get_kv_cache_spec()
+        model_get_spec = getattr(self.model, "get_kv_cache_spec", None)
+        if model_get_spec is not None:
+            kv_cache_spec = {**kv_cache_spec, **model_get_spec(self.vllm_config)}
         static_forward_context = self.compilation_config.static_forward_context
         for layer_name, layer in static_forward_context.items():
             if "linear_attn" not in layer_name or layer_name in kv_cache_spec:

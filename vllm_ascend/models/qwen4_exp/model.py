@@ -1287,6 +1287,52 @@ class AscendQwen4ExpForCausalLM(
 
     # -- KV-cache spec materialization (T1.4) ------------------------------
 
+    def get_kv_cache_spec(self, vllm_config: VllmConfig | None = None) -> dict[str, KVCacheSpec]:
+        """Per-layer KV-cache spec dict for the v1 runner.
+
+        The eager attention modules are plain ``nn.Module`` (not vLLM
+        ``AttentionLayerBase`` subclasses), so the standard runner's
+        ``get_kv_cache_spec`` finds nothing. This builds the per-layer spec dict
+        keyed by the eager module path (``model.layers.{idx}.attention``): GDN
+        layers contribute a ``MambaSpec``; QSA / dense layers contribute a
+        ``FullAttentionSpec`` (the QSA ring + compressed side-caches are tracked
+        out-of-band by the model state, not the attention KV cache).
+        """
+        del vllm_config  # specs are built from self.config / self.dtype_policy
+        config = self.config
+        policy = self.dtype_policy
+        head_dim = int(getattr(config, "head_dim", 0)) or (
+            int(config.hidden_size) // int(getattr(config, "num_attention_heads", 1))
+        )
+        num_kv_heads = int(getattr(config, "num_key_value_heads", 1))
+
+        try:
+            gdn_params = _gdn_params_from_config(config)
+        except Exception:  # pragma: no cover - GDN geometry may be absent
+            gdn_params = None
+
+        spec: dict[str, KVCacheSpec] = {}
+        for idx, layer_type in enumerate(self.model.layer_types):
+            name = f"model.layers.{idx}.attention"
+            if layer_type == _LAYER_TYPE_LINEAR and gdn_params is not None:
+                conv_dim = gdn_params.conv_dim
+                spec[name] = MambaSpec(
+                    shapes=(
+                        (conv_dim, gdn_params.conv_kernel_size - 1),
+                        (gdn_params.num_v_heads, gdn_params.head_v_dim, gdn_params.head_k_dim),
+                    ),
+                    dtypes=(policy.mamba_conv_cache_dtype, policy.mamba_ssm_cache_dtype),
+                    block_size=DEFAULT_ATTENTION_BLOCK_SIZE,
+                )
+            else:
+                spec[name] = FullAttentionSpec(
+                    block_size=DEFAULT_ATTENTION_BLOCK_SIZE,
+                    num_kv_heads=num_kv_heads,
+                    head_size=head_dim,
+                    dtype=policy.kv_cache_dtype,
+                )
+        return spec
+
     def get_kv_cache_groups(self, *, num_speculative_tokens: int = 0) -> list[KVCacheGroupSpec]:
         """Materialize the hybrid KV-cache groups for this model's layers.
 
