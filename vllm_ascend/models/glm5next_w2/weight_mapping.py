@@ -51,6 +51,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from tools.deepseek_w2.w2_format import (
+    NVFP4_BLOCK_COLS,
     W2_BLOCK_COLS,
     W2_BLOCK_ROWS,
     W2_CODES_PER_BYTE,
@@ -212,25 +213,31 @@ def validate_expert_tensor(meta: TensorMeta, geometry: dict) -> ExpertTensorMapp
     Raises :class:`ShapeMismatchError` / :class:`DtypeMismatchError`.
     """
     mapping = map_expert_tensor(meta.name, geometry)
+    hidden = geometry["hidden_size"]
+    inter = geometry["moe_intermediate_size"]
+    out_features, in_features = (inter, hidden) if mapping.slot in ("w1", "w3") else (hidden, inter)
     if mapping.kind == "codes":
-        # Codes width encodes the per-layer bit depth: W2 packs 4 codes/byte
-        # (in//4), W4 packs 2 (in//2). Accept either so mixed-precision W2/W4
-        # expert banks validate; the runtime infers bits from the same width.
-        hidden = geometry["hidden_size"]
-        inter = geometry["moe_intermediate_size"]
-        out_features, in_features = (inter, hidden) if mapping.slot in ("w1", "w3") else (hidden, inter)
+        # Codes width encodes the per-layer format: W2 packs 4 codes/byte
+        # (in//4), W4/NVFP4 pack 2 (in//2). Accept both so mixed-precision
+        # W2/W4/NVFP4 expert banks validate; the runtime infers the exact format
+        # from the same width plus the scale grid.
         accepted = {(out_features, in_features // 4), (out_features, in_features // 2)}
         if tuple(meta.shape) not in accepted:
             raise ShapeMismatchError(
                 f"{meta.name}: codes shape {tuple(meta.shape)} not in {sorted(accepted)} "
-                f"(slot={mapping.slot}; W2=in//4, W4=in//2)"
+                f"(slot={mapping.slot}; W2=in//4, W4/NVFP4=in//2)"
             )
     else:
-        expected_shape = expected_expert_shape(mapping.slot, mapping.kind, geometry)
-        if tuple(meta.shape) != expected_shape:
+        # Scale grid discriminates W2/W4 ([out//32, in//32]) from NVFP4
+        # ([out, in//16] per-output-row x per-16-input-col, folded global scale).
+        accepted = {
+            (out_features // W2_BLOCK_ROWS, in_features // W2_BLOCK_COLS),
+            (out_features, in_features // NVFP4_BLOCK_COLS),
+        }
+        if tuple(meta.shape) not in accepted:
             raise ShapeMismatchError(
-                f"{meta.name}: shape {tuple(meta.shape)} != expected {expected_shape} "
-                f"(slot={mapping.slot}, kind={mapping.kind})"
+                f"{meta.name}: scale shape {tuple(meta.shape)} not in {sorted(accepted)} "
+                f"(slot={mapping.slot}; W2/W4=[out//32,in//32], NVFP4=[out,in//16])"
             )
     expected_dtype = expected_expert_dtype(mapping.kind)
     if meta.dtype != expected_dtype:

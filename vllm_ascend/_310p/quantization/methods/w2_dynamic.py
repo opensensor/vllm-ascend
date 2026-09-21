@@ -66,10 +66,12 @@ from typing import Any
 import torch
 
 from tools.deepseek_w2.w2_format import (
+    NVFP4_BLOCK_COLS,
     W2_BLOCK_COLS,
     W2_BLOCK_ROWS,
     W2_CODES_PER_BYTE,
     unpack_codes,
+    unpack_nvfp4_codes,
     unpack_w2_codes,
 )
 
@@ -136,6 +138,38 @@ def _w2_dequant_fp32(
     bs = block_scale.to(torch.float32)  # [out_f // 32, in_f // 32]
     tiled = codes.view(out_f // W2_BLOCK_ROWS, W2_BLOCK_ROWS, in_f // W2_BLOCK_COLS, W2_BLOCK_COLS)
     scaled = tiled * bs.view(out_f // W2_BLOCK_ROWS, 1, in_f // W2_BLOCK_COLS, 1)
+    return scaled.reshape(out_f, in_f)
+
+
+def _is_nvfp4(block_scale: torch.Tensor, out_f: int, in_f: int) -> bool:
+    """True when a packed operand is NVFP4 (E2M1 + block-16) rather than W2/W4.
+
+    W2/W4 scales tile ``[out_f // 32, in_f // 32]``; NVFP4's folded scale is
+    ``[out_f, in_f // 16]`` (per-output-row x per-16-input-col). The codes width
+    alone cannot distinguish NVFP4 from W4 (both pack 2 codes/byte), so the scale
+    grid is the discriminator.
+    """
+    if block_scale.ndim != 2:
+        return False
+    return block_scale.shape[0] == out_f and block_scale.shape[1] == in_f // NVFP4_BLOCK_COLS
+
+
+def _nvfp4_dequant_fp32(
+    packed: torch.Tensor,
+    block_scale: torch.Tensor,
+    out_f: int,
+    in_f: int,
+) -> torch.Tensor:
+    """Dequantize one packed NVFP4 operand to fp32 ``[out_f, in_f]`` (no fp64).
+
+    Decodes the E2M1 nibbles and multiplies by the folded per-``[1, 16]`` block
+    scale via a tiled view-multiply (never materializing the full-size scale and
+    never touching float64, mirroring :func:`_w2_dequant_fp32` for 310P).
+    """
+    val = unpack_nvfp4_codes(packed, in_f).to(torch.float32)  # [out_f, in_f]
+    bs = block_scale.to(torch.float32)  # [out_f, in_f // 16]
+    tiled = val.view(out_f, in_f // NVFP4_BLOCK_COLS, NVFP4_BLOCK_COLS)
+    scaled = tiled * bs.unsqueeze(-1)
     return scaled.reshape(out_f, in_f)
 
 
@@ -416,9 +450,11 @@ class AscendW2DynamicFusedMoEMethod310(AscendMoEScheme):
             e = experts[expert_id]
             group_x = sorted_x[start:stop]
             inter = int(e.inter)
+            nvfp4 = _is_nvfp4(e.gate_scale, inter, hidden)
             # The Cube kernel unpacks 2-bit codes on-chip -> W2 only. W4 experts
-            # (mixed-precision banks) MUST take the eager fp32 path below.
-            use_cube = w2_op is not None and _infer_bits(e.gate_packed, int(e.hidden)) == 2
+            # (mixed-precision banks) and NVFP4 (E2M1 float codes) MUST take the
+            # eager fp32 path below.
+            use_cube = w2_op is not None and _infer_bits(e.gate_packed, int(e.hidden)) == 2 and not nvfp4
             if use_cube:
                 # Fast path: fused 310P Cube kernel (arch20 catlass MMAD with the
                 # per-[32,32] block dequant fused into the weight load). ~2.4x over
@@ -433,6 +469,17 @@ class AscendW2DynamicFusedMoEMethod310(AscendMoEScheme):
                 up = w2_op(gx, e.up_packed, e.up_scale.to(torch.float32))
                 hidden_act = (torch.nn.functional.silu(gate.to(torch.float32)) * up.to(torch.float32)).to(torch.float16)
                 y = w2_op(hidden_act, e.down_packed, e.down_scale.to(torch.float32)).to(torch.float32)
+            elif nvfp4:
+                # NVFP4 (E2M1 float codes + block-16 scale) has no Cube kernel;
+                # dequantize to fp32 and matmul natively, exact against the golden
+                # GPU NVFP4 weights.
+                gate_w = _nvfp4_dequant_fp32(e.gate_packed, e.gate_scale, inter, hidden)
+                up_w = _nvfp4_dequant_fp32(e.up_packed, e.up_scale, inter, hidden)
+                gate = torch.matmul(group_x, gate_w.t())
+                up = torch.matmul(group_x, up_w.t())
+                hidden_act = torch.nn.functional.silu(gate) * up
+                down_w = _nvfp4_dequant_fp32(e.down_packed, e.down_scale, hidden, inter)
+                y = torch.matmul(hidden_act, down_w.t())
             else:
                 # Fallback: native-fp32 dequant from the packed bank (compact
                 # [out//32,in//32] block scale via tiled view-multiply, no fp64),

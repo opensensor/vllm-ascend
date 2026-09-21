@@ -80,6 +80,20 @@ W4_CODE_MIN = -8
 W4_CODE_MAX = 7
 W4_CODES_PER_BYTE = 2  # 8 // W4_BITS
 
+# NVFP4 (Blackwell E2M1): 4-bit *float* codes, NOT two's-complement ints. The
+# per-element value is a 3-bit magnitude mapped through the E2M1 codebook
+# {0, 0.5, 1, 1.5, 2, 3, 4, 6} with a sign bit, scaled by a per-[1, 16] fp8
+# block scale (x a global float scalar folded in at convert time). Distinct from
+# W4 in BOTH the codebook and the scale grid (block-16 vs block-32), so it needs
+# its own unpack/dequant, not the ``unpack_codes`` int path.
+NVFP4_BITS = 4
+NVFP4_CODES_PER_BYTE = 2  # 8 // NVFP4_BITS (2 nibbles/byte)
+NVFP4_BLOCK_ROWS = 1      # per-output-row scale (no out-axis blocking)
+NVFP4_BLOCK_COLS = 16     # one fp8 scale per 16 input columns
+
+# E2M1 magnitude table (index = low 3 bits of the nibble).
+_NVFP4_E2M1_TABLE = (0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0)
+
 # Smallest representable scale; guards all-zero / tiny blocks against 0-division.
 SCALE_FLOOR = 1e-12
 
@@ -322,6 +336,44 @@ def dequantize_w4(
     return dequantize_packed(packed, block_scale, out_features, in_features, W4_BITS)
 
 
+# --- NVFP4 (Blackwell E2M1 float codes, block-16 fp8 scale) ------------------
+def unpack_nvfp4_codes(packed: torch.Tensor, in_features: int) -> torch.Tensor:
+    """Decode packed NVFP4 nibbles to E2M1 float values ``[..., in]`` (float32).
+
+    ``packed`` is ``uint8[..., in // 2]`` with two 4-bit nibbles per byte along
+    the last axis (low nibble first, little-endian by field index -- same byte
+    layout as W4 packing). Each nibble decodes to a signed E2M1 float via the
+    codebook ``{0, 0.5, 1, 1.5, 2, 3, 4, 6}`` (3-bit magnitude, 1-bit sign).
+    """
+    if packed.shape[-1] * NVFP4_CODES_PER_BYTE != in_features:
+        raise ValueError("in_features does not match NVFP4 packed width")
+    low = packed & 0x0F
+    high = (packed >> 4) & 0x0F
+    nibbles = torch.stack([low, high], dim=-1).reshape(*packed.shape[:-1], in_features)
+    mag = nibbles & 0x07
+    sign = (nibbles >> 3) & 1
+    table = torch.tensor(_NVFP4_E2M1_TABLE, dtype=torch.float32, device=packed.device)
+    val = table[mag.to(torch.int64)]
+    return torch.where(sign == 1, -val, val)
+
+
+def dequantize_nvfp4(
+    packed: torch.Tensor,
+    block_scale: torch.Tensor,
+    out_features: int,
+    in_features: int,
+) -> torch.Tensor:
+    """Decode packed NVFP4 + per-``[1, 16]`` block scale -> ``[out, in]`` float64.
+
+    ``block_scale`` is ``[out, in // 16]`` (one fp32/fp8 scale per 16 input
+    columns per output row); the global NVFP4 scalar scale is expected to have
+    been folded into it at convert time. Returns ``val * block_scale``.
+    """
+    val = unpack_nvfp4_codes(packed, in_features).double()
+    full_scale = block_scale.double().repeat_interleave(NVFP4_BLOCK_COLS, dim=1)[:, :in_features]
+    return val * full_scale
+
+
 __all__ = [
     "W2_BLOCK_ROWS",
     "W2_BLOCK_COLS",
@@ -348,4 +400,10 @@ __all__ = [
     "pack_w4_codes",
     "unpack_w4_codes",
     "dequantize_w4",
+    "NVFP4_BITS",
+    "NVFP4_CODES_PER_BYTE",
+    "NVFP4_BLOCK_ROWS",
+    "NVFP4_BLOCK_COLS",
+    "unpack_nvfp4_codes",
+    "dequantize_nvfp4",
 ]

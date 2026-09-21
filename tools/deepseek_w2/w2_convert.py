@@ -78,6 +78,7 @@ DEFAULT_CHUNK_ROWS = 256
 
 _ST_NP_DTYPE = {
     "I8": np.int8,
+    "U8": np.uint8,
     "F8_E8M0": np.uint8,
     "F8_E4M3": np.uint8,
     "BF16": np.uint16,

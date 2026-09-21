@@ -125,6 +125,8 @@ from vllm_ascend._310p.quantization.methods.registry import get_scheme_class  # 
 from vllm_ascend._310p.quantization.methods.w2_dynamic import (  # noqa: E402
     AscendW2DynamicFusedMoEMethod310,
     _device_kernel_available,
+    _is_nvfp4,
+    _nvfp4_dequant_fp32,
 )
 from vllm_ascend.models.deepseek_v41.w2_unpack import route_topk_w2  # noqa: E402
 
@@ -291,3 +293,22 @@ def test_apply_requires_expert_bank():
     topk_ids, topk_weights = route_topk_w2(router_logits, _TOP_K)
     with pytest.raises(ValueError):
         method.apply(layer, x, topk_weights, topk_ids, None, None)
+
+
+def test_nvfp4_dequant_matches_reference_and_detector():
+    from tools.deepseek_w2.w2_format import NVFP4_BLOCK_COLS, dequantize_nvfp4
+
+    torch.manual_seed(7)
+    out_f, in_f = 64, 128
+    nibbles = torch.randint(0, 16, (out_f, in_f), dtype=torch.uint8)
+    low = nibbles[:, 0::2]
+    high = nibbles[:, 1::2]
+    packed = (low | (high << 4)).to(torch.uint8)  # [out, in//2]
+    block_scale = torch.rand(out_f, in_f // NVFP4_BLOCK_COLS) * 0.01 + 0.01
+
+    assert _is_nvfp4(block_scale, out_f, in_f)
+    assert not _is_nvfp4(torch.rand(out_f // 32, in_f // 32), out_f, in_f)
+
+    got = _nvfp4_dequant_fp32(packed, block_scale, out_f, in_f)
+    ref = dequantize_nvfp4(packed, block_scale, out_f, in_f).float()
+    torch.testing.assert_close(got, ref, rtol=1e-5, atol=1e-5)
