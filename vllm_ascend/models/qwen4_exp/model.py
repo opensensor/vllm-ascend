@@ -48,6 +48,7 @@ torch-only QSA/PLE ops never pull ``fla`` / Triton).
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable
 
 import torch
@@ -91,7 +92,11 @@ from .moe import (
     swiglu_gate_up,
     w8a8_grouped_experts,
 )
-from .ngram_embedding import AscendPLEPinnedHostEmbeddingMethod, AscendQwen4ExpNGramEmbedding
+from .ngram_embedding import (
+    AscendPLELazyShardEmbeddingMethod,
+    AscendPLEPinnedHostEmbeddingMethod,
+    AscendQwen4ExpNGramEmbedding,
+)
 from .ple_layer import AscendQwen4ExpPLELayer
 from .qsa import (
     AscendQwen4ExpQSAAttention,
@@ -123,6 +128,31 @@ except Exception:  # pragma: no cover
 # Layer-type tags mirroring the HF Qwen4Exp ``layer_types`` vocabulary.
 _LAYER_TYPE_LINEAR = "linear_attention"
 _LAYER_TYPE_FULL = "full_attention"
+
+
+def _resolve_checkpoint_dir(vllm_config: object) -> str | None:
+    """Local filesystem directory holding this model's checkpoint (or ``None``).
+
+    The lazy-shard PLE transport reads the n-gram table straight from the
+    checkpoint's safetensors files, so it needs the on-disk directory. Resolve it
+    from the model path (``model_config.model`` for a local-dir launch) with a
+    ``download_dir`` fallback for downloaded weights; return ``None`` when no
+    local directory exists (host dummy boots / remote-only checkpoints).
+    """
+    model_config = getattr(vllm_config, "model_config", None)
+    if model_config is None:
+        return None
+    model = getattr(model_config, "model", None)
+    if model and os.path.isdir(model):
+        return str(model)
+    download_dir = getattr(model_config, "download_dir", None)
+    if download_dir is None:
+        download_dir = getattr(getattr(vllm_config, "load_config", None), "download_dir", None)
+    if model and download_dir:
+        candidate = os.path.join(str(download_dir), str(model))
+        if os.path.isdir(candidate):
+            return str(candidate)
+    return None
 
 
 def _gdn_params_from_config(config: object) -> Qwen4ExpGDNParams:
@@ -603,29 +633,40 @@ class _NGramConfigProxy:
 
 
 class _PLEInjection(nn.Module):
-    """Wire the real PLE injection layer (T4.x) with a host-safe pinned table.
+    """Wire the real PLE injection layer (T4.x) with a host PLE table method.
 
     The n-gram id hashing is REAL: ``AscendQwen4ExpNGramEmbedding.compute_ngram_ids``
     (SplitMix64, T4.2-verified against the checkpoint's ``layer_multipliers``). The
     row gather, projection, gate and dilated short-conv are the real
-    ``AscendQwen4ExpPLELayer`` component. On the host eager-boot path the global row
-    ids are reduced modulo a synthetic table; the real 128-shard gather is the
-    load_weights / device (D2) path.
+    ``AscendQwen4ExpPLELayer`` component. The table itself is either:
+
+    * a lazy per-shard mmap over the checkpoint's 128 n-gram shards (transport c,
+      ``checkpoint_dir`` provided) -- no 95.43 GiB host table; or
+    * a synthetic 4096-row host stub (dummy boot / host tests), where the global
+      row ids are reduced modulo the stub table.
     """
 
     # Rows in the stubbed PLE table. Sized generously above vocab so the stub
     # n-gram ids index a distinct-enough table; the real layout is T1.3.
     _STUB_TABLE_ROWS = 4096
 
-    def __init__(self, *, config: object, layer_idx: int, dtype_policy: Qwen4ExpDtypePolicy) -> None:
+    def __init__(
+        self,
+        *,
+        config: object,
+        layer_idx: int,
+        dtype_policy: Qwen4ExpDtypePolicy,
+        checkpoint_dir: str | None = None,
+    ) -> None:
         super().__init__()
         self.dtype_policy = dtype_policy
         self.eos_token_id = _scalar_eos(config)
+        self.checkpoint_dir = checkpoint_dir
         self.ple = AscendQwen4ExpPLELayer(config=config, layer_idx=layer_idx, dtype_policy=dtype_policy)
         self.num_ngram_heads = self.ple.num_ngram_heads
         self.per_head_dim = self.ple.per_head_dim
         self.ngram_size = int(config.ngram_size)
-        self._ple_method: AscendPLEPinnedHostEmbeddingMethod | None = None
+        self._ple_method: AscendPLEPinnedHostEmbeddingMethod | AscendPLELazyShardEmbeddingMethod | None = None
         # Real SplitMix64 n-gram hashing (T4.2-verified). Constructed without a
         # ple_method: only ``compute_ngram_ids`` is used here (no gather), so the
         # global row ids match the checkpoint's layer_multipliers exactly. A tiny
@@ -644,6 +685,22 @@ class _PLEInjection(nn.Module):
         if self.ple.ple_method is not None:
             return
 
+        if self.checkpoint_dir is not None:
+            # Real checkpoint: read rows on demand from the 128 shard tensors
+            # (transport c) -- no 95.43 GiB host table, no host-budget check.
+            if self.ngram is None:
+                raise RuntimeError("lazy-shard PLE transport requires the real n-gram hasher")
+            method = AscendPLELazyShardEmbeddingMethod(
+                self.ngram.padded_vocab_size,
+                self.per_head_dim,
+                checkpoint_dir=self.checkpoint_dir,
+                split_ngram_parts=self.ngram.split_ngram_parts,
+                dtype_policy=self.dtype_policy,
+            )
+            self.ple.ple_method = method
+            self._ple_method = method
+            return
+
         # Host-safe pinned embedding method: inject a plain CPU allocator + a
         # UVA probe that reports available, so no accelerator/mmap is needed.
         def _cpu_allocator(rows: int, dim: int, dtype: torch.dtype) -> torch.Tensor:
@@ -660,22 +717,24 @@ class _PLEInjection(nn.Module):
         self.ple.ple_method = method
         self._ple_method = method
 
-    def _real_ngram_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+    def _real_ngram_ids(self, input_ids: torch.Tensor, *, reduce: bool = True) -> torch.Tensor:
         """Real SplitMix64 n-gram row ids for a single eager-boot request.
 
         Uses ``AscendQwen4ExpNGramEmbedding.compute_ngram_ids`` (T4.2-verified to
         match the checkpoint's ``layer_multipliers``). The eager-boot path has no
         model state, so we present one request (``query_start_loc=[0, seq_len]``)
         with an EOS-padded history (``ngram_context``). The returned ids index the
-        full 320M-row padded vocab; for the host boot we reduce them modulo the
-        synthetic table (the real 128-shard gather is the load_weights/D2 path).
+        full 320M-row padded vocab; when ``reduce`` is set (the stub-table boot
+        path) they are reduced modulo the synthetic table.
         """
         seq_len = int(input_ids.shape[0])
         device = input_ids.device
         query_start_loc = torch.tensor([0, seq_len], dtype=torch.int64, device=device)
         ngram_context = torch.full((1, self.ngram_size - 1), self.eos_token_id, dtype=torch.int64, device=device)
         global_ids = self.ngram.compute_ngram_ids(input_ids, query_start_loc, ngram_context)
-        return global_ids.remainder(self._STUB_TABLE_ROWS)
+        if reduce:
+            return global_ids.remainder(self._STUB_TABLE_ROWS)
+        return global_ids
 
     def _stub_ngram_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         """Deterministic id fallback for a tiny duck config with no n-gram vocab.
@@ -699,7 +758,12 @@ class _PLEInjection(nn.Module):
 
     def forward(self, hidden_states: torch.Tensor, input_ids: torch.Tensor) -> torch.Tensor:
         self._ensure_ple_method(hidden_states.device)
-        ngram_ids = self._real_ngram_ids(input_ids) if self.ngram is not None else self._stub_ngram_ids(input_ids)
+        if self.ngram is not None:
+            # Real hasher: full padded-vocab ids for the lazy-shard table, or
+            # reduced to the synthetic stub table on the host dummy-boot path.
+            ngram_ids = self._real_ngram_ids(input_ids, reduce=self.checkpoint_dir is None)
+        else:
+            ngram_ids = self._stub_ngram_ids(input_ids)
         return self.ple(hidden_states, ngram_ids)
 
 
@@ -719,6 +783,7 @@ class AscendQwen4ExpDecoderLayer(nn.Module):
         dtype_policy: Qwen4ExpDtypePolicy,
         prefix: str = "",
         expert_sharding: tuple[int, int] = (0, 1),
+        checkpoint_dir: str | None = None,
     ) -> None:
         super().__init__()
         self.config = config
@@ -751,7 +816,14 @@ class AscendQwen4ExpDecoderLayer(nn.Module):
         ple_layer_ids = getattr(config, "ple_layer_ids", None) or []
         self.has_ple = (layer_idx + 1) in ple_layer_ids
         self.ple: _PLEInjection | None = (
-            _PLEInjection(config=config, layer_idx=layer_idx, dtype_policy=dtype_policy) if self.has_ple else None
+            _PLEInjection(
+                config=config,
+                layer_idx=layer_idx,
+                dtype_policy=dtype_policy,
+                checkpoint_dir=checkpoint_dir,
+            )
+            if self.has_ple
+            else None
         )
 
         # Attention: GDN linear attention, QSA sparse attention, or dense.
@@ -858,6 +930,10 @@ class AscendQwen4ExpModel(nn.Module):
         # Expert-dimension TP slicing shared by every MoE block and the loader
         # (T3.1b): contiguous expert range per rank; rank 0 / size 1 host boot.
         self.expert_sharding = _resolve_expert_sharding(vllm_config)
+        # Local checkpoint dir feeds the lazy per-shard PLE transport (T4.1c):
+        # when present, the PLE layer reads n-gram rows on demand instead of
+        # materializing the 95.43 GiB host table.
+        self.checkpoint_dir = _resolve_checkpoint_dir(vllm_config)
         self.layers = nn.ModuleList(
             AscendQwen4ExpDecoderLayer(
                 config=config,
@@ -866,6 +942,7 @@ class AscendQwen4ExpModel(nn.Module):
                 dtype_policy=self.dtype_policy,
                 prefix=maybe_prefix(prefix, f"layers.{idx}"),
                 expert_sharding=self.expert_sharding,
+                checkpoint_dir=self.checkpoint_dir,
             )
             for idx in range(config.num_hidden_layers)
         )
@@ -1225,7 +1302,22 @@ class AscendQwen4ExpForCausalLM(
             # Non-expert tensor: rewrite prefix, then load by name + shape.
             for name, tensor in self.hf_to_vllm_mapper.apply([(raw_name, weight)]):
                 param = params.get(name)
-                if param is None or tuple(param.shape) != tuple(tensor.shape):
+                if param is None:
+                    continue
+                # Vocab-parallel embedding / LM head are dim-0 sharded under a
+                # real TP group: route through their weight_loader (which slices
+                # the checkpoint's full [vocab, hidden] row to this rank's shard
+                # and pads) instead of the strict full-shape copy, which would
+                # otherwise silently skip them on TP>1.
+                if name == "model.embed_tokens.weight":
+                    self.model.embed_tokens.weight_loader(param, tensor)
+                    loaded.add(name)
+                    continue
+                if name == "lm_head.weight":
+                    self.lm_head.weight_loader(param, tensor)
+                    loaded.add(name)
+                    continue
+                if tuple(param.shape) != tuple(tensor.shape):
                     continue
                 with torch.no_grad():
                     param.copy_(tensor.to(param.dtype))

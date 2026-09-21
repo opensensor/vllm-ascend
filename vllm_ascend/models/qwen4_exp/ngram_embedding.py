@@ -924,6 +924,12 @@ class AscendQwen4ExpNGramEmbedding(nn.Module):
             ngram_heads=self.ngram_heads,
             ple_dense_layer_id=self.ple_dense_layer_id,
         )
+        # Padded table geometry (parity with the fork nvidia ngram_embedding):
+        # the physical shards cover total_vocab_size rounded up to the
+        # make_ngram_vocab_size_divisible_by boundary, split into split_ngram_parts.
+        divisor = int(getattr(config, "make_ngram_vocab_size_divisible_by", 1) or 1)
+        self.padded_vocab_size = ((self.total_vocab_size + divisor - 1) // divisor) * divisor
+        self.split_ngram_parts = int(getattr(config, "split_ngram_parts", DEFAULT_SPLIT_NGRAM_PARTS))
         self.register_buffer(
             "layer_multipliers",
             torch.tensor(multipliers, dtype=torch.long),
