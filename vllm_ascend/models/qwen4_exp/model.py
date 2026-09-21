@@ -181,6 +181,7 @@ def _remap_non_expert(name: str, config: object) -> list[tuple[str, slice | None
     shared_inter = int(getattr(config, "shared_expert_intermediate_size", 0) or 0)
     gdn_num_v = int(getattr(config, "linear_num_value_heads", 0) or 0)
     index_rows = int(getattr(config, "indexer_n_heads", 4)) * int(getattr(config, "indexer_head_dim", 128))
+    qsa_q_rows = int(getattr(config, "num_attention_heads", 24)) * int(getattr(config, "head_dim", 256))
 
     def plain(target: str) -> list[tuple[str, slice | None, int | None]]:
         return [(target, None, None)]
@@ -233,7 +234,12 @@ def _remap_non_expert(name: str, config: object) -> list[tuple[str, slice | None
     if ".self_attn." in name:
         base = name.replace(".self_attn.", ".attention.")
         if base.endswith(".q_proj.weight"):
-            return plain(base[: -len(".weight")])
+            # The checkpoint fuses the query + output-gate projections into one
+            # [num_heads*(1+gate), hidden] row block; the eager module keeps them
+            # as separate q_proj / gate_proj params.
+            stem = base[: -len(".q_proj.weight")]
+            q_rows = qsa_q_rows
+            return [(stem + ".q_proj", slice(0, q_rows), None), (stem + ".gate_proj", slice(q_rows, None), None)]
         if base.endswith(".k_proj.weight"):
             return plain(base[: -len(".weight")])
         if base.endswith(".v_proj.weight"):
@@ -1447,6 +1453,10 @@ class AscendQwen4ExpForCausalLM(
                     if target is None:
                         continue
                     source = tensor if src_slice is None else tensor[src_slice]
+                    # Depthwise Conv1d checkpoints store [C, 1, K]; the eager
+                    # params store the flattened [C, K].
+                    if source.ndim == target.ndim + 1 and source.shape[1] == 1:
+                        source = source.squeeze(1)
                     with torch.no_grad():
                         if target_offset is None:
                             if tuple(target.shape) != tuple(source.shape):

@@ -141,6 +141,22 @@ def test_indexer_split_geometry(param_shapes):
     assert param_shapes["model.layers.3.attention.ik_proj"][0] == int(getattr(cfg, "indexer_head_dim", 128))
 
 
+def test_q_proj_split_into_query_and_gate(param_shapes):
+    cfg = _real_config()
+    q_rows = int(getattr(cfg, "num_attention_heads", 24)) * int(getattr(cfg, "head_dim", 256))
+    # The checkpoint's self_attn.q_proj is [2*q_rows, hidden]; the eager module
+    # splits it into q_proj (query) + gate_proj (output gate).
+    placements = _remap_non_expert("model.layers.3.self_attn.q_proj.weight", cfg)
+    assert len(placements) == 2
+    q_place, gate_place = placements
+    assert q_place[0] == "model.layers.3.attention.q_proj"
+    assert gate_place[0] == "model.layers.3.attention.gate_proj"
+    assert q_place[1] == slice(0, q_rows)
+    assert gate_place[1] == slice(q_rows, None)
+    assert param_shapes["model.layers.3.attention.q_proj"][0] == q_rows
+    assert param_shapes["model.layers.3.attention.gate_proj"][0] == q_rows
+
+
 def test_renames_reach_expected_targets(param_shapes):
     cfg = _real_config()
     cases = {
@@ -150,7 +166,7 @@ def test_renames_reach_expected_targets(param_shapes):
         # layer 1 carries the PLE injection.
         "model.layers.0.linear_attn.conv1d.weight": "model.layers.0.attention.conv_weight",
         "model.layers.0.linear_attn.in_proj_qkv.weight": "model.layers.0.attention.in_proj_qkv",
-        "model.layers.3.self_attn.q_proj.weight": "model.layers.3.attention.q_proj",
+        "model.layers.3.self_attn.k_proj.weight": "model.layers.3.attention.k_proj",
         "model.layers.3.self_attn.q_norm.weight": "model.layers.3.attention.attn.q_norm_weight",
         "model.layers.1.ple.norm_query.weight": "model.layers.1.ple.ple.norm_query_weight",
     }
