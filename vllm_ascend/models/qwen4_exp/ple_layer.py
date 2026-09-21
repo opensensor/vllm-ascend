@@ -143,7 +143,9 @@ class AscendQwen4ExpPLELayer(nn.Module):
         if heads != self.num_ngram_heads:
             raise ValueError(f"ngram_ids has {heads} heads, expected {self.num_ngram_heads}")
         # One batched gather over all (token, head) rows -- batched lookup only.
-        rows = self.ple_method.gather_rows(ngram_ids.reshape(-1))
+        # The host PLE table method (lazy mmap / pinned host) returns CPU rows;
+        # move them onto the request's device before the on-device projection.
+        rows = self.ple_method.gather_rows(ngram_ids.reshape(-1)).to(ngram_ids.device)
         per_head_dim = rows.shape[-1]
         if per_head_dim != self.per_head_dim:
             raise ValueError(
