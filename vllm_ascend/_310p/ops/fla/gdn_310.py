@@ -24,7 +24,11 @@ from vllm.v1.attention.backend import AttentionMetadata  # type: ignore
 from vllm.v1.attention.backends.gdn_attn import GDNAttentionMetadata
 from vllm.v1.attention.backends.utils import PAD_SLOT_ID
 
-from vllm_ascend._310p.ops.fla.chunk_gated_delta_rule import chunk_gated_delta_rule_310
+from vllm_ascend._310p.ops.fla.chunk_gated_delta_rule import (
+    CHUNK_SIZE,
+    build_varlen_chunk_plan,
+    chunk_gated_delta_rule_310,
+)
 from vllm_ascend._310p.ops.fla.fused_gdn_gating import (
     fused_gdn_gating_310,
     gdn_gating_constants,
@@ -132,6 +136,27 @@ def _cached_recurrent_step_meta(attn_metadata, slot, cu_seqlens, ssm_state_indic
         derived = (flat_state_indices, actual_seq_lengths)
         cache[key] = derived
     return derived
+
+
+def _cached_chunk_plan(attn_metadata, cu_seqlens):
+    """The step's GDN chunk padding layout, derived once for all 48 layers.
+
+    ``chunk_gated_delta_rule_310`` needs ``cu_seqlens`` on the host to work out
+    where each sequence is padded to a chunk boundary. Doing that inside the op
+    put a device-to-host copy in every GDN layer, and on 310P a D2H copy is a
+    synchronisation point: the host cannot issue the next layer until the device
+    has drained. Prefill depends on the host staying ahead, so 48 drains a step
+    cost more than the 40-odd bytes they move.
+
+    Memoised on ``attn_metadata`` for the same reason as
+    :func:`_cached_recurrent_step_meta` -- the builder makes a fresh one every
+    step, so the cache cannot outlive the tensor it came from.
+    """
+    plan = getattr(attn_metadata, "_gdn_chunk_plan", None)
+    if plan is None:
+        plan = build_varlen_chunk_plan(cu_seqlens.to(torch.int64).cpu(), CHUNK_SIZE)
+        attn_metadata._gdn_chunk_plan = plan
+    return plan
 
 
 def npu_recurrent_gated_delta_rule_310(
@@ -437,6 +462,7 @@ class AscendGatedDeltaNetAttention310(GatedDeltaNetAttention):
                     cu_seqlens=non_spec_query_start_loc,
                     head_first=False,
                     use_qk_l2norm_in_kernel=True,
+                    chunk_plan=_cached_chunk_plan(attn_metadata, non_spec_query_start_loc),
                 )
 
                 # Init cache

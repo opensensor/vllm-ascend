@@ -145,13 +145,15 @@ def _torch_chunk_gated_delta_rule_chunked(
     ]
     g = g.reshape(g.shape[0], g.shape[1], -1, chunk_size)
 
-    mask_diag = torch.triu(torch.ones(chunk_size, chunk_size, dtype=torch.bool, device=query.device), diagonal=0)
-
     # chunk decay
     g = g.cumsum(dim=-1)
-    decay_mask = ((g.unsqueeze(-1) - g.unsqueeze(-2)).tril().exp().float()).tril()
+    decay_mask = (g.unsqueeze(-1) - g.unsqueeze(-2)).tril().exp().tril()
+    # Strictly-lower variant of the same mask, so `attn` needs no separate
+    # masked_fill. `decay_mask` itself keeps its diagonal: the intra-chunk
+    # attention below reads it including the diagonal.
+    strict_decay_mask = decay_mask.tril(-1)
 
-    attn = -((k_beta @ key.transpose(-1, -2)) * decay_mask).masked_fill(mask_diag, 0)
+    attn = -((k_beta @ key.transpose(-1, -2)) * strict_decay_mask)
     attn = _ut_transform(attn, chunk_size)
 
     value = attn @ v_beta
@@ -240,33 +242,77 @@ def _pad_bthd_to_chunk(
     )
 
 
-def _pad_varlen_to_chunk(
+class VarlenChunkPlan:
+    """The chunk padding layout for one prefill step.
+
+    Everything here is a function of ``cu_seqlens`` alone, so it is the same for
+    all 48 GDN layers in a step. Deriving it inside the op meant a
+    device-to-host copy of ``cu_seqlens`` per layer; on 310P that is not just
+    the copy's own latency but a full pipeline drain, which costs the host its
+    run-ahead over the device exactly when prefill wants it most. Build it once
+    per step and hand it down instead.
+    """
+
+    __slots__ = ("segments", "seq_ranges", "cu_kernel", "cu_list", "chunk_indices")
+
+    def __init__(
+        self,
+        segments: list[tuple[int, int, int]],
+        seq_ranges: list[tuple[int, int, int]],
+        cu_kernel: torch.Tensor,
+        cu_list: list[int],
+        chunk_indices: list[int],
+    ) -> None:
+        self.segments = segments  # (start, end, pad_len) into the unpadded token axis
+        self.seq_ranges = seq_ranges
+        self.cu_kernel = cu_kernel
+        self.cu_list = cu_list
+        self.chunk_indices = chunk_indices
+
+
+def build_varlen_chunk_plan(cu_seqlens_cpu: torch.Tensor, chunk_size: int) -> VarlenChunkPlan:
+    """Derive the padding layout from a CPU ``cu_seqlens``. Pure host work."""
+    offsets = [int(x) for x in cu_seqlens_cpu.tolist()]
+    segments: list[tuple[int, int, int]] = []
+    seq_ranges: list[tuple[int, int, int]] = []
+    padded_cu = [0]
+    out_cursor = 0
+
+    for seq_idx in range(len(offsets) - 1):
+        start = offsets[seq_idx]
+        end = offsets[seq_idx + 1]
+        seq_len = end - start
+        padded_len = _ceil_div(seq_len, chunk_size) * chunk_size if seq_len > 0 else 0
+        segments.append((start, end, padded_len - seq_len))
+        seq_ranges.append((0, out_cursor, out_cursor + seq_len))
+        out_cursor += seq_len
+        padded_cu.append(padded_cu[-1] + padded_len)
+
+    cu_kernel = torch.tensor(padded_cu, dtype=torch.int64)
+    return VarlenChunkPlan(
+        segments,
+        seq_ranges,
+        cu_kernel,
+        padded_cu,
+        _chunk_indices_from_offsets(padded_cu, chunk_size),
+    )
+
+
+def _apply_varlen_chunk_plan(
     q: torch.Tensor,
     k: torch.Tensor,
     v: torch.Tensor,
     g: torch.Tensor,
     beta: torch.Tensor,
-    cu_seqlens: torch.Tensor,
-    chunk_size: int,
-) -> tuple[
-    torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, list[tuple[int, int, int]], torch.Tensor
-]:
+    plan: VarlenChunkPlan,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     q_parts: list[torch.Tensor] = []
     k_parts: list[torch.Tensor] = []
     v_parts: list[torch.Tensor] = []
     g_parts: list[torch.Tensor] = []
     beta_parts: list[torch.Tensor] = []
-    seq_ranges: list[tuple[int, int, int]] = []
-    padded_cu = [0]
-    out_cursor = 0
 
-    for seq_idx in range(cu_seqlens.numel() - 1):
-        start = int(cu_seqlens[seq_idx].item())
-        end = int(cu_seqlens[seq_idx + 1].item())
-        seq_len = end - start
-        padded_len = _ceil_div(seq_len, chunk_size) * chunk_size if seq_len > 0 else 0
-        pad_len = padded_len - seq_len
-
+    for start, end, pad_len in plan.segments:
         q_seq = q[:, start:end]
         k_seq = k[:, start:end]
         v_seq = v[:, start:end]
@@ -284,32 +330,42 @@ def _pad_varlen_to_chunk(
         v_parts.append(v_seq)
         g_parts.append(g_seq)
         beta_parts.append(beta_seq)
-        seq_ranges.append((0, out_cursor, out_cursor + seq_len))
-        out_cursor += seq_len
-        padded_cu.append(padded_cu[-1] + padded_len)
 
-    if q_parts:
-        q_padded = torch.cat(q_parts, dim=1)
-        k_padded = torch.cat(k_parts, dim=1)
-        v_padded = torch.cat(v_parts, dim=1)
-        g_padded = torch.cat(g_parts, dim=1)
-        beta_padded = torch.cat(beta_parts, dim=1)
-    else:
-        q_padded = q[:, :0]
-        k_padded = k[:, :0]
-        v_padded = v[:, :0]
-        g_padded = g[:, :0]
-        beta_padded = beta[:, :0]
-
-    cu_padded = torch.tensor(padded_cu, dtype=torch.int64, device=cu_seqlens.device)
-    return q_padded, k_padded, v_padded, g_padded, beta_padded, seq_ranges, cu_padded
+    if not q_parts:
+        return q[:, :0], k[:, :0], v[:, :0], g[:, :0], beta[:, :0]
+    if len(q_parts) == 1:
+        # The common editor case: one sequence, so the cat would copy for nothing.
+        return q_parts[0], k_parts[0], v_parts[0], g_parts[0], beta_parts[0]
+    return (
+        torch.cat(q_parts, dim=1),
+        torch.cat(k_parts, dim=1),
+        torch.cat(v_parts, dim=1),
+        torch.cat(g_parts, dim=1),
+        torch.cat(beta_parts, dim=1),
+    )
 
 
-def _prepare_chunk_indices_list(cu_seqlens: torch.Tensor, chunk_size: int) -> list[int]:
+def _pad_varlen_to_chunk(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    g: torch.Tensor,
+    beta: torch.Tensor,
+    cu_seqlens: torch.Tensor,
+    chunk_size: int,
+) -> tuple[
+    torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, list[tuple[int, int, int]], torch.Tensor
+]:
+    plan = build_varlen_chunk_plan(cu_seqlens, chunk_size)
+    q_pad, k_pad, v_pad, g_pad, beta_pad = _apply_varlen_chunk_plan(q, k, v, g, beta, plan)
+    return q_pad, k_pad, v_pad, g_pad, beta_pad, plan.seq_ranges, plan.cu_kernel
+
+
+def _chunk_indices_from_offsets(offsets: list[int], chunk_size: int) -> list[int]:
     chunk_indices: list[int] = []
     compact_seq_idx = 0
-    for seq_idx in range(cu_seqlens.numel() - 1):
-        seq_len = int(cu_seqlens[seq_idx + 1].item() - cu_seqlens[seq_idx].item())
+    for seq_idx in range(len(offsets) - 1):
+        seq_len = offsets[seq_idx + 1] - offsets[seq_idx]
         num_chunks = _ceil_div(seq_len, chunk_size) if seq_len > 0 else 0
         if num_chunks == 0:
             continue
@@ -317,6 +373,10 @@ def _prepare_chunk_indices_list(cu_seqlens: torch.Tensor, chunk_size: int) -> li
             chunk_indices.extend((compact_seq_idx, chunk_idx))
         compact_seq_idx += 1
     return chunk_indices
+
+
+def _prepare_chunk_indices_list(cu_seqlens: torch.Tensor, chunk_size: int) -> list[int]:
+    return _chunk_indices_from_offsets([int(x) for x in cu_seqlens.tolist()], chunk_size)
 
 
 # Base-case width for the blocked triangular inverse. Below this the recursion
@@ -409,14 +469,15 @@ def _compute_kernel_inputs_from_torch_wy(
     g = g.reshape(batch_size, num_v_heads, num_chunks, chunk_size).cumsum(dim=-1)
     beta = beta.reshape(batch_size, num_v_heads, num_chunks, chunk_size)
 
-    lower_decay = (g.unsqueeze(-1) - g.unsqueeze(-2)).tril().exp().float().tril()
+    # tril(-1) rather than tril(): masking the decay strictly below the diagonal
+    # leaves `attn` strictly lower on its own, so the separate masked_fill that
+    # used to follow -- a read and a write of the whole [B, H, C, 64, 64] fp32
+    # block per layer -- is not needed. The tril before the exp still has to
+    # stay: without it the upper triangle exponentiates a large positive and
+    # overflows to inf, and 0 * inf is nan.
+    lower_decay = (g.unsqueeze(-1) - g.unsqueeze(-2)).tril(-1).exp().tril(-1)
     k_beta = key * beta.unsqueeze(-1)
     attn = -(k_beta @ key.transpose(-1, -2) * lower_decay)
-    mask_diag = torch.triu(
-        torch.ones(chunk_size, chunk_size, dtype=torch.bool, device=k.device),
-        diagonal=0,
-    )
-    attn = attn.masked_fill(mask_diag, 0)
     attn = _ut_transform(attn, chunk_size)
 
     value = attn @ (value * beta.unsqueeze(-1))
@@ -542,12 +603,18 @@ def chunk_gated_delta_rule_310(
     cu_seqlens: torch.Tensor | None = None,
     head_first: bool = False,
     use_qk_l2norm_in_kernel: bool = False,
+    chunk_plan: VarlenChunkPlan | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
     """310P chunk GDN path backed by AscendC fwd_h/fwd_o kernels.
 
     Triton is unavailable on 310P, so the local WY preparation is done with
     torch ops and the inter-chunk state/output matmuls are delegated to the
     custom AscendC kernels.
+
+    ``chunk_plan`` is the step's padding layout from
+    :func:`build_varlen_chunk_plan`. Passing it skips a device-to-host copy of
+    ``cu_seqlens`` that would otherwise happen once per GDN layer; leaving it
+    ``None`` derives the plan here, which is what non-310P callers do.
     """
     if head_first:
         raise DeprecationWarning("head_first=True is not supported in 310P chunk path.")
@@ -574,13 +641,13 @@ def chunk_gated_delta_rule_310(
         chunk_indices_list = None
         num_states = q.shape[0]
     else:
-        q_pad, k_pad, v_pad, g_pad, beta_pad, seq_ranges, cu_kernel = _pad_varlen_to_chunk(
-            q, k, v, g, beta, cu_seqlens.to(torch.int64).cpu(), CHUNK_SIZE
-        )
-        assert cu_kernel is not None
-        cu_list = cu_kernel.tolist()
-        chunk_indices_list = _prepare_chunk_indices_list(cu_kernel, CHUNK_SIZE)
-        num_states = cu_seqlens.numel() - 1
+        if chunk_plan is None:
+            chunk_plan = build_varlen_chunk_plan(cu_seqlens.to(torch.int64).cpu(), CHUNK_SIZE)
+        q_pad, k_pad, v_pad, g_pad, beta_pad = _apply_varlen_chunk_plan(q, k, v, g, beta, chunk_plan)
+        seq_ranges = chunk_plan.seq_ranges
+        cu_list = chunk_plan.cu_list
+        chunk_indices_list = chunk_plan.chunk_indices
+        num_states = len(cu_list) - 1
 
     expected_state_shape = (num_states, v.shape[2], v.shape[-1], k.shape[-1])
     if initial_state is not None:
