@@ -32,6 +32,13 @@ CHUNK_SIZE = 64
 # two can be A/B timed against each other on real traffic.
 _UT_USE_BLOCKED_INVERSE = os.getenv("VLLM_ASCEND_GDN_UT_BLOCKED", "1") == "1"
 
+# Build the WY gram matrix once per K head instead of once per V head. Off by
+# default: it is exact (verified to fp64 against the per-V-head form) and saves
+# two thirds of that matmul, but it leans on torch broadcasting a 6D matmul,
+# which is unverified on Ascend and this is the prefill path for every request.
+# Turn on with VLLM_ASCEND_GDN_WY_GROUPED_GRAM=1 and measure before trusting.
+_WY_GROUPED_GRAM = os.getenv("VLLM_ASCEND_GDN_WY_GROUPED_GRAM", "0") == "1"
+
 
 def _expand_qk_to_v_heads(x: torch.Tensor, num_v_heads: int) -> torch.Tensor:
     """
@@ -459,12 +466,28 @@ def _compute_kernel_inputs_from_torch_wy(
     q_kernel = q.transpose(1, 2).contiguous()
     k_kernel = k.transpose(1, 2).contiguous()
 
-    key = _expand_qk_to_v_heads(k, num_v_heads).transpose(1, 2).contiguous().to(torch.float32)
+    k_heads = k.shape[2]
+    group = num_v_heads // k_heads
+    # A non-divisible head count is a caller error; leave it to the default
+    # path, which raises for it, rather than silently regrouping garbage.
+    use_grouped_gram = _WY_GROUPED_GRAM and group > 1 and num_v_heads % k_heads == 0
+    if use_grouped_gram:
+        key_grouped = (
+            k.transpose(1, 2)
+            .contiguous()
+            .to(torch.float32)
+            .reshape(batch_size, k_heads, num_chunks, chunk_size, k_dim)
+        )
+        key = None
+    else:
+        key_grouped = None
+        key = _expand_qk_to_v_heads(k, num_v_heads).transpose(1, 2).contiguous().to(torch.float32)
     value = v.transpose(1, 2).contiguous().to(torch.float32)
     g = g.transpose(1, 2).contiguous().to(torch.float32)
     beta = beta.transpose(1, 2).contiguous().to(torch.float32)
 
-    key = key.reshape(batch_size, num_v_heads, num_chunks, chunk_size, k_dim)
+    if key is not None:
+        key = key.reshape(batch_size, num_v_heads, num_chunks, chunk_size, k_dim)
     value = value.reshape(batch_size, num_v_heads, num_chunks, chunk_size, value_dim)
     g = g.reshape(batch_size, num_v_heads, num_chunks, chunk_size).cumsum(dim=-1)
     beta = beta.reshape(batch_size, num_v_heads, num_chunks, chunk_size)
@@ -476,12 +499,35 @@ def _compute_kernel_inputs_from_torch_wy(
     # stay: without it the upper triangle exponentiates a large positive and
     # overflows to inf, and 0 * inf is nan.
     lower_decay = (g.unsqueeze(-1) - g.unsqueeze(-2)).tril(-1).exp().tril(-1)
-    k_beta = key * beta.unsqueeze(-1)
-    attn = -(k_beta @ key.transpose(-1, -2) * lower_decay)
-    attn = _ut_transform(attn, chunk_size)
 
-    value = attn @ (value * beta.unsqueeze(-1))
-    k_cumdecay = attn @ (k_beta * g.exp().unsqueeze(-1))
+    if use_grouped_gram:
+        # The expanded key is three copies of the same four heads, and
+        #   (k_beta @ key^T)[i, j] == beta[i] * <key[i], key[j]>,
+        # so the gram matrix is identical across a group and only the beta
+        # scaling differs. Build it once per K head and broadcast, which is a
+        # third of the matmul and skips materialising `key` and `k_beta` at V
+        # head count in fp32 -- the two largest tensors in this function.
+        shape5 = (batch_size, k_heads, group, num_chunks, chunk_size)
+        gram = key_grouped @ key_grouped.transpose(-1, -2)
+        attn = -(gram.unsqueeze(2) * beta.view(*shape5).unsqueeze(-1) * lower_decay.view(*shape5, chunk_size))
+        attn = _ut_transform(attn, chunk_size)
+
+        value = attn.reshape(batch_size, num_v_heads, num_chunks, chunk_size, chunk_size) @ (
+            value * beta.unsqueeze(-1)
+        )
+        # attn @ (key * c[..., None]) == (attn * c[..., None, :]) @ key, which
+        # keeps `key` at K head count on the right of the matmul and lets the
+        # batch dims broadcast instead of being copied.
+        cumdecay_scale = (beta * g.exp()).view(*shape5)
+        k_cumdecay = (attn * cumdecay_scale.unsqueeze(-2)) @ key_grouped.unsqueeze(2)
+        k_cumdecay = k_cumdecay.reshape(batch_size, num_v_heads, num_chunks, chunk_size, k_dim)
+    else:
+        k_beta = key * beta.unsqueeze(-1)
+        attn = -(k_beta @ key.transpose(-1, -2) * lower_decay)
+        attn = _ut_transform(attn, chunk_size)
+
+        value = attn @ (value * beta.unsqueeze(-1))
+        k_cumdecay = attn @ (k_beta * g.exp().unsqueeze(-1))
 
     u_kernel = value.reshape(batch_size, num_v_heads, padded_tokens, value_dim).to(torch.float16).contiguous()
     w_kernel = k_cumdecay.reshape(batch_size, num_v_heads, padded_tokens, k_dim).to(torch.float16).contiguous()
