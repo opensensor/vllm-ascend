@@ -21,6 +21,7 @@ import sys
 import types
 from contextlib import contextmanager
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 import torch
@@ -196,6 +197,54 @@ def test_state_dtypes_from_policy():
     assert ssm_dtype is ASCEND_QWEN4EXP_DTYPE_POLICY.mamba_ssm_cache_dtype
     assert conv_dtype == torch.float16
     assert ssm_dtype == torch.float32
+
+
+def test_model_short_conv_fallback_carries_paged_state():
+    from vllm_ascend.models.qwen4_exp.model import _GDNAttention
+
+    channels, kernel = 4, 4
+    weight = torch.randn(channels, kernel)
+    first = torch.randn(5, channels)
+    second = torch.randn(1, channels)
+    cache = torch.zeros(2, channels, kernel - 1)
+    owner = SimpleNamespace(
+        kv_cache=(cache,),
+        prefix="model.layers.0.attention",
+        conv_weight=weight,
+        conv_dim=channels,
+    )
+    metadata = SimpleNamespace()
+    context = SimpleNamespace(attn_metadata={"model.layers.0.attention": metadata})
+
+    with patch(
+        "vllm_ascend.models.qwen4_exp.model.get_forward_context",
+        return_value=context,
+    ):
+        out_first = _GDNAttention._stateful_short_conv(
+            owner,
+            first,
+            torch.tensor([1]),
+            torch.tensor([0, len(first)]),
+            torch.tensor([False]),
+        )
+        delattr(metadata, "_qwen4exp_query_ranges")
+        out_second = _GDNAttention._stateful_short_conv(
+            owner,
+            second,
+            torch.tensor([1]),
+            torch.tensor([0, len(second)]),
+            torch.tensor([True]),
+        )
+
+    expected = gdn_short_conv(
+        torch.cat([first, second]),
+        weight,
+        activation="silu",
+        compute_dtype=first.dtype,
+    )
+    torch.testing.assert_close(out_first, expected[:-1])
+    torch.testing.assert_close(out_second, expected[-1:])
+    torch.testing.assert_close(cache[1], torch.cat([first, second])[-(kernel - 1) :].T)
 
 
 # ---------------------------------------------------------------------------

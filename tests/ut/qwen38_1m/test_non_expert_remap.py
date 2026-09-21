@@ -27,9 +27,6 @@ _CKPT = Path(
 
 # Documented gaps: tensors with no eager Ascend param yet.
 _DOCUMENTED_SKIP_SUFFIXES = (
-    ".mlp.shared_expert_gate.weight",
-    ".linear_attn.in_proj_z.weight",
-    ".linear_attn.norm.weight",
     ".self_attn.indexer.q_layernorm.weight",
     ".self_attn.indexer.k_layernorm.weight",
 )
@@ -39,6 +36,10 @@ def _is_documented_skip(name: str) -> bool:
     # The PLE n-gram table is derived (buffers) or lazy-shard mmap'd (128 shards).
     if ".ple_embedding." in name:
         return True
+    if ".linear_attn." in name or ".mlp.shared_expert." in name:
+        return True  # dedicated TP-aware loader paths
+    if name.endswith(".self_attn.q_proj.weight"):
+        return True  # dedicated per-head query/gate deinterleave
     return any(name.endswith(s) for s in _DOCUMENTED_SKIP_SUFFIXES)
 
 
@@ -141,20 +142,70 @@ def test_indexer_split_geometry(param_shapes):
     assert param_shapes["model.layers.3.attention.ik_proj"][0] == int(getattr(cfg, "indexer_head_dim", 128))
 
 
-def test_q_proj_split_into_query_and_gate(param_shapes):
-    cfg = _real_config()
-    q_rows = int(getattr(cfg, "num_attention_heads", 24)) * int(getattr(cfg, "head_dim", 256))
-    # The checkpoint's self_attn.q_proj is [2*q_rows, hidden]; the eager module
-    # splits it into q_proj (query) + gate_proj (output gate).
-    placements = _remap_non_expert("model.layers.3.self_attn.q_proj.weight", cfg)
-    assert len(placements) == 2
-    q_place, gate_place = placements
-    assert q_place[0] == "model.layers.3.attention.q_proj"
-    assert gate_place[0] == "model.layers.3.attention.gate_proj"
-    assert q_place[1] == slice(0, q_rows)
-    assert gate_place[1] == slice(q_rows, None)
-    assert param_shapes["model.layers.3.attention.q_proj"][0] == q_rows
-    assert param_shapes["model.layers.3.attention.gate_proj"][0] == q_rows
+def test_q_proj_deinterleaves_query_and_gate_per_head():
+    from vllm_ascend.models.qwen4_exp.model import AscendQwen4ExpForCausalLM
+
+    config = SimpleNamespace(num_attention_heads=2, head_dim=3, hidden_size=2)
+    owner = SimpleNamespace(model=SimpleNamespace(config=config))
+    q = torch.empty(6, 2)
+    gate = torch.empty(6, 2)
+    params = {
+        "model.layers.3.attention.q_proj": q,
+        "model.layers.3.attention.gate_proj": gate,
+    }
+    source = torch.arange(24).reshape(12, 2)
+    loaded = AscendQwen4ExpForCausalLM._place_qsa_q_gate_tensor(
+        owner,
+        params,
+        "model.layers.3.self_attn.q_proj.weight",
+        source,
+    )
+    per_head = source.reshape(2, 2, 3, 2)
+    assert loaded == (
+        "model.layers.3.attention.q_proj",
+        "model.layers.3.attention.gate_proj",
+    )
+    assert torch.equal(q, per_head[:, 0].reshape_as(q))
+    assert torch.equal(gate, per_head[:, 1].reshape_as(gate))
+
+
+def test_gdn_ba_loader_preserves_checkpoint_packing_order():
+    from vllm_ascend.models.qwen4_exp.model import AscendQwen4ExpForCausalLM
+
+    config = SimpleNamespace(
+        linear_num_key_heads=1,
+        linear_num_value_heads=2,
+        linear_key_head_dim=2,
+        linear_value_head_dim=2,
+        linear_conv_kernel_dim=4,
+        head_dim=4,
+        partial_rotary_factor=0.5,
+    )
+    owner = SimpleNamespace(model=SimpleNamespace(config=config))
+    target = torch.zeros(4, 3)
+    params = {"model.layers.0.attention.in_proj_ba": target}
+    b_weight = torch.full((2, 3), 7.0)
+    a_weight = torch.full((2, 3), 11.0)
+
+    AscendQwen4ExpForCausalLM._place_gdn_tensor(
+        owner,
+        params,
+        "model.layers.0.linear_attn.in_proj_b.weight",
+        b_weight,
+        0,
+        1,
+    )
+    AscendQwen4ExpForCausalLM._place_gdn_tensor(
+        owner,
+        params,
+        "model.layers.0.linear_attn.in_proj_a.weight",
+        a_weight,
+        0,
+        1,
+    )
+
+    assert torch.equal(target[:2], b_weight)
+    assert torch.equal(target[2:], a_weight)
 
 
 def test_renames_reach_expected_targets(param_shapes):
@@ -164,8 +215,6 @@ def test_renames_reach_expected_targets(param_shapes):
         "model.layers.0.mlp.gate.weight": "model.layers.0.mlp.gate",
         # Layer 0 is linear_attention (GDN), layer 3 is full_attention (QSA),
         # layer 1 carries the PLE injection.
-        "model.layers.0.linear_attn.conv1d.weight": "model.layers.0.attention.conv_weight",
-        "model.layers.0.linear_attn.in_proj_qkv.weight": "model.layers.0.attention.in_proj_qkv",
         "model.layers.3.self_attn.k_proj.weight": "model.layers.3.attention.k_proj",
         "model.layers.3.self_attn.q_norm.weight": "model.layers.3.attention.attn.q_norm_weight",
         "model.layers.1.ple.norm_query.weight": "model.layers.1.ple.ple.norm_query_weight",

@@ -56,6 +56,8 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from vllm.config import get_current_vllm_config_or_none
+from vllm.forward_context import get_forward_context
+from vllm.model_executor.layers.attention import Attention
 from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.layers.mamba.abstract import MambaBase
@@ -64,6 +66,7 @@ from vllm.model_executor.layers.vocab_parallel_embedding import (
     ParallelLMHead,
     VocabParallelEmbedding,
 )
+from vllm.v1.attention.backends.gdn_attn import GDNAttentionMetadata
 from vllm.v1.attention.backends.registry import MambaAttentionBackendEnum
 
 if TYPE_CHECKING:
@@ -112,11 +115,7 @@ from .ngram_embedding import (
     AscendQwen4ExpNGramEmbedding,
 )
 from .ple_layer import AscendQwen4ExpPLELayer
-from .qsa import (
-    AscendQwen4ExpQSAAttention,
-    QSADecoderProjections,
-    run_qsa_decoder_attention,
-)
+from .qsa import AscendQwen4ExpQSAAttention
 from .qwen4exp_gdn import (
     QWEN4EXP_GDN_CHUNK_SIZE,
     Qwen4ExpGDNParams,
@@ -186,14 +185,12 @@ def _remap_non_expert(name: str, config: object) -> list[tuple[str, slice | None
 
     Skipped (``None``) tensors are the checkpoint's derived n-gram buffers
     (recomputed deterministically at init), the 128 lazy-shard PLE rows (read on
-    demand by the lazy transport), and the small set of eager stand-in params the
-    Ascend modules do not yet own (shared-expert gate, GDN ``in_proj_z``/``norm``,
-    QSA indexer layernorms).
+    demand by the lazy transport), and QSA indexer layernorms that the eager
+    indexer does not yet own.
     """
     hidden = int(config.hidden_size)
     hc_hidden = int(getattr(config, "hc_count", 2)) * hidden
     index_rows = int(getattr(config, "indexer_n_heads", 4)) * int(getattr(config, "indexer_head_dim", 128))
-    qsa_q_rows = int(getattr(config, "num_attention_heads", 24)) * int(getattr(config, "head_dim", 256))
 
     def plain(target: str) -> list[tuple[str, slice | None, int | None]]:
         return [(target, None, None)]
@@ -224,8 +221,8 @@ def _remap_non_expert(name: str, config: object) -> list[tuple[str, slice | None
         or ".mlp.shared_expert.down_proj" in name
     ):
         return None
-    if ".mlp.shared_expert_gate" in name:
-        return None  # eager stand-in has no shared-expert gate scalar
+    if name.endswith(".mlp.shared_expert_gate.weight"):
+        return plain(name[: -len(".weight")])
 
     # GDN linear-attention projections (checkpoint `linear_attn` -> model
     # `attention`) are TP-sharded and placed by the dedicated `_place_gdn_tensor`
@@ -237,12 +234,9 @@ def _remap_non_expert(name: str, config: object) -> list[tuple[str, slice | None
     if ".self_attn." in name:
         base = name.replace(".self_attn.", ".attention.")
         if base.endswith(".q_proj.weight"):
-            # The checkpoint fuses the query + output-gate projections into one
-            # [num_heads*(1+gate), hidden] row block; the eager module keeps them
-            # as separate q_proj / gate_proj params.
-            stem = base[: -len(".q_proj.weight")]
-            q_rows = qsa_q_rows
-            return [(stem + ".q_proj", slice(0, q_rows), None), (stem + ".gate_proj", slice(q_rows, None), None)]
+            # The checkpoint interleaves query and output-gate rows inside each
+            # head. ``load_weights`` handles the non-contiguous deinterleave.
+            return None
         if base.endswith(".k_proj.weight"):
             return plain(base[: -len(".weight")])
         if base.endswith(".v_proj.weight"):
@@ -515,10 +509,9 @@ class _GDNAttention(nn.Module, MambaBase):
     """Wire the real GDN adapter (T5.x): in_proj -> short conv -> gating ->
     gated delta rule (eager backend) -> out_proj.
 
-    Registered as a ``MambaBase`` so the v1 runner allocates the GDN
-    conv + recurrent state; the eager forward uses the GDN state pool (model
-    state) rather than this KV cache, so the cache is currently allocated but
-    not read/written by the eager math.
+    Registered as a ``MambaBase`` so the v1 runner allocates and binds the GDN
+    convolution + recurrent state. The torch/NPU fallback reads and updates
+    those paged slots on every prefill/decode step.
     """
 
     def __init__(
@@ -531,10 +524,13 @@ class _GDNAttention(nn.Module, MambaBase):
     ) -> None:
         super().__init__()
         _register_in_static_forward_context(prefix, self)
+        self.prefix = prefix
         self.compute_dtype = dtype_policy.accumulation_dtype
         self.params_dtype = dtype_policy.main_dtype
+        self.rms_norm_eps = float(getattr(config, "rms_norm_eps", 1e-6))
         self.mamba_conv_dtype = dtype_policy.mamba_conv_cache_dtype
-        self.mamba_ssm_dtype = dtype_policy.mamba_ssm_cache_dtype
+        # The 310P recurrent GDN operator accepts FP16 state only.
+        self.mamba_ssm_dtype = torch.float16
         self.params = _gdn_params_from_config(config)
         self.tp_rank, self.tp_size = (int(expert_sharding[0]), int(expert_sharding[1]))
         if self.tp_size < 1 or not 0 <= self.tp_rank < self.tp_size:
@@ -546,19 +542,19 @@ class _GDNAttention(nn.Module, MambaBase):
         # splitting both num_k_heads and num_v_heads keeps the 3:1 group ratio
         # and the recurrent state is sharded per rank. out_proj is row-parallel.
         if p.num_k_heads % self.tp_size or p.num_v_heads % self.tp_size:
-            raise ValueError(
-                f"GDN heads (k={p.num_k_heads}, v={p.num_v_heads}) not divisible by TP {self.tp_size}"
-            )
+            raise ValueError(f"GDN heads (k={p.num_k_heads}, v={p.num_v_heads}) not divisible by TP {self.tp_size}")
         self.num_k_heads = p.num_k_heads // self.tp_size
         self.num_v_heads = p.num_v_heads // self.tp_size
         self.key_dim = p.head_k_dim * self.num_k_heads
         self.value_dim = p.head_v_dim * self.num_v_heads
         self.conv_dim = 2 * self.key_dim + self.value_dim
         self.in_proj_qkv = nn.Parameter(torch.zeros(self.conv_dim, hidden, dtype=self.params_dtype))
+        self.in_proj_z = nn.Parameter(torch.zeros(self.value_dim, hidden, dtype=self.params_dtype))
         self.conv_weight = nn.Parameter(torch.zeros(self.conv_dim, p.conv_kernel_size, dtype=self.params_dtype))
         self.in_proj_ba = nn.Parameter(torch.zeros(2 * self.num_v_heads, hidden, dtype=self.params_dtype))
         self.A_log = nn.Parameter(torch.zeros(self.num_v_heads, dtype=self.params_dtype))
         self.dt_bias = nn.Parameter(torch.zeros(self.num_v_heads, dtype=self.params_dtype))
+        self.norm_weight = nn.Parameter(torch.zeros(p.head_v_dim, dtype=self.params_dtype))
         self.out_proj = nn.Parameter(torch.zeros(hidden, self.value_dim, dtype=self.params_dtype))
         self._tp_reduce: object | None = None
         if self.tp_size > 1:
@@ -568,6 +564,47 @@ class _GDNAttention(nn.Module, MambaBase):
                 self._tp_reduce = tensor_model_parallel_all_reduce
             except Exception:
                 self._tp_reduce = None
+
+    def _stateful_short_conv(
+        self,
+        mixed: torch.Tensor,
+        state_indices: torch.Tensor,
+        query_start_loc: torch.Tensor,
+        has_initial_state: torch.Tensor,
+    ) -> torch.Tensor:
+        """Torch fallback for Qwen4Exp geometry unsupported by the 310P op."""
+        cache = self.kv_cache[0]
+        cache_key = "_qwen4exp_query_ranges"
+        metadata = get_forward_context().attn_metadata[self.prefix]
+        ranges = getattr(metadata, cache_key, None)
+        if ranges is None:
+            boundaries = query_start_loc.to("cpu").tolist()
+            ranges = tuple(zip(boundaries[:-1], boundaries[1:]))
+            setattr(metadata, cache_key, ranges)
+
+        result = torch.empty_like(mixed)
+        weight = self.conv_weight.to(mixed.dtype)
+        for request_idx, (start, stop) in enumerate(ranges):
+            if stop <= start:
+                continue
+            cache_idx = state_indices[request_idx].long()
+            prior = cache[cache_idx].to(mixed.dtype)
+            keep_prior = has_initial_state[request_idx].to(mixed.dtype)
+            prior = prior * keep_prior
+            sequence = mixed[start:stop]
+            history = torch.cat([prior, sequence.transpose(0, 1)], dim=-1)
+            convolved = (
+                F.conv1d(
+                    history.unsqueeze(0),
+                    weight.unsqueeze(1),
+                    groups=self.conv_dim,
+                )
+                .squeeze(0)
+                .transpose(0, 1)
+            )
+            result[start:stop] = F.silu(convolved)
+            cache[cache_idx].copy_(history[:, -cache.shape[-1] :].to(cache.dtype))
+        return result
 
     @property
     def mamba_type(self) -> MambaAttentionBackendEnum:
@@ -598,27 +635,91 @@ class _GDNAttention(nn.Module, MambaBase):
         del positions  # GDN applies no rotary
         seq_len = block_input.shape[0]
         p = self.params
-        mixed = _linear(block_input, self.in_proj_qkv, self.compute_dtype)
-        mixed = gdn_short_conv(mixed, self.conv_weight, activation="silu", compute_dtype=self.compute_dtype)
+        mixed = _linear(block_input, self.in_proj_qkv, self.compute_dtype).to(self.params_dtype)
+        ba = _linear(block_input, self.in_proj_ba, self.compute_dtype).to(self.params_dtype)
+        # Checkpoint packing is [b, a]. The fallback consumes vLLM's per-step
+        # metadata and mutates the allocated convolution and recurrent caches
+        # for both prefill and decode.
+        b, a = torch.split(ba, [self.num_v_heads, self.num_v_heads], dim=-1)
+        metadata_by_layer = get_forward_context().attn_metadata
+        metadata = metadata_by_layer.get(self.prefix) if isinstance(metadata_by_layer, dict) else None
+        if metadata is None:
+            mixed = gdn_short_conv(
+                mixed,
+                self.conv_weight,
+                activation="silu",
+                compute_dtype=self.compute_dtype,
+            )
+            ranges = ((0, seq_len),)
+            state_indices = None
+            has_initial_state = None
+        else:
+            assert isinstance(metadata, GDNAttentionMetadata)
+            seq_len = metadata.num_actual_tokens
+            mixed = mixed[:seq_len]
+            a = a[:seq_len]
+            b = b[:seq_len]
+            state_indices = metadata.non_spec_state_indices_tensor
+            query_start_loc = metadata.non_spec_query_start_loc
+            has_initial_state = metadata.has_initial_state
+            assert state_indices is not None
+            assert query_start_loc is not None
+            if has_initial_state is None:
+                default_has_state = metadata.num_prefills == 0
+                has_initial_state = torch.full(
+                    (query_start_loc.shape[0] - 1,),
+                    default_has_state,
+                    dtype=torch.bool,
+                    device=query_start_loc.device,
+                )
+            mixed = self._stateful_short_conv(mixed, state_indices, query_start_loc, has_initial_state)
+            boundaries = query_start_loc.to("cpu").tolist()
+            ranges = tuple(zip(boundaries[:-1], boundaries[1:]))
+
         q, k, v = torch.split(mixed, [self.key_dim, self.key_dim, self.value_dim], dim=-1)
         q = q.reshape(seq_len, self.num_k_heads, p.head_k_dim)
         k = k.reshape(seq_len, self.num_k_heads, p.head_k_dim)
         v = v.reshape(seq_len, self.num_v_heads, p.head_v_dim)
-        ba = _linear(block_input, self.in_proj_ba, self.compute_dtype)
-        a, b = torch.split(ba, [self.num_v_heads, self.num_v_heads], dim=-1)
-        g, beta = gdn_gating(self.A_log, a, b, self.dt_bias, compute_dtype=self.compute_dtype, backend="eager")
-        out, _state = gdn_delta_rule(
-            q,
-            k,
-            v,
-            g,
-            beta,
-            chunked=True,
-            chunk_size=QWEN4EXP_GDN_CHUNK_SIZE,
+        g, beta = gdn_gating(
+            self.A_log,
+            a,
+            b,
+            self.dt_bias,
             compute_dtype=self.compute_dtype,
             backend="eager",
         )
-        out = out.reshape(seq_len, self.value_dim)
+        out = torch.empty(
+            (seq_len, self.num_v_heads, p.head_v_dim),
+            dtype=self.compute_dtype,
+            device=block_input.device,
+        )
+        for request_idx, (start, stop) in enumerate(ranges):
+            if stop <= start:
+                continue
+            initial_state = None
+            if state_indices is not None and has_initial_state is not None:
+                cache_idx = state_indices[request_idx].long()
+                initial_state = self.kv_cache[1][cache_idx].to(self.compute_dtype) * has_initial_state[request_idx].to(
+                    self.compute_dtype
+                )
+            segment, final_state = gdn_delta_rule(
+                q[start:stop],
+                k[start:stop],
+                v[start:stop],
+                g[start:stop],
+                beta[start:stop],
+                initial_state=initial_state,
+                chunked=(stop - start) > 1,
+                chunk_size=QWEN4EXP_GDN_CHUNK_SIZE,
+                compute_dtype=self.compute_dtype,
+                backend="eager",
+            )
+            out[start:stop] = segment
+            if state_indices is not None:
+                self.kv_cache[1][cache_idx].copy_(final_state.to(self.kv_cache[1].dtype))
+        normed = _rms_norm(out, self.norm_weight, self.rms_norm_eps, self.compute_dtype)
+        z = _linear(block_input, self.in_proj_z, self.compute_dtype).reshape(seq_len, self.num_v_heads, p.head_v_dim)
+        out = (normed * torch.sigmoid(z)).reshape(seq_len, self.value_dim)
         out = _linear(out, self.out_proj, self.compute_dtype)
         if self.tp_size > 1:
             if self._tp_reduce is None:
@@ -631,22 +732,15 @@ class _GDNAttention(nn.Module, MambaBase):
 
 
 class _QSAAttention(nn.Module, AttentionLayerBase):
-    """Wire the real QSA indexer (T6.1) + sparse GQA attention (T6.2).
+    """QSA layer using cache-backed causal attention for short contexts.
 
-    Owns the layer's projection weights, indexer and attention module, and runs
-    the full QSA decoder-layer path through the single shared composition entry
-    point :func:`~vllm_ascend.models.qwen4_exp.qsa.run_qsa_decoder_attention`
-    (plan T6.4), so every one of the 12 QSA layers exercises identical code.
-
-    Registered as an ``AttentionLayerBase`` so the v1 runner allocates the
-    full-attention KV cache for it; the eager indexer/attention manage the QSA
-    raw ring + compressed side-cache out of band (T6.x), so the standard KV
-    cache is currently allocated but not the eager forward's read/write target.
+    Short contexts use vLLM's standard cache-backed causal attention, which is
+    equivalent to QSA while the complete context fits within its selection
+    budget. Long-context sparse index selection remains a separate fast path.
     """
 
     def __init__(self, *, config: object, layer_idx: int, dtype_policy: Qwen4ExpDtypePolicy, prefix: str = "") -> None:
         super().__init__()
-        _register_in_static_forward_context(prefix, self)
         self.compute_dtype = dtype_policy.accumulation_dtype
         self.params_dtype = dtype_policy.qsa_main_dtype
         hidden = int(config.hidden_size)
@@ -655,11 +749,7 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
         self.head_dim = int(getattr(config, "head_dim", 256))
         self.index_n_heads = int(getattr(config, "indexer_n_heads", 4))
         self.index_head_dim = int(getattr(config, "indexer_head_dim", 128))
-        self._attn_backend: type[AttentionBackend] | None = (
-            _resolve_attn_backend(self.head_dim, self.params_dtype)
-            if get_current_vllm_config_or_none() is not None
-            else None
-        )
+        vllm_config = get_current_vllm_config_or_none()
 
         self.q_proj = nn.Parameter(torch.zeros(self.num_heads * self.head_dim, hidden, dtype=self.params_dtype))
         self.k_proj = nn.Parameter(torch.zeros(self.num_kv_heads * self.head_dim, hidden, dtype=self.params_dtype))
@@ -672,12 +762,19 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
         self.o_proj = nn.Parameter(torch.zeros(hidden, self.num_heads * self.head_dim, dtype=self.params_dtype))
 
         self.indexer = AscendQwen4ExpQSAIndexer(config=config, layer_idx=layer_idx, dtype_policy=dtype_policy)
-        self.attn = AscendQwen4ExpQSAAttention(config=config, layer_idx=layer_idx, dtype_policy=dtype_policy)
+        self.qsa_math = AscendQwen4ExpQSAAttention(config=config, layer_idx=layer_idx, dtype_policy=dtype_policy)
+        self.attn = Attention(
+            self.num_heads,
+            self.head_dim,
+            self.head_dim**-0.5,
+            num_kv_heads=self.num_kv_heads,
+            cache_config=None if vllm_config is None else vllm_config.cache_config,
+            quant_config=None,
+            prefix=prefix,
+        )
 
     def get_attn_backend(self) -> type[AttentionBackend]:
-        if self._attn_backend is None:
-            self._attn_backend = _resolve_attn_backend(self.head_dim, self.params_dtype)
-        return self._attn_backend
+        return self.attn.get_attn_backend()
 
     def get_kv_cache_spec(self, vllm_config: object) -> FullAttentionSpec:
         del vllm_config
@@ -689,28 +786,23 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
         )
 
     def forward(self, block_input: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
-        return run_qsa_decoder_attention(
-            block_input,
-            positions,
-            projections=QSADecoderProjections(
-                q_proj=self.q_proj,
-                k_proj=self.k_proj,
-                v_proj=self.v_proj,
-                gate_proj=self.gate_proj,
-                index_q_proj=self.iq_proj,
-                index_k_proj=self.ik_proj,
-                out_proj=self.o_proj,
-            ),
-            indexer=self.indexer,
-            attention=self.attn,
-            num_query_heads=self.num_heads,
-            num_kv_heads=self.num_kv_heads,
-            head_dim=self.head_dim,
-            index_n_heads=self.index_n_heads,
-            index_head_dim=self.index_head_dim,
-            store_dtype=self.params_dtype,
-            compute_dtype=self.compute_dtype,
-        )
+        seq_len = block_input.shape[0]
+        q = _linear(block_input, self.q_proj, self.compute_dtype).view(seq_len, self.num_heads, self.head_dim)
+        k = _linear(block_input, self.k_proj, self.compute_dtype).view(seq_len, self.num_kv_heads, self.head_dim)
+        v = _linear(block_input, self.v_proj, self.compute_dtype).view(seq_len, self.num_kv_heads, self.head_dim)
+        gate = _linear(block_input, self.gate_proj, self.compute_dtype).view(seq_len, self.num_heads, self.head_dim)
+        q, k = self.qsa_math.project_qk(q, k, positions, positions, accum_dtype=self.compute_dtype)
+        q = q.to(self.params_dtype)
+        k = k.to(self.params_dtype)
+        v = v.to(self.params_dtype)
+        gate = gate.to(self.params_dtype)
+        out = self.attn(
+            q.reshape(seq_len, -1),
+            k.reshape(seq_len, -1),
+            v.reshape(seq_len, -1),
+        ).view(seq_len, self.num_heads, self.head_dim)
+        out = out * torch.sigmoid(gate)
+        return _linear(out.reshape(seq_len, -1), self.o_proj, self.compute_dtype).to(self.params_dtype)
 
 
 class _EagerMLP(nn.Module):
@@ -851,6 +943,7 @@ class _EagerSparseMoE(nn.Module):
                 torch.zeros(2 * self.local_shared_inter, hidden, dtype=self.params_dtype)
             )
             self.shared_down = nn.Parameter(torch.zeros(hidden, self.local_shared_inter, dtype=self.params_dtype))
+            self.shared_expert_gate = nn.Parameter(torch.zeros(1, hidden, dtype=self.params_dtype))
 
     def forward(self, block_input: torch.Tensor) -> torch.Tensor:
         router_logits = F.linear(block_input.to(self.router_dtype), self.gate.to(self.router_dtype))
@@ -892,7 +985,8 @@ class _EagerSparseMoE(nn.Module):
                         "tensor_model_parallel_all_reduce was not importable."
                     )
                 shared_partial = self._tp_reduce(shared_partial)
-            out = out + shared_partial
+            shared_gate = torch.sigmoid(_linear(block_input, self.shared_expert_gate, self.compute_dtype))
+            out = out + shared_partial * shared_gate
         return out.to(self.params_dtype)
 
 
@@ -1261,10 +1355,6 @@ class AscendQwen4ExpModel(nn.Module):
             compute_dtype=self.dtype_policy.accumulation_dtype,
             use_combine=False,
         )
-        # Eager final RMSNorm (avoids the vLLM CustomOp config-context dependency
-        # on the host boot path); weight loaded as a dummy parameter.
-        self.norm_weight = nn.Parameter(torch.ones(self.hidden_size, dtype=self.dtype_policy.main_dtype))
-
         self.start_layer = 0
         self.end_layer = config.num_hidden_layers
         self._mtp_hidden_buffer: torch.Tensor | None = None
@@ -1313,7 +1403,6 @@ class AscendQwen4ExpModel(nn.Module):
         self._mtp_hidden_buffer = hidden_states
         # Final mixer collapses the streams to the sampled single-stream state.
         sample_hidden, _residual = self.hyper_connection_mixer.mix(hidden_states)
-        sample_hidden = _rms_norm(sample_hidden, self.norm_weight, self.eps, self.dtype_policy.accumulation_dtype)
         return sample_hidden.to(self.dtype_policy.main_dtype)
 
 
@@ -1387,7 +1476,7 @@ class AscendQwen4ExpForCausalLM(
     @classmethod
     def get_gdn_mamba_state_dtype_from_config(cls, vllm_config: VllmConfig) -> tuple[torch.dtype, torch.dtype]:
         policy = Qwen4ExpDtypePolicy.from_vllm_config(vllm_config)
-        return (policy.mamba_conv_cache_dtype, policy.mamba_ssm_cache_dtype)
+        return (policy.mamba_conv_cache_dtype, torch.float16)
 
     @classmethod
     def get_ple_mamba_state_dtype_from_config(cls, vllm_config: VllmConfig) -> tuple[torch.dtype, ...]:
@@ -1433,9 +1522,7 @@ class AscendQwen4ExpForCausalLM(
     ) -> MambaStateCopyFuncsByType:
         copy_funcs_by_type = {
             MambaAttentionBackendEnum.GDN_ATTN: cls.get_mamba_state_copy_func(),
-            MambaAttentionBackendEnum.SHORT_CONV: (
-                MambaStateCopyFuncCalculator.short_conv_state_copy_func()
-            ),
+            MambaAttentionBackendEnum.SHORT_CONV: (MambaStateCopyFuncCalculator.short_conv_state_copy_func()),
         }
         missing_types = mamba_types - copy_funcs_by_type.keys()
         assert not missing_types, f"missing state copy funcs for {missing_types}"
@@ -1473,9 +1560,9 @@ class AscendQwen4ExpForCausalLM(
         ``FullAttentionSpec`` (the QSA ring + compressed side-caches are tracked
         out-of-band by the model state, not the attention KV cache).
         """
-        del vllm_config  # specs are built from self.config / self.dtype_policy
         config = self.config
         policy = self.dtype_policy
+        tp_size = self.model.expert_sharding[1]
         head_dim = int(getattr(config, "head_dim", 0)) or (
             int(config.hidden_size) // int(getattr(config, "num_attention_heads", 1))
         )
@@ -1490,13 +1577,17 @@ class AscendQwen4ExpForCausalLM(
         for idx, layer_type in enumerate(self.model.layer_types):
             name = f"model.layers.{idx}.attention"
             if layer_type == _LAYER_TYPE_LINEAR and gdn_params is not None:
-                conv_dim = gdn_params.conv_dim
+                conv_dim = gdn_params.conv_dim // tp_size
                 spec[name] = MambaSpec(
                     shapes=(
                         (conv_dim, gdn_params.conv_kernel_size - 1),
-                        (gdn_params.num_v_heads, gdn_params.head_v_dim, gdn_params.head_k_dim),
+                        (
+                            gdn_params.num_v_heads // tp_size,
+                            gdn_params.head_v_dim,
+                            gdn_params.head_k_dim,
+                        ),
                     ),
-                    dtypes=(policy.mamba_conv_cache_dtype, policy.mamba_ssm_cache_dtype),
+                    dtypes=(policy.mamba_conv_cache_dtype, torch.float16),
                     block_size=DEFAULT_ATTENTION_BLOCK_SIZE,
                     mamba_type=MambaAttentionBackendEnum.GDN_ATTN,
                 )
@@ -1521,6 +1612,7 @@ class AscendQwen4ExpForCausalLM(
             int(config.hidden_size) // int(getattr(config, "num_attention_heads", 1))
         )
         num_kv_heads = int(getattr(config, "num_key_value_heads", 1))
+        tp_size = self.model.expert_sharding[1]
 
         full_attention_layers: dict[str, object] = {}
         mamba_layers: dict[str, object] = {}
@@ -1536,13 +1628,17 @@ class AscendQwen4ExpForCausalLM(
         for idx, layer_type in enumerate(self.model.layer_types):
             name = f"model.layers.{idx}"
             if layer_type == _LAYER_TYPE_LINEAR and gdn_params is not None:
-                conv_dim = gdn_params.conv_dim
+                conv_dim = gdn_params.conv_dim // tp_size
                 mamba_layers[f"{name}.linear_attn"] = MambaSpec(
                     shapes=(
                         (conv_dim, gdn_params.conv_kernel_size - 1),
-                        (gdn_params.num_v_heads, gdn_params.head_v_dim, gdn_params.head_k_dim),
+                        (
+                            gdn_params.num_v_heads // tp_size,
+                            gdn_params.head_v_dim,
+                            gdn_params.head_k_dim,
+                        ),
                     ),
-                    dtypes=(policy.mamba_conv_cache_dtype, policy.mamba_ssm_cache_dtype),
+                    dtypes=(policy.mamba_conv_cache_dtype, torch.float16),
                     block_size=DEFAULT_ATTENTION_BLOCK_SIZE,
                     mamba_type=MambaAttentionBackendEnum.GDN_ATTN,
                 )
@@ -1727,9 +1823,7 @@ class AscendQwen4ExpForCausalLM(
             local_conv = target.shape[0]
             with torch.no_grad():
                 target[0:lkd].copy_(src[tp_rank * lkd : (tp_rank + 1) * lkd].to(target.dtype))
-                target[lkd : 2 * lkd].copy_(
-                    src[fkd + tp_rank * lkd : fkd + (tp_rank + 1) * lkd].to(target.dtype)
-                )
+                target[lkd : 2 * lkd].copy_(src[fkd + tp_rank * lkd : fkd + (tp_rank + 1) * lkd].to(target.dtype))
                 target[2 * lkd : local_conv].copy_(
                     src[2 * fkd + tp_rank * lvd : 2 * fkd + (tp_rank + 1) * lvd].to(target.dtype)
                 )
@@ -1744,12 +1838,11 @@ class AscendQwen4ExpForCausalLM(
             if target is None:
                 return None
             local_v = target.shape[0] // 2
-            # in_proj_a and in_proj_b are separate [num_v_heads, hidden] tensors;
-            # each rank takes its local head slice (a -> rows [0, local_v),
-            # b -> rows [local_v, 2*local_v) of the fused in_proj_ba).
+            # in_proj_a and in_proj_b are separate [num_v_heads, hidden]
+            # tensors. Match vLLM's packed_modules_mapping order [b, a].
             src = tensor[tp_rank * local_v : (tp_rank + 1) * local_v]
             with torch.no_grad():
-                if base.endswith(".in_proj_a.weight"):
+                if base.endswith(".in_proj_b.weight"):
                     target[0:local_v].copy_(src.to(target.dtype))
                 else:
                     target[local_v : 2 * local_v].copy_(src.to(target.dtype))
@@ -1764,6 +1857,27 @@ class AscendQwen4ExpForCausalLM(
                 target.copy_(src.to(target.dtype))
             return base
 
+        if base.endswith(".in_proj_z.weight"):
+            tname = base[: -len(".weight")]
+            target = params.get(tname)
+            if target is None:
+                return None
+            src = tensor[tp_rank * lvd : (tp_rank + 1) * lvd]
+            with torch.no_grad():
+                target.copy_(src.to(target.dtype))
+            return tname
+
+        if base.endswith(".norm.weight"):
+            tname = base[: -len(".weight")] + "_weight"
+            target = params.get(tname)
+            if target is None:
+                return None
+            # GDN RMSNorm is over head_v_dim and is shared by all value heads,
+            # so every TP rank receives the complete vector.
+            with torch.no_grad():
+                target.copy_(tensor.to(target.dtype))
+            return tname
+
         if base.endswith(".out_proj.weight"):
             tname = base[: -len(".out_proj.weight")] + ".out_proj"
             target = params.get(tname)
@@ -1775,6 +1889,36 @@ class AscendQwen4ExpForCausalLM(
             return tname
 
         return None
+
+    def _place_qsa_q_gate_tensor(
+        self,
+        params: dict[str, torch.Tensor],
+        name: str,
+        tensor: torch.Tensor,
+    ) -> tuple[str, str] | None:
+        """Deinterleave a QSA checkpoint's per-head ``[query, gate]`` rows."""
+        if not name.endswith(".self_attn.q_proj.weight"):
+            return None
+        stem = name[: -len(".self_attn.q_proj.weight")] + ".attention"
+        q_name = stem + ".q_proj"
+        gate_name = stem + ".gate_proj"
+        q_target = params.get(q_name)
+        gate_target = params.get(gate_name)
+        if q_target is None or gate_target is None:
+            return None
+        num_heads = int(self.model.config.num_attention_heads)
+        head_dim = int(self.model.config.head_dim)
+        hidden_size = int(self.model.config.hidden_size)
+        expected_shape = (num_heads * 2 * head_dim, hidden_size)
+        if tuple(tensor.shape) != expected_shape:
+            raise ValueError(
+                f"{name}: expected interleaved QSA q/gate shape {expected_shape}, got {tuple(tensor.shape)}"
+            )
+        per_head = tensor.reshape(num_heads, 2, head_dim, hidden_size)
+        with torch.no_grad():
+            q_target.copy_(per_head[:, 0].reshape_as(q_target).to(q_target.dtype))
+            gate_target.copy_(per_head[:, 1].reshape_as(gate_target).to(gate_target.dtype))
+        return q_name, gate_name
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         """Load a real (or round-trip) checkpoint into the assembled model.
@@ -1855,6 +1999,10 @@ class AscendQwen4ExpForCausalLM(
                     if gdn_target is not None:
                         loaded.add(gdn_target)
                         continue
+                qsa_targets = self._place_qsa_q_gate_tensor(params, name, tensor)
+                if qsa_targets is not None:
+                    loaded.update(qsa_targets)
+                    continue
                 # Round-trip / already-mapped names (a state-dict by fused param
                 # name): strict full-shape copy before any checkpoint remap.
                 if param is not None and tuple(param.shape) == tuple(tensor.shape):
