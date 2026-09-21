@@ -50,15 +50,24 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn.functional as F
 from torch import nn
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
+from vllm.model_executor.layers.mamba.mamba_utils import MambaStateCopyFuncCalculator
 from vllm.model_executor.layers.vocab_parallel_embedding import (
     ParallelLMHead,
     VocabParallelEmbedding,
 )
+from vllm.v1.attention.backends.registry import MambaAttentionBackendEnum
+
+if TYPE_CHECKING:
+    from vllm.model_executor.layers.mamba.mamba_utils import (
+        MambaStateCopyFunc,
+        MambaStateCopyFuncsByType,
+    )
 from vllm.model_executor.models.interfaces import (
     HasInnerState,
     IsHybrid,
@@ -1239,6 +1248,42 @@ class AscendQwen4ExpForCausalLM(
     @classmethod
     def get_mamba_state_shape_from_config(cls, vllm_config: VllmConfig):
         return cls.get_gdn_mamba_state_shape_from_config(vllm_config)
+
+    @classmethod
+    def get_mamba_state_copy_func(cls) -> tuple[MambaStateCopyFunc, MambaStateCopyFunc]:
+        return MambaStateCopyFuncCalculator.gated_delta_net_state_copy_func()
+
+    @classmethod
+    def get_mamba_state_copy_funcs(
+        cls,
+        mamba_types: set[MambaAttentionBackendEnum],
+    ) -> MambaStateCopyFuncsByType:
+        copy_funcs_by_type = {
+            MambaAttentionBackendEnum.GDN_ATTN: cls.get_mamba_state_copy_func(),
+            MambaAttentionBackendEnum.SHORT_CONV: (
+                MambaStateCopyFuncCalculator.short_conv_state_copy_func()
+            ),
+        }
+        missing_types = mamba_types - copy_funcs_by_type.keys()
+        assert not missing_types, f"missing state copy funcs for {missing_types}"
+        return {mamba_type: copy_funcs_by_type[mamba_type] for mamba_type in mamba_types}
+
+    @classmethod
+    def get_mamba_specs_from_config(cls, vllm_config: VllmConfig) -> tuple[MambaSpec, ...]:
+        """All MambaSpecs: GDN layers + the PLE short-conv layer."""
+        return (
+            MambaSpec(
+                shapes=cls.get_gdn_mamba_state_shape_from_config(vllm_config),
+                dtypes=cls.get_gdn_mamba_state_dtype_from_config(vllm_config),
+                block_size=-1,
+            ),
+            MambaSpec(
+                shapes=cls.get_ple_mamba_state_shape_from_config(vllm_config),
+                dtypes=cls.get_ple_mamba_state_dtype_from_config(vllm_config),
+                block_size=-1,
+                tp_replicated=True,
+            ),
+        )
 
     # -- KV-cache spec materialization (T1.4) ------------------------------
 
