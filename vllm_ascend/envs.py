@@ -99,6 +99,14 @@ env_variables: dict[str, Callable[[], Any]] = {
     # bring-up flag only; leave it at 0 (default) for all production 310P runs
     # until MLA has been verified on hardware. Valid values: 0 or 1.
     "VLLM_ASCEND_310P_ENABLE_MLA": lambda: bool(int(os.getenv("VLLM_ASCEND_310P_ENABLE_MLA", "0"))),
+    # Fold each RMSNorm into the per-token activation quant of the W8A8 linear
+    # that consumes it, using the 310P npu_(add_)rms_norm_dynamic_quant kernels.
+    # Correct but off by default: it is free rather than a win. The fused
+    # kernel is 0.97x the cost of npu_add_rms_norm + npu_dynamic_quant at
+    # hidden 5120 but 1.6x at hidden 512-2048, and on Qwen3.8-27B prefill
+    # measures 983.2 against 984.0 tok/s. Unset installs no patch at all.
+    # See tools/310p/README.md. Valid values: "0" (default), "1".
+    "VLLM_ASCEND_ENABLE_FUSED_NORM_QUANT": lambda: bool(int(os.getenv("VLLM_ASCEND_ENABLE_FUSED_NORM_QUANT", "0"))),
     # Experimental: quantize the large FLOAT Qwen GDN qkvz projection weights
     # to per-output-channel INT8 at load time on Ascend 310P. The b/a gate and
     # output projections remain FLOAT to limit accuracy risk.

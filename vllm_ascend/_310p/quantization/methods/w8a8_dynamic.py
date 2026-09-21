@@ -235,6 +235,39 @@ class AscendW8A8DynamicLinearMethod310(AscendW8A8Linear310pScheme):
             output = output.unsqueeze(dim=1)
         return output
 
+    def apply_quantized(
+        self,
+        layer: torch.nn.Module,
+        quantized_x: torch.Tensor,
+        pertoken_scale: torch.Tensor,
+        bias: torch.Tensor | None = None,
+        output_dtype: torch.dtype | None = None,
+    ) -> torch.Tensor:
+        """``apply`` for an activation a caller has already quantized.
+
+        Lets a fused RMSNorm + quant kernel feed the matmul directly; see
+        ``vllm_ascend._310p.ops.fused_norm_quant``.
+        """
+        if output_dtype is None:
+            output_dtype = torch.float16
+        need_unsqz = False
+        if pertoken_scale.dim() == 2:
+            need_unsqz = True
+            quantized_x = quantized_x.squeeze(dim=1)
+            pertoken_scale = pertoken_scale.squeeze(dim=1)
+
+        output = torch_npu.npu_quant_matmul(
+            quantized_x,
+            layer.weight.data,
+            layer.weight_scale,
+            pertoken_scale=pertoken_scale,
+            bias=bias,
+            output_dtype=output_dtype,
+        )
+        if need_unsqz:
+            output = output.unsqueeze(dim=1)
+        return output
+
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
         # cast quantized weight tensors in NZ format for higher inference speed
         layer.weight.data = maybe_trans_nz(layer.weight.data).transpose(0, 1)
