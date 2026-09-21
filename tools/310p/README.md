@@ -58,15 +58,17 @@ these account for about 45% of it:
 
 | item | s/step | rate | vs peak |
 | --- | ---: | --- | --- |
-| UT transform (blocked) | 1.479 | | |
+| **all_reduce x128** | **2.282** | 4.7 GB/s | topology-bound |
 | MLP gate+up int8 | 0.828 | 56.4 TOP/s | 81% |
-| WY attn build (fp32) | 0.601 | | |
+| UT transform | 0.696 | | was 1.479, then 1.813 |
 | dynamic_quant [T x hidden] | 0.421 | 76.6 GB/s | ~38% |
 | MLP down int8 | 0.389 | 60.1 TOP/s | 86% |
 | GDN out_proj fp16 | 0.373 | 16.6 TFLOP/s | 47% |
+| WY attn build (fp32) | ~0.25 | | was 0.601 |
 | GDN in_proj_qkv int8 | 0.188 | 54.8 TOP/s | 78% |
 | GDN in_proj_z int8 | 0.129 | 47.8 TOP/s | 68% |
 | dynamic_quant [T x inter/TP] | 0.102 | 67.4 GB/s | ~33% |
+| decay mask | 0.048 | | was 0.399 |
 
 Peaks are per chip: ~70 TOPS INT8, ~35 TFLOPS FP16 (Atlas 300I Duo, 2 chips per
 card). What the table says:
@@ -78,6 +80,18 @@ in fp32, and fp32 matmul is a slow path on 310P. (The tell was that CANN needed
 ~10 minutes to compile these shapes on first call.) An earlier revision of this
 file called the WY prefix ~0.25% of step FLOPs and told you not to bother with
 it; that was arithmetic, not measurement, and it was wrong.
+
+**The all-reduce is the biggest single item and HCCL tuning will not move it.**
+128 calls a step (two per layer) of an 84 MB fp16 block, 17.8 ms each. 4.7 GB/s
+algorithmic, ~7 GB/s of link traffic per rank for a ring. The half-size message
+gives the same GB/s, so it is bandwidth-bound rather than latency-bound. Swept
+`HCCL_BUFFSIZE` (32/128/512), `HCCL_ALGO` (ring, fullmesh) and
+`HCCL_OP_BASE_FFTS_MODE_ENABLE`: the best was BUFFSIZE=512 at 3% off the
+collective, i.e. 0.7% of prefill, and the small buffers were worse. Do not
+re-sweep. Cutting this needs fewer collective bytes or a different hardware
+path, not an env var. (An earlier negative on HCCL tuning was measured at decode
+message sizes, where it is latency-bound; this one is the prefill regime, and it
+agrees.)
 
 **The INT8 GEMMs have no headroom.** 48-60 TOP/s against a ~70 TOPS peak is
 68-86% of the hardware. 1.53 s/step of the budget is essentially irreducible.
@@ -103,6 +117,8 @@ Measured on this box, so do not re-investigate without new evidence:
 - **Big GEMMs running unquantized.** 22.8 B of 24.3 B non-embedding params run
   INT8. Only GDN `out_proj` is fp16.
 - **INT8 Cube utilization.** 68-86% of peak, measured. Nothing to win.
+- **HCCL environment tuning.** Swept at the prefill message size. Best case
+  0.7% of prefill; see above.
 
 ## Served prefill, measured
 
