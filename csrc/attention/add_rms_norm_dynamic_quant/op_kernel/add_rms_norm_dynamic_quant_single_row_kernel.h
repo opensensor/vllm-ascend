@@ -9,14 +9,14 @@
  */
 
 /*!
- * \file add_rms_norm_dynamic_quant_single_row_kernel.h
+ * \file add_add_rms_norm_dynamic_quant_single_row_kernel.h
  * \brief
  */
 
 #ifndef ADD_RMS_NORM_DYNAMIC_QUANT_SINGLE_ROW_KERNEL_H_
 #define ADD_RMS_NORM_DYNAMIC_QUANT_SINGLE_ROW_KERNEL_H_
 
-#include "rms_norm_dynamic_quant_base.h"
+#include "add_rms_norm_dynamic_quant_base.h"
 
 template <typename T, typename T_Y, int TILING_KEY, int BUFFER_NUM = 1>
 class KernelAddRmsNormDynamicQuantSingleRow : public KernelAddRmsNormDynamicQuantBase<T, T_Y, TILING_KEY, BUFFER_NUM> {
@@ -27,12 +27,13 @@ public:
     }
 
     __aicore__ inline void Init(
-        GM_ADDR x, GM_ADDR gamma, GM_ADDR smooth1, GM_ADDR smooth2, GM_ADDR beta, GM_ADDR y1, GM_ADDR y2,
-        GM_ADDR outScale1, GM_ADDR outScale2, GM_ADDR workspace, const RmsNormDynamicQuantTilingData* tiling)
+        GM_ADDR x, GM_ADDR residual, GM_ADDR gamma, GM_ADDR smooth1, GM_ADDR smooth2, GM_ADDR beta, GM_ADDR y1,
+        GM_ADDR y2, GM_ADDR residualOut, GM_ADDR outScale1, GM_ADDR outScale2, GM_ADDR workspace,
+        const AddRmsNormDynamicQuantTilingData* tiling)
     {
         this->InitBaseParams(tiling);
-        this->InitInGlobalTensors(x, gamma, smooth1, smooth2, beta);
-        this->InitOutGlobalTensors(y1, y2, outScale1, outScale2);
+        this->InitInGlobalTensors(x, residual, gamma, smooth1, smooth2, beta);
+        this->InitOutGlobalTensors(y1, y2, residualOut, outScale1, outScale2);
 
         /*
           UB = 3 * alignedCol * sizeof(T)
@@ -40,10 +41,8 @@ public:
               + Count(bias) * alignedCol * sizeof(T)
               + 512Btyes(256 + reduceOut)
         */
-        // Only x streams through the queue now: gamma is loop-invariant and
-        // lives in gammaBufFp32 for the whole kernel.
-        Ppipe->InitBuffer(inRowsQue, BUFFER_NUM, this->numLastDimAligned * sizeof(T)); // D * 2
-        Ppipe->InitBuffer(yQue, BUFFER_NUM, this->numLastDimAligned * sizeof(T));      // D * 2
+        Ppipe->InitBuffer(inRowsQue, BUFFER_NUM, 2 * this->numLastDimAligned * sizeof(T)); // 2 * D * 2
+        Ppipe->InitBuffer(yQue, BUFFER_NUM, this->numLastDimAligned * sizeof(T));          // D * 2
 
         Ppipe->InitBuffer(xBufFp32, this->numLastDimAligned * sizeof(float));     // D * 4
         Ppipe->InitBuffer(yBufFp32, this->numLastDimAligned * sizeof(float));     // D * 4
@@ -72,7 +71,8 @@ public:
         for (int32_t loopIdx = 0; loopIdx < outLoopCount; ++loopIdx) {
             scalesLocalOut = scalesQue.template AllocTensor<float>();
             for (int32_t innerIdx = 0; innerIdx < ROW_FACTOR; ++innerIdx) {
-                CopyInX(gmOffset);
+                CopyInX1X2(gmOffset);
+                AddSingleRow(gmOffset);
                 ComputeRmsNorm(gmOffset);
                 CopyInSmooth();
                 ComputeDynamicQuant(innerIdx, scalesLocalOut, gmOffset);
@@ -86,7 +86,8 @@ public:
         {
             scalesLocalOut = scalesQue.template AllocTensor<float>();
             for (int32_t innerIdx = 0; innerIdx < outLoopTail; ++innerIdx) {
-                CopyInX(gmOffset);
+                CopyInX1X2(gmOffset);
+                AddSingleRow(gmOffset);
                 ComputeRmsNorm(gmOffset);
                 CopyInSmooth();
                 ComputeDynamicQuant(innerIdx, scalesLocalOut, gmOffset);
@@ -102,12 +103,7 @@ private:
     __aicore__ inline void ComputeRmsNorm(int32_t gmOffset)
     {
         LocalTensor<float> xLocalFp32 = xBufFp32.Get<float>();
-        LocalTensor<T> iputLocal = inRowsQue.template DeQue<T>();
         LocalTensor<float> yLocalFp32 = yBufFp32.Get<float>();
-        LocalTensor<T> yLocalB16 = yBufFp32.Get<T>();
-
-        Cast(xLocalFp32, iputLocal, RoundMode::CAST_NONE, this->numLastDim);
-        inRowsQue.FreeTensor(iputLocal);
 
         Mul(yLocalFp32, xLocalFp32, xLocalFp32, this->numLastDim); // yLocalFp32 <- x ** 2
         PipeBarrier<PIPE_V>();
@@ -235,11 +231,47 @@ private:
         scalesQue.FreeTensor(outScalesLocal);
     }
 
-    __aicore__ inline void CopyInX(int32_t gmOffset)
+    __aicore__ inline void CopyInX1X2(int32_t gmOffset)
     {
-        LocalTensor<T> xLocalIn = inRowsQue.template AllocTensor<T>();
-        DataCopyEx(xLocalIn[0], this->xGm[gmOffset], this->numLastDim);
-        inRowsQue.EnQue(xLocalIn);
+        LocalTensor<T> x1x2LocalIn = inRowsQue.template AllocTensor<T>();
+        DataCopyEx(x1x2LocalIn[0], this->xGm[gmOffset], this->numLastDim);
+        DataCopyEx(x1x2LocalIn[this->numLastDimAligned], this->residualGm[gmOffset], this->numLastDim);
+        inRowsQue.EnQue(x1x2LocalIn);
+    }
+
+    __aicore__ inline void AddSingleRow(int32_t gmOffset)
+    {
+        auto x1x2Local = inRowsQue.template DeQue<T>();
+        auto x1Local = x1x2Local[0];
+        auto x2Local = x1x2Local[this->numLastDimAligned];
+
+        auto xBufLocal = xBufFp32.Get<float>();
+        auto yBufLocal1 = yBufFp32.Get<float>();
+
+        Cast(xBufLocal, x1Local, RoundMode::CAST_NONE, this->numLastDim);
+        Cast(yBufLocal1, x2Local, RoundMode::CAST_NONE, this->numLastDim);
+        inRowsQue.FreeTensor(x1x2Local);
+        PipeBarrier<PIPE_V>();
+        Add(xBufLocal, yBufLocal1, xBufLocal, this->numLastDim); // xBufLocal <- x + residual
+        PipeBarrier<PIPE_V>();
+
+        // Emit the residual sum (x + residual) before the norm overwrites xBufLocal.
+        auto xLocal = yQue.template AllocTensor<T>();
+        Cast(xLocal, xBufLocal, RoundMode::CAST_NONE, this->numLastDim);
+        yQue.template EnQue<T>(xLocal);
+        PipeBarrier<PIPE_V>();
+        auto xOut = yQue.template DeQue<T>();
+        DataCopyEx(this->residualOutGm[gmOffset], xOut, this->numLastDim);
+        yQue.FreeTensor(xOut);
+    }
+
+    __aicore__ inline void CopyInSmooth()
+    {
+        if (this->oldDouble || this->newSingleSecond) {
+            LocalTensor<T> smoothCopyIn = inRowsQue.template AllocTensor<T>();
+            DataCopyEx(smoothCopyIn[0], this->smooth2Gm, this->numLastDim);
+            inRowsQue.EnQue(smoothCopyIn);
+        }
     }
 
     // gamma is the same for every row, so read it from GM and widen it to fp32
@@ -254,15 +286,6 @@ private:
         WaitFlag<HardEvent::MTE2_V>(eventMTE2V);
         Cast(gammaBufFp32.Get<float>(), gammaB16, RoundMode::CAST_NONE, this->numLastDim);
         PipeBarrier<PIPE_V>();
-    }
-
-    __aicore__ inline void CopyInSmooth()
-    {
-        if (this->oldDouble || this->newSingleSecond) {
-            LocalTensor<T> smoothCopyIn = inRowsQue.template AllocTensor<T>();
-            DataCopyEx(smoothCopyIn[0], this->smooth2Gm, this->numLastDim);
-            inRowsQue.EnQue(smoothCopyIn);
-        }
     }
 
     __aicore__ inline void CopyInBeta()

@@ -8,7 +8,7 @@
 # ======================================================================================================================
 
 # add_ops_compile_options(
-#         OP_NAME RmsNormDynamicQuant
+#         OP_NAME AddRmsNormDynamicQuant
 #         OPTIONS --cce-auto-sync=off
 #                 -Wno-deprecated-declarations
 #                 -Werror
@@ -17,16 +17,16 @@
 # )
 
 # target_sources(op_host_aclnn PRIVATE
-#         op_host/rms_norm_dynamic_quant_def.cpp
+#         op_host/add_rms_norm_dynamic_quant_def.cpp
 # )
 
 # target_sources(optiling PRIVATE
-#         op_host/rms_norm_dynamic_quant_tiling.cpp
+#         op_host/add_rms_norm_dynamic_quant_tiling.cpp
 # )
 
 # if (NOT BUILD_OPEN_PROJECT)
 #     target_sources(opmaster_ct PRIVATE
-#         op_host/rms_norm_dynamic_quant_tiling.cpp
+#         op_host/add_rms_norm_dynamic_quant_tiling.cpp
 #     )
 # endif ()
 
@@ -35,24 +35,24 @@
 # )
 
 # target_sources(opsproto PRIVATE
-#         op_host/rms_norm_dynamic_quant_proto.cpp
+#         op_host/add_rms_norm_dynamic_quant_proto.cpp
 # )
 
 add_op_to_compiled_list()
 
 if (BUILD_OPEN_PROJECT)
     target_sources(op_host_aclnn PRIVATE
-        rms_norm_dynamic_quant_def.cpp
+        add_rms_norm_dynamic_quant_def.cpp
     )
 endif()
 
 add_ops_compile_options(
-        OP_NAME RmsNormDynamicQuant
+        OP_NAME AddRmsNormDynamicQuant
         OPTIONS --cce-auto-sync=on
                 -Wno-deprecated-declarations
 )
 
 
 if (NOT BUILD_OPS_RTY_KERNEL)
-    add_modules_sources(OPTYPE rms_norm_dynamic_quant ACLNNTYPE aclnn)
+    add_modules_sources(OPTYPE add_rms_norm_dynamic_quant ACLNNTYPE aclnn)
 endif()

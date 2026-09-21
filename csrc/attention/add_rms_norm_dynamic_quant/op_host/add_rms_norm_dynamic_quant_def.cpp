@@ -9,17 +9,23 @@
  */
 
 /*!
- * \file rms_norm_dynamic_quant_def.cpp
+ * \file add_rms_norm_dynamic_quant_def.cpp
  * \brief
  */
 #include "register/op_def_registry.h"
 
 namespace ops {
-class RmsNormDynamicQuant : public OpDef {
+class AddRmsNormDynamicQuant : public OpDef {
 public:
-    explicit RmsNormDynamicQuant(const char* name) : OpDef(name)
+    explicit AddRmsNormDynamicQuant(const char* name) : OpDef(name)
     {
         this->Input("x")
+            .ParamType(REQUIRED)
+            .DataType({ge::DT_FLOAT16, ge::DT_FLOAT16, ge::DT_FLOAT16, ge::DT_FLOAT16})
+            .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND})
+            .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND})
+            .AutoContiguous();
+        this->Input("residual")
             .ParamType(REQUIRED)
             .DataType({ge::DT_FLOAT16, ge::DT_FLOAT16, ge::DT_FLOAT16, ge::DT_FLOAT16})
             .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND})
@@ -61,6 +67,12 @@ public:
             .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND})
             .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND})
             .AutoContiguous();
+        this->Output("x")
+            .ParamType(REQUIRED)
+            .DataType({ge::DT_FLOAT16, ge::DT_FLOAT16, ge::DT_FLOAT16, ge::DT_FLOAT16})
+            .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND})
+            .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND})
+            .AutoContiguous();
         this->Output("scale1")
             .ParamType(REQUIRED)
             .DataType({ge::DT_FLOAT, ge::DT_FLOAT, ge::DT_FLOAT, ge::DT_FLOAT})
@@ -90,5 +102,5 @@ public:
         this->AICore().AddConfig("ascend310p", aicoreConfig310p);
     }
 };
-OP_ADD(RmsNormDynamicQuant);
+OP_ADD(AddRmsNormDynamicQuant);
 } // namespace ops

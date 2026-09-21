@@ -9,7 +9,7 @@
  */
 
 /*!
- * \file add_rms_norm_dynamic_quant_helper.h
+ * \file add_add_rms_norm_dynamic_quant_helper.h
  * \brief
  */
 

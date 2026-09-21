@@ -9,23 +9,25 @@
  */
 
 /*!
- * \file add_rms_norm_dynamic_quant_tiling.cpp
+ * \file add_add_rms_norm_dynamic_quant_tiling.cpp
  * \brief
  */
-#include "rms_norm_dynamic_quant_tiling.h"
+#include "add_rms_norm_dynamic_quant_tiling.h"
 
 namespace optiling {
 
 constexpr int X_IDX = 0;
-constexpr int GAMMA_IDX = 1;
-constexpr int SMOOTH1_IDX = 2;
-constexpr int SMOOTH2_IDX = 3;
-constexpr int BETA_IDX = 4;
+constexpr int RESIDUAL_IDX = 1;
+constexpr int GAMMA_IDX = 2;
+constexpr int SMOOTH1_IDX = 3;
+constexpr int SMOOTH2_IDX = 4;
+constexpr int BETA_IDX = 5;
 
 constexpr int Y1_IDX = 0;
 constexpr int Y2_IDX = 1;
-constexpr int SCALE1_IDX = 2;
-constexpr int SCALE2_IDX = 3;
+constexpr int X_OUT_IDX = 2;
+constexpr int SCALE1_IDX = 3;
+constexpr int SCALE2_IDX = 4;
 
 constexpr int NUM_WITH_BETA = 4;
 constexpr int NUM_WITHOUT_BETA = 3;
@@ -97,7 +99,7 @@ static size_t GetworkspaceRowsNum(int32_t outQuant1Flag, int32_t outQuant2Flag, 
     return workspaceRowsNum;
 }
 
-void RmsNormDynamicQuantTilingHelper::SetTilingDataAndTilingKeyAndWorkSpace(RmsNormDynamicQuantTilingData* tiling)
+void AddRmsNormDynamicQuantTilingHelper::SetTilingDataAndTilingKeyAndWorkSpace(AddRmsNormDynamicQuantTilingData* tiling)
 {
     context_->SetBlockDim(this->useCore_);
     tiling->set_useCore(this->useCore_);
@@ -159,7 +161,7 @@ void RmsNormDynamicQuantTilingHelper::SetTilingDataAndTilingKeyAndWorkSpace(RmsN
         "SetTilingDataAndTilingKeyAndWorkSpace", "Tilingdata tilingKey = %u, usr Workspace: %zu", tilingKey, usrSize);
 }
 
-bool RmsNormDynamicQuantTilingHelper::DoTiling()
+bool AddRmsNormDynamicQuantTilingHelper::DoTiling()
 {
     OPS_CHECK(
         (nullptr == context_), OPS_LOG_E("AddRmsNormDynamicQuantTiling", "Helper context_ get nullptr, return failed."),
@@ -173,7 +175,7 @@ bool RmsNormDynamicQuantTilingHelper::DoTiling()
     return true;
 }
 
-bool RmsNormDynamicQuantTilingHelper::DoBlockTiling()
+bool AddRmsNormDynamicQuantTilingHelper::DoBlockTiling()
 {
     // Block Tiling, Cut N
     this->firstDimPerCore_ = CeilDiv(this->numFirstDim_, this->socCoreNums_);
@@ -195,7 +197,7 @@ bool RmsNormDynamicQuantTilingHelper::DoBlockTiling()
     return true;
 }
 
-bool RmsNormDynamicQuantTilingHelper::InitializePlatformInfo()
+bool AddRmsNormDynamicQuantTilingHelper::InitializePlatformInfo()
 {
     auto platformInfo = context_->GetPlatformInfo();
     // OP_CHECK_NULL_WITH_CONTEXT(context_, platformInfo);
@@ -207,7 +209,7 @@ bool RmsNormDynamicQuantTilingHelper::InitializePlatformInfo()
     return true;
 }
 
-bool RmsNormDynamicQuantTilingHelper::GetBaseInfo()
+bool AddRmsNormDynamicQuantTilingHelper::GetBaseInfo()
 {
     if (!InitializePlatformInfo()) {
         return false;
@@ -242,7 +244,7 @@ bool RmsNormDynamicQuantTilingHelper::GetBaseInfo()
     return true;
 }
 
-bool RmsNormDynamicQuantTilingHelper::ValidateBaseParameters()
+bool AddRmsNormDynamicQuantTilingHelper::ValidateBaseParameters()
 {
     OPS_CHECK(
         this->eps_ <= 0,
@@ -268,7 +270,7 @@ static ge::graphStatus CheckDtypeVaild(ge::DataType& srcDtype, std::vector<ge::D
     return ge::GRAPH_FAILED;
 }
 
-bool RmsNormDynamicQuantTilingHelper::ValidateInputOutput()
+bool AddRmsNormDynamicQuantTilingHelper::ValidateInputOutput()
 {
     // 检查输入输出形状
     OPS_CHECK(
@@ -287,7 +289,7 @@ bool RmsNormDynamicQuantTilingHelper::ValidateInputOutput()
     return true;
 }
 
-bool RmsNormDynamicQuantTilingHelper::CalculateShapeParameters()
+bool AddRmsNormDynamicQuantTilingHelper::CalculateShapeParameters()
 {
     // 设置数据类型大小
     this->dtSize_ = SIZEOF_B16;
@@ -333,7 +335,7 @@ bool RmsNormDynamicQuantTilingHelper::CalculateShapeParameters()
     return true;
 }
 
-bool RmsNormDynamicQuantTilingHelper::SetFlagsAndCheckConsistency()
+bool AddRmsNormDynamicQuantTilingHelper::SetFlagsAndCheckConsistency()
 {
     // 检查可选输入是否存在
     const gert::StorageShape* smooth1Shape = this->context_->GetOptionalInputShape(SMOOTH1_IDX);
@@ -367,7 +369,7 @@ bool RmsNormDynamicQuantTilingHelper::SetFlagsAndCheckConsistency()
     return true;
 }
 
-bool RmsNormDynamicQuantTilingHelper::GetShapeInfo()
+bool AddRmsNormDynamicQuantTilingHelper::GetShapeInfo()
 {
     // 验证输入输出
     if (!ValidateInputOutput()) {
@@ -390,7 +392,7 @@ bool RmsNormDynamicQuantTilingHelper::GetShapeInfo()
     return true;
 }
 
-bool RmsNormDynamicQuantTilingHelper::DoUbTiling()
+bool AddRmsNormDynamicQuantTilingHelper::DoUbTiling()
 {
     OPS_CHECK(CheckUbNormalTiling(), OPS_LOG_I(context_->GetNodeName(), "Ub Tiling: Normal."), return true);
     OPS_CHECK(CheckUbSingleRowTiling(), OPS_LOG_I(context_->GetNodeName(), "Ub Tiling: SingleRow."), return true);
@@ -398,7 +400,7 @@ bool RmsNormDynamicQuantTilingHelper::DoUbTiling()
     return false;
 }
 
-bool RmsNormDynamicQuantTilingHelper::CheckUbNormalTiling()
+bool AddRmsNormDynamicQuantTilingHelper::CheckUbNormalTiling()
 {
     // 3 weights tensor required.
     int64_t ubConst = 0;
@@ -438,10 +440,11 @@ bool RmsNormDynamicQuantTilingHelper::CheckUbNormalTiling()
     return ret;
 }
 
-bool RmsNormDynamicQuantTilingHelper::CheckUbSingleRowTiling()
+bool AddRmsNormDynamicQuantTilingHelper::CheckUbSingleRowTiling()
 {
-    // 3 b16 rows (x in, y out, smooth) and 3 fp32 rows (x, y, resident gamma)
-    int64_t ubRequired = (3 * this->dtSize_ + 3 * sizeof(float)) * this->numLastDimAligned_;
+    // 4 b16 rows (x and residual in, y out, smooth) and 3 fp32 rows
+    // (x, y, resident gamma)
+    int64_t ubRequired = (4 * this->dtSize_ + 3 * sizeof(float)) * this->numLastDimAligned_;
     ubRequired = ubRequired + 2L * ROW_FACTOR * sizeof(float);
     bool ret = (((int64_t)this->ubSize_) >= ubRequired);
     OPS_LOG_I(this->context_->GetNodeName(), "CheckUbSingleRowTiling, ret:%d, ubRequired: %ld", ret, ubRequired);
@@ -455,7 +458,7 @@ bool RmsNormDynamicQuantTilingHelper::CheckUbSingleRowTiling()
     return ret;
 }
 
-bool RmsNormDynamicQuantTilingHelper::CheckUbSliceDTiling()
+bool AddRmsNormDynamicQuantTilingHelper::CheckUbSliceDTiling()
 {
     // SliceD stores one fp32 scale per row. On 310P that is a sub-32B store,
     // which DataCopy cannot express without overwriting rows another core owns.
@@ -477,21 +480,21 @@ bool RmsNormDynamicQuantTilingHelper::CheckUbSliceDTiling()
     return true;
 }
 
-ge::graphStatus Tiling4RmsNormDynamicQuant(gert::TilingContext* context)
+ge::graphStatus Tiling4AddRmsNormDynamicQuant(gert::TilingContext* context)
 {
     OPS_CHECK(nullptr == context, OPS_LOG_E("AddRmsNormDynamicQuant", "Context is null"), return ge::GRAPH_FAILED);
-    OPS_LOG_I(context->GetNodeName(), "Enter Tiling4RmsNormDynamicQuant");
+    OPS_LOG_I(context->GetNodeName(), "Enter Tiling4AddRmsNormDynamicQuant");
     auto colShape = context->GetInputShape(GAMMA_IDX);
     // OP_CHECK_NULL_WITH_CONTEXT(context, colShape);
     auto colStorageShape = optiling::EnsureNotScalar(colShape->GetStorageShape());
     uint32_t col_val = colStorageShape.GetDim(0);
     bool isEmptyTensor = (col_val == 0);
-    auto ptrCompileInfo = reinterpret_cast<const RmsNormDynamicQuantCompileInfo*>(context->GetCompileInfo());
+    auto ptrCompileInfo = reinterpret_cast<const AddRmsNormDynamicQuantCompileInfo*>(context->GetCompileInfo());
     auto ascendcPlatform = platform_ascendc::PlatformAscendC(context->GetPlatformInfo());
     platform_ascendc::SocVersion curSocVersion =
         (ptrCompileInfo) == nullptr ? ascendcPlatform.GetSocVersion() : ptrCompileInfo->curSocVersion;
-    RmsNormDynamicQuantTilingData tiling;
-    RmsNormDynamicQuantTilingHelper instanceNormV3TilingHelper(context);
+    AddRmsNormDynamicQuantTilingData tiling;
+    AddRmsNormDynamicQuantTilingHelper instanceNormV3TilingHelper(context);
     bool status = instanceNormV3TilingHelper.DoTiling();
     OPS_CHECK(
         !status, OPS_LOG_E(context->GetNodeName(), "DoTiling Failed, return Failed."), return ge::GRAPH_FAILED);
@@ -500,14 +503,14 @@ ge::graphStatus Tiling4RmsNormDynamicQuant(gert::TilingContext* context)
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus TilingPrepare4RmsNormDynamicQuant(gert::TilingParseContext* context)
+ge::graphStatus TilingPrepare4AddRmsNormDynamicQuant(gert::TilingParseContext* context)
 {
     OPS_CHECK(nullptr == context, OPS_LOG_E("AddRmsNormDynamicQuant", "Context is null"), return ge::GRAPH_FAILED);
-    OPS_LOG_D(context->GetNodeName(), "Enter TilingPrepare4RmsNormDynamicQuant.");
+    OPS_LOG_D(context->GetNodeName(), "Enter TilingPrepare4AddRmsNormDynamicQuant.");
     fe::PlatFormInfos* platformInfoPtr = context->GetPlatformInfo();
     // OP_CHECK_NULL_WITH_CONTEXT(context, platformInfoPtr);
 
-    auto compileInfoPtr = context->GetCompiledInfo<RmsNormDynamicQuantCompileInfo>();
+    auto compileInfoPtr = context->GetCompiledInfo<AddRmsNormDynamicQuantCompileInfo>();
     // OP_CHECK_NULL_WITH_CONTEXT(context, compileInfoPtr);
 
     auto ascendcPlatform = platform_ascendc::PlatformAscendC(platformInfoPtr);
@@ -517,7 +520,7 @@ ge::graphStatus TilingPrepare4RmsNormDynamicQuant(gert::TilingParseContext* cont
     return ge::GRAPH_SUCCESS;
 }
 
-bool RmsNormDynamicQuantTilingHelper::CheckInputOutputShape()
+bool AddRmsNormDynamicQuantTilingHelper::CheckInputOutputShape()
 {
     // Check Shape Not NULL
     const gert::StorageShape* xShape = this->context_->GetInputShape(X_IDX);
@@ -567,8 +570,8 @@ bool RmsNormDynamicQuantTilingHelper::CheckInputOutputShape()
     return true;
 }
 
-IMPL_OP_OPTILING(RmsNormDynamicQuant)
-    .Tiling(Tiling4RmsNormDynamicQuant)
-    .TilingParse<RmsNormDynamicQuantCompileInfo>(TilingPrepare4RmsNormDynamicQuant);
+IMPL_OP_OPTILING(AddRmsNormDynamicQuant)
+    .Tiling(Tiling4AddRmsNormDynamicQuant)
+    .TilingParse<AddRmsNormDynamicQuantCompileInfo>(TilingPrepare4AddRmsNormDynamicQuant);
 
 } // namespace optiling

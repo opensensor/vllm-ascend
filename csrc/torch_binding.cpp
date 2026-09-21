@@ -1538,6 +1538,27 @@ void inplace_partial_rotary_mul_npu(at::Tensor & x, const at::Tensor &r1, const 
     EXEC_NPU_CMD(aclnnInplacePartialRotaryMul, x, r1, r2, it->second, partial_slice);
 }
 
+namespace {
+// The 310P kernels have no DataCopyPad and store the per-token scales in whole
+// 32B blocks, so the last core can run up to seven floats past the final row.
+// Back the scale tensor with storage rounded up to that block, and hand the op
+// a view of the real shape, so the surplus stays inside our own allocation.
+constexpr int64_t SCALE_ROWS_PER_BLOCK = 32 / static_cast<int64_t>(sizeof(float));
+
+at::Tensor empty_padded_scale(const at::Tensor& x, const c10::TensorOptions& options)
+{
+    constexpr int32_t SIZE = 8;
+    c10::SmallVector<int64_t, SIZE> scale_out_shape;
+    int64_t rows = 1;
+    for (size_t i = 0; i < x.sizes().size() - 1; i++) {
+        scale_out_shape.push_back(x.sizes()[i]);
+        rows *= x.sizes()[i];
+    }
+    const int64_t padded = (rows + SCALE_ROWS_PER_BLOCK - 1) / SCALE_ROWS_PER_BLOCK * SCALE_ROWS_PER_BLOCK;
+    return at::empty({padded}, options.dtype(at::kFloat)).narrow(0, 0, rows).view(scale_out_shape);
+}
+} // namespace
+
 std::tuple<at::Tensor, at::Tensor> npu_rms_norm_dynamic_quant_npu(
     const at::Tensor& x,
     const at::Tensor& gamma,
@@ -1545,24 +1566,25 @@ std::tuple<at::Tensor, at::Tensor> npu_rms_norm_dynamic_quant_npu(
     const c10::optional<at::Tensor>& beta,
     double epsilon)
 {
-    constexpr int32_t SIZE = 8;
     TORCH_CHECK(x.numel() > 0, "Input tensor x should not be empty.");
     TORCH_CHECK(gamma.numel() > 0, "Input tensor gamma should not be empty.");
     TORCH_CHECK(gamma.dim() == 1 && gamma.size(0) == x.size(-1), "gamma dim are not equal to last dim of x shape.");
     TORCH_CHECK(epsilon > 0, "epsilon should be greater than 0.");
+#ifdef ASCEND_PLATFORM_310P
+    // The 310P AI Core has no bfloat16, so the op definition declares fp16 only;
+    // reject it here rather than letting CANN report an OpDef dtype mismatch.
+    TORCH_CHECK(x.dtype() == at::kHalf, "x should be FLOAT16 on 310P.");
+#else
     TORCH_CHECK(x.dtype() == at::kHalf || x.dtype() == at::kBFloat16, "x should be FLOAT16, BFLOAT16.");
+#endif
 
     at::Tensor smooth_scale2{nullptr};
     auto options = x.options();
     at::Tensor y_out = at::empty_like(x, options.dtype(at::kChar));
     at::Tensor y2_out = at::empty({1}, options.dtype(at::kChar));
 
-    c10::SmallVector<int64_t, SIZE> scale_out_shape;
-    for (size_t i = 0; i < x.sizes().size() - 1; i++) {
-        scale_out_shape.push_back(x.sizes()[i]);
-    }
-    at::Tensor scale_out = at::empty(scale_out_shape, options.dtype(at::kFloat));
-    at::Tensor scale2_out = at::empty_like(scale_out);
+    at::Tensor scale_out = empty_padded_scale(x, options);
+    at::Tensor scale2_out = empty_padded_scale(x, options);
     std::array<bool, 2>* output_mask = nullptr;
     int64_t* dst_type = nullptr;
 
@@ -1570,6 +1592,47 @@ std::tuple<at::Tensor, at::Tensor> npu_rms_norm_dynamic_quant_npu(
                  y_out, y2_out, scale_out, scale2_out);
 
     return std::make_tuple(y_out, scale_out);
+}
+
+std::tuple<at::Tensor, at::Tensor, at::Tensor> npu_add_rms_norm_dynamic_quant_npu(
+    const at::Tensor& x,
+    const at::Tensor& residual,
+    const at::Tensor& gamma,
+    const c10::optional<at::Tensor>& smooth_scale,
+    const c10::optional<at::Tensor>& beta,
+    double epsilon)
+{
+    TORCH_CHECK(x.numel() > 0, "Input tensor x should not be empty.");
+    TORCH_CHECK(residual.numel() > 0, "Input tensor residual should not be empty.");
+    TORCH_CHECK(gamma.numel() > 0, "Input tensor gamma should not be empty.");
+    TORCH_CHECK(gamma.dim() == 1 && gamma.size(0) == x.size(-1), "gamma dim are not equal to last dim of x shape.");
+    TORCH_CHECK(epsilon > 0, "epsilon should be greater than 0.");
+#ifdef ASCEND_PLATFORM_310P
+    // The 310P AI Core has no bfloat16, so the op definition declares fp16 only;
+    // reject it here rather than letting CANN report an OpDef dtype mismatch.
+    TORCH_CHECK(x.dtype() == at::kHalf, "x should be FLOAT16 on 310P.");
+#else
+    TORCH_CHECK(x.dtype() == at::kHalf || x.dtype() == at::kBFloat16, "x should be FLOAT16, BFLOAT16.");
+#endif
+
+    at::Tensor smooth_scale2{nullptr};
+    auto options = x.options();
+    at::Tensor y_out = at::empty_like(x, options.dtype(at::kChar));
+    at::Tensor y2_out = at::empty({1}, options.dtype(at::kChar));
+    // AddRmsNormDynamicQuant folds the residual add into its first argument in
+    // place -- xRef is both the x input and the x output, and the aclnn
+    // signature has no separate slot for it. Hand it a copy so x is left alone.
+    at::Tensor residual_out = x.clone();
+
+    at::Tensor scale_out = empty_padded_scale(x, options);
+    at::Tensor scale2_out = empty_padded_scale(x, options);
+    std::array<bool, 2>* output_mask = nullptr;
+    int64_t* dst_type = nullptr;
+
+    EXEC_NPU_CMD(aclnnAddRmsNormDynamicQuant, residual_out, residual, gamma, smooth_scale, smooth_scale2, beta,
+                 epsilon, output_mask, dst_type, y_out, y2_out, scale_out, scale2_out);
+
+    return std::make_tuple(y_out, scale_out, residual_out);
 }
 
 void validate_kv_compress_epilog_inputs(
@@ -2788,6 +2851,29 @@ TORCH_LIBRARY_EXPAND(CONCAT(_C, _ascend), ops)
         "kda_layout_swap12(Tensor x, *, Tensor? dependency=None) -> Tensor"
     );
     ops.impl("kda_layout_swap12", torch::kPrivateUse1, &vllm_ascend::kda_layout_swap12);
+
+    ops.def(
+        "npu_rms_norm_dynamic_quant("
+            "Tensor x, "
+            "Tensor gamma, "
+            "Tensor? smooth_scale=None, "
+            "Tensor? beta=None, "
+            "float epsilon=1e-6"
+        ") -> (Tensor y_out, Tensor scale_out)"
+        );
+    ops.impl("npu_rms_norm_dynamic_quant", torch::kPrivateUse1, &vllm_ascend::npu_rms_norm_dynamic_quant_npu);
+
+    ops.def(
+        "npu_add_rms_norm_dynamic_quant("
+            "Tensor x, "
+            "Tensor residual, "
+            "Tensor gamma, "
+            "Tensor? smooth_scale=None, "
+            "Tensor? beta=None, "
+            "float epsilon=1e-6"
+        ") -> (Tensor y_out, Tensor scale_out, Tensor residual_out)"
+        );
+    ops.impl("npu_add_rms_norm_dynamic_quant", torch::kPrivateUse1, &vllm_ascend::npu_add_rms_norm_dynamic_quant_npu);
 }
 #else
 // Pybind on other platform
@@ -3407,6 +3493,18 @@ TORCH_LIBRARY_EXPAND(CONCAT(_C, _ascend), ops)
         ") -> (Tensor y_out, Tensor scale_out)"
         );
     ops.impl("npu_rms_norm_dynamic_quant", torch::kPrivateUse1, &vllm_ascend::npu_rms_norm_dynamic_quant_npu);
+
+    ops.def(
+        "npu_add_rms_norm_dynamic_quant("
+            "Tensor x, "
+            "Tensor residual, "
+            "Tensor gamma, "
+            "Tensor? smooth_scale=None, "
+            "Tensor? beta=None, "
+            "float epsilon=1e-6"
+        ") -> (Tensor y_out, Tensor scale_out, Tensor residual_out)"
+        );
+    ops.impl("npu_add_rms_norm_dynamic_quant", torch::kPrivateUse1, &vllm_ascend::npu_add_rms_norm_dynamic_quant_npu);
 
     ops.def(
         "kv_compress_epilog("

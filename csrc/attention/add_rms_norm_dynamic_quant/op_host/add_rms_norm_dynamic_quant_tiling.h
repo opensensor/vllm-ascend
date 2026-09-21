@@ -8,7 +8,7 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 /*!
- * \file add_rms_norm_dynamic_quant_tiling.h
+ * \file add_add_rms_norm_dynamic_quant_tiling.h
  */
 #ifndef OPS_BUILT_IN_OP_TILING_RUNTIME_ADD_RMS_NORM_DYN_QUANT_TILING_H
 #define OPS_BUILT_IN_OP_TILING_RUNTIME_ADD_RMS_NORM_DYN_QUANT_TILING_H
@@ -23,7 +23,7 @@
 #include "platform/platform_info.h"
 
 namespace optiling {
-BEGIN_TILING_DATA_DEF(RmsNormDynamicQuantTilingData)
+BEGIN_TILING_DATA_DEF(AddRmsNormDynamicQuantTilingData)
 TILING_DATA_FIELD_DEF(uint64_t, useCore);
 TILING_DATA_FIELD_DEF(uint64_t, numFirstDim);
 TILING_DATA_FIELD_DEF(uint64_t, numLastDim);
@@ -43,7 +43,7 @@ TILING_DATA_FIELD_DEF(float, avgFactor);
 TILING_DATA_FIELD_DEF(uint32_t, betaFlag);
 END_TILING_DATA_DEF;
 
-REGISTER_TILING_DATA_CLASS(RmsNormDynamicQuant, RmsNormDynamicQuantTilingData);
+REGISTER_TILING_DATA_CLASS(AddRmsNormDynamicQuant, AddRmsNormDynamicQuantTilingData);
 
 constexpr uint32_t TILING_TYPE_NORMAL = 0;
 constexpr uint32_t TILING_TYPE_SPILT = 1;
@@ -51,7 +51,7 @@ constexpr uint32_t TILING_OFFSET_HAS_QUANT = 10;
 constexpr uint32_t TILING_OFFSET_REGBASE = 100;
 constexpr uint64_t TILING_KEY_UNRUN = 199;
 
-struct RmsNormDynamicQuantCompileInfo {
+struct AddRmsNormDynamicQuantCompileInfo {
     platform_ascendc::SocVersion curSocVersion = platform_ascendc::SocVersion::ASCEND910B;
     uint64_t totalCoreNum = 0;
     uint64_t maxUbSize = 0;
@@ -74,14 +74,14 @@ inline const gert::Shape& EnsureNotScalar(const gert::Shape& inShape)
     return inShape;
 }
 
-class RmsNormDynamicQuantTilingHelper {
+class AddRmsNormDynamicQuantTilingHelper {
 public:
-    explicit RmsNormDynamicQuantTilingHelper(gert::TilingContext* context) : context_(context)
+    explicit AddRmsNormDynamicQuantTilingHelper(gert::TilingContext* context) : context_(context)
     {}
 
-    ~RmsNormDynamicQuantTilingHelper() = default;
+    ~AddRmsNormDynamicQuantTilingHelper() = default;
     bool DoTiling();
-    void SetTilingDataAndTilingKeyAndWorkSpace(RmsNormDynamicQuantTilingData* tiling);
+    void SetTilingDataAndTilingKeyAndWorkSpace(AddRmsNormDynamicQuantTilingData* tiling);
 
 private:
     bool GetBaseInfo();
