@@ -125,3 +125,41 @@ local reconstruction does not reproduce.
 the most promising path** to reach the golden's stable regime AND likely sidesteps
 this MSE-specific runtime blowup — pending the loader/kernel W4 support scoped in
 `glm-w2-quant-quality-plan.md` and on-device validation.
+
+## UPDATE 3 (2026-09-20, runtime MoE instrumentation — ROOT CAUSE: feedback resonance)
+
+Wrapped `AscendW2DynamicFusedMoEMethod310.apply` to log per-MoE-layer (rank-0)
+input/output RMS + topk_weights (`moe_probe_log.json`). Findings:
+- Per-layer routed gain (out/in) is BOUNDED but grows with depth: ~0.3 (L3) →
+  ~9 (L42), tracking the experts' spectral norm (~6–9). NOT the 500× I feared —
+  the earlier 85× was `mlp_out` after the `×2.5` combine + EP all-reduce (this
+  probe sees only rank-0's expert shard: `tw_sum`~0.2 partials, and out=0 on
+  layers where rank-0 held none of the selected experts — an EP artifact, NOT
+  dead layers).
+- **ROOT CAUSE = positive-feedback resonance.** The mHC residual accumulates →
+  the (RMS-normed, bounded) layer input direction increasingly aligns with each
+  MoE's dominant singular vector → per-layer gain climbs to ~spectral (6–9) →
+  `routed_scaling_factor=2.5` pushes the residual-accumulation loop gain >1 at
+  depth → the residual grows geometrically (L8–L10 onset, RMS 525 by L44).
+- **Why MSE-specific / not a code bug:** golden (bf16) and minmax-W2 don't
+  resonate (golden accurate; minmax noisier + no clipping). MSE's MSE-optimal
+  scale CLIPS block outliers, introducing a *correlated* bias that stays aligned
+  across layers and sustains the resonance. Dequant is bit-identical to the
+  reference (checked), weights/gammas/input all correct — this is a
+  fidelity-driven numerical instability, not a bug in the eager path.
+
+## Path to a WORKING model
+1. **W4 experts (recommended).** Golden (nvfp4, ~4-bit) is stable+coherent; W4 on
+   310P should replicate that regime (fidelity 0.99, minimal clipping → no
+   correlated bias → no resonance). Now known to FIT: 310P3 chips are ~43 GB each
+   (full W4 experts = 38.3 GB/chip). Needs converter W4 emit + loader W4 read
+   (`[out, in//2]`, 2 codes/byte) + eager `dequantize_w4` in `_apply_device`
+   (kernel later for speed). Biggest lift; highest confidence of coherence.
+2. **Cheap de-risk first (optional):** re-convert with a MILDER MSE scale
+   (`frac≈0.45` vs the 0.30 optimum → less clipping, fidelity ~0.88, between
+   minmax 0.83 and MSE 0.92). If the residual stays bounded, it confirms
+   clipping-bias drives the resonance; but W2 fidelity may still be too low for
+   full coherence (minmax 0.83 is stable yet incoherent), so this is a diagnostic
+   step, not necessarily the final fix.
+
+Both need the box + a re-convert (~75 min) + a capture. W4 is the likely endgame.
