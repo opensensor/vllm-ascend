@@ -71,3 +71,57 @@ bounded (L44 layer_out RMS ~0.82). So MSE **triggers** this; it is not the sole 
 - Artifacts: `golden_ascend_activations_deep.npz` (dense-tap Ascend MSE),
   `golden_ascend_activations_72mse.npz`, `golden_gpu_activations.npz` (golden),
   `compare_activations.py`.
+
+## UPDATE 2 (2026-09-20, input/output probe — narrowed to a runtime MoE effect)
+
+Probe (`golden_ascend_activations_probe.npz`) captured actual module INPUTS
+(forward_pre_hook) vs outputs at dense depths. Decisive results:
+
+| L | mlp_IN rms | mlp_IN max/rms | mlp_OUT rms | gain (OUT/IN) |
+|---|---|---|---|---|
+| 4 | 0.25 | 5.2 | 0.05 | 0.21 |
+| 7 | 0.26 | 5.1 | 0.06 | 0.23 |
+| 10 | 0.27 | 4.8 | **3.06** | **11.3** |
+| 25 | 0.32 | 1.3 | 10.35 | 32 |
+| 42 | 0.62 | 1.1 | 53.1 | 85 |
+
+**Ruled out (all measured):**
+- mHC input norm WORKS — `mlp_IN` is bounded ~0.25–0.62 RMS at every layer, and
+  at deep layers it is WELL-CONDITIONED (max/rms ~1.1, no outlier channels).
+- Expert weights are correct and LOW-gain, constant across depth: local
+  reconstruction (dequant MSE weights, random RMS-0.3 input) gives per-routed-expert
+  gain ~0.16 and shared-expert gain ~0.13; spectral norms only ~3–7. A single MoE
+  layer's correct output for a 0.6 input is ~0.1–0.3, NOT 53.
+- Not input outliers, not weight magnitude, not the mHC.
+
+**The unresolved core:** the RUNTIME MoE output at L10+ is ~500× larger than the
+correct expert math, from a bounded well-conditioned input, with correct low-gain
+weights. L3/L4/L7 MoE layers are correct (gain ~0.2); the blowup switches on at
+~L10 and compounds. AND it is MSE-specific: the SAME eager `_apply_device` path
+gives bounded output for the minmax-W2 weights but exploding output for MSE-W2,
+even though both weight sets reconstruct to identical local gain (~0.16). So it is
+neither a pure weight bug nor a pure code bug — it is a runtime interaction that
+local reconstruction does not reproduce.
+
+**Leading hypotheses (need on-device to disambiguate):**
+1. Runtime combine/router: topk_weights not summing to 1 on-device, or too many
+   experts summed — but router_logits matched golden (cos 0.99) at L3–L7.
+2. A precision/accumulation effect in the eager device GEMM sensitive to MSE's
+   distribution (smaller scales → larger codes: MSE scale ~0.30·absmax vs minmax
+   ~0.67, so MSE codes use more of {-2..1}) that only bites past some depth.
+3. A per-layer structural difference at L8–L10 (attention type / MoE variant) that
+   changes the runtime path.
+
+**Exact next on-device experiments (when box is available):**
+1. Inside `Glm5NextW2MoE.forward` / `_apply_device`, capture SEPARATELY: the actual
+   expert input tensor, the routed-only output (pre-`*2.5`), the shared-only output,
+   and `topk_weights.sum(-1)`, at L7 (good) vs L10 (bad). Pinpoints the component.
+2. A/B `routed_scaling_factor` 2.5→1.0 and re-diff (confirms the routed term).
+3. If it is MSE-distribution precision: re-check the eager dequant/GEMM dtype on
+   310P for MSE codes vs minmax.
+
+**Reframed recommendation:** since golden (nvfp4, 0.99) is stable+coherent and the
+310P3 chips are ~43 GB each (full W4 experts = 38.3 GB/chip FITS), **W4 experts is
+the most promising path** to reach the golden's stable regime AND likely sidesteps
+this MSE-specific runtime blowup — pending the loader/kernel W4 support scoped in
+`glm-w2-quant-quality-plan.md` and on-device validation.
