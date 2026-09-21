@@ -1417,24 +1417,22 @@ class AscendQwen4ExpForCausalLM(
             # Non-expert tensor: rewrite prefix, then load by name + shape.
             for name, tensor in self.hf_to_vllm_mapper.apply([(raw_name, weight)]):
                 param = params.get(name)
-                if param is None:
-                    continue
                 # Vocab-parallel embedding / LM head are dim-0 sharded under a
                 # real TP group: route through their weight_loader (which slices
                 # the checkpoint's full [vocab, hidden] row to this rank's shard
                 # and pads) instead of the strict full-shape copy, which would
                 # otherwise silently skip them on TP>1.
-                if name == "model.embed_tokens.weight":
+                if name == "model.embed_tokens.weight" and param is not None:
                     self.model.embed_tokens.weight_loader(param, tensor)
                     loaded.add(name)
                     continue
-                if name == "lm_head.weight":
+                if name == "lm_head.weight" and param is not None:
                     self.lm_head.weight_loader(param, tensor)
                     loaded.add(name)
                     continue
                 # Round-trip / already-mapped names (a state-dict by fused param
                 # name): strict full-shape copy before any checkpoint remap.
-                if tuple(param.shape) == tuple(tensor.shape):
+                if param is not None and tuple(param.shape) == tuple(tensor.shape):
                     with torch.no_grad():
                         param.copy_(tensor.to(param.dtype))
                     loaded.add(name)
