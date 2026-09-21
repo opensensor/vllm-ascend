@@ -449,6 +449,19 @@ def _register_in_static_forward_context(prefix: str, module: nn.Module) -> None:
     compilation_config.static_forward_context[prefix] = module
 
 
+def _resolve_attn_backend(head_size: int, dtype: torch.dtype) -> type[AttentionBackend]:
+    """Select the Ascend attention backend for an eager attention stub.
+
+    Resolved eagerly during ``__init__`` (inside the config context) so that
+    :meth:`get_attn_backend` never needs ``get_current_vllm_config()`` at call
+    time; the v1 runner queries backends from ``get_supported_kv_cache_layouts``
+    before the config context is (re)established on the worker.
+    """
+    from vllm.v1.attention.selector import get_attn_backend as _select
+
+    return _select(head_size=head_size, dtype=dtype, kv_cache_dtype=None)
+
+
 class _EagerDenseAttention(nn.Module, AttentionLayerBase):
     """Eager causal GQA (used for ``full_attention`` layers without an indexer).
 
@@ -470,15 +483,20 @@ class _EagerDenseAttention(nn.Module, AttentionLayerBase):
         self.head_dim = int(getattr(config, "head_dim", hidden // self.num_heads))
         self.group_size = self.num_heads // self.num_kv_heads
         self.scale = self.head_dim**-0.5
+        self._attn_backend: type[AttentionBackend] | None = (
+            _resolve_attn_backend(self.head_dim, self.params_dtype)
+            if get_current_vllm_config_or_none() is not None
+            else None
+        )
         self.q_proj = nn.Parameter(torch.zeros(self.num_heads * self.head_dim, hidden, dtype=self.params_dtype))
         self.k_proj = nn.Parameter(torch.zeros(self.num_kv_heads * self.head_dim, hidden, dtype=self.params_dtype))
         self.v_proj = nn.Parameter(torch.zeros(self.num_kv_heads * self.head_dim, hidden, dtype=self.params_dtype))
         self.o_proj = nn.Parameter(torch.zeros(hidden, self.num_heads * self.head_dim, dtype=self.params_dtype))
 
     def get_attn_backend(self) -> type[AttentionBackend]:
-        from vllm.v1.attention.selector import get_attn_backend as _select
-
-        return _select(head_size=self.head_dim, dtype=self.params_dtype, kv_cache_dtype=None)
+        if self._attn_backend is None:
+            self._attn_backend = _resolve_attn_backend(self.head_dim, self.params_dtype)
+        return self._attn_backend
 
     def get_kv_cache_spec(self, vllm_config: object) -> FullAttentionSpec:
         del vllm_config
@@ -606,6 +624,11 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
         self.head_dim = int(getattr(config, "head_dim", 256))
         self.index_n_heads = int(getattr(config, "indexer_n_heads", 4))
         self.index_head_dim = int(getattr(config, "indexer_head_dim", 128))
+        self._attn_backend: type[AttentionBackend] | None = (
+            _resolve_attn_backend(self.head_dim, self.params_dtype)
+            if get_current_vllm_config_or_none() is not None
+            else None
+        )
 
         self.q_proj = nn.Parameter(torch.zeros(self.num_heads * self.head_dim, hidden, dtype=self.params_dtype))
         self.k_proj = nn.Parameter(torch.zeros(self.num_kv_heads * self.head_dim, hidden, dtype=self.params_dtype))
@@ -621,9 +644,9 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
         self.attn = AscendQwen4ExpQSAAttention(config=config, layer_idx=layer_idx, dtype_policy=dtype_policy)
 
     def get_attn_backend(self) -> type[AttentionBackend]:
-        from vllm.v1.attention.selector import get_attn_backend as _select
-
-        return _select(head_size=self.head_dim, dtype=self.params_dtype, kv_cache_dtype=None)
+        if self._attn_backend is None:
+            self._attn_backend = _resolve_attn_backend(self.head_dim, self.params_dtype)
+        return self._attn_backend
 
     def get_kv_cache_spec(self, vllm_config: object) -> FullAttentionSpec:
         del vllm_config
