@@ -192,7 +192,6 @@ def _remap_non_expert(name: str, config: object) -> list[tuple[str, slice | None
     """
     hidden = int(config.hidden_size)
     hc_hidden = int(getattr(config, "hc_count", 2)) * hidden
-    gdn_num_v = int(getattr(config, "linear_num_value_heads", 0) or 0)
     index_rows = int(getattr(config, "indexer_n_heads", 4)) * int(getattr(config, "indexer_head_dim", 128))
     qsa_q_rows = int(getattr(config, "num_attention_heads", 24)) * int(getattr(config, "head_dim", 256))
 
@@ -228,22 +227,10 @@ def _remap_non_expert(name: str, config: object) -> list[tuple[str, slice | None
     if ".mlp.shared_expert_gate" in name:
         return None  # eager stand-in has no shared-expert gate scalar
 
-    # GDN linear-attention projections (checkpoint `linear_attn` -> model `attention`).
+    # GDN linear-attention projections (checkpoint `linear_attn` -> model
+    # `attention`) are TP-sharded and placed by the dedicated `_place_gdn_tensor`
+    # handler in load_weights, so skip them here.
     if ".linear_attn." in name:
-        base = name.replace(".linear_attn.", ".attention.")
-        if base.endswith(".in_proj_qkv.weight"):
-            return plain(base[: -len(".weight")])
-        if base.endswith(".conv1d.weight"):
-            return plain(base[: -len(".conv1d.weight")] + ".conv_weight")
-        if base.endswith(".in_proj_a.weight"):
-            return [(base[: -len(".in_proj_a.weight")] + ".in_proj_ba", None, 0)]
-        if base.endswith(".in_proj_b.weight"):
-            return [(base[: -len(".in_proj_b.weight")] + ".in_proj_ba", None, gdn_num_v)]
-        if base.endswith(".A_log") or base.endswith(".dt_bias"):
-            return plain(base)
-        if base.endswith(".out_proj.weight"):
-            return plain(base[: -len(".weight")])
-        # in_proj_z / norm are not yet owned by the eager GDN stand-in.
         return None
 
     # QSA sparse attention (checkpoint `self_attn` -> model `attention`).
@@ -534,7 +521,14 @@ class _GDNAttention(nn.Module, MambaBase):
     not read/written by the eager math.
     """
 
-    def __init__(self, *, config: object, dtype_policy: Qwen4ExpDtypePolicy, prefix: str = "") -> None:
+    def __init__(
+        self,
+        *,
+        config: object,
+        dtype_policy: Qwen4ExpDtypePolicy,
+        prefix: str = "",
+        expert_sharding: tuple[int, int] = (0, 1),
+    ) -> None:
         super().__init__()
         _register_in_static_forward_context(prefix, self)
         self.compute_dtype = dtype_policy.accumulation_dtype
@@ -542,22 +536,48 @@ class _GDNAttention(nn.Module, MambaBase):
         self.mamba_conv_dtype = dtype_policy.mamba_conv_cache_dtype
         self.mamba_ssm_dtype = dtype_policy.mamba_ssm_cache_dtype
         self.params = _gdn_params_from_config(config)
+        self.tp_rank, self.tp_size = (int(expert_sharding[0]), int(expert_sharding[1]))
+        if self.tp_size < 1 or not 0 <= self.tp_rank < self.tp_size:
+            raise ValueError(f"expert_sharding={expert_sharding} out of range")
         hidden = int(config.hidden_size)
         p = self.params
-        self.in_proj_qkv = nn.Parameter(torch.zeros(p.conv_dim, hidden, dtype=self.params_dtype))
-        self.conv_weight = nn.Parameter(torch.zeros(p.conv_dim, p.conv_kernel_size, dtype=self.params_dtype))
-        self.in_proj_ba = nn.Parameter(torch.zeros(2 * p.num_v_heads, hidden, dtype=self.params_dtype))
-        self.A_log = nn.Parameter(torch.zeros(p.num_v_heads, dtype=self.params_dtype))
-        self.dt_bias = nn.Parameter(torch.zeros(p.num_v_heads, dtype=self.params_dtype))
-        self.out_proj = nn.Parameter(torch.zeros(hidden, p.value_dim, dtype=self.params_dtype))
+        # TP-shard the GDN heads evenly: the gated delta rule is independent per
+        # value head (q/k are expanded to the v heads via repeat_interleave), so
+        # splitting both num_k_heads and num_v_heads keeps the 3:1 group ratio
+        # and the recurrent state is sharded per rank. out_proj is row-parallel.
+        if p.num_k_heads % self.tp_size or p.num_v_heads % self.tp_size:
+            raise ValueError(
+                f"GDN heads (k={p.num_k_heads}, v={p.num_v_heads}) not divisible by TP {self.tp_size}"
+            )
+        self.num_k_heads = p.num_k_heads // self.tp_size
+        self.num_v_heads = p.num_v_heads // self.tp_size
+        self.key_dim = p.head_k_dim * self.num_k_heads
+        self.value_dim = p.head_v_dim * self.num_v_heads
+        self.conv_dim = 2 * self.key_dim + self.value_dim
+        self.in_proj_qkv = nn.Parameter(torch.zeros(self.conv_dim, hidden, dtype=self.params_dtype))
+        self.conv_weight = nn.Parameter(torch.zeros(self.conv_dim, p.conv_kernel_size, dtype=self.params_dtype))
+        self.in_proj_ba = nn.Parameter(torch.zeros(2 * self.num_v_heads, hidden, dtype=self.params_dtype))
+        self.A_log = nn.Parameter(torch.zeros(self.num_v_heads, dtype=self.params_dtype))
+        self.dt_bias = nn.Parameter(torch.zeros(self.num_v_heads, dtype=self.params_dtype))
+        self.out_proj = nn.Parameter(torch.zeros(hidden, self.value_dim, dtype=self.params_dtype))
+        self._tp_reduce: object | None = None
+        if self.tp_size > 1:
+            try:
+                from vllm.distributed import tensor_model_parallel_all_reduce
+
+                self._tp_reduce = tensor_model_parallel_all_reduce
+            except Exception:
+                self._tp_reduce = None
 
     @property
     def mamba_type(self) -> MambaAttentionBackendEnum:
         return MambaAttentionBackendEnum.GDN_ATTN
 
     def get_state_shape(self) -> tuple[tuple[int, ...], ...]:
-        p = self.params
-        return ((p.conv_dim, p.conv_kernel_size - 1), (p.num_v_heads, p.head_v_dim, p.head_k_dim))
+        return (
+            (self.conv_dim, self.params.conv_kernel_size - 1),
+            (self.num_v_heads, self.params.head_v_dim, self.params.head_k_dim),
+        )
 
     def get_state_dtype(self) -> tuple[torch.dtype, ...]:
         return (self.mamba_conv_dtype, self.mamba_ssm_dtype)
@@ -579,12 +599,12 @@ class _GDNAttention(nn.Module, MambaBase):
         p = self.params
         mixed = _linear(block_input, self.in_proj_qkv, self.compute_dtype)
         mixed = gdn_short_conv(mixed, self.conv_weight, activation="silu", compute_dtype=self.compute_dtype)
-        q, k, v = torch.split(mixed, [p.key_dim, p.key_dim, p.value_dim], dim=-1)
-        q = q.reshape(seq_len, p.num_k_heads, p.head_k_dim)
-        k = k.reshape(seq_len, p.num_k_heads, p.head_k_dim)
-        v = v.reshape(seq_len, p.num_v_heads, p.head_v_dim)
+        q, k, v = torch.split(mixed, [self.key_dim, self.key_dim, self.value_dim], dim=-1)
+        q = q.reshape(seq_len, self.num_k_heads, p.head_k_dim)
+        k = k.reshape(seq_len, self.num_k_heads, p.head_k_dim)
+        v = v.reshape(seq_len, self.num_v_heads, p.head_v_dim)
         ba = _linear(block_input, self.in_proj_ba, self.compute_dtype)
-        a, b = torch.split(ba, [p.num_v_heads, p.num_v_heads], dim=-1)
+        a, b = torch.split(ba, [self.num_v_heads, self.num_v_heads], dim=-1)
         g, beta = gdn_gating(self.A_log, a, b, self.dt_bias, compute_dtype=self.compute_dtype, backend="eager")
         out, _state = gdn_delta_rule(
             q,
@@ -597,8 +617,16 @@ class _GDNAttention(nn.Module, MambaBase):
             compute_dtype=self.compute_dtype,
             backend="eager",
         )
-        out = out.reshape(seq_len, p.value_dim)
-        return _linear(out, self.out_proj, self.compute_dtype).to(self.params_dtype)
+        out = out.reshape(seq_len, self.value_dim)
+        out = _linear(out, self.out_proj, self.compute_dtype)
+        if self.tp_size > 1:
+            if self._tp_reduce is None:
+                raise RuntimeError(
+                    "Qwen4Exp GDN TP needs an all-reduce: vllm.distributed."
+                    "tensor_model_parallel_all_reduce was not importable at model init."
+                )
+            out = self._tp_reduce(out)
+        return out.to(self.params_dtype)
 
 
 class _QSAAttention(nn.Module, AttentionLayerBase):
@@ -1096,7 +1124,12 @@ class AscendQwen4ExpDecoderLayer(nn.Module):
         attn_prefix = f"{prefix}.attention"
         self.uses_qsa = False
         if layer_type == _LAYER_TYPE_LINEAR:
-            self.attention: nn.Module = _GDNAttention(config=config, dtype_policy=dtype_policy, prefix=attn_prefix)
+            self.attention: nn.Module = _GDNAttention(
+                config=config,
+                dtype_policy=dtype_policy,
+                prefix=attn_prefix,
+                expert_sharding=expert_sharding,
+            )
         else:
             if getattr(config, "indexer_n_heads", None) is not None:
                 self.uses_qsa = True
@@ -1650,6 +1683,93 @@ class AscendQwen4ExpForCausalLM(
             return target_name
         return None
 
+    def _place_gdn_tensor(
+        self,
+        params: dict[str, torch.Tensor],
+        name: str,
+        tensor: torch.Tensor,
+        tp_rank: int,
+        tp_size: int,
+    ) -> str | None:
+        """Place one TP-sliced GDN attention tensor into its local param slot.
+
+        The GDN conv dim is ``[q(key_dim), k(key_dim), v(value_dim)]`` and both
+        the key and value heads divide evenly by TP, so the fused conv params are
+        a non-uniform three-way slice (q/k local rows, v local rows). ``out_proj``
+        is row-parallel (split value_dim).
+        """
+        full = _gdn_params_from_config(self.model.config)
+        fkd = full.key_dim
+        fvd = full.value_dim
+        fnum_v = full.num_v_heads
+        lkd = fkd // tp_size
+        lvd = fvd // tp_size
+        lv = fnum_v // tp_size
+
+        base = name.replace(".linear_attn.", ".attention.")
+
+        if base.endswith(".in_proj_qkv.weight") or base.endswith(".conv1d.weight"):
+            if base.endswith(".in_proj_qkv.weight"):
+                tname = base[: -len(".weight")]
+            else:
+                tname = base[: -len(".conv1d.weight")] + ".conv_weight"
+            target = params.get(tname)
+            if target is None:
+                return None
+            src = tensor
+            if src.ndim == target.ndim + 1 and src.shape[1] == 1:
+                src = src.squeeze(1)
+            local_conv = target.shape[0]
+            with torch.no_grad():
+                target[0:lkd].copy_(src[tp_rank * lkd : (tp_rank + 1) * lkd].to(target.dtype))
+                target[lkd : 2 * lkd].copy_(
+                    src[fkd + tp_rank * lkd : fkd + (tp_rank + 1) * lkd].to(target.dtype)
+                )
+                target[2 * lkd : local_conv].copy_(
+                    src[2 * fkd + tp_rank * lvd : 2 * fkd + (tp_rank + 1) * lvd].to(target.dtype)
+                )
+            return tname
+
+        if base.endswith(".in_proj_a.weight") or base.endswith(".in_proj_b.weight"):
+            if base.endswith(".in_proj_a.weight"):
+                tname = base[: -len(".in_proj_a.weight")] + ".in_proj_ba"
+            else:
+                tname = base[: -len(".in_proj_b.weight")] + ".in_proj_ba"
+            target = params.get(tname)
+            if target is None:
+                return None
+            local_v = target.shape[0] // 2
+            if base.endswith(".in_proj_a.weight"):
+                src = tensor[tp_rank * local_v : (tp_rank + 1) * local_v]
+                with torch.no_grad():
+                    target[0:local_v].copy_(src.to(target.dtype))
+            else:
+                src = tensor[fnum_v + tp_rank * local_v : fnum_v + (tp_rank + 1) * local_v]
+                with torch.no_grad():
+                    target[local_v : 2 * local_v].copy_(src.to(target.dtype))
+            return tname
+
+        if base.endswith(".A_log") or base.endswith(".dt_bias"):
+            target = params.get(base)
+            if target is None:
+                return None
+            src = tensor[tp_rank * lv : (tp_rank + 1) * lv]
+            with torch.no_grad():
+                target.copy_(src.to(target.dtype))
+            return base
+
+        if base.endswith(".out_proj.weight"):
+            tname = base[: -len(".out_proj.weight")] + ".out_proj"
+            target = params.get(tname)
+            if target is None:
+                return None
+            src = tensor[:, tp_rank * lvd : (tp_rank + 1) * lvd]
+            with torch.no_grad():
+                target.copy_(src.to(target.dtype))
+            return tname
+
+        return None
+
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         """Load a real (or round-trip) checkpoint into the assembled model.
 
@@ -1721,6 +1841,13 @@ class AscendQwen4ExpForCausalLM(
                     shared_target = self._place_shared_expert_tensor(params, name, tensor, tp_rank, tp_size)
                     if shared_target is not None:
                         loaded.add(shared_target)
+                        continue
+                # GDN linear attention is TP-sharded on its heads (q/k + v split
+                # evenly, out_proj row-parallel). Load this rank's local slice.
+                if ".linear_attn." in name:
+                    gdn_target = self._place_gdn_tensor(params, name, tensor, tp_rank, tp_size)
+                    if gdn_target is not None:
+                        loaded.add(gdn_target)
                         continue
                 # Round-trip / already-mapped names (a state-dict by fused param
                 # name): strict full-shape copy before any checkpoint remap.
