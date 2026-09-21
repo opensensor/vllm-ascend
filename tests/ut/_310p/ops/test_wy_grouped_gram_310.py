@@ -84,9 +84,10 @@ def test_grouped_gram_matches_the_expanded_form(monkeypatch):
             assert torch.equal(want, got), f"{name} should be untouched"
 
 
-def test_grouped_gram_is_off_by_default():
-    """The prefill path for every request: it must opt in, not opt out."""
-    assert cgdr._WY_GROUPED_GRAM is False
+def test_grouped_gram_is_on_by_default():
+    """Measured at 848 tok/s against 823 for the per-V-head form, so it is the
+    default now. VLLM_ASCEND_GDN_WY_GROUPED_GRAM=0 is the way back."""
+    assert cgdr._WY_GROUPED_GRAM is True
 
 
 def test_grouped_path_declines_a_non_divisible_head_count(monkeypatch):

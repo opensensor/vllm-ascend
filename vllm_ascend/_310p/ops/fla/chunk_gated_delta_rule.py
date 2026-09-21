@@ -32,12 +32,13 @@ CHUNK_SIZE = 64
 # two can be A/B timed against each other on real traffic.
 _UT_USE_BLOCKED_INVERSE = os.getenv("VLLM_ASCEND_GDN_UT_BLOCKED", "1") == "1"
 
-# Build the WY gram matrix once per K head instead of once per V head. Off by
-# default: it is exact (verified to fp64 against the per-V-head form) and saves
-# two thirds of that matmul, but it leans on torch broadcasting a 6D matmul,
-# which is unverified on Ascend and this is the prefill path for every request.
-# Turn on with VLLM_ASCEND_GDN_WY_GROUPED_GRAM=1 and measure before trusting.
-_WY_GROUPED_GRAM = os.getenv("VLLM_ASCEND_GDN_WY_GROUPED_GRAM", "0") == "1"
+# Build the WY gram matrix once per K head instead of once per V head. Exact --
+# verified to fp64 against the per-V-head form, and the fp16 kernel inputs land
+# within one ULP. It shipped opt-in because it leans on torch broadcasting a 6D
+# matmul, which was unverified on Ascend; measured on the box at 848 tok/s
+# against 823 for the per-V-head form, so the broadcast works and it is worth
+# ~3.5% of prefill. Set VLLM_ASCEND_GDN_WY_GROUPED_GRAM=0 to go back.
+_WY_GROUPED_GRAM = os.getenv("VLLM_ASCEND_GDN_WY_GROUPED_GRAM", "1") == "1"
 
 
 def _expand_qk_to_v_heads(x: torch.Tensor, num_v_heads: int) -> torch.Tensor:
@@ -391,33 +392,80 @@ def _prepare_chunk_indices_list(cu_seqlens: torch.Tensor, chunk_size: int) -> li
 _UT_INVERSE_BLOCK = 8
 
 
-def _inv_unit_lower_triangular(m: torch.Tensor, block: int = _UT_INVERSE_BLOCK) -> torch.Tensor:
-    """Inverse of a batched unit lower-triangular matrix, by blocked recursion.
+def _inv_small_unit_lower(m: torch.Tensor) -> torch.Tensor:
+    """Forward substitution. Cheap only while ``m`` is small; batch it."""
+    n = m.shape[-1]
+    inv = torch.zeros_like(m)
+    idx = torch.arange(n, device=m.device)
+    inv[..., idx, idx] = 1
+    for i in range(1, n):
+        inv[..., i, :i] = -(m[..., i, :i].unsqueeze(-1) * inv[..., :i, :i]).sum(-2)
+    return inv
 
-    ``[[A, 0], [C, B]] ** -1 == [[A**-1, 0], [-B**-1 @ C @ A**-1, B**-1]]``, so
-    each level costs two batched matmuls and halves the problem.
-    """
+
+def _inv_unit_lower_recursive(m: torch.Tensor, block: int) -> torch.Tensor:
+    """Halve, invert both halves, combine. Handles any size; issues a lot of ops."""
     n = m.shape[-1]
     if n <= block:
-        inv = torch.zeros_like(m)
-        idx = torch.arange(n, device=m.device)
-        inv[..., idx, idx] = 1
-        for i in range(1, n):
-            inv[..., i, :i] = -(m[..., i, :i].unsqueeze(-1) * inv[..., :i, :i]).sum(-2)
-        return inv
-
+        return _inv_small_unit_lower(m)
     half = n // 2
-    a = m[..., :half, :half]
-    c = m[..., half:, :half]
-    b = m[..., half:, half:]
-    a_inv = _inv_unit_lower_triangular(a, block)
-    b_inv = _inv_unit_lower_triangular(b, block)
-
+    a_inv = _inv_unit_lower_recursive(m[..., :half, :half], block)
+    b_inv = _inv_unit_lower_recursive(m[..., half:, half:], block)
     inv = torch.zeros_like(m)
     inv[..., :half, :half] = a_inv
     inv[..., half:, half:] = b_inv
-    inv[..., half:, :half] = -b_inv @ c @ a_inv
+    inv[..., half:, :half] = -b_inv @ m[..., half:, :half] @ a_inv
     return inv
+
+
+def _inv_unit_lower_triangular(m: torch.Tensor, block: int = _UT_INVERSE_BLOCK) -> torch.Tensor:
+    """Inverse of a batched unit lower-triangular matrix.
+
+    ``[[A, 0], [C, B]] ** -1 == [[A**-1, 0], [-B**-1 @ C @ A**-1, B**-1]]``.
+
+    Applying that as a plain recursion descends into A and B in separate calls,
+    so at chunk 64 the eight 8x8 diagonal blocks are inverted one after another
+    -- about 224 of the ~304 ops the whole inverse issues. This op count is what
+    the inverse costs: it moves 269 MFLOP per call and measures 30.8 ms, three
+    orders of magnitude off the Cube, so it is bound by launches and not by
+    arithmetic.
+
+    So invert every diagonal block in ONE batched substitution, then merge pairs
+    of blocks level by level, each level a batched pair of matmuls. Same result,
+    roughly a fifth of the ops.
+    """
+    n = m.shape[-1]
+    if n <= block:
+        return _inv_small_unit_lower(m)
+
+    num_blocks = n // block
+    if n % block or (num_blocks & (num_blocks - 1)):
+        # The pairwise merge needs to halve the block count cleanly every level.
+        return _inv_unit_lower_recursive(m, block)
+
+    lead = m.shape[:-2]
+    # Every diagonal block at once: [..., num_blocks, block, block].
+    diag = torch.diagonal(m.reshape(*lead, num_blocks, block, num_blocks, block), dim1=-4, dim2=-2)
+    inv = _inv_small_unit_lower(diag.movedim(-1, -3).contiguous())
+
+    size = block
+    while size < n:
+        half = n // (2 * size)
+        a_inv = inv[..., 0::2, :, :]
+        b_inv = inv[..., 1::2, :, :]
+        # The lower-left quadrant of each 2*size diagonal block is the C that
+        # couples the pair being merged.
+        pairs = torch.diagonal(m.reshape(*lead, half, 2 * size, half, 2 * size), dim1=-4, dim2=-2)
+        c = pairs.movedim(-1, -3)[..., size:, :size]
+
+        merged = torch.zeros(*lead, half, 2 * size, 2 * size, dtype=m.dtype, device=m.device)
+        merged[..., :size, :size] = a_inv
+        merged[..., size:, size:] = b_inv
+        merged[..., size:, :size] = -b_inv @ c @ a_inv
+        inv = merged
+        size *= 2
+
+    return inv[..., 0, :, :]
 
 
 def _ut_transform(attn: torch.Tensor, chunk_size: int) -> torch.Tensor:

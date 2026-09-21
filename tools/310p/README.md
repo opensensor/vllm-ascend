@@ -104,14 +104,22 @@ Measured on this box, so do not re-investigate without new evidence:
   INT8. Only GDN `out_proj` is fp16.
 - **INT8 Cube utilization.** 68-86% of peak, measured. Nothing to win.
 
-## Opt-in knobs these scripts A/B
+## Served prefill, measured
 
-Both are exact and both are off by default:
+Same server config throughout (TP4, MTP k=5, GDN W8A8), one knob at a time,
+`prefill_probe.py`, 2026-09-21:
 
-- `VLLM_ASCEND_GDN_UT_BLOCKED=0` -- back to the row-wise WY substitution the
-  blocked inverse replaced. Measured: the row loop is 1.810 s/step against the
-  blocked inverse's 1.479 s/step, so the blocked form is worth 0.331 s/step.
-  Kept as a rollback.
-- `VLLM_ASCEND_GDN_WY_GROUPED_GRAM=1` -- build the WY gram matrix once per K
-  head rather than once per V head. Exact to 1 fp16 ULP on CPU, but it needs
-  torch_npu to broadcast a 6D matmul, which is unverified on Ascend.
+| config | 5839 tok | 11599 tok |
+| --- | ---: | ---: |
+| before GDN W8A8 and the blocked inverse | ~714 | ~707 |
+| row-wise WY substitution | 806 | 784 |
+| blocked UT inverse (default) | 823 | 823 |
+| + grouped WY gram (default) | **852** | **845** |
+
+So the blocked inverse is worth 2-5% and the grouped gram another 3.5%, and
+both agree with the per-op budget above. Rollback knobs, both exact:
+
+- `VLLM_ASCEND_GDN_UT_BLOCKED=0` -- the row-wise WY substitution the blocked
+  inverse replaced (1.810 s/step against 1.479).
+- `VLLM_ASCEND_GDN_WY_GROUPED_GRAM=0` -- the per-V-head gram. The 6D broadcast
+  matmul this needs is now confirmed working on Ascend.
