@@ -24,6 +24,7 @@ from vllm.utils.mem_constants import GiB_bytes
 from vllm.utils.mem_utils import MemorySnapshot, memory_profiling
 from vllm.utils.torch_utils import set_random_seed  # noqa: E402
 
+import vllm_ascend.envs as envs_ascend
 from vllm_ascend._310p.model_runner_310p import NPUModelRunner310
 from vllm_ascend.utils import is_rc_device
 from vllm_ascend.worker.worker import NPUWorker, init_workspace_manager
@@ -146,19 +147,30 @@ class NPUWorker310(NPUWorker):
             "isolate vLLM in its own container."
         )
 
-        # Divide the available memory by 2, to reserved more memory for other operators workspace and other cache
-        # This could avoid OOM with default gpu_memory_utilization
+        # Keep only a fraction of the profiled headroom for KV and Mamba cache;
+        # the rest is left to operator workspaces, which are large on this SoC.
+        # Half is the default because it avoids OOM at the default
+        # gpu_memory_utilization, but it is also what caps the servable context:
+        # raising gpu_memory_utilization cannot make up for it, since the reserve
+        # scales with the budget. VLLM_ASCEND_KV_CACHE_FRACTION trades that
+        # margin back for context on a box where the headroom has been measured.
         # The 310P RC device shares the host memory and device memory.
         # Therefore, the space available for allocating KV cache and Mamba cache needs to be calculated
         # based on the already occupied space of the system memory.
+        kv_cache_fraction = envs_ascend.VLLM_ASCEND_KV_CACHE_FRACTION
+        if not 0.0 < kv_cache_fraction <= 1.0:
+            raise ValueError(
+                f"VLLM_ASCEND_KV_CACHE_FRACTION must be in (0, 1], got {kv_cache_fraction}"
+            )
 
         if is_rc_device():
             vm = psutil.virtual_memory()
-            self.available_kv_cache_memory_bytes = (self.requested_memory - (vm.total - vm.available)) // 2
+            profiled_headroom = self.requested_memory - (vm.total - vm.available)
         else:
-            self.available_kv_cache_memory_bytes = (
+            profiled_headroom = (
                 self.requested_memory - profile_result.non_kv_cache_memory - non_torch_memory_cleared_by_empty_cache
-            ) // 2
+            )
+        self.available_kv_cache_memory_bytes = int(profiled_headroom * kv_cache_fraction)
 
         self.available_kv_cache_memory_bytes = self._scale_kv_cache_memory_for_multi_group(
             self.available_kv_cache_memory_bytes,
@@ -166,8 +178,9 @@ class NPUWorker310(NPUWorker):
 
         logger.debug(profile_result)
         logger.info_once(
-            "Available KV cache memory: %.2f GiB (halved for workspace)",
+            "Available KV cache memory: %.2f GiB (%.0f%% of profiled headroom, rest reserved for workspace)",
             GiB(self.available_kv_cache_memory_bytes),
+            kv_cache_fraction * 100,
             scope="local",
         )
         return int(self.available_kv_cache_memory_bytes)

@@ -107,6 +107,14 @@ env_variables: dict[str, Callable[[], Any]] = {
     # measures 983.2 against 984.0 tok/s. Unset installs no patch at all.
     # See tools/310p/README.md. Valid values: "0" (default), "1".
     "VLLM_ASCEND_ENABLE_FUSED_NORM_QUANT": lambda: bool(int(os.getenv("VLLM_ASCEND_ENABLE_FUSED_NORM_QUANT", "0"))),
+    # Fraction of the profiled free memory that 310P gives to KV and Mamba
+    # cache; the remainder is left for operator workspaces, which are large on
+    # this SoC. The 0.5 default is what avoids OOM at the default
+    # gpu_memory_utilization, but it also caps the servable context, and
+    # raising gpu_memory_utilization cannot compensate because the reserve
+    # scales with the budget. Raise it only on a box where the real workspace
+    # headroom has been measured. Valid range: (0, 1].
+    "VLLM_ASCEND_KV_CACHE_FRACTION": lambda: float(os.getenv("VLLM_ASCEND_KV_CACHE_FRACTION", "0.5")),
     # Experimental: quantize the large FLOAT Qwen GDN qkvz projection weights
     # to per-output-channel INT8 at load time on Ascend 310P. The b/a gate and
     # output projections remain FLOAT to limit accuracy risk.
