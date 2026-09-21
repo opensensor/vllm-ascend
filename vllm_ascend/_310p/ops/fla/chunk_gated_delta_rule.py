@@ -17,12 +17,20 @@
 
 from __future__ import annotations
 
+import os
+
 import torch
 import torch.nn.functional as F
 
 from vllm_ascend._310p.ops.fla.l2norm import l2norm_310p
 
 CHUNK_SIZE = 64
+
+# Escape hatch back to the row-by-row forward substitution the blocked inverse
+# replaced. The two are mathematically identical; this exists so the blocked
+# path can be switched off without a rebuild if it ever misbehaves, and so the
+# two can be A/B timed against each other on real traffic.
+_UT_USE_BLOCKED_INVERSE = os.getenv("VLLM_ASCEND_GDN_UT_BLOCKED", "1") == "1"
 
 
 def _expand_qk_to_v_heads(x: torch.Tensor, num_v_heads: int) -> torch.Tensor:
@@ -362,6 +370,14 @@ def _ut_transform(attn: torch.Tensor, chunk_size: int) -> torch.Tensor:
     with a blocked recursion is the same result in ~53 ops dominated by batched
     matmuls.
     """
+    if not _UT_USE_BLOCKED_INVERSE:
+        attn = attn.clone()
+        for row_idx in range(1, chunk_size):
+            row = attn[..., row_idx, :row_idx].clone()
+            sub = attn[..., :row_idx, :row_idx].clone()
+            attn[..., row_idx, :row_idx] = row + (row.unsqueeze(-1) * sub).sum(-2)
+        return attn + torch.eye(chunk_size, dtype=attn.dtype, device=attn.device)
+
     eye = torch.eye(chunk_size, dtype=attn.dtype, device=attn.device)
     return _inv_unit_lower_triangular(eye - attn)
 
