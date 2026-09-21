@@ -82,6 +82,7 @@ from vllm.model_executor.models.utils import (
 from vllm.v1.kv_cache_interface import (
     FullAttentionSpec,
     KVCacheGroupSpec,
+    KVCacheSpec,
     MambaSpec,
 )
 
