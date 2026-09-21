@@ -34,6 +34,20 @@ try:
         var = xf.square().mean(dim=-1, keepdim=True)
         return (xf * _t.rsqrt(var + eps) * weight.float()).to(weight.dtype)
 
+    def _round_to_bf16(x):
+        """Round fp32 -> bf16 (8 mantissa bits) via an int bit-trick.
+
+        The golden runs the mHC residual + hyper-connection mixes in bf16
+        (8 mantissa / 8 exponent); the 310P carries them in fp32 (23 mantissa).
+        fp32 is *more* precise but a *different* rounding, and that drift seeds
+        the residual and compounds across depth. Rounding the fp32 intermediates
+        to bf16 precision (kept in fp32, so bf16's exponent range is preserved)
+        makes the 310P match the golden's bf16 numerics without any bf16 cast.
+        """
+        xi = x.to(_t.float32).view(_t.int32)
+        xi = (xi + 0x7FFF + ((xi >> 16) & 1)) & -65536  # 0xFFFF0000
+        return xi.view(_t.float32)
+
     def _mhc_pre_npu(
         self,
         residual,
@@ -60,6 +74,9 @@ try:
             hc_post_mult_value,
             sinkhorn_repeat,
         )
+        post_mix = _round_to_bf16(post_mix)
+        comb_mix = _round_to_bf16(comb_mix)
+        layer_input = _round_to_bf16(layer_input)
         if norm_weight is not None:
             layer_input = _mhc_rms_norm(layer_input, norm_weight, norm_eps)
         return post_mix, comb_mix, layer_input
@@ -84,6 +101,7 @@ try:
         norm_eps=0.0,
     ):
         residual_cur = _mhc_post_torch(x, residual, post_layer_mix, comb_res_mix)
+        residual_cur = _round_to_bf16(residual_cur)
         post_mix_cur, comb_mix_cur, layer_input_cur = _mhc_pre_torch(
             residual_cur,
             fn,
@@ -95,6 +113,9 @@ try:
             hc_post_mult_value,
             sinkhorn_repeat,
         )
+        post_mix_cur = _round_to_bf16(post_mix_cur)
+        comb_mix_cur = _round_to_bf16(comb_mix_cur)
+        layer_input_cur = _round_to_bf16(layer_input_cur)
         if norm_weight is not None:
             layer_input_cur = _mhc_rms_norm(layer_input_cur, norm_weight, norm_eps)
         return residual_cur, post_mix_cur, comb_mix_cur, layer_input_cur
