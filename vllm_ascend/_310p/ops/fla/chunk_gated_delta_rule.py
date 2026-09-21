@@ -144,11 +144,7 @@ def _torch_chunk_gated_delta_rule_chunked(
     decay_mask = ((g.unsqueeze(-1) - g.unsqueeze(-2)).tril().exp().float()).tril()
 
     attn = -((k_beta @ key.transpose(-1, -2)) * decay_mask).masked_fill(mask_diag, 0)
-    for i in range(1, chunk_size):
-        row = attn[..., i, :i].clone()
-        sub = attn[..., :i, :i].clone()
-        attn[..., i, :i] = row + (row.unsqueeze(-1) * sub).sum(-2)
-    attn = attn + torch.eye(chunk_size, dtype=attn.dtype, device=attn.device)
+    attn = _ut_transform(attn, chunk_size)
 
     value = attn @ v_beta
     k_cumdecay = attn @ (k_beta * g.exp().unsqueeze(-1))
@@ -315,6 +311,61 @@ def _prepare_chunk_indices_list(cu_seqlens: torch.Tensor, chunk_size: int) -> li
     return chunk_indices
 
 
+# Base-case width for the blocked triangular inverse. Below this the recursion
+# costs more slicing than the substitution it replaces.
+_UT_INVERSE_BLOCK = 8
+
+
+def _inv_unit_lower_triangular(m: torch.Tensor, block: int = _UT_INVERSE_BLOCK) -> torch.Tensor:
+    """Inverse of a batched unit lower-triangular matrix, by blocked recursion.
+
+    ``[[A, 0], [C, B]] ** -1 == [[A**-1, 0], [-B**-1 @ C @ A**-1, B**-1]]``, so
+    each level costs two batched matmuls and halves the problem.
+    """
+    n = m.shape[-1]
+    if n <= block:
+        inv = torch.zeros_like(m)
+        idx = torch.arange(n, device=m.device)
+        inv[..., idx, idx] = 1
+        for i in range(1, n):
+            inv[..., i, :i] = -(m[..., i, :i].unsqueeze(-1) * inv[..., :i, :i]).sum(-2)
+        return inv
+
+    half = n // 2
+    a = m[..., :half, :half]
+    c = m[..., half:, :half]
+    b = m[..., half:, half:]
+    a_inv = _inv_unit_lower_triangular(a, block)
+    b_inv = _inv_unit_lower_triangular(b, block)
+
+    inv = torch.zeros_like(m)
+    inv[..., :half, :half] = a_inv
+    inv[..., half:, half:] = b_inv
+    inv[..., half:, :half] = -b_inv @ c @ a_inv
+    return inv
+
+
+def _ut_transform(attn: torch.Tensor, chunk_size: int) -> torch.Tensor:
+    """The WY UT transform: return ``(I - attn) ** -1`` for strictly lower ``attn``.
+
+    The obvious form is forward substitution, one row at a time, which is what
+    this replaced::
+
+        for i in range(1, chunk_size):
+            row = attn[..., i, :i]
+            attn[..., i, :i] = row + (row.unsqueeze(-1) * attn[..., :i, :i]).sum(-2)
+
+    That solves ``T = attn + attn @ T`` correctly but issues roughly five NPU
+    ops per row -- about 315 per call, and this runs in 48 of 64 layers on every
+    prefill step, so ~15k launches. 310P prefill is launch-bound, and each of
+    those ops is a thin slice that leaves the Cube idle. Inverting ``I - attn``
+    with a blocked recursion is the same result in ~53 ops dominated by batched
+    matmuls.
+    """
+    eye = torch.eye(chunk_size, dtype=attn.dtype, device=attn.device)
+    return _inv_unit_lower_triangular(eye - attn)
+
+
 def _compute_kernel_inputs_from_torch_wy(
     q: torch.Tensor,
     k: torch.Tensor,
@@ -350,11 +401,7 @@ def _compute_kernel_inputs_from_torch_wy(
         diagonal=0,
     )
     attn = attn.masked_fill(mask_diag, 0)
-    for row_idx in range(1, chunk_size):
-        row = attn[..., row_idx, :row_idx].clone()
-        sub = attn[..., :row_idx, :row_idx].clone()
-        attn[..., row_idx, :row_idx] = row + (row.unsqueeze(-1) * sub).sum(-2)
-    attn = attn + torch.eye(chunk_size, dtype=attn.dtype, device=attn.device)
+    attn = _ut_transform(attn, chunk_size)
 
     value = attn @ (value * beta.unsqueeze(-1))
     k_cumdecay = attn @ (k_beta * g.exp().unsqueeze(-1))
