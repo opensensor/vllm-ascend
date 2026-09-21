@@ -61,7 +61,7 @@ these account for about 45% of it:
 | **all_reduce x128** | **2.282** | 4.7 GB/s | topology-bound |
 | MLP gate+up int8 | 0.828 | 56.4 TOP/s | 81% |
 | UT transform | 0.696 | | was 1.479, then 1.813 |
-| dynamic_quant [T x hidden] | 0.421 | 76.6 GB/s | ~38% |
+| dynamic_quant [T x hidden] | 0.210 | 76.6 GB/s | ~38% |
 | MLP down int8 | 0.389 | 60.1 TOP/s | 86% |
 | GDN out_proj fp16 | 0.373 | 16.6 TFLOP/s | 47% |
 | WY attn build (fp32) | ~0.25 | | was 0.601 |
@@ -96,11 +96,28 @@ agrees.)
 **The INT8 GEMMs have no headroom.** 48-60 TOP/s against a ~70 TOPS peak is
 68-86% of the hardware. 1.53 s/step of the budget is essentially irreducible.
 
-**`dynamic_quant` costs 0.523 s/step to do no arithmetic.** 256 standalone calls
-per step -- four per layer -- converting activations to INT8 before each matmul,
-at ~38% of memory bandwidth. `vllm_ascend/compilation/passes/norm_quant_fusion_pass.py`
-already fuses this into `npu_add_rms_norm_quant`, but only under torch.compile,
-and the box serves with `--enforce-eager`, so none of it fires.
+**`dynamic_quant` costs 0.312 s/step to do no arithmetic, and cannot be fused
+on this SoC.** 128 calls at [T x hidden] plus 64 at [T x inter/TP], converting
+activations to INT8 before each W8A8 matmul at ~38% of memory bandwidth. (An
+earlier revision said 0.523 s/step from 256 hidden-width calls. The per-call
+time was measured but the count was assumed at four per layer; the real sites
+are mlp.gate_up x64, the *merged* gdn in_proj_qkvz x48 and attn qkv x16, so 128.
+Count the call sites, do not assume them from the layer count.)
+
+Both fusion routes are closed, checked on the box:
+
+- `npu_rms_norm_quant` / `_v2` take `scale` as a required input, i.e. static
+  quantization. This checkpoint is W8A8_DYNAMIC, per-token. Wrong scheme.
+  `norm_quant_fusion_pass.py` uses these, and also only runs under
+  torch.compile while the box serves `--enforce-eager`.
+- `npu_swiglu_quant` is exactly the right fusion and exists in torch_npu's
+  Python API, but CANN has no 310P kernel for it: `aclnnSwiGluQuantV2` fails
+  with "SoC version ascend310p verification failed. This SoC is not configured
+  through the AddConfig API of the OpDef class."
+
+torch_npu's Python surface is SoC-agnostic, so an op appearing in `dir()` says
+nothing about whether it runs here. Fusing this would need a custom AscendC
+kernel, for at most 0.312 s/step of an ~8.6 s step.
 
 **`out_proj` in fp16 costs 0.373 s/step at 47% of FP16 peak.** INT8 would be
 roughly 0.11 s. It is fp16 on purpose -- quantizing it corrupted prose -- so
