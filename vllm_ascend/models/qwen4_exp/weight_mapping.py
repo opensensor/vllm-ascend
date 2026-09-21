@@ -40,6 +40,21 @@ Router / shared-expert / attention (QSA) / LM-head / embeddings / PLE / norms
 stay non-quantized F16 and are **not** mapped here (they are validated against
 the frozen dtype policy but pass through untouched).
 
+Expert-dimension TP slicing (the TP4 target layout)
+----------------------------------------------------
+Each TP rank owns a contiguous range of *global* expert ids
+(:func:`local_expert_range`, mirroring the fork ``ep_weight_filter`` linear
+placement so loader and mapper agree); the bank is sliced along the expert
+dimension while each expert keeps its full rows/columns, and the block output is
+the all-reduced sum of per-rank partials. ``tp_size == 1`` (the default, and
+what the host bring-up wave runs) maps every expert exactly as before. With
+slicing, ``map_expert_tensor`` resolves ``expert_index`` to the local slot,
+``expected_expert_tensor_names``/``validate_expert_weight_map`` cover only this
+rank's experts, and :func:`expert_tensor_is_local` gates streamed names. The
+fork's loader-side read filter skips peer ``.weight`` payloads before disk I/O
+but still delivers the tiny peer scale/offset tensors; those are recorded as
+:attr:`WeightMapping.peer_expert_tensors` and ignored.
+
 Dtype policy
 ------------
 Every tensor is checked against the frozen T1.2 policy
@@ -73,8 +88,10 @@ __all__ = [
     "TensorShapeError",
     "WeightMapping",
     "WeightMappingError",
+    "expert_tensor_is_local",
     "expected_expert_tensor_names",
     "geometry_from_manifest",
+    "local_expert_range",
     "map_expert_tensor",
     "validate_expert_weight_map",
 ]
@@ -177,6 +194,7 @@ class ExpertTensorMapping:
     proj: str
     kind: str
     target_param: str
+    # Local slot in the rank's sliced bank (== global ``expert`` when tp_size==1).
     expert_index: int
     row_start: int
     row_stop: int
@@ -191,6 +209,9 @@ class WeightMapping:
     entries: list[ExpertTensorMapping]
     geometry: dict[str, int]
     non_expert_tensors: list[str] = field(default_factory=list)
+    # Expert-shaped tensors seen for expert ids this rank does NOT own (a stream
+    # from an unfiltered loader). Recorded for observability; never an error.
+    peer_expert_tensors: list[str] = field(default_factory=list)
 
     @property
     def weight_entries(self) -> list[ExpertTensorMapping]:
@@ -241,20 +262,78 @@ def _normalize_geometry(geometry: Mapping[str, int]) -> dict[str, int]:
 
 
 # --------------------------------------------------------------------------- #
+# Expert-parallel (TP-sliced) ownership
+# --------------------------------------------------------------------------- #
+def local_expert_range(num_experts: int, tp_size: int = 1, tp_rank: int = 0) -> tuple[int, int]:
+    """Local ``[start, stop)`` global expert-id range owned by ``tp_rank``.
+
+    Expert-dimension slicing: every TP rank holds *all* rows/columns of its
+    ``num_experts / tp_size`` experts (the intermediate dim stays whole), and the
+    routed output of the block is the all-reduced sum of the per-rank partials.
+    The linear (contiguous) distribution mirrors the fork's
+    ``vllm.model_executor.model_loader.ep_weight_filter.compute_local_expert_ids``
+    so the loader-side read filter and this mapper agree on ownership even for a
+    non-divisible expert count. ``tp_size == 1`` returns the full range.
+    """
+    if tp_size < 1:
+        raise WeightMappingError(f"tp_size must be >= 1, got {tp_size}")
+    if not 0 <= tp_rank < tp_size:
+        raise WeightMappingError(f"tp_rank {tp_rank} out of range [0, {tp_size})")
+    base, remainder = divmod(num_experts, tp_size)
+    start = tp_rank * base + min(tp_rank, remainder)
+    count = base + (1 if tp_rank < remainder else 0)
+    return start, start + count
+
+
+def expert_tensor_is_local(
+    name: str,
+    geometry: Mapping[str, int],
+    tp_size: int = 1,
+    tp_rank: int = 0,
+) -> bool:
+    """Whether an expert-tensor *name* belongs to ``tp_rank`` (cheap gate).
+
+    Returns ``True`` for a non-expert name (there is nothing to skip). Used by
+    ``load_weights`` to drop the peer-expert scale/offset tensors that the fork's
+    loader-side filter deliberately still delivers (it only skips ``.weight``
+    payloads) and, when the loader filter is off, the peer weights themselves.
+    """
+    if tp_size <= 1:
+        return True
+    match = _EXPERT_RE.match(name)
+    if match is None:
+        return True
+    geom = _normalize_geometry(geometry)
+    expert = int(match["expert"])
+    if expert >= geom["num_experts"]:
+        # Outside the frozen geometry: never a peer's tensor. Stay "local" so
+        # map_expert_tensor raises the actionable out-of-range rejection.
+        return True
+    start, stop = local_expert_range(geom["num_experts"], tp_size, tp_rank)
+    return start <= expert < stop
+
+
+# --------------------------------------------------------------------------- #
 # Expected set + per-tensor mapping
 # --------------------------------------------------------------------------- #
-def expected_expert_tensor_names(geometry: Mapping[str, int]) -> set[str]:
-    """Build the full expected expert-tensor name set from the manifest geometry.
+def expected_expert_tensor_names(
+    geometry: Mapping[str, int],
+    tp_size: int = 1,
+    tp_rank: int = 0,
+) -> set[str]:
+    """Build the expected expert-tensor name set from the manifest geometry.
 
-    Returns 3 x (layers x experts x projections) names: one weight, one scale and
-    one offset per projection.
+    With TP slicing (``tp_size > 1``) only the rank's local expert ids are
+    expected; with ``tp_size == 1`` this is every expert. Returns 3 x
+    (layers x local experts x projections) names: one weight, one scale and one
+    offset per projection.
     """
     geom = _normalize_geometry(geometry)
     layers = geom["num_hidden_layers"]
-    experts = geom["num_experts"]
+    start, stop = local_expert_range(geom["num_experts"], tp_size, tp_rank)
     names: set[str] = set()
     for layer in range(layers):
-        for expert in range(experts):
+        for expert in range(start, stop):
             base = f"model.language_model.layers.{layer}.mlp.experts.{expert}"
             for proj in PROJECTIONS:
                 for kind in KINDS:
@@ -267,11 +346,23 @@ def _expected_dtype(kind: str) -> torch.dtype:
     return torch.int8 if kind == WEIGHT else torch.float32
 
 
-def map_expert_tensor(name: str, geometry: Mapping[str, int]) -> ExpertTensorMapping:
+def map_expert_tensor(
+    name: str,
+    geometry: Mapping[str, int],
+    tp_size: int = 1,
+    tp_rank: int = 0,
+) -> ExpertTensorMapping:
     """Resolve one source expert tensor name to its fused-MoE placement.
 
+    With expert-dimension TP slicing (``tp_size > 1``) the resolved
+    ``expert_index`` is the *local* slot ``expert - local_start`` inside the
+    rank's sliced bank; a tensor the rank does not own is rejected here so a
+    wiring mistake (loading a peer expert into a local slot) fails loudly.
+    Callers streaming an unfiltered checkpoint gate on
+    :func:`expert_tensor_is_local` *before* mapping.
+
     Raises :class:`WeightMappingError` if the name is not an expert tensor or if
-    its layer/expert index is outside the geometry.
+    its layer/expert index is outside the geometry / outside this rank's range.
     """
     geom = _normalize_geometry(geometry)
     match = _EXPERT_RE.match(name)
@@ -316,6 +407,16 @@ def map_expert_tensor(name: str, geometry: Mapping[str, int]) -> ExpertTensorMap
     row_start = moe if proj == UP_PROJ else 0
     row_stop = row_start + out_dim
 
+    # Expert-dimension TP slicing: resolve the local slot in the rank's bank.
+    local_start, local_stop = local_expert_range(geom["num_experts"], tp_size, tp_rank)
+    if not local_start <= expert < local_stop:
+        raise WeightMappingError(
+            f"{name!r}: expert {expert} is not owned by tp_rank {tp_rank} of "
+            f"{tp_size} (local range [{local_start}, {local_stop})); gate with "
+            "expert_tensor_is_local() before mapping",
+            tensors=[name],
+        )
+
     return ExpertTensorMapping(
         source_name=name,
         layer=layer,
@@ -323,7 +424,7 @@ def map_expert_tensor(name: str, geometry: Mapping[str, int]) -> ExpertTensorMap
         proj=proj,
         kind=kind,
         target_param=target_param,
-        expert_index=expert,
+        expert_index=expert - local_start,
         row_start=row_start,
         row_stop=row_stop,
         expected_dtype=_expected_dtype(kind),
@@ -417,13 +518,19 @@ def validate_expert_weight_map(
     provided: ProvidedIndex,
     geometry: Mapping[str, int],
     *,
+    tp_size: int = 1,
+    tp_rank: int = 0,
     policy: Qwen4ExpDtypePolicy | None = None,
 ) -> WeightMapping:
     """Validate a checkpoint index against the frozen W8A8 expert contract.
 
     ``provided`` maps (or lists) tensor name -> safetensors-style meta
     (``{"dtype": <str|torch.dtype>, "shape": [...]}``). The expected expert-tensor
-    set is derived from ``geometry`` (driven from the checkpoint manifest).
+    set is derived from ``geometry`` (driven from the checkpoint manifest), and
+    with expert-dimension TP slicing (``tp_size > 1``) to this rank's local
+    experts only. Expert-shaped tensors for *other* ranks' expert ids are
+    recorded in :attr:`WeightMapping.peer_expert_tensors` and otherwise ignored
+    (the fork's loader filter may still deliver their tiny scale/offset tensors).
 
     Rejects, with an actionable error, any of:
       * duplicate source tensors (:class:`DuplicateTensorError`),
@@ -437,6 +544,7 @@ def validate_expert_weight_map(
     policy = policy or ASCEND_QWEN4EXP_DTYPE_POLICY
     _assert_policy_contract(policy)
     geom = _normalize_geometry(geometry)
+    local_start, local_stop = local_expert_range(geom["num_experts"], tp_size, tp_rank)
 
     items = _iter_items(provided)
 
@@ -454,17 +562,23 @@ def validate_expert_weight_map(
             tensors=sorted(set(duplicates)),
         )
 
-    # 2. Partition expert vs non-expert.
+    # 2. Partition expert (local vs peer) vs non-expert. An expert id outside
+    # the frozen geometry is never a peer's tensor -- it stays in the expert
+    # bucket so the extra-set below rejects an index that does not match.
     expert_meta: dict[str, TensorMeta] = {}
+    peer_expert_tensors: list[str] = []
     non_expert_meta: dict[str, TensorMeta] = {}
     for name, meta in seen.items():
-        if _EXPERT_RE.match(name):
-            expert_meta[name] = meta
-        else:
+        match = _EXPERT_RE.match(name)
+        if match is None:
             non_expert_meta[name] = meta
+        elif int(match["expert"]) < geom["num_experts"] and not (local_start <= int(match["expert"]) < local_stop):
+            peer_expert_tensors.append(name)
+        else:
+            expert_meta[name] = meta
 
-    # 3. Missing / extra against the manifest-driven expected set.
-    expected_names = expected_expert_tensor_names(geom)
+    # 3. Missing / extra against the manifest-driven expected local set.
+    expected_names = expected_expert_tensor_names(geom, tp_size, tp_rank)
     provided_names = set(expert_meta)
     missing = expected_names - provided_names
     extra = provided_names - expected_names
@@ -473,7 +587,8 @@ def validate_expert_weight_map(
         raise MissingTensorError(
             f"{len(missing)} expected expert tensor(s) missing from checkpoint index "
             f"(e.g. {preview}); expected {len(expected_names)} expert tensors for "
-            f"{geom['num_hidden_layers']} layers x {geom['num_experts']} experts",
+            f"{geom['num_hidden_layers']} layers x experts [{local_start}, {local_stop}) "
+            f"of {geom['num_experts']} (tp_size={tp_size}, tp_rank={tp_rank})",
             tensors=sorted(missing),
         )
     if extra:
@@ -487,7 +602,7 @@ def validate_expert_weight_map(
     # 4. Per-tensor dtype+shape check, then build the mapping.
     entries: list[ExpertTensorMapping] = []
     for name in expected_names:
-        mapping = map_expert_tensor(name, geom)
+        mapping = map_expert_tensor(name, geom, tp_size, tp_rank)
         _check_expert_tensor(mapping, expert_meta[name])
         entries.append(mapping)
 
@@ -499,4 +614,5 @@ def validate_expert_weight_map(
         entries=entries,
         geometry=geom,
         non_expert_tensors=sorted(non_expert_meta),
+        peer_expert_tensors=sorted(peer_expert_tensors),
     )

@@ -33,6 +33,11 @@ grouping uses ``argsort`` / ``bincount`` and a single boundary ``.tolist()``.
 The shared expert stays non-quantized F16 (per the T3.1 weight-mapping contract:
 router / shared-expert / attention / lm_head / embeddings / PLE are not W8A8) and
 is applied densely and unweighted to every token, added to the routed output.
+
+Expert-dimension TP slicing: when the bank only holds a contiguous slice of the
+global experts, the grouped forward returns the rank's *partial* sum (peer-owned
+top-k slots are dropped); the caller all-reduces the partials across ranks and
+then adds the replicated shared expert exactly once.
 """
 
 from __future__ import annotations
@@ -142,6 +147,9 @@ def w8a8_grouped_experts(
     w2_weight: torch.Tensor,
     w2_weight_scale: torch.Tensor,
     w2_weight_offset: torch.Tensor,
+    *,
+    expert_offset: int = 0,
+    num_global_experts: int | None = None,
 ) -> torch.Tensor:
     """Grouped routed-expert W8A8 forward (``group_list`` grouped-matmul mimic).
 
@@ -150,24 +158,47 @@ def w8a8_grouped_experts(
     result is scaled by the router weight and scattered back with ``index_add_``.
     Empty groups (skew) are skipped. All arithmetic is float32; the caller casts.
 
+    Expert-dimension TP slicing (expert parallel): ``topk_ids`` always carry
+    *global* expert ids (the router gate is replicated, so every rank selects
+    identically and deterministically). When this rank's bank holds only a slice
+    of the global expert set, pass ``expert_offset`` (its first global id) and
+    ``num_global_experts``: ids outside ``[expert_offset, expert_offset +
+    num_local)`` are routed into a sentinel bin and dropped without any extra
+    synchronization (the single ``counts.tolist()`` boundary sync of the original
+    path is preserved), and the returned tensor is this rank's *partial* sum --
+    the caller all-reduces across ranks and adds the (replicated) shared expert.
+    With the defaults (or ``num_global_experts == num_local``) this is exactly
+    the unsharded full-bank forward.
+
     Args:
         x: ``[T, hidden]`` activations (float; upcast to float32 internally).
         topk_weights: ``[T, top_k]`` router weights (already renormalized/scaled).
-        topk_ids: ``[T, top_k]`` selected expert ids.
-        w13_weight: ``[E, 2*moe, hidden]`` int8 fused gate/up weights.
-        w13_weight_scale / w13_weight_offset: ``[E, 2*moe, 1]`` per-channel params.
-        w2_weight: ``[E, hidden, moe]`` int8 down weights.
-        w2_weight_scale / w2_weight_offset: ``[E, hidden, 1]`` per-channel params.
+        topk_ids: ``[T, top_k]`` selected *global* expert ids.
+        w13_weight: ``[E_local, 2*moe, hidden]`` int8 fused gate/up weights.
+        w13_weight_scale / w13_weight_offset: ``[E_local, 2*moe, 1]`` per-channel params.
+        w2_weight: ``[E_local, hidden, moe]`` int8 down weights.
+        w2_weight_scale / w2_weight_offset: ``[E_local, hidden, 1]`` per-channel params.
+        expert_offset: first global expert id held locally (0 = full bank).
+        num_global_experts: global expert count when sliced; ``None`` or equal
+            to the local count means unsharded.
 
     Returns:
-        ``[T, hidden]`` float32 routed-expert output.
+        ``[T, hidden]`` float32 routed-expert partial output (full output when
+        unsharded; the caller all-reduces when TP-sliced).
     """
     num_tokens, hidden = x.shape
     top_k = topk_ids.shape[1]
     num_experts = w13_weight.shape[0]
+    sharded = num_global_experts is not None and num_global_experts != num_experts
     x32 = x.to(torch.float32)
 
     pair_expert = topk_ids.reshape(-1)  # [T * top_k]
+    if sharded:
+        # Translate to local ids; ids owned by peer ranks land in a sentinel
+        # bin (== num_experts) sorted last and dropped by the counts slice.
+        pair_expert = pair_expert - expert_offset
+        in_local = (pair_expert >= 0) & (pair_expert < num_experts)
+        pair_expert = torch.where(in_local, pair_expert, torch.full_like(pair_expert, num_experts))
     pair_weight = topk_weights.to(torch.float32).reshape(-1, 1)
     pair_token = torch.arange(num_tokens, device=x.device).unsqueeze(1).expand(num_tokens, top_k).reshape(-1)
     pair_x = x32[pair_token]  # gather activations for each (token, slot) pair
@@ -178,7 +209,9 @@ def w8a8_grouped_experts(
     sorted_weight = pair_weight[order]
     sorted_token = pair_token[order]
 
-    counts = torch.bincount(sorted_expert, minlength=num_experts)
+    counts = torch.bincount(sorted_expert, minlength=num_experts + (1 if sharded else 0))
+    if sharded:
+        counts = counts[:num_experts]  # drop the sentinel (peer-owned) bin
     out = torch.zeros(num_tokens, hidden, dtype=torch.float32, device=x.device)
 
     start = 0

@@ -47,6 +47,7 @@ Wave 3:
 Wave 4 (components):
   T1.5 assembly ← T1.2,T1.3,T1.4,T0.6
   T3.2 shard load ← T0.1,T0.5       T3.3 moe QDQ parity ← T0.6,T3.1
+  T3.1b expert-TP slicing ← T3.1,T3.3
   T4.1 PLE host method ← T1.2       T5.1 GDN wire ← T1.2,T0.6
   T6.1 indexer ← T1.2,T0.6
 Wave 5:
@@ -64,7 +65,7 @@ DEVICE WAVE (hardware only, serial after host work):
   D1 probe run ← T0.3,T0.2,hardware
   D1-MB PLE transport micro-bench ← D1,T4.1
   D1.5 on-device component parity (G0) ← D1,T3.3,T4.4,T5.1,T6.2
-  D2 G1 8K real-weights ← T1.5,T3.1,T3.2,T3.3,T4.4,T5.2,T6.4,T7.2,D1,D1-MB,D1.5,TOBS
+  D2 G1 8K real-weights ← T1.5,T3.1,T3.1b,T3.2,T3.3,T4.4,T5.2,T6.4,T7.2,D1,D1-MB,D1.5,TOBS
   D3 G2 quant correctness ← D2
   D4 candidate bench@128K + DECISION ← D3,T8.1,T8.2,T8.3
   T8.4 integrate chosen candidate (host re-run of parity suite) ← D4
@@ -196,6 +197,15 @@ S4 ACLGraph, S5 EP4/FlashComm1, S6 docs/tutorial/feature-matrix ← D8
 - **status**: Completed
 - **log**: 2026-09-16 (commit a755260ef) — Host-side (CPU, no torch_npu) parity harness: the device kernels (`npu_quant_grouped_matmul_dequant`+`npu_swiglu` in `AscendW8A8DynamicFusedMoEMethod310`) re-expressed via T0.6 QDQ primitives; two independent 512-expert/top-10/1-shared forwards compared — `_moe_eager` (per-token loop) vs `_moe_fused` (grouped device-path mimic: (token,slot) sorted by expert, one batched QDQ GEMM/expert via group_list, `index_add_` scatter; no `.item()` in hot path). Parity max abs err **5.96e-8** vs pre-declared `MOE_PARITY_ATOL=1e-4` (reused T0.6 W8A8_GEMM_ATOL). Guards with teeth: skew (all tokens→1 expert, empty groups) holds; router renorm sum==routed_scaling_factor (drop-renorm diverges 0.30>0.01); offset order `(q-offset)*scale` correct (wrong `(q+offset)*scale` diverges 1.36>0.01). **Realism (3 real layer-0 experts via mmap)**: I8 [out,in], scale/offset F32 [out,1], **offsets all exactly zero (symmetric)** — so the kernel's symmetric-only (offset-dropped) path is correct on real data → **no production fix needed**. CI-safe skip without the mount. Full suite **636 passed**; ruff clean.
 - **files edited/created**: `tests/ut/qwen38_1m/test_moe_w8a8_parity.py` (new, test-only)
+
+### T3.1b: Expert-dimension TP slicing of the W8A8 fused bank + loader read filter
+- **depends_on**: [T3.1, T3.3]
+- **location**: `vllm_ascend/models/qwen4_exp/{weight_mapping,moe,model}.py`; UT `tests/ut/qwen38_1m/test_moe_tp_sharding.py`
+- **description**: Close the D2 OOM found at target-host survey: the assembled MoE block allocated the FULL 512-expert fused bank per rank (no TP concept in mapper/validation/placement), so every rank demanded ~128 GB of expert weights on a 44 GiB chip. Slice the bank along the expert dimension: each rank owns a contiguous global-id range (same linear placement as the fork `ep_weight_filter`, agreement tested against the fork module), the router gate + shared expert stay replicated (identical top-k on every rank), `w8a8_grouped_experts` maps global top-k ids to local slots via a sentinel bin (no extra boundary sync; peer-owned slots dropped) and returns the rank partial; the block all-reduces (`vllm.distributed.tensor_model_parallel_all_reduce`, injectable for host tests) before adding the replicated shared expert once. Loader side: the opensensor fork's native `--enable-expert-parallel --enable-ep-weight-filter` skips peer expert `.weight` payload reads before disk I/O; the model-side ownership gate (`expert_tensor_is_local`) additionally drops the peer scale/offset tensors the filter still delivers, so `validate_expert_weight_map` runs per-rank (local expected set; peer tensors recorded, not errors; expert ids outside the frozen geometry still rejected).
+- **validation**: CPU UT: fork-agreement of ownership ranges incl. non-divisible counts; per-rank mapper local-slot resolution + peer rejection; partial-sum == full-bank forward within the frozen W8A8 tolerance (observed 1.5e-5); skew concentrates on the owner rank; block-level emulated all-reduce + shared once == TP1 block output (fp16 output rounding term declared); TP4-built models load identical bank contents from unfiltered and loader-filtered streams; missing owned tensor → MissingTensorError; `tp_size == 1` paths bit-identical to pre-slicing.
+- **status**: Completed
+- **log**: 2026-09-21 — Implemented expert-dim slicing (TP4 default target): `local_expert_range` (linear placement, divisibility enforced in block init with an actionable error — 512/4 divides), `expert_tensor_is_local` load gate, `map_expert_tensor(...,tp_size,tp_rank)` resolving local slots, per-rank `validate_expert_weight_map` (+`WeightMapping.peer_expert_tensors`), `w8a8_grouped_experts(expert_offset, num_global_experts)` sentinel-bin slicing (sync count unchanged: one `counts.tolist()`), `_EagerSparseMoE(expert_sharding=(rank,size))` with `_tp_reduce` hook (`tensor_model_parallel_all_reduce` auto-installed when TP>1; loud `RuntimeError` if unavailable), model-level wiring via `_resolve_expert_sharding(vllm_config)`. Read amplification: verified the fork (opensensor `g3ab5dda29`) natively skips peer expert reads with `enable_ep_weight_filter` (skips only `.weight` payloads — hence the model-side tolerance of delivered peer scale/offset); multithread/fastsafetensors iterator paths do NOT pass `local_expert_ids` → D2 launch must use the default `safetensors_weights_iterator`. 24 new UTs (incl. fork-module agreement, host-skip without checkout); full qwen38_1m suite 718 passed, ruff check + format clean. Follow-on (D2-adjacent, NOT in scope): `VocabParallelEmbedding`/`ParallelLMHead` ARE dim-0 sharded under a real TP group but the custom loader's strict-full-shape non-expert path would silently skip them (must route through the param's `weight_loader` or slice); attention/GDN/QSA blocks are built replicated (loads fine, only ~4-5 GB/chip); the ~102 GB PLE shard read-skip (host-table fill + per-rank skip) remains a D2 item.
+- **files edited/created**: `vllm_ascend/models/qwen4_exp/weight_mapping.py`, `vllm_ascend/models/qwen4_exp/moe.py`, `vllm_ascend/models/qwen4_exp/model.py` (all modified), `tests/ut/qwen38_1m/test_moe_tp_sharding.py` (new)
 
 ### T4.1: Host PLE table ownership and lookup method (R5)
 - **depends_on**: [T1.2]

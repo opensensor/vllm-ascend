@@ -109,6 +109,7 @@ from .weight_mapping import (
     TensorDtypeError,
     TensorShapeError,
     WeightMappingError,
+    expert_tensor_is_local,
     map_expert_tensor,
     validate_expert_weight_map,
 )
@@ -435,11 +436,29 @@ class _EagerSparseMoE(nn.Module):
     the shared expert stays non-quantized F16 (per the T3.1 mapping contract) and
     is applied densely + unweighted.
 
+    Expert-dimension TP slicing (the TP4 target): ``expert_sharding=(rank,
+    size)`` gives this rank the contiguous slice of experts
+    ``[rank*E_local, (rank+1)*E_local)`` (same linear placement the fork's
+    ``ep_weight_filter`` loader skip uses). The router gate (``E_global`` rows)
+    and the shared expert stay replicated, so every rank selects identical
+    top-k; the routed partial is all-reduced before the shared expert is added
+    once. The all-reduce defaults to ``vllm.distributed.
+    tensor_model_parallel_all_reduce`` when ``size > 1`` (process group must be
+    initialized -- it is, by worker ``init_device``, before model load) and can
+    be overridden on the instance ``_tp_reduce`` attribute for host tests.
+    ``size == 1`` (host bring-up default) is the exact pre-slicing behavior.
+
     The class name is retained so the assembly imports/isinstance checks keep
     working; the ``experts_*`` eager stub is replaced by the fused W8A8 params.
     """
 
-    def __init__(self, *, config: object, dtype_policy: Qwen4ExpDtypePolicy) -> None:
+    def __init__(
+        self,
+        *,
+        config: object,
+        dtype_policy: Qwen4ExpDtypePolicy,
+        expert_sharding: tuple[int, int] = (0, 1),
+    ) -> None:
         super().__init__()
         self.router_dtype = dtype_policy.router_dtype
         self.compute_dtype = dtype_policy.accumulation_dtype
@@ -455,32 +474,59 @@ class _EagerSparseMoE(nn.Module):
         self.renormalize = bool(getattr(config, "norm_topk_prob", True))
         self.routed_scaling_factor = float(getattr(config, "routed_scaling_factor", 1.0) or 1.0)
 
-        # Router gate stays F16 (non-quantized).
+        # Expert-dimension TP slicing: contiguous [expert_offset,
+        # expert_offset + num_local_experts) global-id range on this rank.
+        # Requiring divisibility keeps local slotting one line everywhere
+        # (512 experts / TP4 = 128); the fork loader filter tolerates
+        # non-divisible counts and must match this, so reject loudly instead.
+        self.expert_tp_rank, self.expert_tp_size = (int(expert_sharding[0]), int(expert_sharding[1]))
+        if self.expert_tp_size < 1 or not 0 <= self.expert_tp_rank < self.expert_tp_size:
+            raise ValueError(f"expert_sharding={expert_sharding} out of range")
+        if self.num_experts and self.num_experts % self.expert_tp_size:
+            raise ValueError(
+                f"num_experts={self.num_experts} is not divisible by expert TP size {self.expert_tp_size}; "
+                "the W8A8 fused bank slices experts contiguously and cannot shard this count"
+            )
+        self.num_local_experts = self.num_experts // self.expert_tp_size
+        self.num_global_experts = self.num_experts
+        self.expert_offset = self.expert_tp_rank * self.num_local_experts
+        self._tp_reduce: object | None = None
+        if self.expert_tp_size > 1:
+            try:
+                from vllm.distributed import tensor_model_parallel_all_reduce
+
+                self._tp_reduce = tensor_model_parallel_all_reduce
+            except Exception:
+                self._tp_reduce = None  # forward() fails loudly if never installed
+
+        # Router gate stays F16 (non-quantized), replicated on every rank so the
+        # top-k selection is identical across all TP ranks.
         self.gate = nn.Parameter(torch.zeros(self.num_experts, hidden, dtype=self.params_dtype))
 
-        # Routed experts in the AscendW8A8DynamicFusedMoEMethod310 fused layout:
-        #   w13_weight        int8    [E, 2*moe, hidden]   gate rows [0,moe), up [moe,2moe)
-        #   w2_weight         int8    [E, hidden, moe]
-        #   w13_weight_scale  float32 [E, 2*moe, 1]  (offset likewise, symmetric == 0)
-        #   w2_weight_scale   float32 [E, hidden, 1]
+        # Routed experts in the AscendW8A8DynamicFusedMoEMethod310 fused layout
+        # (LOCAL slice only under expert-dimension TP slicing):
+        #   w13_weight        int8    [E_local, 2*moe, hidden]   gate rows [0,moe), up [moe,2moe)
+        #   w2_weight         int8    [E_local, hidden, moe]
+        #   w13_weight_scale  float32 [E_local, 2*moe, 1]  (offset likewise, symmetric == 0)
+        #   w2_weight_scale   float32 [E_local, hidden, 1]
         # int8 params never require grad (only float/complex tensors may).
         self.w13_weight = nn.Parameter(
-            torch.zeros(self.num_experts, 2 * moe_inter, hidden, dtype=torch.int8), requires_grad=False
+            torch.zeros(self.num_local_experts, 2 * moe_inter, hidden, dtype=torch.int8), requires_grad=False
         )
         self.w2_weight = nn.Parameter(
-            torch.zeros(self.num_experts, hidden, moe_inter, dtype=torch.int8), requires_grad=False
+            torch.zeros(self.num_local_experts, hidden, moe_inter, dtype=torch.int8), requires_grad=False
         )
         self.w13_weight_scale = nn.Parameter(
-            torch.zeros(self.num_experts, 2 * moe_inter, 1, dtype=self.compute_dtype), requires_grad=False
+            torch.zeros(self.num_local_experts, 2 * moe_inter, 1, dtype=self.compute_dtype), requires_grad=False
         )
         self.w13_weight_offset = nn.Parameter(
-            torch.zeros(self.num_experts, 2 * moe_inter, 1, dtype=self.compute_dtype), requires_grad=False
+            torch.zeros(self.num_local_experts, 2 * moe_inter, 1, dtype=self.compute_dtype), requires_grad=False
         )
         self.w2_weight_scale = nn.Parameter(
-            torch.zeros(self.num_experts, hidden, 1, dtype=self.compute_dtype), requires_grad=False
+            torch.zeros(self.num_local_experts, hidden, 1, dtype=self.compute_dtype), requires_grad=False
         )
         self.w2_weight_offset = nn.Parameter(
-            torch.zeros(self.num_experts, hidden, 1, dtype=self.compute_dtype), requires_grad=False
+            torch.zeros(self.num_local_experts, hidden, 1, dtype=self.compute_dtype), requires_grad=False
         )
 
         shared_inter = int(getattr(config, "shared_expert_intermediate_size", 0) or 0)
@@ -507,7 +553,17 @@ class _EagerSparseMoE(nn.Module):
             self.w2_weight,
             self.w2_weight_scale,
             self.w2_weight_offset,
+            expert_offset=self.expert_offset,
+            num_global_experts=self.num_global_experts,
         )
+        if self.expert_tp_size > 1:
+            if self._tp_reduce is None:
+                raise RuntimeError(
+                    "Qwen4Exp expert-TP MoE needs an all-reduce: vllm.distributed."
+                    "tensor_model_parallel_all_reduce was not importable at model init "
+                    "and no override is installed on _EagerSparseMoE._tp_reduce."
+                )
+            out = self._tp_reduce(out)
 
         if self.has_shared_expert:
             shared_gate_up = _linear(block_input, self.shared_gate_up, self.compute_dtype)
@@ -662,6 +718,7 @@ class AscendQwen4ExpDecoderLayer(nn.Module):
         layer_idx: int,
         dtype_policy: Qwen4ExpDtypePolicy,
         prefix: str = "",
+        expert_sharding: tuple[int, int] = (0, 1),
     ) -> None:
         super().__init__()
         self.config = config
@@ -714,7 +771,9 @@ class AscendQwen4ExpDecoderLayer(nn.Module):
         mlp_only_layers = getattr(config, "mlp_only_layers", []) or []
         is_moe = layer_idx not in mlp_only_layers and num_experts > 0 and (layer_idx + 1) % decoder_sparse_step == 0
         if is_moe:
-            self.mlp: nn.Module = _EagerSparseMoE(config=config, dtype_policy=dtype_policy)
+            self.mlp: nn.Module = _EagerSparseMoE(
+                config=config, dtype_policy=dtype_policy, expert_sharding=expert_sharding
+            )
         else:
             self.mlp = _EagerMLP(
                 hidden_size=hidden,
@@ -745,6 +804,31 @@ class AscendQwen4ExpDecoderLayer(nn.Module):
 # ===========================================================================
 # Backbone
 # ===========================================================================
+def _resolve_expert_sharding(vllm_config: VllmConfig) -> tuple[int, int]:
+    """This process's ``(expert_tp_rank, expert_tp_size)`` for the W8A8 bank.
+
+    The size is the configured tensor-parallel size (expert-dimension slicing,
+    one contiguous expert range per rank -- the same linear placement the fork's
+    ``ep_weight_filter`` weight loader uses). The rank comes from the initialized
+    tensor-model-parallel group; on device runs the worker initializes parallel
+    state in ``init_device`` before the model is constructed, so it is always
+    valid there. Host bring-up (UT / dummy boots) has no process group: rank
+    falls back to 0, which only the ``tp_size == 1`` path consumes.
+    """
+    parallel = getattr(vllm_config, "parallel_config", None)
+    size = int(getattr(parallel, "tensor_parallel_size", 1) or 1)
+    if size <= 1:
+        return (0, 1)
+    rank = 0
+    try:
+        from vllm.distributed import get_tensor_model_parallel_rank
+
+        rank = int(get_tensor_model_parallel_rank())
+    except Exception:
+        rank = 0
+    return (rank % size, size)
+
+
 class AscendQwen4ExpModel(nn.Module):
     """Backbone: embeddings + decoder-layer stack + final mixer + final norm."""
 
@@ -771,6 +855,9 @@ class AscendQwen4ExpModel(nn.Module):
         )
 
         layer_types = self._resolve_layer_types(config)
+        # Expert-dimension TP slicing shared by every MoE block and the loader
+        # (T3.1b): contiguous expert range per rank; rank 0 / size 1 host boot.
+        self.expert_sharding = _resolve_expert_sharding(vllm_config)
         self.layers = nn.ModuleList(
             AscendQwen4ExpDecoderLayer(
                 config=config,
@@ -778,6 +865,7 @@ class AscendQwen4ExpModel(nn.Module):
                 layer_idx=idx,
                 dtype_policy=self.dtype_policy,
                 prefix=maybe_prefix(prefix, f"layers.{idx}"),
+                expert_sharding=self.expert_sharding,
             )
             for idx in range(config.num_hidden_layers)
         )
@@ -1089,15 +1177,25 @@ class AscendQwen4ExpForCausalLM(
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         """Load a real (or round-trip) checkpoint into the assembled model.
 
-        Two tensor namespaces are handled in a single streaming pass (no full
-        512-expert bank is ever materialized, matching the T3.2 loader):
+        Two tensor namespaces are handled in a single streaming pass. Per-rank
+        memory stays at ~1/TP of the 512-expert bank: the fused params are
+        expert-dimension sliced (T3.1b), so this rank only places its local
+        expert range and no full bank is ever materialized (matching the T3.2
+        loader):
 
-        * **Per-expert W8A8 tensors** -- any name containing ``.mlp.experts.`` is
-          routed through the T3.1 mapper (:func:`map_expert_tensor`) and copied
-          into its fused ``w13_*``/``w2_*`` slot as it streams off the iterator.
+        * **Per-expert W8A8 tensors** -- any name containing ``.mlp.experts.``
+          owned by this rank is routed through the T3.1 mapper
+          (:func:`map_expert_tensor`) and copied into its fused ``w13_*``/
+          ``w2_*`` slot as it streams off the iterator. Names for peer ranks'
+          experts are dropped without placement: the fork's loader-side filter
+          skips their ``.weight`` payloads before disk I/O
+          (``--enable-expert-parallel --enable-ep-weight-filter``); it still
+          delivers the tiny peer scale/offset tensors, and without the filter
+          even the weights, so the drop here is the correctness-critical half.
           After the pass, the provided expert index is validated against the
-          frozen geometry (:func:`validate_expert_weight_map`), rejecting missing,
-          extra, wrong-dtype or wrong-shape expert tensors.
+          frozen geometry restricted to this rank's local experts
+          (:func:`validate_expert_weight_map`), rejecting missing, extra,
+          wrong-dtype or wrong-shape expert tensors.
         * **Non-expert F16 tensors** (router / shared expert / attention / PLE /
           norms / lm_head / embeddings) load by name+shape after the
           ``hf_to_vllm_mapper`` prefix rewrite.
@@ -1108,6 +1206,7 @@ class AscendQwen4ExpForCausalLM(
         """
         geometry = self._expert_geometry()
         has_experts = geometry["num_experts"] > 0
+        tp_rank, tp_size = self.model.expert_sharding
         params = dict(self.named_parameters())
         loaded: set[str] = set()
         # Metadata only (name -> {dtype, shape}); payloads are placed + released as
@@ -1116,7 +1215,9 @@ class AscendQwen4ExpForCausalLM(
 
         for raw_name, weight in weights:
             if has_experts and ".mlp.experts." in raw_name:
-                mapping = map_expert_tensor(raw_name, geometry)
+                if not expert_tensor_is_local(raw_name, geometry, tp_size, tp_rank):
+                    continue  # peer-owned expert: placed (and read) by its owner
+                mapping = map_expert_tensor(raw_name, geometry, tp_size, tp_rank)
                 target = self._place_expert_tensor(params, mapping, weight)
                 expert_index[raw_name] = {"dtype": weight.dtype, "shape": tuple(weight.shape)}
                 loaded.add(target)
@@ -1133,7 +1234,7 @@ class AscendQwen4ExpForCausalLM(
         # Reject an incomplete / malformed expert set -- only when the checkpoint
         # actually carried per-expert tensors (a by-name round-trip carries none).
         if expert_index:
-            validate_expert_weight_map(expert_index, geometry)
+            validate_expert_weight_map(expert_index, geometry, tp_size=tp_size, tp_rank=tp_rank)
         return loaded
 
     def compute_logits(self, hidden_states: torch.Tensor) -> torch.Tensor | None:
