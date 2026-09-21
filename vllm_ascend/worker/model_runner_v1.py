@@ -5715,6 +5715,13 @@ class NPUModelRunner(GPUModelRunner):
                 if kv_cache_spec[layer_name].page_size_bytes < mamba_page_size_padded:  # type: ignore[attr-defined]
                     object.__setattr__(kv_cache_spec[layer_name], "page_size_padded", mamba_page_size_padded)
 
+        # Eager Qwen4Exp attention modules are plain nn.Module (not
+        # AttentionLayerBase), so the standard scan above finds none of them;
+        # take the per-layer spec dict straight from the model when present.
+        model_get_spec = getattr(self.model, "get_kv_cache_spec", None)
+        if model_get_spec is not None:
+            kv_cache_spec = {**kv_cache_spec, **model_get_spec(self.vllm_config)}
+
         if self.sparse_kv_offload_enabled:
             self.kv_cache_spec = kv_cache_spec # reserve for Sparse KV offload usage
         return kv_cache_spec
