@@ -203,7 +203,9 @@ def w8a8_grouped_experts(
     pair_token = torch.arange(num_tokens, device=x.device).unsqueeze(1).expand(num_tokens, top_k).reshape(-1)
     pair_x = x32[pair_token]  # gather activations for each (token, slot) pair
 
-    order = torch.argsort(pair_expert, stable=True)
+    # int64 argsort runs on AiCpu (slow + logs a warning); expert ids are < 2^24
+    # so float32 preserves their exact ordering and keeps the sort on AiCore.
+    order = torch.argsort(pair_expert.to(torch.float32), stable=True)
     sorted_expert = pair_expert[order]
     sorted_x = pair_x[order]
     sorted_weight = pair_weight[order]
