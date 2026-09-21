@@ -1739,13 +1739,14 @@ class AscendQwen4ExpForCausalLM(
             if target is None:
                 return None
             local_v = target.shape[0] // 2
-            if base.endswith(".in_proj_a.weight"):
-                src = tensor[tp_rank * local_v : (tp_rank + 1) * local_v]
-                with torch.no_grad():
+            # in_proj_a and in_proj_b are separate [num_v_heads, hidden] tensors;
+            # each rank takes its local head slice (a -> rows [0, local_v),
+            # b -> rows [local_v, 2*local_v) of the fused in_proj_ba).
+            src = tensor[tp_rank * local_v : (tp_rank + 1) * local_v]
+            with torch.no_grad():
+                if base.endswith(".in_proj_a.weight"):
                     target[0:local_v].copy_(src.to(target.dtype))
-            else:
-                src = tensor[fnum_v + tp_rank * local_v : fnum_v + (tp_rank + 1) * local_v]
-                with torch.no_grad():
+                else:
                     target[local_v : 2 * local_v].copy_(src.to(target.dtype))
             return tname
 
