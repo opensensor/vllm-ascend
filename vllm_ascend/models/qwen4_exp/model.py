@@ -542,6 +542,17 @@ class _GDNAttention(nn.Module, MambaBase):
     def get_state_dtype(self) -> tuple[torch.dtype, ...]:
         return (self.mamba_conv_dtype, self.mamba_ssm_dtype)
 
+    def get_kv_cache_spec(self, vllm_config: object) -> MambaSpec:
+        # Match the model's per-layer spec: the GDN state is larger than the
+        # generic ``MambaBase`` page-size padding, so build the spec without a
+        # ``page_size_padded`` (letting it default to the raw state size).
+        del vllm_config
+        return MambaSpec(
+            shapes=self.get_state_shape(),
+            dtypes=self.get_state_dtype(),
+            block_size=DEFAULT_ATTENTION_BLOCK_SIZE,
+        )
+
     def forward(self, block_input: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
         del positions  # GDN applies no rotary
         seq_len = block_input.shape[0]
