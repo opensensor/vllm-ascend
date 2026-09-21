@@ -392,6 +392,32 @@ def _prepare_chunk_indices_list(cu_seqlens: torch.Tensor, chunk_size: int) -> li
 _UT_INVERSE_BLOCK = 8
 
 
+_DECAY_MASK_CACHE: dict[tuple[int, torch.device], torch.Tensor] = {}
+
+
+def _upper_incl_diag_mask(chunk_size: int, device: torch.device) -> torch.Tensor:
+    """Everything the intra-chunk decay must zero: the diagonal and above."""
+    key = (chunk_size, device)
+    mask = _DECAY_MASK_CACHE.get(key)
+    if mask is None:
+        mask = torch.ones(chunk_size, chunk_size, dtype=torch.bool, device=device).triu(0)
+        _DECAY_MASK_CACHE[key] = mask
+    return mask
+
+
+def _strictly_lower_decay(g: torch.Tensor, chunk_size: int) -> torch.Tensor:
+    """exp(g_i - g_j) below the diagonal, zero on and above it.
+
+    The obvious spelling is ``.tril(-1).exp().tril(-1)`` -- the first tril to
+    stop the upper triangle exponentiating a large positive into inf, the
+    second to undo exp(0) == 1 on the entries the first one zeroed. Filling
+    with -inf instead does both in one pass, since exp(-inf) is exactly 0, and
+    each of these passes reads and writes a [B, H, C, 64, 64] fp32 block.
+    """
+    delta = g.unsqueeze(-1) - g.unsqueeze(-2)
+    return delta.masked_fill(_upper_incl_diag_mask(chunk_size, g.device), float("-inf")).exp()
+
+
 def _inv_small_unit_lower(m: torch.Tensor) -> torch.Tensor:
     """Forward substitution. Cheap only while ``m`` is small; batch it."""
     n = m.shape[-1]
@@ -540,13 +566,8 @@ def _compute_kernel_inputs_from_torch_wy(
     g = g.reshape(batch_size, num_v_heads, num_chunks, chunk_size).cumsum(dim=-1)
     beta = beta.reshape(batch_size, num_v_heads, num_chunks, chunk_size)
 
-    # tril(-1) rather than tril(): masking the decay strictly below the diagonal
-    # leaves `attn` strictly lower on its own, so the separate masked_fill that
-    # used to follow -- a read and a write of the whole [B, H, C, 64, 64] fp32
-    # block per layer -- is not needed. The tril before the exp still has to
-    # stay: without it the upper triangle exponentiates a large positive and
-    # overflows to inf, and 0 * inf is nan.
-    lower_decay = (g.unsqueeze(-1) - g.unsqueeze(-2)).tril(-1).exp().tril(-1)
+    # Strictly lower, so `attn` needs no separate masking pass afterwards.
+    lower_decay = _strictly_lower_decay(g, chunk_size)
 
     if use_grouped_gram:
         # The expanded key is three copies of the same four heads, and
@@ -557,7 +578,12 @@ def _compute_kernel_inputs_from_torch_wy(
         # head count in fp32 -- the two largest tensors in this function.
         shape5 = (batch_size, k_heads, group, num_chunks, chunk_size)
         gram = key_grouped @ key_grouped.transpose(-1, -2)
-        attn = -(gram.unsqueeze(2) * beta.view(*shape5).unsqueeze(-1) * lower_decay.view(*shape5, chunk_size))
+        # Carrying the sign on beta, which is [B, H, C] and tiny, rather than
+        # negating attn, which is the [B, H, C, 64, 64] fp32 block. IEEE
+        # negation is exact, so the result is unchanged. `beta` itself stays
+        # positive for the two uses below.
+        neg_beta = -beta
+        attn = gram.unsqueeze(2) * neg_beta.view(*shape5).unsqueeze(-1) * lower_decay.view(*shape5, chunk_size)
         attn = _ut_transform(attn, chunk_size)
 
         value = attn.reshape(batch_size, num_v_heads, num_chunks, chunk_size, chunk_size) @ (

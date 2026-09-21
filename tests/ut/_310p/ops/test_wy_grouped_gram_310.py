@@ -114,3 +114,39 @@ def test_grouped_gram_handles_several_chunks_and_seeds(monkeypatch):
         for want, got in zip(default, grouped):
             ulps = _max_ulps(want, got)
             assert ulps <= 1.0, f"seed {seed} differs by {ulps:.2f} fp16 ULPs"
+
+
+def test_strictly_lower_decay_matches_tril_exp_tril():
+    """The one-pass form must equal the three-pass one it replaced, exactly.
+
+    `.tril(-1).exp().tril(-1)` needs the first tril so the upper triangle does
+    not exponentiate a large positive into inf, and the second to undo
+    exp(0) == 1 where the first one wrote zeros. Filling with -inf does both at
+    once, since exp(-inf) is exactly 0.
+    """
+    torch.manual_seed(2)
+    for spread in (1.0, 40.0, 250.0, 1000.0):
+        g = torch.nn.functional.logsigmoid(torch.randn(1, 12, 4, CHUNK)).cumsum(-1) * spread
+        want = (g.unsqueeze(-1) - g.unsqueeze(-2)).tril(-1).exp().tril(-1)
+        got = cgdr._strictly_lower_decay(g, CHUNK)
+        assert torch.equal(want, got), f"spread {spread}"
+        assert torch.isfinite(got).all(), f"spread {spread} produced inf/nan"
+
+
+def test_strictly_lower_decay_is_zero_on_and_above_the_diagonal():
+    torch.manual_seed(3)
+    g = torch.nn.functional.logsigmoid(torch.randn(1, 2, 3, CHUNK)).cumsum(-1)
+    decay = cgdr._strictly_lower_decay(g, CHUNK)
+    assert torch.equal(decay, decay.tril(-1))
+    # and the surviving entries are exp of a non-positive number, so in (0, 1]
+    below = decay[..., 1:, :-1].tril(-1)
+    assert (below <= 1.0).all()
+
+
+def test_decay_mask_is_built_once_per_shape_and_device():
+    cgdr._DECAY_MASK_CACHE.clear()
+    first = cgdr._upper_incl_diag_mask(CHUNK, torch.device("cpu"))
+    assert cgdr._upper_incl_diag_mask(CHUNK, torch.device("cpu")) is first
+    assert len(cgdr._DECAY_MASK_CACHE) == 1
+    other = cgdr._upper_incl_diag_mask(32, torch.device("cpu"))
+    assert other is not first and other.shape == (32, 32)
