@@ -109,7 +109,6 @@ def test_vocab_and_lm_head_shard_under_tp4():
             patch(f"{_VMOD}.get_tensor_model_parallel_world_size", return_value=tp),
             patch(f"{_VMOD}.get_tensor_model_parallel_rank", return_value=rank),
             patch(f"{_VMOD}.tensor_model_parallel_all_reduce", side_effect=lambda x: x),
-            patch(f"{_LMOD}.get_tensor_model_parallel_world_size", return_value=tp),
             patch(f"{_LMOD}.tensor_model_parallel_gather", side_effect=lambda x: x),
             patch(f"{_LMOD}.tensor_model_parallel_all_gather", side_effect=lambda x, dim=-1: x),
             patch("vllm.distributed.get_tensor_model_parallel_rank", return_value=rank),
