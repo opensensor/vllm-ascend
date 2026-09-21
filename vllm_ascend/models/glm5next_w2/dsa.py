@@ -56,12 +56,16 @@ behavior of sparse attention. Both sets are causal by construction (a visible
 block is fully-formed => all its tokens are <= t), so the DSA output at ``t`` is
 independent of tokens > ``t``.
 
-NOTE (device parity follow-up): GLM's real kpool indexer also adds an absolute
-position embedding (``index_kpool_compress_ape``) to the pooled keys and a gate
-(``index_kpool_compress_gate``) before scoring. This host module runs the plain
-mean-pool reuse (``use_compress_ape=False`` by default) which is the exact
-deepseek_v41 selection; ``compress_ape`` is exposed as an opt-in adapter so a
-later device-parity task can wire the GLM APE/gate without touching call sites.
+NOTE (GLM kpool parity): GLM's real kpool indexer folds an absolute-position
+embedding (``index_kpool_compress_ape``) and a gate (``index_kpool_compress_gate``)
+into the pooled keys via a softmax(gate+ape)-weighted sum before scoring. The
+plain ``use_compress_ape=False`` / ``use_compress_gate=False`` constructor runs
+the exact deepseek_v41 mean-pool reuse (used by the CPU parity harness);
+:meth:`AscendGlm5NextW2DSA.from_config` (the runtime entry point) enables both
+so the 310P selection matches the shipped GPU indexer, and
+:func:`_bind_shipped_mla_weights` loads the two checkpoint params. The only
+remaining fidelity gap vs the GPU kernel is the Hadamard-128 rotation + fp8
+cache encoding, which is orthogonal up to fp rounding.
 """
 
 from __future__ import annotations
@@ -143,6 +147,39 @@ def _layer_norm(
     return normed.to(orig_dtype)
 
 
+def _kpool_softmax_compress(
+    raw_keys: torch.Tensor,
+    gate_score: torch.Tensor,
+    compress_ape: torch.Tensor | None,
+    compress_ratio: int,
+    *,
+    accum_dtype: torch.dtype = torch.float64,
+) -> torch.Tensor:
+    """GLM kpool compression: softmax(gate+ape)-weighted sum of pool keys.
+
+    ``pooled[m, d] = sum_slot softmax_slot(gate_score[slot, d] + ape[slot, d])
+    * k[slot, d]`` -- the softmax is over the ``compress_ratio`` pool slots per
+    head-dim ``d``. This reproduces the shipped ``kpool_compress_and_write_cache``
+    Pass 1 (per-dim max for softmax stability) + Pass 2 (weighted sum), minus the
+    Hadamard-128 rotation and fp8 cache encoding (orthogonal up to fp rounding).
+    """
+    keys = raw_keys.to(accum_dtype)
+    gate = gate_score.to(accum_dtype)
+    seq_len, dim = keys.shape
+    num_blocks = seq_len // compress_ratio
+    if num_blocks == 0:
+        return keys.new_zeros((0, dim))
+    trimmed_k = keys[: num_blocks * compress_ratio].view(num_blocks, compress_ratio, dim)
+    trimmed_g = gate[: num_blocks * compress_ratio].view(num_blocks, compress_ratio, dim)
+    scores = trimmed_g
+    if compress_ape is not None:
+        scores = scores + compress_ape.to(accum_dtype)[None, :, :]
+    max_score = scores.max(dim=1, keepdim=True).values
+    probs = torch.exp(scores - max_score)
+    denom = probs.sum(dim=1)
+    return (trimmed_k * probs).sum(dim=1) / denom
+
+
 # ===========================================================================
 # Indexer selection result
 # ===========================================================================
@@ -201,6 +238,7 @@ class Glm5NextW2DsaIndexer(nn.Module):
         dtype: torch.dtype | None = None,
         device: torch.device | str | None = None,
         use_compress_ape: bool = False,
+        use_compress_gate: bool = False,
     ) -> None:
         super().__init__()
         self.dtype_policy = dtype_policy
@@ -231,12 +269,22 @@ class Glm5NextW2DsaIndexer(nn.Module):
         self.k_norm_bias = nn.Parameter(torch.empty(self.head_dim, **factory))
         # Optional GLM kpool absolute-position embedding (device-parity opt-in).
         self.use_compress_ape = use_compress_ape
+        self.use_compress_gate = use_compress_gate
         if use_compress_ape:
             self.compress_ape: nn.Parameter | None = nn.Parameter(
                 torch.zeros(self.index_kpool, self.head_dim, **factory)
             )
         else:
             self.compress_ape = None
+        if use_compress_gate:
+            # GLM's ``index_kpool_compress_gate``: [head_dim, hidden] gate weight
+            # producing a per-token ``[T, head_dim]`` score folded into the pool
+            # softmax before scoring (see _kpool_softmax_compress).
+            self.compress_gate: nn.Parameter | None = nn.Parameter(
+                torch.empty(self.head_dim, hidden_size, **factory)
+            )
+        else:
+            self.compress_gate = None
         self.reset_parameters()
 
     def reset_parameters(self, seed: int | None = None) -> None:
@@ -253,6 +301,8 @@ class Glm5NextW2DsaIndexer(nn.Module):
         fill(self.k_norm_bias, 0.0)
         if self.compress_ape is not None:
             fill(self.compress_ape, 0.02)
+        if self.compress_gate is not None:
+            fill(self.compress_gate, 0.05)
 
     # -- projections --------------------------------------------------------
     def project_query(self, qr: torch.Tensor) -> torch.Tensor:
@@ -269,6 +319,16 @@ class Glm5NextW2DsaIndexer(nn.Module):
         weights = weights * self.weight_scale
         return k, weights
 
+    def project_gate(self, hidden_states: torch.Tensor) -> torch.Tensor | None:
+        """hidden ``[T, hidden]`` -> gate score ``[T, head_dim]`` (GLM parity).
+
+        ``None`` when the gate is disabled (``use_compress_gate=False``), in
+        which case the compression falls back to the plain mean-pool reuse.
+        """
+        if self.compress_gate is None:
+            return None
+        return hidden_states.to(self.dtype) @ self.compress_gate.t()
+
     # -- compression + scoring + selection (reused functions) --------------
     def _compress(self, raw_keys: torch.Tensor, compress_ratio: int) -> torch.Tensor:
         compressed = mean_pool_compress(raw_keys, compress_ratio, accum_dtype=self.select_accum_dtype)
@@ -279,6 +339,28 @@ class Glm5NextW2DsaIndexer(nn.Module):
             compressed = compressed + ape
         return compressed
 
+    def _compress_glm(
+        self,
+        raw_keys: torch.Tensor,
+        gate_score: torch.Tensor,
+        compress_ratio: int,
+    ) -> torch.Tensor:
+        """GLM-parity kpool compression: softmax(gate+ape)-weighted pool keys.
+
+        Mirrors the shipped ``kpool_compress_and_write_cache`` (Pass 1/Pass 2):
+        ``pooled[m, d] = sum_slot softmax_slot(gate_score[slot, d] + ape[slot, d])
+        * k[slot, d]`` -- the softmax is taken over the ``compress_ratio`` pool
+        slots per head-dim. Omits only the Hadamard-128 rotation + fp8 cache
+        encoding (a later precision refinement; orthogonal up to fp rounding).
+        """
+        return _kpool_softmax_compress(
+            raw_keys,
+            gate_score,
+            self.compress_ape,
+            compress_ratio,
+            accum_dtype=self.select_accum_dtype,
+        )
+
     def select_blocks(
         self,
         query: torch.Tensor,
@@ -286,14 +368,20 @@ class Glm5NextW2DsaIndexer(nn.Module):
         raw_keys: torch.Tensor,
         positions: torch.Tensor,
         compress_ratio: int | None = None,
+        gate_score: torch.Tensor | None = None,
     ) -> list[list[int]]:
-        """Reused deepseek_v41 selection: compress -> lightning score -> top-k.
+        """Compress -> lightning score -> top-k block selection.
 
-        Uses ``vllm_ascend.models.deepseek_v41.indexer`` verbatim so the GLM DSA
-        selection is bit-identical to the DeepSeek indexer on shared inputs.
+        When ``gate_score`` is provided (GLM parity) the compression uses the
+        softmax(gate+ape)-weighted pool; otherwise it is the plain deepseek_v41
+        mean-pool reuse, so the GLM DSA selection stays bit-identical to the
+        DeepSeek indexer on shared inputs in that mode.
         """
         ratio = self.index_kpool if compress_ratio is None else compress_ratio
-        compressed = self._compress(raw_keys, ratio)
+        if gate_score is not None and self.compress_gate is not None:
+            compressed = self._compress_glm(raw_keys, gate_score, ratio)
+        else:
+            compressed = self._compress(raw_keys, ratio)
         scores = lightning_indexer_scores(
             query, weights, compressed, self.softmax_scale, accum_dtype=self.select_accum_dtype
         )
@@ -344,7 +432,11 @@ class Glm5NextW2DsaIndexer(nn.Module):
         seq_len = hidden_states.shape[0]
         query = self.project_query(qr)
         raw_keys, weights = self.project_k_and_weights(hidden_states)
-        compressed = self._compress(raw_keys, self.index_kpool)
+        gate = self.project_gate(hidden_states)
+        if gate is not None and self.compress_gate is not None:
+            compressed = self._compress_glm(raw_keys, gate, self.index_kpool)
+        else:
+            compressed = self._compress(raw_keys, self.index_kpool)
         scores = lightning_indexer_scores(
             query, weights, compressed, self.softmax_scale, accum_dtype=self.select_accum_dtype
         )
@@ -412,6 +504,8 @@ class AscendGlm5NextW2DSA(nn.Module):
         dtype_policy: Glm5NextW2DtypePolicy = ASCEND_GLM5NEXT_W2_DTYPE_POLICY,
         dtype: torch.dtype | None = None,
         device: torch.device | str | None = None,
+        use_compress_ape: bool = False,
+        use_compress_gate: bool = False,
     ) -> None:
         super().__init__()
         self.dtype_policy = dtype_policy
@@ -478,6 +572,8 @@ class AscendGlm5NextW2DSA(nn.Module):
             dtype_policy=dtype_policy,
             dtype=indexer_dtype,
             device=device,
+            use_compress_ape=use_compress_ape,
+            use_compress_gate=use_compress_gate,
         )
         self.reset_parameters()
 
@@ -510,6 +606,8 @@ class AscendGlm5NextW2DSA(nn.Module):
             dtype_policy=dtype_policy,
             dtype=dtype,
             device=device,
+            use_compress_ape=True,
+            use_compress_gate=True,
         )
 
     def reset_parameters(self, seed: int | None = None) -> None:

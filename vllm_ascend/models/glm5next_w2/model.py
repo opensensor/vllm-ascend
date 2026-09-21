@@ -503,6 +503,8 @@ _DSA_WEIGHT_BINDINGS: tuple[tuple[str, str], ...] = (
     ("indexer.wk_weights_proj.weight", "indexer.wk_weights_proj"),
     ("indexer.k_norm.weight", "indexer.k_norm_weight"),
     ("indexer.k_norm.bias", "indexer.k_norm_bias"),
+    ("indexer.index_kpool_compress_ape", "indexer.compress_ape"),
+    ("indexer.index_kpool_compress_gate", "indexer.compress_gate"),
 )
 
 

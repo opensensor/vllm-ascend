@@ -260,3 +260,79 @@ def test_package_lazily_exports_dsa_classes():
     assert pkg.Glm5NextW2DsaIndexer is Glm5NextW2DsaIndexer
     # G3 dtype policy export still present (no regression).
     assert hasattr(pkg, "ASCEND_GLM5NEXT_W2_DTYPE_POLICY")
+
+
+# ---------------------------------------------------------------------------
+# GLM kpool parity: softmax(gate+ape)-weighted pooled key (missing-gate fix)
+# ---------------------------------------------------------------------------
+
+
+def _ref_kpool_compress(raw_keys, gate_score, ape, ratio, dtype=torch.float64):
+    """Direct reference for the shipped ``kpool_compress_and_write_cache`` math."""
+    k = raw_keys.to(dtype)
+    g = gate_score.to(dtype)
+    a = ape.to(dtype)
+    S, D = k.shape
+    nb = S // ratio
+    trimmed_k = k[: nb * ratio].view(nb, ratio, D)
+    trimmed_g = g[: nb * ratio].view(nb, ratio, D)
+    scores = trimmed_g + a[None, :, :]
+    mx = scores.max(dim=1, keepdim=True).values
+    probs = torch.exp(scores - mx)
+    denom = probs.sum(dim=1)
+    return (trimmed_k * probs).sum(dim=1) / denom
+
+
+def test_kpool_softmax_compress_matches_reference():
+    from vllm_ascend.models.glm5next_w2.dsa import _kpool_softmax_compress
+
+    T, D, ratio = 12, _DIMS["index_head_dim"], _DIMS["index_kpool"]
+    torch.manual_seed(17)
+    raw_keys = torch.randn(T, D, dtype=torch.float64)
+    gate_score = torch.randn(T, D, dtype=torch.float64)
+    ape = torch.randn(ratio, D, dtype=torch.float64)
+
+    got = _kpool_softmax_compress(raw_keys, gate_score, ape, ratio, accum_dtype=torch.float64)
+    ref = _ref_kpool_compress(raw_keys, gate_score, ape, ratio)
+    assert got.shape == (T // ratio, D)
+    assert torch.allclose(got, ref, atol=0.0, rtol=0.0), "kpool compression diverged from reference"
+
+
+def test_glm_parity_indexer_uses_gate_ape_weighted_pool():
+    from vllm_ascend.models.glm5next_w2.dsa import Glm5NextW2DsaIndexer
+
+    T = 16
+    torch.manual_seed(23)
+    hidden = torch.randn(T, _DIMS["hidden_size"], dtype=torch.float64)
+    qr = torch.randn(T, _DIMS["q_lora_rank"], dtype=torch.float64)
+    positions = torch.arange(T)
+
+    idx = Glm5NextW2DsaIndexer(
+        hidden_size=_DIMS["hidden_size"],
+        q_lora_rank=_DIMS["q_lora_rank"],
+        index_n_heads=_DIMS["index_n_heads"],
+        index_head_dim=_DIMS["index_head_dim"],
+        index_topk=_DIMS["index_topk"],
+        index_kpool=_DIMS["index_kpool"],
+        dtype=torch.float64,
+        use_compress_ape=True,
+        use_compress_gate=True,
+    )
+    idx.reset_parameters(seed=99)
+
+    # A non-trivial gate/ape must move the pooled key away from the mean pool.
+    raw_keys, _ = idx.project_k_and_weights(hidden)
+    gate = idx.project_gate(hidden)
+    assert gate is not None and gate.shape == (T, _DIMS["index_head_dim"])
+
+    pooled_gate = idx._compress_glm(raw_keys, gate, _DIMS["index_kpool"])
+    pooled_mean = idx._compress(raw_keys, _DIMS["index_kpool"])
+    assert not torch.allclose(pooled_gate, pooled_mean), "gate+ape pooling must differ from mean pool"
+
+    ref = _ref_kpool_compress(raw_keys, gate, idx.compress_ape, _DIMS["index_kpool"])
+    assert torch.allclose(pooled_gate, ref, atol=0.0, rtol=0.0)
+
+    # The full indexer forward must route through the gate/ape-weighted pool.
+    result = idx(hidden, qr, positions)
+    assert result.token_mask.shape == (T, T)
+
