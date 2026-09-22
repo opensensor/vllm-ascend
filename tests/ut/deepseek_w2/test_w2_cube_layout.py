@@ -50,7 +50,7 @@ def _decode_like_kernel(packed: torch.Tensor, bits: int) -> torch.Tensor:
 
 
 def _decode_tile_like_kernel(packed: torch.Tensor, bits: int) -> torch.Tensor:
-    """Re-express the batched 16-row decode into [K-fractal,N,K] order."""
+    """Re-express the 16-row vector decode into [K-fractal,N,K] order."""
     codes_per_byte = 8 // bits
     mask = (1 << bits) - 1
     sign_half = 1 << (bits - 1)
@@ -152,7 +152,8 @@ def test_kernel_and_tiling_keep_dequant_workspace_bounded_per_core():
 
     assert "half, layout::zN" in kernel
     assert "DequantTileToNz" in kernel
-    assert "DataCopy(cU8_, codesGm_[codeOffset], copyParams)" in kernel
+    assert "for (uint32_t row = 0; row < W2_FRACTAL_SIZE; ++row)" in kernel
+    assert "codesGm_[codeOffset + static_cast<int64_t>(row) * packedK_]" in kernel
     assert "W2_TILE_K = 128" in kernel
     assert "xfmGm_" not in kernel
     assert "yfGm_" not in kernel

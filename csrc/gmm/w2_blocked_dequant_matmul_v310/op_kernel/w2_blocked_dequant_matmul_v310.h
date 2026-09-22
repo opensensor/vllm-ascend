@@ -205,15 +205,16 @@ private:
 
     __aicore__ inline void DecodeTile(int64_t codeOffset)
     {
-        // One 2-D DMA loads 16 rows x 128 logical K values. Both W2 (32
-        // packed bytes/row) and W4 (64 bytes/row) are naturally 32-byte
-        // aligned, so no padded tail transfer or per-row MTE command is needed.
-        DataCopyParams copyParams;
-        copyParams.blockCount = W2_FRACTAL_SIZE;
-        copyParams.blockLen = static_cast<uint16_t>(packedTileCols_ * sizeof(uint8_t) / 32);
-        copyParams.srcStride = static_cast<uint16_t>((packedK_ - packedTileCols_) * sizeof(uint8_t) / 32);
-        copyParams.dstStride = 0;
-        DataCopy(cU8_, codesGm_[codeOffset], copyParams);
+        // Copy one packed row at a time. A strided 2-D GM-to-UB DataCopy looks
+        // attractive here, but dav_m200 rejects that descriptor at runtime
+        // with an MTE "burst num" exception even when every row and stride is
+        // 32-byte aligned. The scalar overload is hardware-proven on 310P and
+        // still batches all 128 logical K values for the vector decode below.
+        for (uint32_t row = 0; row < W2_FRACTAL_SIZE; ++row) {
+            DataCopy(cU8_[row * packedTileCols_],
+                     codesGm_[codeOffset + static_cast<int64_t>(row) * packedK_],
+                     static_cast<int32_t>(packedTileCols_));
+        }
         SetFlag<HardEvent::MTE2_V>(EVENT_ID0);
         WaitFlag<HardEvent::MTE2_V>(EVENT_ID0);
         Cast(cH_, cU8_, RoundMode::CAST_NONE, (int32_t)packedTileCount_);
