@@ -23,9 +23,27 @@ The selection is bitwise-deterministic and matches the T0.6 eager reference
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import torch
 
 _PAD_INDEX = -1
+_QSA_INDEX_CACHE_SCRATCH_ROWS = 3
+
+
+@dataclass(frozen=True)
+class QSAGroupSelection:
+    """Device-resident QSA selection before expansion to token ids.
+
+    Keeping the learned selection in compression-group form avoids expanding
+    512 selected groups into roughly 2K token ids.  The native sparse
+    attention kernel expands each group while reading the paged KV cache.
+    """
+
+    group_indices: torch.Tensor
+    group_counts: torch.Tensor
+    tail_starts: torch.Tensor
+    tail_counts: torch.Tensor
 
 
 def compress_keys(
@@ -166,28 +184,212 @@ def qsa_indexer_select(
     """
     if token_topk % compress_ratio != 0:
         raise ValueError("token_topk must be divisible by compress_ratio")
+    selection = qsa_indexer_select_groups(
+        query,
+        compressed_keys,
+        positions,
+        compress_ratio=compress_ratio,
+        token_topk=token_topk,
+        accum_dtype=accum_dtype,
+    )
+    return expand_group_selection(selection, compress_ratio, token_topk)
+
+
+def qsa_indexer_select_groups(
+    query: torch.Tensor,
+    compressed_keys: torch.Tensor,
+    positions: torch.Tensor,
+    *,
+    compress_ratio: int,
+    token_topk: int,
+    accum_dtype: torch.dtype = torch.float32,
+) -> QSAGroupSelection:
+    """Select compressed QSA groups without host synchronization.
+
+    All visibility masking, sorting, and tail metadata stay on device.  This is
+    the contract consumed by the planned 310P sparse-attention kernel; unlike
+    :func:`qsa_indexer_select`, it never materializes per-token indices.
+    """
+    if token_topk % compress_ratio != 0:
+        raise ValueError("token_topk must be divisible by compress_ratio")
+    if positions.ndim != 1 or positions.shape[0] != query.shape[0]:
+        raise ValueError("positions must be [T] aligned with the queries")
+
     block_topk = token_topk // compress_ratio
-    output_width = token_topk + compress_ratio - 1
     seq_len = query.shape[0]
     num_blocks = compressed_keys.shape[0]
+    selected_width = min(block_topk, num_blocks)
+    positions_long = positions.to(torch.long)
+    visible_blocks = torch.div(
+        positions_long + 1,
+        compress_ratio,
+        rounding_mode="floor",
+    ).clamp_max(num_blocks)
 
-    scores = indexer_block_scores(query, compressed_keys, accum_dtype=accum_dtype)
-    packed = query.new_full((seq_len, output_width), _PAD_INDEX, dtype=torch.int64)
-    valid_counts = query.new_zeros((seq_len,), dtype=torch.int64)
-    for t in range(seq_len):
-        pos = int(positions[t].item())
-        visible = min((pos + 1) // compress_ratio, num_blocks)
-        selected = select_topk_blocks(scores[t], visible, block_topk)
-        row, count = expand_block_selection(selected, pos, compress_ratio, token_topk)
-        packed[t] = row
-        valid_counts[t] = count
+    if selected_width == 0:
+        selected = query.new_empty((seq_len, 0), dtype=torch.long)
+    else:
+        scores = indexer_block_scores(query, compressed_keys, accum_dtype=accum_dtype)
+        block_ids = torch.arange(num_blocks, device=query.device)
+        visible_mask = block_ids.unsqueeze(0) < visible_blocks.unsqueeze(1)
+        masked_scores = scores.masked_fill(~visible_mask, -torch.inf)
+        # Stable descending order preserves the reference tie-break: lower
+        # compression-group id wins when scores are equal.
+        selected = torch.argsort(masked_scores, dim=1, descending=True, stable=True)[:, :selected_width]
+
+    group_counts = visible_blocks.clamp_max(selected_width)
+    tail_starts = (
+        torch.div(
+            positions_long + 1,
+            compress_ratio,
+            rounding_mode="floor",
+        )
+        * compress_ratio
+    )
+    tail_counts = positions_long + 1 - tail_starts
+    return QSAGroupSelection(
+        group_indices=selected,
+        group_counts=group_counts,
+        tail_starts=tail_starts,
+        tail_counts=tail_counts,
+    )
+
+
+def qsa_indexer_select_groups_310(
+    query: torch.Tensor,
+    compressed_key_cache: torch.Tensor,
+    block_table: torch.Tensor,
+    query_start_loc: torch.Tensor,
+    positions: torch.Tensor,
+    *,
+    compress_ratio: int,
+    token_topk: int,
+) -> QSAGroupSelection:
+    """Select learned QSA groups through the dedicated 310P score kernel.
+
+    ``compressed_key_cache`` is paged ND storage
+    ``[physical_blocks, groups_per_block + 3, index_head_dim]``. The final
+    three rows are private scratch storage used to carry an incomplete
+    four-token group across scheduler invocations. The native kernel
+    performs page translation and the four-head ReLU-summed dot products in a
+    single launch. Stable sorting remains a device operation so equal scores
+    retain the reference's lower-group-id tie break.
+    """
+    if query.device.type != "npu":
+        raise RuntimeError("qsa_indexer_select_groups_310 is an Ascend NPU-only path")
+    if token_topk % compress_ratio:
+        raise ValueError("token_topk must be divisible by compress_ratio")
+    if query.ndim != 3 or compressed_key_cache.ndim != 3:
+        raise ValueError("query/cache must be [T,H,D] and [blocks,rows,D]")
+    if query.shape[-1] != compressed_key_cache.shape[-1]:
+        raise ValueError("query and compressed cache head dimensions differ")
+    if positions.shape != (query.shape[0],):
+        raise ValueError("positions must be [T]")
+    op_namespace = getattr(torch.ops, "_C_ascend", None)
+    op = None if op_namespace is None else getattr(op_namespace, "npu_qsa_indexer_score_310", None)
+    if op is None:
+        raise RuntimeError("vLLM Ascend was built without the dedicated 310P QSA index-score operator")
+
+    scores = op(
+        query.contiguous(),
+        compressed_key_cache.contiguous(),
+        block_table.to(dtype=torch.int32).contiguous(),
+        query_start_loc.to(dtype=torch.int32).contiguous(),
+        positions.to(dtype=torch.int32).contiguous(),
+        compress_ratio,
+    )
+    block_topk = token_topk // compress_ratio
+    selected_width = min(block_topk, scores.shape[1])
+    selected = torch.argsort(scores, dim=1, descending=True, stable=True)[:, :selected_width]
+    positions_long = positions.to(torch.long)
+    visible_groups = torch.div(positions_long + 1, compress_ratio, rounding_mode="floor").clamp_max(scores.shape[1])
+    group_counts = visible_groups.clamp_max(selected_width)
+    tail_starts = torch.div(positions_long + 1, compress_ratio, rounding_mode="floor") * compress_ratio
+    tail_counts = positions_long + 1 - tail_starts
+    return QSAGroupSelection(selected, group_counts, tail_starts, tail_counts)
+
+
+def qsa_indexer_score_310_reference(
+    query: torch.Tensor,
+    compressed_key_cache: torch.Tensor,
+    block_table: torch.Tensor,
+    query_start_loc: torch.Tensor,
+    positions: torch.Tensor,
+    *,
+    compress_ratio: int = 4,
+) -> torch.Tensor:
+    """Host reference for the 310P paged index-score operator.
+
+    The final three rows of every physical page are cache-update scratch and
+    are intentionally excluded from the logical group address space.
+    """
+    if query.device.type != "cpu" or compressed_key_cache.device.type != "cpu":
+        raise ValueError("the 310P score reference expects CPU tensors")
+    if query.ndim != 3 or compressed_key_cache.ndim != 3:
+        raise ValueError("query/cache must be [T,H,D] and [blocks,rows,D]")
+    groups_per_block = compressed_key_cache.shape[1] - _QSA_INDEX_CACHE_SCRATCH_ROWS
+    if groups_per_block <= 0:
+        raise ValueError("compressed cache has no logical group rows")
+    max_groups = block_table.shape[1] * groups_per_block
+    scores = torch.full((query.shape[0], max_groups), -torch.inf, dtype=torch.float32)
+    boundaries = query_start_loc.to(dtype=torch.int64).tolist()
+    for row in range(query.shape[0]):
+        request = next(request for request in range(len(boundaries) - 1) if row < boundaries[request + 1])
+        visible_groups = min((int(positions[row]) + 1) // compress_ratio, max_groups)
+        for group in range(visible_groups):
+            logical_block, group_row = divmod(group, groups_per_block)
+            physical_block = int(block_table[request, logical_block])
+            key = compressed_key_cache[physical_block, group_row].float()
+            dots = torch.matmul(query[row].float(), key)
+            scores[row, group] = torch.clamp(dots, min=0).sum()
+    return scores
+
+
+def expand_group_selection(
+    selection: QSAGroupSelection,
+    compress_ratio: int,
+    token_topk: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Vectorized compatibility expansion for the torch reference path."""
+    output_width = token_topk + compress_ratio - 1
+    seq_len, selected_width = selection.group_indices.shape
+    device = selection.group_indices.device
+    packed = selection.group_indices.new_full((seq_len, output_width), _PAD_INDEX)
+
+    if selected_width > 0:
+        offsets = torch.arange(compress_ratio, device=device)
+        expanded = (selection.group_indices.unsqueeze(-1) * compress_ratio + offsets.view(1, 1, -1)).reshape(
+            seq_len, selected_width * compress_ratio
+        )
+        expanded_ranks = torch.arange(selected_width * compress_ratio, device=device)
+        expanded_valid = expanded_ranks.unsqueeze(0) < (selection.group_counts * compress_ratio).unsqueeze(1)
+        packed[:, : selected_width * compress_ratio] = torch.where(
+            expanded_valid,
+            expanded,
+            expanded.new_full((), _PAD_INDEX),
+        )
+
+    tail_offsets = torch.arange(compress_ratio - 1, device=device)
+    tail_tokens = selection.tail_starts.unsqueeze(1) + tail_offsets.unsqueeze(0)
+    tail_valid = tail_offsets.unsqueeze(0) < selection.tail_counts.unsqueeze(1)
+    tail_columns = selection.group_counts.unsqueeze(1) * compress_ratio + tail_offsets.unsqueeze(0)
+    rows = torch.arange(seq_len, device=device).unsqueeze(1).expand_as(tail_columns)
+    valid_rows = rows[tail_valid]
+    valid_columns = tail_columns[tail_valid]
+    valid_tokens = tail_tokens[tail_valid]
+    packed[valid_rows, valid_columns] = valid_tokens
+    valid_counts = selection.group_counts * compress_ratio + selection.tail_counts
     return packed, valid_counts
 
 
 __all__ = [
     "compress_keys",
+    "expand_group_selection",
     "expand_block_selection",
     "indexer_block_scores",
     "qsa_indexer_select",
+    "qsa_indexer_select_groups",
+    "qsa_indexer_select_groups_310",
+    "QSAGroupSelection",
     "select_topk_blocks",
 ]

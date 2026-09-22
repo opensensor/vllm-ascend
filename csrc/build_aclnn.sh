@@ -85,6 +85,9 @@ if [[ "$SOC_VERSION" =~ ^ascend310 ]]; then
         "causal_conv1d_v310"
         "gdn_gating_v310"
         "recurrent_gated_delta_rule_v310"
+        "qsa_index_cache_update_v310"
+        "qsa_indexer_score_v310"
+        "qsa_sparse_attention_v310"
         "chunk_fwd_o"
         "chunk_gated_delta_rule_fwd_h"
         "w2_blocked_dequant_matmul_v310"
@@ -271,8 +274,13 @@ log_selected_ops
   log "subshell cwd before cd=$(pwd)"
   cd "${ROOT_DIR}/csrc"
   log "subshell cwd after cd=$(pwd)"
-  log "preserving csrc/build and cleaning output dirs"
-  rm -rf -- output build_out
+  # ASCEND_OP_NAME is cached by CMake. Reusing csrc/build after changing the
+  # selected operator set can therefore produce a valid-looking installer that
+  # silently omits operators. This is especially dangerous for the 310P Qwen4
+  # path: the QSA operators and its GDN operators must live in the same custom
+  # package. Always configure the package from a clean build tree.
+  log "cleaning csrc/build and output dirs to refresh the custom-op manifest"
+  rm -rf -- build output build_out
 
   : "${CUSTOM_OPS:?CUSTOM_OPS is not set}"
   : "${SOC_VERSION:?SOC_VERSION is not set}"

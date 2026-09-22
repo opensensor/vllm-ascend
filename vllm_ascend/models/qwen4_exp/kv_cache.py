@@ -155,6 +155,47 @@ class AscendQSARawRingSpec(AttentionSpec):
         return self.page_size_bytes
 
 
+@dataclass(frozen=True, kw_only=True)
+class AscendQSAFullAttentionSpec(FullAttentionSpec):
+    """Main QSA K/V plus its page-owned compressed index-cache bytes.
+
+    A scheduler page is split into 64-token physical pages by the 310P
+    attention backend for the model's 256-wide heads. Each physical page owns
+    its complete four-token group means and three raw scratch rows. Including
+    those bytes in the spec makes vLLM's memory planner reserve the side cache
+    instead of relying on untracked lazy allocations.
+    """
+
+    has_qsa_index_cache: bool = True
+    index_head_size: int = INDEXER_HEAD_DIM
+    index_dtype: torch.dtype = torch.float16
+    index_compress_ratio: int = INDEXER_COMPRESS_RATIO
+    kernel_block_size: int = 64
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.block_size % self.kernel_block_size:
+            raise ValueError("QSA scheduler block size must be divisible by the kernel block size")
+        if self.kernel_block_size % self.index_compress_ratio:
+            raise ValueError("QSA kernel block size must be divisible by the index compression ratio")
+
+    @property
+    def main_page_size_bytes(self) -> int:
+        """Bytes for K/V only, excluding the compressed index side cache."""
+        return super().real_page_size_bytes
+
+    @property
+    def index_page_size_bytes(self) -> int:
+        kernel_pages = self.block_size // self.kernel_block_size
+        complete_groups = self.block_size // self.index_compress_ratio
+        scratch_rows = kernel_pages * (self.index_compress_ratio - 1)
+        return (complete_groups + scratch_rows) * self.index_head_size * get_dtype_size(self.index_dtype)
+
+    @property
+    def real_page_size_bytes(self) -> int:
+        return self.main_page_size_bytes + self.index_page_size_bytes
+
+
 # =========================================================================
 # Capacity / block-size (LCM) helpers
 # =========================================================================

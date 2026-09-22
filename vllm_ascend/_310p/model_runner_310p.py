@@ -767,10 +767,15 @@ class NPUModelRunner310(NPUModelRunner):
         for layer_name, target_layer_name in self.shared_kv_cache_layers.items():
             logger.debug("%s reuses KV cache of %s", layer_name, target_layer_name)
             kv_caches[layer_name] = kv_caches[target_layer_name]
+            if target_layer_name in self._qsa_index_caches:
+                self._qsa_index_caches[layer_name] = self._qsa_index_caches[target_layer_name]
 
         from vllm.v1.worker.utils import bind_kv_cache
 
         bind_kv_cache(kv_caches, self.compilation_config.static_forward_context, self.kv_caches)
+        for layer_name, index_cache in self._qsa_index_caches.items():
+            layer = self.compilation_config.static_forward_context[layer_name]
+            layer.qsa_index_cache = index_cache
         return kv_caches
 
     def _allocate_kv_cache_tensors(self, kv_cache_config: KVCacheConfig) -> dict[str, torch.Tensor]:
@@ -786,6 +791,7 @@ class NPUModelRunner310(NPUModelRunner):
         """
         # init kv cache tensors
         kv_cache: dict[str, list[torch.Tensor] | tuple[torch.Tensor, torch.Tensor]] = {}
+        self._qsa_index_caches: dict[str, torch.Tensor] = {}
         # get kv cache spec for each layer
         layer_kv_cache_spec: dict[str, KVCacheSpec] = {}
         for group_kv_cache_spec in kv_cache_config.kv_cache_groups:
@@ -883,6 +889,7 @@ class NPUModelRunner310(NPUModelRunner):
                         if _concrete_size(support_size) * _concrete_size(kv_cache_spec.head_size)
                         <= _ATTENTION_BLOCK_SIZE_LIMIT
                     ]
+                    block_size = kv_cache_spec.block_size
                     if supported_sizes:
                         block_size = supported_sizes[0]
                         block_size_chunk = kv_cache_spec.block_size // block_size
@@ -899,6 +906,15 @@ class NPUModelRunner310(NPUModelRunner):
                     k_shape = kv_cache_shape[1:]
                     v_shape = k_shape
                     dtype = kv_cache_spec.dtype
+                    index_cache_shape = None
+                    if getattr(kv_cache_spec, "has_qsa_index_cache", False):
+                        kernel_blocks = k_shape[0]
+                        groups_per_kernel_block = block_size // kv_cache_spec.index_compress_ratio
+                        index_cache_shape = (
+                            kernel_blocks,
+                            groups_per_kernel_block + kv_cache_spec.index_compress_ratio - 1,
+                            kv_cache_spec.index_head_size,
+                        )
                     if vllm_version_is("0.28.0"):
                         # v0.28.0 `shared_by` aliases the same physical blocks.
                         k_cache = torch_npu.empty_with_format(
@@ -911,6 +927,12 @@ class NPUModelRunner310(NPUModelRunner):
                             # shared the kvcache between the self_attn specs in the same group
                             if isinstance(layer_kv_cache_spec.get(layer_name_inner), AttentionSpec):
                                 kv_cache[layer_name_inner] = (k_cache, v_cache)
+                                if index_cache_shape is not None:
+                                    self._qsa_index_caches[layer_name_inner] = torch.empty(
+                                        index_cache_shape,
+                                        dtype=kv_cache_spec.index_dtype,
+                                        device=self.device,
+                                    )
                     else:
                         # main: every layer owns its own region; give each layer a
                         # private (k, v) so block indices don't collide across layers.
@@ -924,6 +946,12 @@ class NPUModelRunner310(NPUModelRunner):
                                         size=v_shape, dtype=dtype, device=self.device, acl_format=self._acl_format
                                     ),
                                 )
+                                if index_cache_shape is not None:
+                                    self._qsa_index_caches[layer_name_inner] = torch.empty(
+                                        index_cache_shape,
+                                        dtype=kv_cache_spec.index_dtype,
+                                        device=self.device,
+                                    )
         layer_names = set()
         for group in kv_cache_config.kv_cache_groups:
             for layer_name in group.layer_names:

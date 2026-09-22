@@ -57,6 +57,7 @@ from tests.ut.qwen38_1m.reference.qsa_attention_reference import (
 from tests.ut.qwen38_1m.reference.qsa_indexer_reference import qsa_select_tokens
 from tests.ut.qwen38_1m.reference.tolerances import QSA_ATTN_ATOL, QSA_ATTN_RTOL
 from vllm_ascend.models.qwen4_exp.dtype_policy import ASCEND_QWEN4EXP_DTYPE_POLICY
+from vllm_ascend.models.qwen4_exp.kv_cache import AscendQSAFullAttentionSpec
 from vllm_ascend.models.qwen4_exp.model import _QSAAttention
 from vllm_ascend.models.qwen4_exp.qsa import (
     QSADecoderProjections,
@@ -125,6 +126,67 @@ def _init_module(module: _QSAAttention, seed: int) -> None:
     with torch.no_grad():
         for param in module.parameters():
             param.copy_((torch.randn(param.shape, generator=gen, dtype=torch.float64) * 0.1).to(param.dtype))
+
+
+@pytest.mark.parametrize("state_name", ["PrefillNoCache", "PrefillCacheHit", "ChunkedPrefill"])
+def test_qsa_dense_prefill_fast_path_covers_complete_selection(state_name):
+    metadata = SimpleNamespace(
+        num_prefills=1,
+        num_decodes=0,
+        attn_state=SimpleNamespace(name=state_name),
+        seq_lens_cpu=torch.tensor([896, 2048], dtype=torch.int32),
+        seq_lens_list=None,
+    )
+
+    assert _QSAAttention._dense_prefill_is_exact(metadata, token_budget=2048)
+
+
+def test_qsa_dense_prefill_fast_path_preserves_sparse_and_decode_dispatch():
+    metadata = SimpleNamespace(
+        num_prefills=1,
+        num_decodes=0,
+        attn_state=SimpleNamespace(name="ChunkedPrefill"),
+        seq_lens_cpu=torch.tensor([2049], dtype=torch.int32),
+        seq_lens_list=None,
+    )
+    assert not _QSAAttention._dense_prefill_is_exact(metadata, token_budget=2048)
+
+    metadata.seq_lens_cpu = torch.tensor([32], dtype=torch.int32)
+    metadata.num_decodes = 1
+    assert not _QSAAttention._dense_prefill_is_exact(metadata, token_budget=2048)
+
+
+def test_qsa_dense_prefill_fast_path_uses_host_list_fallback():
+    metadata = SimpleNamespace(
+        num_prefills=2,
+        num_decodes=0,
+        attn_state=SimpleNamespace(name="ChunkedPrefill"),
+        seq_lens_cpu=None,
+        seq_lens_list=[256, 512],
+    )
+
+    assert _QSAAttention._dense_prefill_is_exact(metadata, token_budget=2048)
+
+
+def test_qsa_layer_registers_custom_cache_spec_owner():
+    """The registered layer must own both the main and index-cache spec."""
+    static_forward_context = {}
+    fake_vllm_config = SimpleNamespace(
+        compilation_config=SimpleNamespace(static_forward_context=static_forward_context)
+    )
+    backend = object()
+    with (
+        patch(
+            "vllm_ascend.models.qwen4_exp.model.get_current_vllm_config_or_none",
+            return_value=fake_vllm_config,
+        ),
+        patch("vllm_ascend.models.qwen4_exp.model._resolve_attn_backend", return_value=backend),
+    ):
+        module = _QSAAttention(config=_qsa_config(), layer_idx=1, dtype_policy=_POLICY_F64, prefix="qsa.1")
+
+    assert static_forward_context == {"qsa.1": module}
+    assert module.get_attn_backend() is backend
+    assert isinstance(module.get_kv_cache_spec(fake_vllm_config), AscendQSAFullAttentionSpec)
 
 
 def _linear_f64(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
@@ -226,6 +288,44 @@ def test_run_qsa_decoder_attention_matches_composite_reference(seq_len, expect_s
 
     assert _selection_is_sparse(packed, valid_counts, seq_len) == expect_sparse
     torch.testing.assert_close(actual.double(), ref, rtol=QSA_ATTN_RTOL, atol=QSA_ATTN_ATOL)
+
+
+def test_run_qsa_decoder_attention_accepts_multimodal_positions():
+    cfg = _qsa_config(indexer_budget=8, compress_ratio=4)
+    module = _QSAAttention(config=cfg, layer_idx=1, dtype_policy=_POLICY_F64).double()
+    _init_module(module, seed=17)
+
+    seq_len = 6
+    block_input = _rand((seq_len, cfg.hidden_size), seed=107) * 0.2
+    text_positions = torch.arange(seq_len, dtype=torch.int64)
+    multimodal_positions = text_positions.repeat(3, 1)
+    projections = QSADecoderProjections(
+        q_proj=module.q_proj,
+        k_proj=module.k_proj,
+        v_proj=module.v_proj,
+        gate_proj=module.gate_proj,
+        index_q_proj=module.iq_proj,
+        index_k_proj=module.ik_proj,
+        out_proj=module.o_proj,
+    )
+    common = {
+        "projections": projections,
+        "indexer": module.indexer,
+        "attention": module.attn,
+        "num_query_heads": cfg.num_attention_heads,
+        "num_kv_heads": cfg.num_key_value_heads,
+        "head_dim": cfg.head_dim,
+        "index_n_heads": cfg.indexer_n_heads,
+        "index_head_dim": cfg.indexer_head_dim,
+        "store_dtype": module.params_dtype,
+        "compute_dtype": module.compute_dtype,
+    }
+
+    with torch.no_grad():
+        text_output = run_qsa_decoder_attention(block_input, text_positions, **common)
+        multimodal_output = run_qsa_decoder_attention(block_input, multimodal_positions, **common)
+
+    torch.testing.assert_close(multimodal_output, text_output)
 
 
 def test_wired_qsa_module_matches_composite_reference():

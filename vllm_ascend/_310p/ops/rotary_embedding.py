@@ -238,6 +238,9 @@ class AscendMRotaryEmbedding310(MRotaryEmbedding):
 
 def prepare_mrope_cos_sin_slices_from_runner(runner: Any, positions: torch.Tensor) -> None:
     """Resolve MRoPE embedding from the runner and populate `_mrope_cos_slice` / `_mrope_sin_slice`."""
+    if getattr(runner.model, "uses_model_owned_mrope", False):
+        return
+
     emb = getattr(runner, "_mrope_embedding", None)
     if emb is None:
         emb = next(module for module in runner.model.modules() if isinstance(module, AscendMRotaryEmbedding310))

@@ -9,6 +9,7 @@ from vllm_ascend.model_executor.offloader.prefetch import (
     AscendPrefetchOffloader,
     ParamInfo,
     _is_using_nz_weight,
+    _use_pageable_cpu_storage,
 )
 from vllm_ascend.worker.model_runner_v1 import (
     _net_offloaded_device_bytes,
@@ -45,6 +46,16 @@ def test_is_using_nz_weight_handles_invalid_npu_format(monkeypatch):
     )
 
     assert not _is_using_nz_weight(param)
+
+
+def test_pageable_cpu_storage_only_disables_pinning_in_scope():
+    import vllm.model_executor.offloader.prefetch as vllm_prefetch
+
+    original_should_pin_memory = vllm_prefetch.should_pin_memory
+    with _use_pageable_cpu_storage():
+        assert vllm_prefetch.should_pin_memory() is False
+
+    assert vllm_prefetch.should_pin_memory is original_should_pin_memory
 
 
 def test_ascend_prefetch_formats_pool_before_binding_and_prefetch():

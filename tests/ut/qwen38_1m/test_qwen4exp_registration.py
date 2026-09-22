@@ -17,7 +17,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-import pytest
 import torch
 
 _PKG_DIR = Path(__file__).parents[3] / "vllm_ascend" / "models" / "qwen4_exp"
@@ -55,14 +54,29 @@ def _tiny_text_config():
 
 def _fake_vllm_config(*, multimodal: bool = False):
     text_config = _tiny_text_config()
+    multimodal_config = None
+    if multimodal:
+        multimodal_config = SimpleNamespace(
+            mm_encoder_tp_mode="weights",
+            video_pruning_rate=0.0,
+            get_video_pruning_spec=lambda: None,
+            is_multimodal_pruning_enabled=lambda: False,
+        )
     model_config = SimpleNamespace(
         hf_text_config=text_config,
         hf_config=SimpleNamespace(
             text_config=text_config,
-            vision_config=SimpleNamespace() if multimodal else None,
+            vision_config=(
+                SimpleNamespace(
+                    deepstack_visual_indexes=[],
+                    out_hidden_size=text_config.hidden_size,
+                )
+                if multimodal
+                else None
+            ),
         ),
         dtype=torch.float16,
-        multimodal_config=SimpleNamespace() if multimodal else None,
+        multimodal_config=multimodal_config,
     )
     return SimpleNamespace(
         model_config=model_config,
@@ -160,24 +174,86 @@ def test_causal_lm_constructs_on_meta_device():
     assert callable(model.get_model_state_cls)
     # load_weights fused-expert mapping hook exists.
     assert hasattr(model, "get_expert_mapping")
+    # Conditional-generation wrappers and pipeline plumbing require this hook.
+    intermediate = model.make_empty_intermediate_tensors(2, torch.float16, torch.device("cpu"))
+    assert intermediate["hidden_states"].shape == (2, 128)
+    assert model.uses_model_owned_mrope is True
 
 
-def test_conditional_generation_rejects_multimodal_first_gate():
+def test_qwen4exp_decoder_layers_use_configured_offloader():
+    from vllm_ascend.models.qwen4_exp.model import AscendQwen4ExpForCausalLM
+
+    vllm_config = _fake_vllm_config(multimodal=False)
+    fake_offloader = MagicMock()
+    fake_offloader.wrap_modules.side_effect = lambda modules, prefix="": list(modules)
+    p_rank, p_ws = _patch_single_rank_tp()
+    with (
+        p_rank,
+        p_ws,
+        patch(
+            "vllm_ascend.models.qwen4_exp.model.get_offloader",
+            return_value=fake_offloader,
+        ),
+        torch.device("meta"),
+    ):
+        model = AscendQwen4ExpForCausalLM(vllm_config=vllm_config)
+
+    fake_offloader.wrap_modules.assert_called_once()
+    assert fake_offloader.wrap_modules.call_args.kwargs == {}
+    assert len(model.model.layers) == vllm_config.model_config.hf_text_config.num_hidden_layers
+
+
+def test_conditional_generation_builds_vision_and_qwen4exp_backbone():
     from vllm_ascend.models.qwen4_exp.model import (
         AscendQwen4ExpForConditionalGeneration,
     )
 
     vllm_config = _fake_vllm_config(multimodal=True)
-    p_rank, p_ws = _patch_single_rank_tp()
-    with p_rank, p_ws, torch.device("meta"), pytest.raises(NotImplementedError):
-        AscendQwen4ExpForConditionalGeneration(vllm_config=vllm_config)
+    fake_visual = torch.nn.Identity()
+    fake_language_model = torch.nn.Identity()
+    fake_language_model.make_empty_intermediate_tensors = MagicMock()
+    with (
+        patch(
+            "vllm_ascend.models.qwen4_exp.model.cached_tokenizer_from_config",
+            return_value=MagicMock(),
+        ),
+        patch(
+            "vllm_ascend.models.qwen4_exp.model.Qwen3_VisionTransformer",
+            return_value=fake_visual,
+        ),
+        patch(
+            "vllm_ascend.models.qwen4_exp.model.AscendQwen4ExpForCausalLM",
+            return_value=fake_language_model,
+        ),
+        patch.object(
+            AscendQwen4ExpForConditionalGeneration,
+            "_mark_tower_model",
+            return_value=MagicMock(__enter__=MagicMock(), __exit__=MagicMock(return_value=False)),
+        ),
+        patch.object(
+            AscendQwen4ExpForConditionalGeneration,
+            "_mark_language_model",
+            return_value=MagicMock(__enter__=MagicMock(), __exit__=MagicMock(return_value=False)),
+        ),
+    ):
+        model = AscendQwen4ExpForConditionalGeneration(vllm_config=vllm_config)
+
+    assert model.visual is fake_visual
+    assert model.language_model is fake_language_model
+    assert model.use_deepstack is False
+    assert model.uses_model_owned_mrope is True
 
 
-def test_conditional_generation_gate_method_rejects():
+def test_conditional_generation_exposes_qwen3vl_placeholders():
     from vllm_ascend.models.qwen4_exp.model import (
         AscendQwen4ExpForConditionalGeneration,
     )
 
-    # The multimodal embedding gate must reject even if reached directly.
-    with pytest.raises(NotImplementedError):
-        AscendQwen4ExpForConditionalGeneration.get_multimodal_embeddings(MagicMock())
+    assert (
+        AscendQwen4ExpForConditionalGeneration.get_placeholder_str("image", 0)
+        == "<|vision_start|><|image_pad|><|vision_end|>"
+    )
+    assert (
+        AscendQwen4ExpForConditionalGeneration.get_placeholder_str("video", 0)
+        == "<|vision_start|><|video_pad|><|vision_end|>"
+    )

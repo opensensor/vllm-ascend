@@ -44,6 +44,11 @@ from vllm_ascend.models.qwen4_exp.ops.qsa_cache import (
     qsa_gather_rows,
     qsa_scatter_rows,
 )
+from vllm_ascend.models.qwen4_exp.ops.qsa_indexer import (
+    expand_group_selection,
+    qsa_indexer_score_310_reference,
+    qsa_indexer_select_groups,
+)
 
 _RATIO = INDEXER_COMPRESS_RATIO  # 4
 
@@ -217,6 +222,39 @@ def test_topk_is_bitwise_deterministic():
     assert torch.equal(first.packed, second.packed)
 
 
+def test_compact_group_selection_expands_to_reference_tokens():
+    """The native-kernel contract retains exact token-level QSA semantics."""
+    ratio = 4
+    budget = 16
+    raw, query, seq_len = _ramp_inputs(num_blocks=10, ratio=ratio, tail=2)
+    compressed = raw[: (seq_len // ratio) * ratio].view(-1, ratio, raw.shape[-1]).mean(dim=1)
+    positions = torch.tensor([seq_len - 1])
+
+    selection = qsa_indexer_select_groups(
+        query,
+        compressed,
+        positions,
+        compress_ratio=ratio,
+        token_topk=budget,
+        accum_dtype=torch.float64,
+    )
+    packed, counts = expand_group_selection(selection, ratio, budget)
+    reference, reference_counts = qsa_select_tokens(
+        query,
+        raw,
+        positions,
+        compress_ratio=ratio,
+        token_topk=budget,
+    )
+
+    assert selection.group_indices.shape == (1, budget // ratio)
+    assert selection.group_counts.tolist() == [budget // ratio]
+    assert selection.tail_starts.tolist() == [40]
+    assert selection.tail_counts.tolist() == [2]
+    assert torch.equal(packed, reference)
+    assert torch.equal(counts, reference_counts)
+
+
 # ---------------------------------------------------------------------------
 # Packed buffer contract (T6.2-facing): trailing count column.
 # ---------------------------------------------------------------------------
@@ -315,3 +353,28 @@ def test_single_kv_head_enforced():
     query = torch.zeros((1, 4, 8))
     with pytest.raises(ValueError):
         indexer.forward(query, raw, torch.tensor([7]))
+
+
+def test_310_score_reference_uses_paged_groups_and_ignores_scratch():
+    groups_per_block = 2
+    scratch_rows = 3
+    cache = torch.zeros((3, groups_per_block + scratch_rows, 2), dtype=torch.float16)
+    cache[2, 0] = torch.tensor([1, 0])
+    cache[2, 1] = torch.tensor([0, 2])
+    cache[0, 0] = torch.tensor([3, 0])
+    cache[0, 1] = torch.tensor([0, 4])
+    cache[:, groups_per_block:] = 10_000  # must never enter the score address space
+    query = torch.tensor([[[1, 1], [-1, 1]]], dtype=torch.float16)
+    block_table = torch.tensor([[2, 0]], dtype=torch.int32)
+
+    scores = qsa_indexer_score_310_reference(
+        query,
+        cache,
+        block_table,
+        torch.tensor([0, 1], dtype=torch.int32),
+        torch.tensor([15], dtype=torch.int32),
+        compress_ratio=4,
+    )
+
+    # Logical groups follow the permuted physical pages: [2:0, 2:1, 0:0, 0:1].
+    torch.testing.assert_close(scores, torch.tensor([[1, 4, 3, 8]], dtype=torch.float32))

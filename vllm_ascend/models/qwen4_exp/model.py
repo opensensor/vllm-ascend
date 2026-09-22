@@ -50,14 +50,13 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 import torch
 import torch.nn.functional as F
 from torch import nn
 from vllm.config import get_current_vllm_config_or_none
-from vllm.forward_context import get_forward_context
-from vllm.model_executor.layers.attention import Attention
+from vllm.forward_context import get_forward_context, is_forward_context_available
 from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.layers.mamba.abstract import MambaBase
@@ -66,6 +65,7 @@ from vllm.model_executor.layers.vocab_parallel_embedding import (
     ParallelLMHead,
     VocabParallelEmbedding,
 )
+from vllm.model_executor.offloader import get_offloader
 from vllm.v1.attention.backends.gdn_attn import GDNAttentionMetadata
 from vllm.v1.attention.backends.registry import MambaAttentionBackendEnum
 
@@ -82,10 +82,20 @@ from vllm.model_executor.models.interfaces import (
     SupportsLoRA,
     SupportsPP,
 )
+from vllm.model_executor.models.qwen3_vl import (
+    Qwen3_VisionTransformer,
+    Qwen3VLDummyInputsBuilder,
+    Qwen3VLForConditionalGeneration,
+    Qwen3VLMultiModalProcessor,
+    Qwen3VLProcessingInfo,
+)
 from vllm.model_executor.models.utils import (
     WeightsMapper,
+    make_empty_intermediate_tensors_factory,
     maybe_prefix,
 )
+from vllm.multimodal import MULTIMODAL_REGISTRY
+from vllm.tokenizers.registry import cached_tokenizer_from_config
 from vllm.v1.kv_cache_interface import (
     FullAttentionSpec,
     KVCacheGroupSpec,
@@ -100,6 +110,7 @@ from .dtype_policy import (
 from .indexer_qsa import AscendQwen4ExpQSAIndexer
 from .kv_cache import (
     DEFAULT_ATTENTION_BLOCK_SIZE,
+    AscendQSAFullAttentionSpec,
     build_qwen4exp_kv_cache_groups,
     make_qsa_compressed_spec,
     make_qsa_raw_ring_spec,
@@ -114,8 +125,18 @@ from .ngram_embedding import (
     AscendPLEPinnedHostEmbeddingMethod,
     AscendQwen4ExpNGramEmbedding,
 )
+from .ops.qsa_index_cache_310 import qsa_index_cache_update_310
+from .ops.qsa_indexer import qsa_indexer_select_groups_310
+from .ops.qsa_sparse_attention_310 import qsa_sparse_attention_310
 from .ple_layer import AscendQwen4ExpPLELayer
-from .qsa import AscendQwen4ExpQSAAttention
+from .qsa import (
+    AscendQwen4ExpQSAAttention,
+    QSADecoderProjections,
+    apply_partial_rope,
+    gemma_rmsnorm,
+    partial_rope_cos_sin,
+    run_qsa_decoder_attention,
+)
 from .qwen4exp_gdn import (
     QWEN4EXP_GDN_CHUNK_SIZE,
     Qwen4ExpGDNParams,
@@ -250,7 +271,10 @@ def _remap_non_expert(name: str, config: object) -> list[tuple[str, slice | None
         if base.endswith(".indexer.index_qk_proj.weight"):
             stem = base[: -len(".indexer.index_qk_proj.weight")]
             return [(stem + ".iq_proj", slice(0, index_rows), None), (stem + ".ik_proj", slice(index_rows, None), None)]
-        # indexer layernorms are not yet owned by the eager QSA indexer.
+        if base.endswith(".indexer.q_layernorm.weight"):
+            return plain(base[: -len(".indexer.q_layernorm.weight")] + ".indexer.q_layernorm_weight")
+        if base.endswith(".indexer.k_layernorm.weight"):
+            return plain(base[: -len(".indexer.k_layernorm.weight")] + ".indexer.k_layernorm_weight")
         return None
 
     # PLE projection layer (checkpoint `ple.*` -> model `ple.ple.*`).
@@ -294,22 +318,22 @@ def _gdn_params_from_config(config: object) -> Qwen4ExpGDNParams:
     return params
 
 
-def _reject_multimodal(vllm_config: object) -> None:
-    """First gate: the 310P Qwen4Exp path is text-only.
+class Qwen4ExpVLProcessingInfo(Qwen3VLProcessingInfo):
+    """Use Qwen3-VL preprocessing with the compatible Qwen4Exp config."""
 
-    Vision/multimodal support is a later milestone; reject at construction so a
-    Qwen4ExpForConditionalGeneration checkpoint cannot silently run degraded.
-    """
-    model_config = getattr(vllm_config, "model_config", None)
-    mm_config = getattr(model_config, "multimodal_config", None)
-    hf_config = getattr(model_config, "hf_config", None)
-    has_vision = getattr(hf_config, "vision_config", None) is not None
-    if mm_config is not None or has_vision:
-        raise NotImplementedError(
-            "AscendQwen4ExpForConditionalGeneration: multimodal/vision inputs "
-            "are not supported on the Ascend 310P Qwen4Exp path (text-only). "
-            "TODO(S-later): wire the Qwen3-VL vision tower."
-        )
+    def get_hf_config(self):
+        # Qwen4Exp deliberately reuses Qwen3-VL's processor and vision config
+        # schema, but it is not an instance of Qwen3VLConfig. Avoid the base
+        # class's nominal type check while retaining all processor semantics.
+        return self.ctx.get_hf_config()
+
+
+class Qwen4ExpVLDummyInputsBuilder(Qwen3VLDummyInputsBuilder):
+    pass
+
+
+class Qwen4ExpVLMultiModalProcessor(Qwen3VLMultiModalProcessor):
+    pass
 
 
 # ===========================================================================
@@ -729,7 +753,7 @@ class _GDNAttention(nn.Module, MambaBase):
         # metadata and mutates the allocated convolution and recurrent caches
         # for both prefill and decode.
         b, a = torch.split(ba, [self.num_v_heads, self.num_v_heads], dim=-1)
-        metadata_by_layer = get_forward_context().attn_metadata
+        metadata_by_layer = get_forward_context().attn_metadata if is_forward_context_available() else None
         metadata = metadata_by_layer.get(self.prefix) if isinstance(metadata_by_layer, dict) else None
         if metadata is None:
             mixed = gdn_short_conv(
@@ -834,18 +858,12 @@ class _GDNAttention(nn.Module, MambaBase):
 
 
 class _QSAAttention(nn.Module, AttentionLayerBase):
-    """QSA layer using the native 310P paged-attention kernel.
-
-    Short contexts use vLLM's standard cache-backed causal attention, which is
-    equivalent to QSA while the complete context fits within its selection
-    budget. During long-context decode, a small per-physical-page index-key
-    cache selects the most relevant KV pages and hands that compact block table
-    to the same native paged-attention kernel. This preserves the device-native
-    KV layout and avoids gathering 2,048 individual K/V rows in Python.
-    """
+    """QSA layer backed by dedicated 310P index and sparse-attention kernels."""
 
     def __init__(self, *, config: object, layer_idx: int, dtype_policy: Qwen4ExpDtypePolicy, prefix: str = "") -> None:
         super().__init__()
+        _register_in_static_forward_context(prefix, self)
+        self.prefix = prefix
         self.compute_dtype = dtype_policy.accumulation_dtype
         self.params_dtype = dtype_policy.qsa_main_dtype
         hidden = int(config.hidden_size)
@@ -854,9 +872,11 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
         self.head_dim = int(getattr(config, "head_dim", 256))
         self.index_n_heads = int(getattr(config, "indexer_n_heads", 4))
         self.index_head_dim = int(getattr(config, "indexer_head_dim", 128))
-        self.indexer_budget = int(getattr(config, "indexer_budget", 2048))
-        self.prefix = prefix
-        vllm_config = get_current_vllm_config_or_none()
+        self._attn_backend: type[AttentionBackend] | None = (
+            _resolve_attn_backend(self.head_dim, self.params_dtype)
+            if get_current_vllm_config_or_none() is not None
+            else None
+        )
 
         self.q_proj = nn.Parameter(torch.zeros(self.num_heads * self.head_dim, hidden, dtype=self.params_dtype))
         self.k_proj = nn.Parameter(torch.zeros(self.num_kv_heads * self.head_dim, hidden, dtype=self.params_dtype))
@@ -869,187 +889,282 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
         self.o_proj = nn.Parameter(torch.zeros(hidden, self.num_heads * self.head_dim, dtype=self.params_dtype))
 
         self.indexer = AscendQwen4ExpQSAIndexer(config=config, layer_idx=layer_idx, dtype_policy=dtype_policy)
-        self.qsa_math = AscendQwen4ExpQSAAttention(config=config, layer_idx=layer_idx, dtype_policy=dtype_policy)
-        self.attn = Attention(
-            self.num_heads,
-            self.head_dim,
-            self.head_dim**-0.5,
-            num_kv_heads=self.num_kv_heads,
-            cache_config=None if vllm_config is None else vllm_config.cache_config,
-            quant_config=None,
-            prefix=prefix,
-        )
-        # Lazily sized after vLLM binds the physical KV cache. Page summaries
-        # cost only one index-key row per physical page (rather than one row per
-        # token) and are local to this attention layer.
-        self.register_buffer("_qsa_page_key_sums", torch.empty(0), persistent=False)
-        self.register_buffer("_qsa_page_key_counts", torch.empty(0), persistent=False)
+        self.attn = AscendQwen4ExpQSAAttention(config=config, layer_idx=layer_idx, dtype_policy=dtype_policy)
 
     def get_attn_backend(self) -> type[AttentionBackend]:
-        return self.attn.get_attn_backend()
+        if self._attn_backend is None:
+            self._attn_backend = _resolve_attn_backend(self.head_dim, self.params_dtype)
+        return self._attn_backend
 
-    def get_kv_cache_spec(self, vllm_config: object) -> FullAttentionSpec:
+    def get_kv_cache_spec(self, vllm_config: object) -> AscendQSAFullAttentionSpec:
         del vllm_config
-        return FullAttentionSpec(
+        return AscendQSAFullAttentionSpec(
             block_size=DEFAULT_ATTENTION_BLOCK_SIZE,
             num_kv_heads=self.num_kv_heads,
             head_size=self.head_dim,
             dtype=self.params_dtype,
         )
 
-    def _ensure_page_key_cache(self, device: torch.device) -> int | None:
-        """Allocate one projected index-key row per physical KV page."""
-        kv_cache = self.attn.kv_cache
-        if not isinstance(kv_cache, torch.Tensor) or kv_cache.ndim < 5 or kv_cache.numel() == 0:
-            return None
-
-        block_size = int(kv_cache.shape[-2])
-        num_blocks = int(kv_cache.shape[1])
-        if self._qsa_page_key_sums.shape != (num_blocks, self.index_head_dim):
-            self._qsa_page_key_sums = torch.zeros(
-                (num_blocks, self.index_head_dim),
-                dtype=self.params_dtype,
-                device=device,
-            )
-            self._qsa_page_key_counts = torch.zeros(
-                (num_blocks, 1),
-                dtype=torch.float32,
-                device=device,
-            )
-        return block_size
-
-    def _update_page_key_cache(
-        self,
-        block_input: torch.Tensor,
+    @staticmethod
+    def _logical_query_positions(
         metadata: object,
-        block_size: int,
-    ) -> None:
-        """Project and retain one representative index key per touched page.
+        num_tokens: int,
+        device: torch.device,
+        rope_positions: torch.Tensor,
+    ) -> torch.Tensor:
+        """Build causal KV positions without synchronizing an NPU tensor."""
+        from vllm_ascend._310p.attention.metadata_builder import get_query_lens_cpu
 
-        Tokens belonging to a physical page are contiguous in the scheduler
-        input. Keeping only the final row touched in this step reduces QSA
-        side-cache projection and writes by up to ``block_size`` during prefill,
-        while decode naturally updates the open page with its newest token.
+        seq_lens_cpu = getattr(metadata, "seq_lens_cpu", None)
+        query_lens_cpu = get_query_lens_cpu(metadata)
+        if seq_lens_cpu is not None and query_lens_cpu is not None:
+            sequence_lengths = seq_lens_cpu.tolist()
+            rows = []
+            for sequence_length, query_length in zip(
+                sequence_lengths,
+                query_lens_cpu.tolist(),
+                strict=True,
+            ):
+                rows.append(torch.arange(sequence_length - query_length, sequence_length, dtype=torch.int64))
+            return torch.cat(rows)[:num_tokens].to(device=device, non_blocking=True)
+        if rope_positions.ndim == 1:
+            return rope_positions
+        raise RuntimeError("Qwen4Exp MRoPE requires host query boundaries for QSA causal selection")
+
+    @staticmethod
+    def _dense_prefill_is_exact(metadata: object, token_budget: int) -> bool:
+        """Whether QSA's selection contains the complete causal context.
+
+        QSA chooses every visible token until the sequence exceeds its token
+        budget.  In that region dense causal attention is mathematically
+        identical and lets 310P use its vectorized FlashAttention/SplitFuse
+        kernels instead of the scalar sparse kernel.  Consult host metadata
+        only so this dispatch never synchronizes an NPU tensor.
         """
+        if getattr(metadata, "num_prefills", 0) < 1 or getattr(metadata, "num_decodes", 0):
+            return False
+        state_name = getattr(getattr(metadata, "attn_state", None), "name", "")
+        if state_name not in {"PrefillNoCache", "PrefillCacheHit", "ChunkedPrefill"}:
+            return False
+        seq_lens_cpu = getattr(metadata, "seq_lens_cpu", None)
+        if seq_lens_cpu is not None:
+            if seq_lens_cpu.device.type != "cpu" or seq_lens_cpu.numel() == 0:
+                return False
+            return bool(torch.all(seq_lens_cpu <= token_budget).item())
+        seq_lens_list = getattr(metadata, "seq_lens_list", None)
+        return bool(seq_lens_list) and max(seq_lens_list) <= token_budget
 
-        num_actual_tokens = int(metadata.num_actual_tokens)
-        slots = metadata.slot_mapping[:num_actual_tokens].long()
-        valid = slots >= 0
-        valid_rows = torch.nonzero(valid, as_tuple=False).flatten()
-        slots = slots.index_select(0, valid_rows)
-        if slots.numel() == 0:
-            return
-
-        block_ids = torch.div(slots, block_size, rounding_mode="floor")
-        last_for_page = torch.ones_like(block_ids, dtype=torch.bool)
-        last_for_page[:-1] = block_ids[:-1] != block_ids[1:]
-        representative_rows = valid_rows[last_for_page]
-        representative_blocks = block_ids[last_for_page]
-        representative_keys = _linear(
-            block_input.index_select(0, representative_rows),
-            self.ik_proj,
-            self.compute_dtype,
-        ).to(self._qsa_page_key_sums.dtype)
-        self._qsa_page_key_sums.index_copy_(0, representative_blocks, representative_keys)
-        self._qsa_page_key_counts.index_fill_(0, representative_blocks, 1)
-
-    def _select_decode_pages(
+    def _dense_prefill_310(
         self,
-        index_queries: torch.Tensor,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        key_cache: torch.Tensor,
+        value_cache: torch.Tensor,
         metadata: object,
-        block_size: int,
-    ) -> tuple[torch.Tensor, torch.Tensor] | None:
-        """Build a content-selected block table for long-context decode."""
-        seq_lens = metadata.seq_lens_list
-        if not seq_lens or max(seq_lens) <= self.indexer_budget:
-            return None
-        if index_queries.shape[0] < len(seq_lens):
-            return None
+    ) -> torch.Tensor:
+        """Run the exact dense-prefix equivalent on optimized 310P kernels."""
+        import torch_npu
 
-        page_budget = max(self.indexer_budget // block_size, 1)
-        if page_budget < 2:
-            return None
-        # Tool results can push the immediately preceding user instruction out
-        # of the open page. Pin a modest recent window, then spend the remaining
-        # budget on content-selected history pages.
-        recent_page_budget = min(8, page_budget)
-
-        selected_tables: list[torch.Tensor] = []
-        selected_lens: list[int] = []
-        for request_idx, seq_len in enumerate(seq_lens):
-            logical_pages = (int(seq_len) + block_size - 1) // block_size
-            if logical_pages <= page_budget:
-                return None
-
-            physical_pages = metadata.block_tables[request_idx, :logical_pages].long()
-            page_sums = self._qsa_page_key_sums.index_select(0, physical_pages)
-            page_counts = self._qsa_page_key_counts.index_select(0, physical_pages).clamp_min_(1.0)
-            page_keys = page_sums.to(torch.float32) / page_counts
-            query = index_queries[request_idx].to(torch.float32)
-            scores = torch.matmul(query, page_keys.transpose(0, 1)).clamp_min_(0).sum(dim=0)
-
-            recent_count = min(recent_page_budget, logical_pages)
-            recent_start = logical_pages - recent_count
-            content_topk = min(page_budget - recent_count, recent_start)
-            if content_topk > 0:
-                content_pages = torch.topk(scores[:recent_start], content_topk, sorted=False).indices
-                content_pages = torch.sort(content_pages).values
-            else:
-                content_pages = physical_pages.new_empty((0,), dtype=torch.long)
-            recent_pages = torch.arange(recent_start, logical_pages, device=physical_pages.device)
-            logical_selection = torch.cat([content_pages, recent_pages])
-            selected_tables.append(physical_pages.index_select(0, logical_selection))
-            last_page_tokens = (int(seq_len) - 1) % block_size + 1
-            selected_lens.append((logical_selection.numel() - 1) * block_size + last_page_tokens)
-
-        return (
-            torch.stack(selected_tables).to(metadata.block_tables.dtype),
-            metadata.seq_lens.new_tensor(selected_lens),
+        from vllm_ascend._310p.attention.attention_mask import (
+            AttentionMaskBuilder310,
+            is_compressed_mask_supported,
         )
+        from vllm_ascend._310p.attention.attention_v1 import (
+            MASK_TYPE_NORM_COMPRESS_PAGED_ATTENTION,
+            MASK_TYPE_NORM_COMPRESS_SELF_ATTENTION,
+        )
+        from vllm_ascend._310p.attention.metadata_builder import get_query_lens_cpu
+
+        output = torch.empty_like(query)
+        state_name = metadata.attn_state.name
+        if state_name == "PrefillNoCache":
+            if is_compressed_mask_supported():
+                torch_npu._npu_flash_attention_v3(
+                    query=query,
+                    key=key,
+                    value=value,
+                    mask=metadata.attn_mask,
+                    seq_len=metadata.seq_lens,
+                    scale_value=self.head_dim**-0.5,
+                    num_heads=self.num_heads,
+                    num_kv_heads=self.num_kv_heads,
+                    mask_type=MASK_TYPE_NORM_COMPRESS_SELF_ATTENTION,
+                    out=output,
+                )
+            else:
+                torch_npu._npu_flash_attention(
+                    query=query,
+                    key=key,
+                    value=value,
+                    mask=metadata.attn_mask,
+                    seq_len=metadata.seq_lens,
+                    scale_value=self.head_dim**-0.5,
+                    num_heads=self.num_heads,
+                    num_kv_heads=self.num_kv_heads,
+                    out=output,
+                )
+            return output
+
+        query_lens = get_query_lens_cpu(metadata)
+        if query_lens is None:
+            query_start_loc_cpu = metadata.query_start_loc.cpu()
+            query_lens = query_start_loc_cpu[1:] - query_start_loc_cpu[:-1]
+        if metadata.seq_lens.device != query.device:
+            metadata.seq_lens = metadata.seq_lens.to(device=query.device, non_blocking=True)
+        if is_compressed_mask_supported():
+            torch_npu._npu_paged_attention_splitfuse_v2(
+                query=query,
+                key_cache=key_cache,
+                value_cache=value_cache,
+                mask=AttentionMaskBuilder310.get_compressed_splitfuse_mask(query.device),
+                block_table=metadata.block_tables,
+                seq_len=query_lens,
+                context_lens=metadata.seq_lens,
+                num_kv_heads=self.num_kv_heads,
+                num_heads=self.num_heads,
+                scale_value=self.head_dim**-0.5,
+                mask_type=MASK_TYPE_NORM_COMPRESS_PAGED_ATTENTION,
+                out=output,
+            )
+        else:
+            torch_npu._npu_paged_attention_splitfuse(
+                query=query,
+                key_cache=key_cache,
+                value_cache=value_cache,
+                mask=AttentionMaskBuilder310.get_splitfuse_mask(metadata, query.device),
+                block_table=metadata.block_tables,
+                seq_len=query_lens,
+                context_lens=metadata.seq_lens,
+                num_kv_heads=self.num_kv_heads,
+                num_heads=self.num_heads,
+                scale_value=self.head_dim**-0.5,
+                out=output,
+            )
+        return output
 
     def forward(self, block_input: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
-        seq_len = block_input.shape[0]
+        metadata_by_layer = get_forward_context().attn_metadata if is_forward_context_available() else None
+        metadata = metadata_by_layer.get(self.prefix) if isinstance(metadata_by_layer, dict) else None
+        if metadata is None or block_input.device.type != "npu":
+            return run_qsa_decoder_attention(
+                block_input,
+                positions,
+                projections=QSADecoderProjections(
+                    q_proj=self.q_proj,
+                    k_proj=self.k_proj,
+                    v_proj=self.v_proj,
+                    gate_proj=self.gate_proj,
+                    index_q_proj=self.iq_proj,
+                    index_k_proj=self.ik_proj,
+                    out_proj=self.o_proj,
+                ),
+                indexer=self.indexer,
+                attention=self.attn,
+                num_query_heads=self.num_heads,
+                num_kv_heads=self.num_kv_heads,
+                head_dim=self.head_dim,
+                index_n_heads=self.index_n_heads,
+                index_head_dim=self.index_head_dim,
+                store_dtype=self.params_dtype,
+                compute_dtype=self.compute_dtype,
+            )
+
+        seq_len = metadata.num_actual_tokens
+        block_input = block_input[:seq_len]
+        positions = positions[..., :seq_len]
+        logical_positions = self._logical_query_positions(
+            metadata,
+            seq_len,
+            block_input.device,
+            positions,
+        )
         q = _linear(block_input, self.q_proj, self.compute_dtype).view(seq_len, self.num_heads, self.head_dim)
         k = _linear(block_input, self.k_proj, self.compute_dtype).view(seq_len, self.num_kv_heads, self.head_dim)
         v = _linear(block_input, self.v_proj, self.compute_dtype).view(seq_len, self.num_kv_heads, self.head_dim)
         gate = _linear(block_input, self.gate_proj, self.compute_dtype).view(seq_len, self.num_heads, self.head_dim)
-        q, k = self.qsa_math.project_qk(q, k, positions, positions, accum_dtype=self.compute_dtype)
+        index_q = _linear(block_input, self.iq_proj, self.compute_dtype).view(
+            seq_len, self.index_n_heads, self.index_head_dim
+        )
+        index_k = _linear(block_input, self.ik_proj, self.compute_dtype)
+        q, k = self.attn.project_qk(q, k, positions, positions, accum_dtype=self.compute_dtype)
         q = q.to(self.params_dtype)
         k = k.to(self.params_dtype)
         v = v.to(self.params_dtype)
         gate = gate.to(self.params_dtype)
-        metadata_by_layer = get_forward_context().attn_metadata
-        metadata = metadata_by_layer.get(self.prefix) if isinstance(metadata_by_layer, dict) else None
-        page_selection = None
-        if metadata is not None and block_input.device.type == "npu":
-            block_size = self._ensure_page_key_cache(block_input.device)
-            if block_size is not None:
-                self._update_page_key_cache(block_input, metadata, block_size)
-            if block_size is not None and metadata.num_prefills == 0:
-                num_requests = len(metadata.seq_lens_list)
-                index_q = _linear(
-                    block_input[:num_requests],
-                    self.iq_proj,
-                    self.compute_dtype,
-                ).view(num_requests, self.index_n_heads, self.index_head_dim)
-                page_selection = self._select_decode_pages(index_q, metadata, block_size)
+        index_q = gemma_rmsnorm(
+            index_q,
+            self.indexer.q_layernorm_weight,
+            self.indexer.rms_norm_eps,
+            self.compute_dtype,
+        )
+        index_q = apply_partial_rope(
+            index_q,
+            positions,
+            self.attn.rotary_dim,
+            self.attn.rope_theta,
+            self.compute_dtype,
+            mrope_section=self.attn.mrope_section,
+            mrope_interleaved=self.attn.mrope_interleaved,
+        ).to(self.params_dtype)
+        if positions.ndim == 1:
+            index_key_positions = positions - torch.remainder(logical_positions, self.indexer.compress_ratio)
+        else:
+            # MRoPE axes do not advance monotonically through an image grid.
+            # Preserve their exact per-token coordinates; causal group/tail
+            # accounting independently uses logical_positions below.
+            index_key_positions = positions
+        index_key_cos, index_key_sin = partial_rope_cos_sin(
+            index_key_positions,
+            rotary_dim=self.attn.rotary_dim,
+            base=self.attn.rope_theta,
+            dtype=self.params_dtype,
+            mrope_section=self.attn.mrope_section,
+            mrope_interleaved=self.attn.mrope_interleaved,
+        )
+        from vllm_ascend.device.device_op import DeviceOperator
 
-        original_block_tables = None
-        original_seq_lens = None
-        if page_selection is not None:
-            original_block_tables = metadata.block_tables
-            original_seq_lens = metadata.seq_lens
-            metadata.block_tables, metadata.seq_lens = page_selection
-        try:
-            out = self.attn(
-                q.reshape(seq_len, -1),
-                k.reshape(seq_len, -1),
-                v.reshape(seq_len, -1),
-            ).view(seq_len, self.num_heads, self.head_dim)
-        finally:
-            if original_block_tables is not None:
-                metadata.block_tables = original_block_tables
-                metadata.seq_lens = original_seq_lens
+        key_cache, value_cache = self.kv_cache
+        index_cache = getattr(self, "qsa_index_cache", None)
+        if index_cache is None:
+            raise RuntimeError(f"QSA index cache was not bound for {self.prefix}")
+        slot_mapping = metadata.slot_mapping[:seq_len]
+        DeviceOperator.reshape_and_cache(k, v, key_cache, value_cache, slot_mapping)
+        cache_block_size = key_cache.shape[2]
+        qsa_index_cache_update_310(
+            index_cache,
+            index_k.to(self.params_dtype),
+            metadata.query_start_loc,
+            slot_mapping,
+            self.indexer.k_layernorm_weight,
+            index_key_cos,
+            index_key_sin,
+            block_size=cache_block_size,
+            rotary_dim=self.attn.rotary_dim,
+            norm_eps=self.indexer.rms_norm_eps,
+        )
+        if self._dense_prefill_is_exact(metadata, self.indexer.token_topk):
+            out = self._dense_prefill_310(q, k, v, key_cache, value_cache, metadata)
+        else:
+            selection = qsa_indexer_select_groups_310(
+                index_q,
+                index_cache,
+                metadata.block_tables,
+                metadata.query_start_loc,
+                logical_positions,
+                compress_ratio=self.indexer.compress_ratio,
+                token_topk=self.indexer.token_topk,
+            )
+            out = qsa_sparse_attention_310(
+                q,
+                key_cache,
+                value_cache,
+                selection,
+                metadata.block_tables,
+                metadata.query_start_loc,
+                scale=self.head_dim**-0.5,
+                compress_ratio=self.indexer.compress_ratio,
+            )
         out = out * torch.sigmoid(gate)
         return _linear(out.reshape(seq_len, -1), self.o_proj, self.compute_dtype).to(self.params_dtype)
 
@@ -1581,16 +1696,20 @@ class AscendQwen4ExpModel(nn.Module):
         # materializing the 95.43 GiB host table.
         self.checkpoint_dir = _resolve_checkpoint_dir(vllm_config)
         self.layers = nn.ModuleList(
-            AscendQwen4ExpDecoderLayer(
-                config=config,
-                layer_type=layer_types[idx],
-                layer_idx=idx,
-                dtype_policy=self.dtype_policy,
-                prefix=maybe_prefix(prefix, f"layers.{idx}"),
-                expert_sharding=self.expert_sharding,
-                checkpoint_dir=self.checkpoint_dir,
+            get_offloader().wrap_modules(
+                (
+                    AscendQwen4ExpDecoderLayer(
+                        config=config,
+                        layer_type=layer_types[idx],
+                        layer_idx=idx,
+                        dtype_policy=self.dtype_policy,
+                        prefix=maybe_prefix(prefix, f"layers.{idx}"),
+                        expert_sharding=self.expert_sharding,
+                        checkpoint_dir=self.checkpoint_dir,
+                    )
+                    for idx in range(config.num_hidden_layers)
+                ),
             )
-            for idx in range(config.num_hidden_layers)
         )
         self.layer_types = layer_types
 
@@ -1607,6 +1726,9 @@ class AscendQwen4ExpModel(nn.Module):
         self.start_layer = 0
         self.end_layer = config.num_hidden_layers
         self._mtp_hidden_buffer: torch.Tensor | None = None
+        self.make_empty_intermediate_tensors = make_empty_intermediate_tensors_factory(
+            ["hidden_states"], self.hc_count * self.hidden_size
+        )
 
     @staticmethod
     def _resolve_layer_types(config: object) -> list[str]:
@@ -1682,6 +1804,9 @@ class AscendQwen4ExpForCausalLM(
     }
     hf_to_vllm_mapper = WeightsMapper(orig_to_new_prefix={"model.language_model.": "model."})
     requires_raw_input_tokens = True
+    # QSA applies the checkpoint's interleaved MRoPE directly from positions.
+    # The 310P runner must not look for an external rotary-embedding module.
+    uses_model_owned_mrope: ClassVar[Literal[True]] = True
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
         super().__init__()
@@ -1710,6 +1835,7 @@ class AscendQwen4ExpForCausalLM(
         if getattr(config, "tie_word_embeddings", False):
             self.lm_head.weight = self.model.embed_tokens.weight
         self.logits_processor = LogitsProcessor(config.vocab_size)
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     # -- state / hooks -----------------------------------------------------
 
@@ -1841,7 +1967,12 @@ class AscendQwen4ExpForCausalLM(
                     mamba_type=MambaAttentionBackendEnum.GDN_ATTN,
                 )
             else:
-                spec[name] = FullAttentionSpec(
+                spec_cls = (
+                    AscendQSAFullAttentionSpec
+                    if layer_type == _LAYER_TYPE_FULL and getattr(config, "indexer_n_heads", None) is not None
+                    else FullAttentionSpec
+                )
+                spec[name] = spec_cls(
                     block_size=DEFAULT_ATTENTION_BLOCK_SIZE,
                     num_kv_heads=num_kv_heads,
                     head_size=head_dim,
@@ -2316,29 +2447,129 @@ class AscendQwen4ExpForCausalLM(
         return self.model(input_ids, positions, inputs_embeds)
 
 
-class AscendQwen4ExpForConditionalGeneration(AscendQwen4ExpForCausalLM):
-    """Multimodal-rejecting alias.
+@MULTIMODAL_REGISTRY.register_processor(
+    Qwen4ExpVLMultiModalProcessor,
+    info=Qwen4ExpVLProcessingInfo,
+    dummy_inputs=Qwen4ExpVLDummyInputsBuilder,
+)
+class AscendQwen4ExpForConditionalGeneration(
+    Qwen3VLForConditionalGeneration,
+    HasInnerState,
+    IsHybrid,
+    MixtureOfExperts,
+):
+    """Qwen3-VL vision frontend backed by the Ascend Qwen4Exp language model."""
 
-    Registered for the ``Qwen4ExpForConditionalGeneration`` architecture so
-    such checkpoints route here, then rejected at the first gate: the 310P path
-    is text-only.
-    """
+    has_inner_state: ClassVar[Literal[True]] = True
+    is_hybrid: ClassVar[Literal[True]] = True
+    uses_model_owned_mrope: ClassVar[Literal[True]] = True
+    requires_raw_input_tokens = True
+
+    @classmethod
+    def get_model_state_cls(cls):
+        return AscendQwen4ExpForCausalLM.get_model_state_cls()
+
+    @classmethod
+    def get_mamba_state_dtype_from_config(cls, vllm_config: VllmConfig):
+        return AscendQwen4ExpForCausalLM.get_mamba_state_dtype_from_config(vllm_config)
+
+    @classmethod
+    def get_mamba_state_shape_from_config(cls, vllm_config: VllmConfig):
+        return AscendQwen4ExpForCausalLM.get_mamba_state_shape_from_config(vllm_config)
+
+    @classmethod
+    def get_mamba_state_copy_func(cls):
+        return AscendQwen4ExpForCausalLM.get_mamba_state_copy_func()
+
+    @classmethod
+    def get_mamba_specs_from_config(cls, vllm_config: VllmConfig):
+        return AscendQwen4ExpForCausalLM.get_mamba_specs_from_config(vllm_config)
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
-        _reject_multimodal(vllm_config)  # first gate
-        super().__init__(vllm_config=vllm_config, prefix=prefix)
+        # Avoid building a Qwen3 text decoder merely to replace it with the much
+        # larger Qwen4Exp hybrid decoder. The frontend is shared; the language
+        # model is constructed exactly once below.
+        nn.Module.__init__(self)
+        config = vllm_config.model_config.hf_config
+        multimodal_config = vllm_config.model_config.multimodal_config
+        if multimodal_config is None:
+            raise ValueError("Qwen4Exp conditional generation requires multimodal_config")
 
-    def get_multimodal_embeddings(self, *args: object, **kwargs: object):
-        raise NotImplementedError(
-            "AscendQwen4ExpForConditionalGeneration: multimodal embeddings are "
-            "not supported on the Ascend 310P path (text-only)."
-        )
+        self.config = config
+        self.model_config = vllm_config.model_config
+        self._tokenizer = cached_tokenizer_from_config(vllm_config.model_config)
+        self.multimodal_config = multimodal_config
+        self.use_data_parallel = multimodal_config.mm_encoder_tp_mode == "data"
+        pruning_spec = multimodal_config.get_video_pruning_spec()
+        if pruning_spec is None:
+            self.video_pruning_method = None
+            self.video_pruning_rate = multimodal_config.video_pruning_rate
+        else:
+            self.video_pruning_method, self.video_pruning_rate = pruning_spec
+        self.is_multimodal_pruning_enabled = multimodal_config.is_multimodal_pruning_enabled()
 
-    def embed_multimodal(self, *args: object, **kwargs: object):
-        raise NotImplementedError(
-            "AscendQwen4ExpForConditionalGeneration: multimodal inputs are not "
-            "supported on the Ascend 310P path (text-only)."
-        )
+        with self._mark_tower_model(vllm_config, {"image", "video"}):
+            self.visual = Qwen3_VisionTransformer(
+                config.vision_config,
+                norm_eps=getattr(config, "rms_norm_eps", 1e-6),
+                quant_config=vllm_config.quant_config,
+                prefix=maybe_prefix(prefix, "visual"),
+            )
+
+        visual_indexes = getattr(config.vision_config, "deepstack_visual_indexes", [])
+        self.use_deepstack = bool(visual_indexes)
+        self.deepstack_num_level = len(visual_indexes)
+        self.visual_dim = config.vision_config.out_hidden_size
+        self.multiscale_dim = self.visual_dim * self.deepstack_num_level
+        if self.use_deepstack:
+            self.deepstack_input_embeds = [
+                torch.zeros(
+                    vllm_config.scheduler_config.max_num_batched_tokens,
+                    config.text_config.hidden_size,
+                )
+                for _ in range(self.deepstack_num_level)
+            ]
+            self.deepstack_input_embeds_num_tokens = 0
+
+        with self._mark_language_model(vllm_config):
+            self.language_model = AscendQwen4ExpForCausalLM(
+                vllm_config=vllm_config,
+                prefix=maybe_prefix(prefix, "language_model"),
+            )
+        self.make_empty_intermediate_tensors = self.language_model.make_empty_intermediate_tensors
+
+    def forward(
+        self,
+        input_ids: torch.Tensor | None,
+        positions: torch.Tensor,
+        intermediate_tensors: object | None = None,
+        inputs_embeds: torch.Tensor | None = None,
+        **kwargs: object,
+    ) -> torch.Tensor:
+        del kwargs
+        return self.language_model(input_ids, positions, intermediate_tensors, inputs_embeds)
+
+    def get_expert_mapping(self) -> list[tuple[str, str, int, str]]:
+        return self.language_model.get_expert_mapping()
+
+    def get_mtp_target_hidden_states(self) -> torch.Tensor | None:
+        return self.language_model.get_mtp_target_hidden_states()
+
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Stream vision tensors to the ViT and all other tensors to Qwen4Exp."""
+        visual_loaded: set[str] = set()
+
+        def language_weights():
+            for name, weight in weights:
+                if name.startswith("model.visual."):
+                    visual_name = name.removeprefix("model.visual.")
+                    loaded = self.visual.load_weights([(visual_name, weight)])
+                    visual_loaded.update(f"visual.{item}" for item in loaded)
+                else:
+                    yield name, weight
+
+        language_loaded = self.language_model.load_weights(language_weights())
+        return visual_loaded | {f"language_model.{name}" for name in language_loaded}
 
 
 # Keep a reference so linters don't flag the authoritative singleton import as
