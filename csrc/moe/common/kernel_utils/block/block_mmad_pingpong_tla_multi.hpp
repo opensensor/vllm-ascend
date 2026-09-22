@@ -677,7 +677,10 @@ public:
             AscendC::LocalTensor<ElementAccumulator> co2Temp =
                 resourcePtr->ubBuf.template GetBufferByByte<ElementAccumulator>(0);
 
-            AscendC::PipeBarrier<PIPE_ALL>();
+            // On dav_m200, L0C -> UB DataCopy runs on the vector pipe.  Wait
+            // for MMAD to finish producing the accumulator before reading it.
+            AscendC::SetFlag<AscendC::HardEvent::M_V>(EVENT_ID7);
+            AscendC::WaitFlag<AscendC::HardEvent::M_V>(EVENT_ID7);
 
             // L0C → UB: BLOCK_MODE_MATRIX copies raw NZ fractals to UB
             // For float: blockLen unit = 1024B (one 16×16 fractal)
@@ -689,8 +692,6 @@ public:
             AscendC::DataCopyEnhancedParams enhParams;
             enhParams.blockMode = AscendC::BlockMode::BLOCK_MODE_MATRIX;
             AscendC::DataCopy(co2Temp, l0CTensorList[l0CListId], l0c2ubParams, enhParams);
-            AscendC::SetFlag<AscendC::HardEvent::MTE3_V>(EVENT_ID7);
-            AscendC::WaitFlag<AscendC::HardEvent::MTE3_V>(EVENT_ID7);
 
             // UB → GM: fractal-by-fractal with strided DataCopy (NZ→ND
             // deformat). When C is fp16, cast the FP32 accumulator in UB and
@@ -745,6 +746,10 @@ public:
             // Ensure every output copy has stopped reading it first.
             AscendC::SetFlag<AscendC::HardEvent::MTE3_V>(EVENT_ID7);
             AscendC::WaitFlag<AscendC::HardEvent::MTE3_V>(EVENT_ID7);
+            // The next BlockMmad invocation reuses L0C.  Finish all vector
+            // reads of the accumulator before allowing MMAD to overwrite it.
+            AscendC::SetFlag<AscendC::HardEvent::V_M>(EVENT_ID7);
+            AscendC::WaitFlag<AscendC::HardEvent::V_M>(EVENT_ID7);
             l0CListId = (l0CListId + 1 < L0C_STAGES) ? (l0CListId + 1) : 0;
         }
 #else
