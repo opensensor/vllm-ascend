@@ -689,7 +689,8 @@ public:
             AscendC::DataCopyEnhancedParams enhParams;
             enhParams.blockMode = AscendC::BlockMode::BLOCK_MODE_MATRIX;
             AscendC::DataCopy(co2Temp, l0CTensorList[l0CListId], l0c2ubParams, enhParams);
-            AscendC::PipeBarrier<PIPE_ALL>();
+            AscendC::SetFlag<AscendC::HardEvent::MTE3_V>(EVENT_ID7);
+            AscendC::WaitFlag<AscendC::HardEvent::MTE3_V>(EVENT_ID7);
 
             // UB → GM: fractal-by-fractal with strided DataCopy (NZ→ND
             // deformat). When C is fp16, cast the FP32 accumulator in UB and
