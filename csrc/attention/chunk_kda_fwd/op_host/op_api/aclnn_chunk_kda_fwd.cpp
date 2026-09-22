@@ -561,6 +561,12 @@ bool IsAscend950()
     const char *socName = aclrtGetSocName();
     return socName != nullptr && std::strstr(socName, "Ascend950") != nullptr;
 }
+
+bool IsAscend310P()
+{
+    const char *socName = aclrtGetSocName();
+    return socName != nullptr && std::strstr(socName, "Ascend310P") != nullptr;
+}
 } // namespace
 
 aclnnStatus aclnnChunkKdaFwdGetWorkspaceSize(
@@ -665,8 +671,11 @@ aclnnStatus aclnnChunkKdaFwdGetWorkspaceSize(
         params.cuSeqlensOptional == nullptr && params.q->GetDataType() == DataType::DT_BF16 &&
         params.chunkSize == 64 && info.kDim == 128 && info.vDim == 128 &&
         info.seqlen % params.chunkSize == 0;
-    const bool splitStages =
-        IsAscend950() && info.totalChunks > 1 && !useDenseA5FastPath;
+    // 310P's unified AI cores cannot preserve the mixed vector/cube event
+    // state across the complete fused pipeline. Physical launch boundaries
+    // also make every intermediate persist instead of using placeholders.
+    const bool splitStages = IsAscend310P() ||
+        (IsAscend950() && info.totalChunks > 1 && !useDenseA5FastPath);
 
     const aclTensor *gkCompute = params.gkOut;
     if (gkCompute != nullptr && info.isRank3) {

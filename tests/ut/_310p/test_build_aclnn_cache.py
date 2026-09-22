@@ -73,6 +73,15 @@ def test_chunk_kda_dispatches_without_keyed_runtime_selection_on_310p():
     assert arch20_dispatch.rstrip().endswith("#endif")
 
 
+def test_chunk_kda_uses_physical_stage_boundaries_on_310p():
+    api = (
+        REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_host" / "op_api" / "aclnn_chunk_kda_fwd.cpp"
+    ).read_text()
+
+    assert 'std::strstr(socName, "Ascend310P")' in api
+    assert "const bool splitStages = IsAscend310P() ||" in api
+
+
 def test_kda_varlen_boundaries_use_310p_scalar_global_reads():
     op_dir = REPO_ROOT / "csrc" / "attention" / "kda_gate_cumsum" / "op_kernel"
     for source_name in ("kda_gate_cumsum.cpp", "kda_gate_cumsum_kernel.h"):
