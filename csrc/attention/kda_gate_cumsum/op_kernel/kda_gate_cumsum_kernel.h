@@ -334,6 +334,11 @@ private:
 
     __aicore__ inline int64_t ReadInt64(GlobalTensor<int64_t> &tensor, uint64_t offset)
     {
+#if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
+        // 310P has unified AI cores and does not reliably execute the
+        // vector-to-scalar synchronization sequence below for int64 data.
+        return tensor.GetValue(offset);
+#else
         LocalTensor<int64_t> scalar = scalarI64Buf_.Get<int64_t>();
         DataCopyParams params{1, static_cast<uint16_t>(sizeof(int64_t)), 0, 0};
         DataCopyPadParams padParams{false, 0, 0, 0};
@@ -344,6 +349,7 @@ private:
         WaitFlag<HardEvent::V_S>(scalarVToSEvent_);
         __ubuf__ int64_t *ptr = (__ubuf__ int64_t *)scalar.GetPhyAddr();
         return ptr[0];
+#endif
     }
 
     __aicore__ inline float ExpScalar(float x)

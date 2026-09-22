@@ -41,12 +41,7 @@ def test_gcc15_protobuf_build_includes_cstdint():
 def test_chunk_kda_is_registered_and_built_for_310p():
     build_script = (REPO_ROOT / "csrc" / "build_aclnn.sh").read_text()
     op_definition = (
-        REPO_ROOT
-        / "csrc"
-        / "attention"
-        / "chunk_kda_fwd"
-        / "op_host"
-        / "chunk_kda_fwd_def.cpp"
+        REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_host" / "chunk_kda_fwd_def.cpp"
     ).read_text()
 
     assert '"chunk_kda_fwd"' in build_script
@@ -54,42 +49,35 @@ def test_chunk_kda_is_registered_and_built_for_310p():
 
 
 def test_chunk_kda_uses_only_default_task_type_on_310p():
-    kernel = (
-        REPO_ROOT
-        / "csrc"
-        / "attention"
-        / "chunk_kda_fwd"
-        / "op_kernel"
-        / "chunk_kda_fwd.cpp"
-    ).read_text()
+    kernel = (REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_kernel" / "chunk_kda_fwd.cpp").read_text()
 
     guard = "#if !defined(__CCE_AICORE__) || (__CCE_AICORE__ != 200)"
+    unified_core_guard = "#ifdef CATLASS_UNIFIED_CORE"
+    assert kernel.index(unified_core_guard) < kernel.index("KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC);")
     assert kernel.index(guard) < kernel.index("KERNEL_TASK_TYPE(1")
     assert kernel.index(guard) < kernel.index("KERNEL_TASK_TYPE(2")
 
 
+def test_kda_varlen_boundaries_use_310p_scalar_global_reads():
+    op_dir = REPO_ROOT / "csrc" / "attention" / "kda_gate_cumsum" / "op_kernel"
+    for source_name in ("kda_gate_cumsum.cpp", "kda_gate_cumsum_kernel.h"):
+        kernel = (op_dir / source_name).read_text()
+        read_int64 = kernel[kernel.index("ReadInt64") : kernel.index("ExpScalar")]
+
+        assert "__CCE_AICORE__ == 200" in read_int64
+        assert "return tensor.GetValue(offset);" in read_int64
+
+
 def test_chunk_kda_helpers_are_registered_for_310p():
     for op_name in ("kda_gate_cumsum", "kda_layout_swap12"):
-        op_definition = (
-            REPO_ROOT
-            / "csrc"
-            / "attention"
-            / op_name
-            / "op_host"
-            / f"{op_name}_def.cpp"
-        ).read_text()
+        op_definition = (REPO_ROOT / "csrc" / "attention" / op_name / "op_host" / f"{op_name}_def.cpp").read_text()
 
         assert 'AddConfig("ascend310p", aicoreConfig)' in op_definition
 
 
 def test_kda_layout_swap_avoids_keyed_task_types_on_310p():
     kernel = (
-        REPO_ROOT
-        / "csrc"
-        / "attention"
-        / "kda_layout_swap12"
-        / "op_kernel"
-        / "kda_layout_swap12.cpp"
+        REPO_ROOT / "csrc" / "attention" / "kda_layout_swap12" / "op_kernel" / "kda_layout_swap12.cpp"
     ).read_text()
 
     guard = "#if !defined(__CCE_AICORE__) || (__CCE_AICORE__ != 200)"
@@ -111,19 +99,13 @@ def test_chunk_kda_helpers_exclude_bf16_on_310p():
 
 
 def test_chunk_kda_loads_310p_compat_before_catlass_kernels():
-    kernel_dir = (
-        REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_kernel"
-    )
+    kernel_dir = REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_kernel"
     common_header = (kernel_dir / "chunk_kda_fwd_common.h").read_text()
     compat_header = (kernel_dir / "arch20" / "compat_310p.h").read_text()
 
     compat_include = '#include "arch20/compat_310p.h"'
-    first_catlass_kernel = (
-        '#include "../../kda_gate_cumsum/op_kernel/kda_gate_cumsum_kernel.h"'
-    )
-    assert common_header.index(compat_include) < common_header.index(
-        first_catlass_kernel
-    )
+    first_catlass_kernel = '#include "../../kda_gate_cumsum/op_kernel/kda_gate_cumsum_kernel.h"'
+    assert common_header.index(compat_include) < common_header.index(first_catlass_kernel)
     assert "#define CATLASS_UNIFIED_CORE 1" in compat_header
     assert "struct bfloat16_t" in compat_header
     assert "#define PIPE_FIX PIPE_MTE3" in compat_header
