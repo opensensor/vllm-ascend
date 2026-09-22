@@ -78,6 +78,7 @@ invalidate_stale_kernel_cache() {
     local op_name
     local op_path
     local source_stamp
+    local stale_kernel_cache
 
     [[ -d "${binary_root}" ]] || return 0
 
@@ -86,8 +87,17 @@ invalidate_stale_kernel_cache() {
         [[ -n "${op_path}" && -d "${op_path}/op_kernel" ]] || continue
 
         source_stamp="${binary_root}/src/${op_name}/${op_name}_${SOC_ARG}_src_copy.done"
-        if [[ -f "${source_stamp}" ]] &&
-           ! find "${op_path}/op_kernel" -type f -newer "${source_stamp}" -print -quit | grep -q .; then
+        stale_kernel_cache=0
+        if [[ ! -f "${source_stamp}" ]] ||
+           find "${op_path}/op_kernel" -type f -newer "${source_stamp}" -print -quit | grep -q .; then
+            stale_kernel_cache=1
+        elif [[ "${op_name}" == "w2_blocked_dequant_matmul_v310" ]] &&
+             find "${ROOT_DIR}/csrc/moe/common/kernel_utils" -type f -newer "${source_stamp}" -print -quit |
+                 grep -q .; then
+            # The 310P W2 kernel includes the shared CATLASS block helpers.
+            stale_kernel_cache=1
+        fi
+        if [[ "${stale_kernel_cache}" -eq 0 ]]; then
             continue
         fi
 
