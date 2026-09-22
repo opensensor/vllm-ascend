@@ -169,6 +169,7 @@ from vllm_ascend.eplb.core.eplb_device_transfer_loader import D2DExpertWeightLoa
 from vllm_ascend.eplb.core.eplb_worker import EplbProcess
 from vllm_ascend.eplb.eplb_updator import EplbUpdator
 from vllm_ascend.model_executor.offloader import create_offloader
+from vllm_ascend.model_executor.offloader.prefetch import AscendPrefetchOffloader
 from vllm_ascend.ops.fused_moe.force_eplb import build_force_eplb_topk
 from vllm_ascend.ops.rotary_embedding import set_cos_and_sin, update_cos_sin
 from vllm_ascend.ops.triton.spec_decode.ngram import triton_ngram_spec_decode
@@ -282,6 +283,37 @@ def _reclaim_offloaded_device_memory(
         0,
     )
     return resident_model_memory, net_offloaded_device_bytes
+
+
+def _warm_up_tp_communicator_for_prefetch(
+    offloader: Any,
+    device: torch.device,
+) -> bool:
+    """Initialize lazy TP communication before prefetch weights consume memory.
+
+    HCCL creates its communicator on the first collective and allocates outside
+    PyTorch's caching allocator. Full-capacity models can leave enough logical
+    headroom after offload while still preventing that late external
+    allocation. A one-element collective reserves the communicator while the
+    device is still mostly empty; the communicator is then reused by model
+    collectives after loading.
+    """
+    if not isinstance(offloader, AscendPrefetchOffloader):
+        return False
+
+    tp_group = get_tp_group()
+    if tp_group.world_size <= 1:
+        return False
+
+    warmup_tensor = torch.zeros(1, dtype=torch.int32, device=device)
+    dist.all_reduce(warmup_tensor, group=tp_group.device_group)
+    torch.npu.current_stream().synchronize()
+    del warmup_tensor
+    torch.npu.empty_cache()
+    logger.info_once(
+        "Initialized the TP communicator before prefetch-offloaded model loading."
+    )
+    return True
 
 
 
@@ -4039,6 +4071,9 @@ class NPUModelRunner(GPUModelRunner):
         load_model_start_time = time.perf_counter()
         logger.info("Starting to load model %s...", self.model_config.model)
 
+        offloader = get_offloader()
+        _warm_up_tp_communicator_for_prefetch(offloader, self.device)
+
         if self.ascend_config.mix_placement:
             # TODO: Enabling the mix placement in deepseek_v2.py
             # remove this part after the mix placement merged into vllm
@@ -4126,7 +4161,6 @@ class NPUModelRunner(GPUModelRunner):
         self.model_memory_usage = m.consumed_memory
         logger.info("Loading model weights took %.4f GB", m.consumed_memory / float(2**30))
 
-        offloader = get_offloader()
         offloader.post_init()
         self.model_memory_usage, net_offloaded_device_bytes = (
             _reclaim_offloaded_device_memory(

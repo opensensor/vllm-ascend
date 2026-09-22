@@ -13,6 +13,7 @@ from vllm_ascend.model_executor.offloader.prefetch import (
 from vllm_ascend.worker.model_runner_v1 import (
     _net_offloaded_device_bytes,
     _reclaim_offloaded_device_memory,
+    _warm_up_tp_communicator_for_prefetch,
 )
 
 
@@ -123,3 +124,46 @@ def test_reclaim_offloaded_device_memory_releases_cache_and_updates_usage():
 
     assert (resident_bytes, reclaimed_bytes) == (700, 300)
     empty_cache.assert_called_once_with()
+
+
+def test_warm_up_tp_communicator_before_prefetch_model_load():
+    offloader = AscendPrefetchOffloader.__new__(AscendPrefetchOffloader)
+    device = torch.device("npu:0")
+    warmup_tensor = MagicMock()
+    current_stream = MagicMock()
+    tp_group = SimpleNamespace(world_size=4, device_group=object())
+
+    with (
+        patch(
+            "vllm_ascend.worker.model_runner_v1.get_tp_group",
+            return_value=tp_group,
+        ),
+        patch(
+            "vllm_ascend.worker.model_runner_v1.torch.zeros",
+            return_value=warmup_tensor,
+        ) as zeros,
+        patch("vllm_ascend.worker.model_runner_v1.dist.all_reduce") as all_reduce,
+        patch(
+            "vllm_ascend.worker.model_runner_v1.torch.npu.current_stream",
+            return_value=current_stream,
+        ),
+        patch("vllm_ascend.worker.model_runner_v1.torch.npu.empty_cache") as empty_cache,
+    ):
+        warmed_up = _warm_up_tp_communicator_for_prefetch(offloader, device)
+
+    assert warmed_up
+    zeros.assert_called_once_with(1, dtype=torch.int32, device=device)
+    all_reduce.assert_called_once_with(warmup_tensor, group=tp_group.device_group)
+    current_stream.synchronize.assert_called_once_with()
+    empty_cache.assert_called_once_with()
+
+
+def test_warm_up_tp_communicator_skips_non_prefetch_offloader():
+    with patch("vllm_ascend.worker.model_runner_v1.dist.all_reduce") as all_reduce:
+        warmed_up = _warm_up_tp_communicator_for_prefetch(
+            NoopOffloader(),
+            torch.device("npu:0"),
+        )
+
+    assert not warmed_up
+    all_reduce.assert_not_called()
