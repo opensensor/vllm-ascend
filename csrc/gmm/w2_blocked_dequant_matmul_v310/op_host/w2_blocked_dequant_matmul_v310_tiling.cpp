@@ -68,26 +68,30 @@ static ge::graphStatus W2BlockedDequantMatmulTilingFunc(gert::TilingContext *con
     tilingData.set_kDim(K);
     tilingData.set_codesPerByte(codesPerByte);
 
-    // Cube path workspace: [ Wdq (N*K half) ][ yF (alignUp(T,16)*N float) ]
+    const int64_t nBlocks = (N + OUTPUT_TILE - 1) / OUTPUT_TILE;
+    uint32_t blockDim = (nBlocks < static_cast<int64_t>(coreNum)) ? static_cast<uint32_t>(nBlocks) : coreNum;
+
+    // Bounded Cube workspace, reused as a core advances through output tiles:
+    //   [blockDim, 128, K] half, already in NZ order
+    //   [blockDim, alignUp(T,16), 128] float accumulation
+    // The former implementation allocated a full [N,K] fp16 dequantized
+    // matrix plus a per-core [T,K] activation reorder.  Besides scaling with N,
+    // that made CATLASS convert each ND B tile to NZ again.  Producing NZ
+    // fractals directly from the packed bytes removes both allocations and the
+    // issue-1563-style format conversion from the matmul path.
     const int64_t mAligned = (T + 15) / 16 * 16;
-    const size_t wdqBytes = static_cast<size_t>(N) * static_cast<size_t>(K) * sizeof(uint16_t);
-    const size_t yfBytes = static_cast<size_t>(mAligned) * static_cast<size_t>(N) * sizeof(float);
+    const size_t wdqBytes = static_cast<size_t>(blockDim) * static_cast<size_t>(OUTPUT_TILE)
+                            * static_cast<size_t>(K) * sizeof(uint16_t);
+    const size_t yfBytes = static_cast<size_t>(blockDim) * static_cast<size_t>(mAligned)
+                           * static_cast<size_t>(OUTPUT_TILE) * sizeof(float);
     // GetUserWorkspace(workspace) returns (workspace + GetLibApiWorkSpaceSize()),
     // so the reported size must include that system reserve or the kernel writes
     // run past the allocation (invalid GM address).
-    // Per-core de-interleaved x workspace: each core builds its own field-major
-    // copy of x[mAligned, K] so the on-chip unpack can store the weight
-    // field-major and skip the per-weight-row gather (x is de-interleaved once
-    // per core instead).
-    const size_t xfmBytes = static_cast<size_t>(coreNum) * static_cast<size_t>(mAligned)
-                            * static_cast<size_t>(K) * sizeof(uint16_t);
     const size_t sysRsv = ascendcPlatform.GetLibApiWorkSpaceSize();
     size_t *currentWorkspace = context->GetWorkspaceSizes(1);
     OP_CHECK_NULL_WITH_CONTEXT(context, currentWorkspace);
-    currentWorkspace[0] = sysRsv + wdqBytes + yfBytes + xfmBytes;
+    currentWorkspace[0] = sysRsv + wdqBytes + yfBytes;
 
-    const int64_t nBlocks = (N + 127) / 128;
-    uint32_t blockDim = (nBlocks < static_cast<int64_t>(coreNum)) ? static_cast<uint32_t>(nBlocks) : coreNum;
     context->SetBlockDim(blockDim);
     context->SetTilingKey(0);
 

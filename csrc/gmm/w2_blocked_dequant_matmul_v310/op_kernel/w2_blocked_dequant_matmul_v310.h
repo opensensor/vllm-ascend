@@ -11,21 +11,14 @@
 
 /*!
  * \file w2_blocked_dequant_matmul_v310.h
- * \brief Cube (AIC) 310P kernel accepting packed signed W2/W4 codes.
+ * \brief 310P packed W2/W4 block-dequant Cube matmul.
  *
- *   out[t, n] = sum_k x[t, k] * (code[n, k] * block_scale[n/32, k/32])
- *   codes: uint8 [N, K/codes_per_byte], little-endian by field. Packed width
- *   selects W2 (4 codes/byte) or W4 (2 codes/byte); both use two's-complement
- *   sign extension and match tools/deepseek_w2/w2_format.py.
- *
- * Interleave strategy (perf): the on-chip unpack naturally produces the weight
- * in FIELD-MAJOR K order (p = j*packed_k + i; k = codes_per_byte*i + j).
- * Rather than
- * gather each of the N weight rows back to true K order (a per-row random-access
- * gather, the dominant cost on m200), we store the weight field-major and
- * de-interleave the (small) activation x into the SAME field-major K order once
- * per core. The Cube contracts x_fm against w_fm over the permuted K, giving the
- * identical result with only T gathers instead of N.
+ * The checkpoint remains byte-packed in canonical row-major order. Each AI
+ * core decodes only its current 128-output-channel tile, restores logical K
+ * order in UB, and writes 16x16 fragments directly in NZ order to a reusable
+ * per-core workspace. CATLASS therefore consumes an already-NZ B operand:
+ * there is no full [N,K] fp16 materialization, no activation de-interleave,
+ * and no ND-to-NZ conversion in the matmul path.
  */
 
 #ifndef W2_BLOCKED_DEQUANT_MATMUL_V310_H
@@ -54,7 +47,8 @@ using namespace AscendC;
 using namespace Catlass;
 using namespace tla;
 
-constexpr int64_t W2_BLK = 32;
+constexpr int64_t W2_BLOCK_SIZE = 32;
+constexpr uint32_t W2_FRACTAL_SIZE = 16;
 constexpr uint32_t W2_TILE_N = 128;
 
 template <typename T>
@@ -71,7 +65,7 @@ public:
     using L1TileShapeTla = tla::Shape<tla::Int<128>, tla::Int<128>, tla::Int<128>>;
     using L0TileShapeTla = L1TileShapeTla;
     using TileCopy = Catlass::Gemm::Tile::PackedTileCopyTla<
-        ArchTag, half, layout::RowMajor, half, layout::ColumnMajor, float, layout::RowMajor>;
+        ArchTag, half, layout::RowMajor, half, layout::zN, float, layout::RowMajor>;
     using BlockMmad = Gemm::Block::BlockMmadTla<
         DispatchPolicyTla, L1TileShapeTla, L0TileShapeTla, half, half, float, void, TileCopy>;
 
@@ -88,59 +82,58 @@ public:
         codesPerByte_ = td->codesPerByte;
         bitsPerCode_ = 8 / codesPerByte_;
         packedK_ = K_ / codesPerByte_;
-        blockPackedCols_ = W2_BLK / codesPerByte_;
+        blockPackedCols_ = W2_BLOCK_SIZE / codesPerByte_;
         fieldMask_ = (1 << bitsPerCode_) - 1;
         signHalf_ = 1 << (bitsPerCode_ - 1);
-        kbCount_ = K_ / W2_BLK;
-        mAligned_ = AlignUpU<int64_t>(T_, 16);
+        kbCount_ = K_ / W2_BLOCK_SIZE;
+        mAligned_ = AlignUpU<int64_t>(T_, W2_FRACTAL_SIZE);
+
+        const int64_t coreCount = GetBlockNum();
+        const int64_t nzElementsPerCore = W2_TILE_N * K_;
+        const int64_t outputElementsPerCore = mAligned_ * W2_TILE_N;
 
         xGm_.SetGlobalBuffer(reinterpret_cast<__gm__ half *>(x));
         codesGm_.SetGlobalBuffer(reinterpret_cast<__gm__ uint8_t *>(codes));
         scaleGm_.SetGlobalBuffer(reinterpret_cast<__gm__ float *>(blockScale));
         yGm_.SetGlobalBuffer(reinterpret_cast<__gm__ half *>(y));
-        wdqGm_.SetGlobalBuffer(reinterpret_cast<__gm__ half *>(user));
-        yfGm_.SetGlobalBuffer(reinterpret_cast<__gm__ float *>(user + N_ * K_ * sizeof(half)));
-        // xfm workspace follows [Wdq][yF]; per-core slice of mAligned*K halfs.
-        xfmGm_.SetGlobalBuffer(reinterpret_cast<__gm__ half *>(
-            user + N_ * K_ * sizeof(half) + mAligned_ * N_ * sizeof(float)));
+        wdqNzGm_.SetGlobalBuffer(reinterpret_cast<__gm__ half *>(user));
+        yfGm_.SetGlobalBuffer(reinterpret_cast<__gm__ float *>(
+            user + coreCount * nzElementsPerCore * sizeof(half)));
+
+        coreNzBase_ = static_cast<int64_t>(GetBlockIdx()) * nzElementsPerCore;
+        coreYfBase_ = static_cast<int64_t>(GetBlockIdx()) * outputElementsPerCore;
     }
 
     __aicore__ inline void Process()
     {
         const uint32_t coreId = GetBlockIdx();
         const uint32_t coreNum = GetBlockNum();
+        const uint32_t nBlocks = CeilDivU<uint32_t>((uint32_t)N_, W2_TILE_N);
         BlockMmad blockMmad(resource);
 
         AllocBuffers();
         FillTables();
 
-        // De-interleave x into field-major K order, once, into this core slice.
-        const int64_t xfmBase = static_cast<int64_t>(coreId) * mAligned_ * K_;
-        DeinterleaveX(xfmBase);
-        AscendC::PipeBarrier<PIPE_ALL>();
-
         auto aLayout = tla::MakeLayout<half, layout::RowMajor>((uint32_t)T_, (uint32_t)K_);
-        auto bLayout = tla::MakeLayout<half, layout::ColumnMajor>((uint32_t)K_, (uint32_t)N_);
-        auto cLayout = tla::MakeLayout<float, layout::RowMajor>((uint32_t)mAligned_, (uint32_t)N_);
-        auto tensorA = tla::MakeTensor(xfmGm_[xfmBase], aLayout, Arch::PositionGM{});
-        auto tensorB = tla::MakeTensor(wdqGm_, bLayout, Arch::PositionGM{});
-        auto tensorC = tla::MakeTensor(yfGm_, cLayout, Arch::PositionGM{});
-
-        const uint32_t nBlocks = CeilDivU<uint32_t>((uint32_t)N_, W2_TILE_N);
+        auto bLayout = tla::MakeLayout<half, layout::zN>((uint32_t)K_, W2_TILE_N);
+        auto cLayout = tla::MakeLayout<float, layout::RowMajor>((uint32_t)mAligned_, W2_TILE_N);
+        auto tensorA = tla::MakeTensor(xGm_, aLayout, Arch::PositionGM{});
+        auto tensorB = tla::MakeTensor(wdqNzGm_[coreNzBase_], bLayout, Arch::PositionGM{});
+        auto tensorC = tla::MakeTensor(yfGm_[coreYfBase_], cLayout, Arch::PositionGM{});
 
         for (uint32_t nb = coreId; nb < nBlocks; nb += coreNum) {
-            uint32_t n0 = nb * W2_TILE_N;
-            uint32_t nActual = MinU<uint32_t>(W2_TILE_N, (uint32_t)N_ - n0);
+            const uint32_t n0 = nb * W2_TILE_N;
+            const uint32_t nActual = MinU<uint32_t>(W2_TILE_N, (uint32_t)N_ - n0);
 
-            DequantBlock(n0, nActual);
+            DequantTileToNz(n0, nActual);
             AscendC::PipeBarrier<PIPE_ALL>();
 
             GemmCoord shape{(uint32_t)T_, nActual, (uint32_t)K_};
             auto tA = GetTile(tensorA, tla::MakeCoord((uint32_t)0, (uint32_t)0),
                               tla::MakeShape((uint32_t)T_, (uint32_t)K_));
-            auto tB = GetTile(tensorB, tla::MakeCoord((uint32_t)0, n0),
+            auto tB = GetTile(tensorB, tla::MakeCoord((uint32_t)0, (uint32_t)0),
                               tla::MakeShape((uint32_t)K_, nActual));
-            auto tC = GetTile(tensorC, tla::MakeCoord((uint32_t)0, n0),
+            auto tC = GetTile(tensorC, tla::MakeCoord((uint32_t)0, (uint32_t)0),
                               tla::MakeShape((uint32_t)T_, nActual));
             blockMmad.preSetFlags();
             blockMmad(tA, tB, tC, shape);
@@ -155,156 +148,155 @@ public:
 private:
     __aicore__ inline void AllocBuffers()
     {
-        const int64_t K = K_;
-        const int64_t packedK = packedK_;
         uint32_t off = 0;
         scaleUB_ = resource.ubBuf.template GetBufferByByte<float>(off);
         off = AlignUpU<uint32_t>(off + (uint32_t)kbCount_ * sizeof(float), 512);
         cU8_ = resource.ubBuf.template GetBufferByByte<uint8_t>(off);
-        off = AlignUpU<uint32_t>(off + (uint32_t)packedK * sizeof(uint8_t), 512);
+        off = AlignUpU<uint32_t>(off + (uint32_t)W2_BLOCK_SIZE * sizeof(uint8_t), 512);
         cH_ = resource.ubBuf.template GetBufferByByte<half>(off);
-        off = AlignUpU<uint32_t>(off + (uint32_t)packedK * sizeof(half), 512);
+        off = AlignUpU<uint32_t>(off + (uint32_t)W2_BLOCK_SIZE * sizeof(half), 512);
         c16_ = resource.ubBuf.template GetBufferByByte<int16_t>(off);
-        off = AlignUpU<uint32_t>(off + (uint32_t)packedK * sizeof(int16_t), 512);
+        off = AlignUpU<uint32_t>(off + (uint32_t)W2_BLOCK_SIZE * sizeof(int16_t), 512);
         andTmp_ = resource.ubBuf.template GetBufferByByte<int16_t>(off);
-        off = AlignUpU<uint32_t>(off + (uint32_t)packedK * sizeof(int16_t), 512);
-        mjhUB_ = resource.ubBuf.template GetBufferByByte<half>(off);
-        off = AlignUpU<uint32_t>(off + (uint32_t)packedK * sizeof(half), 512);
-        f16UB_ = resource.ubBuf.template GetBufferByByte<int16_t>(off);
-        off = AlignUpU<uint32_t>(off + (uint32_t)K * sizeof(int16_t), 512);
-        fhUB_ = resource.ubBuf.template GetBufferByByte<half>(off);
-        off = AlignUpU<uint32_t>(off + (uint32_t)K * sizeof(half), 512);
-        wHalfUB_ = resource.ubBuf.template GetBufferByByte<half>(off);
-        off = AlignUpU<uint32_t>(off + (uint32_t)K * sizeof(half), 512);
-        castFUB_ = resource.ubBuf.template GetBufferByByte<float>(off);
-        off = AlignUpU<uint32_t>(off + (uint32_t)W2_TILE_N * sizeof(float), 512);
-        castHUB_ = resource.ubBuf.template GetBufferByByte<half>(off);
-        off = AlignUpU<uint32_t>(off + (uint32_t)W2_TILE_N * sizeof(half), 512);
-        deintOffUB_ = resource.ubBuf.template GetBufferByByte<uint32_t>(off);
-        off = AlignUpU<uint32_t>(off + (uint32_t)K * sizeof(uint32_t), 512);
+        off = AlignUpU<uint32_t>(off + (uint32_t)W2_BLOCK_SIZE * sizeof(int16_t), 512);
+        fieldHalfUB_ = resource.ubBuf.template GetBufferByByte<half>(off);
+        off = AlignUpU<uint32_t>(off + (uint32_t)W2_BLOCK_SIZE * sizeof(half), 512);
+        fieldI16UB_ = resource.ubBuf.template GetBufferByByte<int16_t>(off);
+        off = AlignUpU<uint32_t>(off + (uint32_t)W2_BLOCK_SIZE * sizeof(int16_t), 512);
+        signedHalfUB_ = resource.ubBuf.template GetBufferByByte<half>(off);
+        off = AlignUpU<uint32_t>(off + (uint32_t)W2_BLOCK_SIZE * sizeof(half), 512);
+        logicalHalfUB_ = resource.ubBuf.template GetBufferByByte<half>(off);
+        off = AlignUpU<uint32_t>(off + (uint32_t)W2_BLOCK_SIZE * sizeof(half), 512);
+        gatherOffsetsUB_ = resource.ubBuf.template GetBufferByByte<uint32_t>(off);
+        off = AlignUpU<uint32_t>(off + (uint32_t)W2_BLOCK_SIZE * sizeof(uint32_t), 512);
         threeUB_ = resource.ubBuf.template GetBufferByByte<int16_t>(off);
-        off = AlignUpU<uint32_t>(off + (uint32_t)K * sizeof(int16_t), 512);
-        twoUB_ = resource.ubBuf.template GetBufferByByte<int16_t>(off);
-        off = AlignUpU<uint32_t>(off + (uint32_t)K * sizeof(int16_t), 512);
+        off = AlignUpU<uint32_t>(off + (uint32_t)W2_BLOCK_SIZE * sizeof(int16_t), 512);
+        signHalfUB_ = resource.ubBuf.template GetBufferByByte<int16_t>(off);
+        off = AlignUpU<uint32_t>(off + (uint32_t)W2_BLOCK_SIZE * sizeof(int16_t), 512);
         masksUB_ = resource.ubBuf.template GetBufferByByte<int16_t>(off);
-        off = AlignUpU<uint32_t>(off + (uint32_t)K * sizeof(int16_t), 512);
-        rowScaleUB_ = resource.ubBuf.template GetBufferByByte<half>(off);
-        off = AlignUpU<uint32_t>(off + (uint32_t)K * sizeof(half), 512);
+        off = AlignUpU<uint32_t>(off + (uint32_t)W2_BLOCK_SIZE * sizeof(int16_t), 512);
+        tileLoUB_ = resource.ubBuf.template GetBufferByByte<half>(off);
+        off = AlignUpU<uint32_t>(off + W2_FRACTAL_SIZE * W2_FRACTAL_SIZE * sizeof(half), 512);
+        tileHiUB_ = resource.ubBuf.template GetBufferByByte<half>(off);
+        off = AlignUpU<uint32_t>(off + W2_FRACTAL_SIZE * W2_FRACTAL_SIZE * sizeof(half), 512);
+        nzFractalUB_ = resource.ubBuf.template GetBufferByByte<half>(off);
+        off = AlignUpU<uint32_t>(off + W2_FRACTAL_SIZE * W2_FRACTAL_SIZE * sizeof(half), 512);
+        castFUB_ = resource.ubBuf.template GetBufferByByte<float>(off);
+        off = AlignUpU<uint32_t>(off + W2_TILE_N * sizeof(float), 512);
+        castHUB_ = resource.ubBuf.template GetBufferByByte<half>(off);
     }
 
     __aicore__ inline void FillTables()
     {
-        const int64_t K = K_;
-        const int64_t packedK = packedK_;
-        Duplicate(threeUB_, static_cast<int16_t>(fieldMask_), (int32_t)K);
-        Duplicate(twoUB_, static_cast<int16_t>(signHalf_), (int32_t)K);
-        for (int64_t j = 0; j < codesPerByte_; ++j) {
-            Duplicate(masksUB_[j * packedK],
-                      static_cast<int16_t>(fieldMask_ << (bitsPerCode_ * j)),
-                      (int32_t)packedK);
+        Duplicate(threeUB_, static_cast<int16_t>(fieldMask_), (int32_t)W2_BLOCK_SIZE);
+        Duplicate(signHalfUB_, static_cast<int16_t>(signHalf_), (int32_t)W2_BLOCK_SIZE);
+        for (int64_t field = 0; field < codesPerByte_; ++field) {
+            Duplicate(masksUB_[field * blockPackedCols_],
+                      static_cast<int16_t>(fieldMask_ << (bitsPerCode_ * field)),
+                      (int32_t)blockPackedCols_);
         }
-        // x de-interleave gather (byte offsets): xfm[p] follows packed fields.
-        for (int64_t i = 0; i < packedK; ++i) {
-            for (int64_t j = 0; j < codesPerByte_; ++j) {
-                int64_t p = j * packedK + i;
-                uint32_t src = (uint32_t)(codesPerByte_ * i + j);
-                deintOffUB_.SetValue(p, src * (uint32_t)sizeof(half));
+
+        // Packed bytes decode field-major: all low fields, then all next fields.
+        // This gather restores the checkpoint's logical adjacent-code order.
+        for (int64_t byte = 0; byte < blockPackedCols_; ++byte) {
+            for (int64_t field = 0; field < codesPerByte_; ++field) {
+                const int64_t logical = byte * codesPerByte_ + field;
+                const int64_t decoded = field * blockPackedCols_ + byte;
+                gatherOffsetsUB_.SetValue(logical, (uint32_t)(decoded * sizeof(half)));
             }
         }
         PipeBarrier<PIPE_ALL>();
     }
 
-    // Build this core field-major copy of x[T, K] at xfmGm_[xfmBase ..].
-    __aicore__ inline void DeinterleaveX(int64_t xfmBase)
+    __aicore__ inline void DecodeRowBlock(int64_t codeOffset, half scale)
     {
-        const int32_t K = (int32_t)K_;
-        for (int64_t t = 0; t < T_; ++t) {
-            DataCopy(fhUB_, xGm_[t * K_], K);           // reuse fhUB_ as x-in
-            SetFlag<HardEvent::MTE2_V>(EVENT_ID1);
-            WaitFlag<HardEvent::MTE2_V>(EVENT_ID1);
-            Gather(wHalfUB_, fhUB_, deintOffUB_, (uint32_t)0, (uint32_t)K);  // x-out
-            SetFlag<HardEvent::V_MTE3>(EVENT_ID1);
-            WaitFlag<HardEvent::V_MTE3>(EVENT_ID1);
-            DataCopy(xfmGm_[xfmBase + t * K_], wHalfUB_, K);
-            PipeBarrier<PIPE_ALL>();  // fully fence: next row reuses fhUB_/wHalfUB_
+        const int32_t packedCount = (int32_t)blockPackedCols_;
+        const int32_t decodedCount = (int32_t)W2_BLOCK_SIZE;
+
+        DataCopy(cU8_, codesGm_[codeOffset], packedCount);
+        SetFlag<HardEvent::MTE2_V>(EVENT_ID0);
+        WaitFlag<HardEvent::MTE2_V>(EVENT_ID0);
+        Cast(cH_, cU8_, RoundMode::CAST_NONE, packedCount);
+        PipeBarrier<PIPE_V>();
+        Cast(c16_, cH_, RoundMode::CAST_RINT, packedCount);
+        PipeBarrier<PIPE_V>();
+
+        for (int32_t field = 0; field < codesPerByte_; ++field) {
+            And(andTmp_, c16_, masksUB_[field * blockPackedCols_], packedCount);
+            PipeBarrier<PIPE_V>();
+            Cast(fieldHalfUB_, andTmp_, RoundMode::CAST_NONE, packedCount);
+            PipeBarrier<PIPE_V>();
+            const half fieldRecip = static_cast<half>(
+                1.0f / static_cast<float>(1 << (bitsPerCode_ * field)));
+            Muls(fieldHalfUB_, fieldHalfUB_, fieldRecip, packedCount);
+            PipeBarrier<PIPE_V>();
+            Cast(fieldI16UB_[field * blockPackedCols_], fieldHalfUB_,
+                 RoundMode::CAST_RINT, packedCount);
+            PipeBarrier<PIPE_V>();
         }
+
+        // Sign-extend the two's-complement W2/W4 field in int16.
+        Add(fieldI16UB_, fieldI16UB_, signHalfUB_, decodedCount);
+        PipeBarrier<PIPE_V>();
+        And(fieldI16UB_, fieldI16UB_, threeUB_, decodedCount);
+        PipeBarrier<PIPE_V>();
+        Sub(fieldI16UB_, fieldI16UB_, signHalfUB_, decodedCount);
+        PipeBarrier<PIPE_V>();
+        Cast(signedHalfUB_, fieldI16UB_, RoundMode::CAST_NONE, decodedCount);
+        PipeBarrier<PIPE_V>();
+
+        Gather(logicalHalfUB_, signedHalfUB_, gatherOffsetsUB_, (uint32_t)0,
+               (uint32_t)decodedCount);
+        PipeBarrier<PIPE_V>();
+        Muls(logicalHalfUB_, logicalHalfUB_, scale, decodedCount);
+        PipeBarrier<PIPE_V>();
     }
 
-    __aicore__ inline void DequantBlock(uint32_t n0, uint32_t nActual)
+    __aicore__ inline void DequantTileToNz(uint32_t n0, uint32_t nActual)
     {
-        const int32_t K = (int32_t)K_;
-        const int32_t packedK = (int32_t)packedK_;
-
-        for (uint32_t rBase = 0; rBase < nActual; rBase += W2_BLK) {
-            uint32_t rows = MinU<uint32_t>((uint32_t)W2_BLK, nActual - rBase);
-            int64_t nb = ((int64_t)n0 + rBase) / W2_BLK;
-
-            // Field-major row scale: block m (kb) covers field-major positions
-            // { j*K4 + i : i in [8m, 8m+8), j in 0..3 }.
-            DataCopy(scaleUB_, scaleGm_[nb * kbCount_], kbCount_);
+        for (uint32_t rowBase = 0; rowBase < nActual; rowBase += W2_FRACTAL_SIZE) {
+            const uint32_t rows = MinU<uint32_t>(W2_FRACTAL_SIZE, nActual - rowBase);
+            const int64_t scaleRow = (static_cast<int64_t>(n0) + rowBase) / W2_BLOCK_SIZE;
+            DataCopy(scaleUB_, scaleGm_[scaleRow * kbCount_], (int32_t)kbCount_);
             SetFlag<HardEvent::MTE2_S>(EVENT_ID3);
             WaitFlag<HardEvent::MTE2_S>(EVENT_ID3);
+
             for (int64_t kb = 0; kb < kbCount_; ++kb) {
-                half sv = static_cast<half>(scaleUB_.GetValue(kb));
-                for (int64_t j = 0; j < codesPerByte_; ++j) {
-                    Duplicate(rowScaleUB_[j * packedK + kb * blockPackedCols_], sv,
-                              (int32_t)blockPackedCols_);
-                }
-            }
-            PipeBarrier<PIPE_V>();
-
-            for (uint32_t rr = 0; rr < rows; ++rr) {
-                int64_t n = (int64_t)n0 + rBase + rr;
-
-                if (rr != 0 || rBase != 0) {
-                    WaitFlag<HardEvent::MTE3_MTE2>(EVENT_ID0);
-                }
-                DataCopy(cU8_, codesGm_[n * packedK_], packedK);
-                SetFlag<HardEvent::MTE2_V>(EVENT_ID0);
-                WaitFlag<HardEvent::MTE2_V>(EVENT_ID0);
-
-                Cast(cH_, cU8_, RoundMode::CAST_NONE, packedK);
-                PipeBarrier<PIPE_V>();
-                Cast(c16_, cH_, RoundMode::CAST_RINT, packedK);
-                PipeBarrier<PIPE_V>();
-
-                for (int32_t j = 0; j < codesPerByte_; ++j) {
-                    And(andTmp_, c16_, masksUB_[j * packedK], packedK);
-                    PipeBarrier<PIPE_V>();
-                    Cast(mjhUB_, andTmp_, RoundMode::CAST_NONE, packedK);
-                    PipeBarrier<PIPE_V>();
-                    half fieldRecip = static_cast<half>(
-                        1.0f / static_cast<float>(1 << (bitsPerCode_ * j)));
-                    Muls(mjhUB_, mjhUB_, fieldRecip, packedK);
-                    PipeBarrier<PIPE_V>();
-                    Cast(f16UB_[j * packedK], mjhUB_, RoundMode::CAST_RINT, packedK);
+                const half scale = static_cast<half>(scaleUB_.GetValue(kb));
+                for (uint32_t rr = 0; rr < rows; ++rr) {
+                    const int64_t n = static_cast<int64_t>(n0) + rowBase + rr;
+                    const int64_t codeOffset = n * packedK_ + kb * blockPackedCols_;
+                    DecodeRowBlock(codeOffset, scale);
+                    DataCopy(tileLoUB_[rr * W2_FRACTAL_SIZE], logicalHalfUB_, W2_FRACTAL_SIZE);
+                    DataCopy(tileHiUB_[rr * W2_FRACTAL_SIZE],
+                             logicalHalfUB_[W2_FRACTAL_SIZE], W2_FRACTAL_SIZE);
                     PipeBarrier<PIPE_V>();
                 }
 
-                Add(f16UB_, f16UB_, twoUB_, K);
+                // W is [N,K], while Cube consumes B=W^T [K,N]. Transposing
+                // each 16x16 half-block produces exactly the zN fractal bytes.
+                const int64_t nFractal = rowBase / W2_FRACTAL_SIZE;
+                const int64_t nzColumnBlockStride = K_ * W2_FRACTAL_SIZE;
+                const int64_t nzBase = coreNzBase_ + nFractal * nzColumnBlockStride;
+                AscendC::Transpose(nzFractalUB_, tileLoUB_);
                 PipeBarrier<PIPE_V>();
-                And(f16UB_, f16UB_, threeUB_, K);
+                DataCopy(wdqNzGm_[nzBase + (2 * kb) * W2_FRACTAL_SIZE * W2_FRACTAL_SIZE],
+                         nzFractalUB_, W2_FRACTAL_SIZE * W2_FRACTAL_SIZE);
+                SetFlag<HardEvent::MTE3_V>(EVENT_ID1);
+                WaitFlag<HardEvent::MTE3_V>(EVENT_ID1);
+                AscendC::Transpose(nzFractalUB_, tileHiUB_);
                 PipeBarrier<PIPE_V>();
-                Sub(f16UB_, f16UB_, twoUB_, K);
-                PipeBarrier<PIPE_V>();
-
-                Cast(fhUB_, f16UB_, RoundMode::CAST_NONE, K);
-                PipeBarrier<PIPE_V>();
-                Mul(wHalfUB_, fhUB_, rowScaleUB_, K);
-
-                SetFlag<HardEvent::V_MTE3>(EVENT_ID0);
-                WaitFlag<HardEvent::V_MTE3>(EVENT_ID0);
-                DataCopy(wdqGm_[n * K_], wHalfUB_, K);
-                SetFlag<HardEvent::MTE3_MTE2>(EVENT_ID0);
+                DataCopy(wdqNzGm_[nzBase + (2 * kb + 1) * W2_FRACTAL_SIZE * W2_FRACTAL_SIZE],
+                         nzFractalUB_, W2_FRACTAL_SIZE * W2_FRACTAL_SIZE);
+                PipeBarrier<PIPE_ALL>();
             }
         }
-        WaitFlag<HardEvent::MTE3_MTE2>(EVENT_ID0);
     }
 
     __aicore__ inline void CastOut(uint32_t n0, uint32_t nActual)
     {
         for (int64_t t = 0; t < T_; ++t) {
-            DataCopy(castFUB_, yfGm_[t * N_ + n0], nActual);
+            DataCopy(castFUB_, yfGm_[coreYfBase_ + t * W2_TILE_N], nActual);
             PipeBarrier<PIPE_ALL>();
             Cast(castHUB_, castFUB_, RoundMode::CAST_NONE, nActual);
             PipeBarrier<PIPE_ALL>();
@@ -319,24 +311,25 @@ private:
     GlobalTensor<uint8_t> codesGm_;
     GlobalTensor<float> scaleGm_;
     GlobalTensor<half> yGm_;
-    GlobalTensor<half> wdqGm_;
+    GlobalTensor<half> wdqNzGm_;
     GlobalTensor<float> yfGm_;
-    GlobalTensor<half> xfmGm_;
 
-    LocalTensor<uint32_t> deintOffUB_;
-    LocalTensor<int16_t> threeUB_;
-    LocalTensor<int16_t> twoUB_;
-    LocalTensor<int16_t> masksUB_;
-    LocalTensor<half> rowScaleUB_;
     LocalTensor<float> scaleUB_;
     LocalTensor<uint8_t> cU8_;
     LocalTensor<half> cH_;
     LocalTensor<int16_t> c16_;
     LocalTensor<int16_t> andTmp_;
-    LocalTensor<half> mjhUB_;
-    LocalTensor<int16_t> f16UB_;
-    LocalTensor<half> fhUB_;
-    LocalTensor<half> wHalfUB_;
+    LocalTensor<half> fieldHalfUB_;
+    LocalTensor<int16_t> fieldI16UB_;
+    LocalTensor<half> signedHalfUB_;
+    LocalTensor<half> logicalHalfUB_;
+    LocalTensor<uint32_t> gatherOffsetsUB_;
+    LocalTensor<int16_t> threeUB_;
+    LocalTensor<int16_t> signHalfUB_;
+    LocalTensor<int16_t> masksUB_;
+    LocalTensor<half> tileLoUB_;
+    LocalTensor<half> tileHiUB_;
+    LocalTensor<half> nzFractalUB_;
     LocalTensor<float> castFUB_;
     LocalTensor<half> castHUB_;
 
@@ -351,6 +344,8 @@ private:
     int64_t signHalf_;
     int64_t kbCount_;
     int64_t mAligned_;
+    int64_t coreNzBase_;
+    int64_t coreYfBase_;
 };
 
 }  // namespace NsW2

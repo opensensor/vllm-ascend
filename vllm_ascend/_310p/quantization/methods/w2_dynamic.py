@@ -187,11 +187,12 @@ def _w2_blocked_mm_op():
     """The fused 310P Cube kernel ``npu_w2_blocked_dequant_matmul_310`` if built.
 
     Computes ``out[T,N] = x[T,K] @ (codes ⊙ block_scale)^T`` on the Cube with the
-    per-[32,32] block dequant fused into the weight load (arch20 catlass MMAD),
-    ~2.4x faster than the eager fp32 dequant+matmul and with no fp-weight HBM
-    materialization. Resolved lazily (the custom-op vendor lib is loaded during
-    worker init); returns ``None`` when the op is unavailable so the eager fp32
-    path stays a correct fallback.
+    per-[32,32] block dequant fused into the weight load (arch20 catlass MMAD).
+    The kernel expands one bounded output tile into an already-NZ per-core
+    workspace, rather than materializing the complete fp16 weight or asking the
+    matmul path to perform an ND-to-NZ conversion. Resolved lazily (the custom-op
+    vendor lib is loaded during worker init); returns ``None`` when the op is
+    unavailable so the eager fp32 path stays a correct fallback.
     """
     global _W2_BLOCKED_MM_OP
     if _W2_BLOCKED_MM_OP is None:
@@ -482,9 +483,11 @@ class AscendW2DynamicFusedMoEMethod310(AscendMoEScheme):
             )
             if use_cube:
                 # Fast path: fused 310P Cube kernel (arch20 catlass MMAD with the
-                # per-[32,32] block dequant fused into the weight load). It avoids
-                # materializing fp weights in HBM. Packed width selects signed W2
-                # (four codes/byte) or W4 (two codes/byte) on-chip.
+                # per-[32,32] block dequant fused into the weight load). It
+                # expands only a reusable 128-column tile directly into NZ,
+                # avoiding a full fp16 weight and the ND-to-NZ matmul conversion.
+                # Packed width selects signed W2 (four codes/byte) or W4 (two
+                # codes/byte) on-chip.
                 gx = group_x.to(torch.float16)
                 gate = w2_op(gx, e.gate_packed, e.gate_scale.to(torch.float32))
                 up = w2_op(gx, e.up_packed, e.up_scale.to(torch.float32))
