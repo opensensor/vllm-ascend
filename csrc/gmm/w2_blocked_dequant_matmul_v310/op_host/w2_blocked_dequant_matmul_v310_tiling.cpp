@@ -25,6 +25,7 @@ constexpr uint32_t X_INDEX = 0;
 constexpr uint32_t CODES_INDEX = 1;
 constexpr int64_t OUTPUT_TILE = 128;
 constexpr int64_t INPUT_TILE = 128;
+constexpr int64_t MIN_INPUT_DIM = 256;
 
 static ge::graphStatus W2BlockedDequantMatmulTilingFunc(gert::TilingContext *context)
 {
@@ -56,8 +57,8 @@ static ge::graphStatus W2BlockedDequantMatmulTilingFunc(gert::TilingContext *con
                 OP_LOGE(context, "packed codes must contain either 2 (W4) or 4 (W2) values per byte"),
                 return ge::GRAPH_FAILED);
     OP_CHECK_IF(T <= 0 || N <= 0 || K <= 0, OP_LOGE(context, "T/N/K must be positive"), return ge::GRAPH_FAILED);
-    OP_CHECK_IF(N % OUTPUT_TILE != 0 || K % INPUT_TILE != 0,
-                OP_LOGE(context, "N and K must be multiples of 128"),
+    OP_CHECK_IF(N % OUTPUT_TILE != 0 || K % INPUT_TILE != 0 || K < MIN_INPUT_DIM,
+                OP_LOGE(context, "N and K must be multiples of 128 and K must be at least 256"),
                 return ge::GRAPH_FAILED);
 
     // Canonical CANN tiling-data pattern (local optiling object + SaveToBuffer),
@@ -73,22 +74,26 @@ static ge::graphStatus W2BlockedDequantMatmulTilingFunc(gert::TilingContext *con
 
     // Bounded Cube workspace, reused as a core advances through output tiles:
     //   [blockDim, 128, K] half, already in NZ order
+    //   [blockDim, alignUp(T,16), 128] float accumulation
     // The former implementation allocated a full [N,K] fp16 dequantized
     // matrix plus a per-core [T,K] activation reorder.  Besides scaling with N,
     // that made CATLASS convert each ND B tile to NZ again.  Producing NZ
     // fractals directly from the packed bytes removes both allocations and the
     // issue-1563-style format conversion from the matmul path. The 310P
-    // BlockMmad epilogue now casts its FP32 accumulator directly to the FP16
-    // output, so no intermediate output workspace is required either.
+    // Keep the accumulator in a small per-core FP32 tile. The direct FP16
+    // unified-core epilogue corrupts its first 16-column fragment on 310P.
+    const int64_t mAligned = (T + 15) / 16 * 16;
     const size_t wdqBytes = static_cast<size_t>(blockDim) * static_cast<size_t>(OUTPUT_TILE)
                             * static_cast<size_t>(K) * sizeof(uint16_t);
+    const size_t yfBytes = static_cast<size_t>(blockDim) * static_cast<size_t>(mAligned)
+                           * static_cast<size_t>(OUTPUT_TILE) * sizeof(float);
     // GetUserWorkspace(workspace) returns (workspace + GetLibApiWorkSpaceSize()),
     // so the reported size must include that system reserve or the kernel writes
     // run past the allocation (invalid GM address).
     const size_t sysRsv = ascendcPlatform.GetLibApiWorkSpaceSize();
     size_t *currentWorkspace = context->GetWorkspaceSizes(1);
     OP_CHECK_NULL_WITH_CONTEXT(context, currentWorkspace);
-    currentWorkspace[0] = sysRsv + wdqBytes;
+    currentWorkspace[0] = sysRsv + wdqBytes + yfBytes;
 
     context->SetBlockDim(blockDim);
     context->SetTilingKey(0);

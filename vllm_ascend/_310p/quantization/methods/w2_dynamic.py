@@ -114,6 +114,7 @@ _W2_DEVICE_KERNEL = "npu_quant_grouped_matmul_dequant"
 W2_CUBE_MAX_TOKENS = 48
 W2_CUBE_OUTPUT_TILE = 128
 W2_CUBE_INPUT_TILE = 128
+W2_CUBE_MIN_INPUT_DIM = 256
 
 
 def _device_kernel_available() -> bool:
@@ -191,11 +192,11 @@ def _w2_blocked_mm_op():
     per-[32,32] block dequant fused into the weight load (arch20 catlass MMAD).
     The kernel expands one bounded output tile into an already-NZ per-core
     workspace, rather than materializing the complete fp16 weight or asking the
-    matmul path to perform an ND-to-NZ conversion. Its unified-core epilogue
-    casts the FP32 accumulator directly into the final FP16 output, avoiding an
-    intermediate output workspace. Resolved lazily (the custom-op vendor lib is
-    loaded during worker init); returns ``None`` when the op is unavailable so
-    the eager fp32 path stays a correct fallback.
+    matmul path to perform an ND-to-NZ conversion. A bounded per-core FP32 tile
+    preserves accumulator correctness before the final FP16 cast. Resolved
+    lazily (the custom-op vendor lib is loaded during worker init); returns
+    ``None`` when the op is unavailable so the eager fp32 path stays a correct
+    fallback.
     """
     global _W2_BLOCKED_MM_OP
     if _W2_BLOCKED_MM_OP is None:
@@ -219,6 +220,7 @@ def _can_use_w2_cube(
         and num_tokens <= W2_CUBE_MAX_TOKENS
         and packed.shape[-2] % W2_CUBE_OUTPUT_TILE == 0
         and in_features % W2_CUBE_INPUT_TILE == 0
+        and in_features >= W2_CUBE_MIN_INPUT_DIM
         and _infer_bits(packed, in_features) in (2, 4)
         and not is_nvfp4
     )
