@@ -196,6 +196,45 @@ extern "C" __global__ __aicore__ void chunk_kda_fwd(
 #endif
     GM_ADDR userWorkspace = AscendC::GetUserWorkspace(workspace);
     GET_TILING_DATA_WITH_STRUCT(ChunkKdaFwdTilingData, tilingData, tiling);
+#if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
+    // dav-m200 only accepts the default task-type registration, so keyed
+    // TILING_KEY_IS branches are not selected at runtime. Dispatch from the
+    // runtime dimensions while preserving the specialized GLM/Kimi shape.
+    const bool useChunk64K128V128Template =
+        tilingData.chunkSize == 64 && tilingData.kHeadDim == 128 &&
+        tilingData.vHeadDim == 128;
+    if (useChunk64K128V128Template) {
+        if (tilingData.stage != KdaForward::KDA_STAGE_FULL) {
+            KdaForward::DispatchStageSafeGate<DTYPE_Q, DTYPE_BETA,
+                ChunkKdaFwdTilingData, 64, 128, 128>(
+                q, k, v, g, beta, a_log, dt_bias, initial_state, cu_seqlens,
+                chunk_indices, attn_out, final_state, gk, aqk, akk, w, u,
+                qg, kg, v_new, h, qg_scaled, u_seed, userWorkspace,
+                tilingData);
+            return;
+        }
+        KdaForward::DispatchGenericSafeGate<DTYPE_Q, DTYPE_BETA,
+            ChunkKdaFwdTilingData, 64, 128, 128>(
+            q, k, v, g, beta, a_log, dt_bias, initial_state, cu_seqlens,
+            chunk_indices, attn_out, final_state, gk, aqk, akk, w, u, qg,
+            kg, v_new, h, userWorkspace, tilingData);
+        return;
+    }
+    if (tilingData.stage != KdaForward::KDA_STAGE_FULL) {
+        KdaForward::DispatchStageSafeGate<DTYPE_Q, DTYPE_BETA,
+            ChunkKdaFwdTilingData, 0, 0, 0>(
+            q, k, v, g, beta, a_log, dt_bias, initial_state, cu_seqlens,
+            chunk_indices, attn_out, final_state, gk, aqk, akk, w, u, qg,
+            kg, v_new, h, qg_scaled, u_seed, userWorkspace, tilingData);
+        return;
+    }
+    KdaForward::DispatchGenericSafeGate<DTYPE_Q, DTYPE_BETA,
+        ChunkKdaFwdTilingData, 0, 0, 0>(
+        q, k, v, g, beta, a_log, dt_bias, initial_state, cu_seqlens,
+        chunk_indices, attn_out, final_state, gk, aqk, akk, w, u, qg, kg,
+        v_new, h, userWorkspace, tilingData);
+    return;
+#endif
     if (TILING_KEY_IS(1)) {
         if (tilingData.stage != KdaForward::KDA_STAGE_FULL) {
             KdaForward::DispatchStageSafeGate<DTYPE_Q, DTYPE_BETA,

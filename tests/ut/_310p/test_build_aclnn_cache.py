@@ -58,6 +58,21 @@ def test_chunk_kda_uses_only_default_task_type_on_310p():
     assert kernel.index(guard) < kernel.index("KERNEL_TASK_TYPE(2")
 
 
+def test_chunk_kda_dispatches_without_keyed_runtime_selection_on_310p():
+    kernel = (REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_kernel" / "chunk_kda_fwd.cpp").read_text()
+
+    arch20_dispatch = kernel[
+        kernel.index(
+            "#if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)", kernel.index("GET_TILING_DATA_WITH_STRUCT")
+        ) : kernel.index("if (TILING_KEY_IS(1))")
+    ]
+    assert "tilingData.chunkSize == 64" in arch20_dispatch
+    assert "tilingData.kHeadDim == 128" in arch20_dispatch
+    assert "tilingData.vHeadDim == 128" in arch20_dispatch
+    assert "DispatchGenericSafeGate" in arch20_dispatch
+    assert arch20_dispatch.rstrip().endswith("#endif")
+
+
 def test_kda_varlen_boundaries_use_310p_scalar_global_reads():
     op_dir = REPO_ROOT / "csrc" / "attention" / "kda_gate_cumsum" / "op_kernel"
     for source_name in ("kda_gate_cumsum.cpp", "kda_gate_cumsum_kernel.h"):
