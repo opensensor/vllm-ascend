@@ -168,7 +168,9 @@ def test_kernel_and_tiling_keep_dequant_workspace_bounded_per_core():
     assert "HardEvent::MTE3_V>(EVENT_ID1)" in kernel
     assert "HardEvent::MTE3_MTE2>(EVENT_ID4)" in kernel
     assert "HardEvent::MTE2_MTE3>(EVENT_ID4)" in kernel
-    assert kernel.index("for (uint32_t nb = coreId") < kernel.index("BlockMmad blockMmad(resource);")
+    assert kernel.index("BlockMmad blockMmad(resource);") < kernel.index("for (uint32_t nb = coreId")
+    assert kernel.count("blockMmad.preSetFlags();") == 1
+    assert kernel.count("blockMmad.finalWaitFlags();") == 1
     assert "yfGm_" not in kernel
     assert "rowCount = min(16U, mBlockActual - gmRow)" in block_mmad
 
