@@ -15,10 +15,13 @@ import torch
 _REPO_ROOT = Path(__file__).parents[3]
 _KERNEL = _REPO_ROOT / "csrc/gmm/w2_blocked_dequant_matmul_v310/op_kernel/w2_blocked_dequant_matmul_v310.h"
 _TILING = _REPO_ROOT / "csrc/gmm/w2_blocked_dequant_matmul_v310/op_host/w2_blocked_dequant_matmul_v310_tiling.cpp"
+_BLOCK_MMAD = _REPO_ROOT / "csrc/moe/common/kernel_utils/block/block_mmad_pingpong_tla_multi.hpp"
 
 _BLOCK_K = 32
 _FRACTAL = 16
 _TILE_N = 128
+_TILE_K = 128
+_K_FRACTALS_PER_TILE = _TILE_K // _FRACTAL
 
 
 def _pack_signed(codes: torch.Tensor, bits: int) -> torch.Tensor:
@@ -44,6 +47,26 @@ def _decode_like_kernel(packed: torch.Tensor, bits: int) -> torch.Tensor:
         [field * packed_cols + byte for byte in range(packed_cols) for field in range(codes_per_byte)]
     )
     return signed[logical_to_field_major]
+
+
+def _decode_tile_like_kernel(packed: torch.Tensor, bits: int) -> torch.Tensor:
+    """Re-express the batched 16-row decode into [K-fractal,N,K] order."""
+    codes_per_byte = 8 // bits
+    mask = (1 << bits) - 1
+    sign_half = 1 << (bits - 1)
+    rows, packed_cols = packed.shape
+    flat = packed.flatten().to(torch.int16)
+    field_major = torch.cat([((flat >> (bits * field)) & mask) for field in range(codes_per_byte)])
+    signed = ((field_major + sign_half) & mask) - sign_half
+
+    offsets = []
+    for k_fractal in range(_K_FRACTALS_PER_TILE):
+        for row in range(rows):
+            for k_within in range(_FRACTAL):
+                k_idx = k_fractal * _FRACTAL + k_within
+                byte, field = divmod(k_idx, codes_per_byte)
+                offsets.append(field * flat.numel() + row * packed_cols + byte)
+    return signed[torch.tensor(offsets)].reshape(_K_FRACTALS_PER_TILE, rows, _FRACTAL)
 
 
 def _to_zn(weight_t: torch.Tensor) -> torch.Tensor:
@@ -86,6 +109,33 @@ def test_field_major_vector_decode_restores_logical_code_order(bits):
     torch.testing.assert_close(_decode_like_kernel(packed, bits), codes)
 
 
+@pytest.mark.parametrize("bits", [2, 4])
+def test_batched_tile_decode_emits_contiguous_16x16_fragments(bits):
+    low = -(1 << (bits - 1))
+    high = (1 << (bits - 1)) - 1
+    codes = torch.arange(_FRACTAL * _TILE_K, dtype=torch.int16).reshape(_FRACTAL, _TILE_K)
+    codes = codes % (high - low + 1) + low
+    packed = _pack_signed(codes, bits)
+    expected = codes.reshape(_FRACTAL, _K_FRACTALS_PER_TILE, _FRACTAL).permute(1, 0, 2)
+
+    torch.testing.assert_close(_decode_tile_like_kernel(packed, bits), expected)
+
+
+@pytest.mark.parametrize("bits", [2, 4])
+def test_batched_decode_scale_and_transpose_matches_zn_weight(bits):
+    low = -(1 << (bits - 1))
+    high = (1 << (bits - 1)) - 1
+    codes = torch.arange(_FRACTAL * _TILE_K, dtype=torch.int16).reshape(_FRACTAL, _TILE_K)
+    codes = codes % (high - low + 1) + low
+    scales = torch.tensor([0.25, 0.5, 1.0, 2.0], dtype=torch.float16)
+    fragments = _decode_tile_like_kernel(_pack_signed(codes, bits), bits).to(torch.float16)
+    got = torch.cat([(fragment.t() * scales[index // 2]).flatten() for index, fragment in enumerate(fragments)])
+
+    scaled_weight = codes.to(torch.float16) * scales.repeat_interleave(_BLOCK_K)
+    expected = _to_zn(scaled_weight.t().contiguous())
+    torch.testing.assert_close(got, expected)
+
+
 def test_transposed_weight_round_trips_through_zn_addressing():
     # Distinct values expose both a missing 16x16 transpose and swapped fractal
     # strides.  K=64 also covers both halves of more than one 32-column block.
@@ -98,13 +148,20 @@ def test_transposed_weight_round_trips_through_zn_addressing():
 def test_kernel_and_tiling_keep_dequant_workspace_bounded_per_core():
     kernel = _KERNEL.read_text(encoding="utf-8")
     tiling = _TILING.read_text(encoding="utf-8")
+    block_mmad = _BLOCK_MMAD.read_text(encoding="utf-8")
 
     assert "half, layout::zN" in kernel
     assert "DequantTileToNz" in kernel
+    assert "DataCopy(cU8_, codesGm_[codeOffset], copyParams)" in kernel
+    assert "W2_TILE_K = 128" in kernel
     assert "xfmGm_" not in kernel
+    assert "yfGm_" not in kernel
     assert "N_ * K_ * sizeof(half)" not in kernel
     assert "static_cast<size_t>(blockDim) * static_cast<size_t>(OUTPUT_TILE)" in tiling
     assert "xfmBytes" not in tiling
+    assert "yfBytes" not in tiling
+    assert "AscendC::Cast(outputTemp, co2Temp" in block_mmad
+    assert "rowCount = min(16U, mBlockActual - gmRow)" in block_mmad
 
 
 def test_bounded_workspace_is_smaller_for_representative_expert():
@@ -113,7 +170,7 @@ def test_bounded_workspace_is_smaller_for_representative_expert():
     m_aligned = (tokens + 15) // 16 * 16
     block_dim = min(n_dim // _TILE_N, cores)
     old_bytes = n_dim * k_dim * 2 + m_aligned * n_dim * 4 + cores * m_aligned * k_dim * 2
-    new_bytes = block_dim * _TILE_N * k_dim * 2 + block_dim * m_aligned * _TILE_N * 4
+    new_bytes = block_dim * _TILE_N * k_dim * 2
 
     assert new_bytes < old_bytes
-    assert new_bytes == 8_781_824
+    assert new_bytes == 8_388_608

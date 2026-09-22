@@ -113,6 +113,7 @@ _W2_DEVICE_KERNEL = "npu_quant_grouped_matmul_dequant"
 # prefill groups above the hardware-validated boundary use exact eager math.
 W2_CUBE_MAX_TOKENS = 48
 W2_CUBE_OUTPUT_TILE = 128
+W2_CUBE_INPUT_TILE = 128
 
 
 def _device_kernel_available() -> bool:
@@ -190,9 +191,11 @@ def _w2_blocked_mm_op():
     per-[32,32] block dequant fused into the weight load (arch20 catlass MMAD).
     The kernel expands one bounded output tile into an already-NZ per-core
     workspace, rather than materializing the complete fp16 weight or asking the
-    matmul path to perform an ND-to-NZ conversion. Resolved lazily (the custom-op
-    vendor lib is loaded during worker init); returns ``None`` when the op is
-    unavailable so the eager fp32 path stays a correct fallback.
+    matmul path to perform an ND-to-NZ conversion. Its unified-core epilogue
+    casts the FP32 accumulator directly into the final FP16 output, avoiding an
+    intermediate output workspace. Resolved lazily (the custom-op vendor lib is
+    loaded during worker init); returns ``None`` when the op is unavailable so
+    the eager fp32 path stays a correct fallback.
     """
     global _W2_BLOCKED_MM_OP
     if _W2_BLOCKED_MM_OP is None:
@@ -215,6 +218,7 @@ def _can_use_w2_cube(
         w2_op is not None
         and num_tokens <= W2_CUBE_MAX_TOKENS
         and packed.shape[-2] % W2_CUBE_OUTPUT_TILE == 0
+        and in_features % W2_CUBE_INPUT_TILE == 0
         and _infer_bits(packed, in_features) in (2, 4)
         and not is_nvfp4
     )
@@ -486,8 +490,9 @@ class AscendW2DynamicFusedMoEMethod310(AscendMoEScheme):
                 # per-[32,32] block dequant fused into the weight load). It
                 # expands only a reusable 128-column tile directly into NZ,
                 # avoiding a full fp16 weight and the ND-to-NZ matmul conversion.
-                # Packed width selects signed W2 (four codes/byte) or W4 (two
-                # codes/byte) on-chip.
+                # Its Cube epilogue writes FP16 output directly. Packed width
+                # selects signed W2 (four codes/byte) or W4 (two codes/byte)
+                # on-chip.
                 gx = group_x.to(torch.float16)
                 gate = w2_op(gx, e.gate_packed, e.gate_scale.to(torch.float32))
                 up = w2_op(gx, e.up_packed, e.up_scale.to(torch.float32))

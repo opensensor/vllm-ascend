@@ -691,25 +691,53 @@ public:
             AscendC::DataCopy(co2Temp, l0CTensorList[l0CListId], l0c2ubParams, enhParams);
             AscendC::PipeBarrier<PIPE_ALL>();
 
-            // UB → GM: fractal-by-fractal with strided DataCopy (NZ→ND deformat)
-            // NZ in UB: [N/16 Z-cols][M/16 fractals][16 rows][16 cols]
-            // ND in GM: [M rows][N cols]
+            // UB → GM: fractal-by-fractal with strided DataCopy (NZ→ND
+            // deformat). When C is fp16, cast the FP32 accumulator in UB and
+            // write it directly to the final output. This avoids a second GM
+            // workspace round-trip in 310P callers that consume fp16 output.
             auto dstOffset = tensorC.layout()(tensorC.coord());
             uint32_t gmStride = tla::get<0>(tensorC.stride());
             uint32_t mFracs = mAligned / 16;
             uint32_t nFracs = nAligned / 16;
-            for (uint32_t nf = 0; nf < nFracs; nf++) {
-                for (uint32_t mf = 0; mf < mFracs; mf++) {
-                    uint32_t ubOff = (nf * mFracs + mf) * 256;
-                    uint32_t gmRow = mf * 16;
-                    uint32_t gmCol = nf * 16;
-                    uint32_t gmOff = dstOffset + gmRow * gmStride + gmCol;
-                    AscendC::DataCopyParams fracParams;
-                    fracParams.blockCount = 16;
-                    fracParams.blockLen = static_cast<uint16_t>(16 * sizeof(ElementAccumulator) / 32);
-                    fracParams.srcStride = 0;
-                    fracParams.dstStride = static_cast<uint16_t>((gmStride - 16) * sizeof(ElementAccumulator) / 32);
-                    AscendC::DataCopy(tensorC.data()[gmOff], co2Temp[ubOff], fracParams);
+            if constexpr (std::is_same_v<ElementC, ElementAccumulator>) {
+                for (uint32_t nf = 0; nf < nFracs; nf++) {
+                    for (uint32_t mf = 0; mf < mFracs; mf++) {
+                        uint32_t ubOff = (nf * mFracs + mf) * 256;
+                        uint32_t gmRow = mf * 16;
+                        uint32_t gmCol = nf * 16;
+                        uint32_t gmOff = dstOffset + gmRow * gmStride + gmCol;
+                        uint32_t rowCount = min(16U, mBlockActual - gmRow);
+                        AscendC::DataCopyParams fracParams;
+                        fracParams.blockCount = static_cast<uint8_t>(rowCount);
+                        fracParams.blockLen = static_cast<uint16_t>(16 * sizeof(ElementAccumulator) / 32);
+                        fracParams.srcStride = 0;
+                        fracParams.dstStride =
+                            static_cast<uint16_t>((gmStride - 16) * sizeof(ElementAccumulator) / 32);
+                        AscendC::DataCopy(tensorC.data()[gmOff], co2Temp[ubOff], fracParams);
+                    }
+                }
+            } else {
+                static_assert(std::is_same_v<ElementC, half>,
+                              "310P unified-core output conversion supports fp32 or fp16 C");
+                AscendC::LocalTensor<ElementC> outputTemp =
+                    resourcePtr->ubBuf.template GetBufferByByte<ElementC>(tileBytes);
+                AscendC::Cast(outputTemp, co2Temp, AscendC::RoundMode::CAST_NONE, tileElems);
+                AscendC::PipeBarrier<PIPE_ALL>();
+                for (uint32_t nf = 0; nf < nFracs; nf++) {
+                    for (uint32_t mf = 0; mf < mFracs; mf++) {
+                        uint32_t ubOff = (nf * mFracs + mf) * 256;
+                        uint32_t gmRow = mf * 16;
+                        uint32_t gmCol = nf * 16;
+                        uint32_t gmOff = dstOffset + gmRow * gmStride + gmCol;
+                        uint32_t rowCount = min(16U, mBlockActual - gmRow);
+                        AscendC::DataCopyParams fracParams;
+                        fracParams.blockCount = static_cast<uint8_t>(rowCount);
+                        fracParams.blockLen = static_cast<uint16_t>(16 * sizeof(ElementC) / 32);
+                        fracParams.srcStride = 0;
+                        fracParams.dstStride =
+                            static_cast<uint16_t>((gmStride - 16) * sizeof(ElementC) / 32);
+                        AscendC::DataCopy(tensorC.data()[gmOff], outputTemp[ubOff], fracParams);
+                    }
                 }
             }
             AscendC::PipeBarrier<PIPE_ALL>();
