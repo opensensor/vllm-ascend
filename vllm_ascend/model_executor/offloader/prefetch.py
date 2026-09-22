@@ -114,7 +114,17 @@ class AscendPrefetchOffloader(PrefetchOffloader):
             vllm_prefetch._ModuleOffloader = original_module_offloader
 
     def post_init(self):
-        super().post_init()
+        """Build format-correct buffers before binding them to parameters.
+
+        The upstream implementation binds and starts filling its ordinary
+        strided buffers inside ``post_init``. Reformatting the pool after that
+        leaves both the parameter and ``_gpu_buffer`` references pointing at
+        the old ND tensors, while the new NZ tensors sit unused in the pool.
+        Construct the pool here so NZ conversion happens before any buffer is
+        assigned or prefetched.
+        """
+        for offloader in self.module_offloaders:
+            offloader.sync_cpu_storage()
 
         device: torch.device | None = None
         param_infos: list[ParamInfo] = []
@@ -126,7 +136,31 @@ class AscendPrefetchOffloader(PrefetchOffloader):
             # No modules to offload
             return
 
+        self.buffer_pool = StaticBufferPool(
+            param_infos=param_infos,
+            slot_capacity=self.prefetch_step,
+            device=device,
+        )
         _format_static_buffers_for_nz(self.buffer_pool, param_infos)
+
+        for index, offloader in enumerate(self.module_offloaders):
+            slot_index = index % self.prefetch_step
+            offloader.assign_buffer_slot(self.buffer_pool, slot_index)
+
+        for offloader in self.module_offloaders:
+            offloader.post_init()
+            self.total_offloaded_bytes += offloader.offloaded_bytes
+
+        logger.info_once(
+            f"[PrefetchOffloader] Initialized {len(self.module_offloaders)} modules. "
+            f"Total GPU memory saved: {self.total_offloaded_bytes / 1e9:.4f} GB, "
+            f"Static buffer pool: {self.buffer_pool.total_bytes / 1e9:.4f} GB "
+            f"(group_size={self.group_size}, num_in_group={self.num_in_group}, "
+            f"prefetch_step={self.prefetch_step}, mode={self.mode})"
+        )
+
+        for index in range(min(self.prefetch_step, len(self.module_offloaders))):
+            self.module_offloaders[index].start_onload_to_static()
 
 
 class _ModuleOffloader(VllmModuleOffloader):

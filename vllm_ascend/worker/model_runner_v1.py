@@ -259,6 +259,31 @@ PerLayerAttnMetadata: TypeAlias = list[AttnMetadataDict] | AttnMetadataDict
 SEQ_LEN_WITH_MAX_PA_WORKSPACE = 6144
 
 
+def _net_offloaded_device_bytes(offloader: Any) -> int:
+    """Return device bytes released after accounting for the static pool."""
+    total_offloaded_bytes = int(getattr(offloader, "total_offloaded_bytes", 0))
+    buffer_pool = getattr(offloader, "buffer_pool", None)
+    static_buffer_bytes = int(getattr(buffer_pool, "total_bytes", 0))
+    return max(total_offloaded_bytes - static_buffer_bytes, 0)
+
+
+def _reclaim_offloaded_device_memory(
+    model_memory_usage: int,
+    offloader: Any,
+) -> tuple[int, int]:
+    """Expose freed offload storage to HCCL and correct weight accounting."""
+    net_offloaded_device_bytes = _net_offloaded_device_bytes(offloader)
+    if not net_offloaded_device_bytes:
+        return model_memory_usage, 0
+
+    torch.npu.empty_cache()
+    resident_model_memory = max(
+        model_memory_usage - net_offloaded_device_bytes,
+        0,
+    )
+    return resident_model_memory, net_offloaded_device_bytes
+
+
 
 @dataclass
 class GraphCaptureContext:
@@ -4101,7 +4126,25 @@ class NPUModelRunner(GPUModelRunner):
         self.model_memory_usage = m.consumed_memory
         logger.info("Loading model weights took %.4f GB", m.consumed_memory / float(2**30))
 
-        get_offloader().post_init()
+        offloader = get_offloader()
+        offloader.post_init()
+        self.model_memory_usage, net_offloaded_device_bytes = (
+            _reclaim_offloaded_device_memory(
+                self.model_memory_usage,
+                offloader,
+            )
+        )
+        if net_offloaded_device_bytes:
+            # Assigning static buffers releases the old parameter allocations
+            # to PyTorch's cache. HCCL allocates outside that cache, so return
+            # those blocks to the device before its lazy initialization in the
+            # profile run.
+            logger.info(
+                "Reclaimed %.4f GB after model offload; resident model "
+                "memory is %.4f GB",
+                net_offloaded_device_bytes / float(2**30),
+                self.model_memory_usage / float(2**30),
+            )
 
         mm_config = self.model_config.multimodal_config
         self.is_multimodal_pruning_enabled = (

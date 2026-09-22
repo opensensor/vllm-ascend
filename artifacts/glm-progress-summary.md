@@ -396,3 +396,33 @@ will be a correctness-first run: W4 still uses eager FP32 dequant/matmul because
 the current packed Cube kernel hardcodes four 2-bit codes per byte. The bounded
 performance follow-up is a two-codes-per-byte W4 Cube variant plus packed-width
 dispatch. None of this update has yet been validated on Ascend hardware.
+
+## UPDATE 9 (2026-09-22, full-W4 load and offloader correction)
+
+The full-W4 artifact was synced to the Threadripper and passed its remote index
+integrity check: all 75,575 mapped tensors resolve across 45 shard files, with
+no missing files or broken links. A TP4/eager/96-token/64-block serve attempt
+loaded all 45 shards and reported 37.6656 GiB/rank before offloader
+finalization. The prefetch offloader selected all 45 decoder layers, reported
+4.4410 GB offloaded with a 0.2527 GB static pool, then failed at the first lazy
+HCCL all-reduce initialization because the released parameter allocations were
+still held by PyTorch's NPU caching allocator.
+
+Code inspection also found that the Ascend specialization called upstream
+`post_init()` before converting its static buffers to FRACTAL_NZ. Upstream had
+already bound parameters and started the first prefetch into the original ND
+buffers, so replacing entries in the pool afterward produced unused NZ buffers
+while inference retained stale ND buffer references.
+
+The local implementation now:
+
+1. creates the static pool and converts required entries to NZ before assigning
+   any buffer to a parameter or starting any prefetch;
+2. returns released cached NPU blocks to the device before the profile run, so
+   the external HCCL allocator can use the net offload savings; and
+3. subtracts `total_offloaded_bytes - static_buffer_pool_bytes` from the model
+   runner's resident-weight accounting before memory profiling.
+
+The correction passes the offloader and GLM/W2 regression set locally (65
+tests). Per operator instruction, no further Ascend hardware run has been made;
+the corrected startup and golden prompt remain hardware-unvalidated.
