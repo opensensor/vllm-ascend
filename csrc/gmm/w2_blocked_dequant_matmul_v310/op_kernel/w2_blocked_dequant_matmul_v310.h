@@ -117,8 +117,6 @@ public:
         auto tensorA = tla::MakeTensor(xGm_, aLayout, Arch::PositionGM{});
         auto tensorB = tla::MakeTensor(wdqNzGm_[coreNzBase_], bLayout, Arch::PositionGM{});
         auto tensorC = tla::MakeTensor(yGm_, cLayout, Arch::PositionGM{});
-        BlockMmad blockMmad(resource);
-        blockMmad.preSetFlags();
 
         for (uint32_t nb = coreId; nb < nBlocks; nb += coreNum) {
             const uint32_t n0 = nb * W2_TILE_N;
@@ -138,14 +136,16 @@ public:
                               tla::MakeShape((uint32_t)K_, nActual));
             auto tC = GetTile(tensorC, tla::MakeCoord((uint32_t)0, n0),
                               tla::MakeShape((uint32_t)T_, nActual));
+            BlockMmad blockMmad(resource);
+            blockMmad.preSetFlags();
             blockMmad(tA, tB, tC, shape);
+            blockMmad.finalWaitFlags();
             // A core can process several N tiles and reuse the same GM
             // workspace.  Finish BlockMmad's MTE2 reads before the next tile
             // overwrites that workspace through MTE3.
             SetFlag<HardEvent::MTE2_MTE3>(EVENT_ID4);
             WaitFlag<HardEvent::MTE2_MTE3>(EVENT_ID4);
         }
-        blockMmad.finalWaitFlags();
     }
 
 private:

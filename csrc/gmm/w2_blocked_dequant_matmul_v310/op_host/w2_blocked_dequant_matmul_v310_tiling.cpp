@@ -70,10 +70,11 @@ static ge::graphStatus W2BlockedDequantMatmulTilingFunc(gert::TilingContext *con
     tilingData.set_codesPerByte(codesPerByte);
 
     const int64_t nBlocks = (N + OUTPUT_TILE - 1) / OUTPUT_TILE;
-    uint32_t blockDim = (nBlocks < static_cast<int64_t>(coreNum)) ? static_cast<uint32_t>(nBlocks) : coreNum;
+    uint32_t blockDim = static_cast<uint32_t>(nBlocks);
 
-    // Bounded Cube workspace, reused as a core advances through output tiles:
-    //   [blockDim, 128, K] half, already in NZ order
+    // One logical block owns each output tile. The runtime schedules excess
+    // blocks over the physical cores, while every block starts with clean
+    // Cube pipeline state and a private [128,K] packed-NZ workspace.
     // The former implementation allocated a full [N,K] fp16 dequantized
     // matrix plus a per-core [T,K] activation reorder.  Besides scaling with N,
     // that made CATLASS convert each ND B tile to NZ again.  Producing NZ
@@ -82,7 +83,7 @@ static ge::graphStatus W2BlockedDequantMatmulTilingFunc(gert::TilingContext *con
     // 310P unified-core epilogue casts its FP32 accumulator
     // directly to the FP16 output, so no intermediate output workspace is
     // required.
-    const size_t wdqBytes = static_cast<size_t>(blockDim) * static_cast<size_t>(OUTPUT_TILE)
+    const size_t wdqBytes = static_cast<size_t>(nBlocks) * static_cast<size_t>(OUTPUT_TILE)
                             * static_cast<size_t>(K) * sizeof(uint16_t);
     // GetUserWorkspace(workspace) returns (workspace + GetLibApiWorkSpaceSize()),
     // so the reported size must include that system reserve or the kernel writes

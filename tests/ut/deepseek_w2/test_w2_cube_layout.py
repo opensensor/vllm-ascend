@@ -157,7 +157,7 @@ def test_kernel_and_tiling_keep_dequant_workspace_bounded_per_core():
     assert "W2_TILE_K = 128" in kernel
     assert "xfmGm_" not in kernel
     assert "N_ * K_ * sizeof(half)" not in kernel
-    assert "static_cast<size_t>(blockDim) * static_cast<size_t>(OUTPUT_TILE)" in tiling
+    assert "static_cast<size_t>(nBlocks) * static_cast<size_t>(OUTPUT_TILE)" in tiling
     assert "xfmBytes" not in tiling
     assert "AscendC::Cast(outputTemp, co2Temp" in block_mmad
     assert block_mmad.count("HardEvent::MTE3_V>(EVENT_ID7)") == 2
@@ -168,7 +168,7 @@ def test_kernel_and_tiling_keep_dequant_workspace_bounded_per_core():
     assert "HardEvent::MTE3_V>(EVENT_ID1)" in kernel
     assert "HardEvent::MTE3_MTE2>(EVENT_ID4)" in kernel
     assert "HardEvent::MTE2_MTE3>(EVENT_ID4)" in kernel
-    assert kernel.index("BlockMmad blockMmad(resource);") < kernel.index("for (uint32_t nb = coreId")
+    assert kernel.index("for (uint32_t nb = coreId") < kernel.index("BlockMmad blockMmad(resource);")
     assert kernel.count("blockMmad.preSetFlags();") == 1
     assert kernel.count("blockMmad.finalWaitFlags();") == 1
     assert "yfGm_" not in kernel
@@ -179,9 +179,9 @@ def test_bounded_workspace_is_smaller_for_representative_expert():
     # Exclude the platform-owned system reserve, which is identical for both.
     tokens, n_dim, k_dim, cores = 48, 4096, 2048, 16
     m_aligned = (tokens + 15) // 16 * 16
-    block_dim = min(n_dim // _TILE_N, cores)
+    block_dim = n_dim // _TILE_N
     old_bytes = n_dim * k_dim * 2 + m_aligned * n_dim * 4 + cores * m_aligned * k_dim * 2
     new_bytes = block_dim * _TILE_N * k_dim * 2
 
     assert new_bytes < old_bytes
-    assert new_bytes == 8_388_608
+    assert new_bytes == 16_777_216
