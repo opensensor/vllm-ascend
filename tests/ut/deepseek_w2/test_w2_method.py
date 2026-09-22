@@ -197,10 +197,11 @@ def test_device_kernel_guard_is_host_under_stub():
     assert _device_kernel_available() is False
 
 
-def test_cube_kernel_rejects_unsafe_prefill_group_size():
+def test_cube_kernel_accepts_validated_l0c_rows_and_rejects_larger_groups():
     packed_w2 = torch.zeros(128, W2_CUBE_MIN_INPUT_DIM // W2_CODES_PER_BYTE, dtype=torch.uint8)
     op = object()
 
+    assert W2_CUBE_MAX_TOKENS == 128
     assert _can_use_w2_cube(op, packed_w2, W2_CUBE_MIN_INPUT_DIM, W2_CUBE_MAX_TOKENS, False)
     assert not _can_use_w2_cube(op, packed_w2, W2_CUBE_MIN_INPUT_DIM, W2_CUBE_MAX_TOKENS + 1, False)
     assert not _can_use_w2_cube(None, packed_w2, W2_CUBE_MIN_INPUT_DIM, 1, False)

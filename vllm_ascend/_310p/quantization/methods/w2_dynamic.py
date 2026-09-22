@@ -107,11 +107,9 @@ W2_ACTIVE_UNPACK_ONLY = True
 # Name of the fused INT8 grouped-matmul + dequant kernel on the device wave.
 _W2_DEVICE_KERNEL = "npu_quant_grouped_matmul_dequant"
 
-# The current 310P packed-W2 Cube kernel corrupts the down projection when its
-# M dimension exceeds 48 (the first failing model shape is [49, 2048] x
-# [4096, 2048]^T). Keep the fast path for decode and small expert groups while
-# prefill groups above the hardware-validated boundary use exact eager math.
-W2_CUBE_MAX_TOKENS = 48
+# The packed W2/W4 Cube kernel owns one 128-row L0C tile. Hardware validation
+# covers the boundary through M=128; larger expert groups use exact eager math.
+W2_CUBE_MAX_TOKENS = 128
 W2_CUBE_OUTPUT_TILE = 128
 W2_CUBE_INPUT_TILE = 128
 W2_CUBE_MIN_INPUT_DIM = 256
