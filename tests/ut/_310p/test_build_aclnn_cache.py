@@ -29,3 +29,18 @@ def test_gcc15_protobuf_build_includes_cstdint():
 
     assert "CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15" in protobuf_cmake
     assert 'string(APPEND protobuf_CXXFLAGS " -include cstdint")' in protobuf_cmake
+
+
+def test_chunk_kda_is_registered_and_built_for_310p():
+    build_script = (REPO_ROOT / "csrc" / "build_aclnn.sh").read_text()
+    op_definition = (
+        REPO_ROOT
+        / "csrc"
+        / "attention"
+        / "chunk_kda_fwd"
+        / "op_host"
+        / "chunk_kda_fwd_def.cpp"
+    ).read_text()
+
+    assert '"chunk_kda_fwd"' in build_script
+    assert 'AddConfig("ascend310p", config)' in op_definition
