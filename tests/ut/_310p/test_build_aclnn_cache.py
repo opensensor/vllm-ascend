@@ -98,6 +98,18 @@ def test_kda_layout_swap_avoids_keyed_task_types_on_310p():
         assert kernel.rindex(guard, 0, kernel.index(task_type)) >= 0
 
 
+def test_chunk_kda_helpers_exclude_bf16_on_310p():
+    for op_name in ("kda_gate_cumsum", "kda_layout_swap12"):
+        op_dir = REPO_ROOT / "csrc" / "attention" / op_name
+        kernel = (op_dir / "op_kernel" / f"{op_name}.cpp").read_text()
+        tiling = (op_dir / "op_host" / f"{op_name}_tiling.cpp").read_text()
+
+        arch_guard = "#if !defined(__CCE_AICORE__) || (__CCE_AICORE__ != 200)"
+        assert kernel.index(arch_guard) < kernel.index("bfloat16_t")
+        assert "SocVersion::ASCEND310P" in tiling
+        assert "ge::DT_BF16" in tiling
+
+
 def test_chunk_kda_loads_310p_compat_before_catlass_kernels():
     kernel_dir = (
         REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_kernel"

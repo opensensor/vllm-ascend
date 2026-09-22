@@ -322,8 +322,10 @@ extern "C" __global__ __aicore__ void kda_gate_cumsum(GM_ADDR g, GM_ADDR aLog, G
     TPipe pipe;
     if (tilingData.dataType == 2) {
         DispatchKdaGateCumsumBySafeGate<float>(g, aLog, dtBias, cuSeqlens, gk, tilingData, &pipe);
+#if !defined(__CCE_AICORE__) || (__CCE_AICORE__ != 200)
     } else if (tilingData.dataType == 1) {
         DispatchKdaGateCumsumBySafeGate<bfloat16_t>(g, aLog, dtBias, cuSeqlens, gk, tilingData, &pipe);
+#endif
     } else {
         DispatchKdaGateCumsumBySafeGate<half>(g, aLog, dtBias, cuSeqlens, gk, tilingData, &pipe);
     }

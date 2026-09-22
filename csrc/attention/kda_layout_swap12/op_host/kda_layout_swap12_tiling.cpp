@@ -59,6 +59,10 @@ ge::graphStatus Tiling4KdaLayoutSwap12(gert::TilingContext *context)
     }
 
     const auto ascendcPlatform = platform_ascendc::PlatformAscendC(context->GetPlatformInfo());
+    if (ascendcPlatform.GetSocVersion() == platform_ascendc::SocVersion::ASCEND310P &&
+        xDesc->GetDataType() == ge::DT_BF16) {
+        return ge::GRAPH_FAILED;
+    }
     uint32_t coreNum = ascendcPlatform.GetCoreNumAiv();
     int64_t rowCount = batch * firstDim * secondDim;
     uint32_t blockDim = static_cast<uint32_t>(std::min<int64_t>(rowCount, coreNum));

@@ -88,6 +88,10 @@ ge::graphStatus Tiling4KdaGateCumsum(gert::TilingContext *context)
     int64_t taskCount = hasCuSeqlens ? seqNum * hv : batch * hv * maxChunks;
 
     const auto ascendcPlatform = platform_ascendc::PlatformAscendC(context->GetPlatformInfo());
+    if (ascendcPlatform.GetSocVersion() == platform_ascendc::SocVersion::ASCEND310P &&
+        gDesc->GetDataType() == ge::DT_BF16) {
+        return ge::GRAPH_FAILED;
+    }
     uint32_t coreNum = ascendcPlatform.GetCoreNumAiv();
     uint32_t blockDim = static_cast<uint32_t>(std::min<int64_t>(taskCount, coreNum));
     context->SetBlockDim(blockDim == 0 ? 1 : blockDim);
