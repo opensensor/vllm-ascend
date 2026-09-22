@@ -21,7 +21,7 @@ import sys
 import types
 from contextlib import contextmanager
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 import torch
@@ -245,6 +245,68 @@ def test_model_short_conv_fallback_carries_paged_state():
     torch.testing.assert_close(out_first, expected[:-1])
     torch.testing.assert_close(out_second, expected[-1:])
     torch.testing.assert_close(cache[1], torch.cat([first, second])[-(kernel - 1) :].T)
+
+
+@pytest.mark.parametrize("is_prefill", [True, False])
+def test_model_native_delta_rule_uses_batched_310p_kernel(is_prefill):
+    """The production path must not fall back to the per-request Python loop."""
+    from vllm_ascend.models.qwen4_exp.model import _GDNAttention
+
+    tokens, num_heads, head_dim = 3, 2, 4
+    q = torch.randn(tokens, num_heads, head_dim)
+    k = torch.randn_like(q)
+    v = torch.randn_like(q)
+    g = torch.randn(1, tokens, num_heads)
+    beta = torch.rand_like(g)
+    recurrent_cache = torch.zeros(4, num_heads, head_dim, head_dim)
+    owner = SimpleNamespace(kv_cache=(torch.empty(0), recurrent_cache))
+    metadata = SimpleNamespace(num_prefills=int(is_prefill))
+    state_indices = torch.tensor([2])
+    query_start_loc = torch.tensor([0, tokens], dtype=torch.int32)
+    has_initial_state = torch.tensor([False])
+
+    chunk_output = v.unsqueeze(0) + 1
+    final_state = torch.full((1, num_heads, head_dim, head_dim), 7.0)
+    chunk_kernel = Mock(return_value=(chunk_output, final_state))
+    recurrent_output = v.unsqueeze(0) + 2
+    recurrent_kernel = Mock(return_value=recurrent_output)
+
+    chunk_module = types.ModuleType("vllm_ascend._310p.ops.fla.chunk_gated_delta_rule")
+    chunk_module.chunk_gated_delta_rule_310 = chunk_kernel
+    gdn_module = types.ModuleType("vllm_ascend._310p.ops.fla.gdn_310")
+    gdn_module._cached_chunk_plan = Mock(return_value="chunk-plan")
+    gdn_module._cached_recurrent_step_meta = Mock(return_value="step-meta")
+    gdn_module.npu_recurrent_gated_delta_rule_310 = recurrent_kernel
+
+    with patch.dict(
+        sys.modules,
+        {
+            chunk_module.__name__: chunk_module,
+            gdn_module.__name__: gdn_module,
+        },
+    ):
+        output = _GDNAttention._native_delta_rule(
+            owner,
+            q,
+            k,
+            v,
+            g,
+            beta,
+            metadata,
+            state_indices,
+            query_start_loc,
+            has_initial_state,
+        )
+
+    if is_prefill:
+        chunk_kernel.assert_called_once()
+        recurrent_kernel.assert_not_called()
+        torch.testing.assert_close(output, chunk_output.squeeze(0))
+        torch.testing.assert_close(recurrent_cache[2], final_state[0])
+    else:
+        recurrent_kernel.assert_called_once()
+        chunk_kernel.assert_not_called()
+        torch.testing.assert_close(output, recurrent_output.squeeze(0))
 
 
 # ---------------------------------------------------------------------------

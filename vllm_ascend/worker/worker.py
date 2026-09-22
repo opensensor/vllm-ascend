@@ -709,6 +709,10 @@ class NPUWorker(WorkerBase):
         ):
             return available_memory
 
+        compact_mamba_state = bool(
+            getattr(model_runner, "supports_compact_mamba_state", False)
+            and not self.vllm_config.cache_config.enable_prefix_caching
+        )
         bytes_per_block = 0
         sum_pages = 0
         for group in kv_cache_groups:
@@ -720,7 +724,8 @@ class NPUWorker(WorkerBase):
                 else:
                     layer_spec = group_spec
                 group_pages += layer_spec.page_size_bytes
-                sum_pages += layer_spec.page_size_bytes
+                if not (compact_mamba_state and isinstance(layer_spec, MambaSpec)):
+                    sum_pages += layer_spec.page_size_bytes
             bytes_per_block = max(bytes_per_block, group_pages)
         if bytes_per_block > 0 and sum_pages > bytes_per_block:
             scale = bytes_per_block / sum_pages

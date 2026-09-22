@@ -115,6 +115,45 @@ def test_310p_hybrid_model_state_initializes_full_upstream_contract() -> None:
     assert isinstance(state._capture_seq_lens_by_ptr, dict)
 
 
+def test_310p_hybrid_state_remaps_mamba_tables_to_request_slots() -> None:
+    class FakeMambaSpec:
+        pass
+
+    state = object.__new__(Ascend310PMambaHybridModelState)
+    state.vllm_config = SimpleNamespace(cache_config=SimpleNamespace(enable_prefix_caching=False))
+    input_batch = SimpleNamespace(
+        num_reqs=2,
+        num_reqs_after_padding=3,
+        idx_mapping=torch.tensor([3, 1], dtype=torch.int32),
+    )
+    attention_table = torch.tensor([[8, 9], [6, 7], [0, 0]], dtype=torch.int32)
+    mamba_table = torch.tensor([[21, 22], [31, 32], [99, 99]], dtype=torch.int32)
+    kv_cache_config = SimpleNamespace(
+        kv_cache_groups=[
+            SimpleNamespace(kv_cache_spec=object()),
+            SimpleNamespace(kv_cache_spec=FakeMambaSpec()),
+        ]
+    )
+
+    with (
+        patch("vllm_ascend._310p.worker.v2.model_state.MambaSpec", FakeMambaSpec),
+        patch.object(AscendMambaHybridModelState, "prepare_attn", return_value={"ok": True}) as parent,
+    ):
+        result = state.prepare_attn(
+            input_batch,
+            CUDAGraphMode.NONE,
+            (attention_table, mamba_table),
+            object(),
+            [],
+            kv_cache_config,
+        )
+
+    assert result == {"ok": True}
+    torch.testing.assert_close(attention_table, torch.tensor([[8, 9], [6, 7], [0, 0]], dtype=torch.int32))
+    torch.testing.assert_close(mamba_table, torch.tensor([[3, 3], [1, 1], [0, 0]], dtype=torch.int32))
+    parent.assert_called_once()
+
+
 def test_init_model_state_routes_qwen35_hybrid_to_310p() -> None:
     """Qwen3.5 is_hybrid must select Ascend310PMambaHybridModelState on 310P."""
     from vllm_ascend.worker.v2.model_states import init_asecnd_model_state
@@ -190,7 +229,8 @@ def test_kv_cache_allocation_qwen35_mamba_stays_nd() -> None:
     )
     runner = object.__new__(NPUModelRunner310V2)
     runner.device = torch.device("cpu")
-    runner.cache_config = SimpleNamespace(cache_dtype="auto")
+    runner.cache_config = SimpleNamespace(cache_dtype="auto", enable_prefix_caching=False)
+    runner.max_num_reqs = 1
     runner.kernel_block_sizes = [1]
     runner.attn_groups = [[SimpleNamespace(backend=object, layer_names=[layer_name])]]
 
@@ -200,10 +240,10 @@ def test_kv_cache_allocation_qwen35_mamba_stays_nd() -> None:
     states = caches[layer_name]
     assert isinstance(states, list)
     assert len(states) == 2
-    assert states[0].shape == (2, 4, 8)
-    assert states[1].shape == (2, 2, 4)
+    assert states[0].shape == (1, 4, 8)
+    assert states[1].shape == (1, 2, 4)
     assert states[0].dtype == torch.float16
-    assert states[0].untyped_storage().nbytes() == 160
+    assert states[0].untyped_storage().nbytes() == 80
 
 
 @pytest.mark.skipif(
@@ -242,7 +282,8 @@ def test_main_mamba_descriptor_allocates_private_per_layer_pages() -> None:
     )
     runner = object.__new__(NPUModelRunner310V2)
     runner.device = torch.device("cpu")
-    runner.cache_config = SimpleNamespace(cache_dtype="auto")
+    runner.cache_config = SimpleNamespace(cache_dtype="auto", enable_prefix_caching=False)
+    runner.max_num_reqs = 1
     runner.kernel_block_sizes = [1]
     runner.attn_groups = [[SimpleNamespace(backend=object, layer_names=layer_names)]]
 
@@ -251,11 +292,11 @@ def test_main_mamba_descriptor_allocates_private_per_layer_pages() -> None:
 
     first_states = caches[layer_names[0]]
     second_states = caches[layer_names[1]]
-    assert first_states[0].shape[0] == kv_cache_config.num_blocks
-    assert second_states[0].shape[0] == kv_cache_config.num_blocks
+    assert first_states[0].shape[0] == runner.max_num_reqs
+    assert second_states[0].shape[0] == runner.max_num_reqs
     assert first_states[0].untyped_storage().data_ptr() != second_states[0].untyped_storage().data_ptr()
-    assert first_states[0].untyped_storage().nbytes() == 160
-    assert second_states[0].untyped_storage().nbytes() == 160
+    assert first_states[0].untyped_storage().nbytes() == 80
+    assert second_states[0].untyped_storage().nbytes() == 80
 
 
 def test_runner_installs_310p_request_state() -> None:

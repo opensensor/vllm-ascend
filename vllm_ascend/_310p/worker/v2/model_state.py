@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 from vllm.config import VllmConfig
 from vllm.config.compilation import CUDAGraphMode
-from vllm.v1.kv_cache_interface import KVCacheConfig
+from vllm.v1.kv_cache_interface import KVCacheConfig, MambaSpec
 from vllm.v1.worker.gpu.mm.encoder_cache import EncoderCache
 from vllm.v1.worker.utils import AttentionGroup
 
@@ -184,6 +184,44 @@ class Ascend310PMambaHybridModelState(_Ascend310PModelStateMixin, AscendMambaHyb
         )
         self._capture_seq_lens_by_ptr = {}
         self._replace_310p_rope_state(encoder_cache)
+
+    def prepare_attn(
+        self,
+        input_batch: AscendInputBatch,
+        cudagraph_mode: CUDAGraphMode,
+        block_tables: tuple[torch.Tensor, ...],
+        slot_mappings: torch.Tensor,
+        attn_groups: list[list[AttentionGroup]],
+        kv_cache_config: KVCacheConfig,
+        for_capture: bool = False,
+    ) -> dict[str, Any]:
+        if not self.vllm_config.cache_config.enable_prefix_caching:
+            # Recurrent state has no historic pages to retain when prefix
+            # caching is disabled. Address it by vLLM's stable request index so
+            # the backing allocation only needs max_num_reqs slots. Mutating
+            # the gathered per-step tables is safe: scheduler-owned CPU block
+            # tables are separate, and attention groups keep their original
+            # paged ids.
+            num_reqs = input_batch.num_reqs
+            num_reqs_padded = input_batch.num_reqs_after_padding
+            request_slots = input_batch.idx_mapping[:num_reqs].to(dtype=torch.int32)
+            for group_id, group in enumerate(kv_cache_config.kv_cache_groups):
+                if not isinstance(group.kv_cache_spec, MambaSpec):
+                    continue
+                table = block_tables[group_id]
+                table[:num_reqs].copy_(request_slots[:, None].expand(-1, table.shape[1]))
+                if num_reqs < num_reqs_padded:
+                    table[num_reqs:num_reqs_padded].zero_()
+
+        return super().prepare_attn(
+            input_batch,
+            cudagraph_mode,
+            block_tables,
+            slot_mappings,
+            attn_groups,
+            kv_cache_config,
+            for_capture=for_capture,
+        )
 
     def preprocess_state(
         self,

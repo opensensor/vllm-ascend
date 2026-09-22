@@ -273,6 +273,16 @@ class TestNPUWorker(TestBase):
                 with patch("vllm_ascend.worker.worker.get_kv_cache_groups", return_value=groups):
                     self.assertEqual(worker._scale_kv_cache_memory_for_multi_group(12345), expected_budget)
 
+        cache_config.enable_prefix_caching = False
+        worker.model_runner = SimpleNamespace(
+            use_sparse=False,
+            use_compress=False,
+            supports_standardized_shared_kv_backing=False,
+            supports_compact_mamba_state=True,
+        )
+        with patch("vllm_ascend.worker.worker.get_kv_cache_groups", return_value=groups):
+            self.assertEqual(worker._scale_kv_cache_memory_for_multi_group(12345), 12345)
+
     @unittest.skipIf(
         vllm_version_is("0.28.0"),
         "vLLM #51718 only changed the main planner",

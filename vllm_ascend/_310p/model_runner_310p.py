@@ -97,11 +97,20 @@ class NPUModelRunner310(NPUModelRunner):
     # separate contiguous state buffers, so it cannot overlay both cache groups
     # on vLLM #51718's standardized shared backing allocation.
     supports_standardized_shared_kv_backing = False
+    supports_compact_mamba_state = False
     uniform_decode_query_len: int
     _spec_dummy_capture: bool = False
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # MRV1 identifies recurrent state by scheduler block id. For the
+        # single-request, non-speculative deployment we can safely remap that
+        # one live id to slot zero and make GDN state independent of context
+        # length. Multi-request compaction needs an explicit persistent
+        # request-to-slot map and remains on the paged allocation.
+        self.supports_compact_mamba_state = (
+            self.max_num_reqs == 1 and self.speculative_config is None and not self.cache_config.enable_prefix_caching
+        )
         # NoPE MLA models (GLM-5.3-Flash) have no extended/decoupled (xdrope)
         # rope; the base runner references these attributes without ever
         # initializing them on this path, so default them to 0.
@@ -270,6 +279,18 @@ class NPUModelRunner310(NPUModelRunner):
             self.attn_state = attn_state
         return attn_state
 
+    def _remap_compact_mamba_block_tables(self, num_reqs: int) -> None:
+        if not self.supports_compact_mamba_state:
+            return
+        multi_group_table = cast(MultiGroupBlockTable310, self.input_batch.block_table)
+        for block_table in multi_group_table.block_tables:
+            if block_table.is_mamba_group:
+                # ``max_num_reqs == 1`` at enablement makes the only persistent
+                # request slot zero. Rewrite only the staged device table;
+                # preserve scheduler-owned CPU block ids for lifecycle updates
+                # and preemption bookkeeping.
+                block_table.block_table.gpu[:num_reqs].zero_()
+
     def _prepare_inputs(  # type: ignore[override]
         self,
         scheduler_output: SchedulerOutput,
@@ -286,6 +307,7 @@ class NPUModelRunner310(NPUModelRunner):
         assert num_reqs > 0
 
         self.input_batch.block_table.commit_block_table(num_reqs)
+        self._remap_compact_mamba_block_tables(num_reqs)
 
         req_indices = np.repeat(self.arange_np[:num_reqs], num_scheduled_tokens)
 
@@ -800,14 +822,20 @@ class NPUModelRunner310(NPUModelRunner):
                     # vLLM #51718 packs all group layers into one tensor on main;
                     # MambaSpec.page_size_bytes is per-layer, so num_blocks times
                     # it is the per-layer byte count (matching v0.28.0's size).
+                    compact_state = self.supports_compact_mamba_state
                     per_layer_size = (
-                        kv_cache_tensor.size
-                        if vllm_version_is("0.28.0")
-                        else kv_cache_config.num_blocks * cache_spec.page_size_bytes
+                        self.max_num_reqs * cache_spec.page_size_bytes
+                        if compact_state
+                        else (
+                            kv_cache_tensor.size
+                            if vllm_version_is("0.28.0")
+                            else kv_cache_config.num_blocks * cache_spec.page_size_bytes
+                        )
                     )
                     assert per_layer_size % cache_spec.page_size_bytes == 0
                     num_blocks = per_layer_size // cache_spec.page_size_bytes
-                    assert num_blocks >= kv_cache_config.num_blocks
+                    if not compact_state:
+                        assert num_blocks >= kv_cache_config.num_blocks
                     if vllm_version_is("0.28.0"):
                         # v0.28.0 `shared_by` aliases the same physical blocks.
                         raw_tensor = torch.zeros(per_layer_size, dtype=torch.int8, device=self.device)
@@ -852,7 +880,8 @@ class NPUModelRunner310(NPUModelRunner):
                     supported_sizes = [
                         support_size
                         for support_size in self.attn_backend.get_supported_kernel_block_sizes()
-                        if _concrete_size(support_size) * _concrete_size(kv_cache_spec.head_size) <= _ATTENTION_BLOCK_SIZE_LIMIT
+                        if _concrete_size(support_size) * _concrete_size(kv_cache_spec.head_size)
+                        <= _ATTENTION_BLOCK_SIZE_LIMIT
                     ]
                     if supported_sizes:
                         block_size = supported_sizes[0]
@@ -1031,7 +1060,8 @@ class NPUModelRunner310(NPUModelRunner):
                     supported_sizes = [
                         _concrete_size(support_size)
                         for support_size in backend.get_supported_kernel_block_sizes()
-                        if _concrete_size(support_size) * _concrete_size(kv_cache_spec.head_size) <= _ATTENTION_BLOCK_SIZE_LIMIT
+                        if _concrete_size(support_size) * _concrete_size(kv_cache_spec.head_size)
+                        <= _ATTENTION_BLOCK_SIZE_LIMIT
                     ]
                     kernel_block_size_list = supported_sizes if supported_sizes else [self.cache_config.block_size]
                 except IndexError:

@@ -93,6 +93,59 @@ def test_model_forward_updates_mtp_full_graph_params_before_replay() -> None:
 
 def test_310p_runner_does_not_advertise_standardized_shared_kv_backing() -> None:
     assert NPUModelRunner310.supports_standardized_shared_kv_backing is False
+    assert NPUModelRunner310.supports_compact_mamba_state is False
+
+
+def test_single_request_runner_compacts_mamba_allocation() -> None:
+    runner = object.__new__(NPUModelRunner310)
+    runner.device = torch.device("cpu")
+    runner.runner_only_attn_layers = set()
+    runner.max_num_reqs = 1
+    runner.supports_compact_mamba_state = True
+    spec = MambaSpec(
+        block_size=128,
+        shapes=((4, 8), (2, 4)),
+        dtypes=(torch.float16, torch.float16),
+    )
+    layer_name = "model.layers.0.linear_attn"
+    kv_cache_config = SimpleNamespace(
+        num_blocks=128,
+        kv_cache_groups=[SimpleNamespace(kv_cache_spec=spec, layer_names=[layer_name])],
+        kv_cache_tensors=[
+            SimpleNamespace(
+                size=128 * spec.page_size_bytes,
+                layers=[layer_name],
+                shared_by=[layer_name],
+            )
+        ],
+    )
+
+    caches = runner._allocate_kv_cache_tensors(kv_cache_config)
+
+    assert caches[layer_name][0].shape == (1, 4, 8)
+    assert caches[layer_name][1].shape == (1, 2, 4)
+    assert caches[layer_name][0].untyped_storage().nbytes() == spec.page_size_bytes
+
+
+def test_single_request_runner_remaps_only_mamba_device_table() -> None:
+    runner = object.__new__(NPUModelRunner310)
+    runner.supports_compact_mamba_state = True
+    attention_gpu = torch.tensor([[17, 18]], dtype=torch.int32)
+    mamba_gpu = torch.tensor([[91, 92]], dtype=torch.int32)
+    attention_table = SimpleNamespace(
+        is_mamba_group=False,
+        block_table=SimpleNamespace(gpu=attention_gpu),
+    )
+    mamba_table = SimpleNamespace(
+        is_mamba_group=True,
+        block_table=SimpleNamespace(gpu=mamba_gpu),
+    )
+    runner.input_batch = SimpleNamespace(block_table=SimpleNamespace(block_tables=[attention_table, mamba_table]))
+
+    runner._remap_compact_mamba_block_tables(num_reqs=1)
+
+    torch.testing.assert_close(attention_gpu, torch.tensor([[17, 18]], dtype=torch.int32))
+    torch.testing.assert_close(mamba_gpu, torch.zeros_like(mamba_gpu))
 
 
 class TestNPUModelRunner310(TestBase):

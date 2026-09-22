@@ -507,11 +507,12 @@ class _EagerDenseAttention(nn.Module, AttentionLayerBase):
 
 class _GDNAttention(nn.Module, MambaBase):
     """Wire the real GDN adapter (T5.x): in_proj -> short conv -> gating ->
-    gated delta rule (eager backend) -> out_proj.
+    gated delta rule -> out_proj.
 
     Registered as a ``MambaBase`` so the v1 runner allocates and binds the GDN
-    convolution + recurrent state. The torch/NPU fallback reads and updates
-    those paged slots on every prefill/decode step.
+    convolution + recurrent state. 310P uses the native chunk/recurrent delta
+    rule kernels while retaining the torch short-convolution fallback (the
+    vendor causal-conv tiler does not accept Qwen4Exp's channel geometry).
     """
 
     def __init__(
@@ -631,6 +632,93 @@ class _GDNAttention(nn.Module, MambaBase):
             mamba_type=MambaAttentionBackendEnum.GDN_ATTN,
         )
 
+    def _native_gating(self, a: torch.Tensor, b: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Run the launch-minimised 310P gate and cache weight-only constants."""
+        from vllm_ascend._310p.ops.fla.fused_gdn_gating import (
+            fused_gdn_gating_310,
+            gdn_gating_constants,
+            gdn_gating_tiled_constants,
+        )
+
+        cached = getattr(self, "_gdn_gating_cache", None)
+        cache_key = (self.A_log.data_ptr(), self.dt_bias.data_ptr())
+        if cached is None or cached[0] != cache_key:
+            constants = gdn_gating_constants(self.A_log, self.dt_bias)
+            tiled_constants = gdn_gating_tiled_constants(self.A_log, self.dt_bias)
+            cached = (cache_key, constants, tiled_constants)
+            self._gdn_gating_cache = cached
+        g, beta = fused_gdn_gating_310(
+            self.A_log,
+            a,
+            b,
+            self.dt_bias,
+            constants=cached[1],
+            tiled_constants=cached[2],
+        )
+        return g, beta
+
+    def _native_delta_rule(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        g: torch.Tensor,
+        beta: torch.Tensor,
+        metadata: GDNAttentionMetadata,
+        state_indices: torch.Tensor,
+        query_start_loc: torch.Tensor,
+        has_initial_state: torch.Tensor,
+    ) -> torch.Tensor:
+        """Run one batched native GDN operation instead of a Python token loop."""
+        from vllm_ascend._310p.ops.fla.chunk_gated_delta_rule import chunk_gated_delta_rule_310
+        from vllm_ascend._310p.ops.fla.gdn_310 import (
+            _cached_chunk_plan,
+            _cached_recurrent_step_meta,
+            npu_recurrent_gated_delta_rule_310,
+        )
+
+        q = q.unsqueeze(0)
+        k = k.unsqueeze(0)
+        v = v.unsqueeze(0)
+        if metadata.num_prefills > 0:
+            initial_state = self.kv_cache[1][state_indices].contiguous()
+            initial_state = initial_state * has_initial_state[:, None, None, None].to(initial_state.dtype)
+            out, final_state = chunk_gated_delta_rule_310(
+                q=q,
+                k=k,
+                v=v,
+                g=g,
+                beta=beta,
+                initial_state=initial_state,
+                output_final_state=True,
+                cu_seqlens=query_start_loc,
+                head_first=False,
+                use_qk_l2norm_in_kernel=True,
+                chunk_plan=_cached_chunk_plan(metadata, query_start_loc),
+            )
+            assert final_state is not None
+            self.kv_cache[1][state_indices] = final_state.to(self.kv_cache[1].dtype)
+            return out.squeeze(0)
+
+        return npu_recurrent_gated_delta_rule_310(
+            q=q,
+            k=k,
+            v=v,
+            g=g,
+            beta=beta,
+            state=self.kv_cache[1],
+            cu_seqlens=query_start_loc,
+            ssm_state_indices=state_indices,
+            use_qk_l2norm_in_kernel=True,
+            step_meta=_cached_recurrent_step_meta(
+                metadata,
+                "qwen4exp_decode",
+                query_start_loc,
+                state_indices,
+                v.shape[1],
+            ),
+        ).squeeze(0)
+
     def forward(self, block_input: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
         del positions  # GDN applies no rotary
         seq_len = block_input.shape[0]
@@ -680,43 +768,57 @@ class _GDNAttention(nn.Module, MambaBase):
         q = q.reshape(seq_len, self.num_k_heads, p.head_k_dim)
         k = k.reshape(seq_len, self.num_k_heads, p.head_k_dim)
         v = v.reshape(seq_len, self.num_v_heads, p.head_v_dim)
-        g, beta = gdn_gating(
-            self.A_log,
-            a,
-            b,
-            self.dt_bias,
-            compute_dtype=self.compute_dtype,
-            backend="eager",
-        )
-        out = torch.empty(
-            (seq_len, self.num_v_heads, p.head_v_dim),
-            dtype=self.compute_dtype,
-            device=block_input.device,
-        )
-        for request_idx, (start, stop) in enumerate(ranges):
-            if stop <= start:
-                continue
-            initial_state = None
-            if state_indices is not None and has_initial_state is not None:
-                cache_idx = state_indices[request_idx].long()
-                initial_state = self.kv_cache[1][cache_idx].to(self.compute_dtype) * has_initial_state[request_idx].to(
-                    self.compute_dtype
-                )
-            segment, final_state = gdn_delta_rule(
-                q[start:stop],
-                k[start:stop],
-                v[start:stop],
-                g[start:stop],
-                beta[start:stop],
-                initial_state=initial_state,
-                chunked=(stop - start) > 1,
-                chunk_size=QWEN4EXP_GDN_CHUNK_SIZE,
+        if metadata is not None and block_input.device.type == "npu":
+            g, beta = self._native_gating(a, b)
+            out = self._native_delta_rule(
+                q,
+                k,
+                v,
+                g,
+                beta,
+                metadata,
+                state_indices,
+                query_start_loc,
+                has_initial_state,
+            ).to(self.compute_dtype)
+        else:
+            g, beta = gdn_gating(
+                self.A_log,
+                a,
+                b,
+                self.dt_bias,
                 compute_dtype=self.compute_dtype,
                 backend="eager",
             )
-            out[start:stop] = segment
-            if state_indices is not None:
-                self.kv_cache[1][cache_idx].copy_(final_state.to(self.kv_cache[1].dtype))
+            out = torch.empty(
+                (seq_len, self.num_v_heads, p.head_v_dim),
+                dtype=self.compute_dtype,
+                device=block_input.device,
+            )
+            for request_idx, (start, stop) in enumerate(ranges):
+                if stop <= start:
+                    continue
+                initial_state = None
+                if state_indices is not None and has_initial_state is not None:
+                    cache_idx = state_indices[request_idx].long()
+                    initial_state = self.kv_cache[1][cache_idx].to(self.compute_dtype) * has_initial_state[
+                        request_idx
+                    ].to(self.compute_dtype)
+                segment, final_state = gdn_delta_rule(
+                    q[start:stop],
+                    k[start:stop],
+                    v[start:stop],
+                    g[start:stop],
+                    beta[start:stop],
+                    initial_state=initial_state,
+                    chunked=(stop - start) > 1,
+                    chunk_size=QWEN4EXP_GDN_CHUNK_SIZE,
+                    compute_dtype=self.compute_dtype,
+                    backend="eager",
+                )
+                out[start:stop] = segment
+                if state_indices is not None:
+                    self.kv_cache[1][cache_idx].copy_(final_state.to(self.kv_cache[1].dtype))
         normed = _rms_norm(out, self.norm_weight, self.rms_norm_eps, self.compute_dtype)
         z = _linear(block_input, self.in_proj_z, self.compute_dtype).reshape(seq_len, self.num_v_heads, p.head_v_dim)
         out = (normed * torch.sigmoid(z)).reshape(seq_len, self.value_dim)

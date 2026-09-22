@@ -57,6 +57,12 @@ class NPUModelRunner310V2(NPUModelRunner):
     # capacity before the engine computes num_blocks.
     supports_standardized_shared_kv_backing = False
 
+    # Without prefix caching, GDN/Mamba state is addressed by a stable request
+    # slot instead of by the scheduler's context-block id. This makes recurrent
+    # state O(max_num_reqs), rather than O(max_model_len), while attention KV
+    # remains fully paged.
+    supports_compact_mamba_state = True
+
     # TODO: Refactor Triton-dependent overrides to register 310P
     # implementations through Triton Dispatcher after vLLM RFC #45133 lands.
     def __init__(self, vllm_config: VllmConfig, device: torch.device):
@@ -687,6 +693,8 @@ class NPUModelRunner310V2(NPUModelRunner):
                     # Hybrid recurrent state stays ND (int8 raw plus views).
                     # Main's descriptor.size is the entire virtual backing;
                     # private 310P state uses only this layer's pages.
+                    if self.supports_compact_mamba_state and not self.cache_config.enable_prefix_caching:
+                        num_blocks = self.max_num_reqs
                     raw_size = kv_cache_tensor.size if legacy_shared_by else num_blocks * kv_cache_spec.page_size_bytes
 
                     def allocate_mamba_cache(
