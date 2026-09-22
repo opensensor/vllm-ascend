@@ -107,7 +107,6 @@ public:
         const uint32_t coreId = GetBlockIdx();
         const uint32_t coreNum = GetBlockNum();
         const uint32_t nBlocks = CeilDivU<uint32_t>((uint32_t)N_, W2_TILE_N);
-        BlockMmad blockMmad(resource);
 
         AllocBuffers();
         FillTables();
@@ -133,6 +132,10 @@ public:
                               tla::MakeShape((uint32_t)K_, nActual));
             auto tC = GetTile(tensorC, tla::MakeCoord((uint32_t)0, n0),
                               tla::MakeShape((uint32_t)T_, nActual));
+            // BlockMmad carries ping-pong stage indices. Reconstruct it for
+            // every N tile so cores that process multiple tiles restart from
+            // the same synchronized stage state.
+            BlockMmad blockMmad(resource);
             blockMmad.preSetFlags();
             blockMmad(tA, tB, tC, shape);
             blockMmad.finalWaitFlags();
