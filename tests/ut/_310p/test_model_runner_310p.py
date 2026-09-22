@@ -19,11 +19,13 @@ from unittest.mock import MagicMock, patch
 
 import torch
 from vllm.config import CUDAGraphMode
-from vllm.v1.kv_cache_interface import AttentionSpec, MambaSpec
+from vllm.v1.kv_cache_interface import AttentionSpec, MambaSpec, MLAAttentionSpec
+from vllm.v1.worker.utils import copy_kv_cache_blocks_inplace
 
 from tests.ut.base import TestBase
 from vllm_ascend._310p.model_runner_310p import (
     NPUModelRunner310,
+    _get_attention_cache_tensor_shape,
     _iter_kv_cache_tensors,
 )
 
@@ -105,13 +107,72 @@ def test_iter_kv_cache_tensors_flattens_hybrid_layout() -> None:
     mamba_conv = torch.empty(3)
     mamba_ssm = torch.empty(4)
 
-    flattened = list(
-        _iter_kv_cache_tensors(
-            [(attention_k, attention_v), [mamba_conv, mamba_ssm]]
-        )
-    )
+    flattened = list(_iter_kv_cache_tensors([(attention_k, attention_v), [mamba_conv, mamba_ssm]]))
 
     assert flattened == [attention_k, attention_v, mamba_conv, mamba_ssm]
+
+
+def test_mla_cache_shape_uses_divisible_kernel_page_and_keeps_blocks() -> None:
+    backend = SimpleNamespace(
+        get_supported_kernel_block_sizes=lambda: [32, 16],
+        get_kv_cache_shape=lambda blocks, block_size, heads, head_size: (
+            blocks,
+            block_size,
+            heads,
+            head_size,
+        ),
+    )
+    cache_spec = MLAAttentionSpec(
+        block_size=16,
+        num_kv_heads=1,
+        head_size=512,
+        dtype=torch.float16,
+    )
+
+    shape = _get_attention_cache_tensor_shape(backend, 64, cache_spec)
+
+    assert shape == (64, 16, 1, 512)
+
+
+def test_dense_cache_shape_splits_leading_key_value_axis() -> None:
+    backend = SimpleNamespace(
+        get_supported_kernel_block_sizes=lambda: [128, 64],
+        get_kv_cache_shape=lambda blocks, block_size, heads, head_size: (
+            2,
+            blocks,
+            heads * head_size // 16,
+            block_size,
+            16,
+        ),
+    )
+    cache_spec = AttentionSpec(
+        block_size=128,
+        num_kv_heads=2,
+        head_size=64,
+        dtype=torch.float16,
+    )
+
+    shape = _get_attention_cache_tensor_shape(backend, 64, cache_spec)
+
+    assert shape == (64, 8, 128, 16)
+
+
+def test_nested_hybrid_cache_copy_uses_scheduler_block_geometry() -> None:
+    attention = (torch.arange(128).reshape(64, 2), torch.arange(128, 256).reshape(64, 2))
+    mamba = [torch.arange(192).reshape(64, 3)]
+
+    with patch(
+        "vllm.v1.worker.utils.async_tensor_h2d",
+        return_value=torch.tensor([[1, 5]], dtype=torch.int64),
+    ):
+        copy_kv_cache_blocks_inplace(
+            _iter_kv_cache_tensors([attention, mamba]),
+            num_blocks=64,
+            kv_cache_block_copies=[(1, 5)],
+        )
+
+    for cache in (*attention, *mamba):
+        torch.testing.assert_close(cache[5], cache[1])
 
 
 def test_update_states_copies_nested_hybrid_cache_once() -> None:

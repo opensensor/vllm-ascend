@@ -40,6 +40,7 @@ from vllm.v1.kv_cache_interface import (
     KVCacheConfig,
     KVCacheSpec,
     MambaSpec,
+    MLAAttentionSpec,
     UniformTypeKVCacheSpecs,
 )
 from vllm.v1.spec_decode.metadata import SpecDecodeMetadata
@@ -95,6 +96,48 @@ def _concrete_size(v):
     Duck-type on ``.base`` so a plain int passes through unchanged.
     """
     return getattr(v, "base", v)
+
+
+def _get_attention_cache_tensor_shape(
+    backend: Any,
+    num_blocks: int,
+    cache_spec: AttentionSpec,
+) -> tuple[int, ...]:
+    """Return one 310P attention cache tensor's physical shape.
+
+    A physical kernel page must divide the scheduler page; otherwise integer
+    division can silently produce zero physical blocks. MLA backends describe
+    one latent tensor directly, while the dense backend includes a leading K/V
+    axis that is split into two tensors by the runner.
+    """
+    supported_sizes = [
+        size
+        for supported_size in backend.get_supported_kernel_block_sizes()
+        if (size := _concrete_size(supported_size)) <= cache_spec.block_size
+        and cache_spec.block_size % size == 0
+        and size * _concrete_size(cache_spec.head_size) <= _ATTENTION_BLOCK_SIZE_LIMIT
+    ]
+    if supported_sizes:
+        kernel_block_size = supported_sizes[0]
+        kernel_blocks_per_scheduler_block = cache_spec.block_size // kernel_block_size
+        cache_shape = backend.get_kv_cache_shape(
+            num_blocks * kernel_blocks_per_scheduler_block,
+            kernel_block_size,
+            cache_spec.num_kv_heads,
+            cache_spec.head_size,
+        )
+    else:
+        cache_shape = backend.get_kv_cache_shape(
+            num_blocks,
+            cache_spec.block_size,
+            cache_spec.num_kv_heads,
+            cache_spec.head_size,
+        )
+
+    if isinstance(cache_spec, MLAAttentionSpec):
+        return cache_shape
+    assert cache_shape[0] == 2, "Dense 310P cache shape must include a K/V axis"
+    return cache_shape[1:]
 
 
 class NPUModelRunner310(NPUModelRunner):
@@ -912,27 +955,11 @@ class NPUModelRunner310(NPUModelRunner):
                         # kv_cache_config.num_blocks is the per-layer block count.
                         num_blocks = kv_cache_config.num_blocks
                     assert num_blocks >= kv_cache_config.num_blocks
-                    # Page attention operation on 310P limits block_size * head_size <= 128 * 128
-                    supported_sizes = [
-                        support_size
-                        for support_size in self.attn_backend.get_supported_kernel_block_sizes()
-                        if _concrete_size(support_size) * _concrete_size(kv_cache_spec.head_size)
-                        <= _ATTENTION_BLOCK_SIZE_LIMIT
-                    ]
-                    if supported_sizes:
-                        block_size = supported_sizes[0]
-                        block_size_chunk = kv_cache_spec.block_size // block_size
-                        kv_cache_shape = self.attn_backend.get_kv_cache_shape(
-                            num_blocks * block_size_chunk,
-                            block_size,
-                            kv_cache_spec.num_kv_heads,
-                            kv_cache_spec.head_size,
-                        )
-                    else:
-                        kv_cache_shape = self.attn_backend.get_kv_cache_shape(
-                            num_blocks, kv_cache_spec.block_size, kv_cache_spec.num_kv_heads, kv_cache_spec.head_size
-                        )
-                    k_shape = kv_cache_shape[1:]
+                    k_shape = _get_attention_cache_tensor_shape(
+                        self.attn_backend,
+                        num_blocks,
+                        kv_cache_spec,
+                    )
                     v_shape = k_shape
                     dtype = kv_cache_spec.dtype
                     if vllm_version_is("0.28.0"):
