@@ -23,5 +23,6 @@ struct W2BlockedDequantMatmulTilingData {
     int64_t numTokens;  // T
     int64_t nDim;       // N
     int64_t kDim;       // K
+    int64_t codesPerByte;  // 4 for W2, 2 for W4
 };
 #endif  // W2_BLOCKED_DEQUANT_MATMUL_V310_TILING_DATA_H_

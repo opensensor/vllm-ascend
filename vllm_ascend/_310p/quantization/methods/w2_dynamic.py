@@ -208,11 +208,11 @@ def _can_use_w2_cube(
     num_tokens: int,
     is_nvfp4: bool,
 ) -> bool:
-    """Whether the packed-W2 Cube kernel is safe for this expert group."""
+    """Whether the packed integer Cube kernel is safe for this expert group."""
     return (
         w2_op is not None
         and num_tokens <= W2_CUBE_MAX_TOKENS
-        and _infer_bits(packed, in_features) == 2
+        and _infer_bits(packed, in_features) in (2, 4)
         and not is_nvfp4
     )
 
@@ -469,9 +469,8 @@ class AscendW2DynamicFusedMoEMethod310(AscendMoEScheme):
             group_x = sorted_x[start:stop]
             inter = int(e.inter)
             nvfp4 = _is_nvfp4(e.gate_scale, inter, hidden)
-            # The Cube kernel unpacks 2-bit codes on-chip -> W2 only. W4 experts
-            # (mixed-precision banks) and NVFP4 (E2M1 float codes) MUST take the
-            # eager fp32 path below.
+            # The Cube kernel unpacks signed W2/W4 codes on-chip. NVFP4 uses an
+            # E2M1 floating-point codebook and must take its eager path below.
             use_cube = _can_use_w2_cube(
                 w2_op,
                 e.gate_packed,
@@ -481,13 +480,9 @@ class AscendW2DynamicFusedMoEMethod310(AscendMoEScheme):
             )
             if use_cube:
                 # Fast path: fused 310P Cube kernel (arch20 catlass MMAD with the
-                # per-[32,32] block dequant fused into the weight load). ~2.4x over
-                # eager and no fp-weight HBM materialization. The kernel takes fp16
-                # x + widened int8 codes [out,in] + compact fp32 block scale, and
-                # returns fp16; chain gate -> SwiGLU -> down through it.
-                # The Cube op now takes the PACKED uint8 codes and unpacks the
-                # 2-bit values on-chip (removing ~816 unpack_w2_codes launches per
-                # decode token), so pass the packed bank tensors directly.
+                # per-[32,32] block dequant fused into the weight load). It avoids
+                # materializing fp weights in HBM. Packed width selects signed W2
+                # (four codes/byte) or W4 (two codes/byte) on-chip.
                 gx = group_x.to(torch.float16)
                 gate = w2_op(gx, e.gate_packed, e.gate_scale.to(torch.float32))
                 up = w2_op(gx, e.up_packed, e.up_scale.to(torch.float32))

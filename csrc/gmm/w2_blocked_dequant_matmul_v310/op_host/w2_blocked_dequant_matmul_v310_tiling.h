@@ -31,6 +31,7 @@ BEGIN_TILING_DATA_DEF(W2BlockedDequantMatmulTilingData)
     TILING_DATA_FIELD_DEF(int64_t, numTokens);  // T
     TILING_DATA_FIELD_DEF(int64_t, nDim);       // N
     TILING_DATA_FIELD_DEF(int64_t, kDim);       // K
+    TILING_DATA_FIELD_DEF(int64_t, codesPerByte);  // 4 for W2, 2 for W4
 END_TILING_DATA_DEF;
 
 REGISTER_TILING_DATA_CLASS(W2BlockedDequantMatmulV310, W2BlockedDequantMatmulTilingData)

@@ -204,11 +204,11 @@ def test_cube_kernel_rejects_unsafe_prefill_group_size():
     assert not _can_use_w2_cube(None, packed_w2, _HIDDEN, 1, False)
 
 
-def test_cube_kernel_rejects_w4_and_nvfp4():
+def test_cube_kernel_accepts_w4_but_rejects_nvfp4():
     packed_w4 = torch.zeros(64, _HIDDEN // 2, dtype=torch.uint8)
     packed_w2 = torch.zeros(64, _HIDDEN // W2_CODES_PER_BYTE, dtype=torch.uint8)
 
-    assert not _can_use_w2_cube(object(), packed_w4, _HIDDEN, 1, False)
+    assert _can_use_w2_cube(object(), packed_w4, _HIDDEN, 1, False)
     assert not _can_use_w2_cube(object(), packed_w2, _HIDDEN, 1, True)
 
 

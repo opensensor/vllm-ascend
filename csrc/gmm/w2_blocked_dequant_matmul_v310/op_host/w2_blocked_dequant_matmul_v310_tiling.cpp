@@ -46,9 +46,13 @@ static ge::graphStatus W2BlockedDequantMatmulTilingFunc(gert::TilingContext *con
     const int64_t T = xShape.GetDim(0);
     const int64_t K = xShape.GetDim(1);
     const int64_t N = codesShape.GetDim(0);
-    // codes is now PACKED uint8 [N, K/4] (4 two-bit codes per byte); full K comes from x.
-    OP_CHECK_IF(codesShape.GetDim(1) * 4 != K,
-                OP_LOGE(context, "codes.shape[1]*4 must equal x.shape[1] (K); codes is packed uint8 [N, K/4]"),
+    const int64_t packedK = codesShape.GetDim(1);
+    OP_CHECK_IF(packedK <= 0 || K % packedK != 0,
+                OP_LOGE(context, "codes.shape[1] must divide x.shape[1] (K)"),
+                return ge::GRAPH_FAILED);
+    const int64_t codesPerByte = K / packedK;
+    OP_CHECK_IF(codesPerByte != 2 && codesPerByte != 4,
+                OP_LOGE(context, "packed codes must contain either 2 (W4) or 4 (W2) values per byte"),
                 return ge::GRAPH_FAILED);
     OP_CHECK_IF(T <= 0 || N <= 0 || K <= 0, OP_LOGE(context, "T/N/K must be positive"), return ge::GRAPH_FAILED);
     OP_CHECK_IF(N % BLK != 0 || K % BLK != 0, OP_LOGE(context, "N and K must be multiples of 32"),
@@ -60,6 +64,7 @@ static ge::graphStatus W2BlockedDequantMatmulTilingFunc(gert::TilingContext *con
     tilingData.set_numTokens(T);
     tilingData.set_nDim(N);
     tilingData.set_kDim(K);
+    tilingData.set_codesPerByte(codesPerByte);
 
     // Cube path workspace: [ Wdq (N*K half) ][ yF (alignUp(T,16)*N float) ]
     const int64_t mAligned = (T + 15) / 16 * 16;
