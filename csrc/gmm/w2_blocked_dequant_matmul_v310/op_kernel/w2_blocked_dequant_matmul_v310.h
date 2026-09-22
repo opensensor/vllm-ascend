@@ -282,7 +282,8 @@ private:
                         PipeBarrier<PIPE_V>();
                         Muls(nzFractalUB_, nzFractalUB_, scale,
                              W2_FRACTAL_SIZE * W2_FRACTAL_SIZE);
-                        PipeBarrier<PIPE_V>();
+                        SetFlag<HardEvent::V_MTE3>(EVENT_ID2);
+                        WaitFlag<HardEvent::V_MTE3>(EVENT_ID2);
                         DataCopy(wdqNzGm_[nzBase + globalKFractal * W2_FRACTAL_SIZE * W2_FRACTAL_SIZE],
                                  nzFractalUB_, W2_FRACTAL_SIZE * W2_FRACTAL_SIZE);
                         SetFlag<HardEvent::MTE3_V>(EVENT_ID1);
