@@ -188,8 +188,8 @@ def _w2_blocked_mm_op():
 
     Computes ``out[T,N] = x[T,K] @ (codes ⊙ block_scale)^T`` on the Cube with the
     per-[32,32] block dequant fused into the weight load (arch20 catlass MMAD).
-    The kernel expands one bounded output tile into an already-NZ per-core
-    workspace, rather than materializing the complete fp16 weight or asking the
+    The kernel expands each output tile into its own already-NZ workspace,
+    rather than also materializing an activation reorder or asking the
     matmul path to perform an ND-to-NZ conversion. Its synchronized unified-core
     epilogue casts the FP32 accumulator directly into the final FP16 output,
     avoiding an intermediate output workspace. Resolved lazily (the custom-op
@@ -488,8 +488,8 @@ class AscendW2DynamicFusedMoEMethod310(AscendMoEScheme):
             if use_cube:
                 # Fast path: fused 310P Cube kernel (arch20 catlass MMAD with the
                 # per-[32,32] block dequant fused into the weight load). It
-                # expands only a reusable 128-column tile directly into NZ,
-                # avoiding a full fp16 weight and the ND-to-NZ matmul conversion.
+                # expands each 128-column tile directly into NZ, avoiding the
+                # activation workspace and the ND-to-NZ matmul conversion.
                 # Its Cube epilogue writes FP16 output directly. Packed width
                 # selects signed W2 (four codes/byte) or W4 (two codes/byte)
                 # on-chip.
@@ -512,7 +512,8 @@ class AscendW2DynamicFusedMoEMethod310(AscendMoEScheme):
             else:
                 # Fallback: native-fp32 dequant from the packed bank (compact
                 # [out//32,in//32] block scale via tiled view-multiply, no fp64),
-                # then fp32 matmul. Correct but ~2.4x slower than the Cube kernel.
+                # then fp32 matmul. Correct but substantially slower and larger
+                # than the packed Cube path on 310P.
                 gate_w = _w2_dequant_fp32(e.gate_packed, e.gate_scale, inter, hidden)
                 up_w = _w2_dequant_fp32(e.up_packed, e.up_scale, inter, hidden)
                 gate = torch.matmul(group_x, gate_w.t())

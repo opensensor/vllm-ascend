@@ -145,7 +145,7 @@ def test_transposed_weight_round_trips_through_zn_addressing():
     torch.testing.assert_close(_from_zn(physical, 64, _TILE_N), weight.t())
 
 
-def test_kernel_and_tiling_keep_dequant_workspace_bounded_per_core():
+def test_kernel_and_tiling_isolate_each_dequant_output_tile():
     kernel = _KERNEL.read_text(encoding="utf-8")
     tiling = _TILING.read_text(encoding="utf-8")
     block_mmad = _BLOCK_MMAD.read_text(encoding="utf-8")
@@ -177,10 +177,10 @@ def test_kernel_and_tiling_keep_dequant_workspace_bounded_per_core():
 
 def test_bounded_workspace_is_smaller_for_representative_expert():
     # Exclude the platform-owned system reserve, which is identical for both.
-    tokens, n_dim, k_dim, cores = 48, 4096, 2048, 16
+    tokens, n_dim, k_dim, physical_cores = 48, 4096, 2048, 8
     m_aligned = (tokens + 15) // 16 * 16
     block_dim = n_dim // _TILE_N
-    old_bytes = n_dim * k_dim * 2 + m_aligned * n_dim * 4 + cores * m_aligned * k_dim * 2
+    old_bytes = n_dim * k_dim * 2 + m_aligned * n_dim * 4 + physical_cores * m_aligned * k_dim * 2
     new_bytes = block_dim * _TILE_N * k_dim * 2
 
     assert new_bytes < old_bytes

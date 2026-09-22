@@ -16,7 +16,7 @@
  * The checkpoint remains byte-packed in canonical row-major order. Each AI
  * core decodes only its current 128-output-channel tile, restores logical K
  * order in UB, and writes 16x16 fragments directly in NZ order to a reusable
- * per-core workspace. CATLASS therefore consumes an already-NZ B operand:
+ * per-output-tile workspace. CATLASS therefore consumes an already-NZ B operand:
  * there is no full [N,K] fp16 materialization, no activation de-interleave,
  * and no ND-to-NZ conversion in the matmul path.
  */
