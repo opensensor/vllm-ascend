@@ -55,6 +55,64 @@ class ParamInfo(VllmParamInfo):
     use_nz_buffer: bool = False
 
 
+class AscendStaticBufferPool(StaticBufferPool):
+    """Static buffers allocated only for slots that can use each parameter.
+
+    The upstream pool allocates every unique parameter key in every slot. That
+    over-allocates hybrid models whose layer types repeat at fixed offsets: a
+    slot may only ever host one subset of those keys. Keep the same lookup API
+    while leaving unreachable key/slot pairs unallocated.
+    """
+
+    def __init__(
+        self,
+        param_infos_by_slot: list[list[ParamInfo]],
+        slot_capacity: int,
+        device: torch.device,
+    ) -> None:
+        assert len(param_infos_by_slot) == slot_capacity
+        self.slot_capacity = slot_capacity
+        self.total_bytes = 0
+        self._device = device
+        self._buffers: dict[tuple, list[torch.Tensor | None]] = {}
+
+        for slot_idx, param_infos in enumerate(param_infos_by_slot):
+            for info in param_infos:
+                buffers = self._buffers.setdefault(
+                    info.key,
+                    [None] * slot_capacity,
+                )
+                if buffers[slot_idx] is not None:
+                    continue
+                buffers[slot_idx] = torch.empty_strided(
+                    size=info.shape,
+                    stride=info.stride,
+                    dtype=info.dtype,
+                    device=device,
+                )
+                self.total_bytes += info.num_bytes
+
+        logger.debug(
+            "[AscendStaticBufferPool] Allocated %d reachable parameter keys across %d slots, total %.4f GB",
+            len(self._buffers),
+            slot_capacity,
+            self.total_bytes / 1e9,
+        )
+
+    def get_buffer(
+        self,
+        name: str,
+        shape: tuple[int, ...],
+        stride: tuple[int, ...],
+        dtype: torch.dtype,
+        slot_idx: int,
+    ) -> torch.Tensor:
+        key = (name, shape, stride, dtype)
+        buffer = self._buffers[key][slot_idx % self.slot_capacity]
+        assert buffer is not None, f"No static buffer allocated for {key=} and {slot_idx=}"
+        return buffer
+
+
 def _format_static_buffers_for_nz(
     buffer_pool: StaticBufferPool,
     param_infos: list[ParamInfo],
@@ -76,7 +134,8 @@ def _format_static_buffers_for_nz(
         if not use_nz_buffer:
             continue
         buffer_pool._buffers[key] = [
-            torch_npu.npu_format_cast(buffer, ACL_FORMAT_FRACTAL_NZ) for buffer in buffer_pool._buffers[key]
+            torch_npu.npu_format_cast(buffer, ACL_FORMAT_FRACTAL_NZ) if buffer is not None else None
+            for buffer in buffer_pool._buffers[key]
         ]
 
 
@@ -128,16 +187,19 @@ class AscendPrefetchOffloader(PrefetchOffloader):
 
         device: torch.device | None = None
         param_infos: list[ParamInfo] = []
-        for offloader in self.module_offloaders:
-            param_infos.extend(offloader.get_param_infos())
+        param_infos_by_slot: list[list[ParamInfo]] = [[] for _ in range(self.prefetch_step)]
+        for index, offloader in enumerate(self.module_offloaders):
+            module_param_infos = offloader.get_param_infos()
+            param_infos.extend(module_param_infos)
+            param_infos_by_slot[index % self.prefetch_step].extend(module_param_infos)
             if device is None:
                 device = offloader.device
         if device is None:
             # No modules to offload
             return
 
-        self.buffer_pool = StaticBufferPool(
-            param_infos=param_infos,
+        self.buffer_pool = AscendStaticBufferPool(
+            param_infos_by_slot=param_infos_by_slot,
             slot_capacity=self.prefetch_step,
             device=device,
         )

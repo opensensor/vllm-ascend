@@ -7,6 +7,7 @@ from vllm.model_executor.offloader.base import NoopOffloader
 from vllm_ascend.model_executor.offloader.base import create_offloader
 from vllm_ascend.model_executor.offloader.prefetch import (
     AscendPrefetchOffloader,
+    AscendStaticBufferPool,
     ParamInfo,
     _is_using_nz_weight,
 )
@@ -78,7 +79,7 @@ def test_ascend_prefetch_formats_pool_before_binding_and_prefetch():
 
     with (
         patch(
-            "vllm_ascend.model_executor.offloader.prefetch.StaticBufferPool",
+            "vllm_ascend.model_executor.offloader.prefetch.AscendStaticBufferPool",
             return_value=buffer_pool,
         ),
         patch(
@@ -90,6 +91,33 @@ def test_ascend_prefetch_formats_pool_before_binding_and_prefetch():
 
     assert events == ["sync", "format", "bind", "post_init", "prefetch"]
     assert offloader.total_offloaded_bytes == 8
+
+
+def test_ascend_static_pool_allocates_only_reachable_key_slot_pairs():
+    even_layer = ParamInfo(
+        name="weight",
+        shape=(2, 2),
+        stride=(2, 1),
+        dtype=torch.float16,
+    )
+    odd_layer = ParamInfo(
+        name="weight",
+        shape=(3, 3),
+        stride=(3, 1),
+        dtype=torch.float16,
+    )
+
+    pool = AscendStaticBufferPool(
+        param_infos_by_slot=[[even_layer, even_layer], [odd_layer]],
+        slot_capacity=2,
+        device=torch.device("cpu"),
+    )
+
+    assert pool.total_bytes == even_layer.num_bytes + odd_layer.num_bytes
+    assert pool.get_buffer(*even_layer.key, slot_idx=0).shape == (2, 2)
+    assert pool.get_buffer(*odd_layer.key, slot_idx=1).shape == (3, 3)
+    assert pool._buffers[even_layer.key][1] is None
+    assert pool._buffers[odd_layer.key][0] is None
 
 
 def test_net_offloaded_device_bytes_subtracts_static_pool():
