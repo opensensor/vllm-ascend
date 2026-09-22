@@ -160,7 +160,7 @@ def test_kernel_and_tiling_keep_dequant_workspace_bounded_per_core():
     assert "static_cast<size_t>(blockDim) * static_cast<size_t>(OUTPUT_TILE)" in tiling
     assert "xfmBytes" not in tiling
     assert "AscendC::Cast(outputTemp, co2Temp" in block_mmad
-    assert "HardEvent::MTE3_V>(EVENT_ID7)" in block_mmad
+    assert block_mmad.count("HardEvent::MTE3_V>(EVENT_ID7)") == 4
     assert "HardEvent::V_MTE3>(EVENT_ID7)" in block_mmad
     assert "HardEvent::V_MTE3>(EVENT_ID2)" in kernel
     assert "HardEvent::MTE3_V>(EVENT_ID1)" in kernel

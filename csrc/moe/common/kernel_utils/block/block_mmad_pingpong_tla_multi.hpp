@@ -741,7 +741,10 @@ public:
                     }
                 }
             }
-            AscendC::PipeBarrier<PIPE_ALL>();
+            // Callers may immediately reuse the shared UB for the next tile.
+            // Ensure every output copy has stopped reading it first.
+            AscendC::SetFlag<AscendC::HardEvent::MTE3_V>(EVENT_ID7);
+            AscendC::WaitFlag<AscendC::HardEvent::MTE3_V>(EVENT_ID7);
             l0CListId = (l0CListId + 1 < L0C_STAGES) ? (l0CListId + 1) : 0;
         }
 #else
