@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager, nullcontext
 from functools import partial
 from typing import Any, cast
@@ -65,6 +66,22 @@ from vllm_ascend.worker.model_runner_v1 import NPUModelRunner
 
 _NGRAM_GRAPH_UNIFORM_DECODE_QUERY_LEN = 1
 _ATTENTION_BLOCK_SIZE_LIMIT = 128 * 128
+
+
+def _iter_kv_cache_tensors(kv_caches: Iterable[Any]) -> Iterator[torch.Tensor]:
+    """Yield tensors from the nested hybrid-cache layout used by 310P.
+
+    Attention caches are ``(key, value)`` tuples while Mamba caches are lists
+    of state tensors. Upstream's copy-on-write helper accepts only a flat
+    tensor iterable.
+    """
+    for cache in kv_caches:
+        if isinstance(cache, torch.Tensor):
+            yield cache
+        elif isinstance(cache, (list, tuple)):
+            yield from _iter_kv_cache_tensors(cache)
+        else:
+            raise TypeError(f"Unsupported 310P KV cache entry: {type(cache)!r}")
 
 
 def _concrete_size(v):
@@ -147,7 +164,26 @@ class NPUModelRunner310(NPUModelRunner):
             logger.info_once("Ngram speculative decoding uses uniform_decode_query_len=1 for graph capture.")
 
     def _update_states(self, scheduler_output: SchedulerOutput):
-        deferred = super()._update_states(scheduler_output)
+        block_copies = scheduler_output.kv_cache_block_copies
+        copied_nested_caches = bool(block_copies) and any(
+            not isinstance(cache, torch.Tensor) for cache in self.kv_caches
+        )
+        if copied_nested_caches:
+            from vllm.v1.worker.utils import copy_kv_cache_blocks_inplace
+
+            copy_kv_cache_blocks_inplace(
+                _iter_kv_cache_tensors(self.kv_caches),
+                self.kv_cache_config.num_blocks,
+                block_copies,
+            )
+            # The base runner would invoke the tensor-only helper again with
+            # the nested list/tuple layout. Temporarily mark these copies done.
+            scheduler_output.kv_cache_block_copies = None
+        try:
+            deferred = super()._update_states(scheduler_output)
+        finally:
+            if copied_nested_caches:
+                scheduler_output.kv_cache_block_copies = block_copies
         if scheduler_output.finished_req_ids:
             # condense() rewrites block_table.np (move_row). Drain the previous
             # step's ACL graph replay on the NPU stream before the condensed

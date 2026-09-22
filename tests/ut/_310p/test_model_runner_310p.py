@@ -22,7 +22,10 @@ from vllm.config import CUDAGraphMode
 from vllm.v1.kv_cache_interface import AttentionSpec, MambaSpec
 
 from tests.ut.base import TestBase
-from vllm_ascend._310p.model_runner_310p import NPUModelRunner310
+from vllm_ascend._310p.model_runner_310p import (
+    NPUModelRunner310,
+    _iter_kv_cache_tensors,
+)
 
 
 def _prepare_inputs_source() -> str:
@@ -94,6 +97,55 @@ def test_model_forward_updates_mtp_full_graph_params_before_replay() -> None:
 def test_310p_runner_does_not_advertise_standardized_shared_kv_backing() -> None:
     assert NPUModelRunner310.supports_standardized_shared_kv_backing is False
     assert NPUModelRunner310.supports_compact_mamba_state is False
+
+
+def test_iter_kv_cache_tensors_flattens_hybrid_layout() -> None:
+    attention_k = torch.empty(2)
+    attention_v = torch.empty(2)
+    mamba_conv = torch.empty(3)
+    mamba_ssm = torch.empty(4)
+
+    flattened = list(
+        _iter_kv_cache_tensors(
+            [(attention_k, attention_v), [mamba_conv, mamba_ssm]]
+        )
+    )
+
+    assert flattened == [attention_k, attention_v, mamba_conv, mamba_ssm]
+
+
+def test_update_states_copies_nested_hybrid_cache_once() -> None:
+    runner = object.__new__(NPUModelRunner310)
+    caches = [(torch.empty(2), torch.empty(2)), [torch.empty(3)]]
+    runner.kv_caches = caches
+    runner.kv_cache_config = SimpleNamespace(num_blocks=8)
+    block_copies = [(1, 2)]
+    scheduler_output = SimpleNamespace(
+        kv_cache_block_copies=block_copies,
+        finished_req_ids=set(),
+    )
+    deferred = object()
+    base_observed_copies = []
+
+    def fake_base_update_states(_runner, output):
+        base_observed_copies.append(output.kv_cache_block_copies)
+        return deferred
+
+    with (
+        patch(
+            "vllm_ascend._310p.model_runner_310p.NPUModelRunner._update_states",
+            new=fake_base_update_states,
+        ),
+        patch("vllm.v1.worker.utils.copy_kv_cache_blocks_inplace") as copy_blocks,
+    ):
+        result = runner._update_states(scheduler_output)
+
+    assert result is deferred
+    assert base_observed_copies == [None]
+    assert scheduler_output.kv_cache_block_copies == block_copies
+    copied_caches = list(copy_blocks.call_args.args[0])
+    assert copied_caches == [caches[0][0], caches[0][1], caches[1][0]]
+    assert copy_blocks.call_args.args[1:] == (8, block_copies)
 
 
 def test_single_request_runner_compacts_mamba_allocation() -> None:
