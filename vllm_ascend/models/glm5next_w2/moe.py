@@ -35,7 +35,9 @@ each piece for eager, host-parity-verified primitives:
 3. **Eager MoE combine.** ``routed * routed_scaling_factor + shared`` via the
    reused DeepSeek :func:`eager_moe_combine` (a plain ``torch.addcmul``). GLM's
    ``routed_scaling_factor = 2.5``; the **shared expert stays FP16**
-   (``policy.shared_expert_dtype``) and rides the residual un-scaled.
+   (``policy.shared_expert_dtype``) and rides the residual un-scaled. Under
+   TP/EP, both contributions remain local until the combined tensor is
+   all-reduced, matching the shipped fused-MoE contract.
 
 4. **Multi-head hyper-connection (``mhc``).** GLM wraps the FFN/MoE in a
    residual-stream hyper-connection: :func:`hc_pre` collapses the ``n`` residual
@@ -120,11 +122,13 @@ _GROUP_SCORE_TOPK = 2
 # on every 310P chip (~78GB total), so under TP>1 we run the TP group as an
 # *expert-parallel* group: each rank owns a contiguous slice of the experts,
 # computes only its slice's weighted contribution, and the ranks sum their
-# partial routed outputs with an all-reduce. Because the router runs on the
-# (replicated) full logits and the top-k weights are already globally
-# renormalized, masking each rank to its local experts and summing across ranks
-# reproduces the replicated result bit-for-bit (every non-local pair contributes
-# ``weight * expert == 0`` via the method's per-pair ``y * weight`` scatter).
+# partial outputs with an all-reduce. Because the router runs on the (replicated)
+# full logits and the top-k weights are already globally renormalized, masking
+# each rank to its local experts and summing across ranks reproduces the routed
+# result bit-for-bit (every non-local pair contributes ``weight * expert == 0``
+# via the method's per-pair ``y * weight`` scatter). The tensor-parallel shared
+# MLP also produces a local partial, so the full forward reduces the combined
+# local routed + shared result in one collective.
 # ---------------------------------------------------------------------------
 
 
@@ -171,6 +175,7 @@ def _all_reduce_routed(routed: torch.Tensor) -> torch.Tensor:
     if routed.dtype == torch.float64:
         return tensor_model_parallel_all_reduce(routed.to(torch.float32)).to(torch.float64)
     return tensor_model_parallel_all_reduce(routed)
+
 
 # GLM multi-head hyper-connection: number of residual streams. Derived from the
 # checkpoint's ``hc_*_base`` width (``(2 + n) * n = 24`` -> ``n = 4``).
@@ -256,8 +261,8 @@ def glm_route_topk(
         group_scores = grouped.topk(group_contrib, dim=-1).values.sum(dim=-1)
         keep_groups = torch.topk(group_scores, topk_group, dim=-1).indices
         group_mask = torch.zeros_like(group_scores).scatter_(1, keep_groups, 1.0)
-        expert_mask = group_mask.unsqueeze(-1).expand(num_tokens, n_group, experts_per_group).reshape(
-            num_tokens, num_experts
+        expert_mask = (
+            group_mask.unsqueeze(-1).expand(num_tokens, n_group, experts_per_group).reshape(num_tokens, num_experts)
         )
         scores_for_choice = scores_for_choice.masked_fill(expert_mask == 0, float("-inf"))
 
@@ -518,6 +523,7 @@ class Glm5NextW2MoE(nn.Module):
         topk_weights: torch.Tensor,
         *,
         experts: list[Any] | None = None,
+        reduce_results: bool = True,
     ) -> torch.Tensor:
         """Dispatch the routed experts through the E1.3 W2 method.
 
@@ -527,6 +533,9 @@ class Glm5NextW2MoE(nn.Module):
         the eager combine owns ``routed_scaling_factor``. The method unpacks only
         the ``<= top_k`` active experts and takes its host path on CPU (device
         INT8 grouped matmul re-expressed via the E1.2 active-expert unpack).
+        Set ``reduce_results=False`` when the caller will combine this local
+        expert-parallel contribution with another local TP contribution before
+        issuing their shared all-reduce.
         """
         experts = experts if experts is not None else self.w2_experts
         if experts is None:
@@ -541,16 +550,17 @@ class Glm5NextW2MoE(nn.Module):
             # pairs' weight and remap their id to a valid local id (``lo``) so
             # the E1.3 method only unpacks *filled* local bank entries; the zero
             # weight makes those remapped pairs contribute exactly 0. The full
-            # routed output is recovered by summing across ranks below. (Requires
-            # ep_size <= num_experts, i.e. every rank owns >= 1 expert -- always
-            # true for GLM's 288 experts on <= 4 chips.)
+            # routed output is recovered either below or after combining with
+            # the local shared-expert output. (Requires ep_size <= num_experts,
+            # i.e. every rank owns >= 1 expert -- always true for GLM's 288
+            # experts on <= 4 chips.)
             lo, hi = ep_expert_range(ep_rank, ep_size, self.num_experts)
             is_local = (topk_ids >= lo) & (topk_ids < hi)
             topk_weights = topk_weights * is_local.to(topk_weights.dtype)
             topk_ids = torch.where(is_local, topk_ids, torch.full_like(topk_ids, lo))
         method_layer = types.SimpleNamespace(w2_experts=experts, w2_shared_expert=None)
         routed = self.method.apply(method_layer, hidden_states, topk_weights, topk_ids, None, None)
-        if ep_size > 1:
+        if ep_size > 1 and reduce_results:
             routed = _all_reduce_routed(routed)
         return routed
 
@@ -591,11 +601,26 @@ class Glm5NextW2MoE(nn.Module):
             precision (the caller casts to ``main_dtype``).
         """
         topk_ids, topk_weights = self.route(router_logits)
-        routed = self.routed_experts_forward(hidden_states, topk_ids, topk_weights, experts=experts)
+        _, ep_size = _ep_rank_size()
+        # The shipped shared MLP is tensor-parallel and was constructed with
+        # ``reduce_results=False`` so that FusedMoEFactory can reduce the routed
+        # and shared contributions together.  Preserve that contract here: an
+        # early reduction of only ``routed`` would leave a different partial
+        # shared-expert result on every TP rank.
+        routed = self.routed_experts_forward(
+            hidden_states,
+            topk_ids,
+            topk_weights,
+            experts=experts,
+            reduce_results=False,
+        )
         if shared_output is None and self.shared_expert is not None:
             # Shared expert stays FP16 and rides the residual un-scaled.
             shared_output = self.shared_expert(hidden_states)
-        return self.combine(routed, shared_output)
+        combined = self.combine(routed, shared_output)
+        if ep_size > 1:
+            combined = _all_reduce_routed(combined)
+        return combined
 
     # -- hyper-connection-wrapped forward ----------------------------------
 

@@ -123,7 +123,9 @@ from tools.deepseek_w2.w2_format import (  # noqa: E402
 )
 from vllm_ascend._310p.quantization.methods.registry import get_scheme_class  # noqa: E402
 from vllm_ascend._310p.quantization.methods.w2_dynamic import (  # noqa: E402
+    W2_CUBE_MAX_TOKENS,
     AscendW2DynamicFusedMoEMethod310,
+    _can_use_w2_cube,
     _device_kernel_available,
     _is_nvfp4,
     _nvfp4_dequant_fp32,
@@ -191,6 +193,23 @@ def test_device_kernel_guard_is_host_under_stub():
     # The stubbed torch_npu lacks the fused INT8 grouped-matmul symbol, so apply
     # deterministically takes the host math path in the CPU UT.
     assert _device_kernel_available() is False
+
+
+def test_cube_kernel_rejects_unsafe_prefill_group_size():
+    packed_w2 = torch.zeros(64, _HIDDEN // W2_CODES_PER_BYTE, dtype=torch.uint8)
+    op = object()
+
+    assert _can_use_w2_cube(op, packed_w2, _HIDDEN, W2_CUBE_MAX_TOKENS, False)
+    assert not _can_use_w2_cube(op, packed_w2, _HIDDEN, W2_CUBE_MAX_TOKENS + 1, False)
+    assert not _can_use_w2_cube(None, packed_w2, _HIDDEN, 1, False)
+
+
+def test_cube_kernel_rejects_w4_and_nvfp4():
+    packed_w4 = torch.zeros(64, _HIDDEN // 2, dtype=torch.uint8)
+    packed_w2 = torch.zeros(64, _HIDDEN // W2_CODES_PER_BYTE, dtype=torch.uint8)
+
+    assert not _can_use_w2_cube(object(), packed_w4, _HIDDEN, 1, False)
+    assert not _can_use_w2_cube(object(), packed_w2, _HIDDEN, 1, True)
 
 
 # --- param creation from a synthetic W2 index -------------------------------

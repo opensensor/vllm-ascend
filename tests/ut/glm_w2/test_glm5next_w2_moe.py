@@ -241,6 +241,37 @@ def test_moe_forward_routes_experts_then_combines_with_injected_method():
     assert torch.allclose(out.float(), torch.full((tokens, hidden), 2.75), atol=1e-5)
 
 
+def test_moe_forward_reduces_routed_and_shared_together(monkeypatch):
+    moe = M.Glm5NextW2MoE(
+        num_experts=4,
+        top_k=2,
+        routed_scaling_factor=2.5,
+        w2_experts=[object()],
+        shared_expert=lambda hidden: torch.full_like(hidden, 0.25),
+    )
+    hidden_states = torch.zeros(2, 3)
+    router_logits = torch.zeros(2, 4)
+    reduced = []
+
+    def fake_routed(*args, **kwargs):
+        assert kwargs["reduce_results"] is False
+        return torch.ones_like(hidden_states)
+
+    def fake_all_reduce(value):
+        reduced.append(value.clone())
+        return value + 10
+
+    monkeypatch.setattr(moe, "routed_experts_forward", fake_routed)
+    monkeypatch.setattr(M, "_ep_rank_size", lambda: (0, 4))
+    monkeypatch.setattr(M, "_all_reduce_routed", fake_all_reduce)
+
+    output = moe(hidden_states, router_logits)
+
+    assert len(reduced) == 1
+    assert torch.allclose(reduced[0], torch.full_like(hidden_states, 2.75))
+    assert torch.allclose(output, torch.full_like(hidden_states, 12.75))
+
+
 def test_moe_routed_experts_forward_requires_bank():
     moe = M.Glm5NextW2MoE(method=object())
     with pytest.raises(ValueError):
@@ -358,8 +389,11 @@ def test_validate_weight_map_extra_dense_expert_rejected():
     names = _all_expert_names(_TINY_GEOMETRY)
     # a dense layer (0) must NOT carry experts -> ExtraTensorError.
     names += [f"model.language_model.layers.0.mlp.experts.0.gate_proj_{k}" for k in ("codes", "scale")]
-    names += [f"model.language_model.layers.0.mlp.experts.0.{p}_{k}"
-              for p in ("up_proj", "down_proj") for k in ("codes", "scale")]
+    names += [
+        f"model.language_model.layers.0.mlp.experts.0.{p}_{k}"
+        for p in ("up_proj", "down_proj")
+        for k in ("codes", "scale")
+    ]
     with pytest.raises(WM.ExtraTensorError):
         WM.validate_weight_map(names, _TINY_GEOMETRY)
 

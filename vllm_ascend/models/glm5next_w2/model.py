@@ -518,16 +518,19 @@ def _resolve_attr(root: Any, dotted: str) -> Any:
 
 
 def _bind_shipped_mla_weights(self_attn: Any, dsa_core: Any) -> list[str]:
-    """Best-effort copy of the shipped MLA/indexer projections into the eager DSA.
+    """Best-effort storage binding of shipped MLA/indexer weights into eager DSA.
 
     Returns the list of eager params that could NOT be bound (shape mismatch or
     absent on the shipped module) so the caller can surface them. This is
     best-effort by design: it never raises, and any unbound param keeps its
-    deterministic ``reset_parameters`` init. Copies are shape-checked because the
+    deterministic ``reset_parameters`` init. Bindings are shape-checked because the
     shipped GLM MLA keeps decoupled-RoPE rows (``qk_rope_head_dim``) that the NoPE
     eager core does not, so ``q_b_proj`` / fused down-projections may legitimately
-    not match; those are reported for the hardware weight-adapter task.
+    not match; those are reported for the hardware weight-adapter task. Matching
+    tensors share storage instead of retaining an ~82 MiB duplicate per DSA layer.
     """
+    from .dsa import share_parameter_storage_
+
     unbound: list[str] = []
     for src_path, dst_path in _DSA_WEIGHT_BINDINGS:
         src = _resolve_attr(self_attn, src_path)
@@ -535,17 +538,15 @@ def _bind_shipped_mla_weights(self_attn: Any, dsa_core: Any) -> list[str]:
         if src is None or dst is None or tuple(src.shape) != tuple(dst.shape):
             unbound.append(dst_path)
             continue
-        with torch.no_grad():
-            dst.copy_(src.to(dst.dtype))
+        share_parameter_storage_(dst, src)
     # Fused ``fused_qkv_a_proj`` -> (w_dq | w_dkv): split by the eager down dims.
     fused = _resolve_attr(self_attn, "fused_qkv_a_proj.weight")
     if fused is not None:
         q_rows = int(getattr(dsa_core, "q_lora_rank", 0))
         kv_rows = int(getattr(dsa_core, "kv_lora_rank", 0))
         if fused.shape[0] >= q_rows + kv_rows and dsa_core.w_dq.shape == (q_rows, fused.shape[1]):
-            with torch.no_grad():
-                dsa_core.w_dq.copy_(fused[:q_rows].to(dsa_core.w_dq.dtype))
-                dsa_core.w_dkv.copy_(fused[q_rows : q_rows + kv_rows].to(dsa_core.w_dkv.dtype))
+            share_parameter_storage_(dsa_core.w_dq, fused[:q_rows])
+            share_parameter_storage_(dsa_core.w_dkv, fused[q_rows : q_rows + kv_rows])
         else:
             unbound.extend(["w_dq", "w_dkv"])
     else:
@@ -679,6 +680,13 @@ def _install_dsa_indexer(layers: Iterable[Any], config: Any, dtype_policy: Glm5N
         layer.dsa_w2 = dsa_core
         self_attn = getattr(layer, "self_attn", None)
         if self_attn is not None and hasattr(self_attn, "kv_b_proj"):
+            # Alias the eager DSA params to the shipped MLA storage now, before
+            # checkpoint loading and memory profiling. The loader subsequently
+            # fills the shipped parameters in-place, so the aliases see the real
+            # weights while releasing ~82 MiB of duplicate storage per DSA
+            # layer. The forward binding repeats this once after loading as a
+            # mixed-dtype fallback (where storage sharing is not possible).
+            _bind_shipped_mla_weights(self_attn, dsa_core)
             _bind_eager_dsa_forward(self_attn, dsa_core, io_dtype)
         count += 1
     return count
@@ -851,9 +859,7 @@ def _build_causal_lm_cls() -> type:
             ``KDA_LAYERS`` so the Triton gated-delta recurrence is never entered.
             Component wired: ``glm5next_w2.kda`` (G4).
             """
-            self._kda_swapped = _install_eager_kda(
-                _iter_model_layers(self), self._glm_text_config, self.dtype_policy
-            )
+            self._kda_swapped = _install_eager_kda(_iter_model_layers(self), self._glm_text_config, self.dtype_policy)
 
         def _override_dsa_indexer(self) -> None:
             """G5: route every full-attn (DSA) layer's forward through the eager core.
@@ -880,9 +886,7 @@ def _build_causal_lm_cls() -> type:
             so the fp8 path is fully bypassed. The packed per-expert bank is filled
             by :meth:`load_weights`. Component wired: ``glm5next_w2.moe`` (G6).
             """
-            self._moe_swapped = _install_w2_moe(
-                _iter_model_layers(self), self._glm_text_config, self.dtype_policy
-            )
+            self._moe_swapped = _install_w2_moe(_iter_model_layers(self), self._glm_text_config, self.dtype_policy)
 
         # -- KV-cache report (hybrid KDA + DSA) ----------------------------
         #

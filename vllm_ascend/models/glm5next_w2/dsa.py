@@ -118,6 +118,21 @@ def _get_tp_world_size_and_rank() -> tuple[int, int]:
         return 1, 0
 
 
+def share_parameter_storage_(dst: nn.Parameter, src: torch.Tensor) -> None:
+    """Reuse an already-loaded tensor for an inference-only DSA parameter.
+
+    Matching device/dtype tensors share storage, including views of fused
+    projections. A copy fallback preserves mixed-dtype host-test behavior.
+    """
+    if tuple(dst.shape) != tuple(src.shape):
+        raise ValueError(f"cannot share mismatched parameter shapes: {tuple(dst.shape)} != {tuple(src.shape)}")
+    with torch.no_grad():
+        if dst.device == src.device and dst.dtype == src.dtype:
+            dst.data = src.data
+        else:
+            dst.copy_(src.to(device=dst.device, dtype=dst.dtype))
+
+
 # ===========================================================================
 # Small eager building blocks (formula-identical across fp16/fp32/fp64)
 # ===========================================================================
@@ -280,9 +295,7 @@ class Glm5NextW2DsaIndexer(nn.Module):
             # GLM's ``index_kpool_compress_gate``: [head_dim, hidden] gate weight
             # producing a per-token ``[T, head_dim]`` score folded into the pool
             # softmax before scoring (see _kpool_softmax_compress).
-            self.compress_gate: nn.Parameter | None = nn.Parameter(
-                torch.empty(self.head_dim, hidden_size, **factory)
-            )
+            self.compress_gate: nn.Parameter | None = nn.Parameter(torch.empty(self.head_dim, hidden_size, **factory))
         else:
             self.compress_gate = None
         self.reset_parameters()
@@ -523,8 +536,7 @@ class AscendGlm5NextW2DSA(nn.Module):
         tp_size, tp_rank = _get_tp_world_size_and_rank()
         if num_attention_heads % tp_size != 0:
             raise ValueError(
-                f"num_attention_heads ({num_attention_heads}) must be divisible by "
-                f"tensor-parallel size ({tp_size})"
+                f"num_attention_heads ({num_attention_heads}) must be divisible by tensor-parallel size ({tp_size})"
             )
         self.tp_size = tp_size
         self.tp_rank = tp_rank
@@ -554,9 +566,7 @@ class AscendGlm5NextW2DSA(nn.Module):
         self.kv_a_norm = nn.Parameter(torch.empty(kv_lora_rank, **factory))
         # kv_b_proj: latent -> per-head [qk_nope_head_dim (K) | v_head_dim (V)];
         # ColumnParallel (output = local head axis).
-        self.w_ukv = nn.Parameter(
-            torch.empty(H_local * (qk_nope_head_dim + v_head_dim), kv_lora_rank, **factory)
-        )
+        self.w_ukv = nn.Parameter(torch.empty(H_local * (qk_nope_head_dim + v_head_dim), kv_lora_rank, **factory))
         # output projection: RowParallel (input = local head axis, all-reduced).
         self.w_o = nn.Parameter(torch.empty(hidden_size, H_local * v_head_dim, **factory))
 

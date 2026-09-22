@@ -216,9 +216,7 @@ def test_selection_matches_deepseek_v41_indexer():
         hidden_size=None,
     )
     ds_idx = AscendDeepseekV41Indexer(ds_config, compress_ratio=ratio, build_projections=False)
-    ds_result = ds_idx.forward(
-        None, None, raw_keys, positions, precomputed_query=query, precomputed_weights=weights
-    )
+    ds_result = ds_idx.forward(None, None, raw_keys, positions, precomputed_query=query, precomputed_weights=weights)
     assert ds_result is not None
     ds_blocks = ds_result.blocks_per_token
 
@@ -336,3 +334,133 @@ def test_glm_parity_indexer_uses_gate_ape_weighted_pool():
     result = idx(hidden, qr, positions)
     assert result.token_mask.shape == (T, T)
 
+
+def test_share_parameter_storage_releases_dsa_mirror_allocation():
+    from vllm_ascend.models.glm5next_w2.dsa import share_parameter_storage_
+
+    source = torch.nn.Parameter(torch.randn(4, 6))
+    destination = torch.nn.Parameter(torch.empty(4, 6))
+
+    share_parameter_storage_(destination, source)
+
+    assert destination.data_ptr() == source.data_ptr()
+    source.data[0, 0] = 123.0
+    assert destination[0, 0].item() == 123.0
+
+
+def test_share_parameter_storage_accepts_fused_projection_view():
+    from vllm_ascend.models.glm5next_w2.dsa import share_parameter_storage_
+
+    fused = torch.nn.Parameter(torch.randn(7, 5))
+    destination = torch.nn.Parameter(torch.empty(3, 5))
+
+    share_parameter_storage_(destination, fused[2:5])
+
+    assert destination.data_ptr() == fused[2:5].data_ptr()
+    assert torch.equal(destination, fused[2:5])
+
+
+def test_shipped_dsa_binding_shares_all_matching_storage():
+    from types import SimpleNamespace
+
+    from vllm_ascend.models.glm5next_w2.model import (
+        _bind_shipped_mla_weights,
+    )
+
+    def linear(rows, cols):
+        return SimpleNamespace(weight=torch.nn.Parameter(torch.randn(rows, cols)))
+
+    self_attn = SimpleNamespace(
+        q_a_layernorm=SimpleNamespace(weight=torch.nn.Parameter(torch.randn(3))),
+        kv_a_layernorm=SimpleNamespace(weight=torch.nn.Parameter(torch.randn(2))),
+        q_b_proj=linear(4, 3),
+        kv_b_proj=linear(5, 2),
+        o_proj=linear(6, 4),
+        fused_qkv_a_proj=linear(5, 6),
+        indexer=SimpleNamespace(
+            wq_b=linear(7, 3),
+            wk_weights_proj=linear(8, 6),
+            k_norm=SimpleNamespace(
+                weight=torch.nn.Parameter(torch.randn(8)),
+                bias=torch.nn.Parameter(torch.randn(8)),
+            ),
+            index_kpool_compress_ape=torch.nn.Parameter(torch.randn(2, 8)),
+            index_kpool_compress_gate=torch.nn.Parameter(torch.randn(8, 6)),
+        ),
+    )
+    dsa_core = SimpleNamespace(
+        q_lora_rank=3,
+        kv_lora_rank=2,
+        q_a_norm=torch.nn.Parameter(torch.empty(3)),
+        kv_a_norm=torch.nn.Parameter(torch.empty(2)),
+        w_uq=torch.nn.Parameter(torch.empty(4, 3)),
+        w_ukv=torch.nn.Parameter(torch.empty(5, 2)),
+        w_o=torch.nn.Parameter(torch.empty(6, 4)),
+        w_dq=torch.nn.Parameter(torch.empty(3, 6)),
+        w_dkv=torch.nn.Parameter(torch.empty(2, 6)),
+        indexer=SimpleNamespace(
+            wq_b=torch.nn.Parameter(torch.empty(7, 3)),
+            wk_weights_proj=torch.nn.Parameter(torch.empty(8, 6)),
+            k_norm_weight=torch.nn.Parameter(torch.empty(8)),
+            k_norm_bias=torch.nn.Parameter(torch.empty(8)),
+            compress_ape=torch.nn.Parameter(torch.empty(2, 8)),
+            compress_gate=torch.nn.Parameter(torch.empty(8, 6)),
+        ),
+    )
+
+    assert _bind_shipped_mla_weights(self_attn, dsa_core) == []
+    assert dsa_core.w_uq.data_ptr() == self_attn.q_b_proj.weight.data_ptr()
+    assert dsa_core.indexer.wq_b.data_ptr() == self_attn.indexer.wq_b.weight.data_ptr()
+    assert dsa_core.w_dq.data_ptr() == self_attn.fused_qkv_a_proj.weight[:3].data_ptr()
+    assert dsa_core.w_dkv.data_ptr() == self_attn.fused_qkv_a_proj.weight[3:5].data_ptr()
+
+
+def test_dsa_install_releases_mirror_storage_before_first_forward():
+    from types import SimpleNamespace
+
+    from vllm_ascend.models.glm5next_w2.dtype_policy import (
+        ASCEND_GLM5NEXT_W2_DTYPE_POLICY,
+    )
+    from vllm_ascend.models.glm5next_w2.model import _install_dsa_indexer
+
+    def linear(rows, cols):
+        return SimpleNamespace(weight=torch.nn.Parameter(torch.randn(rows, cols, dtype=torch.float16)))
+
+    hidden, heads, q_rank, kv_rank, q_dim, v_dim = 6, 2, 3, 2, 2, 2
+    index_heads, index_dim, index_pool = 2, 4, 2
+    self_attn = SimpleNamespace(
+        q_a_layernorm=SimpleNamespace(weight=torch.nn.Parameter(torch.randn(q_rank, dtype=torch.float16))),
+        kv_a_layernorm=SimpleNamespace(weight=torch.nn.Parameter(torch.randn(kv_rank, dtype=torch.float16))),
+        q_b_proj=linear(heads * q_dim, q_rank),
+        kv_b_proj=linear(heads * (q_dim + v_dim), kv_rank),
+        o_proj=linear(hidden, heads * v_dim),
+        fused_qkv_a_proj=linear(q_rank + kv_rank, hidden),
+        indexer=SimpleNamespace(
+            wq_b=linear(index_heads * index_dim, q_rank),
+            wk_weights_proj=linear(index_dim + index_heads, hidden),
+            k_norm=SimpleNamespace(
+                weight=torch.nn.Parameter(torch.randn(index_dim, dtype=torch.float16)),
+                bias=torch.nn.Parameter(torch.randn(index_dim, dtype=torch.float16)),
+            ),
+            index_kpool_compress_ape=torch.nn.Parameter(torch.randn(index_pool, index_dim, dtype=torch.float16)),
+            index_kpool_compress_gate=torch.nn.Parameter(torch.randn(index_dim, hidden, dtype=torch.float16)),
+        ),
+    )
+    layer = SimpleNamespace(layer_kind="mla", self_attn=self_attn)
+    config = SimpleNamespace(
+        hidden_size=hidden,
+        num_attention_heads=heads,
+        q_lora_rank=q_rank,
+        kv_lora_rank=kv_rank,
+        qk_nope_head_dim=q_dim,
+        v_head_dim=v_dim,
+        index_n_heads=index_heads,
+        index_head_dim=index_dim,
+        index_topk=4,
+        index_kpool=index_pool,
+        rms_norm_eps=1e-5,
+    )
+
+    assert _install_dsa_indexer([layer], config, ASCEND_GLM5NEXT_W2_DTYPE_POLICY) == 1
+    assert layer.dsa_w2.w_uq.data_ptr() == self_attn.q_b_proj.weight.data_ptr()
+    assert layer.dsa_w2.w_dq.data_ptr() == self_attn.fused_qkv_a_proj.weight[:q_rank].data_ptr()

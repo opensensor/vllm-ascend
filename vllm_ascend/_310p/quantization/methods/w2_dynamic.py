@@ -72,16 +72,7 @@ from tools.deepseek_w2.w2_format import (
     W2_CODES_PER_BYTE,
     unpack_codes,
     unpack_nvfp4_codes,
-    unpack_w2_codes,
 )
-
-
-def _infer_bits(packed: torch.Tensor, in_features: int) -> int:
-    """Code width (2 or 4) from a packed operand: W2 packs 4 codes/byte
-    (last dim = in//4), W4 packs 2 codes/byte (in//2). Lets the runtime handle
-    mixed-precision W2/W4 expert banks with no config plumbing."""
-    codes_per_byte = in_features // int(packed.shape[-1])
-    return 8 // codes_per_byte
 from vllm_ascend.models.deepseek_v41.w2_unpack import (
     swiglu_gate_up,
     unpack_active_experts,
@@ -91,6 +82,15 @@ from vllm_ascend.models.deepseek_v41.w2_unpack import (
 from vllm_ascend.quantization.methods.base import AscendMoEScheme, QuantType
 
 from .registry import register_scheme
+
+
+def _infer_bits(packed: torch.Tensor, in_features: int) -> int:
+    """Code width (2 or 4) from a packed operand: W2 packs 4 codes/byte
+    (last dim = in//4), W4 packs 2 codes/byte (in//2). Lets the runtime handle
+    mixed-precision W2/W4 expert banks with no config plumbing."""
+    codes_per_byte = in_features // int(packed.shape[-1])
+    return 8 // codes_per_byte
+
 
 # The device INT8 grouped-matmul kernel lives in torch_npu, which is absent
 # host-side. Import it guarded so this module is importable on CPU and the host
@@ -106,6 +106,12 @@ W2_ACTIVE_UNPACK_ONLY = True
 
 # Name of the fused INT8 grouped-matmul + dequant kernel on the device wave.
 _W2_DEVICE_KERNEL = "npu_quant_grouped_matmul_dequant"
+
+# The current 310P packed-W2 Cube kernel corrupts the down projection when its
+# M dimension exceeds 48 (the first failing model shape is [49, 2048] x
+# [4096, 2048]^T). Keep the fast path for decode and small expert groups while
+# prefill groups above the hardware-validated boundary use exact eager math.
+W2_CUBE_MAX_TOKENS = 48
 
 
 def _device_kernel_available() -> bool:
@@ -187,16 +193,28 @@ def _w2_blocked_mm_op():
     path stays a correct fallback.
     """
     global _W2_BLOCKED_MM_OP
-    # Escape hatch to force the eager fp32 fallback (isolate kernel vs model bugs).
-    import os as _os
-    if _os.environ.get("VLLM_ASCEND_W2_DISABLE_CUBE", "0") == "1":
-        return None
     if _W2_BLOCKED_MM_OP is None:
         try:
             _W2_BLOCKED_MM_OP = torch.ops._C_ascend.npu_w2_blocked_dequant_matmul_310
         except (AttributeError, RuntimeError):
             _W2_BLOCKED_MM_OP = None
     return _W2_BLOCKED_MM_OP
+
+
+def _can_use_w2_cube(
+    w2_op: Any,
+    packed: torch.Tensor,
+    in_features: int,
+    num_tokens: int,
+    is_nvfp4: bool,
+) -> bool:
+    """Whether the packed-W2 Cube kernel is safe for this expert group."""
+    return (
+        w2_op is not None
+        and num_tokens <= W2_CUBE_MAX_TOKENS
+        and _infer_bits(packed, in_features) == 2
+        and not is_nvfp4
+    )
 
 
 @register_scheme("W2A8_DYNAMIC", "moe")
@@ -454,7 +472,13 @@ class AscendW2DynamicFusedMoEMethod310(AscendMoEScheme):
             # The Cube kernel unpacks 2-bit codes on-chip -> W2 only. W4 experts
             # (mixed-precision banks) and NVFP4 (E2M1 float codes) MUST take the
             # eager fp32 path below.
-            use_cube = w2_op is not None and _infer_bits(e.gate_packed, int(e.hidden)) == 2 and not nvfp4
+            use_cube = _can_use_w2_cube(
+                w2_op,
+                e.gate_packed,
+                int(e.hidden),
+                int(group_x.shape[0]),
+                nvfp4,
+            )
             if use_cube:
                 # Fast path: fused 310P Cube kernel (arch20 catlass MMAD with the
                 # per-[32,32] block dequant fused into the weight load). ~2.4x over
