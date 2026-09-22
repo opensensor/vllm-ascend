@@ -53,15 +53,8 @@ __aicore__ inline void DispatchStage(
             addresses.u, addresses.kg, addresses.vNew, userWorkspace,
             tiling, pipe);
     } else if (tiling.stage == KDA_STAGE_FWD_H) {
-        if (tiling.vHeadDim > 128) {
-            RunFwdH<T, Catlass::Gemm::Kernel::GDNFwdHTileShapes256>(
-                initialState, cuSeqlens, chunkIndices, addresses,
-                userWorkspace, tiling);
-        } else {
-            RunFwdH<T, Catlass::Gemm::Kernel::GDNFwdHTileShapes128>(
-                initialState, cuSeqlens, chunkIndices, addresses,
-                userWorkspace, tiling);
-        }
+        RunSelectedFwdH<T>(initialState, cuSeqlens, chunkIndices, addresses,
+                           userWorkspace, tiling);
     } else if (tiling.stage == KDA_STAGE_FINALIZE) {
         TPipe pipe;
         KdaFinalize::RunChunkKdaOutput<T, float, BETA_T>(

@@ -1,6 +1,9 @@
 #pragma once
 
 #include "kernel_operator.h"
+#if defined(__CCE_AICORE__) && __CCE_AICORE__ == 200
+#include "arch20/compat_310p.h"
+#endif
 #include "../../kda_gate_cumsum/op_kernel/kda_gate_cumsum_kernel.h"
 #if defined(__CCE_AICORE__) && __CCE_AICORE__ == 310
 #include "arch35/chunk_kda_fwd_prepare.h"
@@ -240,10 +243,9 @@ __aicore__ inline void RunFwdH(
     stateOp.Process();
 }
 
-template <typename T, typename BETA_T, typename TilingData>
-__aicore__ inline void RunGenericBackEnd(
-    GM_ADDR q, GM_ADDR k, GM_ADDR v, GM_ADDR beta, GM_ADDR initialState,
-    GM_ADDR cuSeqlens, GM_ADDR chunkIndices, GM_ADDR aqk, GM_ADDR attnOut,
+template <typename T, typename TilingData>
+__aicore__ inline void RunSelectedFwdH(
+    GM_ADDR initialState, GM_ADDR cuSeqlens, GM_ADDR chunkIndices,
     const ChunkKdaFwdAddresses &addresses, GM_ADDR userWorkspace,
     const TilingData &tiling)
 {
@@ -256,6 +258,17 @@ __aicore__ inline void RunGenericBackEnd(
             initialState, cuSeqlens, chunkIndices, addresses,
             userWorkspace, tiling);
     }
+}
+
+template <typename T, typename BETA_T, typename TilingData>
+__aicore__ inline void RunGenericBackEnd(
+    GM_ADDR q, GM_ADDR k, GM_ADDR v, GM_ADDR beta, GM_ADDR initialState,
+    GM_ADDR cuSeqlens, GM_ADDR chunkIndices, GM_ADDR aqk, GM_ADDR attnOut,
+    const ChunkKdaFwdAddresses &addresses, GM_ADDR userWorkspace,
+    const TilingData &tiling)
+{
+    RunSelectedFwdH<T>(initialState, cuSeqlens, chunkIndices, addresses,
+                       userWorkspace, tiling);
     SyncAll<false>();
     TPipe pipe;
     KdaFinalize::RunChunkKdaOutput<T, float, BETA_T>(
@@ -271,15 +284,8 @@ __aicore__ inline void RunGenericBackEnd(
     const ChunkKdaFwdAddresses &addresses, GM_ADDR userWorkspace,
     const TilingData &tiling, TPipe &pipe)
 {
-    if (tiling.vHeadDim > 128) {
-        RunFwdH<T, Catlass::Gemm::Kernel::GDNFwdHTileShapes256>(
-            initialState, cuSeqlens, chunkIndices, addresses,
-            userWorkspace, tiling);
-    } else {
-        RunFwdH<T, Catlass::Gemm::Kernel::GDNFwdHTileShapes128>(
-            initialState, cuSeqlens, chunkIndices, addresses,
-            userWorkspace, tiling);
-    }
+    RunSelectedFwdH<T>(initialState, cuSeqlens, chunkIndices, addresses,
+                       userWorkspace, tiling);
     SyncAll<false>();
     KdaFinalize::RunChunkKdaOutput<T, float, BETA_T>(
         q, k, v, addresses.gk, beta, initialState, cuSeqlens,

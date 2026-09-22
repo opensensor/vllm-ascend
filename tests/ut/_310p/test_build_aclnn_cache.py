@@ -66,3 +66,23 @@ def test_chunk_kda_uses_only_default_task_type_on_310p():
     guard = "#if !defined(__CCE_AICORE__) || (__CCE_AICORE__ != 200)"
     assert kernel.index(guard) < kernel.index("KERNEL_TASK_TYPE(1")
     assert kernel.index(guard) < kernel.index("KERNEL_TASK_TYPE(2")
+
+
+def test_chunk_kda_loads_310p_compat_before_catlass_kernels():
+    kernel_dir = (
+        REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_kernel"
+    )
+    common_header = (kernel_dir / "chunk_kda_fwd_common.h").read_text()
+    compat_header = (kernel_dir / "arch20" / "compat_310p.h").read_text()
+
+    compat_include = '#include "arch20/compat_310p.h"'
+    first_catlass_kernel = (
+        '#include "../../kda_gate_cumsum/op_kernel/kda_gate_cumsum_kernel.h"'
+    )
+    assert common_header.index(compat_include) < common_header.index(
+        first_catlass_kernel
+    )
+    assert "#define CATLASS_UNIFIED_CORE 1" in compat_header
+    assert "struct bfloat16_t" in compat_header
+    assert "#define PIPE_FIX PIPE_MTE3" in compat_header
+    assert "#define LoadDataWithSparse LoadDataWithSparseCal" in compat_header
