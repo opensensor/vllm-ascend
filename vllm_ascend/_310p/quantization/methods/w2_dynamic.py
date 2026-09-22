@@ -30,14 +30,14 @@ weight-loading hooks:
   * :meth:`get_shared_expert_weight` / :meth:`get_shared_expert_dynamic_quant_param`
     create the always-on shared-expert params in the same layout.
 
-``apply`` dispatches on whether the INT8 grouped-matmul kernel is available:
+``apply`` selects a hardware or host implementation:
 
-  * **Device path** (``_apply_device``, import-guarded): the ``<= top_k`` active
-    experts are widened from packed W2 by E1.2 :func:`unpack_active_experts`,
-    then the resulting INT8 codes + block scales are handed to
-    ``torch_npu.npu_quant_grouped_matmul_dequant`` (as the W8 method's
-    ``apply_gmm1_act_quant`` / ``apply_gmm2`` do). ``torch_npu`` is absent
-    host-side, so this branch is guarded and never runs in the CPU UT.
+  * **Device path** (``_apply_device``, import-guarded): W2/W4 active-expert
+    projections use the packed 310P Cube operator when their shapes satisfy its
+    tiling contract, and otherwise use exact fp32 dequantization and matmul.
+    NVFP4 retains the exact eager path because its E2M1 codebook differs from
+    signed W2/W4. ``torch_npu`` is absent host-side, so this branch is guarded
+    and never runs in the CPU UT.
   * **Host path** (``_apply_host``): re-expresses the identical math through the
     E1.2 grouped primitives (:func:`unpack_active_experts`,
     :func:`w2_group_qdq_linear`, :func:`swiglu_gate_up`), driven by the router's
@@ -45,20 +45,9 @@ weight-loading hooks:
     router-logits entrypoint, a thin wrapper over E1.2
     :func:`w2_active_moe_forward`.
 
-Device-wave note (for D1.5)
----------------------------
-The W2 -> INT8 widen runs on **only the active experts** (``<= top_k``, i.e. at
-most 6 for DeepSeek V4.1), never the full 384-expert bank -- that is the whole
-point of :func:`unpack_active_experts`. Whether the widen itself is a single
-fused device op or an elementwise widen must be verified against the pinned CANN
-op surface: vllm-ascend today exposes no fused W2->INT8 unpack kernel (the
-nearest, ``npu_convert_weight_to_int4pack``, only *packs* INT4 for the INT4
-matmul path), so absent a fused op the widen is an elementwise unpack over the
-``<= top_k`` active experts before ``npu_quant_grouped_matmul_dequant``. The
-per-``[32, 32]`` block scale is applied *into* the weight before the matmul (it
-varies along the input axis every 32 columns and cannot be reduced to a single
-per-output-channel factor); D1.5 confirms the exact block-scale layout the
-pinned kernel ingests. These flags record that decision for D1.5.
+The custom operator decodes only the selected expert projection being executed,
+applies its per-``[32, 32]`` scale while producing NZ tiles, and feeds those
+tiles directly to Cube. It never widens the full expert bank.
 """
 
 from typing import Any
@@ -431,22 +420,11 @@ class AscendW2DynamicFusedMoEMethod310(AscendMoEScheme):
         topk_ids: torch.Tensor,
         shared_expert: Any | None,
     ) -> torch.Tensor:  # pragma: no cover - device-only wave (D1.5)
-        """Device grouped matmul over the ``<= top_k`` active experts.
+        """Run routed active experts on NPU with packed Cube or eager math.
 
-        Widens only the active experts from packed W2 (E1.2), then runs each
-        active-expert group eagerly on the NPU: the packed 2-bit codes are
-        dequantized to fp32 (``codes * per-block scale``) and matmul'd in fp32.
-
-        The pinned CANN fused kernel
-        (``torch_npu.npu_quant_grouped_matmul_dequant``) requires the quantized
-        weight pre-tiled into a 5-D fractal-NZ layout ``(G, K//32, N//16, 16, 32)``
-        that the W2 unpack does not yet emit (raised ``EZ1001`` /
-        ``aclnnQuantGroupedMatmulDequant`` error ``161002`` on 310P); producing
-        that exact layout is the D1.5 optimization. Until then this eager fp32
-        path is the working device path -- same math as :meth:`_apply_host` but
-        without the ``.double()`` (310P matmul supports only fp16/fp32, not fp64
-        or bf16). The weight is reconstructed exactly; activations stay fp32
-        (strictly >= the fused kernel's per-token INT8 activation quant).
+        Signed W2/W4 projections use the 310P custom Cube operator through its
+        validated 128-token boundary. Unsupported shapes and NVFP4 use exact
+        fp32 dequantization and matmul, preserving a correctness fallback.
         """
         num_tokens = x.shape[0]
         hidden = x.shape[1]
