@@ -196,7 +196,7 @@ def test_device_kernel_guard_is_host_under_stub():
 
 
 def test_cube_kernel_rejects_unsafe_prefill_group_size():
-    packed_w2 = torch.zeros(64, _HIDDEN // W2_CODES_PER_BYTE, dtype=torch.uint8)
+    packed_w2 = torch.zeros(128, _HIDDEN // W2_CODES_PER_BYTE, dtype=torch.uint8)
     op = object()
 
     assert _can_use_w2_cube(op, packed_w2, _HIDDEN, W2_CUBE_MAX_TOKENS, False)
@@ -205,11 +205,13 @@ def test_cube_kernel_rejects_unsafe_prefill_group_size():
 
 
 def test_cube_kernel_accepts_w4_but_rejects_nvfp4():
-    packed_w4 = torch.zeros(64, _HIDDEN // 2, dtype=torch.uint8)
-    packed_w2 = torch.zeros(64, _HIDDEN // W2_CODES_PER_BYTE, dtype=torch.uint8)
+    packed_w4 = torch.zeros(128, _HIDDEN // 2, dtype=torch.uint8)
+    packed_w2 = torch.zeros(128, _HIDDEN // W2_CODES_PER_BYTE, dtype=torch.uint8)
+    partial_tile_w4 = torch.zeros(64, _HIDDEN // 2, dtype=torch.uint8)
 
     assert _can_use_w2_cube(object(), packed_w4, _HIDDEN, 1, False)
     assert not _can_use_w2_cube(object(), packed_w2, _HIDDEN, 1, True)
+    assert not _can_use_w2_cube(object(), partial_tile_w4, _HIDDEN, 1, False)
 
 
 # --- param creation from a synthetic W2 index -------------------------------

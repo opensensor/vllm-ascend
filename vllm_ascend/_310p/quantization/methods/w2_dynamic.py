@@ -112,6 +112,7 @@ _W2_DEVICE_KERNEL = "npu_quant_grouped_matmul_dequant"
 # [4096, 2048]^T). Keep the fast path for decode and small expert groups while
 # prefill groups above the hardware-validated boundary use exact eager math.
 W2_CUBE_MAX_TOKENS = 48
+W2_CUBE_OUTPUT_TILE = 128
 
 
 def _device_kernel_available() -> bool:
@@ -212,6 +213,7 @@ def _can_use_w2_cube(
     return (
         w2_op is not None
         and num_tokens <= W2_CUBE_MAX_TOKENS
+        and packed.shape[-2] % W2_CUBE_OUTPUT_TILE == 0
         and _infer_bits(packed, in_features) in (2, 4)
         and not is_nvfp4
     )

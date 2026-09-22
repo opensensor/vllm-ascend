@@ -24,6 +24,7 @@ namespace optiling {
 constexpr uint32_t X_INDEX = 0;
 constexpr uint32_t CODES_INDEX = 1;
 constexpr int64_t BLK = 32;
+constexpr int64_t OUTPUT_TILE = 128;
 
 static ge::graphStatus W2BlockedDequantMatmulTilingFunc(gert::TilingContext *context)
 {
@@ -55,7 +56,8 @@ static ge::graphStatus W2BlockedDequantMatmulTilingFunc(gert::TilingContext *con
                 OP_LOGE(context, "packed codes must contain either 2 (W4) or 4 (W2) values per byte"),
                 return ge::GRAPH_FAILED);
     OP_CHECK_IF(T <= 0 || N <= 0 || K <= 0, OP_LOGE(context, "T/N/K must be positive"), return ge::GRAPH_FAILED);
-    OP_CHECK_IF(N % BLK != 0 || K % BLK != 0, OP_LOGE(context, "N and K must be multiples of 32"),
+    OP_CHECK_IF(N % OUTPUT_TILE != 0 || K % BLK != 0,
+                OP_LOGE(context, "N must be a multiple of 128 and K must be a multiple of 32"),
                 return ge::GRAPH_FAILED);
 
     // Canonical CANN tiling-data pattern (local optiling object + SaveToBuffer),
