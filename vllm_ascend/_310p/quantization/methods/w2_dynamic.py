@@ -192,11 +192,11 @@ def _w2_blocked_mm_op():
     per-[32,32] block dequant fused into the weight load (arch20 catlass MMAD).
     The kernel expands one bounded output tile into an already-NZ per-core
     workspace, rather than materializing the complete fp16 weight or asking the
-    matmul path to perform an ND-to-NZ conversion. A bounded per-core FP32 tile
-    preserves accumulator correctness before the final FP16 cast. Resolved
-    lazily (the custom-op vendor lib is loaded during worker init); returns
-    ``None`` when the op is unavailable so the eager fp32 path stays a correct
-    fallback.
+    matmul path to perform an ND-to-NZ conversion. Its synchronized unified-core
+    epilogue casts the FP32 accumulator directly into the final FP16 output,
+    avoiding an intermediate output workspace. Resolved lazily (the custom-op
+    vendor lib is loaded during worker init); returns ``None`` when the op is
+    unavailable so the eager fp32 path stays a correct fallback.
     """
     global _W2_BLOCKED_MM_OP
     if _W2_BLOCKED_MM_OP is None:

@@ -67,9 +67,9 @@ public:
     using L1TileShapeTla = tla::Shape<tla::Int<128>, tla::Int<128>, tla::Int<128>>;
     using L0TileShapeTla = L1TileShapeTla;
     using TileCopy = Catlass::Gemm::Tile::PackedTileCopyTla<
-        ArchTag, half, layout::RowMajor, half, layout::zN, float, layout::RowMajor>;
+        ArchTag, half, layout::RowMajor, half, layout::zN, half, layout::RowMajor>;
     using BlockMmad = Gemm::Block::BlockMmadTla<
-        DispatchPolicyTla, L1TileShapeTla, L0TileShapeTla, half, half, float, void, TileCopy>;
+        DispatchPolicyTla, L1TileShapeTla, L0TileShapeTla, half, half, half, void, TileCopy>;
 
     __aicore__ inline W2BlockedDequantMatmulV310Cube() {}
 
@@ -90,22 +90,16 @@ public:
         fieldMask_ = (1 << bitsPerCode_) - 1;
         signHalf_ = 1 << (bitsPerCode_ - 1);
         kbCount_ = K_ / W2_BLOCK_SIZE;
-        mAligned_ = AlignUpU<int64_t>(T_, W2_FRACTAL_SIZE);
 
-        const int64_t coreCount = GetBlockNum();
         const int64_t nzElementsPerCore = W2_TILE_N * K_;
-        const int64_t outputElementsPerCore = mAligned_ * W2_TILE_N;
 
         xGm_.SetGlobalBuffer(reinterpret_cast<__gm__ half *>(x));
         codesGm_.SetGlobalBuffer(reinterpret_cast<__gm__ uint8_t *>(codes));
         scaleGm_.SetGlobalBuffer(reinterpret_cast<__gm__ float *>(blockScale));
         yGm_.SetGlobalBuffer(reinterpret_cast<__gm__ half *>(y));
         wdqNzGm_.SetGlobalBuffer(reinterpret_cast<__gm__ half *>(user));
-        yfGm_.SetGlobalBuffer(reinterpret_cast<__gm__ float *>(
-            user + coreCount * nzElementsPerCore * sizeof(half)));
 
         coreNzBase_ = static_cast<int64_t>(GetBlockIdx()) * nzElementsPerCore;
-        coreYfBase_ = static_cast<int64_t>(GetBlockIdx()) * outputElementsPerCore;
     }
 
     __aicore__ inline void Process()
@@ -120,10 +114,10 @@ public:
 
         auto aLayout = tla::MakeLayout<half, layout::RowMajor>((uint32_t)T_, (uint32_t)K_);
         auto bLayout = tla::MakeLayout<half, layout::zN>((uint32_t)K_, W2_TILE_N);
-        auto cLayout = tla::MakeLayout<float, layout::RowMajor>((uint32_t)mAligned_, W2_TILE_N);
+        auto cLayout = tla::MakeLayout<half, layout::RowMajor>((uint32_t)T_, (uint32_t)N_);
         auto tensorA = tla::MakeTensor(xGm_, aLayout, Arch::PositionGM{});
         auto tensorB = tla::MakeTensor(wdqNzGm_[coreNzBase_], bLayout, Arch::PositionGM{});
-        auto tensorC = tla::MakeTensor(yfGm_[coreYfBase_], cLayout, Arch::PositionGM{});
+        auto tensorC = tla::MakeTensor(yGm_, cLayout, Arch::PositionGM{});
 
         for (uint32_t nb = coreId; nb < nBlocks; nb += coreNum) {
             const uint32_t n0 = nb * W2_TILE_N;
@@ -137,15 +131,13 @@ public:
                               tla::MakeShape((uint32_t)T_, (uint32_t)K_));
             auto tB = GetTile(tensorB, tla::MakeCoord((uint32_t)0, (uint32_t)0),
                               tla::MakeShape((uint32_t)K_, nActual));
-            auto tC = GetTile(tensorC, tla::MakeCoord((uint32_t)0, (uint32_t)0),
+            auto tC = GetTile(tensorC, tla::MakeCoord((uint32_t)0, n0),
                               tla::MakeShape((uint32_t)T_, nActual));
             blockMmad.preSetFlags();
             blockMmad(tA, tB, tC, shape);
             blockMmad.finalWaitFlags();
             AscendC::PipeBarrier<PIPE_ALL>();
 
-            CastOut(n0, nActual);
-            AscendC::PipeBarrier<PIPE_ALL>();
         }
     }
 
@@ -181,10 +173,6 @@ private:
         off = AlignUpU<uint32_t>(off + (uint32_t)decodedTileCount_ * sizeof(int16_t), 512);
         nzFractalUB_ = resource.ubBuf.template GetBufferByByte<half>(off);
         off = AlignUpU<uint32_t>(off + W2_FRACTAL_SIZE * W2_FRACTAL_SIZE * sizeof(half), 512);
-        castFUB_ = resource.ubBuf.template GetBufferByByte<float>(off);
-        off = AlignUpU<uint32_t>(off + W2_TILE_N * sizeof(float), 512);
-        castHUB_ = resource.ubBuf.template GetBufferByByte<half>(off);
-        off = AlignUpU<uint32_t>(off + W2_TILE_N * sizeof(half), 512);
     }
 
     __aicore__ inline void FillTables()
@@ -305,18 +293,6 @@ private:
         }
     }
 
-    __aicore__ inline void CastOut(uint32_t n0, uint32_t nActual)
-    {
-        for (int64_t t = 0; t < T_; ++t) {
-            DataCopy(castFUB_, yfGm_[coreYfBase_ + t * W2_TILE_N], nActual);
-            PipeBarrier<PIPE_ALL>();
-            Cast(castHUB_, castFUB_, RoundMode::CAST_NONE, nActual);
-            PipeBarrier<PIPE_ALL>();
-            DataCopy(yGm_[t * N_ + n0], castHUB_, nActual);
-            PipeBarrier<PIPE_ALL>();
-        }
-    }
-
     Arch::Resource<ArchTag> resource;
 
     GlobalTensor<half> xGm_;
@@ -324,7 +300,6 @@ private:
     GlobalTensor<float> scaleGm_;
     GlobalTensor<half> yGm_;
     GlobalTensor<half> wdqNzGm_;
-    GlobalTensor<float> yfGm_;
 
     LocalTensor<float> scaleUB_;
     LocalTensor<uint8_t> cU8_;
@@ -340,8 +315,6 @@ private:
     LocalTensor<int16_t> signHalfUB_;
     LocalTensor<int16_t> masksUB_;
     LocalTensor<half> nzFractalUB_;
-    LocalTensor<float> castFUB_;
-    LocalTensor<half> castHUB_;
 
     int64_t T_;
     int64_t N_;
@@ -355,9 +328,7 @@ private:
     int64_t fieldMask_;
     int64_t signHalf_;
     int64_t kbCount_;
-    int64_t mAligned_;
     int64_t coreNzBase_;
-    int64_t coreYfBase_;
 };
 
 }  // namespace NsW2
