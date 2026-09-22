@@ -51,13 +51,11 @@ _DSA_EXPORTS = (
 
 
 # G4 KDA (Kimi Delta Attention) linear-attention 310P path. Lazily forwarded
-# from the local ``.kda`` module (Triton-free eager gated-delta recurrence,
+# from the local ``.kda`` module (CPU oracle for the stateful AscendC recurrence,
 # validated against the tools/glm_w2 parity oracle). Kept lazy so this package
 # init stays light -- ``.kda`` pulls torch (+ optional guarded torch_npu) only
 # on first access.
-_KDA_EXPORTS = (
-    "Glm5NextW2KDA",
-)
+_KDA_EXPORTS = ("Glm5NextW2KDA",)
 
 
 # G6 routed-expert W2 MoE (host router -> E1.3 W2 method -> eager combine) +

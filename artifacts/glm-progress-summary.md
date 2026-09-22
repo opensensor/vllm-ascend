@@ -452,3 +452,33 @@ decode, top-8 routing transfers at most the selected local experts rather than
 all 72 local experts, reducing the expected steady-state transfer from roughly
 4 GB/rank/token to about 0.1--0.2 GB/rank/token. Exact throughput and the
 minimum safe pattern still require hardware measurement.
+
+## UPDATE 11 (2026-09-22, stateful 310P KDA execution)
+
+The W2 adapter's KDA override was still a CPU-parity implementation: every
+forward started from a zero conv/recurrent state and ran a Python loop over the
+token dimension. That explains both a fundamental decode-correctness break and
+much of the observed approximately 0.1 token/s behavior across 34 KDA layers.
+
+The 310P path now uses operators already shipped in this tree:
+
+1. `npu_causal_conv1d_310` reads and updates the paged convolution state;
+2. `chunk_kda_fwd` handles variable-length prefill with FP32 carry
+   accumulation; and
+3. `npu_recurrent_gated_delta_rule_310` handles decode/spec in place against
+   the paged recurrence pool.
+
+The recurrent operator is driven through its per-key-channel `gk` input, not
+the scalar GDN `g` input, and receives the exact GLM bounded gate
+`lower_bound * sigmoid(exp(A_log) * (raw_gate + dt_bias))`. Thus this is not a
+GDN approximation. The persistent recurrence pool is FP16, as required by the
+310P kernel, while chunked prefill converts active states to FP32 and casts the
+final carry back. This halves recurrence-cache storage compared with the prior
+FP32 declaration. Weight-only gate constants and transposed FP16 conv weights
+are cached after their first use, and the common non-spec path returns the
+operator output directly without an extra zero-and-copy buffer.
+
+Host validation covers the safe-gate formula, variable-length spec slot
+flattening, four-entry KDA cache dtype contract, operator-lane structure, and
+the existing W2 regressions (80 tests passing). Throughput and real-weight
+golden output still require the next authorized 310P run.

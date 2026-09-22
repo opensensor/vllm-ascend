@@ -28,7 +28,7 @@ base class is resolved **lazily** (see :func:`_shipped_causal_lm_base` and the
 module ``__getattr__`` below): merely importing ``glm5next_w2.model`` does not
 pull Triton. The base is only resolved when the W2 class is actually built
 (i.e. when vLLM instantiates the arch on device). G4 replaces the Triton KDA op
-with an eager/FLA gated-delta recurrence, and G6 swaps ``FusedMoEFactory`` for
+with stateful 310P AscendC conv/KDA operators, and G6 swaps ``FusedMoEFactory`` for
 the E1.3 ``AscendW2DynamicFusedMoEMethod310``, at which point even that deferred
 path is Triton-free.
 
@@ -92,6 +92,15 @@ KDA_CONV_KERNEL_CONFIG_KEY = "linear_conv_kernel_dim"
 # W2/W4 tensors are plain attributes rather than nn.Parameters, so upstream's
 # module offloader cannot discover them through ``named_parameters()``.
 PACKED_EXPERTS_OFFLOAD_PARAM = "packed_experts"
+
+
+def _with_fp16_recurrent_state_dtype(
+    state_dtypes: tuple[torch.dtype, ...],
+) -> tuple[torch.dtype, ...]:
+    """Keep the three conv-state dtypes and select FP16 for recurrent KDA."""
+    if not state_dtypes:
+        raise ValueError("KDA state dtype tuple must include a recurrent state")
+    return (*state_dtypes[:-1], torch.float16)
 
 
 # ===========================================================================
@@ -460,7 +469,7 @@ def _merged_kda_conv_weight(self_attn: Any) -> torch.Tensor:
 
 
 def _bind_eager_kda_forward(self_attn: Any, kda_core: Any, io_dtype: torch.dtype) -> None:
-    """Override a shipped ``Glm5NextLinearAttention.forward`` with the eager KDA core.
+    """Override shipped KDA with the stateful 310P AscendC implementation.
 
     The closure reproduces the shipped forward's projection stage
     (``in_proj_qkvbfg_a`` -> split q|k|v / beta / f_a / g_a; ``f_b_proj(f_a)`` ->
@@ -470,28 +479,12 @@ def _bind_eager_kda_forward(self_attn: Any, kda_core: Any, io_dtype: torch.dtype
     the Triton ``_forward`` + Triton ``o_norm``. Returns the same
     ``[num_tokens, hidden]`` shape/dtype (fp16) the shipped forward returned.
 
-    KV/state contract (verified vs. hardware-inferred)
-    --------------------------------------------------
-    Verified on CPU: the projection wiring, the merged conv, and the recurrence
-    output shape/dtype match the shipped forward for a single contiguous
-    sequence started from zero state (``initial_state=None``).
-
-    TODO(hardware, decode/paged state): the shipped ``_forward`` reads the paged
-    mamba state from ``self_attn.kv_cache`` (``(conv_state, recurrent_state)``)
-    and, via ``GDNAttentionMetadata`` on ``get_forward_context().attn_metadata``,
-    (a) segments a batched forward by ``non_spec_query_start_loc`` (cu_seqlens),
-    (b) gathers each request's carry-in recurrent state by
-    ``non_spec_state_indices_tensor`` (prefill) / advances the conv+recurrent
-    state one step per request (decode), and (c) scatters the updated state back.
-    This eager binding currently runs each forward from **zero** recurrent/conv
-    state over the whole token span, which is exact for a fresh single-sequence
-    prefill but does NOT yet carry state across chunks/steps or separate batched
-    requests. Wiring the paged read/write (mirroring the shipped
-    ``gather_initial_states`` / ``scatter_states`` against
-    :meth:`Glm5NextW2KDA.chunked_recurrence`) is the remaining device task; it
-    cannot be validated without NPU + a real KV plan, so it is left explicit here.
+    On NPU, prefill uses ``chunk_kda_fwd`` and decode/spec use the in-place 310P
+    recurrent operator's per-key-channel ``gk`` lane.  Both consume vLLM's
+    request metadata and update ``self_attn.kv_cache``.  The plain torch core is
+    retained only as a CPU parity/profile fallback.
     """
-    conv_cache: dict[str, torch.Tensor | None] = {"w": None}
+    conv_cache: dict[str, torch.Tensor | None] = {"w": None, "w_310": None}
 
     def forward(hidden_states: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
         # Projection stage: identical split to the shipped forward.
@@ -514,20 +507,38 @@ def _bind_eager_kda_forward(self_attn: Any, kda_core: Any, io_dtype: torch.dtype
         o_norm_weight = getattr(self_attn.o_norm, "weight", None)
         conv_bias = getattr(self_attn.q_conv1d, "bias", None)
 
-        out = kda_core(
-            qkv,
-            conv_weight=conv_cache["w"],
-            raw_g=raw_g,
-            beta_raw=beta_raw,
-            a_log=self_attn.A_log,
-            dt_bias=self_attn.dt_bias,
-            g_out=g_out,
-            o_norm_weight=o_norm_weight,
-            conv_bias=conv_bias,
-            initial_state=None,  # TODO(hardware): paged recurrent-state carry
-            o_proj=lambda core: self_attn.o_proj(core)[0],
-            output_dtype=io_dtype,
-        )
+        if qkv.device.type == "npu":
+            from .kda_310 import run_stateful_kda_310
+
+            if conv_cache["w_310"] is None:
+                conv_cache["w_310"] = conv_cache["w"].transpose(0, 1).to(qkv.dtype).contiguous()
+            core = run_stateful_kda_310(
+                self_attn,
+                qkv,
+                raw_g.reshape(1, -1, self_attn.local_num_heads, self_attn.head_dim),
+                beta_raw.unsqueeze(0),
+                conv_cache["w_310"],
+            )
+            normalized = self_attn.o_norm(
+                core,
+                g_out.reshape(-1, self_attn.local_num_heads, self_attn.head_dim),
+            )
+            out = self_attn.o_proj(normalized.reshape(normalized.shape[1], -1))[0]
+        else:
+            out = kda_core(
+                qkv,
+                conv_weight=conv_cache["w"],
+                raw_g=raw_g,
+                beta_raw=beta_raw,
+                a_log=self_attn.A_log,
+                dt_bias=self_attn.dt_bias,
+                g_out=g_out,
+                o_norm_weight=o_norm_weight,
+                conv_bias=conv_bias,
+                initial_state=None,
+                o_proj=lambda core: self_attn.o_proj(core)[0],
+                output_dtype=io_dtype,
+            )
         # Guarantee the shipped forward's dtype contract regardless of the
         # o_proj impl (the eager core returns the o_proj output verbatim).
         return out.to(io_dtype)
@@ -660,15 +671,16 @@ def _bind_eager_dsa_forward(self_attn: Any, dsa_core: Any, io_dtype: torch.dtype
     self_attn.forward = forward
 
 
-def _install_eager_kda(layers: Iterable[Any], config: Any, dtype_policy: Glm5NextW2DtypePolicy) -> int:
-    """G4: route every KDA layer's forward through the Triton-free eager KDA core.
+def _install_310p_kda(layers: Iterable[Any], config: Any, dtype_policy: Glm5NextW2DtypePolicy) -> int:
+    """G4: route every KDA layer through stateful 310P AscendC operators.
 
     For each of the 34 KDA (``layer_kind == 'kda'``) layers this (1) attaches
     ``layer.kda_w2`` (a :class:`~vllm_ascend.models.glm5next_w2.kda.Glm5NextW2KDA`
     seam, kept for introspection/reporting) and (2) -- when the shipped
     ``Glm5NextLinearAttention`` is present -- overrides its ``forward`` so the
-    layer actually RUNS the eager core, never the Triton gated-delta recurrence.
-    The eager core is sized to the shipped module's PER-TP-RANK head geometry
+    layer actually runs the AscendC core, never the Triton recurrence. The
+    attached eager core remains the CPU parity fallback and is sized to the
+    shipped module's PER-TP-RANK head geometry
     (``local_num_heads`` / ``head_dim`` / ``conv_size``) so it is correct at TP>1;
     it falls back to the config globals for CPU stand-in layers (no shipped attn).
     """
@@ -702,6 +714,22 @@ def _install_eager_kda(layers: Iterable[Any], config: Any, dtype_policy: Glm5Nex
         # (the real device module). Pure CPU stand-ins without projections keep
         # the attached seam for introspection.
         if self_attn is not None and hasattr(self_attn, "in_proj_qkvbfg_a"):
+            original_get_state_dtype = self_attn.get_state_dtype
+
+            def get_state_dtype_310(
+                original_get_state_dtype: Any = original_get_state_dtype,
+            ) -> tuple[torch.dtype, ...]:
+                return _with_fp16_recurrent_state_dtype(original_get_state_dtype())
+
+            def get_attn_backend_310() -> type:
+                from vllm_ascend._310p.ops.gdn_attn_builder_310 import (
+                    AscendGDNAttentionBackend310,
+                )
+
+                return AscendGDNAttentionBackend310
+
+            self_attn.get_state_dtype = get_state_dtype_310
+            self_attn.get_attn_backend = get_attn_backend_310
             _bind_eager_kda_forward(self_attn, kda_core, io_dtype)
         count += 1
     return count
@@ -839,7 +867,7 @@ def _shipped_causal_lm_base() -> type:
     TODO(G4/G6): importing the shipped ``glm5next.model`` transitively pulls in
     ``FusedMoEFactory`` and, via ``glm5next.kda``, the Triton KDA op at
     ``vllm_ascend.ops.triton.kda.kda``. G4 swaps the Triton KDA recurrence for
-    an eager/FLA path, and G6 swaps ``FusedMoEFactory`` for the E1.3
+    stateful 310P AscendC operators, and G6 swaps ``FusedMoEFactory`` for the E1.3
     ``AscendW2DynamicFusedMoEMethod310``, removing Triton from the 310P path.
     Until then the base is resolved only at build time (never at package
     import), so the grep-gate stays green.
@@ -890,26 +918,34 @@ def _build_causal_lm_cls() -> type:
 
             with _suppress_fp8_expert_allocation(_shipped_glm):
                 super().__init__(vllm_config=vllm_config, prefix=prefix)
-            # 310P W2 delta hooks: KDA->eager (G4), DSA indexer (G5), MoE->W2 (G6).
+            # 310P W2 delta hooks: KDA->AscendC (G4), DSA indexer (G5), MoE->W2 (G6).
             self._stage_w2_overrides()
+
+        @classmethod
+        def get_mamba_state_dtype_from_config(
+            cls,
+            vllm_config: VllmConfig,
+        ) -> tuple[torch.dtype, ...]:
+            """Use the state dtype required by the 310P recurrent KDA kernel."""
+            return _with_fp16_recurrent_state_dtype(super().get_mamba_state_dtype_from_config(vllm_config))
 
         # -- 310P W2 delta hooks (clean seams for later tasks) -------------
 
         def _stage_w2_overrides(self) -> None:
-            """Run the 310P W2 override hooks (KDA->eager, DSA indexer, MoE->W2)."""
+            """Run the 310P W2 override hooks (KDA->AscendC, DSA indexer, MoE->W2)."""
             self._swap_kda_to_eager()  # G4
             self._override_dsa_indexer()  # G5
             self._swap_moe_to_w2()  # G6
 
         def _swap_kda_to_eager(self) -> None:
-            """G4: route every KDA layer's forward through the eager KDA core.
+            """G4: route every KDA layer through stateful 310P KDA operators.
 
-            Delegates to :func:`_install_eager_kda`, which attaches ``layer.kda_w2``
-            AND overrides the shipped ``Glm5NextLinearAttention.forward`` on the 34
-            ``KDA_LAYERS`` so the Triton gated-delta recurrence is never entered.
+            Delegates to :func:`_install_310p_kda`, which attaches ``layer.kda_w2``
+            as the CPU oracle and overrides the shipped attention forward on the
+            34 ``KDA_LAYERS`` so the Triton recurrence is never entered.
             Component wired: ``glm5next_w2.kda`` (G4).
             """
-            self._kda_swapped = _install_eager_kda(_iter_model_layers(self), self._glm_text_config, self.dtype_policy)
+            self._kda_swapped = _install_310p_kda(_iter_model_layers(self), self._glm_text_config, self.dtype_policy)
 
         def _override_dsa_indexer(self) -> None:
             """G5: route every full-attn (DSA) layer's forward through the eager core.
@@ -1080,7 +1116,7 @@ class Glm5NextW2MTP:
 
     Registration target so the ``Glm5NextW2MTPModel`` arch resolves at G3. The
     concrete drafter reuses the shipped ``glm5next`` MTP path (which inherits
-    the G4/G6 KDA-eager / W2 fixes automatically); wiring is G7. Constructing it
+    the G4/G6 stateful KDA / W2 fixes automatically); wiring is G7. Constructing it
     now fails fast rather than silently running a stub.
     """
 
