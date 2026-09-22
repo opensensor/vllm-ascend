@@ -256,9 +256,12 @@ def test_standalone_mtp_uses_existing_compressed_cache_allocator():
 
 def test_indexer_state_admission_includes_chunk_and_rollover_pages():
     config = _make_config()
+    # Admission follows the upstream in-flight-token contract, not the
+    # scheduler's nominal token budget.
+    config.scheduler_config.max_num_batched_tokens = 64
     state_spec = _make_specs()[STATE]
 
-    # sliding_window=block_size=2 and max_num_batched_tokens=8 requires
+    # sliding_window=block_size=2 and max_in_flight_tokens=8 requires
     # ceil((1 + 8) / 2) pages plus one boundary-rollover page.
     assert state_spec.max_memory_usage_bytes(config) == 6 * state_spec.page_size_bytes
 
