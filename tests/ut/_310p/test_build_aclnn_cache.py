@@ -68,6 +68,36 @@ def test_chunk_kda_uses_only_default_task_type_on_310p():
     assert kernel.index(guard) < kernel.index("KERNEL_TASK_TYPE(2")
 
 
+def test_chunk_kda_helpers_are_registered_for_310p():
+    for op_name in ("kda_gate_cumsum", "kda_layout_swap12"):
+        op_definition = (
+            REPO_ROOT
+            / "csrc"
+            / "attention"
+            / op_name
+            / "op_host"
+            / f"{op_name}_def.cpp"
+        ).read_text()
+
+        assert 'AddConfig("ascend310p", aicoreConfig)' in op_definition
+
+
+def test_kda_layout_swap_avoids_keyed_task_types_on_310p():
+    kernel = (
+        REPO_ROOT
+        / "csrc"
+        / "attention"
+        / "kda_layout_swap12"
+        / "op_kernel"
+        / "kda_layout_swap12.cpp"
+    ).read_text()
+
+    guard = "#if !defined(__CCE_AICORE__) || (__CCE_AICORE__ != 200)"
+    for tiling_key in range(3):
+        task_type = f"KERNEL_TASK_TYPE({tiling_key}"
+        assert kernel.rindex(guard, 0, kernel.index(task_type)) >= 0
+
+
 def test_chunk_kda_loads_310p_compat_before_catlass_kernels():
     kernel_dir = (
         REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_kernel"

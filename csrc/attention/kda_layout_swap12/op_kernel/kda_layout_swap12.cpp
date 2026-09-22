@@ -175,17 +175,23 @@ extern "C" __global__ __aicore__ void kda_layout_swap12(GM_ADDR x, GM_ADDR depen
     GET_TILING_DATA(tilingData, tiling);
     TPipe pipe;
     if (TILING_KEY_IS(0)) {
+#if !defined(__CCE_AICORE__) || (__CCE_AICORE__ != 200)
         KERNEL_TASK_TYPE(0, KERNEL_TYPE_AIV_ONLY);
+#endif
         KdaLayoutSwap12Kernel<float> op;
         op.Init(x, y, tilingData, &pipe);
         op.Process();
     } else if (TILING_KEY_IS(1)) {
+#if !defined(__CCE_AICORE__) || (__CCE_AICORE__ != 200)
         KERNEL_TASK_TYPE(1, KERNEL_TYPE_AIV_ONLY);
+#endif
         KdaLayoutSwap12Kernel<bfloat16_t> op;
         op.Init(x, y, tilingData, &pipe);
         op.Process();
     } else if (TILING_KEY_IS(2)) {
+#if !defined(__CCE_AICORE__) || (__CCE_AICORE__ != 200)
         KERNEL_TASK_TYPE(2, KERNEL_TYPE_AIV_ONLY);
+#endif
         KdaLayoutSwap12Kernel<half> op;
         op.Init(x, y, tilingData, &pipe);
         op.Process();
