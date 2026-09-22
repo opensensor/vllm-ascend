@@ -696,6 +696,18 @@ class NPUWorker(WorkerBase):
         has_attention = any(isinstance(spec, AttentionSpec) for spec in per_layer_specs)
         has_mamba = any(isinstance(spec, MambaSpec) for spec in per_layer_specs)
         model_runner = getattr(self, "model_runner", None)
+        uses_glm5_next_shared_slots = any(
+            getattr(spec, "model_version", None) == "glm5_next" for spec in per_layer_specs
+        ) and getattr(
+            model_runner,
+            "supports_glm5_next_shared_kv_slots",
+            False,
+        )
+        if uses_glm5_next_shared_slots:
+            # GLM-Next's planner accounts for its shared physical slots
+            # directly.  Scaling that budget is only required by the legacy
+            # 310P allocator that expanded every alias into private storage.
+            return available_memory
         layout = self.vllm_config.cache_config.get_resolved_kv_cache_layout()
         if (
             has_attention

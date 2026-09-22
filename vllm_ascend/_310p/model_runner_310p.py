@@ -187,6 +187,11 @@ class NPUModelRunner310(NPUModelRunner):
     # separate contiguous state buffers, so it cannot overlay both cache groups
     # on vLLM #51718's standardized shared backing allocation.
     supports_standardized_shared_kv_backing = False
+    # GLM-Next has a narrower, model-specific shared-slot contract: its cache
+    # planner only aliases layers from independent scheduler groups.  The base
+    # Ascend allocator already materializes those descriptors as contiguous
+    # per-layer views of one slot backing, which is compatible with 310P.
+    supports_glm5_next_shared_kv_slots = True
     supports_compact_mamba_state = False
     uniform_decode_query_len: int
     _spec_dummy_capture: bool = False
@@ -870,8 +875,29 @@ class NPUModelRunner310(NPUModelRunner):
                 "VLLM_ASCEND_310P_ENABLE_MLA=1: initializing experimental MLA "
                 "KV cache on 310P via AscendMLABackend310 (unverified on hardware)."
             )
-        # Initialize the memory buffer for KV cache
-        kv_caches = self._allocate_kv_cache_tensors(kv_cache_config)
+        # GLM-Next's planner emits one descriptor per physical cache slot and
+        # deliberately aliases MLA/Mamba or indexer/state layers whose block
+        # IDs come from independent scheduler groups.  Expanding those
+        # descriptors into private per-layer tensors multiplies the planned
+        # allocation and can OOM even though memory profiling admitted the
+        # cache.  Reuse the base Ascend shared-slot allocator and reshape path
+        # for this model; other 310P models retain their private cache layout.
+        layer_specs = self._get_layer_kv_cache_specs(kv_cache_config)
+        uses_glm5_next_shared_slots = any(
+            getattr(spec, "model_version", None) == "glm5_next" for spec in layer_specs.values()
+        )
+        if uses_glm5_next_shared_slots:
+            raw_caches = NPUModelRunner._allocate_kv_cache_tensors(
+                self,
+                kv_cache_config,
+            )
+            kv_caches = NPUModelRunner._reshape_kv_cache_tensors(
+                self,
+                kv_cache_config,
+                raw_caches,
+            )
+        else:
+            kv_caches = self._allocate_kv_cache_tensors(kv_cache_config)
         # Set up cross-layer KV cache sharing
         for layer_name, target_layer_name in self.shared_kv_cache_layers.items():
             logger.debug("%s reuses KV cache of %s", layer_name, target_layer_name)

@@ -30,6 +30,7 @@ from vllm_ascend._310p.model_runner_310p import (
     _get_layer_attention_backends,
     _iter_kv_cache_tensors,
 )
+from vllm_ascend.worker.model_runner_v1 import NPUModelRunner
 
 
 def _prepare_inputs_source() -> str:
@@ -100,7 +101,55 @@ def test_model_forward_updates_mtp_full_graph_params_before_replay() -> None:
 
 def test_310p_runner_does_not_advertise_standardized_shared_kv_backing() -> None:
     assert NPUModelRunner310.supports_standardized_shared_kv_backing is False
+    assert NPUModelRunner310.supports_glm5_next_shared_kv_slots is True
     assert NPUModelRunner310.supports_compact_mamba_state is False
+
+
+def test_glm5_next_cache_initialization_uses_shared_slot_allocator() -> None:
+    runner = object.__new__(NPUModelRunner310)
+    runner.model_config = SimpleNamespace(use_mla=False)
+    runner.vllm_config = SimpleNamespace(kv_transfer_config=None)
+    runner.runner_only_attn_layers = set()
+    runner.shared_kv_cache_layers = {}
+    runner.compilation_config = SimpleNamespace(static_forward_context={})
+    runner.kv_caches = []
+
+    layer_name = "model.layers.3.self_attn"
+    spec = SimpleNamespace(model_version="glm5_next")
+    cache_config = SimpleNamespace(
+        kv_cache_groups=[
+            SimpleNamespace(
+                kv_cache_spec=spec,
+                layer_names=[layer_name],
+            )
+        ]
+    )
+    raw_caches = {layer_name: torch.empty(1)}
+    reshaped_caches = {layer_name: [torch.empty(1)]}
+
+    with (
+        patch.object(
+            NPUModelRunner,
+            "_allocate_kv_cache_tensors",
+            return_value=raw_caches,
+        ) as allocate,
+        patch.object(
+            NPUModelRunner,
+            "_reshape_kv_cache_tensors",
+            return_value=reshaped_caches,
+        ) as reshape,
+        patch("vllm.v1.worker.utils.bind_kv_cache") as bind_kv_cache,
+    ):
+        result = runner.initialize_kv_cache_tensors(cache_config)
+
+    assert result is reshaped_caches
+    allocate.assert_called_once_with(runner, cache_config)
+    reshape.assert_called_once_with(runner, cache_config, raw_caches)
+    bind_kv_cache.assert_called_once_with(
+        reshaped_caches,
+        runner.compilation_config.static_forward_context,
+        runner.kv_caches,
+    )
 
 
 def test_iter_kv_cache_tensors_flattens_hybrid_layout() -> None:
