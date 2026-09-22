@@ -468,6 +468,39 @@ def _merged_kda_conv_weight(self_attn: Any) -> torch.Tensor:
     ).contiguous()
 
 
+def _rms_norm_gated_310(
+    x: torch.Tensor,
+    gate: torch.Tensor,
+    norm: Any,
+) -> torch.Tensor:
+    """Apply KDA's output RMSNorm and gate without the Triton launcher.
+
+    ``FusedRMSNormGated.forward_oot`` is backed by a Triton-style kernel.  On
+    310P that decorated kernel is a plain Python function, so indexing it with
+    a launch grid raises ``TypeError: 'function' object is not subscriptable``.
+    Use torch-npu's native RMSNorm and retain the upstream activation order.
+    """
+    import torch_npu
+
+    weight = getattr(norm, "weight", None)
+    if weight is None:
+        raise RuntimeError("GLM KDA output RMSNorm requires an affine weight")
+    normalized, _ = torch_npu.npu_rms_norm(x, weight, float(norm.eps))
+    bias = getattr(norm, "bias", None)
+    if bias is not None:
+        normalized = normalized + bias
+
+    gate_fp32 = gate.float()
+    activation = getattr(norm, "activation", "swish")
+    if activation in ("silu", "swish"):
+        activated_gate = gate_fp32 * torch.sigmoid(gate_fp32)
+    elif activation == "sigmoid":
+        activated_gate = torch.sigmoid(gate_fp32)
+    else:
+        raise ValueError(f"Unsupported KDA output gate activation: {activation}")
+    return normalized * activated_gate.to(normalized.dtype)
+
+
 def _bind_eager_kda_forward(self_attn: Any, kda_core: Any, io_dtype: torch.dtype) -> None:
     """Override shipped KDA with the stateful 310P AscendC implementation.
 
@@ -519,9 +552,10 @@ def _bind_eager_kda_forward(self_attn: Any, kda_core: Any, io_dtype: torch.dtype
                 beta_raw.unsqueeze(0),
                 conv_cache["w_310"],
             )
-            normalized = self_attn.o_norm(
+            normalized = _rms_norm_gated_310(
                 core,
                 g_out.reshape(-1, self_attn.local_num_heads, self_attn.head_dim),
+                self_attn.o_norm,
             )
             out = self_attn.o_proj(normalized.reshape(normalized.shape[1], -1))[0]
         else:
