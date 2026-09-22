@@ -140,6 +140,36 @@ def _get_attention_cache_tensor_shape(
     return cache_shape[1:]
 
 
+def _get_layer_attention_backends(attn_groups: Iterable[Iterable[Any]]) -> dict[str, Any]:
+    """Map each cache layer to the backend selected during runner setup."""
+    layer_backends: dict[str, Any] = {}
+    for cache_group in attn_groups:
+        for attention_group in cache_group:
+            for layer_name in attention_group.layer_names:
+                previous = layer_backends.setdefault(layer_name, attention_group.backend)
+                if previous is not attention_group.backend:
+                    raise ValueError(f"Multiple attention backends selected for {layer_name}")
+    return layer_backends
+
+
+def _allocate_attention_cache_tensor(
+    shape: tuple[int, ...],
+    dtype: torch.dtype,
+    device: torch.device,
+    cache_spec: AttentionSpec,
+) -> torch.Tensor:
+    if isinstance(cache_spec, MLAAttentionSpec):
+        # Ascend MLA consumes an ND latent cache. FRACTAL_NZ is the private
+        # dense 310P K/V layout and can expand this rank-4 MLA tensor heavily.
+        return torch.empty(shape, dtype=dtype, device=device)
+    return torch_npu.empty_with_format(
+        size=shape,
+        dtype=dtype,
+        device=device,
+        acl_format=ACL_FORMAT_FRACTAL_NZ,
+    )
+
+
 class NPUModelRunner310(NPUModelRunner):
     """
     310P model runner with a distinct ACL graph capture/replay contract from 910B:
@@ -865,6 +895,7 @@ class NPUModelRunner310(NPUModelRunner):
         """
         # init kv cache tensors
         kv_cache: dict[str, list[torch.Tensor] | tuple[torch.Tensor, torch.Tensor]] = {}
+        layer_attention_backends = _get_layer_attention_backends(getattr(self, "attn_groups", ()))
         # get kv cache spec for each layer
         layer_kv_cache_spec: dict[str, KVCacheSpec] = {}
         for group_kv_cache_spec in kv_cache_config.kv_cache_groups:
@@ -948,6 +979,7 @@ class NPUModelRunner310(NPUModelRunner):
                                 kv_cache[layer_name_inner] = state_tensors
                 elif isinstance(cache_spec, AttentionSpec) and layer_name not in kv_cache:
                     kv_cache_spec = cache_spec
+                    attn_backend = layer_attention_backends[layer_name]
                     assert kv_cache_tensor.size % kv_cache_spec.page_size_bytes == 0
                     num_blocks = kv_cache_tensor.size // kv_cache_spec.page_size_bytes
                     if not vllm_version_is("0.28.0"):
@@ -956,7 +988,7 @@ class NPUModelRunner310(NPUModelRunner):
                         num_blocks = kv_cache_config.num_blocks
                     assert num_blocks >= kv_cache_config.num_blocks
                     k_shape = _get_attention_cache_tensor_shape(
-                        self.attn_backend,
+                        attn_backend,
                         num_blocks,
                         kv_cache_spec,
                     )
@@ -964,11 +996,17 @@ class NPUModelRunner310(NPUModelRunner):
                     dtype = kv_cache_spec.dtype
                     if vllm_version_is("0.28.0"):
                         # v0.28.0 `shared_by` aliases the same physical blocks.
-                        k_cache = torch_npu.empty_with_format(
-                            size=k_shape, dtype=dtype, device=self.device, acl_format=self._acl_format
+                        k_cache = _allocate_attention_cache_tensor(
+                            k_shape,
+                            dtype,
+                            self.device,
+                            kv_cache_spec,
                         )
-                        v_cache = torch_npu.empty_with_format(
-                            size=v_shape, dtype=dtype, device=self.device, acl_format=self._acl_format
+                        v_cache = _allocate_attention_cache_tensor(
+                            v_shape,
+                            dtype,
+                            self.device,
+                            kv_cache_spec,
                         )
                         for layer_name_inner in shared_names:
                             # shared the kvcache between the self_attn specs in the same group
@@ -980,11 +1018,17 @@ class NPUModelRunner310(NPUModelRunner):
                         for layer_name_inner in shared_names:
                             if isinstance(layer_kv_cache_spec.get(layer_name_inner), AttentionSpec):
                                 kv_cache[layer_name_inner] = (
-                                    torch_npu.empty_with_format(
-                                        size=k_shape, dtype=dtype, device=self.device, acl_format=self._acl_format
+                                    _allocate_attention_cache_tensor(
+                                        k_shape,
+                                        dtype,
+                                        self.device,
+                                        kv_cache_spec,
                                     ),
-                                    torch_npu.empty_with_format(
-                                        size=v_shape, dtype=dtype, device=self.device, acl_format=self._acl_format
+                                    _allocate_attention_cache_tensor(
+                                        v_shape,
+                                        dtype,
+                                        self.device,
+                                        kv_cache_spec,
                                     ),
                                 )
         layer_names = set()

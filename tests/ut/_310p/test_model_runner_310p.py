@@ -25,7 +25,9 @@ from vllm.v1.worker.utils import copy_kv_cache_blocks_inplace
 from tests.ut.base import TestBase
 from vllm_ascend._310p.model_runner_310p import (
     NPUModelRunner310,
+    _allocate_attention_cache_tensor,
     _get_attention_cache_tensor_shape,
+    _get_layer_attention_backends,
     _iter_kv_cache_tensors,
 )
 
@@ -155,6 +157,48 @@ def test_dense_cache_shape_splits_leading_key_value_axis() -> None:
     shape = _get_attention_cache_tensor_shape(backend, 64, cache_spec)
 
     assert shape == (64, 8, 128, 16)
+
+
+def test_layer_attention_backends_preserve_hybrid_group_selection() -> None:
+    linear_backend = object()
+    mla_backend = object()
+    attn_groups = [
+        [
+            SimpleNamespace(backend=linear_backend, layer_names=["layers.0.attn"]),
+            SimpleNamespace(backend=mla_backend, layer_names=["layers.3.attn"]),
+        ]
+    ]
+
+    layer_backends = _get_layer_attention_backends(attn_groups)
+
+    assert layer_backends == {
+        "layers.0.attn": linear_backend,
+        "layers.3.attn": mla_backend,
+    }
+
+
+def test_mla_cache_allocation_keeps_nd_layout() -> None:
+    cache_spec = MLAAttentionSpec(
+        block_size=16,
+        num_kv_heads=1,
+        head_size=512,
+        dtype=torch.float16,
+    )
+
+    with patch(
+        "vllm_ascend._310p.model_runner_310p.torch_npu.empty_with_format",
+        create=True,
+    ) as empty_nz:
+        cache = _allocate_attention_cache_tensor(
+            (4, 16, 1, 8),
+            torch.float16,
+            torch.device("cpu"),
+            cache_spec,
+        )
+
+    assert cache.shape == (4, 16, 1, 8)
+    assert cache.is_contiguous()
+    empty_nz.assert_not_called()
 
 
 def test_nested_hybrid_cache_copy_uses_scheduler_block_geometry() -> None:
