@@ -834,11 +834,14 @@ class _GDNAttention(nn.Module, MambaBase):
 
 
 class _QSAAttention(nn.Module, AttentionLayerBase):
-    """QSA layer using cache-backed causal attention for short contexts.
+    """QSA layer using the native 310P paged-attention kernel.
 
     Short contexts use vLLM's standard cache-backed causal attention, which is
     equivalent to QSA while the complete context fits within its selection
-    budget. Long-context sparse index selection remains a separate fast path.
+    budget. During long-context decode, a small per-physical-page index-key
+    cache selects the most relevant KV pages and hands that compact block table
+    to the same native paged-attention kernel. This preserves the device-native
+    KV layout and avoids gathering 2,048 individual K/V rows in Python.
     """
 
     def __init__(self, *, config: object, layer_idx: int, dtype_policy: Qwen4ExpDtypePolicy, prefix: str = "") -> None:
@@ -851,6 +854,8 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
         self.head_dim = int(getattr(config, "head_dim", 256))
         self.index_n_heads = int(getattr(config, "indexer_n_heads", 4))
         self.index_head_dim = int(getattr(config, "indexer_head_dim", 128))
+        self.indexer_budget = int(getattr(config, "indexer_budget", 2048))
+        self.prefix = prefix
         vllm_config = get_current_vllm_config_or_none()
 
         self.q_proj = nn.Parameter(torch.zeros(self.num_heads * self.head_dim, hidden, dtype=self.params_dtype))
@@ -874,6 +879,11 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
             quant_config=None,
             prefix=prefix,
         )
+        # Lazily sized after vLLM binds the physical KV cache. Page summaries
+        # cost only one index-key row per physical page (rather than one row per
+        # token) and are local to this attention layer.
+        self.register_buffer("_qsa_page_key_sums", torch.empty(0), persistent=False)
+        self.register_buffer("_qsa_page_key_counts", torch.empty(0), persistent=False)
 
     def get_attn_backend(self) -> type[AttentionBackend]:
         return self.attn.get_attn_backend()
@@ -887,6 +897,116 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
             dtype=self.params_dtype,
         )
 
+    def _ensure_page_key_cache(self, device: torch.device) -> int | None:
+        """Allocate one projected index-key row per physical KV page."""
+        kv_cache = self.attn.kv_cache
+        if not isinstance(kv_cache, torch.Tensor) or kv_cache.ndim < 5 or kv_cache.numel() == 0:
+            return None
+
+        block_size = int(kv_cache.shape[-2])
+        num_blocks = int(kv_cache.shape[1])
+        if self._qsa_page_key_sums.shape != (num_blocks, self.index_head_dim):
+            self._qsa_page_key_sums = torch.zeros(
+                (num_blocks, self.index_head_dim),
+                dtype=self.params_dtype,
+                device=device,
+            )
+            self._qsa_page_key_counts = torch.zeros(
+                (num_blocks, 1),
+                dtype=torch.float32,
+                device=device,
+            )
+        return block_size
+
+    def _update_page_key_cache(
+        self,
+        block_input: torch.Tensor,
+        metadata: object,
+        block_size: int,
+    ) -> None:
+        """Project and retain one representative index key per touched page.
+
+        Tokens belonging to a physical page are contiguous in the scheduler
+        input. Keeping only the final row touched in this step reduces QSA
+        side-cache projection and writes by up to ``block_size`` during prefill,
+        while decode naturally updates the open page with its newest token.
+        """
+
+        num_actual_tokens = int(metadata.num_actual_tokens)
+        slots = metadata.slot_mapping[:num_actual_tokens].long()
+        valid = slots >= 0
+        valid_rows = torch.nonzero(valid, as_tuple=False).flatten()
+        slots = slots.index_select(0, valid_rows)
+        if slots.numel() == 0:
+            return
+
+        block_ids = torch.div(slots, block_size, rounding_mode="floor")
+        last_for_page = torch.ones_like(block_ids, dtype=torch.bool)
+        last_for_page[:-1] = block_ids[:-1] != block_ids[1:]
+        representative_rows = valid_rows[last_for_page]
+        representative_blocks = block_ids[last_for_page]
+        representative_keys = _linear(
+            block_input.index_select(0, representative_rows),
+            self.ik_proj,
+            self.compute_dtype,
+        ).to(self._qsa_page_key_sums.dtype)
+        self._qsa_page_key_sums.index_copy_(0, representative_blocks, representative_keys)
+        self._qsa_page_key_counts.index_fill_(0, representative_blocks, 1)
+
+    def _select_decode_pages(
+        self,
+        index_queries: torch.Tensor,
+        metadata: object,
+        block_size: int,
+    ) -> tuple[torch.Tensor, torch.Tensor] | None:
+        """Build a content-selected block table for long-context decode."""
+        seq_lens = metadata.seq_lens_list
+        if not seq_lens or max(seq_lens) <= self.indexer_budget:
+            return None
+        if index_queries.shape[0] < len(seq_lens):
+            return None
+
+        page_budget = max(self.indexer_budget // block_size, 1)
+        if page_budget < 2:
+            return None
+        # Tool results can push the immediately preceding user instruction out
+        # of the open page. Pin a modest recent window, then spend the remaining
+        # budget on content-selected history pages.
+        recent_page_budget = min(8, page_budget)
+
+        selected_tables: list[torch.Tensor] = []
+        selected_lens: list[int] = []
+        for request_idx, seq_len in enumerate(seq_lens):
+            logical_pages = (int(seq_len) + block_size - 1) // block_size
+            if logical_pages <= page_budget:
+                return None
+
+            physical_pages = metadata.block_tables[request_idx, :logical_pages].long()
+            page_sums = self._qsa_page_key_sums.index_select(0, physical_pages)
+            page_counts = self._qsa_page_key_counts.index_select(0, physical_pages).clamp_min_(1.0)
+            page_keys = page_sums.to(torch.float32) / page_counts
+            query = index_queries[request_idx].to(torch.float32)
+            scores = torch.matmul(query, page_keys.transpose(0, 1)).clamp_min_(0).sum(dim=0)
+
+            recent_count = min(recent_page_budget, logical_pages)
+            recent_start = logical_pages - recent_count
+            content_topk = min(page_budget - recent_count, recent_start)
+            if content_topk > 0:
+                content_pages = torch.topk(scores[:recent_start], content_topk, sorted=False).indices
+                content_pages = torch.sort(content_pages).values
+            else:
+                content_pages = physical_pages.new_empty((0,), dtype=torch.long)
+            recent_pages = torch.arange(recent_start, logical_pages, device=physical_pages.device)
+            logical_selection = torch.cat([content_pages, recent_pages])
+            selected_tables.append(physical_pages.index_select(0, logical_selection))
+            last_page_tokens = (int(seq_len) - 1) % block_size + 1
+            selected_lens.append((logical_selection.numel() - 1) * block_size + last_page_tokens)
+
+        return (
+            torch.stack(selected_tables).to(metadata.block_tables.dtype),
+            metadata.seq_lens.new_tensor(selected_lens),
+        )
+
     def forward(self, block_input: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
         seq_len = block_input.shape[0]
         q = _linear(block_input, self.q_proj, self.compute_dtype).view(seq_len, self.num_heads, self.head_dim)
@@ -898,11 +1018,38 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
         k = k.to(self.params_dtype)
         v = v.to(self.params_dtype)
         gate = gate.to(self.params_dtype)
-        out = self.attn(
-            q.reshape(seq_len, -1),
-            k.reshape(seq_len, -1),
-            v.reshape(seq_len, -1),
-        ).view(seq_len, self.num_heads, self.head_dim)
+        metadata_by_layer = get_forward_context().attn_metadata
+        metadata = metadata_by_layer.get(self.prefix) if isinstance(metadata_by_layer, dict) else None
+        page_selection = None
+        if metadata is not None and block_input.device.type == "npu":
+            block_size = self._ensure_page_key_cache(block_input.device)
+            if block_size is not None:
+                self._update_page_key_cache(block_input, metadata, block_size)
+            if block_size is not None and metadata.num_prefills == 0:
+                num_requests = len(metadata.seq_lens_list)
+                index_q = _linear(
+                    block_input[:num_requests],
+                    self.iq_proj,
+                    self.compute_dtype,
+                ).view(num_requests, self.index_n_heads, self.index_head_dim)
+                page_selection = self._select_decode_pages(index_q, metadata, block_size)
+
+        original_block_tables = None
+        original_seq_lens = None
+        if page_selection is not None:
+            original_block_tables = metadata.block_tables
+            original_seq_lens = metadata.seq_lens
+            metadata.block_tables, metadata.seq_lens = page_selection
+        try:
+            out = self.attn(
+                q.reshape(seq_len, -1),
+                k.reshape(seq_len, -1),
+                v.reshape(seq_len, -1),
+            ).view(seq_len, self.num_heads, self.head_dim)
+        finally:
+            if original_block_tables is not None:
+                metadata.block_tables = original_block_tables
+                metadata.seq_lens = original_seq_lens
         out = out * torch.sigmoid(gate)
         return _linear(out.reshape(seq_len, -1), self.o_proj, self.compute_dtype).to(self.params_dtype)
 
