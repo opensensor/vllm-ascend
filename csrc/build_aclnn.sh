@@ -110,6 +110,32 @@ invalidate_stale_kernel_cache() {
     done
 }
 
+invalidate_stale_host_cache() {
+    local autogen_root="${ROOT_DIR}/csrc/build/autogen"
+    local generated_proto
+    local op_name
+    local op_path
+
+    [[ -d "${autogen_root}" ]] || return 0
+
+    for op_name in "${CUSTOM_OPS_ARRAY[@]}"; do
+        op_path=$(resolve_op_dir "${op_name}")
+        [[ -n "${op_path}" && -d "${op_path}/op_host" ]] || continue
+
+        for generated_proto in \
+            "${autogen_root}/${op_name}_proto.cpp" \
+            "${autogen_root}/inner/${op_name}_proto.cpp" \
+            "${autogen_root}/exc/${op_name}_proto.cpp"; do
+            [[ -f "${generated_proto}" ]] || continue
+            if find "${op_path}/op_host" -type f -newer "${generated_proto}" \
+                -print -quit | grep -q .; then
+                log "invalidating stale host metadata for ${op_name}"
+                rm -f -- "${generated_proto}"
+            fi
+        done
+    done
+}
+
 log "start: ROOT_DIR=${ROOT_DIR:-<unset>} SOC_VERSION=${SOC_VERSION:-<unset>} cwd=$(pwd)"
 log "env: ASCEND_HOME_PATH=${ASCEND_HOME_PATH:-<unset>} ASCEND_TOOLKIT_HOME=${ASCEND_TOOLKIT_HOME:-<unset>}"
 
@@ -293,6 +319,7 @@ fi
 
 log_selected_ops
 invalidate_stale_kernel_cache
+invalidate_stale_host_cache
 
 
 # # build custom ops

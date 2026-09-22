@@ -24,6 +24,13 @@ def test_w2_shared_kernel_changes_invalidate_compile_stamps():
     assert 'find "${ROOT_DIR}/csrc/moe/common/kernel_utils" -type f' in build_script
 
 
+def test_host_changes_invalidate_generated_operator_metadata():
+    build_script = (REPO_ROOT / "csrc" / "build_aclnn.sh").read_text()
+
+    assert 'find "${op_path}/op_host" -type f -newer "${generated_proto}"' in build_script
+    assert 'rm -f -- "${generated_proto}"' in build_script
+
+
 def test_gcc15_protobuf_build_includes_cstdint():
     protobuf_cmake = (REPO_ROOT / "csrc" / "cmake" / "third_party" / "ascend_protobuf.cmake").read_text()
 
