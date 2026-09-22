@@ -109,6 +109,7 @@ def test_glm5_next_cache_initialization_uses_shared_slot_allocator() -> None:
     runner = object.__new__(NPUModelRunner310)
     runner.model_config = SimpleNamespace(use_mla=False)
     runner.vllm_config = SimpleNamespace(kv_transfer_config=None)
+    runner.use_sparse = False
     runner.runner_only_attn_layers = set()
     runner.shared_kv_cache_layers = {}
     runner.compilation_config = SimpleNamespace(static_forward_context={})
