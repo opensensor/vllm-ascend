@@ -72,6 +72,34 @@ log_selected_ops() {
     done
 }
 
+invalidate_stale_kernel_cache() {
+    local binary_root="${ROOT_DIR}/csrc/build/binary/${SOC_ARG}"
+    local compile_stamp
+    local op_name
+    local op_path
+    local source_stamp
+
+    [[ -d "${binary_root}" ]] || return 0
+
+    for op_name in "${CUSTOM_OPS_ARRAY[@]}"; do
+        op_path=$(resolve_op_dir "${op_name}")
+        [[ -n "${op_path}" && -d "${op_path}/op_kernel" ]] || continue
+
+        source_stamp="${binary_root}/src/${op_name}/${op_name}_${SOC_ARG}_src_copy.done"
+        if [[ -f "${source_stamp}" ]] &&
+           ! find "${op_path}/op_kernel" -type f -newer "${source_stamp}" -print -quit | grep -q .; then
+            continue
+        fi
+
+        log "invalidating stale kernel cache for ${op_name}"
+        rm -f -- "${source_stamp}"
+        while IFS= read -r -d '' compile_stamp; do
+            rm -f -- "${compile_stamp}"
+        done < <(find "${binary_root}/gen" -maxdepth 1 -type f \
+            -name "${op_name}_${SOC_ARG}_*.done" -print0 2>/dev/null)
+    done
+}
+
 log "start: ROOT_DIR=${ROOT_DIR:-<unset>} SOC_VERSION=${SOC_VERSION:-<unset>} cwd=$(pwd)"
 log "env: ASCEND_HOME_PATH=${ASCEND_HOME_PATH:-<unset>} ASCEND_TOOLKIT_HOME=${ASCEND_TOOLKIT_HOME:-<unset>}"
 
@@ -251,6 +279,7 @@ else
 fi
 
 log_selected_ops
+invalidate_stale_kernel_cache
 
 
 # # build custom ops

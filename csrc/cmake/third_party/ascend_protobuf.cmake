@@ -42,6 +42,12 @@ else()
     endif()
     
     set(protobuf_CXXFLAGS "-Wno-maybe-uninitialized -Wno-unused-parameter -fPIC -fstack-protector-all -D_FORTIFY_SOURCE=2 -D_GLIBCXX_USE_CXX11_ABI=0 -O2 -Dgoogle=ascend_private")
+    # Abseil bundled with protobuf 25.1 uses uintptr_t without including
+    # <cstdint>. GCC 15 no longer exposes it transitively, so keep clean builds
+    # working with the system compiler used by current development images.
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15)
+        string(APPEND protobuf_CXXFLAGS " -include cstdint")
+    endif()
     set(protobuf_LDFLAGS "-Wl,-z,relro,-z,now,-z,noexecstack")
 
     ExternalProject_Add(ascend_protobuf_build_transformer
