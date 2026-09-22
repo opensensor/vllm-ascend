@@ -13,7 +13,9 @@
 #include "catlass/arch/cross_core_sync.hpp"
 #include "catlass/arch/resource.hpp"
 #include "catlass/catlass.hpp"
+#if !defined(__CCE_AICORE__) || (__CCE_AICORE__ != 200)
 #include "catlass/debug.hpp"
+#endif
 #include "catlass/epilogue/block/block_epilogue.hpp"
 #include "../../epilogue/block/block_epilogue_gdn_fwdh_update.hpp"
 #include "../../epilogue/block/block_epilogue_gdn_fwdh_vnew.hpp"

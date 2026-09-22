@@ -86,3 +86,19 @@ def test_chunk_kda_loads_310p_compat_before_catlass_kernels():
     assert "struct bfloat16_t" in compat_header
     assert "#define PIPE_FIX PIPE_MTE3" in compat_header
     assert "#define LoadDataWithSparse LoadDataWithSparseCal" in compat_header
+
+
+def test_generic_kda_state_kernel_avoids_host_debug_header_on_310p():
+    kernel = (
+        REPO_ROOT
+        / "csrc"
+        / "moe"
+        / "chunk_gated_delta_rule_fwd_h"
+        / "op_kernel"
+        / "gemm"
+        / "kernel"
+        / "gdn_fwd_h_kernel.hpp"
+    ).read_text()
+
+    arch_guard = "#if !defined(__CCE_AICORE__) || (__CCE_AICORE__ != 200)"
+    assert kernel.index(arch_guard) < kernel.index('#include "catlass/debug.hpp"')
