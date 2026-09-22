@@ -123,7 +123,11 @@ public:
             const uint32_t nActual = MinU<uint32_t>(W2_TILE_N, (uint32_t)N_ - n0);
 
             DequantTileToNz(n0, nActual);
-            AscendC::PipeBarrier<PIPE_ALL>();
+            // The dequantizer writes this core's packed-NZ workspace through
+            // MTE3, while BlockMmad consumes it from GM through MTE2.  A pipe
+            // barrier does not order those engines on 310P.
+            SetFlag<HardEvent::MTE3_MTE2>(EVENT_ID4);
+            WaitFlag<HardEvent::MTE3_MTE2>(EVENT_ID4);
 
             GemmCoord shape{(uint32_t)T_, nActual, (uint32_t)K_};
             auto tA = GetTile(tensorA, tla::MakeCoord((uint32_t)0, (uint32_t)0),
@@ -139,8 +143,11 @@ public:
             blockMmad.preSetFlags();
             blockMmad(tA, tB, tC, shape);
             blockMmad.finalWaitFlags();
-            AscendC::PipeBarrier<PIPE_ALL>();
-
+            // A core can process several N tiles and reuse the same GM
+            // workspace.  Finish BlockMmad's MTE2 reads before the next tile
+            // overwrites that workspace through MTE3.
+            SetFlag<HardEvent::MTE2_MTE3>(EVENT_ID4);
+            WaitFlag<HardEvent::MTE2_MTE3>(EVENT_ID4);
         }
     }
 
