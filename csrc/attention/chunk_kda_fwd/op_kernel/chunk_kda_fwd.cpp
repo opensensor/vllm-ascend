@@ -191,8 +191,12 @@ extern "C" __global__ __aicore__ void chunk_kda_fwd(
     GM_ADDR qg_scaled, GM_ADDR u_seed, GM_ADDR workspace, GM_ADDR tiling)
 {
     KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);
+    // 310P codegen only supports the default task-type registration. Both
+    // tiling keys use the same arch20 mixed-core ABI on that target.
+#if !defined(__CCE_AICORE__) || (__CCE_AICORE__ != 200)
     KERNEL_TASK_TYPE(1, KERNEL_TYPE_MIX_AIC_1_2);
     KERNEL_TASK_TYPE(2, KERNEL_TYPE_MIX_AIC_1_2);
+#endif
     GM_ADDR userWorkspace = AscendC::GetUserWorkspace(workspace);
     GET_TILING_DATA_WITH_STRUCT(ChunkKdaFwdTilingData, tilingData, tiling);
     if (TILING_KEY_IS(1)) {
