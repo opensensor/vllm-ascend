@@ -426,3 +426,29 @@ The local implementation now:
 The correction passes the offloader and GLM/W2 regression set locally (65
 tests). Per operator instruction, no further Ascend hardware run has been made;
 the corrected startup and golden prompt remain hardware-unvalidated.
+
+## UPDATE 10 (2026-09-22, sparse packed-expert offload)
+
+The all-layer registered-parameter offload made full W4 fit, but transferred
+about 4.2 GB/rank for every token. The 310P GLM path can now instead select
+packed routed-expert banks with the existing prefetch layer pattern by adding
+`packed_experts` to `--offload-params`. Selected banks remain pinned on the
+host; after routing, only nonzero locally-owned experts are staged to NPU in
+their compact W2/W4 representation. The weights are never widened on host or
+while crossing PCIe.
+
+A conservative full-W4 starting point is one expert layer in every eight:
+
+```text
+--offload-backend prefetch \
+--offload-group-size 8 \
+--offload-num-in-group 1 \
+--offload-prefetch-step 1 \
+--offload-params packed_experts
+```
+
+Five selected MoE layers should free about 4.25 GiB/rank. At single-token
+decode, top-8 routing transfers at most the selected local experts rather than
+all 72 local experts, reducing the expected steady-state transfer from roughly
+4 GB/rank/token to about 0.1--0.2 GB/rank/token. Exact throughput and the
+minimum safe pattern still require hardware measurement.

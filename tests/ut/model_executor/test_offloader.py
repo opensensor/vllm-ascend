@@ -10,6 +10,7 @@ from vllm_ascend.model_executor.offloader.prefetch import (
     AscendStaticBufferPool,
     ParamInfo,
     _is_using_nz_weight,
+    _ModuleOffloader,
 )
 from vllm_ascend.worker.model_runner_v1 import (
     _net_offloaded_device_bytes,
@@ -118,6 +119,42 @@ def test_ascend_static_pool_allocates_only_reachable_key_slot_pairs():
     assert pool.get_buffer(*odd_layer.key, slot_idx=1).shape == (3, 3)
     assert pool._buffers[even_layer.key][1] is None
     assert pool._buffers[odd_layer.key][0] is None
+
+
+def test_module_offloader_reuses_compute_ready_event_in_eager_decode():
+    offloader = _ModuleOffloader.__new__(_ModuleOffloader)
+    offloader._buffer_pool = object()
+    offloader._eager_compute_ready_event = MagicMock()
+    offloader._copy_done_event = MagicMock()
+    offloader.copy_stream = MagicMock()
+    offloader._param_offloaders = {}
+
+    current_stream = MagicMock()
+    stream_context = MagicMock()
+    stream_context.__enter__.return_value = None
+    stream_context.__exit__.return_value = False
+    with (
+        patch(
+            "vllm_ascend.model_executor.offloader.prefetch.torch.cuda.current_stream",
+            return_value=current_stream,
+        ),
+        patch(
+            "vllm_ascend.model_executor.offloader.prefetch.torch.cuda.is_current_stream_capturing",
+            return_value=False,
+        ),
+        patch(
+            "vllm_ascend.model_executor.offloader.prefetch.torch.cuda.stream",
+            return_value=stream_context,
+        ),
+        patch("vllm_ascend.model_executor.offloader.prefetch.torch.cuda.Event") as event_factory,
+    ):
+        offloader.start_onload_to_static()
+        offloader.start_onload_to_static()
+
+    event_factory.assert_not_called()
+    assert current_stream.record_event.call_count == 2
+    current_stream.record_event.assert_called_with(offloader._eager_compute_ready_event)
+    assert offloader.copy_stream.wait_event.call_count == 2
 
 
 def test_net_offloaded_device_bytes_subtracts_static_pool():

@@ -64,7 +64,10 @@ def _make_config():
             decode_context_parallel_size=1,
             prefill_context_parallel_size=1,
         ),
-        scheduler_config=SimpleNamespace(disable_hybrid_kv_cache_manager=False),
+        scheduler_config=SimpleNamespace(
+            disable_hybrid_kv_cache_manager=False,
+            max_num_batched_tokens=8,
+        ),
         max_in_flight_tokens=8,
         cache_config=SimpleNamespace(
             num_gpu_blocks_override=None,
@@ -249,6 +252,15 @@ def test_standalone_mtp_uses_existing_compressed_cache_allocator():
 
     assert set(raw_caches) == {MAIN, INDEXER, STATE}
     assert raw_caches[INDEXER] is raw_caches[STATE]
+
+
+def test_indexer_state_admission_includes_chunk_and_rollover_pages():
+    config = _make_config()
+    state_spec = _make_specs()[STATE]
+
+    # sliding_window=block_size=2 and max_num_batched_tokens=8 requires
+    # ceil((1 + 8) / 2) pages plus one boundary-rollover page.
+    assert state_spec.max_memory_usage_bytes(config) == 6 * state_spec.page_size_bytes
 
 
 def test_glm5_next_initialize_passes_all_pooled_views_to_cache_binding():

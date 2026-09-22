@@ -283,11 +283,24 @@ class AscendIndexerKPoolStateSpec(AscendSlidingWindowMLASpec):
         return copy.deepcopy(specs[0])
 
     def max_memory_usage_bytes(self, vllm_config: VllmConfig) -> int:
-        del vllm_config
-        # The state group keeps only the current incomplete pool. Since its
-        # sliding window and block size are identical, one page per request is
-        # sufficient on every context-parallel rank.
-        return self.page_size_bytes
+        if vllm_config.parallel_config.decode_context_parallel_size > 1:
+            # The 310P context-parallel state path keeps one replicated current
+            # pool per rank and does not use the ordinary sliding-window
+            # admission contract (which rejects DCP outright).
+            return self.page_size_bytes
+        # The state kernel only reads the current incomplete pool, but the
+        # SlidingWindowManager temporarily holds every page touched by one
+        # scheduler chunk plus a rollover page. Advertising one page can admit
+        # a pool that completes prefill and then stalls when decode crosses the
+        # next compression boundary. Keep startup admission consistent with
+        # the runtime manager's allocation bound.
+        max_model_len = vllm_config.model_config.max_model_len
+        max_num_batched_tokens = vllm_config.scheduler_config.max_num_batched_tokens
+        max_blocks = self.max_admission_blocks_per_request(
+            max_num_batched_tokens=max_num_batched_tokens,
+            max_model_len=max_model_len,
+        )
+        return max_blocks * self.page_size_bytes
 
 
 def register_ascend_kv_cache_specs() -> None:

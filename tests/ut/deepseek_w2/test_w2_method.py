@@ -131,6 +131,7 @@ from vllm_ascend._310p.quantization.methods.w2_dynamic import (  # noqa: E402
     _device_kernel_available,
     _is_nvfp4,
     _nvfp4_dequant_fp32,
+    _stage_packed_expert,
 )
 from vllm_ascend.models.deepseek_v41.w2_unpack import route_topk_w2  # noqa: E402
 
@@ -195,6 +196,29 @@ def test_device_kernel_guard_is_host_under_stub():
     # The stubbed torch_npu lacks the fused INT8 grouped-matmul symbol, so apply
     # deterministically takes the host math path in the CPU UT.
     assert _device_kernel_available() is False
+
+
+def test_resident_packed_expert_staging_is_zero_copy():
+    expert = _make_experts(1, seed=21)[0]
+
+    assert _stage_packed_expert(expert, expert.gate_packed.device) is expert
+
+
+def test_device_path_skips_zero_weight_ep_pairs_before_expert_access():
+    method = _method()
+    x = torch.randn(2, _HIDDEN)
+    topk_ids = torch.zeros(2, 3, dtype=torch.int64)
+    topk_weights = torch.zeros(2, 3)
+
+    output = method._apply_device(
+        experts=[],
+        x=x,
+        topk_weights=topk_weights,
+        topk_ids=topk_ids,
+        shared_expert=None,
+    )
+
+    assert torch.equal(output, torch.zeros_like(x, dtype=torch.float32))
 
 
 def test_cube_kernel_accepts_validated_l0c_rows_and_rejects_larger_groups():

@@ -252,3 +252,25 @@ def test_w2_config_contract_constants():
     assert m.KDA_HEAD_DIM == 128
     assert m.ROUTED_SCALING_FACTOR == 2.5
     assert m.NUM_NEXTN_PREDICT_LAYERS == 1
+
+
+def test_packed_expert_offload_requires_explicit_marker_and_follows_pattern():
+    from types import SimpleNamespace
+
+    import vllm_ascend.models.glm5next_w2.model as m
+
+    def config(params):
+        return SimpleNamespace(
+            offload_backend="prefetch",
+            prefetch=SimpleNamespace(
+                offload_group_size=8,
+                offload_num_in_group=2,
+                offload_params=set(params),
+            ),
+        )
+
+    assert not m._should_offload_packed_experts(config(set()), 6)
+    assert not m._should_offload_packed_experts(config({"gate_up_proj"}), 6)
+    assert m._should_offload_packed_experts(config({m.PACKED_EXPERTS_OFFLOAD_PARAM}), 6)
+    assert m._should_offload_packed_experts(config({m.PACKED_EXPERTS_OFFLOAD_PARAM}), 7)
+    assert not m._should_offload_packed_experts(config({m.PACKED_EXPERTS_OFFLOAD_PARAM}), 8)

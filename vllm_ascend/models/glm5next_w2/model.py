@@ -88,6 +88,11 @@ KDA_NUM_HEADS_CONFIG_KEY = "linear_num_heads"
 KDA_HEAD_DIM_CONFIG_KEY = "linear_head_dim"
 KDA_CONV_KERNEL_CONFIG_KEY = "linear_conv_kernel_dim"
 
+# Virtual prefetch-offload parameter selecting the packed expert bank. Packed
+# W2/W4 tensors are plain attributes rather than nn.Parameters, so upstream's
+# module offloader cannot discover them through ``named_parameters()``.
+PACKED_EXPERTS_OFFLOAD_PARAM = "packed_experts"
+
 
 # ===========================================================================
 # fp8-MoE OOM prevention (the GLM-specific device delta -- see module docstring)
@@ -194,6 +199,7 @@ class _PackedW2Expert:
     __slots__ = (
         "hidden",
         "inter",
+        "offload_to_cpu",
         "gate_packed",
         "gate_scale",
         "up_packed",
@@ -202,9 +208,10 @@ class _PackedW2Expert:
         "down_scale",
     )
 
-    def __init__(self, hidden: int, inter: int) -> None:
+    def __init__(self, hidden: int, inter: int, *, offload_to_cpu: bool = False) -> None:
         self.hidden = int(hidden)
         self.inter = int(inter)
+        self.offload_to_cpu = bool(offload_to_cpu)
         self.gate_packed: torch.Tensor | None = None
         self.gate_scale: torch.Tensor | None = None
         self.up_packed: torch.Tensor | None = None
@@ -238,11 +245,37 @@ def _expert_geometry_from_config(config: Any) -> dict[str, int]:
     }
 
 
-def _new_packed_expert_bank(geometry: dict[str, int]) -> list[_PackedW2Expert]:
+def _new_packed_expert_bank(
+    geometry: dict[str, int],
+    *,
+    offload_to_cpu: bool = False,
+) -> list[_PackedW2Expert]:
     """A fresh (unfilled) per-expert packed bank for one MoE layer."""
     hidden = geometry["hidden_size"]
     inter = geometry["moe_intermediate_size"]
-    return [_PackedW2Expert(hidden, inter) for _ in range(geometry["n_routed_experts"])]
+    return [_PackedW2Expert(hidden, inter, offload_to_cpu=offload_to_cpu) for _ in range(geometry["n_routed_experts"])]
+
+
+def _should_offload_packed_experts(offload_config: Any | None, layer_idx: int) -> bool:
+    """Whether the existing prefetch pattern selects this packed expert layer.
+
+    The feature is explicit: users include ``packed_experts`` in
+    ``--offload-params``. An empty parameter set retains the established
+    behavior of offloading registered parameters only, avoiding an unexpected
+    host-memory increase for existing launch commands.
+    """
+    if offload_config is None:
+        return False
+    prefetch = getattr(offload_config, "prefetch", None)
+    backend = getattr(offload_config, "offload_backend", "auto")
+    if prefetch is None or backend not in ("auto", "prefetch"):
+        return False
+    group_size = int(getattr(prefetch, "offload_group_size", 0) or 0)
+    num_in_group = int(getattr(prefetch, "offload_num_in_group", 0) or 0)
+    offload_params = set(getattr(prefetch, "offload_params", set()) or set())
+    if group_size <= 0 or PACKED_EXPERTS_OFFLOAD_PARAM not in offload_params:
+        return False
+    return layer_idx % group_size >= group_size - num_in_group
 
 
 def _place_streamed_expert(
@@ -286,12 +319,19 @@ def _place_streamed_expert(
         lo, hi = ep_expert_range(ep_rank, ep_size, geometry["n_routed_experts"])
         if not (lo <= mapping.expert_id < hi):
             return mapping.block
-    # The packed W2 codes/scales are plain attributes (not nn.Parameters), so
-    # vLLM's device placement never touches them and they load on CPU. The W2
-    # grouped-matmul-dequant runs on the NPU, so move them to the device here.
-    if tensor.device.type != "npu":
+    expert = bank[mapping.expert_id]
+    if expert.offload_to_cpu:
+        # Keep the packed bank on host and stage only router-selected experts at
+        # runtime. Pinning makes the non-blocking H2D copies real when the
+        # platform supports pinned host storage.
+        tensor = tensor.cpu()
+        from vllm.model_executor.offloader.base import should_pin_memory
+
+        if should_pin_memory() and not tensor.is_pinned():
+            tensor = tensor.pin_memory()
+    elif tensor.device.type != "npu":
         tensor = tensor.to("npu")
-    setattr(bank[mapping.expert_id], attr, tensor)
+    setattr(expert, attr, tensor)
     return mapping.block
 
 
@@ -330,7 +370,12 @@ def _layer_is_moe(layer: Any) -> bool:
     return isinstance(experts, _NoFp8FusedMoEExperts)
 
 
-def _install_w2_moe(layers: Iterable[Any], config: Any, dtype_policy: Glm5NextW2DtypePolicy) -> int:
+def _install_w2_moe(
+    layers: Iterable[Any],
+    config: Any,
+    dtype_policy: Glm5NextW2DtypePolicy,
+    offload_config: Any | None = None,
+) -> int:
     """G6: attach a ``Glm5NextW2MoE`` seam to every MoE layer + bind its forward.
 
     Mirrors the DeepSeek V4.1 ``_swap_moe_to_w2`` (one W2 MoE per routed layer,
@@ -359,7 +404,11 @@ def _install_w2_moe(layers: Iterable[Any], config: Any, dtype_policy: Glm5NextW2
             e_score_correction_bias=bias,
             dtype_policy=dtype_policy,
         )
-        w2_moe.w2_experts = _new_packed_expert_bank(geometry)
+        layer_idx = int(getattr(layer, "layer_idx", count))
+        w2_moe.w2_experts = _new_packed_expert_bank(
+            geometry,
+            offload_to_cpu=_should_offload_packed_experts(offload_config, layer_idx),
+        )
         layer.mlp_w2 = w2_moe
         experts = getattr(mlp, "experts", None)
         if isinstance(experts, _NoFp8FusedMoEExperts):
@@ -822,6 +871,7 @@ def _build_causal_lm_cls() -> type:
             # KDA/DSA/dense/shared/LM-head, FP32 accum). Every W2 submodule
             # reads this rather than spelling dtype literals.
             self.dtype_policy: Glm5NextW2DtypePolicy = Glm5NextW2DtypePolicy.from_vllm_config(vllm_config)
+            self._w2_offload_config = getattr(vllm_config, "offload_config", None)
             # Config plumbing: expose the flattened GLM text config so the
             # shipped constructor sees 45L / 288-expert / KDA+DSA / MTP-1.
             self._glm_text_config = _resolve_glm_text_config(vllm_config)
@@ -886,7 +936,12 @@ def _build_causal_lm_cls() -> type:
             so the fp8 path is fully bypassed. The packed per-expert bank is filled
             by :meth:`load_weights`. Component wired: ``glm5next_w2.moe`` (G6).
             """
-            self._moe_swapped = _install_w2_moe(_iter_model_layers(self), self._glm_text_config, self.dtype_policy)
+            self._moe_swapped = _install_w2_moe(
+                _iter_model_layers(self),
+                self._glm_text_config,
+                self.dtype_policy,
+                self._w2_offload_config,
+            )
 
         # -- KV-cache report (hybrid KDA + DSA) ----------------------------
         #

@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 import torch_npu
 from vllm.logger import logger
+from vllm.model_executor.offloader.base import should_pin_memory
 from vllm.model_executor.offloader.prefetch import (
     ParamInfo as VllmParamInfo,
 )
@@ -243,7 +244,37 @@ class _ModuleOffloader(VllmModuleOffloader):
             whitelist_param_names=whitelist_param_names,
             layer_idx=layer_idx,
         )
+        # Eager decode revisits every offloaded module for every token. Reuse
+        # its compute-to-copy event instead of allocating an NPU event on each
+        # visit. Graph capture keeps the upstream call-scoped event because an
+        # event created outside capture is not portable across CANN versions.
+        self._eager_compute_ready_event = torch.cuda.Event()
         self._wrap_process_weights_for_format_detection()
+
+    def start_onload_to_static(self) -> None:
+        """Start an async H2D copy without allocating an event in eager decode."""
+        assert self._buffer_pool is not None, "Buffer pool not assigned"
+
+        is_capturing = torch.cuda.is_current_stream_capturing()
+        self._prefetch_in_capture = is_capturing
+        compute_ready_event = torch.cuda.Event() if is_capturing else self._eager_compute_ready_event
+        torch.cuda.current_stream().record_event(compute_ready_event)
+        self.copy_stream.wait_event(compute_ready_event)
+
+        with torch.cuda.stream(self.copy_stream):
+            for name, offloader in self._param_offloaders.items():
+                cpu_storage = offloader._cpu_storage
+                gpu_buffer = offloader._gpu_buffer
+                assert cpu_storage is not None, "CPU storage not initialized"
+                assert gpu_buffer is not None, "GPU buffer not assigned"
+                assert not should_pin_memory() or cpu_storage.is_pinned(), (
+                    f"CPU storage for {name} is not pinned! non_blocking=True "
+                    "H2D copy from non-pinned memory causes stream synchronization."
+                )
+                gpu_buffer.copy_(cpu_storage, non_blocking=True)
+
+        self._copy_done_event.record(self.copy_stream)
+        self._event_valid_for_eager = not is_capturing
 
     def _capture_static_buffer_formats_from_npu_params(self) -> None:
         """

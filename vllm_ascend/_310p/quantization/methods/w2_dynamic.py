@@ -50,6 +50,7 @@ applies its per-``[32, 32]`` scale while producing NZ tiles, and feeds those
 tiles directly to Cube. It never widens the full expert bank.
 """
 
+from types import SimpleNamespace
 from typing import Any
 
 import torch
@@ -111,6 +112,35 @@ def _device_kernel_available() -> bool:
     so the CPU UT deterministically takes the host math path.
     """
     return torch_npu is not None and hasattr(torch_npu, _W2_DEVICE_KERNEL)
+
+
+def _stage_packed_expert(expert: Any, device: torch.device) -> Any:
+    """Copy a host-resident packed expert to ``device`` for one forward.
+
+    Resident experts are returned unchanged. Host banks use pinned tensors, so
+    all six compact code/scale operands can be queued without widening the
+    weights or retaining a device copy between tokens.
+    """
+    gate_packed = expert.gate_packed
+    if gate_packed is None:
+        raise ValueError("packed expert weights were not loaded")
+    if gate_packed.device == device:
+        return expert
+
+    staged = SimpleNamespace(hidden=expert.hidden, inter=expert.inter)
+    for name in (
+        "gate_packed",
+        "gate_scale",
+        "up_packed",
+        "up_scale",
+        "down_packed",
+        "down_scale",
+    ):
+        tensor = getattr(expert, name)
+        if tensor is None:
+            raise ValueError(f"packed expert operand {name!r} was not loaded")
+        setattr(staged, name, tensor.to(device=device, non_blocking=True))
+    return staged
 
 
 def _w2_dequant_fp32(
@@ -434,6 +464,21 @@ class AscendW2DynamicFusedMoEMethod310(AscendMoEScheme):
         pair_token = torch.arange(num_tokens, device=x.device).unsqueeze(1).expand(num_tokens, top_k).reshape(-1)
         pair_x = x[pair_token].to(torch.float32)
 
+        # EP remaps non-local selections to a valid local expert with exactly
+        # zero weight. Drop those pairs before sorting and kernel dispatch so a
+        # rank with no selected local expert performs no packed-weight staging
+        # or Cube work for the synthetic remap target.
+        active_pairs = pair_weight.squeeze(-1) != 0
+        pair_expert = pair_expert[active_pairs]
+        pair_weight = pair_weight[active_pairs]
+        pair_token = pair_token[active_pairs]
+        pair_x = pair_x[active_pairs]
+        if pair_expert.numel() == 0:
+            out = torch.zeros(num_tokens, hidden, dtype=torch.float32, device=x.device)
+            if shared_expert is not None:
+                out = out + shared_expert.forward(x).to(torch.float32)
+            return out
+
         # ArgSort has no int32/int64 AiCore kernel on 310P (falls back to AiCPU,
         # which dominated the eager MoE cost); sort on an fp32 key instead -- the
         # expert ids (< 2**24) are exact in fp32, so the ordering is identical.
@@ -446,11 +491,24 @@ class AscendW2DynamicFusedMoEMethod310(AscendMoEScheme):
         uniq_expert, counts = torch.unique_consecutive(sorted_expert, return_counts=True)
         out = torch.zeros(num_tokens, hidden, dtype=torch.float32, device=x.device)
 
+        # One batched device-to-host synchronization for the Python dispatch
+        # loop. Calling ``tolist`` separately for ids (twice) and counts adds
+        # avoidable scheduler stalls on NPU decode.
+        expert_groups = [
+            (int(expert_id), int(count)) for expert_id, count in torch.stack((uniq_expert, counts), dim=1).tolist()
+        ]
+
+        # Queue compact H2D copies for host-offloaded experts once per unique
+        # router selection. Device-resident banks pass through unchanged.
+        staged_experts = {
+            expert_id: _stage_packed_expert(experts[expert_id], x.device) for expert_id, _ in expert_groups
+        }
+
         w2_op = _w2_blocked_mm_op()
         start = 0
-        for expert_id, count in zip(uniq_expert.tolist(), counts.tolist()):
+        for expert_id, count in expert_groups:
             stop = start + count
-            e = experts[expert_id]
+            e = staged_experts[expert_id]
             group_x = sorted_x[start:stop]
             inter = int(e.inter)
             nvfp4 = _is_nvfp4(e.gate_scale, inter, hidden)
