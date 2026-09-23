@@ -164,8 +164,15 @@ class ChunkKdaFwdPrepareKernel {
 public:
     using OUT_T = T;
     using AKK_T = float;
+#if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
+    // dav-m200 has no native BF16 vector/cube instructions. Keep the safe
+    // gate score workspace in FP16; the FP32 gate accumulator and explicit
+    // clamping still bound the conversion before the score GEMMs.
+    using SCORE_T = T;
+#else
     using SCORE_T =
         std::conditional_t<SAFE_GATE && IsSameType<T, half>::value, bfloat16_t, T>;
+#endif
     template <typename TilingData>
     __aicore__ inline void Init(GM_ADDR q, GM_ADDR k, GM_ADDR v, GM_ADDR gk, GM_ADDR beta, GM_ADDR initialState,
                                 GM_ADDR cuSeqlens, GM_ADDR chunkIndices, GM_ADDR preparedQG, GM_ADDR preparedAqk,

@@ -148,6 +148,21 @@ def test_chunk_kda_emits_both_unified_core_pipelines_on_310p():
         assert all(call in source for call in calls)
 
 
+def test_chunk_kda_uses_fp16_score_workspace_on_310p():
+    prepare = (
+        REPO_ROOT
+        / "csrc"
+        / "attention"
+        / "chunk_kda_fwd"
+        / "op_kernel"
+        / "chunk_kda_fwd_prepare.h"
+    ).read_text()
+    score_type = prepare[prepare.index("using AKK_T") : prepare.index("template <typename TilingData>")]
+
+    assert "__CCE_AICORE__ == 200" in score_type
+    assert "using SCORE_T = T;" in score_type
+
+
 def test_chunk_kda_uses_physical_stage_boundaries_on_310p():
     api = (
         REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_host" / "op_api" / "aclnn_chunk_kda_fwd.cpp"
