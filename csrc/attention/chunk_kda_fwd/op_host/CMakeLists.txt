@@ -27,7 +27,7 @@ add_ops_compile_options(
             -I${CATLASS_INCLUDE_DIR_ABS}
             -I${COMMON_KERNEL_UTILS_DIR_ABS}
 )
-if("${ASCEND_COMPUTE_UNIT}" STREQUAL "ascend310p")
+if("ascend310p" IN_LIST ASCEND_COMPUTE_UNIT)
     add_ops_compile_options(
         OP_NAME ChunkKdaFwd
         COMPUTE_UNIT Ascend310P3

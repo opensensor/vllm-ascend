@@ -56,6 +56,7 @@ def test_chunk_kda_uses_only_default_task_type_on_310p():
     assert "KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);" in kernel
     assert kernel.index(guard) < kernel.index("KERNEL_TASK_TYPE(1")
     assert kernel.index(guard) < kernel.index("KERNEL_TASK_TYPE(2")
+    assert 'if("ascend310p" IN_LIST ASCEND_COMPUTE_UNIT)' in cmake
     assert 'COMPUTE_UNIT Ascend310P3' in cmake
     assert "OPTIONS -DKDA_310P_DEFAULT_TASK=1" in cmake
 
