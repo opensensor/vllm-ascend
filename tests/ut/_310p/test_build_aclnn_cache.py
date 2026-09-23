@@ -63,7 +63,7 @@ def test_chunk_kda_uses_unified_default_task_type_on_310p():
     task_selection_end = kernel.index("#endif", arch20_end)
     arch20_entry = kernel[arch20_start:arch20_end]
 
-    assert "KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AICORE);" in arch20_entry
+    assert "KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AICORE);" in arch20_entry
     assert "KERNEL_TASK_TYPE(1" not in arch20_entry
     assert "KERNEL_TASK_TYPE(2" not in arch20_entry
     assert "KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);" in kernel[arch20_end:task_selection_end]

@@ -274,9 +274,10 @@ extern "C" __global__ __aicore__ void chunk_kda_fwd(
 {
 #if defined(KDA_310P_DEFAULT_TASK) || \
     (defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200))
-    // 310P has one physical AI Core for its vector and cube pipelines. Use
-    // CANN's supported v200 task type so precompile emits one _0 entry.
-    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AICORE);
+    // 310P has one physical AI Core with both vector and cube pipelines. Use
+    // CANN's supported mixed v200 task type so both sides execute through one
+    // _0 entry.
+    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AICORE);
 #else
     // Newer split-core architectures use their paired AIC/AIV ABI.
     KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);
