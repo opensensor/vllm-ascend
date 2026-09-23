@@ -55,9 +55,15 @@ def test_chunk_kda_is_registered_and_built_for_310p():
 def test_chunk_kda_uses_unified_default_task_type_on_310p():
     kernel = (REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_kernel" / "chunk_kda_fwd.cpp").read_text()
 
-    assert "KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC);" in kernel
-    assert "KERNEL_TASK_TYPE(1, KERNEL_TYPE_MIX_AIC_1_2);" in kernel
-    assert "KERNEL_TASK_TYPE(2, KERNEL_TYPE_MIX_AIC_1_2);" in kernel
+    arch20_start = kernel.rindex("#if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)")
+    arch20_end = kernel.index("#else", arch20_start)
+    arch20_entry = kernel[arch20_start:arch20_end]
+
+    assert "KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC);" in arch20_entry
+    assert "KERNEL_TASK_TYPE(1" not in arch20_entry
+    assert "KERNEL_TASK_TYPE(2" not in arch20_entry
+    assert "KERNEL_TASK_TYPE(1, KERNEL_TYPE_MIX_AIC_1_2);" in kernel[arch20_end:]
+    assert "KERNEL_TASK_TYPE(2, KERNEL_TYPE_MIX_AIC_1_2);" in kernel[arch20_end:]
 
 
 def test_chunk_kda_dispatches_without_keyed_runtime_selection_on_310p():
