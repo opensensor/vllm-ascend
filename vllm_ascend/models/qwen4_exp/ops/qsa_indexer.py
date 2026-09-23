@@ -46,6 +46,52 @@ class QSAGroupSelection:
     tail_counts: torch.Tensor
 
 
+def _stable_topk_indices(scores: torch.Tensor, k: int) -> torch.Tensor:
+    """Exact score-descending/index-ascending top-k without a full sort.
+
+    An initial top-k establishes the cutoff. A second top-k collects scores
+    strictly above it and a third selects the lowest indices tied at it. Only
+    those ``2 * k`` candidates need stable sorting, preserving the reference's
+    deterministic tie contract while avoiding an ``O(capacity log capacity)``
+    sort of every QSA cache slot during decode.
+    """
+    if k <= 0 or k > scores.shape[1]:
+        raise ValueError("k must be in [1, scores.shape[1]]")
+    initial_values = torch.topk(scores, k, dim=1, sorted=False).values
+    cutoff = initial_values.amin(dim=1, keepdim=True)
+
+    negative_inf = torch.full_like(scores, -torch.inf)
+    better_values, better_indices = torch.topk(
+        torch.where(scores > cutoff, scores, negative_inf),
+        k,
+        dim=1,
+        sorted=False,
+    )
+    better_valid = better_values > cutoff
+
+    indices = torch.arange(scores.shape[1], device=scores.device).expand_as(scores)
+    tie_priority = torch.where(scores == cutoff, -indices.to(scores.dtype), negative_inf)
+    tie_priorities, tie_indices = torch.topk(tie_priority, k, dim=1, sorted=False)
+    tie_valid = torch.isfinite(tie_priorities)
+    tie_values = torch.where(tie_valid, cutoff.expand_as(tie_priorities), tie_priorities)
+
+    candidate_indices = torch.cat((better_indices, tie_indices), dim=1)
+    candidate_values = torch.cat((better_values, tie_values), dim=1)
+    candidate_valid = torch.cat((better_valid, tie_valid), dim=1)
+
+    # Stable least-significant-key sorts build the lexicographic order:
+    # score descending, valid before padding, then group index ascending.
+    order = torch.argsort(candidate_indices, dim=1, stable=True)
+    candidate_indices = candidate_indices.gather(1, order)
+    candidate_values = candidate_values.gather(1, order)
+    candidate_valid = candidate_valid.gather(1, order)
+    order = torch.argsort(candidate_valid.to(torch.int8), dim=1, descending=True, stable=True)
+    candidate_indices = candidate_indices.gather(1, order)
+    candidate_values = candidate_values.gather(1, order)
+    order = torch.argsort(candidate_values, dim=1, descending=True, stable=True)
+    return candidate_indices.gather(1, order)[:, :k]
+
+
 def compress_keys(
     raw_keys: torch.Tensor,
     compress_ratio: int,
@@ -272,8 +318,9 @@ def qsa_indexer_select_groups_310(
     three rows are private scratch storage used to carry an incomplete
     four-token group across scheduler invocations. The native kernel
     performs page translation and the four-head ReLU-summed dot products in a
-    single launch. Stable sorting remains a device operation so equal scores
-    retain the reference's lower-group-id tie break.
+    single launch. Selection uses bounded top-k candidate sets followed by a
+    stable ``2 * block_topk`` sort, so equal scores retain the reference's
+    lower-group-id tie break without sorting the full cache capacity.
     """
     if query.device.type != "npu":
         raise RuntimeError("qsa_indexer_select_groups_310 is an Ascend NPU-only path")
@@ -300,7 +347,7 @@ def qsa_indexer_select_groups_310(
     )
     block_topk = token_topk // compress_ratio
     selected_width = min(block_topk, scores.shape[1])
-    selected = torch.argsort(scores, dim=1, descending=True, stable=True)[:, :selected_width]
+    selected = _stable_topk_indices(scores, selected_width)
     positions_long = positions.to(torch.long)
     visible_groups = torch.div(positions_long + 1, compress_ratio, rounding_mode="floor").clamp_max(scores.shape[1])
     group_counts = visible_groups.clamp_max(selected_width)

@@ -61,6 +61,7 @@ from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.layers.mamba.abstract import MambaBase
 from vllm.model_executor.layers.mamba.mamba_utils import MambaStateCopyFuncCalculator
+from vllm.model_executor.layers.quantization.base_config import QuantizeMethodBase
 from vllm.model_executor.layers.vocab_parallel_embedding import (
     ParallelLMHead,
     VocabParallelEmbedding,
@@ -364,10 +365,28 @@ def _rms_norm(x: torch.Tensor, weight: torch.Tensor, eps: float, compute_dtype: 
     return normalized * weight.to(compute_dtype)
 
 
+def _linear_operand_dtype(
+    device_type: str,
+    weight_dtype: torch.dtype,
+    compute_dtype: torch.dtype,
+) -> torch.dtype:
+    """Choose the eager GEMM operand dtype without copying NPU weights.
+
+    Norms, routing, and attention reductions still use the policy's FP32
+    accumulation dtype.  Casting every projection weight to FP32 at each call,
+    however, materializes a full temporary weight matrix and prevents CANN from
+    selecting its native FP16 cube path.  Keep the CPU reference path in the
+    requested compute dtype, while NPU projections use their checkpoint storage
+    dtype.
+    """
+    return weight_dtype if device_type == "npu" else compute_dtype
+
+
 def _linear(x: torch.Tensor, weight: torch.Tensor, compute_dtype: torch.dtype) -> torch.Tensor:
-    """Dtype-safe eager matmul: compute in ``compute_dtype`` regardless of the
-    stored (fp16) parameter dtype, so fp16 weights never clash with fp32 acts."""
-    return F.linear(x.to(compute_dtype), weight.to(compute_dtype))
+    """Dtype-safe eager linear with a zero-copy NPU weight fast path."""
+    operand_dtype = _linear_operand_dtype(x.device.type, weight.dtype, compute_dtype)
+    linear_weight = weight if weight.dtype == operand_dtype else weight.to(operand_dtype)
+    return F.linear(x.to(operand_dtype), linear_weight)
 
 
 class _GatedResidual(nn.Module):
@@ -555,7 +574,7 @@ class _GDNAttention(nn.Module, MambaBase):
         self.rms_norm_eps = float(getattr(config, "rms_norm_eps", 1e-6))
         self.mamba_conv_dtype = dtype_policy.mamba_conv_cache_dtype
         # The 310P recurrent GDN operator accepts FP16 state only.
-        self.mamba_ssm_dtype = torch.float16
+        self.mamba_ssm_dtype = dtype_policy.main_dtype
         self.params = _gdn_params_from_config(config)
         self.tp_rank, self.tp_size = (int(expert_sharding[0]), int(expert_sharding[1]))
         if self.tp_size < 1 or not 0 <= self.tp_rank < self.tp_size:
@@ -603,7 +622,15 @@ class _GDNAttention(nn.Module, MambaBase):
         metadata = get_forward_context().attn_metadata[self.prefix]
         ranges = getattr(metadata, cache_key, None)
         if ranges is None:
-            boundaries = query_start_loc.to("cpu").tolist()
+            # The 310P metadata builder attaches this pinned host tensor. Read
+            # it directly here so the CPU fallback does not import torch_npu.
+            query_lens_cpu = getattr(metadata, "query_lens_cpu", None)
+            if query_lens_cpu is not None and query_lens_cpu.device.type == "cpu":
+                boundaries = [0]
+                for query_length in query_lens_cpu.tolist():
+                    boundaries.append(boundaries[-1] + query_length)
+            else:
+                boundaries = query_start_loc.to("cpu").tolist()
             ranges = tuple(zip(boundaries[:-1], boundaries[1:]))
             setattr(metadata, cache_key, ranges)
 
@@ -785,8 +812,7 @@ class _GDNAttention(nn.Module, MambaBase):
                     device=query_start_loc.device,
                 )
             mixed = self._stateful_short_conv(mixed, state_indices, query_start_loc, has_initial_state)
-            boundaries = query_start_loc.to("cpu").tolist()
-            ranges = tuple(zip(boundaries[:-1], boundaries[1:]))
+            ranges = metadata._qwen4exp_query_ranges
 
         q, k, v = torch.split(mixed, [self.key_dim, self.key_dim, self.value_dim], dim=-1)
         q = q.reshape(seq_len, self.num_k_heads, p.head_k_dim)
@@ -1185,6 +1211,27 @@ class _EagerMLP(nn.Module):
         return _linear(F.silu(gate) * up, self.down_proj, self.compute_dtype).to(self.params_dtype)
 
 
+class _Qwen4ExpW8A8PostLoadMethod(QuantizeMethodBase):
+    """Prepare the custom expert bank for 310P single-expert quant matmuls."""
+
+    def create_weights(self, layer: nn.Module, *weight_args, **extra_weight_attrs) -> None:
+        raise RuntimeError("Qwen4Exp creates its fused expert weights directly")
+
+    def apply(self, layer: nn.Module, *args, **kwargs) -> torch.Tensor:
+        raise RuntimeError("Qwen4Exp routes expert execution through its model forward")
+
+    def process_weights_after_loading(self, layer: nn.Module) -> None:
+        # Keep expert weights in their checkpoint [out, in] layout.  The 310P
+        # dynamic INT8 matmul is documented as having an accuracy issue, while
+        # grouped A8W8 is unsupported on this device.  The forward path therefore
+        # dequantizes one active expert at a time and uses native FP16 matmul,
+        # bounding temporary storage to a single expert.
+        layer.w13_weight_scale.data = layer.w13_weight_scale.data.view(layer.num_local_experts, -1)
+        layer.w13_weight_offset.data = layer.w13_weight_offset.data.view(layer.num_local_experts, -1)
+        layer.w2_weight_scale.data = layer.w2_weight_scale.data.view(layer.num_local_experts, -1)
+        layer.w2_weight_offset.data = layer.w2_weight_offset.data.view(layer.num_local_experts, -1)
+
+
 class _EagerSparseMoE(nn.Module):
     """Routed-expert (W8A8) + shared-expert (F16) MoE block (T3.x, stub closed).
 
@@ -1194,7 +1241,9 @@ class _EagerSparseMoE(nn.Module):
     (``w13_*``/``w2_*``, gate+up column-fused) and evaluated with the
     T3.3-validated grouped QDQ math from :mod:`vllm_ascend.models.qwen4_exp.moe`
     (per-token INT8 activation quant, per-channel ``(q - offset) * scale`` weight
-    dequant -- real experts are symmetric so ``offset == 0``). The router runs in
+    dequant -- real experts are symmetric so ``offset == 0``). NPU execution
+    dequantizes one active expert at a time and uses FP16 matmuls; the pure-
+    PyTorch QDQ path is retained as the host reference. The router runs in
     the policy ``router_dtype`` (fp32) with ``norm_topk_prob`` renormalization;
     the shared expert stays non-quantized F16 (per the T3.1 mapping contract) and
     is applied densely + unweighted.
@@ -1268,16 +1317,19 @@ class _EagerSparseMoE(nn.Module):
 
         # Routed experts in the AscendW8A8DynamicFusedMoEMethod310 fused layout
         # (LOCAL slice only under expert-dimension TP slicing):
-        #   w13_weight        int8    [E_local, 2*moe, hidden]   gate rows [0,moe), up [moe,2moe)
-        #   w2_weight         int8    [E_local, hidden, moe]
+        #   w13_weight        ParameterList[E_local] of int8 [2*moe, hidden]
+        #                     gate rows [0,moe), up [moe,2moe)
+        #   w2_weight         ParameterList[E_local] of int8 [hidden, moe]
         #   w13_weight_scale  float32 [E_local, 2*moe, 1]  (offset likewise, symmetric == 0)
         #   w2_weight_scale   float32 [E_local, hidden, 1]
         # int8 params never require grad (only float/complex tensors may).
-        self.w13_weight = nn.Parameter(
-            torch.zeros(self.num_local_experts, 2 * moe_inter, hidden, dtype=torch.int8), requires_grad=False
+        self.w13_weight = nn.ParameterList(
+            nn.Parameter(torch.zeros(2 * moe_inter, hidden, dtype=torch.int8), requires_grad=False)
+            for _ in range(self.num_local_experts)
         )
-        self.w2_weight = nn.Parameter(
-            torch.zeros(self.num_local_experts, hidden, moe_inter, dtype=torch.int8), requires_grad=False
+        self.w2_weight = nn.ParameterList(
+            nn.Parameter(torch.zeros(hidden, moe_inter, dtype=torch.int8), requires_grad=False)
+            for _ in range(self.num_local_experts)
         )
         self.w13_weight_scale = nn.Parameter(
             torch.zeros(self.num_local_experts, 2 * moe_inter, 1, dtype=self.compute_dtype), requires_grad=False
@@ -1291,6 +1343,14 @@ class _EagerSparseMoE(nn.Module):
         self.w2_weight_offset = nn.Parameter(
             torch.zeros(self.num_local_experts, hidden, 1, dtype=self.compute_dtype), requires_grad=False
         )
+        self.quant_method: QuantizeMethodBase | None = None
+        try:
+            import torch_npu  # noqa: F401
+        except ModuleNotFoundError as exc:
+            if exc.name != "torch_npu":
+                raise
+        else:
+            self.quant_method = _Qwen4ExpW8A8PostLoadMethod()
 
         shared_inter = int(getattr(config, "shared_expert_intermediate_size", 0) or 0)
         self.has_shared_expert = shared_inter > 0
@@ -1310,7 +1370,9 @@ class _EagerSparseMoE(nn.Module):
             self.shared_expert_gate = nn.Parameter(torch.zeros(1, hidden, dtype=self.params_dtype))
 
     def forward(self, block_input: torch.Tensor) -> torch.Tensor:
-        router_logits = F.linear(block_input.to(self.router_dtype), self.gate.to(self.router_dtype))
+        # Keep the 310P router GEMM on the native FP16 cube path; route_topk
+        # promotes its comparatively small logits tensor for softmax/top-k.
+        router_logits = _linear(block_input, self.gate, self.router_dtype)
         topk_weights, topk_ids = route_topk(
             router_logits,
             self.top_k,
@@ -1330,6 +1392,15 @@ class _EagerSparseMoE(nn.Module):
             expert_offset=self.expert_offset,
             num_global_experts=self.num_global_experts,
         )
+        if self.has_shared_expert:
+            shared_gate_up = _linear(block_input, self.shared_gate_up, self.compute_dtype)
+            shared_partial = _linear(swiglu_gate_up(shared_gate_up), self.shared_down, self.compute_dtype)
+            shared_gate = torch.sigmoid(_linear(block_input, self.shared_expert_gate, self.compute_dtype))
+            out = out + shared_partial * shared_gate
+
+        # Routed and shared expert projections are both sharded on their output
+        # dimensions.  Their sum is linear with respect to the TP all-reduce, so
+        # combine the local partials first and pay for one collective per layer.
         if self.expert_tp_size > 1:
             if self._tp_reduce is None:
                 raise RuntimeError(
@@ -1338,19 +1409,6 @@ class _EagerSparseMoE(nn.Module):
                     "and no override is installed on _EagerSparseMoE._tp_reduce."
                 )
             out = self._tp_reduce(out)
-
-        if self.has_shared_expert:
-            shared_gate_up = _linear(block_input, self.shared_gate_up, self.compute_dtype)
-            shared_partial = _linear(swiglu_gate_up(shared_gate_up), self.shared_down, self.compute_dtype)
-            if self.expert_tp_size > 1:
-                if self._tp_reduce is None:
-                    raise RuntimeError(
-                        "Qwen4Exp shared-expert TP needs an all-reduce: "
-                        "tensor_model_parallel_all_reduce was not importable."
-                    )
-                shared_partial = self._tp_reduce(shared_partial)
-            shared_gate = torch.sigmoid(_linear(block_input, self.shared_expert_gate, self.compute_dtype))
-            out = out + shared_partial * shared_gate
         return out.to(self.params_dtype)
 
 
@@ -1851,7 +1909,7 @@ class AscendQwen4ExpForCausalLM(
     @classmethod
     def get_gdn_mamba_state_dtype_from_config(cls, vllm_config: VllmConfig) -> tuple[torch.dtype, torch.dtype]:
         policy = Qwen4ExpDtypePolicy.from_vllm_config(vllm_config)
-        return (policy.mamba_conv_cache_dtype, torch.float16)
+        return (policy.mamba_conv_cache_dtype, policy.main_dtype)
 
     @classmethod
     def get_ple_mamba_state_dtype_from_config(cls, vllm_config: VllmConfig) -> tuple[torch.dtype, ...]:
@@ -1962,7 +2020,7 @@ class AscendQwen4ExpForCausalLM(
                             gdn_params.head_k_dim,
                         ),
                     ),
-                    dtypes=(policy.mamba_conv_cache_dtype, torch.float16),
+                    dtypes=(policy.mamba_conv_cache_dtype, policy.main_dtype),
                     block_size=DEFAULT_ATTENTION_BLOCK_SIZE,
                     mamba_type=MambaAttentionBackendEnum.GDN_ATTN,
                 )
@@ -2018,7 +2076,7 @@ class AscendQwen4ExpForCausalLM(
                             gdn_params.head_k_dim,
                         ),
                     ),
-                    dtypes=(policy.mamba_conv_cache_dtype, torch.float16),
+                    dtypes=(policy.mamba_conv_cache_dtype, policy.main_dtype),
                     block_size=DEFAULT_ATTENTION_BLOCK_SIZE,
                     mamba_type=MambaAttentionBackendEnum.GDN_ATTN,
                 )
@@ -2086,14 +2144,18 @@ class AscendQwen4ExpForCausalLM(
     def _place_expert_tensor(self, params, mapping, weight: torch.Tensor) -> str:
         """Copy one source expert tensor into its fused-MoE param slot (streamed).
 
-        ``mapping`` is the T3.1 :class:`ExpertTensorMapping`; the destination is
-        ``model.layers.{L}.mlp.{target_param}`` at ``[expert_index,
-        row_start:row_stop]`` (the same slice for weight/scale/offset, and for w2
-        the slice spans the full output dim). Rejects a dtype/shape mismatch with
-        the mapper's own error taxonomy before any copy.
+        ``mapping`` is the T3.1 :class:`ExpertTensorMapping`. Quantized weights
+        land in the expert-specific ``.{expert_index}`` parameter at
+        ``[row_start:row_stop]``; compact scale/offset banks retain the leading
+        expert dimension. Rejects a dtype/shape mismatch with the mapper's own
+        error taxonomy before any copy.
         """
         target_name = f"model.layers.{mapping.layer}.mlp.{mapping.target_param}"
-        param = params.get(target_name)
+        # Quantized weights are registered as individual expert parameters so
+        # their post-load NZ conversion never duplicates a full layer bank.
+        # Scale/offset tensors remain compact fused banks.
+        param_name = f"{target_name}.{mapping.expert_index}" if mapping.kind == "weight" else target_name
+        param = params.get(param_name)
         if param is None:
             raise WeightMappingError(
                 f"no fused-MoE parameter {target_name!r} for expert tensor "
@@ -2113,7 +2175,10 @@ class AscendQwen4ExpForCausalLM(
                 tensors=[mapping.source_name],
             )
         with torch.no_grad():
-            param[mapping.expert_index, mapping.row_start : mapping.row_stop].copy_(weight.to(param.dtype))
+            if mapping.kind == "weight":
+                param[mapping.row_start : mapping.row_stop].copy_(weight.to(param.dtype))
+            else:
+                param[mapping.expert_index, mapping.row_start : mapping.row_stop].copy_(weight.to(param.dtype))
         return target_name
 
     def _place_shared_expert_tensor(

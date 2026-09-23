@@ -45,6 +45,7 @@ from vllm_ascend.models.qwen4_exp.ops.qsa_cache import (
     qsa_scatter_rows,
 )
 from vllm_ascend.models.qwen4_exp.ops.qsa_indexer import (
+    _stable_topk_indices,
     expand_group_selection,
     qsa_indexer_score_310_reference,
     qsa_indexer_select_groups,
@@ -204,6 +205,21 @@ def test_partial_repeated_block_ties():
     out = _assert_parity(indexer, query, raw, positions)
     kept_blocks = {tok // _RATIO for tok in selected_token_set(out.token_indices[0])}
     assert kept_blocks == {0, 1, 2, 3}
+
+
+@pytest.mark.parametrize(
+    "scores,k",
+    [
+        ([[1.0, 1.0, 1.0, 1.0, 1.0]], 3),
+        ([[4.0, 3.0, 3.0, 3.0, 2.0, 1.0]], 3),
+        ([[2.0, -torch.inf, -torch.inf, -torch.inf]], 3),
+        ([[0.0, 2.0, 1.0, 2.0], [5.0, 4.0, 3.0, 2.0]], 2),
+    ],
+)
+def test_bounded_stable_topk_matches_full_stable_sort(scores, k):
+    score_tensor = torch.tensor(scores)
+    expected = torch.argsort(score_tensor, dim=1, descending=True, stable=True)[:, :k]
+    assert torch.equal(_stable_topk_indices(score_tensor, k), expected)
 
 
 # ---------------------------------------------------------------------------

@@ -106,6 +106,14 @@ def test_accumulation_sites_are_fp32():
     assert policy.logits_dtype is torch.float32
 
 
+def test_eager_linear_keeps_npu_weights_in_storage_dtype():
+    from vllm_ascend.models.qwen4_exp.model import _linear_operand_dtype
+
+    assert _linear_operand_dtype("npu", torch.float16, torch.float32) is torch.float16
+    assert _linear_operand_dtype("cpu", torch.float16, torch.float32) is torch.float32
+    assert _linear_operand_dtype("cpu", torch.float64, torch.float64) is torch.float64
+
+
 def test_ssm_cache_dtype_is_fp32_and_main_caches_fp16():
     policy = ASCEND_QWEN4EXP_DTYPE_POLICY
     # SSM recurrent state must stay fp32 for numerical stability at 1M ctx.

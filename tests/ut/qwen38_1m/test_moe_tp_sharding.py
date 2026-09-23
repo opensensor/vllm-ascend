@@ -337,7 +337,8 @@ def _block(rank: int, *, shared_inter: int = 16):
 def test_block_allocates_local_banks_and_replicates_router():
     blocks = [_block(r) for r in range(_TP)]
     for r, b in enumerate(blocks):
-        assert b.w13_weight.shape == (2, 32, 32)  # local experts only
+        assert len(b.w13_weight) == 2  # local experts only
+        assert all(weight.shape == (32, 32) for weight in b.w13_weight)
         assert b.w13_weight_scale.shape[0] == 2
         assert b.gate.shape == (8, 32)  # replicated router
         assert b.expert_offset == 2 * r
@@ -352,14 +353,6 @@ def test_block_divisibility_guard():
         _EagerSparseMoE(config=cfg, dtype_policy=ASCEND_QWEN4EXP_DTYPE_POLICY, expert_sharding=(0, 4))
 
 
-def _shared_once(block, x):
-    from vllm_ascend.models.qwen4_exp.model import _linear
-    from vllm_ascend.models.qwen4_exp.moe import swiglu_gate_up
-
-    gate_up = _linear(x, block.shared_gate_up, block.compute_dtype)
-    return _linear(swiglu_gate_up(gate_up), block.shared_down, block.compute_dtype).to(torch.float32)
-
-
 def test_block_tp_reduce_partial_plus_shared_once():
     (w13, s13, o13, w2, s2, o2), banks = _sharded_banks(seed=23)
     blocks = [_block(r) for r in range(_TP)]
@@ -369,14 +362,25 @@ def test_block_tp_reduce_partial_plus_shared_once():
     shared_up = torch.randn(32, 32, generator=gen) * 0.05
     shared_dn = torch.randn(32, 16, generator=gen) * 0.05
     for b, src in zip(blocks, banks):
+        local_inter = b.local_shared_inter
+        shared_start = b.expert_tp_rank * local_inter
+        local_shared_up = torch.cat(
+            (
+                shared_up[shared_start : shared_start + local_inter],
+                shared_up[16 + shared_start : 16 + shared_start + local_inter],
+            )
+        )
+        local_shared_dn = shared_dn[:, shared_start : shared_start + local_inter]
         with torch.no_grad():
             b.gate.copy_(router)
-            b.shared_gate_up.copy_(shared_up.to(b.params_dtype))
-            b.shared_down.copy_(shared_dn.to(b.params_dtype))
-            b.w13_weight.copy_(src["w13"])
+            b.shared_gate_up.copy_(local_shared_up.to(b.params_dtype))
+            b.shared_down.copy_(local_shared_dn.to(b.params_dtype))
+            for target, source in zip(b.w13_weight, src["w13"]):
+                target.copy_(source)
             b.w13_weight_scale.copy_(src["s13"])
             b.w13_weight_offset.copy_(src["o13"])
-            b.w2_weight.copy_(src["w2"])
+            for target, source in zip(b.w2_weight, src["w2"]):
+                target.copy_(source)
             b.w2_weight_scale.copy_(src["s2"])
             b.w2_weight_offset.copy_(src["o2"])
     # TP1 reference block: default unsharded bank, same router/shared weights.
@@ -390,10 +394,12 @@ def test_block_tp_reduce_partial_plus_shared_once():
         ref.gate.copy_(router)
         ref.shared_gate_up.copy_(shared_up.to(ref.params_dtype))
         ref.shared_down.copy_(shared_dn.to(ref.params_dtype))
-        ref.w13_weight.copy_(w13)
+        for target, source in zip(ref.w13_weight, w13):
+            target.copy_(source)
         ref.w13_weight_scale.copy_(s13)
         ref.w13_weight_offset.copy_(o13)
-        ref.w2_weight.copy_(w2)
+        for target, source in zip(ref.w2_weight, w2):
+            target.copy_(source)
         ref.w2_weight_scale.copy_(s2)
         ref.w2_weight_offset.copy_(o2)
 
@@ -415,21 +421,19 @@ def test_block_tp_reduce_partial_plus_shared_once():
     summed = captured[0]
     for t in captured[1:]:
         summed = summed + t
-    shared = _shared_once(blocks[0], x).float()
-
     ref_out = ref(x).to(torch.float32)
     # Declared tolerance (module docstring): identical float32 contributions in
     # TP-reassociated order, plus the reference block's final fp16 output
     # rounding (half an ulp at this magnitude ~ 0.25, observed 0.22).
     fp16_output_round = 0.51 * torch.finfo(torch.float16).eps * 2 * ref_out.abs().max().item()
     budget = W8A8_GEMM_ATOL + W8A8_GEMM_RTOL * ref_out.abs().max().item() + fp16_output_round
-    # emulated all-reduce (sum of partials) + shared ONCE == TP1 block output
-    err = (summed + shared - ref_out).abs().max().item()
+    # Each captured tensor already contains that rank's routed and shared
+    # projection partial. Their emulated all-reduce equals the TP1 block.
+    err = (summed - ref_out).abs().max().item()
     assert err <= budget, (err, budget)
-    # shared expert is added after the reduce (once per call), never tp times:
-    # the block output is exactly the fp16 rounding of (captured partial + the
-    # fp16 shared contribution), matching forward's dtype chain.
-    expected_out0 = (captured[0] + shared).to(ASCEND_QWEN4EXP_DTYPE_POLICY.main_dtype)
+    # The fake reduction returns its input, so each local output is exactly its
+    # combined partial rounded to the block's main dtype.
+    expected_out0 = captured[0].to(ASCEND_QWEN4EXP_DTYPE_POLICY.main_dtype)
     assert torch.equal(outs[0].to(torch.float32), expected_out0.to(torch.float32))
 
 
@@ -457,15 +461,19 @@ class _TpEnv:
         return vc
 
     def build(self, rank: int, cfg):
+        from vllm.config import set_current_vllm_config
+
         from vllm_ascend.models.qwen4_exp.model import AscendQwen4ExpForCausalLM
 
         vmod = "vllm.model_executor.layers.vocab_parallel_embedding"
+        vllm_config = self._vllm_config(cfg)
         with (
             _single_rank_tp(),  # keep embed/lm_head fully replicated on host
             patch(f"{vmod}.get_tensor_model_parallel_rank", return_value=0),
             patch("vllm.distributed.get_tensor_model_parallel_rank", return_value=rank),
+            set_current_vllm_config(vllm_config),
         ):
-            model = AscendQwen4ExpForCausalLM(vllm_config=self._vllm_config(cfg))
+            model = AscendQwen4ExpForCausalLM(vllm_config=vllm_config)
         assert model.model.expert_sharding == (rank, self.tp_size)
         return model
 
@@ -494,13 +502,13 @@ def test_tp_model_places_only_its_experts_and_validates():
         model = env.build(rank, cfg)
         loaded = _load(model, geometry)
         layer0 = model.model.layers[0].mlp
-        assert layer0.w13_weight.shape[0] == 2
+        assert len(layer0.w13_weight) == 2
         for local, expert in enumerate(range(2 * rank, 2 * rank + 2)):
             gate = truth[_expert_name(0, expert, "gate_proj", "weight")]
             up = truth[_expert_name(0, expert, "up_proj", "weight")]
             dn = truth[_expert_name(0, expert, "down_proj", "weight")]
-            assert torch.equal(layer0.w13_weight[local, :16], gate.view(16, 32)), (rank, expert)
-            assert torch.equal(layer0.w13_weight[local, 16:], up.view(16, 32)), (rank, expert)
+            assert torch.equal(layer0.w13_weight[local][:16], gate.view(16, 32)), (rank, expert)
+            assert torch.equal(layer0.w13_weight[local][16:], up.view(16, 32)), (rank, expert)
             assert torch.equal(
                 layer0.w2_weight[local],
                 dn.view(layer0.w2_weight[local].shape),
@@ -536,11 +544,14 @@ def test_tp_model_survives_loader_filter_and_missing_local():
     rank1_full.load_weights(iter(all_payloads + _non_expert_payloads(rank1_full)))
     m1 = rank1.model.layers[0].mlp
     m2 = rank1_full.model.layers[0].mlp
+    for name in ("w13_weight", "w2_weight"):
+        first = getattr(m1, name)
+        second = getattr(m2, name)
+        assert len(first) == len(second)
+        assert all(torch.equal(lhs, rhs) for lhs, rhs in zip(first, second)), name
     fused_params = (
-        "w13_weight",
         "w13_weight_scale",
         "w13_weight_offset",
-        "w2_weight",
         "w2_weight_scale",
         "w2_weight_offset",
     )
@@ -562,5 +573,5 @@ def test_tp1_full_stream_regression():
     model = _build(cfg)
     assert model.model.expert_sharding == (0, 1)
     loaded = _load(model, geometry)
-    assert model.model.layers[0].mlp.w13_weight.shape[0] == 8
+    assert len(model.model.layers[0].mlp.w13_weight) == 8
     assert "model.layers.0.mlp.w13_weight" in loaded
