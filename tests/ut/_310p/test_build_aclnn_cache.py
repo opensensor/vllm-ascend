@@ -50,11 +50,14 @@ def test_chunk_kda_is_registered_and_built_for_310p():
 
 def test_chunk_kda_uses_only_default_task_type_on_310p():
     kernel = (REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_kernel" / "chunk_kda_fwd.cpp").read_text()
+    cmake = (REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_host" / "CMakeLists.txt").read_text()
 
-    guard = "#ifndef CATLASS_UNIFIED_CORE"
+    guard = "#ifndef KDA_310P_DEFAULT_TASK"
     assert "KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);" in kernel
     assert kernel.index(guard) < kernel.index("KERNEL_TASK_TYPE(1")
     assert kernel.index(guard) < kernel.index("KERNEL_TASK_TYPE(2")
+    assert 'COMPUTE_UNIT Ascend310P3' in cmake
+    assert "OPTIONS -DKDA_310P_DEFAULT_TASK=1" in cmake
 
 
 def test_chunk_kda_dispatches_without_keyed_runtime_selection_on_310p():

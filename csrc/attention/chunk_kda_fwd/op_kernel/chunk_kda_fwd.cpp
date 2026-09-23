@@ -186,9 +186,9 @@ extern "C" __global__ __aicore__ void chunk_kda_fwd(
     KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);
     // 310P codegen only supports the default task-type registration; its host
     // tiling selects key 0 and runtime dimensions choose the template below.
-    // Use the compatibility-layer marker here: the registration scanner does
-    // not define __CCE_AICORE__, but it does parse the selected arch20 headers.
-#ifndef CATLASS_UNIFIED_CORE
+    // The registration scanner does not define __CCE_AICORE__, so the build
+    // supplies an explicit SoC-scoped marker shared by both compiler passes.
+#ifndef KDA_310P_DEFAULT_TASK
     KERNEL_TASK_TYPE(1, KERNEL_TYPE_MIX_AIC_1_2);
     KERNEL_TASK_TYPE(2, KERNEL_TYPE_MIX_AIC_1_2);
 #endif
