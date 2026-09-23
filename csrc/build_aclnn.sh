@@ -75,6 +75,8 @@ log_selected_ops() {
 invalidate_stale_kernel_cache() {
     local binary_root="${ROOT_DIR}/csrc/build/binary/${SOC_ARG}"
     local compile_stamp
+    local copied_launcher
+    local generated_launcher
     local op_name
     local op_path
     local source_stamp
@@ -101,6 +103,16 @@ invalidate_stale_kernel_cache() {
                  grep -q .; then
             # The 310P W2 kernel includes the shared CATLASS block helpers.
             stale_kernel_cache=1
+        fi
+        if [[ "${stale_kernel_cache}" -eq 0 ]]; then
+            generated_launcher="${ROOT_DIR}/csrc/build/impl/dynamic/${op_name}.py"
+            copied_launcher=$(find "${binary_root}/src/${op_name}" -maxdepth 1 \
+                -type f -name '*.py' -print -quit 2>/dev/null)
+            if [[ -f "${generated_launcher}" ]] &&
+               { [[ -z "${copied_launcher}" ]] ||
+                 ! cmp -s "${generated_launcher}" "${copied_launcher}"; }; then
+                stale_kernel_cache=1
+            fi
         fi
         if [[ "${stale_kernel_cache}" -eq 0 ]]; then
             continue

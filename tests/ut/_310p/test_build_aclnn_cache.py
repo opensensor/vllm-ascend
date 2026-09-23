@@ -17,6 +17,7 @@ def test_kernel_changes_invalidate_copy_and_compile_stamps():
     assert 'rm -f -- "${source_stamp}"' in build_script
     assert '"${binary_root}/src/${op_name}" -maxdepth 1 -type f' in build_script
     assert "-name '*.py' -delete" in build_script
+    assert 'cmp -s "${generated_launcher}" "${copied_launcher}"' in build_script
     assert '-name "${op_name}_${SOC_ARG}_*.done"' in build_script
 
 
