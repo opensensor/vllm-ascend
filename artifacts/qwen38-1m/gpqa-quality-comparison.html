@@ -287,6 +287,122 @@
       gap: 16px;
     }
 
+    .insight-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    .insight {
+      padding: 24px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .insight::after {
+      content: "";
+      position: absolute;
+      width: 92px;
+      height: 92px;
+      right: -42px;
+      top: -42px;
+      border-radius: 50%;
+      background: color-mix(in srgb, var(--accent) 18%, transparent);
+    }
+
+    .insight .metric {
+      margin: 7px 0 2px;
+      color: var(--accent);
+      font-size: 38px;
+      font-weight: 850;
+      line-height: 1;
+      letter-spacing: -0.05em;
+    }
+
+    .insight h3 {
+      margin: 12px 0 5px;
+      font-size: 17px;
+    }
+
+    .insight p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .domain-table {
+      margin-top: 16px;
+      padding: 12px 22px;
+    }
+
+    .domain-row {
+      display: grid;
+      grid-template-columns: minmax(120px, 0.8fr) minmax(240px, 2fr) 92px 92px;
+      align-items: center;
+      gap: 16px;
+      padding: 17px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .domain-row:last-child { border-bottom: 0; }
+
+    .domain-track {
+      display: grid;
+      gap: 6px;
+    }
+
+    .domain-track .track { height: 9px; }
+    .domain-track .answered { background: linear-gradient(90deg, #23aa80, var(--mint)); }
+
+    .domain-value {
+      text-align: right;
+      font-size: 15px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .domain-value small {
+      display: block;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 650;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .finding-list {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .finding {
+      padding: 22px 24px;
+    }
+
+    .finding h3 { margin: 0 0 8px; font-size: 17px; }
+    .finding ul { margin: 0; padding-left: 19px; color: var(--muted); font-size: 14px; }
+    .finding li + li { margin-top: 7px; }
+
+    .legend {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      margin: 0 5px 0 12px;
+      border-radius: 50%;
+      background: var(--blue);
+    }
+
+    .dot:first-child { margin-left: 0; }
+    .dot.answered { background: var(--mint); }
+
     .method {
       padding: 24px;
     }
@@ -352,10 +468,13 @@
 
     @media (max-width: 760px) {
       main { padding-top: 34px; }
-      .hero-grid, .method-grid { grid-template-columns: 1fr; }
+      .hero-grid, .method-grid, .insight-grid, .finding-list { grid-template-columns: 1fr; }
       .row { grid-template-columns: 1fr 58px; gap: 8px 14px; }
       .track { grid-column: 1 / -1; grid-row: 2; }
       .value { grid-column: 2; grid-row: 1; }
+      .domain-row { grid-template-columns: 1fr 1fr; gap: 9px 12px; }
+      .domain-track { grid-column: 1 / -1; grid-row: 2; }
+      .domain-value { text-align: left; }
       .section-head { display: block; }
       .section-head p { margin-top: 8px; text-align: left; }
       footer { display: block; }
@@ -378,8 +497,8 @@
         <div class="score-detail">
           <span><strong>138</strong> correct</span>
           <span><strong>198</strong> questions</span>
-          <span><strong>100%</strong> answer extraction</span>
-          <span><strong>0</strong> failed requests</span>
+          <span><strong>144</strong> usable final answers</span>
+          <span><strong>54</strong> cap-without-answer</span>
         </div>
       </article>
 
@@ -390,6 +509,94 @@
         <div class="fact"><span class="label">Reasoning cap</span><strong>8,192</strong></div>
       </aside>
     </div>
+
+    <section>
+      <div class="section-head">
+        <h2>What the aggregate hides</h2>
+        <p>The run summary reports 100% extraction, but item-level grader output contains only 144 extractable final choices. The distinction materially changes how this score should be read.</p>
+      </div>
+
+      <div class="insight-grid">
+        <article class="card insight" style="--accent: var(--mint)">
+          <div class="label">When a choice was emitted</div>
+          <div class="metric">95.8%</div>
+          <h3>138 of 144 correct</h3>
+          <p>Only six completed choices were wrong. This is the cleanest view of answer quality in the present ledger.</p>
+        </article>
+        <article class="card insight" style="--accent: var(--coral)">
+          <div class="label">Dominant failure mode</div>
+          <div class="metric">54</div>
+          <h3>No final choice before cap</h3>
+          <p>Every no-answer response used all 8,192 output tokens. These account for 90% of the run's 60 scored errors.</p>
+        </article>
+        <article class="card insight" style="--accent: var(--amber)">
+          <div class="label">Errors associated with cap</div>
+          <div class="metric">93.3%</div>
+          <h3>56 of 60 errors</h3>
+          <p>Two additional capped responses emitted a wrong choice; just four errors occurred in responses below the ceiling.</p>
+        </article>
+      </div>
+
+      <div class="card domain-table" aria-label="GPQA results by scientific domain">
+        <div class="domain-row">
+          <div class="model-name">Physics<small>86 questions</small></div>
+          <div class="domain-track">
+            <div class="track"><div class="bar" style="--score:90.7"></div></div>
+            <div class="track"><div class="bar answered" style="--score:97.5"></div></div>
+          </div>
+          <div class="domain-value">90.7%<small>raw · 78/86</small></div>
+          <div class="domain-value">97.5%<small>answered · 78/80</small></div>
+        </div>
+        <div class="domain-row">
+          <div class="model-name">Chemistry<small>93 questions</small></div>
+          <div class="domain-track">
+            <div class="track"><div class="bar" style="--score:52.7"></div></div>
+            <div class="track"><div class="bar answered" style="--score:96.1"></div></div>
+          </div>
+          <div class="domain-value">52.7%<small>raw · 49/93</small></div>
+          <div class="domain-value">96.1%<small>answered · 49/51</small></div>
+        </div>
+        <div class="domain-row">
+          <div class="model-name">Biology<small>19 questions</small></div>
+          <div class="domain-track">
+            <div class="track"><div class="bar" style="--score:57.9"></div></div>
+            <div class="track"><div class="bar answered" style="--score:84.6"></div></div>
+          </div>
+          <div class="domain-value">57.9%<small>raw · 11/19</small></div>
+          <div class="domain-value">84.6%<small>answered · 11/13</small></div>
+        </div>
+        <p class="legend"><span class="dot"></span>Raw benchmark accuracy <span class="dot answered"></span>Accuracy among responses with an extracted choice</p>
+      </div>
+
+      <div class="finding-list">
+        <article class="card finding">
+          <h3>Where it excelled</h3>
+          <ul>
+            <li>Physics remained strong even before adjusting for truncation: 78/86 correct.</li>
+            <li>High-energy particle physics reached 13/14; quantum mechanics reached 23/25.</li>
+            <li>General chemistry was 15/20 raw and 15/15 whenever a final choice was emitted.</li>
+            <li>Uncapped responses were 114/118 correct, or 96.6%.</li>
+          </ul>
+        </article>
+        <article class="card finding">
+          <h3>Where it was deficient</h3>
+          <ul>
+            <li>Organic chemistry triggered severe over-reasoning: 36 of 72 items ended at the cap without a choice.</li>
+            <li>Biology had the lowest answered accuracy, with genuine misses in molecular biology and genetics.</li>
+            <li>The six wrong emitted choices comprised two organic chemistry and one each in general physics, quantum mechanics, molecular biology, and genetics.</li>
+            <li>The result does not yet isolate IQ4 quality; the reasoning budget and stop behavior are major confounders.</li>
+          </ul>
+        </article>
+      </div>
+
+      <div class="warning">
+        <div class="icon">→</div>
+        <div>
+          <strong>Highest-value next run: fix completion behavior before judging quantization.</strong>
+          <p>Either raise the output ceiling or force the model to emit its final choice before extended reasoning. Then rerun the same item order. A controlled IQ4-versus-W8A8 comparison should report raw accuracy, answered-only accuracy, cap rate, and domain-level answer completion separately.</p>
+        </div>
+      </div>
+    </section>
 
     <section>
       <div class="section-head">
@@ -474,6 +681,8 @@
         <a href="https://huggingface.co/Qwen/Qwen3.8-Flash-Next">Qwen model card</a>
         ·
         <a href="https://docs.vllm.ai/projects/ascend/en/latest/tutorials/models/Qwen3.8-Flash-Next.html">vLLM Ascend tutorial</a>
+        ·
+        <a href="https://huggingface.co/datasets/Idavidrein/gpqa">GPQA metadata</a>
       </div>
       <span>Local dataset version b1ed2c · AISBench 19018e9c</span>
     </footer>
