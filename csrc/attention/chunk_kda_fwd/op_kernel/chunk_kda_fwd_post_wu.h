@@ -214,9 +214,10 @@ public:
         usedCoreNum_ = tiling.postWuUsedCoreNum;
         if ASCEND_IS_AIV {
             uint64_t subBlockNum = static_cast<uint64_t>(GetSubBlockNum());
-            solveCoreIdx_ = subBlockNum == 0 ? 0 : static_cast<uint64_t>(GetBlockIdx()) / subBlockNum;
+            solveCoreIdx_ = subBlockNum == 0 ? 0 :
+                KdaForward::GetPhysicalBlockIdx() / subBlockNum;
         } else {
-            solveCoreIdx_ = static_cast<uint64_t>(GetBlockIdx());
+            solveCoreIdx_ = KdaForward::GetPhysicalBlockIdx();
         }
         if (pipe_ != nullptr && initVecBuffers) {
             pipe_->InitBuffer(exp2Buf_, EXP2_UB_BYTES);
@@ -849,7 +850,7 @@ private:
         }
         uint64_t subBlockIdx = static_cast<uint64_t>(GetSubBlockIdx());
         uint64_t coreNum = usedCoreNum_ == 0 ? 1 : usedCoreNum_;
-        uint64_t coreIdx = static_cast<uint64_t>(GetBlockIdx()) / subBlockNum;
+        uint64_t coreIdx = KdaForward::GetPhysicalBlockIdx() / subBlockNum;
         uint64_t taskNum = static_cast<uint64_t>((isVarLen_ ? NT_ : B_ * NT_) * HV_);
         for (uint64_t task = coreIdx; task < taskNum; task += coreNum) {
             uint64_t seq = 0;
@@ -873,7 +874,8 @@ private:
         }
         uint64_t taskNum = static_cast<uint64_t>((isVarLen_ ? NT_ : B_ * NT_) * HV_);
         uint64_t coreNum = usedCoreNum_ == 0 ? 1 : usedCoreNum_;
-        for (uint64_t task = GetBlockIdx(); task < taskNum; task += coreNum) {
+        for (uint64_t task = KdaForward::GetPhysicalBlockIdx();
+             task < taskNum; task += coreNum) {
             uint64_t seq = 0;
             uint64_t b = 0;
             uint64_t h = 0;

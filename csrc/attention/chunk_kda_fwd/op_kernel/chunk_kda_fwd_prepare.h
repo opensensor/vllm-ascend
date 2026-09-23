@@ -231,9 +231,10 @@ public:
         scoreWorkspace_.SetGlobalBuffer((__gm__ SCORE_T *)(workspace + alignedSolveBytes));
         if ASCEND_IS_AIV {
             uint64_t subBlockNum = static_cast<uint64_t>(GetSubBlockNum());
-            solveCoreIdx_ = subBlockNum == 0 ? 0 : static_cast<uint64_t>(GetBlockIdx()) / subBlockNum;
+            solveCoreIdx_ = subBlockNum == 0 ? 0 :
+                KdaForward::GetPhysicalBlockIdx() / subBlockNum;
         } else {
-            solveCoreIdx_ = static_cast<uint64_t>(GetBlockIdx());
+            solveCoreIdx_ = KdaForward::GetPhysicalBlockIdx();
         }
         if (pipe_ != nullptr && initVecBuffers) {
             pipe_->InitBuffer(exp2Buf_, EXP2_UB_BYTES);
@@ -2304,7 +2305,7 @@ private:
         const uint64_t subBlockIdx = static_cast<uint64_t>(GetSubBlockIdx());
         const uint64_t subBlockNum = static_cast<uint64_t>(GetSubBlockNum());
         const uint64_t coreNum = usedCoreNum_;
-        const uint64_t coreIdx = static_cast<uint64_t>(GetBlockIdx()) / subBlockNum;
+        const uint64_t coreIdx = KdaForward::GetPhysicalBlockIdx() / subBlockNum;
         const uint64_t chunkCount = isVarLen_ ? NT_ : B_ * NT_;
         const uint64_t headWindows = HV_ / KDA_SCORE_LANES;
         const uint64_t taskNum = chunkCount * headWindows;
@@ -2368,7 +2369,8 @@ private:
         const uint64_t taskNum = chunkCount * headWindows;
         const uint64_t coreNum = usedCoreNum_ == 0 ? 1 : usedCoreNum_;
         uint64_t localTaskIdx = 0;
-        for (uint64_t task = GetBlockIdx(); task < taskNum; task += coreNum, ++localTaskIdx) {
+        for (uint64_t task = KdaForward::GetPhysicalBlockIdx();
+             task < taskNum; task += coreNum, ++localTaskIdx) {
             uint64_t flatChunk = task / headWindows;
             uint64_t hvBase = (task % headWindows) * KDA_SCORE_LANES;
             uint64_t seq = 0;
@@ -2396,8 +2398,7 @@ private:
         }
         uint64_t subBlockIdx = isAivOnly_ ? 0 : static_cast<uint64_t>(GetSubBlockIdx());
         uint64_t coreNum = isAivOnly_ ? static_cast<uint64_t>(GetBlockNum()) : usedCoreNum_;
-        uint64_t coreIdx = isAivOnly_ ? static_cast<uint64_t>(GetBlockIdx()) :
-                                        static_cast<uint64_t>(GetBlockIdx()) / subBlockNum;
+        uint64_t coreIdx = KdaForward::GetPhysicalBlockIdx() / subBlockNum;
         uint64_t taskNum = static_cast<uint64_t>((isVarLen_ ? NT_ : B_ * NT_) * HV_);
         if constexpr (SAFE_GATE && !IsSameType<T, float>::value) {
             bool pendingValid = false;
@@ -2479,7 +2480,8 @@ private:
         uint64_t taskNum = static_cast<uint64_t>((isVarLen_ ? NT_ : B_ * NT_) * HV_);
         uint64_t coreNum = usedCoreNum_ == 0 ? 1 : usedCoreNum_;
         uint64_t localTaskIdx = 0;
-        for (uint64_t task = GetBlockIdx(); task < taskNum; task += coreNum, ++localTaskIdx) {
+        for (uint64_t task = KdaForward::GetPhysicalBlockIdx();
+             task < taskNum; task += coreNum, ++localTaskIdx) {
             uint64_t seq = 0;
             uint64_t b = 0;
             uint64_t h = 0;

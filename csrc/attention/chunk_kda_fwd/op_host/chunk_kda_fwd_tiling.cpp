@@ -342,7 +342,10 @@ ge::graphStatus Tiling4ChunkKdaFwd(gert::TilingContext *context)
     tiling.set_stage(stage);
     tiling.set_gateDataType(gDesc->GetDataType() == ge::DT_FLOAT ? 2 :
         (gDesc->GetDataType() == ge::DT_BF16 ? 1 : 0));
-    tiling.set_gateUsedCoreNum(static_cast<int64_t>(blockDim) * 2);
+    // dav-m200 has one vector task per physical cube core. Newer split-core
+    // devices expose two vector sub-blocks for every cube core.
+    tiling.set_gateUsedCoreNum(
+        static_cast<int64_t>(blockDim) * (isAscend310P ? 1 : 2));
     tiling.set_prepareUsedCoreNum(blockDim);
     tiling.set_postWuUsedCoreNum(blockDim);
     tiling.set_outputUsedCoreNum(blockDim);

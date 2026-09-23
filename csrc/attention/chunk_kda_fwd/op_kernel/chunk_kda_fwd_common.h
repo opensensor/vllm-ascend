@@ -4,6 +4,24 @@
 #if defined(__CCE_AICORE__) && __CCE_AICORE__ == 200
 #include "arch20/compat_310p.h"
 #endif
+
+namespace KdaForward {
+
+// In a dav-m200 MIX_AICORE kernel AscendC::GetBlockIdx() adds
+// get_data_main_base() on the vector task. KDA partitions vector and cube work
+// over the same physical cores, so both tasks need the zero-based hardware
+// block index instead.
+__aicore__ inline uint64_t GetPhysicalBlockIdx()
+{
+#if defined(__CCE_AICORE__) && __CCE_AICORE__ == 200
+    return static_cast<uint64_t>(block_idx);
+#else
+    return static_cast<uint64_t>(AscendC::GetBlockIdx());
+#endif
+}
+
+} // namespace KdaForward
+
 #include "../../kda_gate_cumsum/op_kernel/kda_gate_cumsum_kernel.h"
 #if defined(__CCE_AICORE__) && __CCE_AICORE__ == 310
 #include "arch35/chunk_kda_fwd_prepare.h"

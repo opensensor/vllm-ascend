@@ -188,7 +188,14 @@ public:
     __aicore__ inline void Process()
     {
         uint64_t taskCount = hasCuSeqlens_ ? seqNum_ * hv_ : batch_ * hv_ * maxChunks_;
+#if defined(__CCE_AICORE__) && __CCE_AICORE__ == 200
+        // GetBlockIdx() includes the mixed-kernel data-task base on dav-m200.
+        // The raw index is local to the physical vector core and remains valid
+        // for both standalone AIV and fused MIX_AICORE launches.
+        uint64_t coreIdx = static_cast<uint64_t>(block_idx);
+#else
         uint64_t coreIdx = static_cast<uint64_t>(GetBlockIdx());
+#endif
         for (uint64_t task = coreIdx; task < taskCount; task += usedCoreNum_) {
             ProcessTask(task);
         }

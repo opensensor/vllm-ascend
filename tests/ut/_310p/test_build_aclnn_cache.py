@@ -96,6 +96,35 @@ def test_chunk_kda_uses_unified_default_tiling_key_on_310p():
     assert "SocVersion::ASCEND310P" in tiling
 
 
+def test_chunk_kda_normalizes_mixed_vector_core_indices_on_310p():
+    kernel_dir = REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_kernel"
+    common = (kernel_dir / "chunk_kda_fwd_common.h").read_text()
+    gate = (
+        REPO_ROOT
+        / "csrc"
+        / "attention"
+        / "kda_gate_cumsum"
+        / "op_kernel"
+        / "kda_gate_cumsum_kernel.h"
+    ).read_text()
+    tiling = (
+        REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_host" / "chunk_kda_fwd_tiling.cpp"
+    ).read_text()
+
+    assert "return static_cast<uint64_t>(block_idx);" in common
+    assert "uint64_t coreIdx = static_cast<uint64_t>(block_idx);" in gate
+    assert "(isAscend310P ? 1 : 2)" in tiling
+
+    for filename in (
+        "chunk_kda_fwd_prepare.h",
+        "chunk_kda_fwd_post_wu.h",
+        "chunk_kda_fwd_finalize.h",
+    ):
+        source = (kernel_dir / filename).read_text()
+        assert "KdaForward::GetPhysicalBlockIdx()" in source
+        assert "GetBlockIdx()" not in source
+
+
 def test_chunk_kda_uses_physical_stage_boundaries_on_310p():
     api = (
         REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_host" / "op_api" / "aclnn_chunk_kda_fwd.cpp"
