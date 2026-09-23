@@ -79,14 +79,14 @@ def test_chunk_kda_dispatches_without_keyed_runtime_selection_on_310p():
 
     arch20_dispatch = kernel[
         kernel.index(
-            "#if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)", kernel.index("GET_TILING_DATA_WITH_STRUCT")
+            "#if defined(KDA_310P_DEFAULT_TASK)", kernel.index("GET_TILING_DATA_WITH_STRUCT")
         ) : kernel.index("if (TILING_KEY_IS(1))")
     ]
     assert "tilingData.chunkSize == 64" in arch20_dispatch
     assert "tilingData.kHeadDim == 128" in arch20_dispatch
     assert "tilingData.vHeadDim == 128" in arch20_dispatch
     assert "DispatchGenericSafeGate" in arch20_dispatch
-    assert arch20_dispatch.rstrip().endswith("#endif")
+    assert arch20_dispatch.rstrip().endswith("#else")
 
 
 def test_chunk_kda_uses_unified_default_tiling_key_on_310p():

@@ -183,7 +183,8 @@ __aicore__ inline void RunKernel(
 {
     GM_ADDR userWorkspace = AscendC::GetUserWorkspace(workspace);
     GET_TILING_DATA_WITH_STRUCT(ChunkKdaFwdTilingData, tilingData, tiling);
-#if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
+#if defined(KDA_310P_DEFAULT_TASK) || \
+    (defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200))
     // dav-m200 only accepts the default task-type registration, so keyed
     // TILING_KEY_IS branches are not selected at runtime. Dispatch from the
     // runtime dimensions while preserving the specialized GLM/Kimi shape.
@@ -221,7 +222,7 @@ __aicore__ inline void RunKernel(
         chunk_indices, attn_out, final_state, gk, aqk, akk, w, u, qg, kg,
         v_new, h, userWorkspace, tilingData);
     return;
-#endif
+#else
     if (TILING_KEY_IS(1)) {
         if (tilingData.stage != KdaForward::KDA_STAGE_FULL) {
             KdaForward::DispatchStageSafeGate<DTYPE_Q, DTYPE_BETA,
@@ -258,6 +259,7 @@ __aicore__ inline void RunKernel(
             chunk_indices, attn_out, final_state, gk, aqk, akk, w, u, qg,
             kg, v_new, h, userWorkspace, tilingData);
     }
+#endif
 }
 
 } // namespace KdaForward
