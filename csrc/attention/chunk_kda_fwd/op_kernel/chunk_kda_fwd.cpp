@@ -270,11 +270,10 @@ extern "C" __global__ __aicore__ void chunk_kda_fwd(
     GM_ADDR w, GM_ADDR u, GM_ADDR qg, GM_ADDR kg, GM_ADDR v_new, GM_ADDR h,
     GM_ADDR qg_scaled, GM_ADDR u_seed, GM_ADDR workspace, GM_ADDR tiling)
 {
-#if defined(KDA_310P_DEFAULT_TASK) || \
-    (defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200))
-    // 310P has unified vector/cube cores. The build marker makes this choice
-    // visible to CANN's task-registration scan, which does not define
-    // __CCE_AICORE__.
+#if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
+    // 310P has unified vector/cube cores. Keep this decision on the device
+    // compiler path: CANN's generic precompile scan rejects the unified task
+    // type before it has selected the 310P core version.
     KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC);
 #else
     // Newer split-core architectures use their paired AIC/AIV ABI.

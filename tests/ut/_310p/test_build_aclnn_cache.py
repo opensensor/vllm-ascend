@@ -54,12 +54,10 @@ def test_chunk_kda_is_registered_and_built_for_310p():
 
 def test_chunk_kda_uses_unified_default_task_type_on_310p():
     kernel = (REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_kernel" / "chunk_kda_fwd.cpp").read_text()
-    cmake = (REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_host" / "CMakeLists.txt").read_text()
-
     entry_signature = 'extern "C" __global__ __aicore__ void chunk_kda_fwd('
     assert kernel.count(entry_signature) == 1
 
-    arch20_start = kernel.rindex("#if defined(KDA_310P_DEFAULT_TASK)")
+    arch20_start = kernel.rindex("#if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)")
     arch20_end = kernel.index("#else", arch20_start)
     task_selection_end = kernel.index("#endif", arch20_end)
     arch20_entry = kernel[arch20_start:arch20_end]
@@ -71,8 +69,7 @@ def test_chunk_kda_uses_unified_default_task_type_on_310p():
     assert "KdaForward::RunKernel(" in kernel[task_selection_end:]
     assert "KERNEL_TASK_TYPE(1" not in kernel
     assert "KERNEL_TASK_TYPE(2" not in kernel
-    assert 'if("ascend310p" IN_LIST ASCEND_COMPUTE_UNIT)' in cmake
-    assert "OPTIONS -DKDA_310P_DEFAULT_TASK=1" in cmake
+    assert "KDA_310P_DEFAULT_TASK" not in kernel
 
 
 def test_chunk_kda_dispatches_without_keyed_runtime_selection_on_310p():
