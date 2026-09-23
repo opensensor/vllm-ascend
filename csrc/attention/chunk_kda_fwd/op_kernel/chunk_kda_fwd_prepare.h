@@ -2580,14 +2580,25 @@ __aicore__ inline void RunChunkKdaPrepare(
     GM_ADDR akkFp32 = userWorkspace + tiling.prepareAkkFp32Offset;
     GM_ADDR prepareScratch = userWorkspace + tiling.prepareScratchOffset;
 
+#if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
+    // A unified dav-m200 core has g_coreType == MIX. Emit both pipelines;
+    // their existing cross-pipeline flags preserve the producer/consumer
+    // ordering once the compiler separates cube and vector instructions.
+    {
+#else
     if ASCEND_IS_AIC {
+#endif
         ChunkKdaFwdPrepareKernel<SAFE_GATE, T, GK_T, BETA_T> op;
         op.Init(q, k, v, gk, beta, initialState, cuSeqlens, chunkIndices,
                 nullptr, nullptr, nullptr, nullptr, aqk, userWorkspace, aqkFp32, akkFp32,
                 wSeed, akk, qg, qgScaled, uSeed, userWorkspace, prepareScratch, tiling, &pipe, false);
         op.ProcessAic();
     }
+#if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
+    {
+#else
     if ASCEND_IS_AIV {
+#endif
         ChunkKdaFwdPrepareKernel<SAFE_GATE, T, GK_T, BETA_T> op;
         op.Init(q, k, v, gk, beta, initialState, cuSeqlens, chunkIndices,
                 nullptr, nullptr, nullptr, nullptr, aqk, userWorkspace, aqkFp32, akkFp32,

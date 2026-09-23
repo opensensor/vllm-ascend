@@ -189,7 +189,14 @@ __aicore__ inline void RunGateCumsum(
     if (tiling.computeGateInPrepare) {
         return;
     }
+#if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
+    // dav-m200 reports the unified core as AscendC::MIX, so both
+    // ASCEND_IS_AIV and ASCEND_IS_AIC are false.  This portion of the mixed
+    // kernel is the vector pipeline and must be emitted explicitly.
+    {
+#else
     if ASCEND_IS_AIV {
+#endif
         GateRuntimeTiling gateTiling = MakeGateTiling(tiling);
         TPipe gatePipe;
         if (gateTiling.dataType == 2) {

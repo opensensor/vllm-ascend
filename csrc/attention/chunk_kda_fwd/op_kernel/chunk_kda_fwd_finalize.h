@@ -828,7 +828,13 @@ __aicore__ inline void RunChunkKdaOutput(
                               static_cast<uint64_t>(tiling.vHeadDim);
     GM_ADDR stateScratch = outputScratch;
     GM_ADDR localScratch = outputScratch + outputElements * sizeof(float);
+#if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
+    // dav-m200 exposes one unified MIX core rather than distinct AIC/AIV
+    // core types. Emit both instruction pipelines for the mixed kernel.
+    {
+#else
     if ASCEND_IS_AIC {
+#endif
         ChunkKdaFwdFinalizeKernel<T, GK_T, BETA_T> op;
         op.Init(q, k, v, gk, beta, initialState, cuSeqlens, chunkIndices,
                 qgScaled, aqk, propagatedVNew, propagatedH, stateScratch, userWorkspace, aqk, userWorkspace,
@@ -836,7 +842,11 @@ __aicore__ inline void RunChunkKdaOutput(
                 outputScratch, tiling, &pipe, false);
         op.ProcessAic();
     }
+#if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
+    {
+#else
     if ASCEND_IS_AIV {
+#endif
         ChunkKdaFwdFinalizeKernel<T, GK_T, BETA_T> op;
         op.Init(q, k, v, gk, beta, initialState, cuSeqlens, chunkIndices,
                 qgScaled, aqk, propagatedVNew, propagatedH, stateScratch, userWorkspace, aqk, userWorkspace,

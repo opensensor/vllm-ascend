@@ -125,6 +125,26 @@ def test_chunk_kda_normalizes_mixed_vector_core_indices_on_310p():
         assert "GetBlockIdx()" not in source
 
 
+def test_chunk_kda_emits_both_unified_core_pipelines_on_310p():
+    kernel_dir = REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_kernel"
+    arch20_guard = "#if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)"
+
+    common = (kernel_dir / "chunk_kda_fwd_common.h").read_text()
+    gate_dispatch = common[common.index("void RunGateCumsum") : common.index("void RunFrontEnd")]
+    assert arch20_guard in gate_dispatch
+    assert "DispatchKdaGateCumsum" in gate_dispatch
+
+    expected_pipelines = {
+        "chunk_kda_fwd_prepare.h": ("op.ProcessAic();", "op.ProcessAiv();"),
+        "chunk_kda_fwd_post_wu.h": ("op.ProcessAic();", "op.ProcessAiv();"),
+        "chunk_kda_fwd_finalize.h": ("op.ProcessAic();", "op.ProcessAiv();"),
+    }
+    for filename, calls in expected_pipelines.items():
+        source = (kernel_dir / filename).read_text()
+        assert source.count(arch20_guard) >= 2
+        assert all(call in source for call in calls)
+
+
 def test_chunk_kda_uses_physical_stage_boundaries_on_310p():
     api = (
         REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_host" / "op_api" / "aclnn_chunk_kda_fwd.cpp"

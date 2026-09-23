@@ -965,14 +965,24 @@ __aicore__ inline void RunChunkKdaPostWu(
     const TilingData &tiling, TPipe &pipe)
 {
     GM_ADDR postScratch = userWorkspace + tiling.postWuScratchOffset;
+#if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
+    // dav-m200 exposes one unified MIX core rather than distinct AIC/AIV
+    // core types. Emit both instruction pipelines for the mixed kernel.
+    {
+#else
     if ASCEND_IS_AIC {
+#endif
         ChunkKdaFwdPostWuKernel<T, GK_T, BETA_T> op;
         op.Init(q, k, v, gk, beta, initialState, cuSeqlens, chunkIndices,
                 wSeed, akk, uSeed, nullptr, userWorkspace, userWorkspace, userWorkspace, akk, w, u,
                 userWorkspace, kg, vNew, postScratch, postScratch, tiling, &pipe, false);
         op.ProcessAic();
     }
+#if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
+    {
+#else
     if ASCEND_IS_AIV {
+#endif
         ChunkKdaFwdPostWuKernel<T, GK_T, BETA_T> op;
         op.Init(q, k, v, gk, beta, initialState, cuSeqlens, chunkIndices,
                 wSeed, akk, uSeed, nullptr, userWorkspace, userWorkspace, userWorkspace, akk, w, u,
