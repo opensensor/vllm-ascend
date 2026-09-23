@@ -2581,10 +2581,9 @@ __aicore__ inline void RunChunkKdaPrepare(
     GM_ADDR prepareScratch = userWorkspace + tiling.prepareScratchOffset;
 
 #if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
-    // A unified dav-m200 core has g_coreType == MIX. Emit both pipelines;
-    // their existing cross-pipeline flags preserve the producer/consumer
-    // ordering once the compiler separates cube and vector instructions.
-    {
+    // CANN compiles MIX_AICORE into separate cube/vector objects, while both
+    // report g_coreType == MIX. Select the object with CANN's marker.
+    if constexpr (KdaForward::CompilesCubePipeline()) {
 #else
     if ASCEND_IS_AIC {
 #endif
@@ -2595,7 +2594,7 @@ __aicore__ inline void RunChunkKdaPrepare(
         op.ProcessAic();
     }
 #if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
-    {
+    if constexpr (KdaForward::CompilesVectorPipeline()) {
 #else
     if ASCEND_IS_AIV {
 #endif

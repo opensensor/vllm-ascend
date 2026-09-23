@@ -132,6 +132,7 @@ def test_chunk_kda_emits_both_unified_core_pipelines_on_310p():
     common = (kernel_dir / "chunk_kda_fwd_common.h").read_text()
     gate_dispatch = common[common.index("void RunGateCumsum") : common.index("void RunFrontEnd")]
     assert arch20_guard in gate_dispatch
+    assert "CompilesVectorPipeline()" in gate_dispatch
     assert "DispatchKdaGateCumsum" in gate_dispatch
 
     expected_pipelines = {
@@ -142,6 +143,8 @@ def test_chunk_kda_emits_both_unified_core_pipelines_on_310p():
     for filename, calls in expected_pipelines.items():
         source = (kernel_dir / filename).read_text()
         assert source.count(arch20_guard) >= 2
+        assert "CompilesCubePipeline()" in source
+        assert "CompilesVectorPipeline()" in source
         assert all(call in source for call in calls)
 
 

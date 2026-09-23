@@ -829,9 +829,9 @@ __aicore__ inline void RunChunkKdaOutput(
     GM_ADDR stateScratch = outputScratch;
     GM_ADDR localScratch = outputScratch + outputElements * sizeof(float);
 #if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
-    // dav-m200 exposes one unified MIX core rather than distinct AIC/AIV
-    // core types. Emit both instruction pipelines for the mixed kernel.
-    {
+    // Both dav-m200 mixed objects report g_coreType == MIX. Select CANN's
+    // separately compiled cube object explicitly.
+    if constexpr (KdaForward::CompilesCubePipeline()) {
 #else
     if ASCEND_IS_AIC {
 #endif
@@ -843,7 +843,7 @@ __aicore__ inline void RunChunkKdaOutput(
         op.ProcessAic();
     }
 #if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
-    {
+    if constexpr (KdaForward::CompilesVectorPipeline()) {
 #else
     if ASCEND_IS_AIV {
 #endif

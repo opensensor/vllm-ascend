@@ -20,6 +20,22 @@ __aicore__ inline uint64_t GetPhysicalBlockIdx()
 #endif
 }
 
+#if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
+__aicore__ inline constexpr bool CompilesVectorPipeline()
+{
+#if defined(__ENABLE_VECTOR_CORE__)
+    return true;
+#else
+    return false;
+#endif
+}
+
+__aicore__ inline constexpr bool CompilesCubePipeline()
+{
+    return !CompilesVectorPipeline();
+}
+#endif
+
 } // namespace KdaForward
 
 #include "../../kda_gate_cumsum/op_kernel/kda_gate_cumsum_kernel.h"
@@ -190,10 +206,9 @@ __aicore__ inline void RunGateCumsum(
         return;
     }
 #if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
-    // dav-m200 reports the unified core as AscendC::MIX, so both
-    // ASCEND_IS_AIV and ASCEND_IS_AIC are false.  This portion of the mixed
-    // kernel is the vector pipeline and must be emitted explicitly.
-    {
+    // dav-m200 reports both mixed objects as AscendC::MIX. Use CANN's
+    // per-object marker to emit this work only into the vector object.
+    if constexpr (KdaForward::CompilesVectorPipeline()) {
 #else
     if ASCEND_IS_AIV {
 #endif
