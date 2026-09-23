@@ -27,6 +27,15 @@ add_ops_compile_options(
             -I${CATLASS_INCLUDE_DIR_ABS}
             -I${COMMON_KERNEL_UTILS_DIR_ABS}
 )
+if("ascend310p" IN_LIST ASCEND_COMPUTE_UNIT)
+    # CANN precompile runs before __CCE_AICORE__ is set. Select the v200
+    # single-core ABI explicitly so it does not infer a split v220 task.
+    add_ops_compile_options(
+        OP_NAME ChunkKdaFwd
+        COMPUTE_UNIT Ascend310P3
+        OPTIONS -DKDA_310P_DEFAULT_TASK=1
+    )
+endif()
 if("${ASCEND_COMPUTE_UNIT}" STREQUAL "ascend950")
     add_ops_compile_options(
         OP_NAME ChunkKdaFwd
