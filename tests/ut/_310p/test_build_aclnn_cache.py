@@ -177,6 +177,24 @@ def test_chunk_kda_uses_no_fixpipe_mmad_on_310p():
         assert policy_block.count(unified_policy) == 2
 
 
+def test_chunk_kda_keeps_fp32_solve_off_310p_cube():
+    prepare = (
+        REPO_ROOT
+        / "csrc"
+        / "attention"
+        / "chunk_kda_fwd"
+        / "op_kernel"
+        / "chunk_kda_fwd_prepare.h"
+    ).read_text()
+
+    capability_end = prepare.index("using KdaArchTag")
+    capability_start = prepare.rindex("#if defined(__CCE_AICORE__)", 0, capability_end)
+    capability = prepare[capability_start:capability_end]
+    assert "__CCE_AICORE__ == 200" in capability
+    assert "KDA_SUPPORTS_FP32_CUBE_SOLVE = false" in capability
+    assert prepare.count("if constexpr (KDA_SUPPORTS_FP32_CUBE_SOLVE)") >= 2
+
+
 def test_chunk_kda_uses_physical_stage_boundaries_on_310p():
     api = (
         REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_host" / "op_api" / "aclnn_chunk_kda_fwd.cpp"

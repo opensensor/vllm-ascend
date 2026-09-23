@@ -89,6 +89,13 @@ constexpr uint64_t KDA_WORKSPACE_ALIGN = 512;
 constexpr uint32_t KDA_GATE_TILE_ROWS = 16;
 constexpr uint32_t KDA_GATE_PIPELINE_DEPTH = 3;
 constexpr uint32_t KDA_AIV_UB_BUDGET_BYTES = 192 * 1024;
+#if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
+// dav-m200 Cube MMAD accepts fp16 inputs only. Keep the fp32 triangular
+// solve on the vector pipeline while still using Cube for fp16 score GEMMs.
+constexpr bool KDA_SUPPORTS_FP32_CUBE_SOLVE = false;
+#else
+constexpr bool KDA_SUPPORTS_FP32_CUBE_SOLVE = true;
+#endif
 using KdaArchTag = Catlass::Arch::AtlasA2;
 #if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
 using KdaDispatchPolicy = Catlass::Gemm::MmadPingpongTlaMulti<KdaArchTag, true, false>;
@@ -1140,6 +1147,9 @@ private:
 
     __aicore__ inline bool UseAkkCubeSolve(uint64_t curT) const
     {
+        if constexpr (!KDA_SUPPORTS_FP32_CUBE_SOLVE) {
+            return false;
+        }
         return curT > 0 && curT <= BT_ && (BT_ == 64 || BT_ == 128) && K_ >= 16 && V_ >= 16 &&
                V_ <= 256 && K_ % 16 == 0 && V_ % 16 == 0;
     }
@@ -2231,18 +2241,20 @@ private:
             Catlass::Arch::CrossCoreSetFlagWithReverse<0x2, PIPE_FIX>(scoreDoneFlag_);
         }
         bool usePostWuCube = UsePostWuCube(curT);
-        bool useAkkCubeSolve = UseAkkCubeSolve(curT);
-        if (useAkkCubeSolve) {
-            if constexpr (SAFE_GATE) {
-                Catlass::Arch::CrossCoreWaitFlag(syncReadyFlag_);
-                ComputeAkkMergeCubeWorkspace(b, hv, chunkIdx);
-                Catlass::Arch::CrossCoreSetFlag<0x2, PIPE_FIX>(syncDoneFlag_);
-            } else {
-                Catlass::Arch::CrossCoreWaitFlagWithReverse<0x2, PIPE_FIX>(mchSyncReadyFlag_);
-                if (curT == BT_) {
-                    ComputeAkkInverseMchFull(b, hv, chunkIdx, start);
+        if constexpr (KDA_SUPPORTS_FP32_CUBE_SOLVE) {
+            bool useAkkCubeSolve = UseAkkCubeSolve(curT);
+            if (useAkkCubeSolve) {
+                if constexpr (SAFE_GATE) {
+                    Catlass::Arch::CrossCoreWaitFlag(syncReadyFlag_);
+                    ComputeAkkMergeCubeWorkspace(b, hv, chunkIdx);
+                    Catlass::Arch::CrossCoreSetFlag<0x2, PIPE_FIX>(syncDoneFlag_);
                 } else {
-                    ComputeAkkInverseMchTail(b, hv, chunkIdx, start, curT);
+                    Catlass::Arch::CrossCoreWaitFlagWithReverse<0x2, PIPE_FIX>(mchSyncReadyFlag_);
+                    if (curT == BT_) {
+                        ComputeAkkInverseMchFull(b, hv, chunkIdx, start);
+                    } else {
+                        ComputeAkkInverseMchTail(b, hv, chunkIdx, start, curT);
+                    }
                 }
             }
         }
@@ -2278,14 +2290,16 @@ private:
             Catlass::Arch::CrossCoreSetFlagWithReverse<0x2, PIPE_FIX>(scoreDoneFlag_);
         }
 
-        if (UseAkkCubeSolve(curT)) {
-            Catlass::Arch::CrossCoreWaitFlag(syncReadyFlag_);
-            for (uint64_t lane = 0; lane < KDA_SCORE_LANES; ++lane) {
-                activeSolveSlot_ =
-                    (localTaskIdx % (KDA_SOLVE_PIPELINE_DEPTH / KDA_SCORE_LANES)) * KDA_SCORE_LANES + lane;
-                ComputeAkkMergeCubeWorkspace(b, hvBase + lane, chunkIdx);
+        if constexpr (KDA_SUPPORTS_FP32_CUBE_SOLVE) {
+            if (UseAkkCubeSolve(curT)) {
+                Catlass::Arch::CrossCoreWaitFlag(syncReadyFlag_);
+                for (uint64_t lane = 0; lane < KDA_SCORE_LANES; ++lane) {
+                    activeSolveSlot_ =
+                        (localTaskIdx % (KDA_SOLVE_PIPELINE_DEPTH / KDA_SCORE_LANES)) * KDA_SCORE_LANES + lane;
+                    ComputeAkkMergeCubeWorkspace(b, hvBase + lane, chunkIdx);
+                }
+                Catlass::Arch::CrossCoreSetFlag<0x2, PIPE_FIX>(syncDoneFlag_);
             }
-            Catlass::Arch::CrossCoreSetFlag<0x2, PIPE_FIX>(syncDoneFlag_);
         }
     }
 
