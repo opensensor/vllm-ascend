@@ -229,7 +229,7 @@ public:
         const uint64_t alignedSolveBytes =
             (solveBytes + KDA_WORKSPACE_ALIGN - 1) / KDA_WORKSPACE_ALIGN * KDA_WORKSPACE_ALIGN;
         scoreWorkspace_.SetGlobalBuffer((__gm__ SCORE_T *)(workspace + alignedSolveBytes));
-        if KDA_RUN_AIV_SECTION {
+        if (KDA_RUN_AIV_SECTION) {
             uint64_t subBlockNum = static_cast<uint64_t>(GetSubBlockNum());
             solveCoreIdx_ = subBlockNum == 0 ? 0 : static_cast<uint64_t>(GetBlockIdx()) / subBlockNum;
         } else {
@@ -2578,14 +2578,14 @@ __aicore__ inline void RunChunkKdaPrepare(
     GM_ADDR akkFp32 = userWorkspace + tiling.prepareAkkFp32Offset;
     GM_ADDR prepareScratch = userWorkspace + tiling.prepareScratchOffset;
 
-    if KDA_RUN_AIC_SECTION {
+    if (KDA_RUN_AIC_SECTION) {
         ChunkKdaFwdPrepareKernel<SAFE_GATE, T, GK_T, BETA_T> op;
         op.Init(q, k, v, gk, beta, initialState, cuSeqlens, chunkIndices,
                 nullptr, nullptr, nullptr, nullptr, aqk, userWorkspace, aqkFp32, akkFp32,
                 wSeed, akk, qg, qgScaled, uSeed, userWorkspace, prepareScratch, tiling, &pipe, false);
         op.ProcessAic();
     }
-    if KDA_RUN_AIV_SECTION {
+    if (KDA_RUN_AIV_SECTION) {
         ChunkKdaFwdPrepareKernel<SAFE_GATE, T, GK_T, BETA_T> op;
         op.Init(q, k, v, gk, beta, initialState, cuSeqlens, chunkIndices,
                 nullptr, nullptr, nullptr, nullptr, aqk, userWorkspace, aqkFp32, akkFp32,

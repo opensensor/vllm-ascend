@@ -183,7 +183,7 @@ __aicore__ inline void RunGateCumsum(
     if (tiling.computeGateInPrepare) {
         return;
     }
-    if KDA_RUN_AIV_SECTION {
+    if (KDA_RUN_AIV_SECTION) {
         GateRuntimeTiling gateTiling = MakeGateTiling(tiling);
         TPipe gatePipe;
         if (gateTiling.dataType == 2) {

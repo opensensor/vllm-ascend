@@ -86,8 +86,8 @@ def test_chunk_kda_runs_both_pipeline_sections_on_unified_310p_core():
         "chunk_kda_fwd_finalize.h",
     ):
         source = (kernel_dir / filename).read_text()
-        assert "if KDA_RUN_AIC_SECTION" in source
-        assert "if KDA_RUN_AIV_SECTION" in source
+        assert "if (KDA_RUN_AIC_SECTION)" in source
+        assert "if (KDA_RUN_AIV_SECTION)" in source
 
 
 def test_chunk_kda_dispatches_without_keyed_runtime_selection_on_310p():
