@@ -2,8 +2,8 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """W8A8 fused-MoE forward for the Ascend 310P Qwen4Exp path (T3.x).
 
-The NPU path groups routes by expert, dequantizes one active expert at a time,
-and evaluates it with the supported FP16 matmul path. Neither grouped A8W8
+The NPU path groups routes by expert and evaluates each active expert with the
+supported W8A16 weight-only matmul path. Neither grouped A8W8
 entry point is usable on this stack: CANN 9.1 and torch_npu disagree about the
 scale rank for ``npu_quant_grouped_matmul_dequant``, while regular
 ``npu_grouped_matmul`` rejects A8W8 on 310P. The per-token dynamic INT8 matmul
@@ -117,6 +117,29 @@ def swiglu_gate_up(gate_up: torch.Tensor) -> torch.Tensor:
     return F.silu(gate) * up
 
 
+def _w8a16_linear_npu(
+    x: torch.Tensor,
+    weight_int8: torch.Tensor,
+    weight_scale: torch.Tensor,
+) -> torch.Tensor:
+    """Run a per-channel W8A16 linear without materializing FP16 weights.
+
+    Qwen4Exp's shipped expert weights are symmetric (zero offset). 310P's
+    weight-only matmul accepts FP16 activations and a contiguous post-load
+    ``[K, N]`` INT8 weight, preserving the accurate A16 path while avoiding the per-call
+    INT8->FP16 conversion and scale multiplication used by the compatibility
+    fallback.
+    """
+    import torch_npu
+
+    return torch_npu.npu_weight_quant_batchmatmul(
+        x=x,
+        weight=weight_int8,
+        antiquant_scale=weight_scale.reshape(-1).to(x.dtype),
+        antiquant_offset=None,
+    )
+
+
 def route_topk(
     router_logits: torch.Tensor,
     top_k: int,
@@ -149,13 +172,13 @@ def w8a8_grouped_experts_npu(
     *,
     expert_offset: int = 0,
 ) -> torch.Tensor:
-    """Run locally active routed experts with 310P-supported A8W8 matmuls.
+    """Run locally active routed experts with 310P-supported W8A16 matmuls.
 
     Peer-owned routes are removed on device, then one compact expert-count
     vector is copied to the host so empty expert matmuls can be skipped. 310P's
     grouped A8W8 kernel is unsupported and its per-token dynamic INT8 matmul has
-    a documented accuracy issue, so each active expert is dequantized just in
-    time and evaluated with the supported FP16 matmul path.
+    a documented accuracy issue. The weight-only operator keeps activations in
+    FP16 and consumes the INT8 expert weights directly.
     """
     import torch_npu
 
@@ -189,20 +212,24 @@ def w8a8_grouped_experts_npu(
     # This is one intentional device-to-host boundary per MoE layer.  It lets
     # decode invoke only the locally active top-k experts (typically 2-3 at
     # TP4) instead of launching 128 empty expert matmuls.  Each active expert
-    # then uses the 310P-supported FP16 linear path.
+    # then uses the 310P-supported weight-only FP16-activation path.
     start = 0
     for expert_id, count in enumerate(counts.tolist()):
         if count == 0:
             continue
         stop = start + count
         group_x = sorted_x[start:stop]
-        w13 = w13_weight[expert_id].to(x.dtype)
-        w13 = w13 * w13_weight_scale[expert_id].reshape(-1, 1).to(x.dtype)
-        gate_up = F.linear(group_x, w13)
+        gate_up = _w8a16_linear_npu(
+            group_x,
+            w13_weight[expert_id],
+            w13_weight_scale[expert_id],
+        )
         hidden_act = torch_npu.npu_swiglu(gate_up)
-        w2 = w2_weight[expert_id].to(x.dtype)
-        w2 = w2 * w2_weight_scale[expert_id].reshape(-1, 1).to(x.dtype)
-        routed = F.linear(hidden_act, w2)
+        routed = _w8a16_linear_npu(
+            hidden_act,
+            w2_weight[expert_id],
+            w2_weight_scale[expert_id],
+        )
         routed = routed * sorted_weight[start:stop]
         route_outputs.index_copy_(0, sorted_slot[start:stop], routed.to(torch.float32))
         start = stop

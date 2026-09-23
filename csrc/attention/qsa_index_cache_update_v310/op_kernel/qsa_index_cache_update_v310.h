@@ -9,6 +9,7 @@ namespace NsQsaIndexCacheUpdate {
 using namespace AscendC;
 
 constexpr int64_t QSA_COMPRESS_RATIO = 4;
+constexpr int64_t FP32_REDUCE_WIDTH = 64;
 
 class QsaIndexCacheUpdateV310 {
 public:
@@ -62,6 +63,19 @@ public:
     }
 
 private:
+    __aicore__ inline float ReduceHead(LocalTensor<float> values, LocalTensor<float> reduce)
+    {
+        float sum = 0.0f;
+        for (int64_t offset = 0; offset < headDim_; offset += FP32_REDUCE_WIDTH) {
+            const int64_t width = headDim_ - offset < FP32_REDUCE_WIDTH
+                                      ? headDim_ - offset : FP32_REDUCE_WIDTH;
+            WholeReduceSum(reduce, values[offset], width, 1, 1, 1, 8);
+            PipeBarrier<PIPE_V>();
+            sum += reduce.GetValue(0);
+        }
+        return sum;
+    }
+
     __aicore__ inline void Update(int64_t row)
     {
         const int64_t slot = slotMappingGm_.GetValue(row);
@@ -115,9 +129,7 @@ private:
         // RMSNorm and the first token's Neox-style RoPE to the complete group.
         Mul(workFloat, sumFloat, sumFloat, headDim_);
         PipeBarrier<PIPE_V>();
-        WholeReduceSum(reduce, workFloat, headDim_, 1, 1, 1, 8);
-        PipeBarrier<PIPE_V>();
-        const float variance = reduce.GetValue(0) / static_cast<float>(headDim_) + normEps_;
+        const float variance = ReduceHead(workFloat, reduce) / static_cast<float>(headDim_) + normEps_;
         Duplicate(reduce, variance, 8);
         PipeBarrier<PIPE_V>();
         Sqrt(reduce, reduce, 8);

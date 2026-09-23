@@ -980,6 +980,42 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
         seq_lens_list = getattr(metadata, "seq_lens_list", None)
         return bool(seq_lens_list) and max(seq_lens_list) <= token_budget
 
+    @staticmethod
+    def _dense_decode_is_exact(metadata: object, token_budget: int) -> bool:
+        if getattr(getattr(metadata, "attn_state", None), "name", "") != "DecodeOnly":
+            return False
+        seq_lens_cpu = getattr(metadata, "seq_lens_cpu", None)
+        if seq_lens_cpu is not None and seq_lens_cpu.device.type == "cpu" and seq_lens_cpu.numel():
+            return bool(torch.all(seq_lens_cpu <= token_budget).item())
+        seq_lens_list = getattr(metadata, "seq_lens_list", None)
+        return bool(seq_lens_list) and max(seq_lens_list) <= token_budget
+
+    def _dense_decode_310(
+        self,
+        query: torch.Tensor,
+        key_cache: torch.Tensor,
+        value_cache: torch.Tensor,
+        metadata: object,
+    ) -> torch.Tensor:
+        import torch_npu
+
+        output = torch.empty_like(query)
+        context_lens = metadata.seq_lens
+        if context_lens.device != query.device:
+            context_lens = context_lens.to(device=query.device, non_blocking=True)
+        torch_npu._npu_paged_attention(
+            query=query,
+            key_cache=key_cache,
+            value_cache=value_cache,
+            num_kv_heads=self.num_kv_heads,
+            num_heads=self.num_heads,
+            scale_value=self.head_dim**-0.5,
+            block_table=metadata.block_tables,
+            context_lens=context_lens,
+            out=output,
+        )
+        return output
+
     def _dense_prefill_310(
         self,
         query: torch.Tensor,
@@ -1171,6 +1207,8 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
         )
         if self._dense_prefill_is_exact(metadata, self.indexer.token_topk):
             out = self._dense_prefill_310(q, k, v, key_cache, value_cache, metadata)
+        elif self._dense_decode_is_exact(metadata, self.indexer.token_topk):
+            out = self._dense_decode_310(q, key_cache, value_cache, metadata)
         else:
             selection = qsa_indexer_select_groups_310(
                 index_q,
@@ -1221,15 +1259,27 @@ class _Qwen4ExpW8A8PostLoadMethod(QuantizeMethodBase):
         raise RuntimeError("Qwen4Exp routes expert execution through its model forward")
 
     def process_weights_after_loading(self, layer: nn.Module) -> None:
-        # Keep expert weights in their checkpoint [out, in] layout.  The 310P
+        # Expert weights are streamed directly into the W8A16 operator's
+        # [in, out] layout. The 310P
         # dynamic INT8 matmul is documented as having an accuracy issue, while
         # grouped A8W8 is unsupported on this device.  The forward path therefore
-        # dequantizes one active expert at a time and uses native FP16 matmul,
-        # bounding temporary storage to a single expert.
+        # uses the 310P W8A16 weight-only matmul, preserving FP16 activations
+        # without materializing dequantized expert weights.
+        scale_dtype = getattr(layer, "params_dtype", torch.float16)
         layer.w13_weight_scale.data = layer.w13_weight_scale.data.view(layer.num_local_experts, -1)
         layer.w13_weight_offset.data = layer.w13_weight_offset.data.view(layer.num_local_experts, -1)
         layer.w2_weight_scale.data = layer.w2_weight_scale.data.view(layer.num_local_experts, -1)
         layer.w2_weight_offset.data = layer.w2_weight_offset.data.view(layer.num_local_experts, -1)
+        # Materialize independent per-expert FP16 scale vectors once. Views of
+        # the banked NPU parameter retain the full bank's physical storage on
+        # 310P, which makes WeightQuantBatchMatmulV2 see E*N scales instead of
+        # the selected expert's N scales.
+        layer.w13_weight_scale_list = [
+            scale.to(scale_dtype).clone() for scale in layer.w13_weight_scale.data.unbind(dim=0)
+        ]
+        layer.w2_weight_scale_list = [
+            scale.to(scale_dtype).clone() for scale in layer.w2_weight_scale.data.unbind(dim=0)
+        ]
 
 
 class _EagerSparseMoE(nn.Module):
@@ -1242,8 +1292,8 @@ class _EagerSparseMoE(nn.Module):
     T3.3-validated grouped QDQ math from :mod:`vllm_ascend.models.qwen4_exp.moe`
     (per-token INT8 activation quant, per-channel ``(q - offset) * scale`` weight
     dequant -- real experts are symmetric so ``offset == 0``). NPU execution
-    dequantizes one active expert at a time and uses FP16 matmuls; the pure-
-    PyTorch QDQ path is retained as the host reference. The router runs in
+    uses the 310P W8A16 weight-only matmul; the pure-PyTorch QDQ path is retained
+    as the host reference. The router runs in
     the policy ``router_dtype`` (fp32) with ``norm_topk_prob`` renormalization;
     the shared expert stays non-quantized F16 (per the T3.1 mapping contract) and
     is applied densely + unweighted.
@@ -1317,18 +1367,18 @@ class _EagerSparseMoE(nn.Module):
 
         # Routed experts in the AscendW8A8DynamicFusedMoEMethod310 fused layout
         # (LOCAL slice only under expert-dimension TP slicing):
-        #   w13_weight        ParameterList[E_local] of int8 [2*moe, hidden]
-        #                     gate rows [0,moe), up [moe,2moe)
-        #   w2_weight         ParameterList[E_local] of int8 [hidden, moe]
+        #   w13_weight        ParameterList[E_local] of int8 [hidden, 2*moe]
+        #                     gate cols [0,moe), up [moe,2moe)
+        #   w2_weight         ParameterList[E_local] of int8 [moe, hidden]
         #   w13_weight_scale  float32 [E_local, 2*moe, 1]  (offset likewise, symmetric == 0)
         #   w2_weight_scale   float32 [E_local, hidden, 1]
         # int8 params never require grad (only float/complex tensors may).
         self.w13_weight = nn.ParameterList(
-            nn.Parameter(torch.zeros(2 * moe_inter, hidden, dtype=torch.int8), requires_grad=False)
+            nn.Parameter(torch.zeros(hidden, 2 * moe_inter, dtype=torch.int8), requires_grad=False)
             for _ in range(self.num_local_experts)
         )
         self.w2_weight = nn.ParameterList(
-            nn.Parameter(torch.zeros(hidden, moe_inter, dtype=torch.int8), requires_grad=False)
+            nn.Parameter(torch.zeros(moe_inter, hidden, dtype=torch.int8), requires_grad=False)
             for _ in range(self.num_local_experts)
         )
         self.w13_weight_scale = nn.Parameter(
@@ -1379,15 +1429,18 @@ class _EagerSparseMoE(nn.Module):
             renormalize=self.renormalize,
             routed_scaling_factor=self.routed_scaling_factor,
         )
+        npu_expert_weights = block_input.device.type == "npu"
+        w13_weight = self.w13_weight if npu_expert_weights else [weight.t() for weight in self.w13_weight]
+        w2_weight = self.w2_weight if npu_expert_weights else [weight.t() for weight in self.w2_weight]
         out = w8a8_grouped_experts(
             block_input,
             topk_weights,
             topk_ids,
-            self.w13_weight,
-            self.w13_weight_scale,
+            w13_weight,
+            getattr(self, "w13_weight_scale_list", self.w13_weight_scale),
             self.w13_weight_offset,
-            self.w2_weight,
-            self.w2_weight_scale,
+            w2_weight,
+            getattr(self, "w2_weight_scale_list", self.w2_weight_scale),
             self.w2_weight_offset,
             expert_offset=self.expert_offset,
             num_global_experts=self.num_global_experts,
@@ -1528,20 +1581,37 @@ class _PLEInjection(nn.Module):
         self.ple.ple_method = method
         self._ple_method = method
 
-    def _real_ngram_ids(self, input_ids: torch.Tensor, *, reduce: bool = True) -> torch.Tensor:
-        """Real SplitMix64 n-gram row ids for a single eager-boot request.
+    def _real_ngram_ids(
+        self,
+        input_ids: torch.Tensor,
+        query_start_loc: torch.Tensor | None = None,
+        ngram_context: torch.Tensor | None = None,
+        *,
+        reduce: bool = True,
+    ) -> torch.Tensor:
+        """Real SplitMix64 n-gram row ids for packed serving requests.
 
         Uses ``AscendQwen4ExpNGramEmbedding.compute_ngram_ids`` (T4.2-verified to
-        match the checkpoint's ``layer_multipliers``). The eager-boot path has no
-        model state, so we present one request (``query_start_loc=[0, seq_len]``)
-        with an EOS-padded history (``ngram_context``). The returned ids index the
-        full 320M-row padded vocab; when ``reduce`` is set (the stub-table boot
-        path) they are reduced modulo the synthetic table.
+        match the checkpoint's ``layer_multipliers``). Serving supplies packed
+        request boundaries and the preceding per-request token history. Eager
+        host boots may omit both, in which case a single EOS-padded request is
+        used. The returned ids index the full 320M-row padded vocab; when
+        ``reduce`` is set (the stub-table boot path) they are reduced modulo the
+        synthetic table.
         """
-        seq_len = int(input_ids.shape[0])
-        device = input_ids.device
-        query_start_loc = torch.tensor([0, seq_len], dtype=torch.int64, device=device)
-        ngram_context = torch.full((1, self.ngram_size - 1), self.eos_token_id, dtype=torch.int64, device=device)
+        if (query_start_loc is None) != (ngram_context is None):
+            raise ValueError("query_start_loc and ngram_context must be provided together")
+        if query_start_loc is None:
+            seq_len = int(input_ids.shape[0])
+            device = input_ids.device
+            query_start_loc = torch.tensor([0, seq_len], dtype=torch.int64, device=device)
+            ngram_context = torch.full(
+                (1, self.ngram_size - 1),
+                self.eos_token_id,
+                dtype=torch.int64,
+                device=device,
+            )
+        assert ngram_context is not None
         global_ids = self.ngram.compute_ngram_ids(input_ids, query_start_loc, ngram_context)
         if reduce:
             return global_ids.remainder(self._STUB_TABLE_ROWS)
@@ -1567,12 +1637,23 @@ class _PLEInjection(nn.Module):
             ids[:, head] = mixed.remainder(self._STUB_TABLE_ROWS)
         return ids
 
-    def forward(self, hidden_states: torch.Tensor, input_ids: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        input_ids: torch.Tensor,
+        query_start_loc: torch.Tensor | None = None,
+        ngram_context: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         self._ensure_ple_method(hidden_states.device)
         if self.ngram is not None:
             # Real hasher: full padded-vocab ids for the lazy-shard table, or
             # reduced to the synthetic stub table on the host dummy-boot path.
-            ngram_ids = self._real_ngram_ids(input_ids, reduce=self.checkpoint_dir is None)
+            ngram_ids = self._real_ngram_ids(
+                input_ids,
+                query_start_loc,
+                ngram_context,
+                reduce=self.checkpoint_dir is None,
+            )
         else:
             ngram_ids = self._stub_ngram_ids(input_ids)
         return self.ple(hidden_states, ngram_ids)
@@ -1677,10 +1758,12 @@ class AscendQwen4ExpDecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         positions: torch.Tensor,
         input_ids: torch.Tensor,
+        query_start_loc: torch.Tensor | None = None,
+        ngram_context: torch.Tensor | None = None,
     ) -> torch.Tensor:
         # PLE injects into the multi-stream state before the attention block.
         if self.ple is not None:
-            hidden_states = self.ple(hidden_states, input_ids)
+            hidden_states = self.ple(hidden_states, input_ids, query_start_loc, ngram_context)
 
         block_input, residual = self.attn_hyper_connection.mix(hidden_states)
         attn_out = self.attention(block_input, positions)
@@ -1810,6 +1893,8 @@ class AscendQwen4ExpModel(nn.Module):
         input_ids: torch.Tensor | None,
         positions: torch.Tensor,
         inputs_embeds: torch.Tensor | None = None,
+        query_start_loc: torch.Tensor | None = None,
+        ngram_context: torch.Tensor | None = None,
     ) -> torch.Tensor:
         if inputs_embeds is not None:
             hidden_states = inputs_embeds
@@ -1826,7 +1911,13 @@ class AscendQwen4ExpModel(nn.Module):
             else torch.zeros(hidden_states.shape[0], dtype=torch.int64, device=hidden_states.device)
         )
         for layer in self.layers:
-            hidden_states = layer(hidden_states, positions, raw_input_ids)
+            hidden_states = layer(
+                hidden_states,
+                positions,
+                raw_input_ids,
+                query_start_loc,
+                ngram_context,
+            )
 
         # Retain the multi-stream state for the MTP drafter (scheme A).
         self._mtp_hidden_buffer = hidden_states
@@ -2145,10 +2236,10 @@ class AscendQwen4ExpForCausalLM(
         """Copy one source expert tensor into its fused-MoE param slot (streamed).
 
         ``mapping`` is the T3.1 :class:`ExpertTensorMapping`. Quantized weights
-        land in the expert-specific ``.{expert_index}`` parameter at
-        ``[row_start:row_stop]``; compact scale/offset banks retain the leading
-        expert dimension. Rejects a dtype/shape mismatch with the mapper's own
-        error taxonomy before any copy.
+        land transposed in the expert-specific ``.{expert_index}`` parameter at
+        ``[:, row_start:row_stop]``; compact scale/offset banks retain the
+        leading expert dimension. Rejects a dtype/shape mismatch with the
+        mapper's own error taxonomy before any copy.
         """
         target_name = f"model.layers.{mapping.layer}.mlp.{mapping.target_param}"
         # Quantized weights are registered as individual expert parameters so
@@ -2176,7 +2267,7 @@ class AscendQwen4ExpForCausalLM(
             )
         with torch.no_grad():
             if mapping.kind == "weight":
-                param[mapping.row_start : mapping.row_stop].copy_(weight.to(param.dtype))
+                param[:, mapping.row_start : mapping.row_stop].copy_(weight.t().to(param.dtype))
             else:
                 param[mapping.expert_index, mapping.row_start : mapping.row_stop].copy_(weight.to(param.dtype))
         return target_name
@@ -2508,8 +2599,14 @@ class AscendQwen4ExpForCausalLM(
         inputs_embeds: torch.Tensor | None = None,
         **kwargs: object,
     ) -> torch.Tensor:
-        del intermediate_tensors, kwargs  # single-stage PP; ngram kwargs unused here
-        return self.model(input_ids, positions, inputs_embeds)
+        del intermediate_tensors  # single-stage PP
+        return self.model(
+            input_ids,
+            positions,
+            inputs_embeds,
+            query_start_loc=kwargs.get("query_start_loc"),
+            ngram_context=kwargs.get("ngram_context"),
+        )
 
 
 @MULTIMODAL_REGISTRY.register_processor(
@@ -2611,8 +2708,13 @@ class AscendQwen4ExpForConditionalGeneration(
         inputs_embeds: torch.Tensor | None = None,
         **kwargs: object,
     ) -> torch.Tensor:
-        del kwargs
-        return self.language_model(input_ids, positions, intermediate_tensors, inputs_embeds)
+        return self.language_model(
+            input_ids,
+            positions,
+            intermediate_tensors,
+            inputs_embeds,
+            **kwargs,
+        )
 
     def get_expert_mapping(self) -> list[tuple[str, str, int, str]]:
         return self.language_model.get_expert_mapping()

@@ -9,6 +9,7 @@ namespace NsQsaIndexerScore {
 using namespace AscendC;
 
 constexpr int64_t QSA_COMPRESS_RATIO = 4;
+constexpr int64_t FP32_REDUCE_WIDTH = 64;
 
 class QsaIndexerScoreV310 {
 public:
@@ -53,6 +54,19 @@ public:
     }
 
 private:
+    __aicore__ inline float ReduceHead(LocalTensor<float> product, LocalTensor<float> reduce)
+    {
+        float sum = 0.0f;
+        for (int64_t offset = 0; offset < headDim_; offset += FP32_REDUCE_WIDTH) {
+            const int64_t width = headDim_ - offset < FP32_REDUCE_WIDTH
+                                      ? headDim_ - offset : FP32_REDUCE_WIDTH;
+            WholeReduceSum(reduce, product[offset], width, 1, 1, 1, 8);
+            PipeBarrier<PIPE_V>();
+            sum += reduce.GetValue(0);
+        }
+        return sum;
+    }
+
     __aicore__ inline int64_t RequestForToken(int64_t row) const
     {
         for (int64_t request = 0; request < numRequests_; ++request) {
@@ -99,9 +113,7 @@ private:
             PipeBarrier<PIPE_V>();
             Mul(product, queryFloat, keyFloat, headDim_);
             PipeBarrier<PIPE_V>();
-            WholeReduceSum(reduce, product, headDim_, 1, 1, 1, 8);
-            PipeBarrier<PIPE_V>();
-            const float dot = reduce.GetValue(0);
+            const float dot = ReduceHead(product, reduce);
             score += dot > 0.0f ? dot : 0.0f;
         }
         scoresGm_.SetValue(task, score);

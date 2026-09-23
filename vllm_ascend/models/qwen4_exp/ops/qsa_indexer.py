@@ -81,11 +81,13 @@ def _stable_topk_indices(scores: torch.Tensor, k: int) -> torch.Tensor:
 
     # Stable least-significant-key sorts build the lexicographic order:
     # score descending, valid before padding, then group index ascending.
-    order = torch.argsort(candidate_indices, dim=1, stable=True)
+    # 310P sorts integer tensors on AiCPU. Group ids fit exactly in float32,
+    # so these two key sorts can stay on AiCore without changing tie order.
+    order = torch.argsort(candidate_indices.to(torch.float32), dim=1, stable=True)
     candidate_indices = candidate_indices.gather(1, order)
     candidate_values = candidate_values.gather(1, order)
     candidate_valid = candidate_valid.gather(1, order)
-    order = torch.argsort(candidate_valid.to(torch.int8), dim=1, descending=True, stable=True)
+    order = torch.argsort(candidate_valid.to(torch.float32), dim=1, descending=True, stable=True)
     candidate_indices = candidate_indices.gather(1, order)
     candidate_values = candidate_values.gather(1, order)
     order = torch.argsort(candidate_values, dim=1, descending=True, stable=True)

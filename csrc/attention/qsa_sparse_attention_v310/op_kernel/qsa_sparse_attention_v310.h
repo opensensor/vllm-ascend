@@ -11,6 +11,7 @@ using namespace AscendC;
 constexpr int64_t NZ_INNER = 16;
 constexpr int64_t QSA_COMPRESS_RATIO = 4;
 constexpr int64_t SCALAR_VECTOR_WIDTH = 8;
+constexpr int64_t FP32_REDUCE_WIDTH = 64;
 constexpr float SCALE_Q24_FACTOR = 16777216.0f;
 
 class QsaSparseAttentionV310 {
@@ -110,6 +111,19 @@ private:
         return scalar.GetValue(0);
     }
 
+    __aicore__ inline float ReduceHead(LocalTensor<float> product, LocalTensor<float> scalar)
+    {
+        float sum = 0.0f;
+        for (int64_t offset = 0; offset < headDim_; offset += FP32_REDUCE_WIDTH) {
+            const int64_t width = headDim_ - offset < FP32_REDUCE_WIDTH
+                                      ? headDim_ - offset : FP32_REDUCE_WIDTH;
+            WholeReduceSum(scalar, product[offset], width, 1, 1, 1, SCALAR_VECTOR_WIDTH);
+            PipeBarrier<PIPE_V>();
+            sum += scalar.GetValue(0);
+        }
+        return sum;
+    }
+
     __aicore__ inline void AccumulateToken(int64_t request, int64_t token, int64_t kvHead,
                                            LocalTensor<float> query, LocalTensor<half> halfKv,
                                            LocalTensor<float> kv, LocalTensor<float> product,
@@ -122,9 +136,7 @@ private:
         PipeBarrier<PIPE_V>();
         Mul(product, query, kv, headDim_);
         PipeBarrier<PIPE_V>();
-        WholeReduceSum(scalar, product, headDim_, 1, 1, 1, 8);
-        PipeBarrier<PIPE_V>();
-        const float score = scalar.GetValue(0) * scale_;
+        const float score = ReduceHead(product, scalar) * scale_;
         const float nextMax = score > rowMax ? score : rowMax;
         const float previousWeight = rowSum == 0.0f ? 0.0f : ExpScalar(rowMax - nextMax, scalar);
         const float tokenWeight = ExpScalar(score - nextMax, scalar);

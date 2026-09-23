@@ -269,7 +269,7 @@ def test_place_expert_tensor_targets_per_expert_weight_parameter():
     scale_name = f"{weight_name}_scale"
     weight_mapping = map_expert_tensor(weight_name, geometry)
     scale_mapping = map_expert_tensor(scale_name, geometry)
-    expert_weight = torch.nn.Parameter(torch.zeros(8, 3, dtype=torch.int8), requires_grad=False)
+    expert_weight = torch.nn.Parameter(torch.zeros(3, 8, dtype=torch.int8), requires_grad=False)
     weight_scale = torch.nn.Parameter(torch.zeros(2, 8, 1), requires_grad=False)
     params = {
         "model.layers.0.mlp.w13_weight.0": expert_weight,
@@ -283,8 +283,8 @@ def test_place_expert_tensor_targets_per_expert_weight_parameter():
 
     assert weight_target == "model.layers.0.mlp.w13_weight"
     assert scale_target == "model.layers.0.mlp.w13_weight_scale"
-    assert torch.equal(expert_weight[:4], source_weight)
-    assert torch.equal(expert_weight[4:], torch.zeros_like(expert_weight[4:]))
+    assert torch.equal(expert_weight[:, :4], source_weight.t())
+    assert torch.equal(expert_weight[:, 4:], torch.zeros_like(expert_weight[:, 4:]))
     assert torch.equal(weight_scale[0, :4], source_scale)
 
 
@@ -357,9 +357,9 @@ def test_load_weights_places_experts_and_non_experts():
         gate = ref[f"{base}.gate_proj.weight"]
         up = ref[f"{base}.up_proj.weight"]
         down = ref[f"{base}.down_proj.weight"]
-        assert torch.equal(layer0.w13_weight[e][:moe], gate)
-        assert torch.equal(layer0.w13_weight[e][moe:], up)
-        assert torch.equal(layer0.w2_weight[e], down)
+        assert torch.equal(layer0.w13_weight[e][:, :moe], gate.t())
+        assert torch.equal(layer0.w13_weight[e][:, moe:], up.t())
+        assert torch.equal(layer0.w2_weight[e], down.t())
         # Scales (gate rows first, then up rows) and symmetric zero offsets.
         assert torch.allclose(layer0.w13_weight_scale[e, :moe], ref[f"{base}.gate_proj.weight_scale"])
         assert torch.allclose(layer0.w13_weight_scale[e, moe:], ref[f"{base}.up_proj.weight_scale"])
@@ -507,11 +507,11 @@ def test_moe_block_forward_finite_and_uses_shared_expert():
     w13_w, w13_s, w13_o, w2_w, w2_s, w2_o = _stack_experts(experts, 16, 8)
     with torch.no_grad():
         for target, source in zip(block.w13_weight, w13_w):
-            target.copy_(source)
+            target.copy_(source.t())
         block.w13_weight_scale.copy_(w13_s)
         block.w13_weight_offset.copy_(w13_o)
         for target, source in zip(block.w2_weight, w2_w):
-            target.copy_(source)
+            target.copy_(source.t())
         block.w2_weight_scale.copy_(w2_s)
         block.w2_weight_offset.copy_(w2_o)
         block.gate.copy_((torch.randn(8, 16, generator=gen) * 0.1).to(block.gate.dtype))

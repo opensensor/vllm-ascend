@@ -376,11 +376,11 @@ def test_block_tp_reduce_partial_plus_shared_once():
             b.shared_gate_up.copy_(local_shared_up.to(b.params_dtype))
             b.shared_down.copy_(local_shared_dn.to(b.params_dtype))
             for target, source in zip(b.w13_weight, src["w13"]):
-                target.copy_(source)
+                target.copy_(source.t())
             b.w13_weight_scale.copy_(src["s13"])
             b.w13_weight_offset.copy_(src["o13"])
             for target, source in zip(b.w2_weight, src["w2"]):
-                target.copy_(source)
+                target.copy_(source.t())
             b.w2_weight_scale.copy_(src["s2"])
             b.w2_weight_offset.copy_(src["o2"])
     # TP1 reference block: default unsharded bank, same router/shared weights.
@@ -395,11 +395,11 @@ def test_block_tp_reduce_partial_plus_shared_once():
         ref.shared_gate_up.copy_(shared_up.to(ref.params_dtype))
         ref.shared_down.copy_(shared_dn.to(ref.params_dtype))
         for target, source in zip(ref.w13_weight, w13):
-            target.copy_(source)
+            target.copy_(source.t())
         ref.w13_weight_scale.copy_(s13)
         ref.w13_weight_offset.copy_(o13)
         for target, source in zip(ref.w2_weight, w2):
-            target.copy_(source)
+            target.copy_(source.t())
         ref.w2_weight_scale.copy_(s2)
         ref.w2_weight_offset.copy_(o2)
 
@@ -507,11 +507,11 @@ def test_tp_model_places_only_its_experts_and_validates():
             gate = truth[_expert_name(0, expert, "gate_proj", "weight")]
             up = truth[_expert_name(0, expert, "up_proj", "weight")]
             dn = truth[_expert_name(0, expert, "down_proj", "weight")]
-            assert torch.equal(layer0.w13_weight[local][:16], gate.view(16, 32)), (rank, expert)
-            assert torch.equal(layer0.w13_weight[local][16:], up.view(16, 32)), (rank, expert)
+            assert torch.equal(layer0.w13_weight[local][:, :16], gate.view(16, 32).t()), (rank, expert)
+            assert torch.equal(layer0.w13_weight[local][:, 16:], up.view(16, 32).t()), (rank, expert)
             assert torch.equal(
                 layer0.w2_weight[local],
-                dn.view(layer0.w2_weight[local].shape),
+                dn.view(32, 16).t(),
             ), (rank, expert)
             assert "model.layers.0.mlp.w13_weight" in loaded
 

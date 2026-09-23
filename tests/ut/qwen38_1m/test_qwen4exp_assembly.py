@@ -188,6 +188,82 @@ def test_full_model_boots_forwards_and_samples():
     assert 0 <= token < cfg.vocab_size
 
 
+def test_model_forwards_serving_ngram_context_to_ple():
+    """Decode/chunk history prepared by model state must reach PLE hashing."""
+    from vllm_ascend.models.qwen4_exp.model import AscendQwen4ExpForCausalLM
+
+    class _BackboneRecorder(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.call = None
+
+        def forward(self, *args, **kwargs):
+            self.call = (args, kwargs)
+            return torch.ones(1, 2)
+
+    model = AscendQwen4ExpForCausalLM.__new__(AscendQwen4ExpForCausalLM)
+    torch.nn.Module.__init__(model)
+    model.model = _BackboneRecorder()
+
+    input_ids = torch.tensor([17], dtype=torch.int64)
+    positions = torch.tensor([9], dtype=torch.int64)
+    query_start_loc = torch.tensor([0, 1], dtype=torch.int32)
+    ngram_context = torch.tensor([[15, 16]], dtype=torch.int32)
+    output = model(
+        input_ids,
+        positions,
+        query_start_loc=query_start_loc,
+        ngram_context=ngram_context,
+    )
+
+    assert torch.equal(output, torch.ones(1, 2))
+    assert model.model.call is not None
+    _args, kwargs = model.model.call
+    assert kwargs["query_start_loc"] is query_start_loc
+    assert kwargs["ngram_context"] is ngram_context
+
+
+def test_ple_decode_hash_uses_previous_tokens():
+    from vllm_ascend.models.qwen4_exp.dtype_policy import ASCEND_QWEN4EXP_DTYPE_POLICY
+    from vllm_ascend.models.qwen4_exp.model import _PLEInjection
+
+    cfg = _tiny_text_config(num_layers=1, ple_layer_ids=(1,))
+    cfg.ngram_vocab_size_base = 257
+    cfg.seed = 1234
+    ple = _PLEInjection(config=cfg, layer_idx=0, dtype_policy=ASCEND_QWEN4EXP_DTYPE_POLICY)
+    assert ple.ngram is not None
+    token = torch.tensor([23], dtype=torch.int64)
+    query_start_loc = torch.tensor([0, 1], dtype=torch.int32)
+
+    ids_with_history = ple._real_ngram_ids(
+        token,
+        query_start_loc,
+        torch.tensor([[21, 22]], dtype=torch.int32),
+    )
+    ids_at_sequence_start = ple._real_ngram_ids(
+        token,
+        query_start_loc,
+        torch.tensor([[cfg.eos_token_id, cfg.eos_token_id]], dtype=torch.int32),
+    )
+
+    assert not torch.equal(ids_with_history, ids_at_sequence_start)
+
+
+def test_qsa_dense_decode_only_when_selection_is_exact():
+    from vllm_ascend.models.qwen4_exp.model import _QSAAttention
+
+    metadata = SimpleNamespace(
+        attn_state=SimpleNamespace(name="DecodeOnly"),
+        seq_lens_cpu=torch.tensor([2, 2048]),
+    )
+    assert _QSAAttention._dense_decode_is_exact(metadata, 2048)
+    metadata.seq_lens_cpu = torch.tensor([2, 2049])
+    assert not _QSAAttention._dense_decode_is_exact(metadata, 2048)
+    metadata.attn_state.name = "PrefillOnly"
+    metadata.seq_lens_cpu = torch.tensor([2, 2048])
+    assert not _QSAAttention._dense_decode_is_exact(metadata, 2048)
+
+
 def test_composition_places_gdn_qsa_ple_and_moe():
     from vllm_ascend.models.qwen4_exp.model import (
         _EagerSparseMoE,
