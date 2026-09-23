@@ -34,10 +34,21 @@ def test_host_changes_invalidate_generated_operator_metadata():
 
     assert 'find "${op_path}/op_host" -type f -newer "${generated_proto}"' in build_script
     assert 'rm -f -- "${generated_proto}"' in build_script
+    assert "hash_op_host_sources()" in build_script
+    assert '[[ ! -f "${host_stamp}" ]]' in build_script
+    assert '[[ "$(< "${host_stamp}")" != "${host_hash}" ]]' in build_script
     assert '-name "${op_type}_*_param.json"' in build_script
     assert '-name "kernel_meta_${op_type}_*"' in build_script
     assert 'rm -rf -- "${binary_root}/bin/${op_name}"' in build_script
     assert 'rm -f -- "${binary_root}/bin/${op_name}.json"' in build_script
+
+
+def test_host_fingerprint_is_saved_only_after_successful_build():
+    build_script = (REPO_ROOT / "csrc" / "build_aclnn.sh").read_text()
+
+    build_call = 'bash build.sh --pkg --ops="${CUSTOM_OPS}" --soc="${SOC_ARG}"'
+    assert build_script.index("update_host_cache_fingerprints()") < build_script.index(build_call)
+    assert build_script.index(build_call) < build_script.index("  update_host_cache_fingerprints")
 
 
 def test_dead_compiler_locks_are_removed_before_build():

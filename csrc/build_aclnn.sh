@@ -63,6 +63,13 @@ op_name_to_type() {
     echo "${op_type}"
 }
 
+hash_op_host_sources() {
+    local op_path=$1
+
+    find "${op_path}/op_host" -type f -exec sha256sum {} + |
+        LC_ALL=C sort | sha256sum | cut -d ' ' -f 1
+}
+
 log_selected_ops() {
     local op_name
     local op_path
@@ -148,6 +155,8 @@ invalidate_stale_host_cache() {
     local autogen_root="${ROOT_DIR}/csrc/build/autogen"
     local binary_root="${ROOT_DIR}/csrc/build/binary/${SOC_ARG}"
     local generated_proto
+    local host_hash
+    local host_stamp
     local op_name
     local op_path
     local op_type
@@ -159,7 +168,14 @@ invalidate_stale_host_cache() {
         op_path=$(resolve_op_dir "${op_name}")
         [[ -n "${op_path}" && -d "${op_path}/op_host" ]] || continue
 
+        host_stamp="${binary_root}/src/${op_name}/${op_name}_${SOC_ARG}_host.sha256"
+        host_hash=$(hash_op_host_sources "${op_path}")
         stale_host_cache=0
+        if [[ ! -f "${host_stamp}" ]] ||
+           [[ "$(< "${host_stamp}")" != "${host_hash}" ]]; then
+            log "invalidating stale host metadata for ${op_name}"
+            stale_host_cache=1
+        fi
         for generated_proto in \
             "${autogen_root}/${op_name}_proto.cpp" \
             "${autogen_root}/inner/${op_name}_proto.cpp" \
@@ -167,7 +183,6 @@ invalidate_stale_host_cache() {
             [[ -f "${generated_proto}" ]] || continue
             if find "${op_path}/op_host" -type f -newer "${generated_proto}" \
                 -print -quit | grep -q .; then
-                log "invalidating stale host metadata for ${op_name}"
                 rm -f -- "${generated_proto}"
                 stale_host_cache=1
             fi
@@ -186,6 +201,21 @@ invalidate_stale_host_cache() {
             -name "kernel_meta_${op_type}_*" -exec rm -rf -- {} + 2>/dev/null || true
         rm -rf -- "${binary_root}/bin/${op_name}"
         rm -f -- "${binary_root}/bin/${op_name}.json"
+    done
+}
+
+update_host_cache_fingerprints() {
+    local binary_root="${ROOT_DIR}/csrc/build/binary/${SOC_ARG}"
+    local host_stamp
+    local op_name
+    local op_path
+
+    for op_name in "${CUSTOM_OPS_ARRAY[@]}"; do
+        op_path=$(resolve_op_dir "${op_name}")
+        [[ -n "${op_path}" && -d "${op_path}/op_host" ]] || continue
+        host_stamp="${binary_root}/src/${op_name}/${op_name}_${SOC_ARG}_host.sha256"
+        mkdir -p -- "$(dirname "${host_stamp}")"
+        hash_op_host_sources "${op_path}" > "${host_stamp}"
     done
 }
 
@@ -421,6 +451,7 @@ remove_stale_kernel_locks
   log "building custom ops ${CUSTOM_OPS} for ${SOC_VERSION}"
   bash build.sh --pkg --ops="${CUSTOM_OPS}" --soc="${SOC_ARG}"
   log "build.sh finished"
+  update_host_cache_fingerprints
 
   custom_ops_install_dir="${ROOT_DIR}/vllm_ascend/_cann_ops_custom"
   log "custom_ops_install_dir=${custom_ops_install_dir}"
