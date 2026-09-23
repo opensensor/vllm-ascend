@@ -287,9 +287,11 @@ extern "C" __global__ __aicore__ void chunk_kda_fwd(
     GM_ADDR w, GM_ADDR u, GM_ADDR qg, GM_ADDR kg, GM_ADDR v_new, GM_ADDR h,
     GM_ADDR qg_scaled, GM_ADDR u_seed, GM_ADDR workspace, GM_ADDR tiling)
 {
+    // Tiling keys 1 and 2 select implementations, but both use the same
+    // mixed-core ABI. Registering them as task-type keys makes the 310P
+    // precompile scanner emit only _1/_2 entries, even though its host uses
+    // the default key 0.
     KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);
-    KERNEL_TASK_TYPE(1, KERNEL_TYPE_MIX_AIC_1_2);
-    KERNEL_TASK_TYPE(2, KERNEL_TYPE_MIX_AIC_1_2);
     KdaForward::RunKernel(
         q, k, v, g, beta, a_log, dt_bias, initial_state, cu_seqlens,
         chunk_indices, attn_out, final_state, gk, aqk, akk, w, u, qg, kg,

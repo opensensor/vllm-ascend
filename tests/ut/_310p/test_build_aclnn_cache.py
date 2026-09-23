@@ -62,8 +62,9 @@ def test_chunk_kda_uses_unified_default_task_type_on_310p():
     assert "KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC);" in arch20_entry
     assert "KERNEL_TASK_TYPE(1" not in arch20_entry
     assert "KERNEL_TASK_TYPE(2" not in arch20_entry
-    assert "KERNEL_TASK_TYPE(1, KERNEL_TYPE_MIX_AIC_1_2);" in kernel[arch20_end:]
-    assert "KERNEL_TASK_TYPE(2, KERNEL_TYPE_MIX_AIC_1_2);" in kernel[arch20_end:]
+    assert "KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);" in kernel[arch20_end:]
+    assert "KERNEL_TASK_TYPE(1" not in kernel
+    assert "KERNEL_TASK_TYPE(2" not in kernel
 
 
 def test_chunk_kda_dispatches_without_keyed_runtime_selection_on_310p():
