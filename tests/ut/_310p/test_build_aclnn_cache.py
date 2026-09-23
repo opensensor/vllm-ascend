@@ -34,6 +34,19 @@ def test_host_changes_invalidate_generated_operator_metadata():
 
     assert 'find "${op_path}/op_host" -type f -newer "${generated_proto}"' in build_script
     assert 'rm -f -- "${generated_proto}"' in build_script
+    assert '-name "${op_type}_*_param.json"' in build_script
+    assert '-name "kernel_meta_${op_type}_*"' in build_script
+    assert 'rm -rf -- "${binary_root}/bin/${op_name}"' in build_script
+    assert 'rm -f -- "${binary_root}/bin/${op_name}.json"' in build_script
+
+
+def test_dead_compiler_locks_are_removed_before_build():
+    build_script = (REPO_ROOT / "csrc" / "build_aclnn.sh").read_text()
+
+    assert "remove_stale_kernel_locks()" in build_script
+    assert "lock_pid=$(tr -cd '0-9'" in build_script
+    assert '! kill -0 "${lock_pid}"' in build_script
+    assert 'rm -f -- "${lock_file}"' in build_script
 
 
 def test_gcc15_protobuf_build_includes_cstdint():

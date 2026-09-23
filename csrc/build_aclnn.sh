@@ -50,6 +50,19 @@ resolve_op_dir() {
     find "${ROOT_DIR}/csrc" -maxdepth 3 -type d -name "${op_name}" -print -quit 2>/dev/null
 }
 
+op_name_to_type() {
+    local op_name=$1
+    local component
+    local op_type=""
+    local -a components
+
+    IFS='_' read -r -a components <<< "${op_name}"
+    for component in "${components[@]}"; do
+        op_type+="${component^}"
+    done
+    echo "${op_type}"
+}
+
 log_selected_ops() {
     local op_name
     local op_path
@@ -133,9 +146,12 @@ invalidate_stale_kernel_cache() {
 
 invalidate_stale_host_cache() {
     local autogen_root="${ROOT_DIR}/csrc/build/autogen"
+    local binary_root="${ROOT_DIR}/csrc/build/binary/${SOC_ARG}"
     local generated_proto
     local op_name
     local op_path
+    local op_type
+    local stale_host_cache
 
     [[ -d "${autogen_root}" ]] || return 0
 
@@ -143,6 +159,7 @@ invalidate_stale_host_cache() {
         op_path=$(resolve_op_dir "${op_name}")
         [[ -n "${op_path}" && -d "${op_path}/op_host" ]] || continue
 
+        stale_host_cache=0
         for generated_proto in \
             "${autogen_root}/${op_name}_proto.cpp" \
             "${autogen_root}/inner/${op_name}_proto.cpp" \
@@ -152,9 +169,40 @@ invalidate_stale_host_cache() {
                 -print -quit | grep -q .; then
                 log "invalidating stale host metadata for ${op_name}"
                 rm -f -- "${generated_proto}"
+                stale_host_cache=1
             fi
         done
+        [[ "${stale_host_cache}" -eq 1 && -d "${binary_root}" ]] || continue
+
+        # Host definitions determine the number and dtypes of generated kernel
+        # variants. CANN does not prune outputs from variants removed by a
+        # newer definition, so delete only this operator's generated products.
+        op_type=$(op_name_to_type "${op_name}")
+        find "${binary_root}/gen" -maxdepth 1 -type f \
+            \( -name "${op_type}-*" -o -name "${op_type}_*_param.json" \
+               -o -name "${op_name}_${SOC_ARG}_*.done" \) \
+            -delete 2>/dev/null || true
+        find "${binary_root}/gen" -maxdepth 1 -type d \
+            -name "kernel_meta_${op_type}_*" -exec rm -rf -- {} + 2>/dev/null || true
+        rm -rf -- "${binary_root}/bin/${op_name}"
+        rm -f -- "${binary_root}/bin/${op_name}.json"
     done
+}
+
+remove_stale_kernel_locks() {
+    local binary_root="${ROOT_DIR}/csrc/build/binary/${SOC_ARG}"
+    local lock_file
+    local lock_pid
+
+    [[ -d "${binary_root}/gen" ]] || return 0
+    while IFS= read -r -d '' lock_file; do
+        lock_pid=$(tr -cd '0-9' < "${lock_file}")
+        if [[ -z "${lock_pid}" ]] || ! kill -0 "${lock_pid}" 2>/dev/null; then
+            log "removing stale compiler lock ${lock_file}"
+            rm -f -- "${lock_file}"
+        fi
+    done < <(find "${binary_root}/gen" -mindepth 2 -maxdepth 2 \
+        -type f -name 'kernel_meta.lock' -print0 2>/dev/null)
 }
 
 log "start: ROOT_DIR=${ROOT_DIR:-<unset>} SOC_VERSION=${SOC_VERSION:-<unset>} cwd=$(pwd)"
@@ -341,6 +389,7 @@ fi
 log_selected_ops
 invalidate_stale_kernel_cache
 invalidate_stale_host_cache
+remove_stale_kernel_locks
 
 
 # # build custom ops
