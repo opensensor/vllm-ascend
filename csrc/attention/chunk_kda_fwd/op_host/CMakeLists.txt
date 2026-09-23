@@ -15,11 +15,14 @@ set(chunk_kda_fwd_depends
     "attention/kda_gate_cumsum;moe/chunk_gated_delta_rule_fwd_h"
     CACHE STRING "Kernel source dependencies for chunk_kda_fwd" FORCE)
 if (BUILD_OPEN_PROJECT)
-    target_sources(op_host_aclnnExc PRIVATE
-        chunk_kda_fwd_def.cpp
-    )
     if("ascend310p" IN_LIST ASCEND_COMPUTE_UNIT)
-        target_compile_definitions(op_host_aclnnExc PRIVATE KDA_310P_FP16_INPUT_ONLY=1)
+        target_sources(op_host_aclnnExc PRIVATE
+            chunk_kda_fwd_def_310p.cpp
+        )
+    else()
+        target_sources(op_host_aclnnExc PRIVATE
+            chunk_kda_fwd_def.cpp
+        )
     endif()
 endif()
 
