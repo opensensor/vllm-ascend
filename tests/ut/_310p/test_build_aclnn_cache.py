@@ -201,7 +201,7 @@ def test_chunk_kda_prunes_unsupported_bf16_inputs_on_310p():
     op_def = (op_dir / "chunk_kda_fwd_def.cpp").read_text()
     api = (op_dir / "op_api" / "aclnn_chunk_kda_fwd.cpp").read_text()
 
-    assert 'STREQUAL "ascend310p"' in cmake
+    assert '"ascend310p" IN_LIST ASCEND_COMPUTE_UNIT' in cmake
     assert "KDA_310P_FP16_INPUT_ONLY=1" in cmake
     assert "#if defined(KDA_310P_FP16_INPUT_ONLY)" in op_def
     assert "Ascend 310P requires float16 q, k and v." in api
