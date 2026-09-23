@@ -51,7 +51,7 @@ def test_chunk_kda_is_registered_and_built_for_310p():
 def test_chunk_kda_uses_only_default_task_type_on_310p():
     kernel = (REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_kernel" / "chunk_kda_fwd.cpp").read_text()
 
-    guard = "#if !defined(__CCE_AICORE__) || (__CCE_AICORE__ != 200)"
+    guard = "#ifndef CATLASS_UNIFIED_CORE"
     assert "KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);" in kernel
     assert kernel.index(guard) < kernel.index("KERNEL_TASK_TYPE(1")
     assert kernel.index(guard) < kernel.index("KERNEL_TASK_TYPE(2")
