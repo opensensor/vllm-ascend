@@ -91,6 +91,11 @@ invalidate_stale_kernel_cache() {
         if [[ ! -f "${source_stamp}" ]] ||
            find "${op_path}/op_kernel" -type f -newer "${source_stamp}" -print -quit | grep -q .; then
             stale_kernel_cache=1
+        elif [[ -f "${op_path}/op_host/CMakeLists.txt" &&
+                "${op_path}/op_host/CMakeLists.txt" -nt "${source_stamp}" ]]; then
+            # Per-SoC kernel compiler options live beside the host sources.
+            # Recompile device objects when those options change.
+            stale_kernel_cache=1
         elif [[ "${op_name}" == "w2_blocked_dequant_matmul_v310" ]] &&
              find "${ROOT_DIR}/csrc/moe/common/kernel_utils" -type f -newer "${source_stamp}" -print -quit |
                  grep -q .; then

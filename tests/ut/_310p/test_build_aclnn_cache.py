@@ -13,6 +13,7 @@ def test_kernel_changes_invalidate_copy_and_compile_stamps():
     build_script = (REPO_ROOT / "csrc" / "build_aclnn.sh").read_text()
 
     assert 'find "${op_path}/op_kernel" -type f -newer "${source_stamp}"' in build_script
+    assert '"${op_path}/op_host/CMakeLists.txt" -nt "${source_stamp}"' in build_script
     assert 'rm -f -- "${source_stamp}"' in build_script
     assert '-name "${op_name}_${SOC_ARG}_*.done"' in build_script
 
