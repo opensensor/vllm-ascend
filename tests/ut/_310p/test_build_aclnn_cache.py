@@ -199,13 +199,13 @@ def test_chunk_kda_prunes_unsupported_bf16_inputs_on_310p():
     op_dir = REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_host"
     cmake = (op_dir / "CMakeLists.txt").read_text()
     op_def = (op_dir / "chunk_kda_fwd_def.cpp").read_text()
-    op_def_310p = (op_dir / "chunk_kda_fwd_def_310p.cpp").read_text()
+    op_def_310p = (op_dir / "310p" / "chunk_kda_fwd_def.cpp").read_text()
     api = (op_dir / "op_api" / "aclnn_chunk_kda_fwd.cpp").read_text()
 
     assert '"ascend310p" IN_LIST ASCEND_COMPUTE_UNIT' in cmake
-    assert "chunk_kda_fwd_def_310p.cpp" in cmake
+    assert "310p/chunk_kda_fwd_def.cpp" in cmake
     assert "#define KDA_310P_FP16_INPUT_ONLY 1" in op_def_310p
-    assert '#include "chunk_kda_fwd_def.cpp"' in op_def_310p
+    assert '#include "../chunk_kda_fwd_def.cpp"' in op_def_310p
     assert "#if defined(KDA_310P_FP16_INPUT_ONLY)" in op_def
     assert "Ascend 310P requires float16 q, k and v." in api
 

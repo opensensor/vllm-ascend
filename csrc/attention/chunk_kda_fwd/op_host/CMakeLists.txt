@@ -17,7 +17,7 @@ set(chunk_kda_fwd_depends
 if (BUILD_OPEN_PROJECT)
     if("ascend310p" IN_LIST ASCEND_COMPUTE_UNIT)
         target_sources(op_host_aclnnExc PRIVATE
-            chunk_kda_fwd_def_310p.cpp
+            310p/chunk_kda_fwd_def.cpp
         )
     else()
         target_sources(op_host_aclnnExc PRIVATE

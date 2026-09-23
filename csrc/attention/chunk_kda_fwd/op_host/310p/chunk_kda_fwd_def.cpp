@@ -7,8 +7,7 @@
  * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
  */
 
-// CANN's metadata prebuild does not inherit target compile definitions. Keep
-// the 310P capability selection in the translation unit so metadata generation
-// and host compilation see the same operator signatures.
+// The basename must remain chunk_kda_fwd_def.cpp because CANN derives the op
+// metadata name from it during prebuild.
 #define KDA_310P_FP16_INPUT_ONLY 1
-#include "chunk_kda_fwd_def.cpp"
+#include "../chunk_kda_fwd_def.cpp"
