@@ -108,6 +108,10 @@ invalidate_stale_kernel_cache() {
 
         log "invalidating stale kernel cache for ${op_name}"
         rm -f -- "${source_stamp}"
+        # These generated launchers embed per-SoC compiler options. Removing
+        # the copied launcher makes Ninja refresh it from build/impl/dynamic.
+        find "${binary_root}/src/${op_name}" -maxdepth 1 -type f \
+            -name '*.py' -delete 2>/dev/null || true
         while IFS= read -r -d '' compile_stamp; do
             rm -f -- "${compile_stamp}"
         done < <(find "${binary_root}/gen" -maxdepth 1 -type f \

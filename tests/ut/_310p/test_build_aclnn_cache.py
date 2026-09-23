@@ -15,6 +15,8 @@ def test_kernel_changes_invalidate_copy_and_compile_stamps():
     assert 'find "${op_path}/op_kernel" -type f -newer "${source_stamp}"' in build_script
     assert '"${op_path}/op_host/CMakeLists.txt" -nt "${source_stamp}"' in build_script
     assert 'rm -f -- "${source_stamp}"' in build_script
+    assert '"${binary_root}/src/${op_name}" -maxdepth 1 -type f' in build_script
+    assert "-name '*.py' -delete" in build_script
     assert '-name "${op_name}_${SOC_ARG}_*.done"' in build_script
 
 
