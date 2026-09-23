@@ -82,11 +82,11 @@ def test_chunk_kda_dispatches_without_keyed_runtime_selection_on_310p():
     assert arch20_dispatch.rstrip().endswith("#endif")
 
 
-def test_chunk_kda_uses_default_tiling_key_on_310p():
+def test_chunk_kda_uses_compiled_mixed_core_tiling_keys_on_310p():
     tiling = (REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_host" / "chunk_kda_fwd_tiling.cpp").read_text()
 
-    assert "SocVersion::ASCEND310P" in tiling
-    assert "isAscend310P ? 0" in tiling
+    assert "SetTilingKey(useChunk64K128V128Template ? 2 : 1)" in tiling
+    assert "isAscend310P ? 0" not in tiling
 
 
 def test_chunk_kda_uses_physical_stage_boundaries_on_310p():

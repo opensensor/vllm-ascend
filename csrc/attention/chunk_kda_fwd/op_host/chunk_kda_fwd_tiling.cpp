@@ -206,8 +206,6 @@ ge::graphStatus Tiling4ChunkKdaFwd(gert::TilingContext *context)
 
     const auto platform = platform_ascendc::PlatformAscendC(context->GetPlatformInfo());
     const uint32_t blockDim = std::max<uint32_t>(platform.GetCoreNumAic(), 1);
-    const bool isAscend310P =
-        platform.GetSocVersion() == platform_ascendc::SocVersion::ASCEND310P;
     const bool isAscend950 =
         platform.GetSocVersion() == platform_ascendc::SocVersion::ASCEND950;
     const bool useChunk64K128V128Template =
@@ -299,11 +297,11 @@ ge::graphStatus Tiling4ChunkKdaFwd(gert::TilingContext *context)
     const uint64_t totalWorkspace = AlignWorkspace(cursor);
 
     context->SetBlockDim(blockDim);
-    // dav-m200 only supports KERNEL_TASK_TYPE_DEFAULT. Keep key 0 so the
-    // default entry is selected; the kernel dispatches its template from the
-    // runtime dimensions on 310P.
-    context->SetTilingKey(
-        isAscend310P ? 0 : (useChunk64K128V128Template ? 2 : 1));
+    // ChunkKdaFwd contains both cube and vector work, so CANN emits the
+    // paired _1/_2 entries even for dav-m200. Keep the host key aligned with
+    // those compiled entries; the 310P kernel still dispatches stages and
+    // templates from the runtime tiling data.
+    context->SetTilingKey(useChunk64K128V128Template ? 2 : 1);
     context->SetScheduleMode(KDA_BATCH_MODE);
     context->GetWorkspaceSizes(1)[0] = platform.GetLibApiWorkSpaceSize() + totalWorkspace;
 
