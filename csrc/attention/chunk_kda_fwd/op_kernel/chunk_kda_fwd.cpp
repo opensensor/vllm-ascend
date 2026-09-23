@@ -183,15 +183,11 @@ extern "C" __global__ __aicore__ void chunk_kda_fwd(
     GM_ADDR w, GM_ADDR u, GM_ADDR qg, GM_ADDR kg, GM_ADDR v_new, GM_ADDR h,
     GM_ADDR qg_scaled, GM_ADDR u_seed, GM_ADDR workspace, GM_ADDR tiling)
 {
-    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);
-    // 310P codegen only supports the default task-type registration; its host
-    // tiling selects key 0 and runtime dimensions choose the template below.
-    // The registration scanner does not define __CCE_AICORE__, so the build
-    // supplies an explicit SoC-scoped marker shared by both compiler passes.
-#ifndef KDA_310P_DEFAULT_TASK
+    // Key 0 is reserved for the 310P unified-core path. Other architectures
+    // select key 1 or 2 and retain their paired AIC/AIV task ABI below.
+    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC);
     KERNEL_TASK_TYPE(1, KERNEL_TYPE_MIX_AIC_1_2);
     KERNEL_TASK_TYPE(2, KERNEL_TYPE_MIX_AIC_1_2);
-#endif
     GM_ADDR userWorkspace = AscendC::GetUserWorkspace(workspace);
     GET_TILING_DATA_WITH_STRUCT(ChunkKdaFwdTilingData, tilingData, tiling);
 #if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
