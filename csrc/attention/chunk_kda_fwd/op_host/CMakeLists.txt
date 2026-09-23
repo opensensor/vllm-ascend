@@ -18,6 +18,9 @@ if (BUILD_OPEN_PROJECT)
     target_sources(op_host_aclnnExc PRIVATE
         chunk_kda_fwd_def.cpp
     )
+    if("${ASCEND_COMPUTE_UNIT}" STREQUAL "ascend310p")
+        target_compile_definitions(op_host_aclnnExc PRIVATE KDA_310P_FP16_INPUT_ONLY=1)
+    endif()
 endif()
 
 add_ops_compile_options(

@@ -360,12 +360,16 @@ aclnnStatus ResolveShapeInfo(const ChunkKdaFwdParams &params, KdaFwdLayout layou
     return ACLNN_SUCCESS;
 }
 
+bool IsAscend310P();
+
 aclnnStatus CheckDtypes(const ChunkKdaFwdParams &params)
 {
     const DataType dataType = params.q->GetDataType();
     CHECK_COND((dataType == DataType::DT_FLOAT16 || dataType == DataType::DT_BF16) &&
                    params.k->GetDataType() == dataType && params.v->GetDataType() == dataType,
                ACLNN_ERR_PARAM_INVALID, "q, k and v must use the same float16 or bfloat16 dtype.");
+    CHECK_COND(!IsAscend310P() || dataType == DataType::DT_FLOAT16,
+               ACLNN_ERR_PARAM_INVALID, "Ascend 310P requires float16 q, k and v.");
     const DataType gateType = params.g->GetDataType();
     CHECK_COND(gateType == DataType::DT_FLOAT || gateType == DataType::DT_BF16,
                ACLNN_ERR_PARAM_INVALID, "g must be float32 or bfloat16.");
