@@ -163,6 +163,20 @@ def test_chunk_kda_uses_fp16_score_workspace_on_310p():
     assert "using SCORE_T = T;" in score_type
 
 
+def test_chunk_kda_uses_no_fixpipe_mmad_on_310p():
+    kernel_dir = REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_kernel"
+    unified_policy = "MmadPingpongTlaMulti<KdaArchTag, true, false>"
+
+    for filename in (
+        "chunk_kda_fwd_prepare.h",
+        "chunk_kda_fwd_post_wu.h",
+        "chunk_kda_fwd_finalize.h",
+    ):
+        source = (kernel_dir / filename).read_text()
+        policy_block = source[source.index("using KdaArchTag") : source.index("using KdaL1TileShape")]
+        assert policy_block.count(unified_policy) == 2
+
+
 def test_chunk_kda_uses_physical_stage_boundaries_on_310p():
     api = (
         REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_host" / "op_api" / "aclnn_chunk_kda_fwd.cpp"

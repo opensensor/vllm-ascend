@@ -77,14 +77,22 @@ constexpr uint64_t KDA_WORKSPACE_ALIGN = 512;
 constexpr uint32_t KDA_GATE_TILE_ROWS = 32;
 
 using KdaArchTag = Catlass::Arch::AtlasA2;
+#if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
+using KdaDispatchPolicy = Catlass::Gemm::MmadPingpongTlaMulti<KdaArchTag, true, false>;
+#else
 using KdaDispatchPolicy = Catlass::Gemm::MmadPingpong<KdaArchTag, true, false>;
+#endif
 using KdaScoreDispatchPolicy =
     Catlass::Gemm::MmadPingpongTlaMulti<KdaArchTag, true, false, 1, true, 2, 1, 2, 2>;
 static_assert(KdaScoreDispatchPolicy::ENABLE_L1_RESIDENT,
               "KDA Aqk/Akk score MMAD must keep the shared right matrix resident in L1");
 static_assert(KdaScoreDispatchPolicy::L1B_STAGES == 1,
               "KDA Aqk/Akk score MMAD needs one L1 B slot so the second MMAD reuses it");
+#if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
+using KdaSolveDispatchPolicy = Catlass::Gemm::MmadPingpongTlaMulti<KdaArchTag, true, false>;
+#else
 using KdaSolveDispatchPolicy = Catlass::Gemm::MmadPingpong<KdaArchTag, true, false>;
+#endif
 static_assert(!KdaSolveDispatchPolicy::USE_HF32_MODE, "KDA triangular solve must use IEEE FP32 Cube mode");
 using KdaL1TileShape = tla::Shape<KdaInt64, KdaInt128, KdaInt128>;
 using KdaL0TileShape = KdaL1TileShape;
