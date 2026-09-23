@@ -14,25 +14,6 @@ class ChunkKdaFwd : public OpDef {
 public:
     explicit ChunkKdaFwd(const char *name) : OpDef(name)
     {
-#if defined(KDA_310P_FP16_INPUT_ONLY)
-        // dav-m200 Cube MMAD has no BF16 input mode. Gate and beta may remain
-        // BF16 because those values are converted by the vector pipeline.
-        const std::initializer_list<ge::DataType> dataTypes = {
-            ge::DT_FLOAT16, ge::DT_FLOAT16, ge::DT_FLOAT16, ge::DT_FLOAT16
-        };
-        const std::initializer_list<ge::DataType> gateTypes = {
-            ge::DT_FLOAT, ge::DT_FLOAT, ge::DT_BF16, ge::DT_BF16
-        };
-        const std::initializer_list<ge::DataType> betaTypes = {
-            ge::DT_FLOAT, ge::DT_BF16, ge::DT_FLOAT, ge::DT_BF16
-        };
-        const std::initializer_list<ge::DataType> stateTypes = {
-            ge::DT_FLOAT, ge::DT_FLOAT, ge::DT_FLOAT, ge::DT_FLOAT
-        };
-        const std::initializer_list<ge::Format> formats = {
-            ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND
-        };
-#else
         const std::initializer_list<ge::DataType> dataTypes = {
             ge::DT_FLOAT16, ge::DT_FLOAT16, ge::DT_FLOAT16, ge::DT_FLOAT16,
             ge::DT_BF16, ge::DT_BF16, ge::DT_BF16, ge::DT_BF16
@@ -53,8 +34,6 @@ public:
             ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND,
             ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND
         };
-#endif
-
         this->Input("q").ParamType(REQUIRED).DataType(dataTypes).Format(formats).UnknownShapeFormat(formats);
         this->Input("k").ParamType(REQUIRED).DataType(dataTypes).Format(formats).UnknownShapeFormat(formats);
         this->Input("v").ParamType(REQUIRED).DataType(dataTypes).Format(formats).UnknownShapeFormat(formats);

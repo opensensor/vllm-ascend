@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -204,10 +205,12 @@ def test_chunk_kda_prunes_unsupported_bf16_inputs_on_310p():
 
     assert '"ascend310p" IN_LIST ASCEND_COMPUTE_UNIT' in cmake
     assert "310p/chunk_kda_fwd_def.cpp" in cmake
-    assert "#define KDA_310P_FP16_INPUT_ONLY 1" in op_def_310p
-    assert '#include "../chunk_kda_fwd_def.cpp"' in op_def_310p
-    assert "#if defined(KDA_310P_FP16_INPUT_ONLY)" in op_def
+    assert "ge::DT_FLOAT16, ge::DT_FLOAT16, ge::DT_FLOAT16, ge::DT_FLOAT16" in op_def_310p
+    assert "ge::DT_BF16, ge::DT_BF16, ge::DT_BF16, ge::DT_BF16" not in op_def_310p
+    assert 'this->AICore().AddConfig("ascend310p", config)' in op_def_310p
     assert "Ascend 310P requires float16 q, k and v." in api
+    signature_pattern = r'this->(?:Input|Output|Attr)\("([^"]+)"\)'
+    assert re.findall(signature_pattern, op_def_310p) == re.findall(signature_pattern, op_def)
 
 
 def test_chunk_kda_uses_physical_stage_boundaries_on_310p():
