@@ -4,6 +4,18 @@
 #if defined(__CCE_AICORE__) && __CCE_AICORE__ == 200
 #include "arch20/compat_310p.h"
 #endif
+
+// 310P exposes one unified AI core rather than independently scheduled AIC
+// and AIV tasks.  A single AICORE launch must therefore execute both halves
+// of each staged pipeline.  Newer devices retain the native task predicates.
+#if defined(KDA_310P_DEFAULT_TASK)
+#define KDA_RUN_AIC_SECTION true
+#define KDA_RUN_AIV_SECTION true
+#else
+#define KDA_RUN_AIC_SECTION ASCEND_IS_AIC
+#define KDA_RUN_AIV_SECTION ASCEND_IS_AIV
+#endif
+
 #include "../../kda_gate_cumsum/op_kernel/kda_gate_cumsum_kernel.h"
 #if defined(__CCE_AICORE__) && __CCE_AICORE__ == 310
 #include "arch35/chunk_kda_fwd_prepare.h"
@@ -171,7 +183,7 @@ __aicore__ inline void RunGateCumsum(
     if (tiling.computeGateInPrepare) {
         return;
     }
-    if ASCEND_IS_AIV {
+    if KDA_RUN_AIV_SECTION {
         GateRuntimeTiling gateTiling = MakeGateTiling(tiling);
         TPipe gatePipe;
         if (gateTiling.dataType == 2) {
