@@ -262,7 +262,8 @@ __aicore__ inline void RunKernel(
 
 } // namespace KdaForward
 
-#if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
+#if defined(KDA_310P_DEFAULT_TASK) || \
+    (defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200))
 extern "C" __global__ __aicore__ void chunk_kda_fwd(
     GM_ADDR q, GM_ADDR k, GM_ADDR v, GM_ADDR g, GM_ADDR beta,
     GM_ADDR a_log, GM_ADDR dt_bias, GM_ADDR initial_state,
@@ -271,7 +272,9 @@ extern "C" __global__ __aicore__ void chunk_kda_fwd(
     GM_ADDR w, GM_ADDR u, GM_ADDR qg, GM_ADDR kg, GM_ADDR v_new, GM_ADDR h,
     GM_ADDR qg_scaled, GM_ADDR u_seed, GM_ADDR workspace, GM_ADDR tiling)
 {
-    // 310P has unified vector/cube cores and host tiling reserves key 0.
+    // 310P has unified vector/cube cores. KDA_310P_DEFAULT_TASK also makes
+    // this branch visible to CANN's task-registration scan, which does not
+    // define __CCE_AICORE__.
     KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC);
     KdaForward::RunKernel(
         q, k, v, g, beta, a_log, dt_bias, initial_state, cu_seqlens,
@@ -287,10 +290,7 @@ extern "C" __global__ __aicore__ void chunk_kda_fwd(
     GM_ADDR w, GM_ADDR u, GM_ADDR qg, GM_ADDR kg, GM_ADDR v_new, GM_ADDR h,
     GM_ADDR qg_scaled, GM_ADDR u_seed, GM_ADDR workspace, GM_ADDR tiling)
 {
-    // Tiling keys 1 and 2 select implementations, but both use the same
-    // mixed-core ABI. Registering them as task-type keys makes the 310P
-    // precompile scanner emit only _1/_2 entries, even though its host uses
-    // the default key 0.
+    // Newer split-core architectures use their paired AIC/AIV ABI.
     KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);
     KdaForward::RunKernel(
         q, k, v, g, beta, a_log, dt_bias, initial_state, cu_seqlens,

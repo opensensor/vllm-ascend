@@ -54,8 +54,9 @@ def test_chunk_kda_is_registered_and_built_for_310p():
 
 def test_chunk_kda_uses_unified_default_task_type_on_310p():
     kernel = (REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_kernel" / "chunk_kda_fwd.cpp").read_text()
+    cmake = (REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_host" / "CMakeLists.txt").read_text()
 
-    arch20_start = kernel.rindex("#if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)")
+    arch20_start = kernel.rindex("#if defined(KDA_310P_DEFAULT_TASK)")
     arch20_end = kernel.index("#else", arch20_start)
     arch20_entry = kernel[arch20_start:arch20_end]
 
@@ -65,6 +66,8 @@ def test_chunk_kda_uses_unified_default_task_type_on_310p():
     assert "KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);" in kernel[arch20_end:]
     assert "KERNEL_TASK_TYPE(1" not in kernel
     assert "KERNEL_TASK_TYPE(2" not in kernel
+    assert 'if("ascend310p" IN_LIST ASCEND_COMPUTE_UNIT)' in cmake
+    assert "OPTIONS -DKDA_310P_DEFAULT_TASK=1" in cmake
 
 
 def test_chunk_kda_dispatches_without_keyed_runtime_selection_on_310p():
@@ -82,11 +85,11 @@ def test_chunk_kda_dispatches_without_keyed_runtime_selection_on_310p():
     assert arch20_dispatch.rstrip().endswith("#endif")
 
 
-def test_chunk_kda_uses_compiled_mixed_core_tiling_keys_on_310p():
+def test_chunk_kda_uses_unified_default_tiling_key_on_310p():
     tiling = (REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_host" / "chunk_kda_fwd_tiling.cpp").read_text()
 
-    assert "SetTilingKey(useChunk64K128V128Template ? 2 : 1)" in tiling
-    assert "isAscend310P ? 0" not in tiling
+    assert "isAscend310P ? 0 : (useChunk64K128V128Template ? 2 : 1)" in tiling
+    assert "SocVersion::ASCEND310P" in tiling
 
 
 def test_chunk_kda_uses_physical_stage_boundaries_on_310p():

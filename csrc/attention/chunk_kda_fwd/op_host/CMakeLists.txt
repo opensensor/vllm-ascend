@@ -27,6 +27,16 @@ add_ops_compile_options(
             -I${CATLASS_INCLUDE_DIR_ABS}
             -I${COMMON_KERNEL_UTILS_DIR_ABS}
 )
+if("ascend310p" IN_LIST ASCEND_COMPUTE_UNIT)
+    # The task-registration scan runs without __CCE_AICORE__. Give it the
+    # same SoC decision as the device compiler so it emits the unified _0
+    # entry instead of a split _1/_2 AIC/AIV pair.
+    add_ops_compile_options(
+        OP_NAME ChunkKdaFwd
+        COMPUTE_UNIT Ascend310P3
+        OPTIONS -DKDA_310P_DEFAULT_TASK=1
+    )
+endif()
 if("${ASCEND_COMPUTE_UNIT}" STREQUAL "ascend950")
     add_ops_compile_options(
         OP_NAME ChunkKdaFwd
