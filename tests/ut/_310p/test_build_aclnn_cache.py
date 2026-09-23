@@ -63,7 +63,7 @@ def test_chunk_kda_uses_unified_default_task_type_on_310p():
     task_selection_end = kernel.index("#endif", arch20_end)
     arch20_entry = kernel[arch20_start:arch20_end]
 
-    assert "KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AICORE);" in arch20_entry
+    assert "KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AICORE);" in arch20_entry
     assert "KERNEL_TASK_TYPE(1" not in arch20_entry
     assert "KERNEL_TASK_TYPE(2" not in arch20_entry
     assert "KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);" in kernel[arch20_end:task_selection_end]
@@ -72,22 +72,6 @@ def test_chunk_kda_uses_unified_default_task_type_on_310p():
     assert "KERNEL_TASK_TYPE(2" not in kernel
     assert 'if("ascend310p" IN_LIST ASCEND_COMPUTE_UNIT)' in cmake
     assert "OPTIONS -DKDA_310P_DEFAULT_TASK=1" in cmake
-
-
-def test_chunk_kda_runs_both_pipeline_sections_on_unified_310p_core():
-    kernel_dir = REPO_ROOT / "csrc" / "attention" / "chunk_kda_fwd" / "op_kernel"
-    common = (kernel_dir / "chunk_kda_fwd_common.h").read_text()
-    assert "#define KDA_RUN_AIC_SECTION true" in common
-    assert "#define KDA_RUN_AIV_SECTION true" in common
-
-    for filename in (
-        "chunk_kda_fwd_prepare.h",
-        "chunk_kda_fwd_post_wu.h",
-        "chunk_kda_fwd_finalize.h",
-    ):
-        source = (kernel_dir / filename).read_text()
-        assert "if (KDA_RUN_AIC_SECTION)" in source
-        assert "if (KDA_RUN_AIV_SECTION)" in source
 
 
 def test_chunk_kda_dispatches_without_keyed_runtime_selection_on_310p():

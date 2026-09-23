@@ -212,7 +212,7 @@ public:
         isVarLen_ = tiling.isVarLen;
         inputSequenceMajor_ = tiling.inputSequenceMajor;
         usedCoreNum_ = tiling.postWuUsedCoreNum;
-        if (KDA_RUN_AIV_SECTION) {
+        if ASCEND_IS_AIV {
             uint64_t subBlockNum = static_cast<uint64_t>(GetSubBlockNum());
             solveCoreIdx_ = subBlockNum == 0 ? 0 : static_cast<uint64_t>(GetBlockIdx()) / subBlockNum;
         } else {
@@ -963,14 +963,14 @@ __aicore__ inline void RunChunkKdaPostWu(
     const TilingData &tiling, TPipe &pipe)
 {
     GM_ADDR postScratch = userWorkspace + tiling.postWuScratchOffset;
-    if (KDA_RUN_AIC_SECTION) {
+    if ASCEND_IS_AIC {
         ChunkKdaFwdPostWuKernel<T, GK_T, BETA_T> op;
         op.Init(q, k, v, gk, beta, initialState, cuSeqlens, chunkIndices,
                 wSeed, akk, uSeed, nullptr, userWorkspace, userWorkspace, userWorkspace, akk, w, u,
                 userWorkspace, kg, vNew, postScratch, postScratch, tiling, &pipe, false);
         op.ProcessAic();
     }
-    if (KDA_RUN_AIV_SECTION) {
+    if ASCEND_IS_AIV {
         ChunkKdaFwdPostWuKernel<T, GK_T, BETA_T> op;
         op.Init(q, k, v, gk, beta, initialState, cuSeqlens, chunkIndices,
                 wSeed, akk, uSeed, nullptr, userWorkspace, userWorkspace, userWorkspace, akk, w, u,

@@ -210,7 +210,7 @@ public:
         const uint64_t outputElements = B_ * HV_ * T_ * V_;
         o_.SetGlobalBuffer((__gm__ OUT_T *)workspace);
         u_.SetGlobalBuffer((__gm__ OUT_T *)workspace + outputElements);
-        if (KDA_RUN_AIV_SECTION) {
+        if ASCEND_IS_AIV {
             uint64_t subBlockNum = static_cast<uint64_t>(GetSubBlockNum());
             solveCoreIdx_ = subBlockNum == 0 ? 0 : static_cast<uint64_t>(GetBlockIdx()) / subBlockNum;
         } else {
@@ -826,7 +826,7 @@ __aicore__ inline void RunChunkKdaOutput(
                               static_cast<uint64_t>(tiling.vHeadDim);
     GM_ADDR stateScratch = outputScratch;
     GM_ADDR localScratch = outputScratch + outputElements * sizeof(float);
-    if (KDA_RUN_AIC_SECTION) {
+    if ASCEND_IS_AIC {
         ChunkKdaFwdFinalizeKernel<T, GK_T, BETA_T> op;
         op.Init(q, k, v, gk, beta, initialState, cuSeqlens, chunkIndices,
                 qgScaled, aqk, propagatedVNew, propagatedH, stateScratch, userWorkspace, aqk, userWorkspace,
@@ -834,7 +834,7 @@ __aicore__ inline void RunChunkKdaOutput(
                 outputScratch, tiling, &pipe, false);
         op.ProcessAic();
     }
-    if (KDA_RUN_AIV_SECTION) {
+    if ASCEND_IS_AIV {
         ChunkKdaFwdFinalizeKernel<T, GK_T, BETA_T> op;
         op.Init(q, k, v, gk, beta, initialState, cuSeqlens, chunkIndices,
                 qgScaled, aqk, propagatedVNew, propagatedH, stateScratch, userWorkspace, aqk, userWorkspace,
