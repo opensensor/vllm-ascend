@@ -116,6 +116,12 @@ class AscendQwen4ExpQSAIndexer(nn.Module):
         self.index_head_dim = int(getattr(config, "indexer_head_dim", _DEFAULT_INDEXER_HEAD_DIM))
         self.token_topk = int(getattr(config, "indexer_budget", _DEFAULT_INDEXER_BUDGET))
         self.compress_ratio = int(getattr(config, "indexer_compress_ratio", _DEFAULT_INDEXER_COMPRESS_RATIO))
+        self.rms_norm_eps = float(getattr(config, "rms_norm_eps", 1e-6))
+        # Gemma RMSNorm uses ``x * rsqrt(mean(x**2) + eps) * (1 + weight)``.
+        # These are learned checkpoint tensors; omitting them changes the QSA
+        # ranking even when the score and top-k kernels are otherwise exact.
+        self.q_layernorm_weight = nn.Parameter(torch.zeros(self.index_head_dim, dtype=self.indexer_dtype))
+        self.k_layernorm_weight = nn.Parameter(torch.zeros(self.index_head_dim, dtype=self.indexer_dtype))
         if self.index_kv_heads != 1:
             raise NotImplementedError("QSA indexer supports a single kv head (MQA)")
         if self.token_topk % self.compress_ratio != 0:

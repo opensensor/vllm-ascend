@@ -25,22 +25,13 @@ _CKPT = Path(
     "/run/media/matteius/3cbe076a-d779-4f67-93a7-9195b734fac8/models/ascend/Qwen3.8-Flash-Next-W8A8-DYNAMIC-300i"
 )
 
-# Documented gaps: tensors with no eager Ascend param yet.
-_DOCUMENTED_SKIP_SUFFIXES = (
-    ".self_attn.indexer.q_layernorm.weight",
-    ".self_attn.indexer.k_layernorm.weight",
-)
-
-
 def _is_documented_skip(name: str) -> bool:
     # The PLE n-gram table is derived (buffers) or lazy-shard mmap'd (128 shards).
     if ".ple_embedding." in name:
         return True
     if ".linear_attn." in name or ".mlp.shared_expert." in name:
         return True  # dedicated TP-aware loader paths
-    if name.endswith(".self_attn.q_proj.weight"):
-        return True  # dedicated per-head query/gate deinterleave
-    return any(name.endswith(s) for s in _DOCUMENTED_SKIP_SUFFIXES)
+    return name.endswith(".self_attn.q_proj.weight")  # dedicated per-head query/gate deinterleave
 
 
 def _model_param_shapes() -> dict[str, tuple[int, ...]]:
@@ -217,6 +208,12 @@ def test_renames_reach_expected_targets(param_shapes):
         # layer 1 carries the PLE injection.
         "model.layers.3.self_attn.k_proj.weight": "model.layers.3.attention.k_proj",
         "model.layers.3.self_attn.q_norm.weight": "model.layers.3.attention.attn.q_norm_weight",
+        "model.layers.3.self_attn.indexer.q_layernorm.weight": (
+            "model.layers.3.attention.indexer.q_layernorm_weight"
+        ),
+        "model.layers.3.self_attn.indexer.k_layernorm.weight": (
+            "model.layers.3.attention.indexer.k_layernorm_weight"
+        ),
         "model.layers.1.ple.norm_query.weight": "model.layers.1.ple.ple.norm_query_weight",
     }
     for src, expected in cases.items():

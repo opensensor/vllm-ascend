@@ -29,8 +29,8 @@ Target fused-MoE layout (from :class:`AscendW8A8DynamicFusedMoEMethod310`)
 ``gate_proj`` and ``up_proj`` fuse column-wise into ``w13_*`` and ``down_proj``
 lands in ``w2_*``::
 
-    w13_weight        int8    [E, 2 * moe, hidden]   gate -> rows [0, moe), up -> rows [moe, 2*moe)
-    w2_weight         int8    [E, hidden, moe]        down -> full slot
+    w13_weight        int8    [E, hidden, 2 * moe]   gate -> cols [0, moe), up -> cols [moe, 2*moe)
+    w2_weight         int8    [E, moe, hidden]        down -> full slot
     w13_weight_scale  float32 [E, 2 * moe, 1]
     w13_weight_offset float32 [E, 2 * moe, 1]
     w2_weight_scale   float32 [E, hidden, 1]

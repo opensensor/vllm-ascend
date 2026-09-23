@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Host-side W8A8 fused-MoE forward for the Ascend 310P Qwen4Exp path (T3.x).
+"""W8A8 fused-MoE forward for the Ascend 310P Qwen4Exp path (T3.x).
 
-This is the CPU *math* of the routed-expert W8A8_DYNAMIC fused MoE that runs on
-device through :class:`AscendW8A8DynamicFusedMoEMethod310`
-(``vllm_ascend/_310p/quantization/methods/w8a8_dynamic.py``). That method calls
-``torch_npu.npu_quant_grouped_matmul_dequant`` + ``npu_swiglu``, which are not
-importable off-NPU (``torch_npu`` is absent on the host); this module re-expresses
-the identical quantize/dequantize (QDQ) grouped-matmul math in pure PyTorch so the
-310P assembly can run and be validated host-side.
+The NPU path groups routes by expert and evaluates each active expert with the
+supported W8A16 weight-only matmul path. Neither grouped A8W8
+entry point is usable on this stack: CANN 9.1 and torch_npu disagree about the
+scale rank for ``npu_quant_grouped_matmul_dequant``, while regular
+``npu_grouped_matmul`` rejects A8W8 on 310P. The per-token dynamic INT8 matmul
+is also documented as having an accuracy issue on 310P. This module retains the
+pure-PyTorch QDQ math as the host reference.
 
 The math is the frozen, T3.3-validated formulation
 (``tests/ut/qwen38_1m/test_moe_w8a8_parity.py``):
@@ -50,6 +50,7 @@ __all__ = [
     "quantize_activation_per_token",
     "route_topk",
     "w8a8_grouped_experts",
+    "w8a8_grouped_experts_npu",
     "w8a8_qdq_linear",
     "swiglu_gate_up",
 ]
@@ -116,6 +117,29 @@ def swiglu_gate_up(gate_up: torch.Tensor) -> torch.Tensor:
     return F.silu(gate) * up
 
 
+def _w8a16_linear_npu(
+    x: torch.Tensor,
+    weight_int8: torch.Tensor,
+    weight_scale: torch.Tensor,
+) -> torch.Tensor:
+    """Run a per-channel W8A16 linear without materializing FP16 weights.
+
+    Qwen4Exp's shipped expert weights are symmetric (zero offset). 310P's
+    weight-only matmul accepts FP16 activations and a contiguous post-load
+    ``[K, N]`` INT8 weight, preserving the accurate A16 path while avoiding the per-call
+    INT8->FP16 conversion and scale multiplication used by the compatibility
+    fallback.
+    """
+    import torch_npu
+
+    return torch_npu.npu_weight_quant_batchmatmul(
+        x=x,
+        weight=weight_int8,
+        antiquant_scale=weight_scale.reshape(-1).to(x.dtype),
+        antiquant_offset=None,
+    )
+
+
 def route_topk(
     router_logits: torch.Tensor,
     top_k: int,
@@ -135,6 +159,81 @@ def route_topk(
         topk_weights = topk_weights / topk_weights.sum(dim=-1, keepdim=True)
     topk_weights = topk_weights * routed_scaling_factor
     return topk_weights, topk_ids.to(torch.int64)
+
+
+def w8a8_grouped_experts_npu(
+    x: torch.Tensor,
+    topk_weights: torch.Tensor,
+    topk_ids: torch.Tensor,
+    w13_weight: torch.Tensor,
+    w13_weight_scale: torch.Tensor,
+    w2_weight: torch.Tensor,
+    w2_weight_scale: torch.Tensor,
+    *,
+    expert_offset: int = 0,
+) -> torch.Tensor:
+    """Run locally active routed experts with 310P-supported W8A16 matmuls.
+
+    Peer-owned routes are removed on device, then one compact expert-count
+    vector is copied to the host so empty expert matmuls can be skipped. 310P's
+    grouped A8W8 kernel is unsupported and its per-token dynamic INT8 matmul has
+    a documented accuracy issue. The weight-only operator keeps activations in
+    FP16 and consumes the INT8 expert weights directly.
+    """
+    import torch_npu
+
+    num_tokens, hidden = x.shape
+    num_local_experts = len(w13_weight)
+    top_k = topk_ids.shape[1]
+    pair_expert = topk_ids.reshape(-1) - expert_offset
+    in_local = (pair_expert >= 0) & (pair_expert < num_local_experts)
+    pair_slot = torch.arange(num_tokens * top_k, device=x.device)
+    pair_token = torch.arange(num_tokens, device=x.device).unsqueeze(1).expand(num_tokens, top_k).reshape(-1)
+    pair_weight = topk_weights.to(x.dtype).reshape(-1, 1)
+
+    pair_expert = pair_expert[in_local]
+    pair_slot = pair_slot[in_local]
+    pair_token = pair_token[in_local]
+    pair_weight = pair_weight[in_local]
+
+    order = torch.argsort(pair_expert.to(torch.float32), stable=True)
+    sorted_expert = pair_expert[order]
+    sorted_slot = pair_slot[order]
+    sorted_token = pair_token[order]
+    sorted_weight = pair_weight[order]
+    sorted_x = x[sorted_token]
+    counts = torch.bincount(sorted_expert, minlength=num_local_experts)
+    # Preserve the original top-k slot order and accumulate in FP32, matching
+    # the host QDQ reference.  Direct FP16 index_add_ uses unordered atomics;
+    # its rounding varied between identical requests and the error compounded
+    # through all 48 MoE layers.
+    route_outputs = torch.zeros(num_tokens * top_k, hidden, dtype=torch.float32, device=x.device)
+
+    # This is one intentional device-to-host boundary per MoE layer.  It lets
+    # decode invoke only the locally active top-k experts (typically 2-3 at
+    # TP4) instead of launching 128 empty expert matmuls.  Each active expert
+    # then uses the 310P-supported weight-only FP16-activation path.
+    start = 0
+    for expert_id, count in enumerate(counts.tolist()):
+        if count == 0:
+            continue
+        stop = start + count
+        group_x = sorted_x[start:stop]
+        gate_up = _w8a16_linear_npu(
+            group_x,
+            w13_weight[expert_id],
+            w13_weight_scale[expert_id],
+        )
+        hidden_act = torch_npu.npu_swiglu(gate_up)
+        routed = _w8a16_linear_npu(
+            hidden_act,
+            w2_weight[expert_id],
+            w2_weight_scale[expert_id],
+        )
+        routed = routed * sorted_weight[start:stop]
+        route_outputs.index_copy_(0, sorted_slot[start:stop], routed.to(torch.float32))
+        start = stop
+    return route_outputs.view(num_tokens, top_k, hidden).sum(dim=1).to(x.dtype)
 
 
 def w8a8_grouped_experts(
@@ -186,9 +285,21 @@ def w8a8_grouped_experts(
         ``[T, hidden]`` float32 routed-expert partial output (full output when
         unsharded; the caller all-reduces when TP-sliced).
     """
+    if x.device.type == "npu":
+        return w8a8_grouped_experts_npu(
+            x,
+            topk_weights,
+            topk_ids,
+            w13_weight,
+            w13_weight_scale,
+            w2_weight,
+            w2_weight_scale,
+            expert_offset=expert_offset,
+        )
+
     num_tokens, hidden = x.shape
     top_k = topk_ids.shape[1]
-    num_experts = w13_weight.shape[0]
+    num_experts = len(w13_weight)
     sharded = num_global_experts is not None and num_global_experts != num_experts
     x32 = x.to(torch.float32)
 

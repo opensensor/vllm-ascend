@@ -53,6 +53,9 @@
 #include "attention/kda_gate_cumsum/kda_gate_cumsum_torch_adpt.h"
 #include "attention/kda_layout_swap12/kda_layout_swap12_torch_adpt.h"
 #include "attention/recurrent_gated_delta_rule_v310/recurrent_gated_delta_rule_310_torch_adpt.h"
+#include "attention/qsa_sparse_attention_v310/qsa_sparse_attention_310_torch_adpt.h"
+#include "attention/qsa_indexer_score_v310/qsa_indexer_score_310_torch_adpt.h"
+#include "attention/qsa_index_cache_update_v310/qsa_index_cache_update_310_torch_adpt.h"
 #include "attention/k2q_csr/k2q_csr_torch_adpt.h"
 #include "attention/msa_index_score/msa_index_score_torch_adpt.h"
 #include "attention/sparse_attention_score/sparse_attention_score_torch_adpt.h"
@@ -2826,6 +2829,27 @@ TORCH_LIBRARY_EXPAND(CONCAT(_C, _ascend), ops)
         "                                   Tensor? num_accepted_tokens, "
         "                                   float scale_value=1.0) -> (Tensor output)");
     ops.impl("npu_recurrent_gated_delta_rule_310", torch::kPrivateUse1, &vllm_ascend::npu_recurrent_gated_delta_rule_310);
+
+    ops.def(
+        "npu_qsa_sparse_attention_310(Tensor query, Tensor key_cache, Tensor value_cache, "
+        "Tensor group_indices, Tensor group_counts, Tensor tail_starts, Tensor tail_counts, "
+        "Tensor block_table, Tensor query_start_loc, float scale, int compress_ratio=4) -> Tensor");
+    ops.impl("npu_qsa_sparse_attention_310", torch::kPrivateUse1,
+             &vllm_ascend::npu_qsa_sparse_attention_310);
+
+    ops.def(
+        "npu_qsa_indexer_score_310(Tensor query, Tensor compressed_key_cache, Tensor block_table, "
+        "Tensor query_start_loc, Tensor positions, int compress_ratio=4) -> Tensor");
+    ops.impl("npu_qsa_indexer_score_310", torch::kPrivateUse1,
+             &vllm_ascend::npu_qsa_indexer_score_310);
+
+    ops.def(
+        "qsa_index_cache_update_310(Tensor(a!) compressed_key_cache, Tensor index_keys, "
+        "Tensor query_start_loc, Tensor slot_mapping, Tensor key_norm_weight, "
+        "Tensor rope_cos, Tensor rope_sin, int block_size=128, "
+        "int compress_ratio=4, int rotary_dim=64, float norm_eps=1e-6) -> ()");
+    ops.impl("qsa_index_cache_update_310", torch::kPrivateUse1,
+             &vllm_ascend::qsa_index_cache_update_310);
 
     ops.def(
         "chunk_gated_delta_rule_fwd_h(Tensor k, Tensor w, Tensor u, Tensor? g=None, *, Tensor? gk=None, Tensor? initial_state=None, bool? output_final_state=False, int? chunk_size=None, bool? save_new_value=True, int[]? cu_seqlens=None, int[]? chunk_indices=None, bool? use_exp2=False, bool? transpose_state_layout=False) -> (Tensor h_out, Tensor v_new_out, Tensor final_state_out)"

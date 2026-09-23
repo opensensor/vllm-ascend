@@ -55,6 +55,7 @@ from vllm_ascend.models.qwen4_exp.weight_mapping import (
     TensorDtypeError,
     TensorShapeError,
     expected_expert_tensor_names,
+    map_expert_tensor,
     validate_expert_weight_map,
 )
 
@@ -115,6 +116,7 @@ def _vllm_config(cfg: SimpleNamespace) -> SimpleNamespace:
         hf_text_config=cfg,
         hf_config=SimpleNamespace(text_config=cfg, vision_config=None),
         dtype=torch.float16,
+        head_dtype=None,
         multimodal_config=None,
     )
     return SimpleNamespace(
@@ -124,6 +126,7 @@ def _vllm_config(cfg: SimpleNamespace) -> SimpleNamespace:
         parallel_config=SimpleNamespace(tensor_parallel_size=1),
         scheduler_config=SimpleNamespace(max_num_batched_tokens=16),
         speculative_config=None,
+        compilation_config=SimpleNamespace(static_forward_context={}),
     )
 
 
@@ -131,22 +134,37 @@ def _vllm_config(cfg: SimpleNamespace) -> SimpleNamespace:
 def _single_rank_tp():
     vmod = "vllm.model_executor.layers.vocab_parallel_embedding"
     lmod = "vllm.model_executor.layers.logits_processor"
+    avmod = "vllm_ascend.ops.vocab_parallel_embedding"
+    qmod = "vllm_ascend.models.qwen4_exp.model"
     with (
         patch(f"{vmod}.get_tensor_model_parallel_rank", return_value=0),
         patch(f"{vmod}.get_tensor_model_parallel_world_size", return_value=1),
         patch(f"{vmod}.tensor_model_parallel_all_reduce", side_effect=lambda x: x),
-        patch(f"{lmod}.get_tensor_model_parallel_world_size", return_value=1),
-        patch(f"{lmod}.tensor_model_parallel_gather", side_effect=lambda x: x),
-        patch(f"{lmod}.tensor_model_parallel_all_gather", side_effect=lambda x, dim=-1: x),
+        # These helpers moved out of logits_processor in newer vLLM snapshots.
+        # ``create=True`` keeps the host fixture compatible with both layouts;
+        # older snapshots consume the patched globals, newer ones ignore them.
+        patch(f"{lmod}.get_tensor_model_parallel_world_size", return_value=1, create=True),
+        patch(f"{lmod}.tensor_model_parallel_gather", side_effect=lambda x: x, create=True),
+        patch(f"{lmod}.tensor_model_parallel_all_gather", side_effect=lambda x, dim=-1: x, create=True),
+        patch(f"{avmod}.lmhead_tp_enable", return_value=False),
+        patch(f"{avmod}.embedding_tp_enable", return_value=False),
+        patch(
+            f"{avmod}.get_tp_group",
+            return_value=SimpleNamespace(world_size=1, rank_in_group=0),
+        ),
+        patch(f"{qmod}._resolve_attn_backend", return_value=object),
     ):
         yield
 
 
 def _build(cfg: SimpleNamespace):
+    from vllm.config import set_current_vllm_config
+
     from vllm_ascend.models.qwen4_exp.model import AscendQwen4ExpForCausalLM
 
-    with _single_rank_tp():
-        return AscendQwen4ExpForCausalLM(vllm_config=_vllm_config(cfg))
+    vllm_config = _vllm_config(cfg)
+    with _single_rank_tp(), set_current_vllm_config(vllm_config):
+        return AscendQwen4ExpForCausalLM(vllm_config=vllm_config)
 
 
 # ---------------------------------------------------------------------------
@@ -228,7 +246,7 @@ def _non_expert_payloads(model) -> list[tuple[str, torch.Tensor]]:
     fused = {"w13_weight", "w2_weight", "w13_weight_scale", "w13_weight_offset", "w2_weight_scale", "w2_weight_offset"}
     payloads: list[tuple[str, torch.Tensor]] = []
     for name, param in model.named_parameters():
-        if name.rsplit(".", 1)[-1] in fused:
+        if any(component in fused for component in name.split(".")):
             continue
         payloads.append((name, (torch.randn(param.shape, generator=gen) * 0.02).to(param.dtype)))
     return payloads
@@ -237,6 +255,39 @@ def _non_expert_payloads(model) -> list[tuple[str, torch.Tensor]]:
 # ===========================================================================
 # 1a. Metadata validation on the REAL geometry (no 224 GB load)
 # ===========================================================================
+def test_place_expert_tensor_targets_per_expert_weight_parameter():
+    """Weight placement uses the local ParameterList slot; scales stay fused."""
+    from vllm_ascend.models.qwen4_exp.model import AscendQwen4ExpForCausalLM
+
+    geometry = {
+        "num_hidden_layers": 1,
+        "num_experts": 2,
+        "moe_intermediate_size": 4,
+        "hidden_size": 3,
+    }
+    weight_name = "model.language_model.layers.0.mlp.experts.0.gate_proj.weight"
+    scale_name = f"{weight_name}_scale"
+    weight_mapping = map_expert_tensor(weight_name, geometry)
+    scale_mapping = map_expert_tensor(scale_name, geometry)
+    expert_weight = torch.nn.Parameter(torch.zeros(3, 8, dtype=torch.int8), requires_grad=False)
+    weight_scale = torch.nn.Parameter(torch.zeros(2, 8, 1), requires_grad=False)
+    params = {
+        "model.layers.0.mlp.w13_weight.0": expert_weight,
+        "model.layers.0.mlp.w13_weight_scale": weight_scale,
+    }
+    source_weight = torch.arange(12, dtype=torch.int8).reshape(4, 3)
+    source_scale = torch.arange(4, dtype=torch.float32).reshape(4, 1)
+
+    weight_target = AscendQwen4ExpForCausalLM._place_expert_tensor(None, params, weight_mapping, source_weight)
+    scale_target = AscendQwen4ExpForCausalLM._place_expert_tensor(None, params, scale_mapping, source_scale)
+
+    assert weight_target == "model.layers.0.mlp.w13_weight"
+    assert scale_target == "model.layers.0.mlp.w13_weight_scale"
+    assert torch.equal(expert_weight[:, :4], source_weight.t())
+    assert torch.equal(expert_weight[:, 4:], torch.zeros_like(expert_weight[:, 4:]))
+    assert torch.equal(weight_scale[0, :4], source_scale)
+
+
 def test_real_geometry_metadata_validates_without_materializing_bank():
     geometry = _real_geometry()
     assert geometry == {
@@ -306,9 +357,9 @@ def test_load_weights_places_experts_and_non_experts():
         gate = ref[f"{base}.gate_proj.weight"]
         up = ref[f"{base}.up_proj.weight"]
         down = ref[f"{base}.down_proj.weight"]
-        assert torch.equal(layer0.w13_weight[e, :moe], gate)
-        assert torch.equal(layer0.w13_weight[e, moe:], up)
-        assert torch.equal(layer0.w2_weight[e], down)
+        assert torch.equal(layer0.w13_weight[e][:, :moe], gate.t())
+        assert torch.equal(layer0.w13_weight[e][:, moe:], up.t())
+        assert torch.equal(layer0.w2_weight[e], down.t())
         # Scales (gate rows first, then up rows) and symmetric zero offsets.
         assert torch.allclose(layer0.w13_weight_scale[e, :moe], ref[f"{base}.gate_proj.weight_scale"])
         assert torch.allclose(layer0.w13_weight_scale[e, moe:], ref[f"{base}.up_proj.weight_scale"])
@@ -455,10 +506,12 @@ def test_moe_block_forward_finite_and_uses_shared_expert():
     experts = _build_experts(8, 16, 8, seed=2)
     w13_w, w13_s, w13_o, w2_w, w2_s, w2_o = _stack_experts(experts, 16, 8)
     with torch.no_grad():
-        block.w13_weight.copy_(w13_w)
+        for target, source in zip(block.w13_weight, w13_w):
+            target.copy_(source.t())
         block.w13_weight_scale.copy_(w13_s)
         block.w13_weight_offset.copy_(w13_o)
-        block.w2_weight.copy_(w2_w)
+        for target, source in zip(block.w2_weight, w2_w):
+            target.copy_(source.t())
         block.w2_weight_scale.copy_(w2_s)
         block.w2_weight_offset.copy_(w2_o)
         block.gate.copy_((torch.randn(8, 16, generator=gen) * 0.1).to(block.gate.dtype))

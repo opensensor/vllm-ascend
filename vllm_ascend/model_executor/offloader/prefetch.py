@@ -1,6 +1,7 @@
 """Ascend prefetch-based CPU offloading with NZ-format static buffers."""
 
 from collections.abc import Generator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import wraps
 from typing import Any
@@ -25,6 +26,27 @@ from vllm_ascend.utils import ACL_FORMAT_FRACTAL_NZ
 
 # mark
 _ASCEND_PREFETCH_NZ_WEIGHT_ATTR = "_vllm_ascend_prefetch_offload_nz_weight"
+
+
+@contextmanager
+def _use_pageable_cpu_storage():
+    """Keep bulk offloaded weights out of CANN's limited pinned-host pool.
+
+    Ascend's ``aclrtMallocHost`` pool is substantially smaller than system
+    memory on 310P hosts. Pinning every offloaded decoder parameter can exhaust
+    that pool during model construction even when tens of GiB of ordinary RAM
+    remain available. The reusable device-side static buffers still bound NPU
+    memory; transfers from pageable storage may be synchronous, which is the
+    safe capacity-first fallback for eager execution.
+    """
+    import vllm.model_executor.offloader.prefetch as vllm_prefetch
+
+    original_should_pin_memory = vllm_prefetch.should_pin_memory
+    vllm_prefetch.should_pin_memory = lambda: False
+    try:
+        yield
+    finally:
+        vllm_prefetch.should_pin_memory = original_should_pin_memory
 
 
 def mark_prefetch_offload_nz_weight(param: nn.Parameter) -> None:
@@ -163,13 +185,15 @@ class AscendPrefetchOffloader(PrefetchOffloader):
     def wrap_modules(
         self,
         modules_generator: Generator[nn.Module, None, None],
+        prefix: str = "",
     ) -> list[nn.Module]:
         import vllm.model_executor.offloader.prefetch as vllm_prefetch
 
         original_module_offloader = vllm_prefetch._ModuleOffloader
         vllm_prefetch._ModuleOffloader = _ModuleOffloader
         try:
-            return super().wrap_modules(modules_generator)
+            with _use_pageable_cpu_storage():
+                return super().wrap_modules(modules_generator, prefix=prefix)
         finally:
             vllm_prefetch._ModuleOffloader = original_module_offloader
 
@@ -183,8 +207,9 @@ class AscendPrefetchOffloader(PrefetchOffloader):
         Construct the pool here so NZ conversion happens before any buffer is
         assigned or prefetched.
         """
-        for offloader in self.module_offloaders:
-            offloader.sync_cpu_storage()
+        with _use_pageable_cpu_storage():
+            for offloader in self.module_offloaders:
+                offloader.sync_cpu_storage()
 
         device: torch.device | None = None
         param_infos: list[ParamInfo] = []
@@ -252,6 +277,13 @@ class _ModuleOffloader(VllmModuleOffloader):
         self._wrap_process_weights_for_format_detection()
 
     def start_onload_to_static(self) -> None:
+        # The CPU copies intentionally live in pageable system RAM. Tell the
+        # eager prefetch path not to require per-parameter pinning; the backend
+        # safely makes pageable H2D copies synchronous as needed.
+        with _use_pageable_cpu_storage():
+            self._start_onload_to_static()
+
+    def _start_onload_to_static(self) -> None:
         """Start an async H2D copy without allocating an event in eager decode."""
         assert self._buffer_pool is not None, "Buffer pool not assigned"
 

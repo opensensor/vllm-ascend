@@ -3,11 +3,10 @@
 """W8A8 fused-MoE parity vs the eager T0.6 QDQ reference (T3.3).
 
 Host-side (CPU) parity harness for the Ascend 310P Qwen4Exp W8A8_DYNAMIC fused
-MoE. There is no NPU / ``torch_npu`` here, so the device kernels
-(``npu_quant_grouped_matmul_dequant`` + ``npu_swiglu`` inside
-``vllm_ascend/_310p/quantization/methods/w8a8_dynamic.py``
-``AscendW8A8DynamicFusedMoEMethod310``) are re-expressed as their *math* on
-CPU using the frozen T0.6 QDQ primitives
+MoE. There is no NPU / ``torch_npu`` here, so the device path (per-active-
+expert W8A16 weight-only matmul + ``npu_swiglu`` in
+``vllm_ascend/models/qwen4_exp/moe.py``) is re-expressed as its *math* on CPU
+using the frozen T0.6 QDQ primitives
 (``tests/ut/qwen38_1m/reference/w8a8_reference.py``):
 
   * per-token symmetric INT8 activation quant (``quant_mode="pertoken"``),
@@ -45,7 +44,10 @@ otherwise.
 from __future__ import annotations
 
 import os
+import sys
+import types
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 import pytest
 import torch
@@ -334,6 +336,122 @@ def _rand_inputs(num_tokens, hidden, num_experts, seed):
 
 def _max_abs_err(a: torch.Tensor, b: torch.Tensor) -> float:
     return (a - b).abs().max().item()
+
+
+def test_native_path_runs_only_locally_active_experts():
+    from vllm_ascend.models.qwen4_exp.moe import w8a8_grouped_experts_npu
+
+    x = torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float16)
+    topk_ids = torch.tensor([[4, 5], [5, 4]])
+    topk_weights = torch.tensor([[0.25, 0.75], [0.5, 0.5]], dtype=torch.float32)
+    # The post-load hook converts checkpoint [out, in] weights to the W8A16
+    # operator's [in, out] orientation once.
+    w13 = torch.zeros(2, 2, 4, dtype=torch.int8)
+    s13 = torch.ones(2, 4, 1)
+    w2 = torch.zeros(2, 2, 2, dtype=torch.int8)
+    s2 = torch.ones(2, 2, 1)
+    gate_up = [torch.ones(2, 4, dtype=torch.float16) for _ in range(2)]
+    activated = [torch.ones(2, 2, dtype=torch.float16) for _ in range(2)]
+    routed = [
+        torch.tensor([[2.0, 4.0], [10.0, 12.0]], dtype=torch.float16),
+        torch.tensor([[6.0, 8.0], [14.0, 16.0]], dtype=torch.float16),
+    ]
+    fake_torch_npu = types.ModuleType("torch_npu")
+    weight_only_linear = Mock(side_effect=[gate_up[0], routed[0], gate_up[1], routed[1]])
+    fake_torch_npu.npu_weight_quant_batchmatmul = weight_only_linear
+    fake_torch_npu.npu_swiglu = Mock(side_effect=activated)
+
+    with patch.dict(sys.modules, {"torch_npu": fake_torch_npu}):
+        output = w8a8_grouped_experts_npu(
+            x,
+            topk_weights,
+            topk_ids,
+            w13,
+            s13,
+            w2,
+            s2,
+            expert_offset=4,
+        )
+
+    torch.testing.assert_close(
+        output,
+        torch.tensor([[5.0, 7.0], [12.0, 14.0]], dtype=torch.float16),
+    )
+    assert weight_only_linear.call_count == 4
+    for expert_id in range(2):
+        gate_call = weight_only_linear.call_args_list[2 * expert_id]
+        down_call = weight_only_linear.call_args_list[2 * expert_id + 1]
+        assert gate_call.kwargs["x"].dtype == x.dtype
+        torch.testing.assert_close(gate_call.kwargs["weight"], w13[expert_id])
+        torch.testing.assert_close(
+            gate_call.kwargs["antiquant_scale"],
+            s13[expert_id].reshape(-1).to(x.dtype),
+        )
+        assert gate_call.kwargs["antiquant_offset"] is None
+        torch.testing.assert_close(down_call.kwargs["x"], activated[expert_id])
+        torch.testing.assert_close(down_call.kwargs["weight"], w2[expert_id])
+        torch.testing.assert_close(
+            down_call.kwargs["antiquant_scale"],
+            s2[expert_id].reshape(-1).to(x.dtype),
+        )
+        assert down_call.kwargs["antiquant_offset"] is None
+    assert fake_torch_npu.npu_swiglu.call_count == 2
+
+
+def test_native_path_handles_no_locally_active_experts():
+    from vllm_ascend.models.qwen4_exp.moe import w8a8_grouped_experts_npu
+
+    fake_torch_npu = types.ModuleType("torch_npu")
+    fake_torch_npu.npu_swiglu = Mock()
+    x = torch.ones(2, 2, dtype=torch.float16)
+
+    with patch.dict(sys.modules, {"torch_npu": fake_torch_npu}):
+        output = w8a8_grouped_experts_npu(
+            x,
+            torch.ones(2, 2),
+            torch.tensor([[0, 1], [2, 3]]),
+            torch.zeros(2, 4, 2, dtype=torch.int8),
+            torch.ones(2, 4),
+            torch.zeros(2, 2, 2, dtype=torch.int8),
+            torch.ones(2, 2),
+            expert_offset=4,
+        )
+
+    torch.testing.assert_close(output, torch.zeros_like(x))
+    fake_torch_npu.npu_swiglu.assert_not_called()
+
+
+def test_native_postload_keeps_each_expert_in_checkpoint_layout():
+    from vllm_ascend.models.qwen4_exp.model import _Qwen4ExpW8A8PostLoadMethod
+
+    layer = torch.nn.Module()
+    layer.num_local_experts = 2
+    layer.params_dtype = torch.float16
+    layer.w13_weight = torch.nn.ParameterList(
+        torch.nn.Parameter(torch.zeros(2, 4, dtype=torch.int8), requires_grad=False) for _ in range(2)
+    )
+    layer.w2_weight = torch.nn.ParameterList(
+        torch.nn.Parameter(torch.zeros(2, 2, dtype=torch.int8), requires_grad=False) for _ in range(2)
+    )
+    layer.w13_weight_scale = torch.nn.Parameter(torch.ones(2, 4, 1), requires_grad=False)
+    layer.w13_weight_offset = torch.nn.Parameter(torch.zeros(2, 4, 1), requires_grad=False)
+    layer.w2_weight_scale = torch.nn.Parameter(torch.ones(2, 2, 1), requires_grad=False)
+    layer.w2_weight_offset = torch.nn.Parameter(torch.zeros(2, 2, 1), requires_grad=False)
+
+    _Qwen4ExpW8A8PostLoadMethod().process_weights_after_loading(layer)
+
+    assert len(layer.w13_weight) == 2
+    assert len(layer.w2_weight) == 2
+    assert all(weight.shape == (2, 4) for weight in layer.w13_weight)
+    assert all(weight.shape == (2, 2) for weight in layer.w2_weight)
+    assert layer.w13_weight_scale.shape == (2, 4)
+    assert layer.w2_weight_scale.shape == (2, 2)
+    assert len(layer.w13_weight_scale_list) == 2
+    assert len(layer.w2_weight_scale_list) == 2
+    assert all(scale.shape == (4,) for scale in layer.w13_weight_scale_list)
+    assert all(scale.shape == (2,) for scale in layer.w2_weight_scale_list)
+    assert all(scale.dtype == torch.float16 for scale in layer.w13_weight_scale_list)
+    assert all(scale.dtype == torch.float16 for scale in layer.w2_weight_scale_list)
 
 
 # --------------------------------------------------------------------------- #

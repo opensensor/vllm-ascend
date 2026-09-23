@@ -43,7 +43,10 @@ from vllm_ascend.models.qwen4_exp.ops.qsa_attention import (
     qsa_write_kv_to_cache,
 )
 from vllm_ascend.models.qwen4_exp.ops.qsa_cache import PAD_SLOT_ID
-from vllm_ascend.models.qwen4_exp.qsa import AscendQwen4ExpQSAAttention
+from vllm_ascend.models.qwen4_exp.qsa import (
+    AscendQwen4ExpQSAAttention,
+    partial_rope_cos_sin,
+)
 
 _EPS = 1e-6
 _ROPE_THETA = 10_000.0
@@ -57,6 +60,26 @@ _POLICY_F64 = replace(
     kv_cache_dtype=torch.float64,
     attention_accumulation_dtype=torch.float64,
 )
+
+
+def test_interleaved_mrope_selects_axis_per_frequency_pair():
+    positions = torch.tensor([[1, 2], [10, 20], [100, 200]])
+    cos, sin = partial_rope_cos_sin(
+        positions,
+        rotary_dim=8,
+        base=_ROPE_THETA,
+        dtype=torch.float64,
+        mrope_section=[2, 1, 1],
+        mrope_interleaved=True,
+    )
+
+    inv_freq = 1.0 / (_ROPE_THETA ** (torch.arange(0, 8, 2, dtype=torch.float32) / 8))
+    frequency_positions = torch.tensor([[1, 10, 100, 1], [2, 20, 200, 2]], dtype=torch.float32)
+    angles = frequency_positions * inv_freq
+    expected_cos = torch.cat((torch.cos(angles), torch.cos(angles)), dim=-1).double()
+    expected_sin = torch.cat((torch.sin(angles), torch.sin(angles)), dim=-1).double()
+    torch.testing.assert_close(cos, expected_cos)
+    torch.testing.assert_close(sin, expected_sin)
 
 
 def _rand(shape, seed):

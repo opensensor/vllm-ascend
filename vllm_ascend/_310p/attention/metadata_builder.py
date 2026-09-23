@@ -132,15 +132,19 @@ class AscendAttentionMetadataBuilder310(AscendAttentionMetadataBuilder):
             attn_metadata.seq_lens = common_attn_metadata.seq_lens[:num_reqs]
             attn_metadata.query_start_loc = common_attn_metadata.query_start_loc[: num_reqs + 1]
 
-        if attn_metadata.attn_state not in splitfuse_states:
-            return attn_metadata
-
+        # Keep host query boundaries available for every attention phase.
+        # SplitFuse passes them to ATB, while model-specific sparse attention
+        # (for example Qwen4Exp QSA with MRoPE) also needs the per-request
+        # lengths during ordinary decode to derive logical causal positions
+        # without synchronizing the device query_start_loc tensor.
         query_start_loc_cpu = common_attn_metadata.query_start_loc_cpu[: num_reqs + 1]
-        # ATB splitfuse qLensTensor must be host; filled here (outside graph forward).
         set_query_lens_cpu(
             attn_metadata,
             self._fill_query_lens_cpu(num_reqs, query_start_loc_cpu, is_drafting),
         )
+
+        if attn_metadata.attn_state not in splitfuse_states:
+            return attn_metadata
 
         if is_compressed_mask_supported():
             attn_metadata.attn_mask = AttentionMaskBuilder310.get_compressed_splitfuse_mask(self.device)

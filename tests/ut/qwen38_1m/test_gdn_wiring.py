@@ -213,8 +213,12 @@ def test_model_short_conv_fallback_carries_paged_state():
         conv_weight=weight,
         conv_dim=channels,
     )
-    metadata = SimpleNamespace()
+    metadata = SimpleNamespace(query_lens_cpu=torch.tensor([len(first)], dtype=torch.int32))
     context = SimpleNamespace(attn_metadata={"model.layers.0.attention": metadata})
+
+    class _NoDeviceBoundaryRead:
+        def to(self, *_args, **_kwargs):
+            raise AssertionError("query_start_loc must not synchronize to the host")
 
     with patch(
         "vllm_ascend.models.qwen4_exp.model.get_forward_context",
@@ -224,15 +228,16 @@ def test_model_short_conv_fallback_carries_paged_state():
             owner,
             first,
             torch.tensor([1]),
-            torch.tensor([0, len(first)]),
+            _NoDeviceBoundaryRead(),
             torch.tensor([False]),
         )
         delattr(metadata, "_qwen4exp_query_ranges")
+        metadata.query_lens_cpu = torch.tensor([len(second)], dtype=torch.int32)
         out_second = _GDNAttention._stateful_short_conv(
             owner,
             second,
             torch.tensor([1]),
-            torch.tensor([0, len(second)]),
+            _NoDeviceBoundaryRead(),
             torch.tensor([True]),
         )
 

@@ -53,6 +53,8 @@ class AscendSampler(Sampler):
         output_token_ids: list[list[int]],
     ) -> torch.Tensor:
         """Use Triton-Ascend penalties on NPU when Triton is available; else vLLM default."""
+        if sampling_metadata.no_penalties:
+            return logits
         if not HAS_TRITON:
             logger.warning_once(
                 "[sample/sampler] Triton not available, falling back to vLLM default "
@@ -60,8 +62,6 @@ class AscendSampler(Sampler):
             )
             return Sampler.apply_penalties(logits, sampling_metadata, output_token_ids)
 
-        if sampling_metadata.no_penalties:
-            return logits
         assert sampling_metadata.prompt_token_ids is not None
         return apply_all_penalties(
             logits,

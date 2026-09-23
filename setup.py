@@ -43,6 +43,11 @@ def load_module_from_path(module_name, path):
 ROOT_DIR = os.path.dirname(__file__)
 logger = logging.getLogger(__name__)
 
+# ``tools`` is a PEP 420 namespace rather than a regular package, so
+# ``find_packages`` does not discover its children.  A small subset is imported
+# by runtime model/quantization modules and must be present in built wheels.
+RUNTIME_TOOL_PACKAGES = ["tools.deepseek_w2"]
+
 
 def check_or_set_default_env(cmake_args, env_name, env_variable, default_path=""):
     if env_variable is None:
@@ -506,7 +511,7 @@ setup(
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
         "Topic :: Scientific/Engineering :: Information Analysis",
     ],
-    packages=find_packages(exclude=("docs", "examples", "tests*", "csrc")),
+    packages=find_packages(exclude=("docs", "examples", "tests*", "csrc")) + RUNTIME_TOOL_PACKAGES,
     package_data={
         "vllm_ascend.observability": ["config/*.yaml"],
     },

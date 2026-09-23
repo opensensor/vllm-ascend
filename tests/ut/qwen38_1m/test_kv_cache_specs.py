@@ -94,6 +94,21 @@ def test_raw_ring_spec_is_key_only_bytes():
     assert ring.prefix_cacheable is False
 
 
+def test_qsa_full_spec_accounts_for_page_owned_index_cache():
+    spec = kvc.AscendQSAFullAttentionSpec(
+        block_size=128,
+        num_kv_heads=2,
+        head_size=256,
+        dtype=torch.float16,
+    )
+    # K/V: 128 tokens * 2 KV heads * 256 dims * 2 tensors * 2 bytes.
+    assert spec.main_page_size_bytes == 262_144
+    # Two 64-token kernel pages. Each has 16 complete means + 3 scratch
+    # rows, and every row is a 128-wide fp16 index key.
+    assert spec.index_page_size_bytes == 2 * 19 * 128 * 2 == 9_728
+    assert spec.page_size_bytes == 271_872
+
+
 def test_ring_capacity_rounds_to_whole_groups_with_speculation():
     assert kvc.qsa_ring_capacity(4, 0) == 4
     assert kvc.qsa_ring_capacity(4, 1) == 8  # 4 * ceil(5/4)

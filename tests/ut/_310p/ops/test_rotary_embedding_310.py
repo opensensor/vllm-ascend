@@ -13,12 +13,16 @@
 # This file is a part of the vllm-ascend project.
 #
 
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
 import torch
 
 from vllm_ascend._310p.ops import rotary_embedding as rotary_310
 from vllm_ascend._310p.ops.rotary_embedding import (
     AscendMRotaryEmbedding310,
     AscendRotaryEmbedding310,
+    prepare_mrope_cos_sin_slices_from_runner,
     set_mrope_apply_rotary_slices,
 )
 
@@ -34,6 +38,18 @@ def _build_mrope_embedding() -> AscendMRotaryEmbedding310:
     emb.mrope_interleaved = False
     emb.cos_sin_cache = torch.randn(64, 12, dtype=torch.float32)
     return emb
+
+
+def test_prepare_mrope_slices_skips_model_owned_mrope():
+    model = SimpleNamespace(uses_model_owned_mrope=True, modules=MagicMock())
+    runner = SimpleNamespace(model=model, max_num_tokens=8)
+
+    prepare_mrope_cos_sin_slices_from_runner(
+        runner,
+        torch.zeros((3, 4), dtype=torch.long),
+    )
+
+    model.modules.assert_not_called()
 
 
 def test_set_mrope_apply_rotary_slices_populates_globals():

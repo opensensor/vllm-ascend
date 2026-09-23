@@ -67,6 +67,49 @@ _DEFAULT_ROPE_THETA = 10_000.0
 _DEFAULT_RMS_NORM_EPS = 1e-6
 
 
+def _mrope_interleaved_dims(section: list[int]) -> list[int]:
+    """Match vLLM's Qwen MRoPE frequency-to-axis interleaving."""
+    if len(section) != 3 or any(size <= 0 for size in section):
+        raise ValueError("mrope_section must contain three positive sizes")
+    remaining = {axis: size for axis, size in enumerate(section)}
+    remaining[0] -= 1
+    original = remaining.copy()
+    placed = {axis: 0 for axis in remaining}
+    result: list[int] = []
+    previous = None
+    for _ in range(sum(remaining.values())):
+        candidates = [axis for axis, count in remaining.items() if count > 0 and axis != previous]
+        if not candidates:
+            candidates = [axis for axis, count in remaining.items() if count > 0]
+        axis = min(candidates, key=lambda item: (placed[item] / original[item], item))
+        result.append(axis)
+        placed[axis] += 1
+        remaining[axis] -= 1
+        previous = axis
+    result.append(0)
+    return result
+
+
+def _rope_frequency_positions(
+    positions: torch.Tensor,
+    rotary_dim: int,
+    mrope_section: list[int] | None,
+    mrope_interleaved: bool,
+) -> torch.Tensor:
+    """Return one position per token and RoPE frequency pair."""
+    half = rotary_dim // 2
+    if positions.ndim == 1:
+        return positions[:, None].expand(-1, half)
+    if positions.ndim != 2 or positions.shape[0] != 3:
+        raise ValueError("positions must be [T] or multimodal [3,T]")
+    if mrope_section is None:
+        return positions[0, :, None].expand(-1, half)
+    if not mrope_interleaved or sum(mrope_section) != half:
+        raise ValueError("interleaved mrope_section must sum to rotary_dim // 2")
+    axes = torch.tensor(_mrope_interleaved_dims(mrope_section), device=positions.device)
+    return positions.index_select(0, axes).transpose(0, 1)
+
+
 def gemma_rmsnorm(x: torch.Tensor, weight: torch.Tensor, eps: float, accum_dtype: torch.dtype) -> torch.Tensor:
     """Per-head GemmaRMSNorm over the last dim: ``x * rsqrt(mean(x^2)+eps) * (1+w)``.
 
@@ -87,6 +130,9 @@ def apply_partial_rope(
     rotary_dim: int,
     base: float,
     accum_dtype: torch.dtype,
+    *,
+    mrope_section: list[int] | None = None,
+    mrope_interleaved: bool = False,
 ) -> torch.Tensor:
     """Neox-style RoPE on the first ``rotary_dim`` dims; pass the rest through.
 
@@ -104,9 +150,14 @@ def apply_partial_rope(
         raise ValueError("rotary_dim must be even and <= head_dim")
     orig_dtype = x.dtype
     x = x.to(accum_dtype)
-    pos = positions.to(accum_dtype)
+    pos = _rope_frequency_positions(
+        positions,
+        rotary_dim,
+        mrope_section,
+        mrope_interleaved,
+    ).to(accum_dtype)
     inv_freq = 1.0 / (base ** (torch.arange(0, rotary_dim, 2, dtype=accum_dtype, device=x.device) / rotary_dim))
-    angles = pos[:, None] * inv_freq[None, :]  # [T, rotary_dim/2]
+    angles = pos * inv_freq[None, :]  # [T, rotary_dim/2]
     cos = torch.cat([torch.cos(angles), torch.cos(angles)], dim=-1)[:, None, :]
     sin = torch.cat([torch.sin(angles), torch.sin(angles)], dim=-1)[:, None, :]
 
@@ -118,6 +169,32 @@ def apply_partial_rope(
     rotate_half = torch.cat([-x2, x1], dim=-1)
     rot_out = rot * cos + rotate_half * sin
     return torch.cat([rot_out, passthrough], dim=-1).to(orig_dtype)
+
+
+def partial_rope_cos_sin(
+    positions: torch.Tensor,
+    *,
+    rotary_dim: int,
+    base: float,
+    dtype: torch.dtype,
+    mrope_section: list[int] | None = None,
+    mrope_interleaved: bool = False,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Materialize Neox-style cos/sin rows for a dedicated device kernel."""
+    compute_dtype = torch.float32
+    pos = _rope_frequency_positions(
+        positions,
+        rotary_dim,
+        mrope_section,
+        mrope_interleaved,
+    ).to(compute_dtype)
+    inv_freq = 1.0 / (
+        base ** (torch.arange(0, rotary_dim, 2, dtype=compute_dtype, device=positions.device) / rotary_dim)
+    )
+    angles = pos * inv_freq[None, :]
+    cos = torch.cat((torch.cos(angles), torch.cos(angles)), dim=-1)
+    sin = torch.cat((torch.sin(angles), torch.sin(angles)), dim=-1)
+    return cos.to(dtype), sin.to(dtype)
 
 
 class AscendQwen4ExpQSAAttention(nn.Module):
@@ -171,6 +248,9 @@ class AscendQwen4ExpQSAAttention(nn.Module):
         self.rope_theta = float(
             getattr(config, "rope_theta", None) or rope_parameters.get("rope_theta") or _DEFAULT_ROPE_THETA
         )
+        section = rope_parameters.get("mrope_section")
+        self.mrope_section = list(section) if section is not None else None
+        self.mrope_interleaved = bool(rope_parameters.get("mrope_interleaved", False))
         self.rms_norm_eps = float(getattr(config, "rms_norm_eps", _DEFAULT_RMS_NORM_EPS))
 
         # Per-head GemmaRMSNorm weights (applied as ``1 + weight``); zero-init is
@@ -193,8 +273,24 @@ class AscendQwen4ExpQSAAttention(nn.Module):
         """Apply per-head Q/K GemmaRMSNorm then partial RoPE (model order)."""
         q = gemma_rmsnorm(query, self.q_norm_weight, self.rms_norm_eps, accum_dtype)
         k = gemma_rmsnorm(key, self.k_norm_weight, self.rms_norm_eps, accum_dtype)
-        q = apply_partial_rope(q, q_positions, self.rotary_dim, self.rope_theta, accum_dtype)
-        k = apply_partial_rope(k, k_positions, self.rotary_dim, self.rope_theta, accum_dtype)
+        q = apply_partial_rope(
+            q,
+            q_positions,
+            self.rotary_dim,
+            self.rope_theta,
+            accum_dtype,
+            mrope_section=self.mrope_section,
+            mrope_interleaved=self.mrope_interleaved,
+        )
+        k = apply_partial_rope(
+            k,
+            k_positions,
+            self.rotary_dim,
+            self.rope_theta,
+            accum_dtype,
+            mrope_section=self.mrope_section,
+            mrope_interleaved=self.mrope_interleaved,
+        )
         return q, k
 
     def write_kv_cache(
@@ -352,10 +448,14 @@ def run_qsa_decoder_attention(
     index_q = _linear(block_input, projections.index_q_proj).view(seq_len, index_n_heads, index_head_dim)
     index_k = _linear(block_input, projections.index_k_proj)
 
+    # QSA selection is causal in the flattened token stream. Multimodal RoPE
+    # positions carry temporal/height/width axes, but only the temporal axis is
+    # meaningful for visibility and compressed-group accounting.
+    logical_positions = positions if positions.ndim == 1 else positions[0]
     selection = indexer(
         index_q.to(store_dtype),
         index_k.to(store_dtype),
-        positions,
+        logical_positions,
     )
     out = attention(
         query.to(store_dtype),
@@ -365,6 +465,7 @@ def run_qsa_decoder_attention(
         positions,
         selection.token_indices,
         selection.valid_counts,
+        key_positions=positions,
     )
     out = out.reshape(seq_len, num_query_heads * head_dim)
     return _linear(out, projections.out_proj).to(store_dtype)
@@ -373,5 +474,6 @@ def run_qsa_decoder_attention(
 __all__ = [
     "AscendQwen4ExpQSAAttention",
     "QSADecoderProjections",
+    "partial_rope_cos_sin",
     "run_qsa_decoder_attention",
 ]

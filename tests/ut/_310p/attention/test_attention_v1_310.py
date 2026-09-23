@@ -27,6 +27,9 @@ from vllm_ascend._310p.attention.attention_v1 import (
 from vllm_ascend._310p.attention.metadata_builder import (
     AscendAttentionMetadataBuilder310 as AscendMetadataBuilder310Direct,
 )
+from vllm_ascend._310p.attention.metadata_builder import (
+    get_query_lens_cpu,
+)
 
 
 class TestAscendAttentionBackend310(TestBase):
@@ -238,6 +241,27 @@ class TestAscendAttentionBackendImpl310(TestBase):
 
 
 class TestAscendAttentionMetadataBuilder310(TestBase):
+    def test_build_attaches_host_query_lens_for_decode(self):
+        builder = object.__new__(AscendMetadataBuilder310Direct)
+        builder._query_lens_cpu_buffer = torch.zeros(4, dtype=torch.int32, device="cpu")
+
+        common_attn_metadata = MagicMock()
+        common_attn_metadata.num_reqs = 2
+        common_attn_metadata.query_start_loc = torch.tensor([0, 1, 3])
+        common_attn_metadata.query_start_loc_cpu = torch.tensor([0, 1, 3])
+        common_attn_metadata.seq_lens = torch.tensor([5, 9])
+
+        attn_metadata = MagicMock()
+        attn_metadata.attn_state = AscendAttentionState.DecodeOnly
+        parent_builder = AscendMetadataBuilder310Direct.__bases__[0]
+        with patch.object(parent_builder, "build", return_value=attn_metadata):
+            result = builder.build(0, common_attn_metadata)
+
+        torch.testing.assert_close(
+            get_query_lens_cpu(result),
+            torch.tensor([1, 2], dtype=torch.int32),
+        )
+
     def test_fill_query_lens_cpu_without_buffer(self):
         builder = AscendMetadataBuilder310Direct.__new__(AscendMetadataBuilder310Direct)
         builder._query_lens_cpu_buffer = None
