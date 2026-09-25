@@ -139,6 +139,9 @@ Recommended path replacements:
 - [ ] Run a held-out perplexity comparison against the pinned BF16 base.
 - [ ] Run the frozen 198-item GPQA Diamond replay and archive its prediction
       ledger, detailed grader output, server command, and server log.
+- [x] Run a serial first-five GPQA pipeline check; Ascend and the RTX reference
+      both answered 5/5 correctly. Do not treat this subset as a quality
+      estimate.
 - [ ] Benchmark TTFT, inter-token latency, output throughput, and end-to-end
       latency with a versioned harness.
 - [x] Exercise prompts beyond the original 2,304-token smoke context. The

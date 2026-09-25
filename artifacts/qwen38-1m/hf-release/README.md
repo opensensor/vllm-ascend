@@ -148,6 +148,27 @@ evaluation remains required.
 
 ## Planned comparative quality evaluation
 
+### Preliminary five-item pipeline check
+
+On September 25, 2026, the first five GPQA Diamond items were replayed serially
+against the Ascend milestone using AISBench revision `19018e9c`, dataset version
+`b1ed2c`, temperature 0, seed 1024, and the same 8,192-token output ceiling as
+the RTX reference:
+
+| Measurement | Ascend W8A8 | RTX UD-IQ4_XS |
+| --- | ---: | ---: |
+| Correct / attempted | 5 / 5 | 5 / 5 |
+| Accuracy | 100% | 100% |
+| Extractable final choices | 5 / 5 | 5 / 5 |
+| Scored output tokens | 8,190 | 7,746 |
+
+The Ascend run used client batch size 1 to match the server's single active
+sequence and completed its inference phase in 538 seconds, including one
+warmup. This deterministic first-five subset is a pipeline and qualitative
+smoke check only. It is too small and non-random to estimate model quality or
+claim an advantage over the RTX result. The full 198-item replay remains
+pending.
+
 The first public quality comparison will replay the exact September 23 RTX
 6000 PRO `llama.cpp` GPQA Diamond configuration against this Ascend checkpoint:
 
@@ -227,6 +248,8 @@ vllm serve /path/to/Qwen3.8-Flash-Next-W8A8-DYNAMIC-300i \
 - [ ] Validate MTP loading and generation with the real checkpoint on four
   310P devices, including an ACL graph run and a no-MTP comparison.
 - [ ] Measure MTP acceptance rate and controlled latency/throughput.
+- [x] Complete a serial five-item GPQA pipeline check with a valid prediction
+  ledger and evaluation summary.
 - [ ] Run the frozen GPQA Diamond replay and publish item-level diagnostics.
 - [ ] Validate a full 100K/131K prompt and resolve the cold-prefill issue.
 - [ ] Finish license review, metadata scan, shard inventory, and checksums.
