@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "artifact": {
+    "name": "Qwen3.8-Flash-Next-W8A8-DYNAMIC-300i",
+    "file_count": 268,
+    "bytes": 240059994407,
+    "weight_shards": 254
+  },
+  "base_model": {
+    "repo_id": "Qwen/Qwen3.8-Flash-Next",
+    "revision": "de4b8e4d43b917e7706784d8bb445c9af86a3540",
+    "architecture": "Qwen4ExpForConditionalGeneration",
+    "license": "qwen-community-1.0"
+  },
+  "conversion": {
+    "tool": "Ascend ModelSlim",
+    "method": "W8A8_DYNAMIC",
+    "export_format": "ascend_v1",
+    "quantized_linears": 73728,
+    "source_tensors": 149018,
+    "export_tensors": 222746,
+    "source_tensor_bytes": 239392751608,
+    "export_tensor_bytes": 239958982648
+  },
+  "runtime_smoke_test": {
+    "date": "2026-09-23",
+    "hardware": "2 x Atlas 300I Duo / 4 x Ascend 310P3",
+    "tensor_parallel_size": 4,
+    "max_model_len": 2304,
+    "vllm_ascend_repository": "https://github.com/opensensor/vllm-ascend",
+    "vllm_ascend_branch": "main",
+    "vllm_ascend_revision": "e3091d23015e3fa4a75471fc9d57f45e8b6c7a6b",
+    "vllm_repository": "https://github.com/opensensor/vllm",
+    "vllm_branch": "main",
+    "vllm_revision": "3756b28a3c63d7d5c5503912cdc5e9dfbbe3c7f6",
+    "npu_smi_version": "26.0.rc1",
+    "models_endpoint_http_status": 200,
+    "chat_completion_http_status": 200,
+    "scope": "Short-context text-generation smoke test; not a benchmark"
+  },
+  "provisional_runtime_milestone": {
+    "date": "2026-09-25",
+    "status": "development measurement; final runtime revision and controlled benchmark pending",
+    "evidence_label": "qwen38-mtp-grouped-qsa-r21",
+    "hardware": "2 x Atlas 300I Duo / 4 x Ascend 310P3",
+    "tensor_parallel_size": 4,
+    "max_num_seqs": 1,
+    "quantization": "W8A8_DYNAMIC routed-expert linears with FP16 non-expert state",
+    "runtime": {
+      "max_model_len": 131072,
+      "npu_kv_cache_capacity_tokens": 142237,
+      "longest_captured_development_prompt_tokens": 43603,
+      "full_100k_or_131k_request_validated": false,
+      "prefix_caching": true,
+      "chunked_prefill": true,
+      "decode_graph_mode": "FULL_DECODE_ONLY",
+      "mtp_speculative_tokens": 1,
+      "vllm_revision": "3ab5dda29acabea01f6a63d0806bdbbb4a27bde5",
+      "vllm_ascend_revision": null,
+      "vllm_ascend_revision_note": "Experimental staged snapshot; freeze the public main revision after the cold-prefill fix"
+    },
+    "software": {
+      "python": "3.12.13",
+      "vllm": "0.1.dev1+g3ab5dda29.empty",
+      "vllm_ascend": "0.0.0",
+      "torch": "2.13.0+cpu",
+      "torch_npu": "2.13.0rc1",
+      "transformers": "5.17.0",
+      "npu_smi": "26.0.rc1"
+    },
+    "per_rank_memory_gib": {
+      "weights": 33.93,
+      "peak_activation": 1.56,
+      "npu_graph": 0.32,
+      "kv_cache_rank0": 5.84
+    },
+    "decode_samples": [
+      {
+        "output_tokens": 1359,
+        "tokens_per_second": 14.8
+      },
+      {
+        "output_tokens": 257,
+        "tokens_per_second": 15.3
+      },
+      {
+        "output_tokens": 224,
+        "tokens_per_second": 15.6
+      },
+      {
+        "output_tokens": 201,
+        "tokens_per_second": 16.0
+      }
+    ],
+    "uncached_prefill_samples": [
+      {
+        "prompt_tokens": 24227,
+        "milliseconds": 83298.6,
+        "effective_tokens_per_second": 290.8
+      },
+      {
+        "prompt_tokens": 24243,
+        "milliseconds": 61503.9,
+        "effective_tokens_per_second": 394.2
+      }
+    ],
+    "known_issue": "Initial uncached prompt KV computation remains slower and more variable than desired"
+  },
+  "planned_quality_benchmark": {
+    "harness": "AISBench",
+    "harness_revision": "19018e9c",
+    "dataset": "GPQA Diamond",
+    "dataset_version": "b1ed2c",
+    "questions": 198,
+    "temperature": 0.0,
+    "seed": 1024,
+    "max_output_tokens": 8192,
+    "reference_backend": "llama.cpp on RTX 6000 PRO",
+    "reference_quantization": "UD-IQ4_XS",
+    "reference_correct": 138,
+    "reference_accuracy_percent": 69.7,
+    "ascend_result": null
+  }
+}
