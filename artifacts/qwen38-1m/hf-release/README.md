@@ -79,9 +79,11 @@ These are batch-one request timings rather than a multi-request throughput
 benchmark.
 
 The configured limit and KV allocation show that a 131K-token request fits the
-runtime's calculated memory budget. They do **not** establish end-to-end 131K
-correctness: the longest captured development request was 43,603 prompt tokens.
-A full 100K/131K prompt test remains a release gate.
+runtime's calculated memory budget. They do **not** by themselves establish
+end-to-end 131K correctness. The longest request in the reviewed server-log
+sample was 43,603 prompt tokens, but real KiloCode sessions have exceeded that
+length; their exact token counts have not yet been recovered into the benchmark
+evidence bundle. A controlled full 100K/131K prompt test remains a release gate.
 
 Initial prompt processing also remains under active optimization. In this
 build, uncached 24K-token prompts varied from 61.5 to 83.3 seconds
@@ -199,8 +201,9 @@ vllm serve /path/to/Qwen3.8-Flash-Next-W8A8-DYNAMIC-300i \
 - Requires four Ascend 310P3 devices and the Qwen4Exp support in the associated
   public vLLM fork and vLLM Ascend `main` revisions.
 - The runtime has been configured for 131,072 tokens and allocated sufficient
-  KV capacity, but captured requests reached 43,603 prompt tokens; a full
-  100K/131K request is not yet validated.
+  KV capacity. The reviewed log sample reached 43,603 prompt tokens, while
+  longer real KiloCode sessions have run successfully. A controlled 100K/131K
+  request with retained artifacts is not yet validated.
 - Native 262,144-token and extended 1M-token operation are not validated on
   this four-chip configuration.
 - Multimodal inputs are not validated.

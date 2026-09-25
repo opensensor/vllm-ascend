@@ -140,8 +140,10 @@ Recommended path replacements:
       ledger, detailed grader output, server command, and server log.
 - [ ] Benchmark TTFT, inter-token latency, output throughput, and end-to-end
       latency with a versioned harness.
-- [x] Exercise prompts beyond the original 2,304-token smoke context; captured
-      development requests reached 43,603 prompt tokens.
+- [x] Exercise prompts beyond the original 2,304-token smoke context. The
+      reviewed log sample reached 43,603 prompt tokens, and real KiloCode
+      sessions exceeded that length; their exact counts are not retained in
+      this evidence bundle.
 - [ ] Validate one complete 100K/131K prompt rather than inferring support only
       from the configured limit and allocated KV-token capacity.
 - [ ] Clearly separate measured results from projections for 262K and 1M
