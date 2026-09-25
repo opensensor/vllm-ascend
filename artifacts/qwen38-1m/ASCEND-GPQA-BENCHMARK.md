@@ -76,6 +76,24 @@ RUN_NAME=gpqa-diamond-deterministic-ascend-w8a8-final \
   artifacts/qwen38-1m/run-ascend-gpqa-replay.sh
 ```
 
+### Five-question smoke run
+
+Before committing to the complete 198-question replay, run the first five
+dataset prompts with all other generation and evaluation settings unchanged:
+
+```bash
+SERVER_HOST=<ASCEND_SERVER> \
+SERVER_PORT=8001 \
+NUM_PROMPTS=5 \
+RUN_NAME=gpqa-diamond-first5-ascend-w8a8 \
+  artifacts/qwen38-1m/run-ascend-gpqa-replay.sh
+```
+
+AISBench implements `--num-prompts 5` as the dataset range `[:5]`, so this is
+a deterministic first-five subset rather than a random sample. Treat its score
+as a pipeline and qualitative smoke check, not as a statistically meaningful
+model-quality estimate.
+
 With the current server limited to one active sequence, the reference token
 volume implies roughly 17–18.5 hours of decode at 14.8–16.0 tokens/s. Client
 concurrency remains three to reproduce the reference request schedule, but the
