@@ -49,9 +49,10 @@ following evidence has been saved:
 
 The September 25 milestone configuration is not yet the frozen release build.
 It used TP=4, one MTP draft token, prefix caching, chunked prefill, full-decode
-graphs, `max_model_len=131072`, and `max_num_seqs=1`. Fix or explicitly accept
-the cold-prefill issue before starting GPQA, then restart once so the entire
-run uses one code and configuration state.
+graphs, the deployment serving cap `max_model_len=131072`, and
+`max_num_seqs=1`. That serving cap is not the model's architectural maximum
+context. Fix or explicitly accept the cold-prefill issue before starting GPQA,
+then restart once so the entire run uses one code and configuration state.
 
 ## Run the exact replay
 

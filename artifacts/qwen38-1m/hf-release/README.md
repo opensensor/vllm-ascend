@@ -62,7 +62,7 @@ measurements, not a controlled public benchmark:
 
 | Measurement | Observed value |
 | --- | ---: |
-| Configured maximum model length | 131,072 tokens |
+| Milestone serving limit (`--max-model-len`) | 131,072 tokens |
 | Allocated NPU KV capacity | 142,237 tokens |
 | TP ranks / active sequences | 4 / 1 |
 | Weight memory per rank | 33.93 GiB |
@@ -78,6 +78,8 @@ full-decode-only graphs. Representative 201–328-token completions measured
 These are batch-one request timings rather than a multi-request throughput
 benchmark.
 
+The 131,072-token value is the serving limit selected for this four-chip
+milestone (`--max-model-len`), **not the model's architectural maximum context**.
 The configured limit and KV allocation show that a 131K-token request fits the
 runtime's calculated memory budget. They do **not** by themselves establish
 end-to-end 131K correctness. The longest request in the reviewed server-log
@@ -200,12 +202,12 @@ vllm serve /path/to/Qwen3.8-Flash-Next-W8A8-DYNAMIC-300i \
 
 - Requires four Ascend 310P3 devices and the Qwen4Exp support in the associated
   public vLLM fork and vLLM Ascend `main` revisions.
-- The runtime has been configured for 131,072 tokens and allocated sufficient
-  KV capacity. The reviewed log sample reached 43,603 prompt tokens, while
-  longer real KiloCode sessions have run successfully. A controlled 100K/131K
-  request with retained artifacts is not yet validated.
-- Native 262,144-token and extended 1M-token operation are not validated on
-  this four-chip configuration.
+- This four-chip deployment has a 131,072-token serving cap; that cap is not
+  the model's maximum context. The reviewed log sample reached 43,603 prompt
+  tokens, while longer real KiloCode sessions have run successfully. A
+  controlled 100K/131K request with retained artifacts is not yet validated.
+- Longer contexts supported by the underlying model, including 262,144-token
+  and extended 1M-token operation, are not validated on this configuration.
 - Multimodal inputs are not validated.
 - MTP generation is functional in the provisional development build, but its
   item-level quality parity against target-only decoding is not yet measured.

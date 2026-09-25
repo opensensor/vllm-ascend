@@ -40,8 +40,9 @@ Git.
 The MTP adapter and 310P v1 runner route were added to public vLLM Ascend
 `main` in [`839b6657f`](https://github.com/opensensor/vllm-ascend/commit/839b6657f2e08b60fcd2d3fa124341003465104f)
 on September 25, 2026. A subsequent experimental device build loaded the full
-checkpoint with one-token MTP and full-decode graphs, advertised a 131,072-token
-limit, allocated 142,237 KV tokens, and produced representative batch-one
+checkpoint with one-token MTP and full-decode graphs, used a 131,072-token
+deployment serving limit (not the model's maximum context), allocated 142,237
+KV tokens, and produced representative batch-one
 decode measurements of 14.8–16.0 tokens/s. The associated Ascend performance
 snapshot and cold-prefill fix are not yet frozen on public `main`, so these
 remain provisional findings rather than the final release baseline.
