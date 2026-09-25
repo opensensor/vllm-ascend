@@ -52,7 +52,6 @@ exec "${AIS_BENCH_BIN}" \
   --work-dir "${WORK_ROOT}/${RUN_NAME}" \
   --host-ip "${SERVER_HOST}" \
   --host-port "${SERVER_PORT}" \
-  --path "${MODEL_NAME}" \
   --model-name "${MODEL_NAME}" \
   --batch-size 3 \
   --max-out-len 8192 \
