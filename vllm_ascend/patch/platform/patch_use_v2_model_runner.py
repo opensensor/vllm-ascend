@@ -1,6 +1,8 @@
 import vllm.envs as envs
 from vllm.config.vllm import VllmConfig
+from vllm.logger import logger
 
+from vllm_ascend._310p.qwen4exp_mtp import is_qwen4exp_mtp_config
 from vllm_ascend.utils import is_310p
 from vllm_ascend.worker.v2.pp_utils import resolve_spec_pp_support
 
@@ -15,15 +17,23 @@ _ASCEND_V1_SUPPORTED_FEATURES = frozenset(
 )
 
 
+def _needs_310p_qwen4exp_mtp_v1(self) -> bool:
+    """310P MRv2 has no speculative input packing or rejection sampler yet."""
+    return is_310p() and is_qwen4exp_mtp_config(self.model_config, self.speculative_config)
+
+
 def _patched_use_v2_model_runner(self) -> bool:
-    """Return VLLM_USE_V2_MODEL_RUNNER env directly.
+    """Use the Ascend runner selection, including 310P MTP fallback.
 
     The upstream use_v2_model_runner gate-keeps the v2 runner with
     per-model architecture whitelists, Triton availability checks, and
     feature-support inspections. On Ascend the v2 runner is controlled
-    purely by the VLLM_USE_V2_MODEL_RUNNER environment variable;
-    model-compatibility decisions are deferred to the NPU runner itself.
+    by the VLLM_USE_V2_MODEL_RUNNER environment variable. The 310P Qwen4Exp
+    MTP path uses MRv1 until MRv2 can pack and verify speculative tokens.
     """
+    if _needs_310p_qwen4exp_mtp_v1(self):
+        logger.warning_once("Qwen4Exp MTP on 310P uses model runner v1 for speculative decoding.")
+        return False
     use_v2 = envs.VLLM_USE_V2_MODEL_RUNNER
     if use_v2 is not None:
         return use_v2

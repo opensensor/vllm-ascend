@@ -133,3 +133,17 @@ optimization, not a requirement for reaching 1M.
 - Actual free bytes per chip (§6) — plan D1 / PRD open decision #1.
 - PLE row-gather transport winner (pinned-UVA vs mmap+registered window) — plan D1-MB.
 - 1M cache candidate A vs B — plan D4.
+
+## 11. MTP runner path (2026-09-25)
+
+The Qwen4Exp MTP checkpoint has a separate FP16 draft expert bank and passes all
+`hc_count` hyperconnection streams from the target to the draft. On 310P, MTP
+uses model runner v1 even when `VLLM_USE_V2_MODEL_RUNNER=1`: the v2 runner does
+not yet pack draft tokens or perform rejection sampling. The v1 runner stages
+PLE's preceding token history for each request on every target step, including
+after a speculative rollback. The existing ACL graph configuration remains
+available on this route.
+
+The FP16 draft head, runner selection, hidden-state width, and PLE staging have
+host-side tests. Full checkpoint loading, generation accuracy, acceptance rate,
+and throughput with MTP have not yet been measured on the NPUs.

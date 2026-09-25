@@ -43,6 +43,7 @@ from vllm.v1.spec_decode.utils import (
 from vllm.v1.worker.gpu_input_batch import CachedRequestState, InputBatch
 
 from vllm_ascend import utils as ascend_utils
+from vllm_ascend._310p.qwen4exp_mtp import qwen4exp_mtp_hidden_width
 from vllm_ascend.ascend_config import get_ascend_config
 from vllm_ascend.ascend_forward_context import _EXTRA_CTX, set_ascend_forward_context
 from vllm_ascend.attention.attention_v1 import AscendAttentionState
@@ -167,6 +168,17 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
 
     def __init__(self, vllm_config: VllmConfig, device: torch.device, pass_hidden_states_to_model: bool, runner=None):
         super().__init__(vllm_config, device, pass_hidden_states_to_model, runner=runner)
+
+        # Qwen4Exp passes its complete hyperconnection state to MTP. Upstream's
+        # proposer only widens this buffer for hc_mult (DeepSeek V4); the Qwen
+        # checkpoint calls the same dimension hc_count. Keep the draft input
+        # wide enough for the target state before any proposal or graph capture.
+        expected_width = qwen4exp_mtp_hidden_width(self.draft_model_config, self.method)
+        if expected_width is not None and self.hidden_size != expected_width:
+            self.hidden_size = expected_width
+            self.hidden_states = torch.zeros(
+                (self.max_num_tokens, expected_width), dtype=self.dtype, device=self.device
+            )
 
         # Assign runner before it's used in the methods below
         self.runner = runner
@@ -1782,20 +1794,20 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
 
     def model_returns_tuple(self) -> bool:
         if self.method == "mtp":
-            # DeepSeek-family MTP (deepseek_mtp.py) recycles the post-final-
-            # norm hidden, so its forward returns (logit_hidden,
-            # recycle_hidden). Other MTP families return a single tensor.
+            # These MTP models return separate hidden states for logits and
+            # feedback into the next draft step.
             draft_model_config = getattr(self, "draft_model_config", None)
             hf_config = getattr(draft_model_config, "hf_config", None)
             architectures = getattr(hf_config, "architectures", []) or []
             if vllm_version_is("0.28.0"):
-                return bool({"DeepSeekMTPModel", "KimiK3MTPModel"}.intersection(architectures))
+                return bool({"DeepSeekMTPModel", "KimiK3MTPModel", "Qwen4ExpMTP"}.intersection(architectures))
             else:
                 return bool(
                     {
                         "DeepSeekMTPModel",
                         "DeepseekV32MTPModel",
                         "KimiK3MTPModel",
+                        "Qwen4ExpMTP",
                     }.intersection(architectures)
                 )
         return self.method not in ("mtp", "draft_model", "dflash", "dspark")

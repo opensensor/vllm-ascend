@@ -49,6 +49,7 @@ from vllm_ascend._310p.block_table import MultiGroupBlockTable as MultiGroupBloc
 from vllm_ascend._310p.kv_block_zeroer import AscendKVBlockZeroer310
 from vllm_ascend._310p.npu_input_batch import NPUInputBatch310 as NPUInputBatch
 from vllm_ascend._310p.ops.rotary_embedding import prepare_mrope_cos_sin_slices_from_runner
+from vllm_ascend._310p.qwen4exp_mtp import is_qwen4exp_mtp_config, stage_ple_history
 from vllm_ascend._310p.sample.rejection_sampler import AscendRejectionSampler310
 from vllm_ascend._310p.sample.sampler import AscendSampler310
 from vllm_ascend.attention.attention_v1 import AscendAttentionState
@@ -230,6 +231,17 @@ class NPUModelRunner310(NPUModelRunner):
             ),
             cp_kv_cache_interleave_size=self.parallel_config.cp_kv_cache_interleave_size,
         )
+        self._qwen4exp_mtp_ple = is_qwen4exp_mtp_config(self.model_config, self.speculative_config)
+        if self._qwen4exp_mtp_ple:
+            text_config = self.model_config.hf_text_config
+            self._ple_context_len = int(text_config.ngram_size) - 1
+            if self._ple_context_len < 1:
+                raise ValueError("Qwen4Exp MTP requires ngram_size >= 2")
+            self._ple_eos_token_id = int(text_config.eos_token_id)
+            self._ple_context_cpu = torch.empty((self.max_num_reqs + 1, self._ple_context_len), dtype=torch.int32)
+            self._ple_context_gpu = torch.empty_like(self._ple_context_cpu, device=self.device)
+            self._ple_query_start_loc_cpu = torch.empty(self.max_num_reqs + 2, dtype=torch.int32)
+            self._ple_query_start_loc_gpu = torch.empty_like(self._ple_query_start_loc_cpu, device=self.device)
         self._acl_format = ACL_FORMAT_FRACTAL_NZ
         logger.info_once("Weight layout uses FRACTAL_NZ.")
         self.sampler = AscendSampler310()
@@ -240,6 +252,22 @@ class NPUModelRunner310(NPUModelRunner):
             # Keep dispatcher's internal query_len in sync to avoid key-init assert.
             self.cudagraph_dispatcher.uniform_decode_query_len = _NGRAM_GRAPH_UNIFORM_DECODE_QUERY_LEN
             logger.info_once("Ngram speculative decoding uses uniform_decode_query_len=1 for graph capture.")
+
+    def _stage_qwen4exp_ple_inputs(self, num_tokens_padded: int) -> tuple[torch.Tensor, torch.Tensor]:
+        """Supply stable, rollback-safe PLE history to the MRv1 target model."""
+        stage_ple_history(
+            self._ple_context_cpu,
+            self._ple_query_start_loc_cpu,
+            self.input_batch.token_ids_cpu,
+            self.input_batch.num_computed_tokens_cpu,
+            self.query_start_loc.np,
+            self.input_batch.num_reqs,
+            num_tokens_padded,
+            self._ple_eos_token_id,
+        )
+        self._ple_context_gpu.copy_(self._ple_context_cpu, non_blocking=True)
+        self._ple_query_start_loc_gpu.copy_(self._ple_query_start_loc_cpu, non_blocking=True)
+        return self._ple_query_start_loc_gpu, self._ple_context_gpu
 
     def _update_states(self, scheduler_output: SchedulerOutput):
         block_copies = scheduler_output.kv_cache_block_copies
@@ -782,6 +810,11 @@ class NPUModelRunner310(NPUModelRunner):
         if self.uses_mrope:
             assert positions is not None
             prepare_mrope_cos_sin_slices_from_runner(self, positions)
+
+        if self._qwen4exp_mtp_ple:
+            query_start_loc, ngram_context = self._stage_qwen4exp_ple_inputs(num_tokens_padded)
+            model_kwargs["query_start_loc"] = query_start_loc
+            model_kwargs["ngram_context"] = ngram_context
 
         assert self.model is not None
         forward_context = get_forward_context()
