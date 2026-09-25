@@ -24,7 +24,7 @@ Its frozen settings were:
 | Top-p / top-k / min-p | `1.0` / `20` / `0.0` |
 | Repetition / presence penalty | `1.0` / `0.0` |
 | Maximum output | 8,192 tokens |
-| Client concurrency | 3 |
+| RTX reference client batch size | 3 |
 | Warmups | 1 |
 | Result | 138/198, 69.70% |
 
@@ -77,6 +77,14 @@ RUN_NAME=gpqa-diamond-deterministic-ascend-w8a8-final \
   artifacts/qwen38-1m/run-ascend-gpqa-replay.sh
 ```
 
+The Ascend runner defaults to `CLIENT_BATCH_SIZE=1` because this deployment
+uses `max_num_seqs=1`. A larger client batch only queues requests and obscures
+per-request timing. The RTX reference used batch size 3; the question set,
+prompt format, output cap, and deterministic sampling settings remain matched,
+but throughput and latency must be reported separately rather than inferred
+from this quality comparison. Set `CLIENT_BATCH_SIZE=3` only to reproduce the
+reference client's queuing schedule deliberately.
+
 ### Five-question smoke run
 
 Before committing to the complete 198-question replay, run the first five
@@ -96,10 +104,9 @@ as a pipeline and qualitative smoke check, not as a statistically meaningful
 model-quality estimate.
 
 With the current server limited to one active sequence, the reference token
-volume implies roughly 17–18.5 hours of decode at 14.8–16.0 tokens/s. Client
-concurrency remains three to reproduce the reference request schedule, but the
-server may queue two requests. Record actual wall time rather than presenting
-this estimate as measured benchmark throughput.
+volume implies roughly 17–18.5 hours of decode at 14.8–16.0 tokens/s. Record
+actual wall time rather than presenting this estimate as measured benchmark
+throughput.
 
 ## Required result checks
 

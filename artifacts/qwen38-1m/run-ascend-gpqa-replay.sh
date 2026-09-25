@@ -13,6 +13,7 @@ MODEL_NAME="${MODEL_NAME:-qwen38-flash-next-w8a8}"
 WORK_ROOT="${WORK_ROOT:-./benchmark-results/qwen38-quality}"
 RUN_NAME="${RUN_NAME:-gpqa-diamond-deterministic-ascend-w8a8}"
 NUM_PROMPTS="${NUM_PROMPTS:-}"
+CLIENT_BATCH_SIZE="${CLIENT_BATCH_SIZE:-1}"
 
 GENERATION_KWARGS='{"ignore_eos":false,"min_p":0.0,"presence_penalty":0.0,"repetition_penalty":1.0,"seed":1024,"temperature":0.0,"top_k":20,"top_p":1.0}'
 
@@ -23,6 +24,11 @@ fi
 
 if ! command -v "${AIS_BENCH_BIN}" >/dev/null 2>&1 && [[ ! -x "${AIS_BENCH_BIN}" ]]; then
   echo "AISBench executable not found: ${AIS_BENCH_BIN}" >&2
+  exit 1
+fi
+
+if [[ ! "${CLIENT_BATCH_SIZE}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "CLIENT_BATCH_SIZE must be a positive integer: ${CLIENT_BATCH_SIZE}" >&2
   exit 1
 fi
 
@@ -40,6 +46,7 @@ curl --fail --silent --show-error \
   "http://${SERVER_HOST}:${SERVER_PORT}/v1/models" >/dev/null
 
 echo "Starting exact GPQA Diamond replay against ${MODEL_NAME}."
+echo "Using client batch size ${CLIENT_BATCH_SIZE}."
 if [[ -n "${NUM_PROMPTS}" ]]; then
   echo "Limiting this run to the first ${NUM_PROMPTS} dataset prompts."
 fi
@@ -53,7 +60,7 @@ exec "${AIS_BENCH_BIN}" \
   --host-ip "${SERVER_HOST}" \
   --host-port "${SERVER_PORT}" \
   --model-name "${MODEL_NAME}" \
-  --batch-size 3 \
+  --batch-size "${CLIENT_BATCH_SIZE}" \
   --max-out-len 8192 \
   --request-rate 0 \
   --retry 2 \
