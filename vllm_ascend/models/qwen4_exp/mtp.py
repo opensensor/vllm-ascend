@@ -287,7 +287,7 @@ class AscendQwen4ExpMTP(nn.Module, SupportsPP, MixtureOfExperts):
         """Stream MTP tensors and the target's shared embedding/head by name."""
         params = dict(self.named_parameters())
         loaded: set[str] = set()
-        tp_rank, _tp_size = self.model.expert_sharding
+        tp_rank, tp_size = self.model.expert_sharding
         for raw_name, tensor in weights:
             name = raw_name.removeprefix("model.language_model.").removeprefix("language_model.")
             if name.startswith("model.mtp."):
@@ -363,6 +363,10 @@ class AscendQwen4ExpMTP(nn.Module, SupportsPP, MixtureOfExperts):
             qsa_targets = AscendQwen4ExpForCausalLM._place_qsa_q_gate_tensor(self, params, name, tensor)
             if qsa_targets is not None:
                 loaded.update(qsa_targets)
+                continue
+            qsa_target = AscendQwen4ExpForCausalLM._place_qsa_head_tensor(self, params, name, tensor, tp_rank, tp_size)
+            if qsa_target is not None:
+                loaded.add(qsa_target)
                 continue
             placements = _remap_non_expert(name, self.config)
             if placements is None:

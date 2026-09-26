@@ -214,6 +214,8 @@ class AscendQwen4ExpQSAAttention(nn.Module):
         dtype_policy: Qwen4ExpDtypePolicy = ASCEND_QWEN4EXP_DTYPE_POLICY,
         chunk_prefill_policy: QSAChunkPrefillPolicy | None = None,
         prefix: str = "",
+        num_query_heads: int | None = None,
+        num_kv_heads: int | None = None,
     ) -> None:
         super().__init__()
         self.config = config
@@ -229,8 +231,14 @@ class AscendQwen4ExpQSAAttention(nn.Module):
         self.kv_cache_dtype = dtype_policy.cast_site("kv_cache")
         self.accumulation_dtype = dtype_policy.cast_site("attention_accumulation")
 
-        self.num_query_heads = int(getattr(config, "num_attention_heads", _DEFAULT_NUM_QUERY_HEADS))
-        self.num_kv_heads = int(getattr(config, "num_key_value_heads", _DEFAULT_NUM_KV_HEADS))
+        self.num_query_heads = (
+            int(getattr(config, "num_attention_heads", _DEFAULT_NUM_QUERY_HEADS))
+            if num_query_heads is None
+            else num_query_heads
+        )
+        self.num_kv_heads = (
+            int(getattr(config, "num_key_value_heads", _DEFAULT_NUM_KV_HEADS)) if num_kv_heads is None else num_kv_heads
+        )
         self.head_dim = int(getattr(config, "head_dim", _DEFAULT_HEAD_DIM))
         if self.num_query_heads % self.num_kv_heads:
             raise ValueError("QSA query heads must be divisible by kv heads")

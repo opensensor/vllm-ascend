@@ -25,6 +25,7 @@ _CKPT = Path(
     "/run/media/matteius/3cbe076a-d779-4f67-93a7-9195b734fac8/models/ascend/Qwen3.8-Flash-Next-W8A8-DYNAMIC-300i"
 )
 
+
 def _is_documented_skip(name: str) -> bool:
     # The PLE n-gram table is derived (buffers) or lazy-shard mmap'd (128 shards).
     if ".ple_embedding." in name:
@@ -160,6 +161,39 @@ def test_q_proj_deinterleaves_query_and_gate_per_head():
     assert torch.equal(gate, per_head[:, 1].reshape_as(gate))
 
 
+def test_qsa_tp4_loader_slices_query_kv_and_output_projections():
+    from vllm_ascend.models.qwen4_exp.model import AscendQwen4ExpForCausalLM
+
+    config = SimpleNamespace(num_attention_heads=8, num_key_value_heads=2, head_dim=2, hidden_size=3, indexer_n_heads=1)
+    owner = SimpleNamespace(model=SimpleNamespace(config=config, expert_sharding=(2, 4)))
+    stem = "model.layers.3.attention"
+    params = {
+        f"{stem}.q_proj": torch.empty(4, 3),
+        f"{stem}.gate_proj": torch.empty(4, 3),
+        f"{stem}.k_proj": torch.empty(2, 3),
+        f"{stem}.v_proj": torch.empty(2, 3),
+        f"{stem}.o_proj": torch.empty(3, 4),
+    }
+    q_gate = torch.arange(8 * 2 * 2 * 3).reshape(32, 3)
+    k = torch.arange(4 * 3).reshape(4, 3)
+    v = k + 100
+    o = torch.arange(3 * 16).reshape(3, 16)
+    loaded = AscendQwen4ExpForCausalLM._place_qsa_q_gate_tensor(
+        owner, params, "model.layers.3.self_attn.q_proj.weight", q_gate
+    )
+    assert loaded == (f"{stem}.q_proj", f"{stem}.gate_proj")
+    assert torch.equal(params[f"{stem}.q_proj"], q_gate.reshape(8, 2, 2, 3)[4:6, 0].reshape(4, 3))
+    assert torch.equal(params[f"{stem}.gate_proj"], q_gate.reshape(8, 2, 2, 3)[4:6, 1].reshape(4, 3))
+    for projection, source in (("k_proj", k), ("v_proj", v), ("o_proj", o)):
+        target = AscendQwen4ExpForCausalLM._place_qsa_head_tensor(
+            owner, params, f"model.layers.3.self_attn.{projection}.weight", source, 2, 4
+        )
+        assert target == f"{stem}.{projection}"
+    assert torch.equal(params[f"{stem}.k_proj"], k[2:4])
+    assert torch.equal(params[f"{stem}.v_proj"], v[2:4])
+    assert torch.equal(params[f"{stem}.o_proj"], o[:, 8:12])
+
+
 def test_gdn_ba_loader_preserves_checkpoint_packing_order():
     from vllm_ascend.models.qwen4_exp.model import AscendQwen4ExpForCausalLM
 
@@ -208,12 +242,8 @@ def test_renames_reach_expected_targets(param_shapes):
         # layer 1 carries the PLE injection.
         "model.layers.3.self_attn.k_proj.weight": "model.layers.3.attention.k_proj",
         "model.layers.3.self_attn.q_norm.weight": "model.layers.3.attention.attn.q_norm_weight",
-        "model.layers.3.self_attn.indexer.q_layernorm.weight": (
-            "model.layers.3.attention.indexer.q_layernorm_weight"
-        ),
-        "model.layers.3.self_attn.indexer.k_layernorm.weight": (
-            "model.layers.3.attention.indexer.k_layernorm_weight"
-        ),
+        "model.layers.3.self_attn.indexer.q_layernorm.weight": ("model.layers.3.attention.indexer.q_layernorm_weight"),
+        "model.layers.3.self_attn.indexer.k_layernorm.weight": ("model.layers.3.attention.indexer.k_layernorm_weight"),
         "model.layers.1.ple.norm_query.weight": "model.layers.1.ple.ple.norm_query_weight",
     }
     for src, expected in cases.items():

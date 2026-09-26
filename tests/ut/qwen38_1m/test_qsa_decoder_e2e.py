@@ -58,11 +58,12 @@ from tests.ut.qwen38_1m.reference.qsa_indexer_reference import qsa_select_tokens
 from tests.ut.qwen38_1m.reference.tolerances import QSA_ATTN_ATOL, QSA_ATTN_RTOL
 from vllm_ascend.models.qwen4_exp.dtype_policy import ASCEND_QWEN4EXP_DTYPE_POLICY
 from vllm_ascend.models.qwen4_exp.kv_cache import AscendQSAFullAttentionSpec
-from vllm_ascend.models.qwen4_exp.model import _QSAAttention
+from vllm_ascend.models.qwen4_exp.model import AscendQwen4ExpForCausalLM, _QSAAttention
 from vllm_ascend.models.qwen4_exp.qsa import (
     QSADecoderProjections,
     run_qsa_decoder_attention,
 )
+from vllm_ascend.models.qwen4_exp.qsa_head_sharding import qsa_head_shard
 
 _EPS = 1e-6
 _ROPE_THETA = 10_000.0
@@ -187,6 +188,70 @@ def test_qsa_layer_registers_custom_cache_spec_owner():
     assert static_forward_context == {"qsa.1": module}
     assert module.get_attn_backend() is backend
     assert isinstance(module.get_kv_cache_spec(fake_vllm_config), AscendQSAFullAttentionSpec)
+
+
+def test_qsa_tp4_shards_two_kv_heads_without_splitting_gqa_groups():
+    shards = [qsa_head_shard(24, 2, 256, rank, 4) for rank in range(4)]
+    assert [(s.query_start, s.num_query_heads, s.kv_start, s.num_kv_heads) for s in shards] == [
+        (0, 6, 0, 1),
+        (6, 6, 0, 1),
+        (12, 6, 1, 1),
+        (18, 6, 1, 1),
+    ]
+    assert [s.query_rows for s in shards] == [
+        slice(0, 1536),
+        slice(1536, 3072),
+        slice(3072, 4608),
+        slice(4608, 6144),
+    ]
+    assert [s.kv_rows for s in shards] == [slice(0, 256), slice(0, 256), slice(256, 512), slice(256, 512)]
+    with pytest.raises(ValueError, match="evenly"):
+        qsa_head_shard(24, 2, 256, 0, 5)
+
+
+def test_model_cache_spec_uses_local_qsa_kv_head_count():
+    cfg = _qsa_config(num_q_heads=8, num_kv_heads=2)
+    fake_model = SimpleNamespace(layer_types=["full_attention"], expert_sharding=(2, 4))
+    owner = SimpleNamespace(config=cfg, dtype_policy=_POLICY_F64, model=fake_model)
+    spec = AscendQwen4ExpForCausalLM.get_kv_cache_spec(owner)
+    assert spec["model.layers.0.attention"].num_kv_heads == 1
+
+
+@pytest.mark.parametrize("seq_len", [6, 24])
+def test_qsa_tp4_sum_matches_unsharded_attention(seq_len):
+    cfg = _qsa_config(num_q_heads=8, num_kv_heads=2, indexer_budget=8)
+    full = _QSAAttention(config=cfg, layer_idx=1, dtype_policy=_POLICY_F64).double()
+    _init_module(full, seed=61)
+    block_input = _rand((seq_len, cfg.hidden_size), seed=62) * 0.2
+    positions = torch.arange(seq_len, dtype=torch.int64)
+    partials = []
+
+    for rank in range(4):
+        local = _QSAAttention(
+            config=cfg,
+            layer_idx=1,
+            dtype_policy=_POLICY_F64,
+            expert_sharding=(rank, 4),
+        ).double()
+        shard = local.head_shard
+        assert local.get_kv_cache_spec(None).num_kv_heads == 1
+        assert local.attn.num_kv_heads == 1
+        local._tp_reduce = lambda output: output
+        with torch.no_grad():
+            for name, param in local.named_parameters():
+                source = dict(full.named_parameters())[name]
+                if name in ("q_proj", "gate_proj"):
+                    source = source[shard.query_rows]
+                elif name in ("k_proj", "v_proj"):
+                    source = source[shard.kv_rows]
+                elif name == "o_proj":
+                    source = source[:, shard.query_rows]
+                param.copy_(source)
+            partials.append(local(block_input, positions))
+
+    with torch.no_grad():
+        reference = full(block_input, positions)
+    torch.testing.assert_close(torch.stack(partials).sum(dim=0), reference, rtol=1e-9, atol=1e-9)
 
 
 def _linear_f64(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:

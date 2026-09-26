@@ -138,6 +138,7 @@ from .qsa import (
     partial_rope_cos_sin,
     run_qsa_decoder_attention,
 )
+from .qsa_head_sharding import qsa_head_shard
 from .qwen4exp_gdn import (
     QWEN4EXP_GDN_CHUNK_SIZE,
     Qwen4ExpGDNParams,
@@ -886,16 +887,32 @@ class _GDNAttention(nn.Module, MambaBase):
 class _QSAAttention(nn.Module, AttentionLayerBase):
     """QSA layer backed by dedicated 310P index and sparse-attention kernels."""
 
-    def __init__(self, *, config: object, layer_idx: int, dtype_policy: Qwen4ExpDtypePolicy, prefix: str = "") -> None:
+    def __init__(
+        self,
+        *,
+        config: object,
+        layer_idx: int,
+        dtype_policy: Qwen4ExpDtypePolicy,
+        prefix: str = "",
+        expert_sharding: tuple[int, int] = (0, 1),
+    ) -> None:
         super().__init__()
         _register_in_static_forward_context(prefix, self)
         self.prefix = prefix
         self.compute_dtype = dtype_policy.accumulation_dtype
         self.params_dtype = dtype_policy.qsa_main_dtype
         hidden = int(config.hidden_size)
-        self.num_heads = int(getattr(config, "num_attention_heads", 24))
-        self.num_kv_heads = int(getattr(config, "num_key_value_heads", 2))
         self.head_dim = int(getattr(config, "head_dim", 256))
+        self.tp_rank, self.tp_size = expert_sharding
+        self.head_shard = qsa_head_shard(
+            int(getattr(config, "num_attention_heads", 24)),
+            int(getattr(config, "num_key_value_heads", 2)),
+            self.head_dim,
+            self.tp_rank,
+            self.tp_size,
+        )
+        self.num_heads = self.head_shard.num_query_heads
+        self.num_kv_heads = self.head_shard.num_kv_heads
         self.index_n_heads = int(getattr(config, "indexer_n_heads", 4))
         self.index_head_dim = int(getattr(config, "indexer_head_dim", 128))
         self._attn_backend: type[AttentionBackend] | None = (
@@ -915,7 +932,28 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
         self.o_proj = nn.Parameter(torch.zeros(hidden, self.num_heads * self.head_dim, dtype=self.params_dtype))
 
         self.indexer = AscendQwen4ExpQSAIndexer(config=config, layer_idx=layer_idx, dtype_policy=dtype_policy)
-        self.attn = AscendQwen4ExpQSAAttention(config=config, layer_idx=layer_idx, dtype_policy=dtype_policy)
+        self.attn = AscendQwen4ExpQSAAttention(
+            config=config,
+            layer_idx=layer_idx,
+            dtype_policy=dtype_policy,
+            num_query_heads=self.num_heads,
+            num_kv_heads=self.num_kv_heads,
+        )
+        self._tp_reduce: object | None = None
+        if self.tp_size > 1:
+            try:
+                from vllm.distributed import tensor_model_parallel_all_reduce
+
+                self._tp_reduce = tensor_model_parallel_all_reduce
+            except ImportError:
+                pass
+
+    def _reduce_output(self, output: torch.Tensor) -> torch.Tensor:
+        if self.tp_size > 1:
+            if self._tp_reduce is None:
+                raise RuntimeError("QSA TP needs tensor_model_parallel_all_reduce")
+            output = self._tp_reduce(output)
+        return output.to(self.params_dtype)
 
     def get_attn_backend(self) -> type[AttentionBackend]:
         if self._attn_backend is None:
@@ -1109,27 +1147,29 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
         metadata_by_layer = get_forward_context().attn_metadata if is_forward_context_available() else None
         metadata = metadata_by_layer.get(self.prefix) if isinstance(metadata_by_layer, dict) else None
         if metadata is None or block_input.device.type != "npu":
-            return run_qsa_decoder_attention(
-                block_input,
-                positions,
-                projections=QSADecoderProjections(
-                    q_proj=self.q_proj,
-                    k_proj=self.k_proj,
-                    v_proj=self.v_proj,
-                    gate_proj=self.gate_proj,
-                    index_q_proj=self.iq_proj,
-                    index_k_proj=self.ik_proj,
-                    out_proj=self.o_proj,
-                ),
-                indexer=self.indexer,
-                attention=self.attn,
-                num_query_heads=self.num_heads,
-                num_kv_heads=self.num_kv_heads,
-                head_dim=self.head_dim,
-                index_n_heads=self.index_n_heads,
-                index_head_dim=self.index_head_dim,
-                store_dtype=self.params_dtype,
-                compute_dtype=self.compute_dtype,
+            return self._reduce_output(
+                run_qsa_decoder_attention(
+                    block_input,
+                    positions,
+                    projections=QSADecoderProjections(
+                        q_proj=self.q_proj,
+                        k_proj=self.k_proj,
+                        v_proj=self.v_proj,
+                        gate_proj=self.gate_proj,
+                        index_q_proj=self.iq_proj,
+                        index_k_proj=self.ik_proj,
+                        out_proj=self.o_proj,
+                    ),
+                    indexer=self.indexer,
+                    attention=self.attn,
+                    num_query_heads=self.num_heads,
+                    num_kv_heads=self.num_kv_heads,
+                    head_dim=self.head_dim,
+                    index_n_heads=self.index_n_heads,
+                    index_head_dim=self.index_head_dim,
+                    store_dtype=self.params_dtype,
+                    compute_dtype=self.compute_dtype,
+                )
             )
 
         seq_len = metadata.num_actual_tokens
@@ -1230,7 +1270,7 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
                 compress_ratio=self.indexer.compress_ratio,
             )
         out = out * torch.sigmoid(gate)
-        return _linear(out.reshape(seq_len, -1), self.o_proj, self.compute_dtype).to(self.params_dtype)
+        return self._reduce_output(_linear(out.reshape(seq_len, -1), self.o_proj, self.compute_dtype))
 
 
 class _EagerMLP(nn.Module):
@@ -1732,7 +1772,11 @@ class AscendQwen4ExpDecoderLayer(nn.Module):
             if getattr(config, "indexer_n_heads", None) is not None:
                 self.uses_qsa = True
                 self.attention = _QSAAttention(
-                    config=config, layer_idx=layer_idx, dtype_policy=dtype_policy, prefix=attn_prefix
+                    config=config,
+                    layer_idx=layer_idx,
+                    dtype_policy=dtype_policy,
+                    prefix=attn_prefix,
+                    expert_sharding=expert_sharding,
                 )
             else:
                 self.attention = _EagerDenseAttention(config=config, dtype_policy=dtype_policy, prefix=attn_prefix)
@@ -2091,6 +2135,16 @@ class AscendQwen4ExpForCausalLM(
             int(config.hidden_size) // int(getattr(config, "num_attention_heads", 1))
         )
         num_kv_heads = int(getattr(config, "num_key_value_heads", 1))
+        qsa_num_kv_heads = (
+            qsa_head_shard(
+                int(getattr(config, "num_attention_heads", 1)),
+                num_kv_heads,
+                head_dim,
+                *self.model.expert_sharding,
+            ).num_kv_heads
+            if getattr(config, "indexer_n_heads", None) is not None
+            else num_kv_heads
+        )
 
         try:
             gdn_params = _gdn_params_from_config(config)
@@ -2123,7 +2177,7 @@ class AscendQwen4ExpForCausalLM(
                 )
                 spec[name] = spec_cls(
                     block_size=DEFAULT_ATTENTION_BLOCK_SIZE,
-                    num_kv_heads=num_kv_heads,
+                    num_kv_heads=qsa_num_kv_heads if spec_cls is AscendQSAFullAttentionSpec else num_kv_heads,
                     head_size=head_dim,
                     dtype=policy.kv_cache_dtype,
                 )
@@ -2450,11 +2504,62 @@ class AscendQwen4ExpForCausalLM(
             raise ValueError(
                 f"{name}: expected interleaved QSA q/gate shape {expected_shape}, got {tuple(tensor.shape)}"
             )
+        tp_rank, tp_size = getattr(self.model, "expert_sharding", (0, 1))
+        shard = qsa_head_shard(
+            num_heads,
+            int(getattr(self.model.config, "num_key_value_heads", 1)),
+            head_dim,
+            tp_rank,
+            tp_size,
+        )
         per_head = tensor.reshape(num_heads, 2, head_dim, hidden_size)
+        local_heads = per_head[shard.query_start : shard.query_start + shard.num_query_heads]
         with torch.no_grad():
-            q_target.copy_(per_head[:, 0].reshape_as(q_target).to(q_target.dtype))
-            gate_target.copy_(per_head[:, 1].reshape_as(gate_target).to(gate_target.dtype))
+            q_target.copy_(local_heads[:, 0].reshape_as(q_target).to(q_target.dtype))
+            gate_target.copy_(local_heads[:, 1].reshape_as(gate_target).to(gate_target.dtype))
         return q_name, gate_name
+
+    def _place_qsa_head_tensor(
+        self,
+        params: dict[str, torch.Tensor],
+        name: str,
+        tensor: torch.Tensor,
+        tp_rank: int,
+        tp_size: int,
+    ) -> str | None:
+        """Slice checkpoint K/V rows or output columns by their GQA group."""
+        suffixes = ("k_proj", "v_proj", "o_proj")
+        suffix = next((item for item in suffixes if name.endswith(f".self_attn.{item}.weight")), None)
+        if suffix is None:
+            return None
+        target_name = name.replace(".self_attn.", ".attention.")[: -len(".weight")]
+        target = params.get(target_name)
+        if target is None:
+            return None
+        config = self.model.config
+        if getattr(config, "indexer_n_heads", None) is None:
+            return None
+        shard = qsa_head_shard(
+            int(config.num_attention_heads),
+            int(config.num_key_value_heads),
+            int(config.head_dim),
+            tp_rank,
+            tp_size,
+        )
+        hidden_size = int(config.hidden_size)
+        expected_shape = (
+            (hidden_size, int(config.num_attention_heads) * shard.head_dim)
+            if suffix == "o_proj"
+            else (int(config.num_key_value_heads) * shard.head_dim, hidden_size)
+        )
+        if tuple(tensor.shape) != expected_shape:
+            raise ValueError(f"{name}: expected QSA shape {expected_shape}, got {tuple(tensor.shape)}")
+        local_tensor = tensor[:, shard.query_rows] if suffix == "o_proj" else tensor[shard.kv_rows]
+        if tuple(local_tensor.shape) != tuple(target.shape):
+            raise ValueError(f"{name}: local shape {tuple(local_tensor.shape)} != {tuple(target.shape)}")
+        with torch.no_grad():
+            target.copy_(local_tensor.to(target.dtype))
+        return target_name
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         """Load a real (or round-trip) checkpoint into the assembled model.
@@ -2538,6 +2643,10 @@ class AscendQwen4ExpForCausalLM(
                 qsa_targets = self._place_qsa_q_gate_tensor(params, name, tensor)
                 if qsa_targets is not None:
                     loaded.update(qsa_targets)
+                    continue
+                qsa_target = self._place_qsa_head_tensor(params, name, tensor, tp_rank, tp_size)
+                if qsa_target is not None:
+                    loaded.add(qsa_target)
                     continue
                 # Round-trip / already-mapped names (a state-dict by fused param
                 # name): strict full-shape copy before any checkpoint remap.

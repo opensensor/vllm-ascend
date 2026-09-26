@@ -105,6 +105,54 @@ def test_checkpoint_experts_are_sliced_by_tp_rank_and_invalid_weights_fail():
         model.load_weights([("mtp.layers.0.mlp.experts.gate_up_proj", gate_up[:3])])
 
 
+def test_mtp_qsa_checkpoint_heads_are_sharded_for_tp4():
+    model = _build(expert_sharding=(2, 4), qsa=True)
+    attention = model.model.layers[0].attention
+    config = model.config
+    hidden = config.hidden_size
+    head_dim = config.head_dim
+    q_gate = torch.arange(config.num_attention_heads * 2 * head_dim * hidden, dtype=torch.float16).reshape(
+        config.num_attention_heads * 2 * head_dim, hidden
+    )
+    k = torch.arange(config.num_key_value_heads * head_dim * hidden, dtype=torch.float16).reshape(
+        config.num_key_value_heads * head_dim, hidden
+    )
+    v = k + 1
+    o = torch.arange(hidden * config.num_attention_heads * head_dim, dtype=torch.float16).reshape(
+        hidden, config.num_attention_heads * head_dim
+    )
+    with _single_rank_tp():
+        loaded = model.load_weights(
+            [
+                ("mtp.layers.0.self_attn.q_proj.weight", q_gate),
+                ("mtp.layers.0.self_attn.k_proj.weight", k),
+                ("mtp.layers.0.self_attn.v_proj.weight", v),
+                ("mtp.layers.0.self_attn.o_proj.weight", o),
+            ]
+        )
+    prefix = "model.layers.0.attention"
+    assert loaded == {f"{prefix}.{name}" for name in ("q_proj", "gate_proj", "k_proj", "v_proj", "o_proj")}
+    assert attention.num_heads == 1
+    assert attention.num_kv_heads == 1
+    assert attention.get_kv_cache_spec(None).num_kv_heads == 1
+    source_heads = q_gate.reshape(config.num_attention_heads, 2, head_dim, hidden)
+    torch.testing.assert_close(attention.q_proj, source_heads[2, 0])
+    torch.testing.assert_close(attention.gate_proj, source_heads[2, 1])
+    torch.testing.assert_close(attention.k_proj, k[head_dim:])
+    torch.testing.assert_close(attention.v_proj, v[head_dim:])
+    torch.testing.assert_close(attention.o_proj, o[:, 2 * head_dim : 3 * head_dim])
+
+
+def test_mtp_dense_attention_weights_bypass_qsa_head_slicing():
+    model = _build(qsa=False)
+    target = model.model.layers[0].attention.k_proj
+    source = torch.arange(target.numel(), dtype=target.dtype).reshape_as(target)
+    with _single_rank_tp():
+        loaded = model.load_weights([("mtp.layers.0.self_attn.k_proj.weight", source)])
+    assert loaded == {"model.layers.0.attention.k_proj"}
+    torch.testing.assert_close(target, source)
+
+
 def test_tp_expert_partials_sum_to_unsharded_fp16_moe():
     config = _tiny_text_config(num_layers=1, qsa=False, moe=True, ple_layer_ids=())
     config.shared_expert_intermediate_size = 0
