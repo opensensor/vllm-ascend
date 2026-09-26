@@ -206,12 +206,13 @@ def test_model_short_conv_fallback_carries_paged_state():
     weight = torch.randn(channels, kernel)
     first = torch.randn(5, channels)
     second = torch.randn(1, channels)
-    cache = torch.zeros(2, channels, kernel - 1)
+    cache = torch.zeros(2, kernel - 1, channels)
     owner = SimpleNamespace(
         kv_cache=(cache,),
         prefix="model.layers.0.attention",
         conv_weight=weight,
         conv_dim=channels,
+        params=SimpleNamespace(conv_kernel_size=kernel),
     )
     metadata = SimpleNamespace(query_lens_cpu=torch.tensor([len(first)], dtype=torch.int32))
     context = SimpleNamespace(attn_metadata={"model.layers.0.attention": metadata})
@@ -249,7 +250,7 @@ def test_model_short_conv_fallback_carries_paged_state():
     )
     torch.testing.assert_close(out_first, expected[:-1])
     torch.testing.assert_close(out_second, expected[-1:])
-    torch.testing.assert_close(cache[1], torch.cat([first, second])[-(kernel - 1) :].T)
+    torch.testing.assert_close(cache[1], torch.cat([first, second])[-(kernel - 1) :])
 
 
 @pytest.mark.parametrize("is_prefill", [True, False])
@@ -265,7 +266,7 @@ def test_model_native_delta_rule_uses_batched_310p_kernel(is_prefill):
     beta = torch.rand_like(g)
     recurrent_cache = torch.zeros(4, num_heads, head_dim, head_dim)
     owner = SimpleNamespace(kv_cache=(torch.empty(0), recurrent_cache))
-    metadata = SimpleNamespace(num_prefills=int(is_prefill))
+    metadata = SimpleNamespace(num_prefills=int(is_prefill), spec_sequence_masks=None)
     state_indices = torch.tensor([2])
     query_start_loc = torch.tensor([0, tokens], dtype=torch.int32)
     has_initial_state = torch.tensor([False])

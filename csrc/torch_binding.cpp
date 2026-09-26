@@ -54,6 +54,7 @@
 #include "attention/kda_layout_swap12/kda_layout_swap12_torch_adpt.h"
 #include "attention/recurrent_gated_delta_rule_v310/recurrent_gated_delta_rule_310_torch_adpt.h"
 #include "attention/qsa_sparse_attention_v310/qsa_sparse_attention_310_torch_adpt.h"
+#include "attention/qsa_gather_value_nz_v310/qsa_gather_value_nz_310_torch_adpt.h"
 #include "attention/qsa_indexer_score_v310/qsa_indexer_score_310_torch_adpt.h"
 #include "attention/qsa_index_cache_update_v310/qsa_index_cache_update_310_torch_adpt.h"
 #include "attention/k2q_csr/k2q_csr_torch_adpt.h"
@@ -2836,6 +2837,13 @@ TORCH_LIBRARY_EXPAND(CONCAT(_C, _ascend), ops)
         "Tensor block_table, Tensor query_start_loc, float scale, int compress_ratio=4) -> Tensor");
     ops.impl("npu_qsa_sparse_attention_310", torch::kPrivateUse1,
              &vllm_ascend::npu_qsa_sparse_attention_310);
+
+    ops.def(
+        "qsa_gather_value_nz_310(Tensor value_cache, Tensor group_indices, Tensor group_counts, "
+        "Tensor tail_starts, Tensor tail_counts, Tensor block_table, Tensor(a!) value_nz, "
+        "int num_kv_heads, int head_dim, bool transpose_output=False) -> ()");
+    ops.impl("qsa_gather_value_nz_310", torch::kPrivateUse1,
+             &vllm_ascend::qsa_gather_value_nz_310);
 
     ops.def(
         "npu_qsa_indexer_score_310(Tensor query, Tensor compressed_key_cache, Tensor block_table, "

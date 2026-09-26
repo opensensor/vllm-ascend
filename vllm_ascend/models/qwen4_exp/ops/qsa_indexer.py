@@ -29,6 +29,10 @@ import torch
 
 _PAD_INDEX = -1
 _QSA_INDEX_CACHE_SCRATCH_ROWS = 3
+_QSA_MATMUL_PREFILL_MIN_TOKENS = 128
+_QSA_MATMUL_DECODE_MAX_TOKENS = 2
+_QSA_MATMUL_DECODE_MIN_GROUPS = 2048
+_QSA_MATMUL_MAX_TILE_ELEMENTS = 1 << 25
 
 
 @dataclass(frozen=True)
@@ -46,52 +50,61 @@ class QSAGroupSelection:
     tail_counts: torch.Tensor
 
 
-def _stable_topk_indices(scores: torch.Tensor, k: int) -> torch.Tensor:
-    """Exact score-descending/index-ascending top-k without a full sort.
+def copy_group_selection_into(destination: QSAGroupSelection, source: QSAGroupSelection) -> None:
+    """Copy a variable-width selection into graph-stable output buffers."""
+    width = source.group_indices.shape[1]
+    if width > destination.group_indices.shape[1]:
+        raise ValueError("QSA selection exceeds the fixed graph buffer")
+    if source.group_indices.shape[0] != destination.group_indices.shape[0]:
+        raise ValueError("QSA selection batch size changed during graph replay")
+    destination.group_indices.fill_(_PAD_INDEX)
+    destination.group_indices[:, :width].copy_(source.group_indices)
+    destination.group_counts.copy_(source.group_counts)
+    destination.tail_starts.copy_(source.tail_starts)
+    destination.tail_counts.copy_(source.tail_counts)
 
-    An initial top-k establishes the cutoff. A second top-k collects scores
-    strictly above it and a third selects the lowest indices tied at it. Only
-    those ``2 * k`` candidates need stable sorting, preserving the reference's
-    deterministic tie contract while avoiding an ``O(capacity log capacity)``
-    sort of every QSA cache slot during decode.
+
+def _stable_topk_indices(scores: torch.Tensor, k: int) -> torch.Tensor:
+    """Exact score-descending/index-ascending top-k on the NPU.
+
+    The 310P float32 stable sort runs on AiCore and is faster than the prior
+    three-topk/three-gather pipeline even at the full 128K cache capacity.
+    Equal scores retain the reference's lower-group-id tie break.
     """
     if k <= 0 or k > scores.shape[1]:
         raise ValueError("k must be in [1, scores.shape[1]]")
-    initial_values = torch.topk(scores, k, dim=1, sorted=False).values
-    cutoff = initial_values.amin(dim=1, keepdim=True)
+    return torch.argsort(scores, dim=1, descending=True, stable=True)[:, :k]
 
-    negative_inf = torch.full_like(scores, -torch.inf)
-    better_values, better_indices = torch.topk(
-        torch.where(scores > cutoff, scores, negative_inf),
-        k,
-        dim=1,
-        sorted=False,
+
+def _repair_native_group_indices(selected: torch.Tensor, visible_groups: torch.Tensor) -> torch.Tensor:
+    """Keep native top-k from passing an invalid group to sparse attention.
+
+    The complete visible prefix is the exact QSA selection while it fits in
+    the budget. Beyond that point, a recent-window fallback is used only for
+    rows where native top-k returned an out-of-range index. Both choices stay
+    on device and avoid an NPU-to-host synchronization in decode.
+    """
+    width = selected.shape[1]
+    if width == 0:
+        return selected
+    recent_start = (visible_groups - width).clamp_min(0)
+    fallback = recent_start.unsqueeze(1) + torch.arange(width, device=selected.device).unsqueeze(0)
+    invalid = (selected < 0) | (selected >= visible_groups.unsqueeze(1))
+    use_fallback = (visible_groups <= width) | invalid.any(dim=1)
+    return torch.where(use_fallback.unsqueeze(1), fallback, selected)
+
+
+def _use_qsa_matmul_score(num_tokens: int, capacity: int, num_requests: int, query_start_loc_size: int) -> bool:
+    """Use GEMM where measured 310P scoring beats the native group kernel."""
+    return (
+        capacity > 0
+        and num_requests == 1
+        and query_start_loc_size == 2
+        and (
+            num_tokens >= _QSA_MATMUL_PREFILL_MIN_TOKENS
+            or (num_tokens <= _QSA_MATMUL_DECODE_MAX_TOKENS and capacity >= _QSA_MATMUL_DECODE_MIN_GROUPS)
+        )
     )
-    better_valid = better_values > cutoff
-
-    indices = torch.arange(scores.shape[1], device=scores.device).expand_as(scores)
-    tie_priority = torch.where(scores == cutoff, -indices.to(scores.dtype), negative_inf)
-    tie_priorities, tie_indices = torch.topk(tie_priority, k, dim=1, sorted=False)
-    tie_valid = torch.isfinite(tie_priorities)
-    tie_values = torch.where(tie_valid, cutoff.expand_as(tie_priorities), tie_priorities)
-
-    candidate_indices = torch.cat((better_indices, tie_indices), dim=1)
-    candidate_values = torch.cat((better_values, tie_values), dim=1)
-    candidate_valid = torch.cat((better_valid, tie_valid), dim=1)
-
-    # Stable least-significant-key sorts build the lexicographic order:
-    # score descending, valid before padding, then group index ascending.
-    # 310P sorts integer tensors on AiCPU. Group ids fit exactly in float32,
-    # so these two key sorts can stay on AiCore without changing tie order.
-    order = torch.argsort(candidate_indices.to(torch.float32), dim=1, stable=True)
-    candidate_indices = candidate_indices.gather(1, order)
-    candidate_values = candidate_values.gather(1, order)
-    candidate_valid = candidate_valid.gather(1, order)
-    order = torch.argsort(candidate_valid.to(torch.float32), dim=1, descending=True, stable=True)
-    candidate_indices = candidate_indices.gather(1, order)
-    candidate_values = candidate_values.gather(1, order)
-    order = torch.argsort(candidate_values, dim=1, descending=True, stable=True)
-    return candidate_indices.gather(1, order)[:, :k]
 
 
 def compress_keys(
@@ -147,7 +160,7 @@ def indexer_block_scores(
         raise ValueError("compressed_keys must be [N, D]")
     q = query.to(accum_dtype)
     k = compressed_keys.to(accum_dtype)
-    per_head = torch.einsum("thd,nd->thn", q, k)
+    per_head = torch.einsum("qhd,kd->qhk", q, k)
     return torch.clamp(per_head, min=0.0).sum(dim=1)
 
 
@@ -312,17 +325,18 @@ def qsa_indexer_select_groups_310(
     *,
     compress_ratio: int,
     token_topk: int,
+    max_visible_groups: int | None = None,
 ) -> QSAGroupSelection:
-    """Select learned QSA groups through the dedicated 310P score kernel.
+    """Select learned QSA groups on 310P.
 
     ``compressed_key_cache`` is paged ND storage
     ``[physical_blocks, groups_per_block + 3, index_head_dim]``. The final
     three rows are private scratch storage used to carry an incomplete
-    four-token group across scheduler invocations. The native kernel
-    performs page translation and the four-head ReLU-summed dot products in a
-    single launch. Selection uses bounded top-k candidate sets followed by a
-    stable ``2 * block_topk`` sort, so equal scores retain the reference's
-    lower-group-id tie break without sorting the full cache capacity.
+    four-token group across scheduler invocations. Long single-request
+    prefills use a tiled matrix multiply; other shapes use the native score
+    kernel. The host-visible sequence limit removes the unused padded
+    block-table suffix before scoring and stable sorting. Equal scores retain
+    the reference's lower-group-id tie break.
     """
     if query.device.type != "npu":
         raise RuntimeError("qsa_indexer_select_groups_310 is an Ascend NPU-only path")
@@ -334,24 +348,63 @@ def qsa_indexer_select_groups_310(
         raise ValueError("query and compressed cache head dimensions differ")
     if positions.shape != (query.shape[0],):
         raise ValueError("positions must be [T]")
+    if max_visible_groups is not None:
+        if max_visible_groups < 0:
+            raise ValueError("max_visible_groups must be nonnegative")
+        groups_per_block = compressed_key_cache.shape[1] - _QSA_INDEX_CACHE_SCRATCH_ROWS
+        if groups_per_block <= 0:
+            raise ValueError("compressed cache has no logical group rows")
+        required_blocks = max(1, (max_visible_groups + groups_per_block - 1) // groups_per_block)
+        if required_blocks > block_table.shape[1]:
+            raise ValueError("max_visible_groups exceeds block table capacity")
+        # The native score op sizes both its output and its per-core work from
+        # the table width. Scheduler-provided host sequence lengths let us
+        # exclude the unused padded suffix without synchronizing the NPU.
+        block_table = block_table[:, :required_blocks]
     op_namespace = getattr(torch.ops, "_C_ascend", None)
     op = None if op_namespace is None else getattr(op_namespace, "npu_qsa_indexer_score_310", None)
     if op is None:
         raise RuntimeError("vLLM Ascend was built without the dedicated 310P QSA index-score operator")
 
-    scores = op(
-        query.contiguous(),
-        compressed_key_cache.contiguous(),
-        block_table.to(dtype=torch.int32).contiguous(),
-        query_start_loc.to(dtype=torch.int32).contiguous(),
-        positions.to(dtype=torch.int32).contiguous(),
-        compress_ratio,
-    )
+    groups_per_block = compressed_key_cache.shape[1] - _QSA_INDEX_CACHE_SCRATCH_ROWS
+    capacity = block_table.shape[1] * groups_per_block
+    if _use_qsa_matmul_score(query.shape[0], capacity, block_table.shape[0], query_start_loc.numel()):
+        # Reuse the paged-key GEMM for long prefills and wide single-request
+        # decode. At 7K visible groups and two decode queries on 310P, it
+        # scores about four times faster than the native per-group kernel.
+        physical_blocks = block_table[0].to(torch.long).clamp_min_(0)
+        keys = torch.index_select(compressed_key_cache, 0, physical_blocks)
+        keys = keys[:, :groups_per_block].reshape(capacity, query.shape[-1])
+        query_fp32 = query.float()
+        keys_transposed = keys.float().t()
+        # The native operator already materializes [T, capacity] FP32 scores.
+        # Only the four-head GEMM intermediate needs an additional bound.
+        tile_tokens = max(1, _QSA_MATMUL_MAX_TILE_ELEMENTS // (query.shape[1] * capacity))
+        if tile_tokens >= query.shape[0]:
+            scores = torch.matmul(query_fp32, keys_transposed).relu_().sum(dim=1)
+        else:
+            scores = torch.empty((query.shape[0], capacity), dtype=torch.float32, device=query.device)
+            for start in range(0, query.shape[0], tile_tokens):
+                stop = min(start + tile_tokens, query.shape[0])
+                tile_scores = torch.matmul(query_fp32[start:stop], keys_transposed).relu_().sum(dim=1)
+                scores[start:stop].copy_(tile_scores)
+        visible_groups = ((positions.to(torch.long) + 1) // compress_ratio).clamp_max(capacity)
+        group_ids = torch.arange(capacity, device=query.device)
+        scores.masked_fill_(group_ids.unsqueeze(0) >= visible_groups.unsqueeze(1), -torch.inf)
+    else:
+        scores = op(
+            query.contiguous(),
+            compressed_key_cache.contiguous(),
+            block_table.to(dtype=torch.int32).contiguous(),
+            query_start_loc.to(dtype=torch.int32).contiguous(),
+            positions.to(dtype=torch.int32).contiguous(),
+            compress_ratio,
+        )
     block_topk = token_topk // compress_ratio
     selected_width = min(block_topk, scores.shape[1])
-    selected = _stable_topk_indices(scores, selected_width)
     positions_long = positions.to(torch.long)
     visible_groups = torch.div(positions_long + 1, compress_ratio, rounding_mode="floor").clamp_max(scores.shape[1])
+    selected = _repair_native_group_indices(_stable_topk_indices(scores, selected_width), visible_groups)
     group_counts = visible_groups.clamp_max(selected_width)
     tail_starts = torch.div(positions_long + 1, compress_ratio, rounding_mode="floor") * compress_ratio
     tail_counts = positions_long + 1 - tail_starts
@@ -440,5 +493,6 @@ __all__ = [
     "qsa_indexer_select_groups",
     "qsa_indexer_select_groups_310",
     "QSAGroupSelection",
+    "copy_group_selection_into",
     "select_topk_blocks",
 ]

@@ -723,7 +723,10 @@ class NPUWorker(WorkerBase):
 
         compact_mamba_state = bool(
             getattr(model_runner, "supports_compact_mamba_state", False)
-            and not self.vllm_config.cache_config.enable_prefix_caching
+            and (
+                not self.vllm_config.cache_config.enable_prefix_caching
+                or getattr(model_runner, "supports_prefix_mamba_state_tier", False)
+            )
         )
         bytes_per_block = 0
         sum_pages = 0

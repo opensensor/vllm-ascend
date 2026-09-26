@@ -5,7 +5,7 @@ from typing import Any
 
 import torch
 from vllm.config import CacheConfig
-from vllm.model_executor.layers.mamba.mamba_utils import MambaStateCopyFunc
+from vllm.model_executor.layers.mamba.mamba_utils import MambaStateCopyFuncsByType
 from vllm.utils.math_utils import cdiv
 from vllm.v1.core.sched.output import SchedulerOutput
 from vllm.v1.kv_cache_interface import (
@@ -18,6 +18,7 @@ from vllm.v1.worker.gpu_input_batch import CachedRequestState
 from vllm.v1.worker.lora_model_runner_mixin import GPUInputBatch
 from vllm.v1.worker.mamba_utils import MambaCopyBuffers
 
+from vllm_ascend._310p.prefix_mamba_state import get_mamba_postprocess_block_ids
 from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_hardware_profile
 from vllm_ascend.ops.triton.batch_memcpy import batch_memcpy_kernel
 from vllm_ascend.ops.triton.mamba.postprocess import postprocess_mamba_fused_kernel
@@ -39,28 +40,19 @@ def _get_mamba_groups(
     kv_cache_config: KVCacheConfig,
 ) -> dict[MambaSpec, list[int]]:
     """Find Mamba groups, including uniform worker-side group wrappers."""
-    mamba_group_ids: list[int] = []
-    mamba_specs: list[MambaSpec] = []
+    mamba_groups: dict[MambaSpec, set[int]] = {}
     for group_id, group in enumerate(kv_cache_config.kv_cache_groups):
         group_spec = group.kv_cache_spec
-        if isinstance(group_spec, MambaSpec):
-            mamba_group_ids.append(group_id)
-            mamba_specs.append(group_spec)
+        if isinstance(group_spec, UniformTypeKVCacheSpecs):
+            group_spec = group_spec.first_spec
+        if not isinstance(group_spec, MambaSpec):
             continue
-        if not isinstance(group_spec, UniformTypeKVCacheSpecs):
-            continue
+        for layer_name in group.layer_names:
+            spec = mamba_utils._get_mamba_spec_for_layer(group, layer_name)
+            mamba_groups.setdefault(spec, set()).add(group_id)
 
-        inner_specs = list(group_spec.kv_cache_specs.values())
-        if inner_specs and all(isinstance(spec, MambaSpec) for spec in inner_specs):
-            mamba_group_ids.append(group_id)
-            mamba_specs.append(inner_specs[0])
-
-    assert mamba_group_ids, "no mamba layers in the model"
-    assert all(mamba_specs[0] == spec for spec in mamba_specs)
-    # Mirrors vllm.v1.worker.mamba_utils.get_mamba_groups, which this replaces:
-    # its callers iterate the result for MambaSpec keys and hand it to
-    # validate_mamba_state_copy_funcs, both of which want the mapping form.
-    return {mamba_specs[0]: sorted(mamba_group_ids)}
+    assert mamba_groups, "no mamba layers in the model"
+    return {spec: sorted(group_ids) for spec, group_ids in mamba_groups.items()}
 
 
 def _batch_memcpy_triton(src_ptrs, dst_ptrs, sizes):
@@ -128,7 +120,7 @@ def _get_tensor_copy_pairs(copy_bufs: mamba_utils.MambaCopyBuffers) -> list[tupl
 def _collect_mamba_copy_meta_torch(
     copy_bufs: mamba_utils.MambaCopyBuffers,
     kv_cache_config,
-    mamba_state_copy_funcs,
+    mamba_state_copy_funcs: MambaStateCopyFuncsByType,
     mamba_group_ids: list[int],
     src_block_idx: int,
     dest_block_idx: int,
@@ -148,9 +140,13 @@ def _collect_mamba_copy_meta_torch(
         dest_block_id = block_ids[dest_block_idx]
         layer_names = kv_cache_config.kv_cache_groups[mamba_group_id].layer_names
         for layer_name in layer_names:
+            mamba_spec = mamba_utils._get_mamba_spec_for_layer(
+                kv_cache_config.kv_cache_groups[mamba_group_id], layer_name
+            )
+            state_copy_funcs = mamba_state_copy_funcs[mamba_spec.mamba_type]
             attention = forward_context[layer_name]
             kv_caches: list[torch.Tensor] = attention.kv_cache
-            for state, state_copy_func in zip(kv_caches, mamba_state_copy_funcs):
+            for state, state_copy_func in zip(kv_caches, state_copy_funcs):
                 copy_spec = state_copy_func(state, block_ids, src_block_idx, accept_token_bias + 1)
                 src_state = _tensor_view_from_data_ptr(state, copy_spec.start_addr, copy_spec.num_elements)
                 dst_state = _tensor_view_from_data_ptr(state, state[dest_block_id].data_ptr(), copy_spec.num_elements)
@@ -186,7 +182,7 @@ def _postprocess_mamba_align_gpu_cpu_fallback(
     input_batch: GPUInputBatch,
     kv_cache_config: KVCacheConfig,
     forward_context: dict[str, Any],
-    mamba_state_copy_funcs: tuple[MambaStateCopyFunc, ...],
+    mamba_state_copy_funcs: MambaStateCopyFuncsByType,
 ) -> None:
     """CPU fallback for 310P where the Triton fused postprocess is unavailable."""
     ctx = bufs.postprocess_align
@@ -235,13 +231,17 @@ def _postprocess_mamba_align_gpu_cpu_fallback(
         # step. Do the same with tensor views so 310P avoids Triton without
         # changing where conv/temporal state lands before the next iteration.
         for mamba_group_id in ctx.mamba_group_ids:
-            block_ids = input_batch.block_table[mamba_group_id].get_numpy_array()[i]
+            block_ids = get_mamba_postprocess_block_ids(input_batch, mamba_group_id, i)
             dest_block_id = block_ids[dest_block_idx]
             layer_names = kv_cache_config.kv_cache_groups[mamba_group_id].layer_names
             for layer_name in layer_names:
+                mamba_spec = mamba_utils._get_mamba_spec_for_layer(
+                    kv_cache_config.kv_cache_groups[mamba_group_id], layer_name
+                )
+                state_copy_funcs = mamba_state_copy_funcs[mamba_spec.mamba_type]
                 attention = forward_context[layer_name]
                 kv_caches: list[torch.Tensor] = attention.kv_cache
-                for state, state_copy_func in zip(kv_caches, mamba_state_copy_funcs):
+                for state, state_copy_func in zip(kv_caches, state_copy_funcs):
                     copy_spec = state_copy_func(state, block_ids, src_block_idx, accept_token_bias + 1)
                     src_state = _tensor_view_from_data_ptr(state, copy_spec.start_addr, copy_spec.num_elements)
                     dst_state = _tensor_view_from_data_ptr(
@@ -268,7 +268,7 @@ def _reset_layerwise_copy_meta(copy_bufs: mamba_utils.MambaCopyBuffers) -> None:
 def _collect_mamba_copy_meta_with_layers(
     copy_bufs: mamba_utils.MambaCopyBuffers,
     kv_cache_config,
-    mamba_state_copy_funcs,
+    mamba_state_copy_funcs: MambaStateCopyFuncsByType,
     mamba_group_ids: list[int],
     src_block_idx: int,
     dest_block_idx: int,
@@ -296,10 +296,14 @@ def _collect_mamba_copy_meta_with_layers(
         dest_block_id = block_ids[dest_block_idx]
         layer_names = kv_cache_config.kv_cache_groups[mamba_group_id].layer_names
         for layer_name in layer_names:
+            mamba_spec = mamba_utils._get_mamba_spec_for_layer(
+                kv_cache_config.kv_cache_groups[mamba_group_id], layer_name
+            )
+            state_copy_funcs = mamba_state_copy_funcs[mamba_spec.mamba_type]
             attention = forward_context[layer_name]
             kv_caches: list[torch.Tensor] = attention.kv_cache
             layer_meta = layer_copy_metadata.setdefault(layer_name, ([], [], []))
-            for state, state_copy_func in zip(kv_caches, mamba_state_copy_funcs):
+            for state, state_copy_func in zip(kv_caches, state_copy_funcs):
                 copy_spec = state_copy_func(state, block_ids, src_block_idx, accept_token_bias + 1)
                 src_ptr = copy_spec.start_addr
                 dst_ptr = state[dest_block_id].data_ptr()
@@ -429,7 +433,7 @@ def preprocess_mamba(
     input_batch: GPUInputBatch,
     requests: dict[str, CachedRequestState],
     forward_context: dict[str, Any],
-    mamba_state_copy_funcs: tuple[MambaStateCopyFunc, ...],
+    mamba_state_copy_funcs: MambaStateCopyFuncsByType,
     copy_bufs: MambaCopyBuffers,
 ):
     """

@@ -45,7 +45,11 @@ from vllm_ascend.models.qwen4_exp.ops.qsa_cache import (
     qsa_scatter_rows,
 )
 from vllm_ascend.models.qwen4_exp.ops.qsa_indexer import (
+    QSAGroupSelection,
+    _repair_native_group_indices,
     _stable_topk_indices,
+    _use_qsa_matmul_score,
+    copy_group_selection_into,
     expand_group_selection,
     qsa_indexer_score_310_reference,
     qsa_indexer_select_groups,
@@ -220,6 +224,78 @@ def test_bounded_stable_topk_matches_full_stable_sort(scores, k):
     score_tensor = torch.tensor(scores)
     expected = torch.argsort(score_tensor, dim=1, descending=True, stable=True)[:, :k]
     assert torch.equal(_stable_topk_indices(score_tensor, k), expected)
+
+
+@pytest.mark.parametrize("visible_groups", [258, 511, 512])
+def test_native_selection_uses_exact_prefix_within_budget(visible_groups):
+    """A malformed top-k result cannot omit a visible group near the boundary."""
+    selected = torch.arange(512, dtype=torch.int32).unsqueeze(0)
+    selected[0, 258] = torch.iinfo(torch.int32).min
+    repaired = _repair_native_group_indices(selected, torch.tensor([visible_groups]))
+    assert repaired[0, :visible_groups].tolist() == list(range(visible_groups))
+
+
+def test_native_selection_preserves_valid_over_budget_ranking():
+    selected = torch.tensor([[520, 519, 518, 517]], dtype=torch.int32)
+    repaired = _repair_native_group_indices(selected, torch.tensor([521]))
+    assert torch.equal(repaired, selected)
+
+
+def test_native_selection_invalid_over_budget_uses_recent_valid_window():
+    selected = torch.tensor([[520, torch.iinfo(torch.int32).min, 518, 517]], dtype=torch.int32)
+    repaired = _repair_native_group_indices(selected, torch.tensor([521]))
+    assert repaired.tolist() == [[517, 518, 519, 520]]
+
+
+@pytest.mark.parametrize("num_tokens", [1, 2])
+def test_wide_decode_uses_matmul_only_past_measured_crossover(num_tokens):
+    assert not _use_qsa_matmul_score(num_tokens, 2047, 1, 2)
+    assert _use_qsa_matmul_score(num_tokens, 2048, 1, 2)
+    assert not _use_qsa_matmul_score(num_tokens, 2048, 2, 3)
+
+
+def test_prefill_matmul_gate_preserves_existing_long_prefill_path():
+    assert not _use_qsa_matmul_score(127, 1024, 1, 2)
+    assert _use_qsa_matmul_score(128, 1024, 1, 2)
+    assert not _use_qsa_matmul_score(128, 1024, 2, 3)
+    assert not _use_qsa_matmul_score(3, 2048, 1, 2)
+
+
+def test_graph_selection_buffer_tracks_growing_width_and_clears_stale_groups():
+    destination = QSAGroupSelection(
+        torch.full((1, 4), 99, dtype=torch.int64),
+        torch.zeros(1, dtype=torch.int64),
+        torch.zeros(1, dtype=torch.int64),
+        torch.zeros(1, dtype=torch.int64),
+    )
+    first = QSAGroupSelection(
+        torch.tensor([[3, 1]], dtype=torch.int64),
+        torch.tensor([2]),
+        torch.tensor([8]),
+        torch.tensor([1]),
+    )
+    copy_group_selection_into(destination, first)
+    assert destination.group_indices.tolist() == [[3, 1, -1, -1]]
+    assert destination.group_counts.tolist() == [2]
+
+    wider = QSAGroupSelection(
+        torch.tensor([[6, 4, 2]], dtype=torch.int64),
+        torch.tensor([3]),
+        torch.tensor([16]),
+        torch.tensor([2]),
+    )
+    copy_group_selection_into(destination, wider)
+    assert destination.group_indices.tolist() == [[6, 4, 2, -1]]
+    assert destination.tail_starts.tolist() == [16]
+    assert destination.tail_counts.tolist() == [2]
+
+    with pytest.raises(ValueError, match="fixed graph buffer"):
+        copy_group_selection_into(
+            destination,
+            QSAGroupSelection(
+                torch.zeros((1, 5), dtype=torch.int64), wider.group_counts, wider.tail_starts, wider.tail_counts
+            ),
+        )
 
 
 # ---------------------------------------------------------------------------

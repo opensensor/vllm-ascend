@@ -15,6 +15,8 @@ BEGIN_TILING_DATA_DEF(QsaSparseAttentionV310TilingData)
     TILING_DATA_FIELD_DEF(int64_t, numTokens);
     TILING_DATA_FIELD_DEF(int64_t, numQueryHeads);
     TILING_DATA_FIELD_DEF(int64_t, numKvHeads);
+    TILING_DATA_FIELD_DEF(int64_t, headsPerTask);
+    TILING_DATA_FIELD_DEF(int64_t, taskTilesPerKvHead);
     TILING_DATA_FIELD_DEF(int64_t, headDim);
     TILING_DATA_FIELD_DEF(int64_t, cacheBlockSize);
     TILING_DATA_FIELD_DEF(int64_t, cacheHeadDimBlocks);

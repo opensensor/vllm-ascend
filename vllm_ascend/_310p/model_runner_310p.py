@@ -44,12 +44,18 @@ from vllm.v1.kv_cache_interface import (
     UniformTypeKVCacheSpecs,
 )
 from vllm.v1.spec_decode.metadata import SpecDecodeMetadata
+from vllm.v1.utils import CpuGpuBuffer
 
 from vllm_ascend._310p.block_table import MultiGroupBlockTable as MultiGroupBlockTable310
 from vllm_ascend._310p.kv_block_zeroer import AscendKVBlockZeroer310
 from vllm_ascend._310p.npu_input_batch import NPUInputBatch310 as NPUInputBatch
 from vllm_ascend._310p.ops.rotary_embedding import prepare_mrope_cos_sin_slices_from_runner
-from vllm_ascend._310p.qwen4exp_mtp import is_qwen4exp_mtp_config, stage_ple_history
+from vllm_ascend._310p.prefix_mamba_state import PrefixMambaStateTier
+from vllm_ascend._310p.qwen4exp_mtp import (
+    is_qwen4exp_mtp_config,
+    stage_ple_history,
+    validate_mtp_ple_scheduling,
+)
 from vllm_ascend._310p.sample.rejection_sampler import AscendRejectionSampler310
 from vllm_ascend._310p.sample.sampler import AscendSampler310
 from vllm_ascend.attention.attention_v1 import AscendAttentionState
@@ -68,6 +74,7 @@ from vllm_ascend.worker.model_runner_v1 import NPUModelRunner
 
 _NGRAM_GRAPH_UNIFORM_DECODE_QUERY_LEN = 1
 _ATTENTION_BLOCK_SIZE_LIMIT = 128 * 128
+_PREFIX_MAMBA_NPU_SLOTS = 64
 
 
 def _iter_kv_cache_tensors(kv_caches: Iterable[Any]) -> Iterator[torch.Tensor]:
@@ -194,18 +201,47 @@ class NPUModelRunner310(NPUModelRunner):
     # per-layer views of one slot backing, which is compatible with 310P.
     supports_glm5_next_shared_kv_slots = True
     supports_compact_mamba_state = False
+    supports_prefix_mamba_state_tier = False
     uniform_decode_query_len: int
     _spec_dummy_capture: bool = False
 
+    def _make_buffer(self, *size: int | torch.SymInt, dtype: torch.dtype, numpy: bool = True) -> CpuGpuBuffer:
+        # On 310P, zero-filling the pinned FP16 input-embedding staging buffer
+        # can segfault inside PyTorch's CPU AVX2 fill kernel during TP startup.
+        # Keep the same zero-initialized buffer, but allocate this one on normal
+        # host memory. Other (small, frequently copied) buffers remain pinned.
+        if dtype == torch.float16 and size == (self.max_num_tokens, self.inputs_embeds_size):
+            return CpuGpuBuffer(*size, dtype=dtype, device=self.device, pin_memory=False, with_numpy=numpy)
+        return super()._make_buffer(*size, dtype=dtype, numpy=numpy)
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._qwen4exp_mtp_ple = is_qwen4exp_mtp_config(self.model_config, self.speculative_config)
+        validate_mtp_ple_scheduling(self._qwen4exp_mtp_ple, self.use_async_scheduling)
         # MRV1 identifies recurrent state by scheduler block id. For the
-        # single-request, non-speculative deployment we can safely remap that
-        # one live id to slot zero and make GDN state independent of context
-        # length. Multi-request compaction needs an explicit persistent
-        # request-to-slot map and remains on the paged allocation.
-        self.supports_compact_mamba_state = (
-            self.max_num_reqs == 1 and self.speculative_config is None and not self.cache_config.enable_prefix_caching
+        # single-request deployment without prefix caching, the only live
+        # recurrent state is the current request's state (plus one state per
+        # speculative token). Remap its staged block ids to those fixed slots
+        # so GDN allocation is independent of context length. The native GDN
+        # speculative kernel writes one state per candidate token and selects
+        # the accepted state on the next step; its two slots must stay distinct.
+        # Multi-request or prefix-cached compaction needs persistent mapping.
+        self.supports_prefix_mamba_state_tier = (
+            self.max_num_reqs == 1
+            and self.cache_config.enable_prefix_caching
+            and self.cache_config.mamba_cache_mode == "align"
+            and getattr(self.model_config.hf_text_config, "model_type", None) == "qwen4_exp_text"
+            and (self.speculative_config is None or self._qwen4exp_mtp_ple)
+        )
+        self.supports_compact_mamba_state = self.supports_prefix_mamba_state_tier or (
+            self.max_num_reqs == 1
+            and not self.cache_config.enable_prefix_caching
+            and (self.speculative_config is None or self._qwen4exp_mtp_ple)
+        )
+        self.num_compact_mamba_blocks = (
+            _PREFIX_MAMBA_NPU_SLOTS
+            if self.supports_prefix_mamba_state_tier
+            else (1 + self.speculative_config.num_speculative_tokens if self._qwen4exp_mtp_ple else 1)
         )
         # NoPE MLA models (GLM-5.3-Flash) have no extended/decoupled (xdrope)
         # rope; the base runner references these attributes without ever
@@ -231,7 +267,6 @@ class NPUModelRunner310(NPUModelRunner):
             ),
             cp_kv_cache_interleave_size=self.parallel_config.cp_kv_cache_interleave_size,
         )
-        self._qwen4exp_mtp_ple = is_qwen4exp_mtp_config(self.model_config, self.speculative_config)
         if self._qwen4exp_mtp_ple:
             text_config = self.model_config.hf_text_config
             self._ple_context_len = int(text_config.ngram_size) - 1
@@ -271,6 +306,8 @@ class NPUModelRunner310(NPUModelRunner):
 
     def _update_states(self, scheduler_output: SchedulerOutput):
         block_copies = scheduler_output.kv_cache_block_copies
+        prefix_tiers = getattr(self, "_prefix_mamba_tiers", None)
+        fresh_mamba_ids = self._new_prefix_mamba_block_ids(scheduler_output) if prefix_tiers else {}
         copied_nested_caches = bool(block_copies) and any(
             not isinstance(cache, torch.Tensor) for cache in self.kv_caches
         )
@@ -278,7 +315,7 @@ class NPUModelRunner310(NPUModelRunner):
             from vllm.v1.worker.utils import copy_kv_cache_blocks_inplace
 
             copy_kv_cache_blocks_inplace(
-                _iter_kv_cache_tensors(self.kv_caches),
+                (self._prefix_attention_copy_tensors if prefix_tiers else _iter_kv_cache_tensors(self.kv_caches)),
                 self.kv_cache_config.num_blocks,
                 block_copies,
             )
@@ -290,6 +327,17 @@ class NPUModelRunner310(NPUModelRunner):
         finally:
             if copied_nested_caches:
                 scheduler_output.kv_cache_block_copies = block_copies
+        if prefix_tiers:
+            multi_group_table = cast(MultiGroupBlockTable310, self.input_batch.block_table)
+            for group_idx, tier in prefix_tiers.items():
+                tier.invalidate(fresh_mamba_ids.get(group_idx, ()))
+                if block_copies:
+                    block_table = multi_group_table.block_tables[group_idx]
+                    active_ids = set(np.unique(block_table.block_table.np[: self.input_batch.num_reqs]))
+                    active_ids.update(fresh_mamba_ids.get(group_idx, ()))
+                    for source_id, target_id in block_copies:
+                        if target_id in active_ids:
+                            tier.copy(source_id, target_id)
         if scheduler_output.finished_req_ids:
             # condense() rewrites block_table.np (move_row). Drain the previous
             # step's ACL graph replay on the NPU stream before the condensed
@@ -300,6 +348,27 @@ class NPUModelRunner310(NPUModelRunner):
             # layout-change steps only.
             torch.npu.current_stream().synchronize()
         return deferred
+
+    def _new_prefix_mamba_block_ids(self, scheduler_output: SchedulerOutput) -> dict[int, set[int]]:
+        """Identify fresh IDs so a recycled scheduler block cannot load old state."""
+        fresh = {group_idx: set() for group_idx in self._prefix_mamba_tiers}
+        for req in scheduler_output.scheduled_new_reqs:
+            for group_idx in fresh:
+                block_size = self.kv_cache_config.kv_cache_groups[group_idx].kv_cache_spec.block_size
+                first_new = cdiv(req.num_computed_tokens, block_size)
+                fresh[group_idx].update(block_id for block_id in req.block_ids[group_idx][first_new:] if block_id > 0)
+        cached = scheduler_output.scheduled_cached_reqs
+        for req_idx, req_id in enumerate(cached.req_ids):
+            new_block_ids = cached.new_block_ids[req_idx]
+            if new_block_ids is None:
+                continue
+            for group_idx in fresh:
+                ids = new_block_ids[group_idx]
+                if req_id in cached.resumed_req_ids:
+                    block_size = self.kv_cache_config.kv_cache_groups[group_idx].kv_cache_spec.block_size
+                    ids = ids[cdiv(cached.num_computed_tokens[req_idx], block_size) :]
+                fresh[group_idx].update(block_id for block_id in ids if block_id > 0)
+        return fresh
 
     @contextmanager
     def temporary_modify_uniform_decode_query_len(self):
@@ -334,14 +403,24 @@ class NPUModelRunner310(NPUModelRunner):
     ):
         is_all_decode = np.all(self.input_batch.num_computed_tokens_cpu[:num_reqs] > 0)
 
-        if self.attn_state in (AscendAttentionState.ChunkedPrefill, AscendAttentionState.PrefillCacheHit):
+        # The parent dummy run starts with a prefill-like attention state and
+        # switches to SpecDecoding while building metadata. Do not veto its
+        # uniform speculative decode graph before that transition happens.
+        if not self._spec_dummy_capture and self.attn_state in (
+            AscendAttentionState.ChunkedPrefill,
+            AscendAttentionState.PrefillCacheHit,
+        ):
             force_eager = True
 
         # Spec decoding graph replay is only valid for uniform spec-decode batches (q_len = 1 + K).
-        if self.speculative_config is not None and (
-            self.attn_state != AscendAttentionState.SpecDecoding
-            or max_num_scheduled_tokens != self.uniform_decode_query_len
-            or num_tokens != max_num_scheduled_tokens * num_reqs
+        if (
+            self.speculative_config is not None
+            and not self._spec_dummy_capture
+            and (
+                self.attn_state != AscendAttentionState.SpecDecoding
+                or max_num_scheduled_tokens != self.uniform_decode_query_len
+                or num_tokens != max_num_scheduled_tokens * num_reqs
+            )
         ):
             force_eager = True
 
@@ -421,17 +500,102 @@ class NPUModelRunner310(NPUModelRunner):
             self.attn_state = attn_state
         return attn_state
 
-    def _remap_compact_mamba_block_tables(self, num_reqs: int) -> None:
+    def _remap_compact_mamba_block_tables(self, num_reqs: int, num_scheduled_tokens: np.ndarray | None = None) -> None:
         if not self.supports_compact_mamba_state:
             return
         multi_group_table = cast(MultiGroupBlockTable310, self.input_batch.block_table)
-        for block_table in multi_group_table.block_tables:
+        self._prefix_mamba_active_columns = {}
+        mapped_tables: dict[int, np.ndarray] = {}
+        for group_idx, block_table in enumerate(multi_group_table.block_tables):
             if block_table.is_mamba_group:
-                # ``max_num_reqs == 1`` at enablement makes the only persistent
-                # request slot zero. Rewrite only the staged device table;
-                # preserve scheduler-owned CPU block ids for lifecycle updates
-                # and preemption bookkeeping.
-                block_table.block_table.gpu[:num_reqs].zero_()
+                if self.supports_prefix_mamba_state_tier:
+                    tier = self._prefix_mamba_tiers[group_idx]
+                    used_columns = int(max(block_table.num_blocks_per_row[:num_reqs], default=0))
+                    active_columns: tuple[int, ...] = tuple(range(used_columns))
+                    if num_scheduled_tokens is not None:
+                        spec = self.kv_cache_config.kv_cache_groups[group_idx].kv_cache_spec
+                        block_size = spec.block_size
+                        computed = int(self.input_batch.num_computed_tokens_cpu[0])
+                        scheduled = int(num_scheduled_tokens[0])
+                        # The align-mode pre-copy may read the checkpoint from
+                        # before this chunk; forward reads the destination at
+                        # its end. It never reads the intervening block IDs.
+                        current_column = (computed + scheduled - 1) // block_size
+                        if current_column >= used_columns:
+                            raise RuntimeError("Mamba destination block is missing from the scheduler table")
+                        previous_column = (computed - 1) // block_size if computed else current_column
+                        needed_columns = set(range(current_column, current_column + 1 + spec.num_speculative_blocks))
+                        needed_columns.add(previous_column)
+                        active_columns = tuple(col for col in sorted(needed_columns) if col < used_columns)
+                    self._prefix_mamba_active_columns[group_idx] = active_columns
+                    mapped = tier.remap_table(block_table.block_table.np[:num_reqs], used_columns, active_columns)
+                    mapped_tables[group_idx] = mapped
+                    block_table.block_table.gpu[:num_reqs].copy_(
+                        torch.as_tensor(mapped, device=self.device), non_blocking=True
+                    )
+                    continue
+                # The running block advances with context length. Reuse the
+                # compact slots cyclically, including columns beyond the first
+                # speculative window; otherwise all later columns alias slot 0.
+                # Keep scheduler-owned CPU block ids unchanged.
+                device_table = block_table.block_table.gpu
+                num_columns = device_table.shape[1]
+                compact_columns = torch.arange(num_columns, dtype=device_table.dtype, device=device_table.device)
+                compact_columns.remainder_(self.num_compact_mamba_blocks)
+                device_table[:num_reqs].copy_(compact_columns.unsqueeze(0))
+                mapped_tables[group_idx] = np.broadcast_to(
+                    np.arange(num_columns, dtype=np.int32) % self.num_compact_mamba_blocks,
+                    (num_reqs, num_columns),
+                ).copy()
+        self.input_batch._prefix_mamba_postprocess_tables = mapped_tables
+
+    def _stage_prefix_mamba_request_ids(self) -> None:
+        """Give the upstream Mamba pre-copy the same slots as the NPU table.
+
+        Its scalar pre-copy uses ``CachedRequestState.block_ids`` directly to
+        derive device pointers, whereas the attention builder reads the staged
+        block table. Keep the scheduler IDs in a separate reference and restore
+        them immediately after execution so lifecycle updates remain correct.
+        """
+        self._prefix_raw_req_block_ids = {}
+        prefix_tiers = getattr(self, "_prefix_mamba_tiers", {})
+        block_tables = cast(MultiGroupBlockTable310, self.input_batch.block_table).block_tables
+        for req_id in self.input_batch.req_ids:
+            req_state = self.requests[req_id]
+            raw_ids = req_state.block_ids
+            mapped = list(raw_ids)
+            for group_idx, block_table in enumerate(block_tables):
+                if not block_table.is_mamba_group:
+                    continue
+                if tier := prefix_tiers.get(group_idx):
+                    mapped_ids = [0] * len(raw_ids[group_idx])
+                    for column in self._prefix_mamba_active_columns[group_idx]:
+                        mapped_ids[column] = tier.slot_for(raw_ids[group_idx][column])
+                else:
+                    mapped_ids = [column % self.num_compact_mamba_blocks for column in range(len(raw_ids[group_idx]))]
+                mapped[group_idx] = mapped_ids
+            self._prefix_raw_req_block_ids[req_id] = raw_ids
+            req_state.block_ids = tuple(mapped)
+
+    def _restore_prefix_mamba_request_ids(self) -> None:
+        raw_by_request = getattr(self, "_prefix_raw_req_block_ids", None)
+        if raw_by_request:
+            for req_id, raw_ids in raw_by_request.items():
+                if req_state := self.requests.get(req_id):
+                    req_state.block_ids = raw_ids
+        self._prefix_raw_req_block_ids = {}
+
+    @torch.inference_mode()
+    def execute_model(
+        self,
+        scheduler_output: SchedulerOutput,
+        intermediate_tensors: IntermediateTensors | None = None,
+    ):
+        try:
+            return super().execute_model(scheduler_output, intermediate_tensors)
+        finally:
+            if self.supports_compact_mamba_state:
+                self._restore_prefix_mamba_request_ids()
 
     def _prepare_inputs(  # type: ignore[override]
         self,
@@ -449,7 +613,7 @@ class NPUModelRunner310(NPUModelRunner):
         assert num_reqs > 0
 
         self.input_batch.block_table.commit_block_table(num_reqs)
-        self._remap_compact_mamba_block_tables(num_reqs)
+        self._remap_compact_mamba_block_tables(num_reqs, num_scheduled_tokens)
 
         req_indices = np.repeat(self.arange_np[:num_reqs], num_scheduled_tokens)
 
@@ -744,6 +908,9 @@ class NPUModelRunner310(NPUModelRunner):
             max_num_reqs_across_dp = self.max_num_reqs * self.uniform_decode_query_len
             logits_indices = nn.functional.pad(logits_indices, (0, max_num_reqs_across_dp - logits_indices.shape[0]))
 
+        if self.supports_compact_mamba_state:
+            self._stage_prefix_mamba_request_ids()
+
         return (
             logits_indices,
             spec_decode_metadata,
@@ -931,6 +1098,20 @@ class NPUModelRunner310(NPUModelRunner):
             )
         else:
             kv_caches = self._allocate_kv_cache_tensors(kv_cache_config)
+        if self.supports_prefix_mamba_state_tier:
+            self._prefix_mamba_tiers = {}
+            self._prefix_attention_copy_tensors = tuple(
+                tensor
+                for name, cache in kv_caches.items()
+                if isinstance(layer_specs[name], AttentionSpec)
+                for tensor in _iter_kv_cache_tensors((cache,))
+            ) + tuple(self._qsa_index_caches.values())
+            for group_idx, group in enumerate(kv_cache_config.kv_cache_groups):
+                if isinstance(group.kv_cache_spec, MambaSpec):
+                    self._prefix_mamba_tiers[group_idx] = PrefixMambaStateTier(
+                        [kv_caches[name] for name in group.layer_names],
+                        self.num_compact_mamba_blocks,
+                    )
         # Set up cross-layer KV cache sharing
         for layer_name, target_layer_name in self.shared_kv_cache_layers.items():
             logger.debug("%s reuses KV cache of %s", layer_name, target_layer_name)
@@ -999,7 +1180,7 @@ class NPUModelRunner310(NPUModelRunner):
                     # it is the per-layer byte count (matching v0.28.0's size).
                     compact_state = self.supports_compact_mamba_state
                     per_layer_size = (
-                        self.max_num_reqs * cache_spec.page_size_bytes
+                        self.max_num_reqs * self.num_compact_mamba_blocks * cache_spec.page_size_bytes
                         if compact_state
                         else (
                             kv_cache_tensor.size

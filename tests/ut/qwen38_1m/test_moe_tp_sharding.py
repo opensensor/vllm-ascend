@@ -345,12 +345,18 @@ def test_block_allocates_local_banks_and_replicates_router():
         assert b.num_global_experts == 8
 
 
-def test_block_divisibility_guard():
+def test_block_balances_non_divisible_experts():
     from vllm_ascend.models.qwen4_exp.model import _EagerSparseMoE
 
     cfg = _tiny_moe_config(num_layers=1, num_experts=6, top_k=3, shared_inter=0)
-    with pytest.raises(ValueError, match="not divisible"):
-        _EagerSparseMoE(config=cfg, dtype_policy=ASCEND_QWEN4EXP_DTYPE_POLICY, expert_sharding=(0, 4))
+    blocks = [
+        _EagerSparseMoE(config=cfg, dtype_policy=ASCEND_QWEN4EXP_DTYPE_POLICY, expert_sharding=(rank, 4))
+        for rank in range(4)
+    ]
+    assert [(block.expert_offset, block.num_local_experts) for block in blocks] == [(0, 2), (2, 2), (4, 1), (5, 1)]
+    assert [len(block.w13_weight) for block in blocks] == [2, 2, 1, 1]
+    with pytest.raises(ValueError, match="each rank must own at least one expert"):
+        _EagerSparseMoE(config=cfg, dtype_policy=ASCEND_QWEN4EXP_DTYPE_POLICY, expert_sharding=(0, 8))
 
 
 def test_block_tp_reduce_partial_plus_shared_once():

@@ -113,6 +113,7 @@ class AscendAttentionMetadataBuilder310(AscendAttentionMetadataBuilder):
         is_drafting: bool = False,
     ) -> AscendMetadata:
         attn_metadata = super().build(common_prefix_len, common_attn_metadata, fast_build)
+        attn_metadata.logical_positions = common_attn_metadata.positions[: common_attn_metadata.num_actual_tokens]
 
         num_reqs = common_attn_metadata.num_reqs
 

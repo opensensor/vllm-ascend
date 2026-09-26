@@ -45,6 +45,7 @@ import mmap
 import os
 import struct
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
@@ -69,6 +70,7 @@ logger = logging.getLogger(__name__)
 # single shared PLE table is placed in host RAM (PRD §6). Startup fails fast if
 # the table cannot coexist with this reserve.
 OS_TRANSFER_RESERVE_BYTES = 48 * (1024**3)
+PLE_LAZY_SHARD_READ_WORKERS = 8
 
 # Default location for the file-backed shared table. tmpfs (/dev/shm) keeps the
 # pages resident and lets co-located workers share one physical copy.
@@ -636,13 +638,30 @@ class AscendPLELazyShardEmbeddingMethod(AscendPLEEmbeddingMethod):
         shard = arr // self.shard_rows
         row = arr % self.shard_rows
         out = np.empty((arr.size, self.embedding_dim), dtype=np.float16)
-        for s in np.unique(shard):
-            mask = shard == s
-            rows = row[mask]
-            mm = self._shard_memmap(int(s))
+        shard_indices = np.unique(shard).tolist()
+        # Checkpoint shards are independent files. Cold, random row reads are
+        # dominated by page faults, so overlap those reads across shards while
+        # keeping each shard's output positions disjoint and in original order.
+        self._load_weight_map()
+
+        def read_shard(shard_index: int) -> None:
+            positions = np.flatnonzero(shard == shard_index)
+            rows = row[positions]
+            mm = self._shard_memmap(shard_index)
             if rows.size and int(rows.max()) >= mm.shape[0]:
-                raise IndexError(f"PLE row id {int(rows.max())} resolves past shard {int(s)} ({mm.shape[0]} rows)")
-            out[mask] = mm[rows]
+                raise IndexError(f"PLE row id {int(rows.max())} resolves past shard {shard_index} ({mm.shape[0]} rows)")
+            # Keep the output in token/head order, but read each shard in file
+            # order so adjacent pages can be coalesced by the storage stack.
+            order = np.argsort(rows)
+            positions = positions[order]
+            rows = rows[order]
+            out[positions] = mm[rows]
+
+        if len(shard_indices) == 1:
+            read_shard(shard_indices[0])
+        else:
+            with ThreadPoolExecutor(max_workers=min(PLE_LAZY_SHARD_READ_WORKERS, len(shard_indices))) as pool:
+                list(pool.map(read_shard, shard_indices))
         return torch.from_numpy(out)
 
     def close(self) -> None:

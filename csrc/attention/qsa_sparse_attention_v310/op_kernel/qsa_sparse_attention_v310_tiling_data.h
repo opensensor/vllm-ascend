@@ -7,6 +7,8 @@ struct QsaSparseAttentionV310TilingData {
     int64_t numTokens;
     int64_t numQueryHeads;
     int64_t numKvHeads;
+    int64_t headsPerTask;
+    int64_t taskTilesPerKvHead;
     int64_t headDim;
     int64_t cacheBlockSize;
     int64_t cacheHeadDimBlocks;

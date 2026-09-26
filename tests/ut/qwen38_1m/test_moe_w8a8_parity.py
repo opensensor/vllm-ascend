@@ -361,7 +361,14 @@ def test_native_path_runs_only_locally_active_experts():
     fake_torch_npu.npu_weight_quant_batchmatmul = weight_only_linear
     fake_torch_npu.npu_swiglu = Mock(side_effect=activated)
 
-    with patch.dict(sys.modules, {"torch_npu": fake_torch_npu}):
+    with (
+        patch.dict(sys.modules, {"torch_npu": fake_torch_npu}),
+        patch.object(
+            torch.Tensor,
+            "index_copy_",
+            side_effect=AssertionError("310P routed MoE must not use slow index_copy_ scatter"),
+        ),
+    ):
         output = w8a8_grouped_experts_npu(
             x,
             topk_weights,
@@ -409,7 +416,7 @@ def test_native_path_handles_no_locally_active_experts():
         output = w8a8_grouped_experts_npu(
             x,
             torch.ones(2, 2),
-            torch.tensor([[0, 1], [2, 3]]),
+            torch.tensor([[0, 1 << 62], [2, 3]]),
             torch.zeros(2, 4, 2, dtype=torch.int8),
             torch.ones(2, 4),
             torch.zeros(2, 2, 2, dtype=torch.int8),
@@ -419,6 +426,45 @@ def test_native_path_handles_no_locally_active_experts():
 
     torch.testing.assert_close(output, torch.zeros_like(x))
     fake_torch_npu.npu_swiglu.assert_not_called()
+
+
+def test_native_path_sentinel_keeps_local_routes_in_stable_order():
+    from vllm_ascend.models.qwen4_exp.moe import w8a8_grouped_experts_npu
+
+    x = torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float16)
+    topk_ids = torch.tensor([[5, 1], [4, 5]])
+    topk_weights = torch.tensor([[0.5, 0.5], [0.25, 0.75]])
+    fake_torch_npu = types.ModuleType("torch_npu")
+    fake_torch_npu.npu_weight_quant_batchmatmul = Mock(
+        side_effect=[
+            torch.ones(1, 4, dtype=torch.float16),
+            torch.tensor([[8.0, 12.0]], dtype=torch.float16),
+            torch.ones(2, 4, dtype=torch.float16),
+            torch.tensor([[2.0, 4.0], [6.0, 8.0]], dtype=torch.float16),
+        ]
+    )
+    fake_torch_npu.npu_swiglu = Mock(
+        side_effect=[torch.ones(1, 2, dtype=torch.float16), torch.ones(2, 2, dtype=torch.float16)]
+    )
+    with (
+        patch.dict(sys.modules, {"torch_npu": fake_torch_npu}),
+        patch.object(torch, "bincount", side_effect=AssertionError("310P must use fixed-size route counts")),
+    ):
+        output = w8a8_grouped_experts_npu(
+            x,
+            topk_weights,
+            topk_ids,
+            torch.zeros(2, 2, 4, dtype=torch.int8),
+            torch.ones(2, 4, 1),
+            torch.zeros(2, 2, 2, dtype=torch.int8),
+            torch.ones(2, 2, 1),
+            expert_offset=4,
+        )
+
+    torch.testing.assert_close(output, torch.tensor([[1.0, 2.0], [6.5, 9.0]], dtype=torch.float16))
+    local_inputs = [fake_torch_npu.npu_weight_quant_batchmatmul.call_args_list[i].kwargs["x"] for i in (0, 2)]
+    torch.testing.assert_close(local_inputs[0], x[1:2])
+    torch.testing.assert_close(local_inputs[1], x[[0, 1]])
 
 
 def test_native_postload_keeps_each_expert_in_checkpoint_layout():

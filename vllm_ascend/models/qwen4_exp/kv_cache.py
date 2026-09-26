@@ -197,10 +197,14 @@ class AscendQSAFullAttentionSpec(FullAttentionSpec):
 
     @property
     def page_size_bytes(self) -> int:
-        # FullAttentionSpec caches its own padded K/V-only page size during
-        # initialization. The QSA index cache is a separate allocation owned by
-        # the same scheduler page, so its bytes must be added explicitly for
-        # admission and memory planning.
+        # The QSA index cache is a separate allocation owned by the same
+        # scheduler page. The base class's padding check only accounts for
+        # K/V, so apply planner padding to the complete page here. In
+        # particular, speculative target/draft page unification may replace
+        # this spec with page_size_padded set.
+        if self.page_size_padded is not None:
+            assert self.page_size_padded >= self.real_page_size_bytes
+            return self.page_size_padded
         return self.real_page_size_bytes
 
 

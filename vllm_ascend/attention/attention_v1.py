@@ -190,6 +190,9 @@ class AscendMetadata:
     actual_seq_lengths_q: list[int] = None  # type: ignore
 
     query_start_loc: torch.Tensor = None
+    # Absolute causal positions already resident on the device. These differ
+    # from multimodal RoPE coordinates and can be shared by every QSA layer.
+    logical_positions: torch.Tensor | None = None
     # Maximum query length in the batch (None for decoding).
     max_query_len: int | None = None
 

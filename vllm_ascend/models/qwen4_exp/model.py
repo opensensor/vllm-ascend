@@ -55,6 +55,7 @@ from typing import TYPE_CHECKING, ClassVar, Literal
 import torch
 import torch.nn.functional as F
 from torch import nn
+from vllm.compilation.breakable_cudagraph import BreakableCUDAGraphCapture
 from vllm.config import get_current_vllm_config_or_none
 from vllm.forward_context import get_forward_context, is_forward_context_available
 from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
@@ -69,6 +70,7 @@ from vllm.model_executor.layers.vocab_parallel_embedding import (
 from vllm.model_executor.offloader import get_offloader
 from vllm.v1.attention.backends.gdn_attn import GDNAttentionMetadata
 from vllm.v1.attention.backends.registry import MambaAttentionBackendEnum
+from vllm.v1.attention.backends.utils import PAD_SLOT_ID
 
 if TYPE_CHECKING:
     from vllm.model_executor.layers.mamba.mamba_utils import (
@@ -126,8 +128,9 @@ from .ngram_embedding import (
     AscendPLEPinnedHostEmbeddingMethod,
     AscendQwen4ExpNGramEmbedding,
 )
+from .ops.qsa_batched_attention_310 import qsa_batched_prefill_310
 from .ops.qsa_index_cache_310 import qsa_index_cache_update_310
-from .ops.qsa_indexer import qsa_indexer_select_groups_310
+from .ops.qsa_indexer import QSAGroupSelection, copy_group_selection_into, qsa_indexer_select_groups_310
 from .ops.qsa_sparse_attention_310 import qsa_sparse_attention_310
 from .ple_layer import AscendQwen4ExpPLELayer
 from .qsa import (
@@ -152,9 +155,14 @@ from .weight_mapping import (
     WeightMappingError,
     expert_tensor_is_local,
     is_expert_tensor_name,
+    local_expert_range,
     map_expert_tensor,
     validate_expert_weight_map,
 )
+
+_BATCHED_QSA_MIN_PREFILL_TOKENS = 16
+_BATCHED_QSA_MAX_DECODE_TOKENS = 2
+_BATCHED_QSA_MIN_DECODE_GROUPS = 256
 
 # ``VllmConfig`` is only needed for typing; keep import light.
 try:  # pragma: no cover - trivial import guard
@@ -165,6 +173,18 @@ except Exception:  # pragma: no cover
 # Layer-type tags mirroring the HF Qwen4Exp ``layer_types`` vocabulary.
 _LAYER_TYPE_LINEAR = "linear_attention"
 _LAYER_TYPE_FULL = "full_attention"
+
+
+def _mamba_runtime_spec_kwargs(vllm_config: object) -> dict[str, int | str]:
+    """Keep the eager GDN specs aligned with vLLM's MambaBase contract."""
+    cache_config = vllm_config.cache_config
+    num_speculative_blocks = getattr(vllm_config, "num_speculative_tokens", 0)
+    if getattr(cache_config, "use_kda_recoverssm", False):
+        num_speculative_blocks = 0
+    return {
+        "mamba_cache_mode": cache_config.mamba_cache_mode,
+        "num_speculative_blocks": num_speculative_blocks,
+    }
 
 
 def _resolve_checkpoint_dir(vllm_config: object) -> str | None:
@@ -341,18 +361,35 @@ class Qwen4ExpVLMultiModalProcessor(Qwen3VLMultiModalProcessor):
 # ===========================================================================
 # Eager math helpers (Triton-free, deterministic)
 # ===========================================================================
+_NPU_GROUPED_RMS_NORM_MIN_TOKENS = 256
+
+
 def _grouped_rms_norm(
     x: torch.Tensor,
     weight: torch.Tensor,
     eps: float,
     group_size: int,
     compute_dtype: torch.dtype,
+    unit_weight: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """GemmaRMSNorm applied per contiguous ``group_size`` lane (``*(1+w)``)."""
     num_tokens, channels = x.shape
     xc = x.to(compute_dtype)
     wc = weight.to(compute_dtype)
     grouped = xc.view(num_tokens, channels // group_size, group_size)
+    if (
+        x.device.type == "npu"
+        and num_tokens >= _NPU_GROUPED_RMS_NORM_MIN_TOKENS
+        and compute_dtype == torch.float32
+        and unit_weight is not None
+    ):
+        # The native op fuses the square/mean/rsqrt/scale sequence.  Its
+        # weight is shared across groups, so apply the Gemma per-channel
+        # (1 + weight) affine afterwards in FP32 to retain exact semantics.
+        import torch_npu
+
+        normalized, _ = torch_npu.npu_rms_norm(grouped.reshape(-1, group_size), unit_weight, eps)
+        return normalized.view(num_tokens, channels) * (1.0 + wc)
     variance = grouped.square().mean(dim=-1, keepdim=True)
     normalized = (grouped * torch.rsqrt(variance + eps)).reshape(num_tokens, channels)
     return normalized * (1.0 + wc)
@@ -390,6 +427,49 @@ def _linear(x: torch.Tensor, weight: torch.Tensor, compute_dtype: torch.dtype) -
     return F.linear(x.to(operand_dtype), linear_weight)
 
 
+def _format_eager_linear_weights_npu(model: nn.Module) -> None:
+    """Keep eager FP16 projection weights in the 310P cube's NZ layout.
+
+    The custom Qwen4Exp layers use raw ``nn.Parameter`` weights rather than
+    vLLM linear modules, so their load path does not run the usual Ascend
+    post-load NZ conversion. Without it, every decode ``F.linear`` converts
+    the same large ND weight to NZ again. Only known projection modules are
+    visited; expert INT8 weights, embeddings, convolution filters, and scalar
+    gates keep their existing formats.
+    """
+    projection_types = (
+        _GatedResidual,
+        _EagerDenseAttention,
+        _GDNAttention,
+        _QSAAttention,
+        _EagerMLP,
+        _EagerSparseMoE,
+    )
+    weights_to_format: list[nn.Parameter] = []
+    for module in model.modules():
+        if not isinstance(module, projection_types):
+            continue
+        for name, param in module.named_parameters(recurse=False):
+            if (
+                name != "conv_weight"
+                and param.device.type == "npu"
+                and param.dtype == ASCEND_QWEN4EXP_DTYPE_POLICY.main_dtype
+                and param.ndim == 2
+                and min(param.shape) >= 16
+            ):
+                weights_to_format.append(param)
+    if not weights_to_format:
+        return
+
+    import torch_npu
+
+    from vllm_ascend.utils import ACL_FORMAT_FRACTAL_NZ
+
+    with torch.no_grad():
+        for param in weights_to_format:
+            param.data = torch_npu.npu_format_cast(param.data, ACL_FORMAT_FRACTAL_NZ)
+
+
 class _GatedResidual(nn.Module):
     """Eager hyperconnection / gated-residual multi-stream mixer (TODO(hc)).
 
@@ -423,13 +503,21 @@ class _GatedResidual(nn.Module):
         self.use_combine = use_combine
 
         self.hc_norm_weight = nn.Parameter(torch.zeros(self.hyper_hidden, dtype=params_dtype))
+        self.register_buffer("_rms_unit_weight", torch.ones(self.hidden_size, dtype=torch.float32), persistent=False)
         self.input_mix_weight_down = nn.Parameter(torch.zeros(lowrank, self.hyper_hidden, dtype=params_dtype))
         self.input_mix_weight_up = nn.Parameter(torch.zeros(self.hyper_hidden, lowrank, dtype=params_dtype))
         if use_combine:
             self.block_inject_weight = nn.Parameter(torch.zeros(hc_count, self.hyper_hidden, dtype=params_dtype))
 
     def _normalize(self, hyper_input: torch.Tensor) -> torch.Tensor:
-        return _grouped_rms_norm(hyper_input, self.hc_norm_weight, self.eps, self.hidden_size, self.compute_dtype)
+        return _grouped_rms_norm(
+            hyper_input,
+            self.hc_norm_weight,
+            self.eps,
+            self.hidden_size,
+            self.compute_dtype,
+            self._rms_unit_weight,
+        )
 
     def mix(self, hyper_input: torch.Tensor) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         num_tokens = hyper_input.shape[0]
@@ -554,9 +642,9 @@ class _GDNAttention(nn.Module, MambaBase):
     gated delta rule -> out_proj.
 
     Registered as a ``MambaBase`` so the v1 runner allocates and binds the GDN
-    convolution + recurrent state. 310P uses the native chunk/recurrent delta
-    rule kernels while retaining the torch short-convolution fallback (the
-    vendor causal-conv tiler does not accept Qwen4Exp's channel geometry).
+    convolution + recurrent state. 310P uses the native causal-convolution
+    prefill/decode and chunk/recurrent delta-rule kernels. The torch
+    short-convolution path handles non-310P execution.
     """
 
     def __init__(
@@ -566,6 +654,7 @@ class _GDNAttention(nn.Module, MambaBase):
         dtype_policy: Qwen4ExpDtypePolicy,
         prefix: str = "",
         expert_sharding: tuple[int, int] = (0, 1),
+        num_speculative_tokens: int = 0,
     ) -> None:
         super().__init__()
         _register_in_static_forward_context(prefix, self)
@@ -576,6 +665,7 @@ class _GDNAttention(nn.Module, MambaBase):
         self.mamba_conv_dtype = dtype_policy.mamba_conv_cache_dtype
         # The 310P recurrent GDN operator accepts FP16 state only.
         self.mamba_ssm_dtype = dtype_policy.main_dtype
+        self.num_speculative_tokens = num_speculative_tokens
         self.params = _gdn_params_from_config(config)
         self.tp_rank, self.tp_size = (int(expert_sharding[0]), int(expert_sharding[1]))
         if self.tp_size < 1 or not 0 <= self.tp_rank < self.tp_size:
@@ -615,12 +705,61 @@ class _GDNAttention(nn.Module, MambaBase):
         mixed: torch.Tensor,
         state_indices: torch.Tensor,
         query_start_loc: torch.Tensor,
-        has_initial_state: torch.Tensor,
+        has_initial_state: torch.Tensor | None,
     ) -> torch.Tensor:
-        """Torch fallback for Qwen4Exp geometry unsupported by the 310P op."""
+        """Run the 310P stateful op, or the torch fallback."""
         cache = self.kv_cache[0]
-        cache_key = "_qwen4exp_query_ranges"
         metadata = get_forward_context().attn_metadata[self.prefix]
+        spec_metadata = getattr(metadata, "spec_decode_metadata", None)
+        if mixed.device.type == "npu" and spec_metadata is not None:
+            conv_metadata = spec_metadata.spec_causal_conv1d
+            return torch.ops._C_ascend.npu_causal_conv1d_310(
+                mixed,
+                self.conv_weight.transpose(0, 1),
+                bias=None,
+                conv_states=cache,
+                query_start_loc=conv_metadata.query_start_loc,
+                cache_indices=conv_metadata.cache_indices,
+                initial_state_mode=None,
+                num_accepted_tokens=conv_metadata.num_accepted_tokens,
+                activation_mode=1,
+                pad_slot_id=PAD_SLOT_ID,
+                run_mode=1,
+            )
+        if mixed.device.type == "npu":
+            assert has_initial_state is not None
+            if metadata.num_prefills > 0:
+                return torch.ops._C_ascend.npu_causal_conv1d_310(
+                    mixed,
+                    self.conv_weight.transpose(0, 1),
+                    bias=None,
+                    conv_states=cache,
+                    query_start_loc=query_start_loc,
+                    cache_indices=state_indices,
+                    initial_state_mode=has_initial_state,
+                    num_accepted_tokens=None,
+                    activation_mode=1,
+                    pad_slot_id=PAD_SLOT_ID,
+                    run_mode=0,
+                )
+            if metadata.num_decodes > 0:
+                num_decodes = metadata.num_decodes
+                return torch.ops._C_ascend.npu_causal_conv1d_310(
+                    mixed[:num_decodes],
+                    self.conv_weight.transpose(0, 1),
+                    bias=None,
+                    conv_states=cache,
+                    query_start_loc=None,
+                    cache_indices=state_indices[:num_decodes],
+                    initial_state_mode=has_initial_state[:num_decodes],
+                    num_accepted_tokens=None,
+                    activation_mode=1,
+                    pad_slot_id=PAD_SLOT_ID,
+                    run_mode=1,
+                )
+
+        assert has_initial_state is not None
+        cache_key = "_qwen4exp_query_ranges"
         ranges = getattr(metadata, cache_key, None)
         if ranges is None:
             # The 310P metadata builder attaches this pinned host tensor. Read
@@ -641,7 +780,7 @@ class _GDNAttention(nn.Module, MambaBase):
             if stop <= start:
                 continue
             cache_idx = state_indices[request_idx].long()
-            prior = cache[cache_idx].to(mixed.dtype)
+            prior = cache[cache_idx, : self.params.conv_kernel_size - 1].transpose(0, 1).to(mixed.dtype)
             keep_prior = has_initial_state[request_idx].to(mixed.dtype)
             prior = prior * keep_prior
             sequence = mixed[start:stop]
@@ -656,16 +795,26 @@ class _GDNAttention(nn.Module, MambaBase):
                 .transpose(0, 1)
             )
             result[start:stop] = F.silu(convolved)
-            cache[cache_idx].copy_(history[:, -cache.shape[-1] :].to(cache.dtype))
+            cache[cache_idx, : self.params.conv_kernel_size - 1].copy_(
+                history[:, -(self.params.conv_kernel_size - 1) :].transpose(0, 1).to(cache.dtype)
+            )
         return result
 
     @property
     def mamba_type(self) -> MambaAttentionBackendEnum:
         return MambaAttentionBackendEnum.GDN_ATTN
 
+    def get_attn_backend(self) -> type[AttentionBackend]:
+        # MambaBase otherwise selects the upstream GDN builder, which exposes
+        # speculative masks but does not attach the 310P native convolution
+        # metadata required by this model's GDN path during graph capture.
+        from vllm_ascend._310p.ops.gdn_attn_builder_310 import AscendGDNAttentionBackend310
+
+        return AscendGDNAttentionBackend310
+
     def get_state_shape(self) -> tuple[tuple[int, ...], ...]:
         return (
-            (self.conv_dim, self.params.conv_kernel_size - 1),
+            (self.params.conv_kernel_size - 1 + self.num_speculative_tokens, self.conv_dim),
             (self.num_v_heads, self.params.head_v_dim, self.params.head_k_dim),
         )
 
@@ -676,12 +825,12 @@ class _GDNAttention(nn.Module, MambaBase):
         # Match the model's per-layer spec: the GDN state is larger than the
         # generic ``MambaBase`` page-size padding, so build the spec without a
         # ``page_size_padded`` (letting it default to the raw state size).
-        del vllm_config
         return MambaSpec(
             shapes=self.get_state_shape(),
             dtypes=self.get_state_dtype(),
             block_size=DEFAULT_ATTENTION_BLOCK_SIZE,
             mamba_type=MambaAttentionBackendEnum.GDN_ATTN,
+            **_mamba_runtime_spec_kwargs(vllm_config),
         )
 
     def _native_gating(self, a: torch.Tensor, b: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -719,7 +868,7 @@ class _GDNAttention(nn.Module, MambaBase):
         metadata: GDNAttentionMetadata,
         state_indices: torch.Tensor,
         query_start_loc: torch.Tensor,
-        has_initial_state: torch.Tensor,
+        has_initial_state: torch.Tensor | None,
     ) -> torch.Tensor:
         """Run one batched native GDN operation instead of a Python token loop."""
         from vllm_ascend._310p.ops.fla.chunk_gated_delta_rule import chunk_gated_delta_rule_310
@@ -732,7 +881,31 @@ class _GDNAttention(nn.Module, MambaBase):
         q = q.unsqueeze(0)
         k = k.unsqueeze(0)
         v = v.unsqueeze(0)
+        if metadata.spec_sequence_masks is not None:
+            spec_metadata = metadata.spec_decode_metadata
+            assert spec_metadata is not None
+            return npu_recurrent_gated_delta_rule_310(
+                q=q,
+                k=k,
+                v=v,
+                g=g,
+                beta=beta,
+                state=self.kv_cache[1],
+                cu_seqlens=query_start_loc,
+                ssm_state_indices=state_indices,
+                num_accepted_tokens=spec_metadata.spec_causal_conv1d.num_accepted_tokens,
+                use_qk_l2norm_in_kernel=True,
+                step_meta=_cached_recurrent_step_meta(
+                    metadata,
+                    "qwen4exp_spec",
+                    query_start_loc,
+                    state_indices,
+                    v.shape[1],
+                    uniform_state_indices=True,
+                ),
+            ).squeeze(0)
         if metadata.num_prefills > 0:
+            assert has_initial_state is not None
             initial_state = self.kv_cache[1][state_indices].contiguous()
             initial_state = initial_state * has_initial_state[:, None, None, None].to(initial_state.dtype)
             out, final_state = chunk_gated_delta_rule_310(
@@ -799,12 +972,19 @@ class _GDNAttention(nn.Module, MambaBase):
             mixed = mixed[:seq_len]
             a = a[:seq_len]
             b = b[:seq_len]
-            state_indices = metadata.non_spec_state_indices_tensor
-            query_start_loc = metadata.non_spec_query_start_loc
-            has_initial_state = metadata.has_initial_state
+            if metadata.spec_sequence_masks is not None:
+                if metadata.num_prefills or metadata.num_decodes:
+                    raise NotImplementedError("Qwen4Exp GDN mixed speculative/non-speculative batches")
+                state_indices = metadata.spec_state_indices_tensor
+                query_start_loc = metadata.spec_query_start_loc
+                has_initial_state = None
+            else:
+                state_indices = metadata.non_spec_state_indices_tensor
+                query_start_loc = metadata.non_spec_query_start_loc
+                has_initial_state = metadata.has_initial_state
             assert state_indices is not None
             assert query_start_loc is not None
-            if has_initial_state is None:
+            if has_initial_state is None and metadata.spec_sequence_masks is None:
                 default_has_state = metadata.num_prefills == 0
                 has_initial_state = torch.full(
                     (query_start_loc.shape[0] - 1,),
@@ -813,7 +993,7 @@ class _GDNAttention(nn.Module, MambaBase):
                     device=query_start_loc.device,
                 )
             mixed = self._stateful_short_conv(mixed, state_indices, query_start_loc, has_initial_state)
-            ranges = metadata._qwen4exp_query_ranges
+            ranges = getattr(metadata, "_qwen4exp_query_ranges", ())
 
         q, k, v = torch.split(mixed, [self.key_dim, self.key_dim, self.value_dim], dim=-1)
         q = q.reshape(seq_len, self.num_k_heads, p.head_k_dim)
@@ -947,6 +1127,21 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
                 self._tp_reduce = tensor_model_parallel_all_reduce
             except ImportError:
                 pass
+        vllm_config = get_current_vllm_config_or_none()
+        device_config = getattr(vllm_config, "device_config", None)
+        device = getattr(device_config, "device", torch.device("cpu"))
+        heads_per_kv_head = self.num_heads // self.num_kv_heads
+        self.register_buffer(
+            "_qsa_decode_group_list",
+            torch.arange(
+                1,
+                _BATCHED_QSA_MAX_DECODE_TOKENS * self.num_kv_heads + 1,
+                dtype=torch.int64,
+                device=device,
+            )
+            * heads_per_kv_head,
+            persistent=False,
+        )
 
     def _reduce_output(self, output: torch.Tensor) -> torch.Tensor:
         if self.tp_size > 1:
@@ -975,13 +1170,22 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
         num_tokens: int,
         device: torch.device,
         rope_positions: torch.Tensor,
+        layer_prefix: str | None = None,
     ) -> torch.Tensor:
         """Build causal KV positions without synchronizing an NPU tensor."""
-        from vllm_ascend._310p.attention.metadata_builder import get_query_lens_cpu
+        # The text runner's 1-D RoPE positions already are logical causal
+        # positions, including packed requests and chunked-prefill offsets.
+        # Reuse them instead of reconstructing them on the host and copying a
+        # new tensor to the NPU once per QSA layer. MRoPE axes can differ from
+        # causal positions, so that path still uses the request boundaries.
+        if rope_positions.ndim == 1:
+            return rope_positions[:num_tokens]
 
-        seq_lens_cpu = getattr(metadata, "seq_lens_cpu", None)
-        query_lens_cpu = get_query_lens_cpu(metadata)
-        if seq_lens_cpu is not None and query_lens_cpu is not None:
+        def positions_from_host(current_metadata: object) -> torch.Tensor:
+            seq_lens_cpu = getattr(current_metadata, "seq_lens_cpu", None)
+            query_lens_cpu = getattr(current_metadata, "query_lens_cpu", None)
+            if seq_lens_cpu is None or query_lens_cpu is None:
+                raise RuntimeError("Qwen4Exp MRoPE requires host query boundaries for QSA causal selection")
             sequence_lengths = seq_lens_cpu.tolist()
             rows = []
             for sequence_length, query_length in zip(
@@ -990,10 +1194,28 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
                 strict=True,
             ):
                 rows.append(torch.arange(sequence_length - query_length, sequence_length, dtype=torch.int64))
-            return torch.cat(rows)[:num_tokens].to(device=device, non_blocking=True)
-        if rope_positions.ndim == 1:
-            return rope_positions
-        raise RuntimeError("Qwen4Exp MRoPE requires host query boundaries for QSA causal selection")
+            return torch.cat(rows)[:num_tokens]
+
+        capture = BreakableCUDAGraphCapture.current()
+        if capture is not None and capture._capturing:
+            if layer_prefix is None:
+                raise RuntimeError("Qwen4Exp QSA graph capture requires a layer prefix")
+            from vllm_ascend.utils import weak_ref_tensor
+
+            # MRoPE axes can differ from causal positions. The host metadata
+            # must be read on every replay, but its pageable H2D copy cannot
+            # occur inside an NPU graph segment.
+            output = torch.empty(num_tokens, dtype=torch.int64, device=device)
+            weak_output = weak_ref_tensor(output)
+
+            def copy_current_positions() -> None:
+                current_metadata = get_forward_context().attn_metadata[layer_prefix]
+                weak_output.copy_(positions_from_host(current_metadata).to(device=device, non_blocking=True))
+
+            capture.add_eager(copy_current_positions)
+            return output
+
+        return positions_from_host(metadata).to(device=device, non_blocking=True)
 
     @staticmethod
     def _dense_prefill_is_exact(metadata: object, token_budget: int) -> bool:
@@ -1180,6 +1402,7 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
             seq_len,
             block_input.device,
             positions,
+            self.prefix,
         )
         q = _linear(block_input, self.q_proj, self.compute_dtype).view(seq_len, self.num_heads, self.head_dim)
         k = _linear(block_input, self.k_proj, self.compute_dtype).view(seq_len, self.num_kv_heads, self.head_dim)
@@ -1250,16 +1473,91 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
         elif self._dense_decode_is_exact(metadata, self.indexer.token_topk):
             out = self._dense_decode_310(q, key_cache, value_cache, metadata)
         else:
-            selection = qsa_indexer_select_groups_310(
-                index_q,
-                index_cache,
-                metadata.block_tables,
-                metadata.query_start_loc,
-                logical_positions,
-                compress_ratio=self.indexer.compress_ratio,
-                token_topk=self.indexer.token_topk,
+            seq_lens_cpu = getattr(metadata, "seq_lens_cpu", None)
+            max_visible_groups = None
+            max_visible_tokens = None
+            if seq_lens_cpu is not None and seq_lens_cpu.device.type == "cpu" and seq_lens_cpu.numel():
+                # Scheduler-owned host lengths avoid a device-to-host sync.
+                max_visible_tokens = int(seq_lens_cpu.max().item())
+                max_visible_groups = max_visible_tokens // self.indexer.compress_ratio
+            capture = BreakableCUDAGraphCapture.current()
+            if capture is not None and capture._capturing:
+                # A graph captured for the first decode step cannot freeze
+                # max_visible_groups: the visible QSA pages grow as the
+                # request generates. Score/select outside the graph, copying
+                # into fixed-width buffers consumed by the next segment.
+                from vllm_ascend.utils import weak_ref_tensor
+
+                num_groups = self.indexer.token_topk // self.indexer.compress_ratio
+                selection = QSAGroupSelection(
+                    group_indices=torch.empty((seq_len, num_groups), dtype=torch.int64, device=index_q.device),
+                    group_counts=torch.empty(seq_len, dtype=torch.int64, device=index_q.device),
+                    tail_starts=torch.empty(seq_len, dtype=torch.int64, device=index_q.device),
+                    tail_counts=torch.empty(seq_len, dtype=torch.int64, device=index_q.device),
+                )
+                weak_index_q = weak_ref_tensor(index_q)
+                weak_index_cache = weak_ref_tensor(index_cache)
+                weak_positions = weak_ref_tensor(logical_positions)
+                weak_selection = QSAGroupSelection(
+                    weak_ref_tensor(selection.group_indices),
+                    weak_ref_tensor(selection.group_counts),
+                    weak_ref_tensor(selection.tail_starts),
+                    weak_ref_tensor(selection.tail_counts),
+                )
+
+                def select_current_groups() -> None:
+                    current_metadata = get_forward_context().attn_metadata[self.prefix]
+                    current_seq_lens = getattr(current_metadata, "seq_lens_cpu", None)
+                    current_max_groups = None
+                    if (
+                        current_seq_lens is not None
+                        and current_seq_lens.device.type == "cpu"
+                        and current_seq_lens.numel()
+                    ):
+                        current_max_groups = int(current_seq_lens.max().item()) // self.indexer.compress_ratio
+                    current = qsa_indexer_select_groups_310(
+                        weak_index_q,
+                        weak_index_cache,
+                        current_metadata.block_tables,
+                        current_metadata.query_start_loc,
+                        weak_positions,
+                        compress_ratio=self.indexer.compress_ratio,
+                        token_topk=self.indexer.token_topk,
+                        max_visible_groups=current_max_groups,
+                    )
+                    copy_group_selection_into(weak_selection, current)
+
+                capture.add_eager(select_current_groups)
+            else:
+                selection = qsa_indexer_select_groups_310(
+                    index_q,
+                    index_cache,
+                    metadata.block_tables,
+                    metadata.query_start_loc,
+                    logical_positions,
+                    compress_ratio=self.indexer.compress_ratio,
+                    token_topk=self.indexer.token_topk,
+                    max_visible_groups=max_visible_groups,
+                )
+            sparse_attention = qsa_sparse_attention_310
+            use_batched_prefill = (
+                metadata.num_prefills > 0 and metadata.num_decodes == 0 and seq_len >= _BATCHED_QSA_MIN_PREFILL_TOKENS
             )
-            out = qsa_sparse_attention_310(
+            use_batched_decode = (
+                metadata.num_decodes > 0
+                and metadata.num_prefills == 0
+                and seq_len <= _BATCHED_QSA_MAX_DECODE_TOKENS
+                and selection.group_indices.shape[1] >= _BATCHED_QSA_MIN_DECODE_GROUPS
+            )
+            if metadata.block_tables.shape[0] == 1 and (use_batched_prefill or use_batched_decode):
+                sparse_attention = qsa_batched_prefill_310
+            sparse_kwargs = {}
+            if sparse_attention is qsa_batched_prefill_310 and use_batched_decode:
+                sparse_kwargs["decode_group_list"] = self._qsa_decode_group_list
+            if sparse_attention is qsa_batched_prefill_310 and max_visible_tokens is not None:
+                block_size = key_cache.shape[2]
+                sparse_kwargs["visible_blocks"] = max(1, (max_visible_tokens + block_size - 1) // block_size)
+            out = sparse_attention(
                 q,
                 key_cache,
                 value_cache,
@@ -1268,6 +1566,7 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
                 metadata.query_start_loc,
                 scale=self.head_dim**-0.5,
                 compress_ratio=self.indexer.compress_ratio,
+                **sparse_kwargs,
             )
         out = out * torch.sigmoid(gate)
         return self._reduce_output(_linear(out.reshape(seq_len, -1), self.o_proj, self.compute_dtype))
@@ -1290,7 +1589,12 @@ class _EagerMLP(nn.Module):
 
 
 class _Qwen4ExpW8A8PostLoadMethod(QuantizeMethodBase):
-    """Prepare the custom expert bank for 310P single-expert quant matmuls."""
+    """Prepare the expert bank for 310P grouped and fallback matmuls."""
+
+    # This method only reshapes scale tensors and clones per-expert views on
+    # their existing device. Moving all expert parameters to NPU and back is
+    # unnecessary, and can exhaust pinned host memory during TP4 loading.
+    requires_device_loading = False
 
     def create_weights(self, layer: nn.Module, *weight_args, **extra_weight_attrs) -> None:
         raise RuntimeError("Qwen4Exp creates its fused expert weights directly")
@@ -1298,14 +1602,39 @@ class _Qwen4ExpW8A8PostLoadMethod(QuantizeMethodBase):
     def apply(self, layer: nn.Module, *args, **kwargs) -> torch.Tensor:
         raise RuntimeError("Qwen4Exp routes expert execution through its model forward")
 
+    @staticmethod
+    def pack_expert_weight_bank(layer: nn.Module, name: str) -> None:
+        """Pack one loaded [in, out] parameter list into NZ [expert, out, in].
+
+        Preserve per-expert parameter names as views into the packed storage so
+        state-dict round trips remain compatible without retaining two banks.
+        The 310P grouped op consumes FRACTAL_NZ weights: converting once here
+        avoids a full expert-bank transpose on every prefill/decode step.
+        """
+        weights = getattr(layer, name)
+        packed = torch.stack([weight.t() for weight in weights], dim=0).contiguous()
+        if packed.device.type == "npu":
+            # Load-time worker-only import keeps the host reference importable.
+            from vllm_ascend.utils import maybe_trans_nz
+
+            packed = maybe_trans_nz(packed)
+        setattr(layer, f"{name}_grouped", packed)
+        setattr(
+            layer,
+            name,
+            nn.ParameterList(
+                nn.Parameter(packed[expert].t(), requires_grad=False) for expert in range(layer.num_local_experts)
+            ),
+        )
+
     def process_weights_after_loading(self, layer: nn.Module) -> None:
-        # Expert weights are streamed directly into the W8A16 operator's
-        # [in, out] layout. The 310P
-        # dynamic INT8 matmul is documented as having an accuracy issue, while
-        # grouped A8W8 is unsupported on this device.  The forward path therefore
-        # uses the 310P W8A16 weight-only matmul, preserving FP16 activations
-        # without materializing dequantized expert weights.
-        scale_dtype = getattr(layer, "params_dtype", torch.float16)
+        # Weights stream into individual [in, out] parameters to avoid a full
+        # checkpoint-bank allocation during loading. Once loaded, pack each
+        # local layer into the [expert, out, in] layout consumed by 310P's
+        # dynamic-quant grouped matmul. Do this one layer at a time: replacing
+        # the original parameters with views releases their storage before the
+        # next layer is packed, so steady-state NPU memory does not double.
+        scale_dtype = getattr(layer, "params_dtype", ASCEND_QWEN4EXP_DTYPE_POLICY.main_dtype)
         layer.w13_weight_scale.data = layer.w13_weight_scale.data.view(layer.num_local_experts, -1)
         layer.w13_weight_offset.data = layer.w13_weight_offset.data.view(layer.num_local_experts, -1)
         layer.w2_weight_scale.data = layer.w2_weight_scale.data.view(layer.num_local_experts, -1)
@@ -1320,6 +1649,9 @@ class _Qwen4ExpW8A8PostLoadMethod(QuantizeMethodBase):
         layer.w2_weight_scale_list = [
             scale.to(scale_dtype).clone() for scale in layer.w2_weight_scale.data.unbind(dim=0)
         ]
+        if hasattr(layer, "w13_weight") and layer.w13_weight[0].device.type == "npu":
+            self.pack_expert_weight_bank(layer, "w13_weight")
+            self.pack_expert_weight_bank(layer, "w2_weight")
 
 
 class _EagerSparseMoE(nn.Module):
@@ -1332,16 +1664,17 @@ class _EagerSparseMoE(nn.Module):
     T3.3-validated grouped QDQ math from :mod:`vllm_ascend.models.qwen4_exp.moe`
     (per-token INT8 activation quant, per-channel ``(q - offset) * scale`` weight
     dequant -- real experts are symmetric so ``offset == 0``). NPU execution
-    uses the 310P W8A16 weight-only matmul; the pure-PyTorch QDQ path is retained
-    as the host reference. The router runs in
+    uses the 310P dynamic-quant grouped matmul on packed expert banks, with the
+    W8A16 weight-only path as a compatibility fallback. The pure-PyTorch QDQ
+    path is retained as the host reference. The router runs in
     the policy ``router_dtype`` (fp32) with ``norm_topk_prob`` renormalization;
     the shared expert stays non-quantized F16 (per the T3.1 mapping contract) and
     is applied densely + unweighted.
 
     Expert-dimension TP slicing (the TP4 target): ``expert_sharding=(rank,
-    size)`` gives this rank the contiguous slice of experts
-    ``[rank*E_local, (rank+1)*E_local)`` (same linear placement the fork's
-    ``ep_weight_filter`` loader skip uses). The router gate (``E_global`` rows)
+    size)`` gives this rank a contiguous, possibly uneven slice of experts
+    (same linear placement the fork's ``ep_weight_filter`` loader skip uses).
+    The router gate (``E_global`` rows)
     and the shared expert stay replicated, so every rank selects identical
     top-k; the routed partial is all-reduced before the shared expert is added
     once. The all-reduce defaults to ``vllm.distributed.
@@ -1378,20 +1711,20 @@ class _EagerSparseMoE(nn.Module):
 
         # Expert-dimension TP slicing: contiguous [expert_offset,
         # expert_offset + num_local_experts) global-id range on this rank.
-        # Requiring divisibility keeps local slotting one line everywhere
-        # (512 experts / TP4 = 128); the fork loader filter tolerates
-        # non-divisible counts and must match this, so reject loudly instead.
+        # The fork loader filter and weight mapper both use this same balanced,
+        # contiguous ownership rule. In particular, 512 experts over six ranks
+        # yields 86/86/85/85/85/85 without dummy experts or weight transfers.
         self.expert_tp_rank, self.expert_tp_size = (int(expert_sharding[0]), int(expert_sharding[1]))
         if self.expert_tp_size < 1 or not 0 <= self.expert_tp_rank < self.expert_tp_size:
             raise ValueError(f"expert_sharding={expert_sharding} out of range")
-        if self.num_experts and self.num_experts % self.expert_tp_size:
+        if self.num_experts < self.expert_tp_size:
             raise ValueError(
-                f"num_experts={self.num_experts} is not divisible by expert TP size {self.expert_tp_size}; "
-                "the W8A8 fused bank slices experts contiguously and cannot shard this count"
+                f"num_experts={self.num_experts} is smaller than expert TP size {self.expert_tp_size}; "
+                "each rank must own at least one expert"
             )
-        self.num_local_experts = self.num_experts // self.expert_tp_size
+        self.expert_offset, expert_stop = local_expert_range(self.num_experts, self.expert_tp_size, self.expert_tp_rank)
+        self.num_local_experts = expert_stop - self.expert_offset
         self.num_global_experts = self.num_experts
-        self.expert_offset = self.expert_tp_rank * self.num_local_experts
         self._tp_reduce: object | None = None
         if self.expert_tp_size > 1:
             try:
@@ -1470,20 +1803,32 @@ class _EagerSparseMoE(nn.Module):
             routed_scaling_factor=self.routed_scaling_factor,
         )
         npu_expert_weights = block_input.device.type == "npu"
-        w13_weight = self.w13_weight if npu_expert_weights else [weight.t() for weight in self.w13_weight]
-        w2_weight = self.w2_weight if npu_expert_weights else [weight.t() for weight in self.w2_weight]
+        use_packed_grouped = npu_expert_weights and hasattr(self, "w13_weight_grouped")
+        w13_weight = (
+            getattr(self, "w13_weight_grouped", self.w13_weight)
+            if npu_expert_weights
+            else [weight.t() for weight in self.w13_weight]
+        )
+        w2_weight = (
+            getattr(self, "w2_weight_grouped", self.w2_weight)
+            if npu_expert_weights
+            else [weight.t() for weight in self.w2_weight]
+        )
         out = w8a8_grouped_experts(
             block_input,
             topk_weights,
             topk_ids,
             w13_weight,
-            getattr(self, "w13_weight_scale_list", self.w13_weight_scale),
+            self.w13_weight_scale
+            if use_packed_grouped
+            else getattr(self, "w13_weight_scale_list", self.w13_weight_scale),
             self.w13_weight_offset,
             w2_weight,
-            getattr(self, "w2_weight_scale_list", self.w2_weight_scale),
+            self.w2_weight_scale if use_packed_grouped else getattr(self, "w2_weight_scale_list", self.w2_weight_scale),
             self.w2_weight_offset,
             expert_offset=self.expert_offset,
             num_global_experts=self.num_global_experts,
+            use_packed_grouped=use_packed_grouped,
         )
         if self.has_shared_expert:
             shared_gate_up = _linear(block_input, self.shared_gate_up, self.compute_dtype)
@@ -1571,6 +1916,19 @@ class _PLEInjection(nn.Module):
         self.per_head_dim = self.ple.per_head_dim
         self.ngram_size = int(config.ngram_size)
         self._ple_method: AscendPLEPinnedHostEmbeddingMethod | AscendPLELazyShardEmbeddingMethod | None = None
+        # The single-request fallback is used by the v1 runner during decode
+        # graph capture. Construct these once instead of copying tiny host
+        # tensors to the NPU on every token (or inside graph capture).
+        self.register_buffer(
+            "_single_request_start_locs",
+            torch.tensor([0, 1], dtype=torch.int64),
+            persistent=False,
+        )
+        self.register_buffer(
+            "_single_request_ngram_context",
+            torch.full((1, self.ngram_size - 1), self.eos_token_id, dtype=torch.int64),
+            persistent=False,
+        )
         # Real SplitMix64 n-gram hashing (T4.2-verified). Constructed without a
         # ple_method: only ``compute_ngram_ids`` is used here (no gather), so the
         # global row ids match the checkpoint's layer_multipliers exactly. A tiny
@@ -1644,13 +2002,15 @@ class _PLEInjection(nn.Module):
         if query_start_loc is None:
             seq_len = int(input_ids.shape[0])
             device = input_ids.device
-            query_start_loc = torch.tensor([0, seq_len], dtype=torch.int64, device=device)
-            ngram_context = torch.full(
-                (1, self.ngram_size - 1),
-                self.eos_token_id,
-                dtype=torch.int64,
-                device=device,
+            if self._single_request_start_locs.device != device:
+                self._single_request_start_locs = self._single_request_start_locs.to(device=device, non_blocking=True)
+                self._single_request_ngram_context = self._single_request_ngram_context.to(
+                    device=device, non_blocking=True
+                )
+            query_start_loc = (
+                self._single_request_start_locs if seq_len == 1 else self._single_request_start_locs * seq_len
             )
+            ngram_context = self._single_request_ngram_context
         assert ngram_context is not None
         global_ids = self.ngram.compute_ngram_ids(input_ids, query_start_loc, ngram_context)
         if reduce:
@@ -1677,7 +2037,7 @@ class _PLEInjection(nn.Module):
             ids[:, head] = mixed.remainder(self._STUB_TABLE_ROWS)
         return ids
 
-    def forward(
+    def _forward_eager(
         self,
         hidden_states: torch.Tensor,
         input_ids: torch.Tensor,
@@ -1698,6 +2058,36 @@ class _PLEInjection(nn.Module):
             ngram_ids = self._stub_ngram_ids(input_ids)
         return self.ple(hidden_states, ngram_ids)
 
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        input_ids: torch.Tensor,
+        query_start_loc: torch.Tensor | None = None,
+        ngram_context: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        capture = BreakableCUDAGraphCapture.current()
+        if capture is None or not capture._capturing:
+            return self._forward_eager(hidden_states, input_ids, query_start_loc, ngram_context)
+
+        # The checkpoint's n-gram table is demand-paged on the host. Hashing,
+        # gathering, and the following host-to-device copy must run on every
+        # replay, outside stream capture. Write into a stable graph-pool tensor
+        # so subsequent captured layers always read the same address.
+        from vllm_ascend.utils import weak_ref_tensor
+
+        output = torch.empty_like(hidden_states)
+        weak_output = weak_ref_tensor(output)
+        weak_hidden = weak_ref_tensor(hidden_states)
+        weak_input_ids = weak_ref_tensor(input_ids)
+        weak_start_loc = weak_ref_tensor(query_start_loc)
+        weak_context = weak_ref_tensor(ngram_context)
+
+        def run_ple_eager() -> None:
+            weak_output.copy_(self._forward_eager(weak_hidden, weak_input_ids, weak_start_loc, weak_context))
+
+        capture.add_eager(run_ple_eager)
+        return output
+
 
 # ===========================================================================
 # Decoder layer
@@ -1716,6 +2106,7 @@ class AscendQwen4ExpDecoderLayer(nn.Module):
         prefix: str = "",
         expert_sharding: tuple[int, int] = (0, 1),
         checkpoint_dir: str | None = None,
+        num_speculative_tokens: int = 0,
     ) -> None:
         super().__init__()
         self.config = config
@@ -1767,6 +2158,7 @@ class AscendQwen4ExpDecoderLayer(nn.Module):
                 dtype_policy=dtype_policy,
                 prefix=attn_prefix,
                 expert_sharding=expert_sharding,
+                num_speculative_tokens=num_speculative_tokens,
             )
         else:
             if getattr(config, "indexer_n_heads", None) is not None:
@@ -1788,7 +2180,9 @@ class AscendQwen4ExpDecoderLayer(nn.Module):
         is_moe = layer_idx not in mlp_only_layers and num_experts > 0 and (layer_idx + 1) % decoder_sparse_step == 0
         if is_moe:
             self.mlp: nn.Module = _EagerSparseMoE(
-                config=config, dtype_policy=dtype_policy, expert_sharding=expert_sharding
+                config=config,
+                dtype_policy=dtype_policy,
+                expert_sharding=expert_sharding,
             )
         else:
             self.mlp = _EagerMLP(
@@ -1891,6 +2285,7 @@ class AscendQwen4ExpModel(nn.Module):
                         prefix=maybe_prefix(prefix, f"layers.{idx}"),
                         expert_sharding=self.expert_sharding,
                         checkpoint_dir=self.checkpoint_dir,
+                        num_speculative_tokens=getattr(vllm_config, "num_speculative_tokens", 0),
                     )
                     for idx in range(config.num_hidden_layers)
                 ),
@@ -1910,7 +2305,26 @@ class AscendQwen4ExpModel(nn.Module):
         )
         self.start_layer = 0
         self.end_layer = config.num_hidden_layers
-        self._mtp_hidden_buffer: torch.Tensor | None = None
+        speculative_config = getattr(vllm_config, "speculative_config", None)
+        if getattr(speculative_config, "method", None) == "mtp":
+            # This buffer must outlive every ACL graph capture. A Python
+            # assignment to an intermediate tensor in forward() only runs
+            # while capturing; replaying an earlier graph shape would then
+            # hand the drafter the last capture's stale HC state.
+            device_config = getattr(vllm_config, "device_config", None)
+            device = getattr(device_config, "device", torch.device("cpu"))
+            max_tokens = int(vllm_config.scheduler_config.max_num_batched_tokens)
+            self.register_buffer(
+                "_mtp_hidden_buffer",
+                torch.empty(
+                    (max_tokens, self.hc_count * self.hidden_size),
+                    dtype=self.dtype_policy.main_dtype,
+                    device=device,
+                ),
+                persistent=False,
+            )
+        else:
+            self.register_buffer("_mtp_hidden_buffer", None, persistent=False)
         self.make_empty_intermediate_tensors = make_empty_intermediate_tensors_factory(
             ["hidden_states"], self.hc_count * self.hidden_size
         )
@@ -1963,8 +2377,14 @@ class AscendQwen4ExpModel(nn.Module):
                 ngram_context,
             )
 
-        # Retain the multi-stream state for the MTP drafter (scheme A).
-        self._mtp_hidden_buffer = hidden_states
+        # Retain the multi-stream state for the MTP drafter (scheme A). The
+        # graph records this copy into one stable, externally owned address;
+        # replay therefore updates the same buffer regardless of capture size.
+        if self._mtp_hidden_buffer is not None:
+            num_tokens = hidden_states.shape[0]
+            if num_tokens > self._mtp_hidden_buffer.shape[0]:
+                raise ValueError("Qwen4Exp MTP hidden state exceeds the graph-stable buffer")
+            self._mtp_hidden_buffer[:num_tokens].copy_(hidden_states)
         # Final mixer collapses the streams to the sampled single-stream state.
         sample_hidden, _residual = self.hyper_connection_mixer.mix(hidden_states)
         return sample_hidden.to(self.dtype_policy.main_dtype)
@@ -2062,7 +2482,10 @@ class AscendQwen4ExpForCausalLM(
         tp_size = int(getattr(parallel_config, "tensor_parallel_size", 1) or 1)
         params = _gdn_params_from_config(config)
         conv_dim = params.conv_dim // tp_size
-        conv_state = (conv_dim, params.conv_kernel_size - 1)
+        conv_state = (
+            params.conv_kernel_size - 1 + getattr(vllm_config, "num_speculative_tokens", 0),
+            conv_dim,
+        )
         recurrent_state = (params.num_v_heads // tp_size, params.head_v_dim, params.head_k_dim)
         return (conv_state, recurrent_state)
 
@@ -2105,6 +2528,7 @@ class AscendQwen4ExpForCausalLM(
                 dtypes=cls.get_gdn_mamba_state_dtype_from_config(vllm_config),
                 block_size=-1,
                 mamba_type=MambaAttentionBackendEnum.GDN_ATTN,
+                **_mamba_runtime_spec_kwargs(vllm_config),
             ),
             MambaSpec(
                 shapes=cls.get_ple_mamba_state_shape_from_config(vllm_config),
@@ -2112,6 +2536,7 @@ class AscendQwen4ExpForCausalLM(
                 block_size=-1,
                 tp_replicated=True,
                 mamba_type=MambaAttentionBackendEnum.SHORT_CONV,
+                **_mamba_runtime_spec_kwargs(vllm_config),
             ),
         )
 
@@ -2128,9 +2553,10 @@ class AscendQwen4ExpForCausalLM(
         ``FullAttentionSpec`` (the QSA ring + compressed side-caches are tracked
         out-of-band by the model state, not the attention KV cache).
         """
+        if vllm_config is None:
+            vllm_config = self.vllm_config
         config = self.config
         policy = self.dtype_policy
-        tp_size = self.model.expert_sharding[1]
         head_dim = int(getattr(config, "head_dim", 0)) or (
             int(config.hidden_size) // int(getattr(config, "num_attention_heads", 1))
         )
@@ -2152,22 +2578,17 @@ class AscendQwen4ExpForCausalLM(
             gdn_params = None
 
         spec: dict[str, KVCacheSpec] = {}
+        gdn_shapes = self.get_gdn_mamba_state_shape_from_config(vllm_config) if gdn_params is not None else ()
+        mamba_runtime_kwargs = _mamba_runtime_spec_kwargs(vllm_config)
         for idx, layer_type in enumerate(self.model.layer_types):
             name = f"model.layers.{idx}.attention"
             if layer_type == _LAYER_TYPE_LINEAR and gdn_params is not None:
-                conv_dim = gdn_params.conv_dim // tp_size
                 spec[name] = MambaSpec(
-                    shapes=(
-                        (conv_dim, gdn_params.conv_kernel_size - 1),
-                        (
-                            gdn_params.num_v_heads // tp_size,
-                            gdn_params.head_v_dim,
-                            gdn_params.head_k_dim,
-                        ),
-                    ),
+                    shapes=gdn_shapes,
                     dtypes=(policy.mamba_conv_cache_dtype, policy.main_dtype),
                     block_size=DEFAULT_ATTENTION_BLOCK_SIZE,
                     mamba_type=MambaAttentionBackendEnum.GDN_ATTN,
+                    **mamba_runtime_kwargs,
                 )
             else:
                 spec_cls = (
@@ -2195,8 +2616,6 @@ class AscendQwen4ExpForCausalLM(
             int(config.hidden_size) // int(getattr(config, "num_attention_heads", 1))
         )
         num_kv_heads = int(getattr(config, "num_key_value_heads", 1))
-        tp_size = self.model.expert_sharding[1]
-
         full_attention_layers: dict[str, object] = {}
         mamba_layers: dict[str, object] = {}
         qsa_raw_ring_layers: dict[str, object] = {}
@@ -2207,23 +2626,18 @@ class AscendQwen4ExpForCausalLM(
             gdn_params = _gdn_params_from_config(config)
         except Exception:  # pragma: no cover - GDN geometry may be absent
             gdn_params = None
+        gdn_shapes = self.get_gdn_mamba_state_shape_from_config(self.vllm_config) if gdn_params is not None else ()
+        mamba_runtime_kwargs = _mamba_runtime_spec_kwargs(self.vllm_config)
 
         for idx, layer_type in enumerate(self.model.layer_types):
             name = f"model.layers.{idx}"
             if layer_type == _LAYER_TYPE_LINEAR and gdn_params is not None:
-                conv_dim = gdn_params.conv_dim // tp_size
                 mamba_layers[f"{name}.linear_attn"] = MambaSpec(
-                    shapes=(
-                        (conv_dim, gdn_params.conv_kernel_size - 1),
-                        (
-                            gdn_params.num_v_heads // tp_size,
-                            gdn_params.head_v_dim,
-                            gdn_params.head_k_dim,
-                        ),
-                    ),
+                    shapes=gdn_shapes,
                     dtypes=(policy.mamba_conv_cache_dtype, policy.main_dtype),
                     block_size=DEFAULT_ATTENTION_BLOCK_SIZE,
                     mamba_type=MambaAttentionBackendEnum.GDN_ATTN,
+                    **mamba_runtime_kwargs,
                 )
             elif layer_type == _LAYER_TYPE_FULL and uses_qsa:
                 qsa_raw_ring_layers[f"{name}.self_attn.qsa.ring"] = make_qsa_raw_ring_spec(
@@ -2686,6 +3100,7 @@ class AscendQwen4ExpForCausalLM(
         # actually carried per-expert tensors (a by-name round-trip carries none).
         if expert_index:
             validate_expert_weight_map(expert_index, geometry, tp_size=tp_size, tp_rank=tp_rank)
+        _format_eager_linear_weights_npu(self.model)
         return loaded
 
     def compute_logits(self, hidden_states: torch.Tensor) -> torch.Tensor | None:
@@ -2751,6 +3166,13 @@ class AscendQwen4ExpForConditionalGeneration(
     @classmethod
     def get_mamba_state_copy_func(cls):
         return AscendQwen4ExpForCausalLM.get_mamba_state_copy_func()
+
+    @classmethod
+    def get_mamba_state_copy_funcs(
+        cls,
+        mamba_types: set[MambaAttentionBackendEnum],
+    ) -> MambaStateCopyFuncsByType:
+        return AscendQwen4ExpForCausalLM.get_mamba_state_copy_funcs(mamba_types)
 
     @classmethod
     def get_mamba_specs_from_config(cls, vllm_config: VllmConfig):

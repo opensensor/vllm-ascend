@@ -10,6 +10,7 @@ using namespace AscendC;
 
 constexpr int64_t QSA_COMPRESS_RATIO = 4;
 constexpr int64_t FP32_REDUCE_WIDTH = 64;
+constexpr int64_t SCORE_CACHE_LINE_ELEMENTS = 64 / sizeof(float);
 
 class QsaIndexerScoreV310 {
 public:
@@ -43,10 +44,18 @@ public:
 
     __aicore__ inline void Process()
     {
-        const int64_t firstTask = GetBlockIdx() * tasksPerCore_;
+        const int64_t totalLines = (taskCount_ + SCORE_CACHE_LINE_ELEMENTS - 1) / SCORE_CACHE_LINE_ELEMENTS;
+        const int64_t coreCount = GetBlockNum();
+        const int64_t linesPerCore = totalLines / coreCount;
+        const int64_t extraLineCores = totalLines % coreCount;
+        const int64_t core = GetBlockIdx();
+        const int64_t firstLine = core * linesPerCore + (core < extraLineCores ? core : extraLineCores);
+        const int64_t firstTask = firstLine * SCORE_CACHE_LINE_ELEMENTS;
+        const int64_t taskEnd = (firstLine + linesPerCore + (core < extraLineCores ? 1 : 0)) *
+                                SCORE_CACHE_LINE_ELEMENTS;
         for (int64_t offset = 0; offset < tasksPerCore_; ++offset) {
             const int64_t task = firstTask + offset;
-            if (task >= taskCount_) {
+            if (task >= taskCount_ || task >= taskEnd) {
                 break;
             }
             Compute(task);

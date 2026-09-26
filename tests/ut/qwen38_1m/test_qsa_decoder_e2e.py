@@ -43,12 +43,14 @@ Run with ``--noconftest`` (the shared tests/ut/conftest.py fails to import here)
 from __future__ import annotations
 
 import contextlib
+import sys
 from dataclasses import replace
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 import torch
+from vllm.compilation.breakable_cudagraph import BreakableCUDAGraphCapture
 
 from tests.ut.qwen38_1m.reference.qsa_attention_reference import (
     project_qk_norm_rope,
@@ -127,6 +129,67 @@ def _init_module(module: _QSAAttention, seed: int) -> None:
     with torch.no_grad():
         for param in module.parameters():
             param.copy_((torch.randn(param.shape, generator=gen, dtype=torch.float64) * 0.1).to(param.dtype))
+
+
+def test_qsa_text_positions_reuse_device_input_without_host_copy():
+    positions = torch.tensor([4, 5, 6, 7, 8], dtype=torch.int64)
+    metadata = SimpleNamespace(
+        seq_lens_cpu=torch.tensor([6, 9], dtype=torch.int32),
+        query_lens_cpu=torch.tensor([2, 3], dtype=torch.int32),
+    )
+
+    with patch("vllm_ascend.models.qwen4_exp.model.torch.arange", side_effect=AssertionError("host copy")):
+        logical_positions = _QSAAttention._logical_query_positions(metadata, 5, positions.device, positions)
+
+    assert logical_positions.data_ptr() == positions.data_ptr()
+    assert torch.equal(logical_positions, torch.tensor([4, 5, 6, 7, 8]))
+
+
+def test_qsa_mrope_positions_keep_host_causal_boundaries():
+    positions = torch.tensor([[100, 101, 102], [0, 0, 0], [0, 0, 0]], dtype=torch.int64)
+    metadata = SimpleNamespace(
+        seq_lens_cpu=torch.tensor([9], dtype=torch.int32),
+        query_lens_cpu=torch.tensor([3], dtype=torch.int32),
+    )
+
+    logical_positions = _QSAAttention._logical_query_positions(metadata, 3, positions.device, positions)
+
+    assert torch.equal(logical_positions, torch.tensor([6, 7, 8]))
+
+
+def test_qsa_mrope_graph_break_refreshes_causal_positions_on_replay():
+    positions = torch.tensor([[100, 101], [0, 0], [0, 0]], dtype=torch.int64)
+    metadata = SimpleNamespace(
+        seq_lens_cpu=torch.tensor([9], dtype=torch.int32),
+        query_lens_cpu=torch.tensor([2], dtype=torch.int32),
+    )
+    context = SimpleNamespace(attn_metadata={"qsa": metadata})
+
+    class FakeCapture:
+        _capturing = True
+
+        def add_eager(self, callback):
+            self.callback = callback
+            self._capturing = False
+            callback()
+            self._capturing = True
+
+    capture = FakeCapture()
+    fake_utils = ModuleType("vllm_ascend.utils")
+    fake_utils.weak_ref_tensor = lambda tensor: tensor
+    with (
+        patch.object(BreakableCUDAGraphCapture, "current", return_value=capture),
+        patch.dict(sys.modules, {"vllm_ascend.utils": fake_utils}),
+        patch("vllm_ascend.models.qwen4_exp.model.get_forward_context", return_value=context),
+    ):
+        logical_positions = _QSAAttention._logical_query_positions(metadata, 2, positions.device, positions, "qsa")
+        torch.testing.assert_close(logical_positions, torch.tensor([7, 8]))
+        context.attn_metadata["qsa"] = SimpleNamespace(
+            seq_lens_cpu=torch.tensor([12], dtype=torch.int32),
+            query_lens_cpu=torch.tensor([2], dtype=torch.int32),
+        )
+        capture.callback()
+        torch.testing.assert_close(logical_positions, torch.tensor([10, 11]))
 
 
 @pytest.mark.parametrize("state_name", ["PrefillNoCache", "PrefillCacheHit", "ChunkedPrefill"])
@@ -212,7 +275,13 @@ def test_qsa_tp4_shards_two_kv_heads_without_splitting_gqa_groups():
 def test_model_cache_spec_uses_local_qsa_kv_head_count():
     cfg = _qsa_config(num_q_heads=8, num_kv_heads=2)
     fake_model = SimpleNamespace(layer_types=["full_attention"], expert_sharding=(2, 4))
-    owner = SimpleNamespace(config=cfg, dtype_policy=_POLICY_F64, model=fake_model)
+    owner = SimpleNamespace(
+        config=cfg,
+        dtype_policy=_POLICY_F64,
+        model=fake_model,
+        vllm_config=SimpleNamespace(cache_config=SimpleNamespace(mamba_cache_mode="align")),
+        get_gdn_mamba_state_shape_from_config=lambda _: (),
+    )
     spec = AscendQwen4ExpForCausalLM.get_kv_cache_spec(owner)
     assert spec["model.layers.0.attention"].num_kv_heads == 1
 

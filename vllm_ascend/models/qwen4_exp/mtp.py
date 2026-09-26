@@ -13,6 +13,7 @@ from copy import copy
 
 import torch
 from torch import nn
+from vllm.compilation.breakable_cudagraph import BreakableCUDAGraphCapture
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
 from vllm.model_executor.models.interfaces import MixtureOfExperts, SupportsPP
@@ -29,13 +30,19 @@ from .model import (
     _remap_non_expert,
     _resolve_expert_sharding,
 )
-from .moe import route_topk, swiglu_gate_up
+from .moe import _w8a16_linear_npu, route_topk, swiglu_gate_up
 
 
 class _MTPFP16MoE(nn.Module):
-    """Local slice of the checkpoint's fused FP16 MTP expert bank."""
+    """Local slice of the FP16 MTP checkpoint, optionally stored as W8A16."""
 
-    def __init__(self, config: object, policy: Qwen4ExpDtypePolicy, sharding: tuple[int, int]) -> None:
+    def __init__(
+        self,
+        config: object,
+        policy: Qwen4ExpDtypePolicy,
+        sharding: tuple[int, int],
+        quantize_experts: bool = False,
+    ) -> None:
         super().__init__()
         self.policy = policy
         self.num_experts = int(config.num_experts)
@@ -47,15 +54,39 @@ class _MTPFP16MoE(nn.Module):
         self.expert_offset = self.expert_rank * self.num_local_experts
         hidden = int(config.hidden_size)
         intermediate = int(config.moe_intermediate_size)
+        self.hidden_size = hidden
+        self.intermediate_size = intermediate
+        self.quantized_experts = quantize_experts
         self.gate = nn.Parameter(torch.zeros(self.num_experts, hidden, dtype=policy.main_dtype))
-        self.gate_up_proj = nn.ParameterList(
-            nn.Parameter(torch.zeros(2 * intermediate, hidden, dtype=policy.main_dtype))
-            for _ in range(self.num_local_experts)
-        )
-        self.down_proj = nn.ParameterList(
-            nn.Parameter(torch.zeros(hidden, intermediate, dtype=policy.main_dtype))
-            for _ in range(self.num_local_experts)
-        )
+        if quantize_experts:
+            # The checkpoint remains FP16; each local expert is quantized once
+            # during load. The runtime 310P W8A16 matmul consumes [K, N] INT8
+            # weights and one FP16 symmetric scale per output channel.
+            self.gate_up_proj = nn.ParameterList(
+                nn.Parameter(torch.zeros(hidden, 2 * intermediate, dtype=torch.int8), requires_grad=False)
+                for _ in range(self.num_local_experts)
+            )
+            self.down_proj = nn.ParameterList(
+                nn.Parameter(torch.zeros(intermediate, hidden, dtype=torch.int8), requires_grad=False)
+                for _ in range(self.num_local_experts)
+            )
+            self.gate_up_proj_scale = nn.ParameterList(
+                nn.Parameter(torch.ones(2 * intermediate, dtype=policy.main_dtype), requires_grad=False)
+                for _ in range(self.num_local_experts)
+            )
+            self.down_proj_scale = nn.ParameterList(
+                nn.Parameter(torch.ones(hidden, dtype=policy.main_dtype), requires_grad=False)
+                for _ in range(self.num_local_experts)
+            )
+        else:
+            self.gate_up_proj = nn.ParameterList(
+                nn.Parameter(torch.zeros(2 * intermediate, hidden, dtype=policy.main_dtype))
+                for _ in range(self.num_local_experts)
+            )
+            self.down_proj = nn.ParameterList(
+                nn.Parameter(torch.zeros(hidden, intermediate, dtype=policy.main_dtype))
+                for _ in range(self.num_local_experts)
+            )
         shared_intermediate = int(getattr(config, "shared_expert_intermediate_size", 0) or 0)
         if shared_intermediate % self.expert_tp_size:
             raise ValueError("MTP shared expert size must be divisible by tensor parallel size")
@@ -76,7 +107,30 @@ class _MTPFP16MoE(nn.Module):
 
             self._tp_reduce = tensor_model_parallel_all_reduce
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def load_expert_weight(self, projection: str, local_id: int, source: torch.Tensor) -> None:
+        weights = getattr(self, projection)
+        with torch.no_grad():
+            if not self.quantized_experts:
+                weights[local_id].copy_(source)
+                return
+            # Quantize one expert at a time so an entire 512-expert checkpoint
+            # tensor is never expanded to FP32 on the NPU or host.
+            source_fp32 = source.to(torch.float32)
+            scales = (source_fp32.abs().amax(dim=1) / 127).clamp_min(1e-8)
+            quantized = torch.round(source_fp32 / scales[:, None]).clamp(-127, 127).to(torch.int8)
+            weights[local_id].copy_(quantized.t().contiguous())
+            getattr(self, projection + "_scale")[local_id].copy_(scales.to(self.policy.main_dtype))
+
+    def _expert_linear(self, x: torch.Tensor, projection: str, local_id: int) -> torch.Tensor:
+        weights = getattr(self, projection)
+        if not self.quantized_experts:
+            return _linear(x, weights[local_id], self.policy.accumulation_dtype)
+        scales = getattr(self, projection + "_scale")[local_id]
+        if x.device.type == "npu":
+            return _w8a16_linear_npu(x, weights[local_id], scales)
+        return x.to(torch.float32) @ (weights[local_id].to(torch.float32) * scales.to(torch.float32)).to(torch.float32)
+
+    def _forward_eager(self, x: torch.Tensor) -> torch.Tensor:
         logits = _linear(x, self.gate, self.policy.router_dtype)
         weights, ids = route_topk(
             logits,
@@ -111,10 +165,8 @@ class _MTPFP16MoE(nn.Module):
                     continue
                 stop = start + count
                 selected = x[token_ids[start:stop]]
-                gate_up = _linear(selected, self.gate_up_proj[expert_id], self.policy.accumulation_dtype)
-                expert_output = _linear(
-                    swiglu_gate_up(gate_up), self.down_proj[expert_id], self.policy.accumulation_dtype
-                )
+                gate_up = self._expert_linear(selected, "gate_up_proj", expert_id)
+                expert_output = self._expert_linear(swiglu_gate_up(gate_up), "down_proj", expert_id)
                 route_outputs.index_copy_(
                     0, slot_ids[start:stop], expert_output.to(route_outputs.dtype) * flat_weights[start:stop, None]
                 )
@@ -129,6 +181,26 @@ class _MTPFP16MoE(nn.Module):
             assert self._tp_reduce is not None
             output = self._tp_reduce(output)
         return output.to(self.policy.main_dtype)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        capture = BreakableCUDAGraphCapture.current()
+        if capture is None or not capture._capturing:
+            return self._forward_eager(x)
+
+        # Expert counts are read by the host to dispatch the MTP's small
+        # per-expert matmuls. Keep that read outside graph capture, and copy
+        # the result into a stable graph-pool tensor for following layers.
+        from vllm_ascend.utils import weak_ref_tensor
+
+        output = torch.empty_like(x)
+        weak_output = weak_ref_tensor(output)
+        weak_x = weak_ref_tensor(x)
+
+        def run_experts_eager() -> None:
+            weak_output.copy_(self._forward_eager(weak_x))
+
+        capture.add_eager(run_experts_eager)
+        return output
 
 
 class _MTPPredictor(nn.Module):
@@ -154,6 +226,8 @@ class _MTPPredictor(nn.Module):
         self.pre_fc_norm_embedding = nn.Parameter(torch.zeros(self.hidden_size, dtype=policy.main_dtype))
         self.pre_fc_norm_hidden = nn.Parameter(torch.zeros(self.hc_count * self.hidden_size, dtype=policy.main_dtype))
         self.expert_sharding = _resolve_expert_sharding(vllm_config)
+        runtime_device = getattr(getattr(vllm_config, "device_config", None), "device", None)
+        quantize_experts = getattr(runtime_device, "type", None) == "npu"
         self.layers = nn.ModuleList()
         # The target's INT8 bank is several GiB. Do not construct it only to
         # replace it with the MTP checkpoint's FP16 bank.
@@ -172,7 +246,12 @@ class _MTPPredictor(nn.Module):
             if layer.ple is not None:
                 raise ValueError("Qwen4Exp MTP layers must not use PLE")
             if getattr(config, "num_experts", 0):
-                layer.mlp = _MTPFP16MoE(config, policy, self.expert_sharding)
+                layer.mlp = _MTPFP16MoE(
+                    config,
+                    policy,
+                    self.expert_sharding,
+                    quantize_experts=quantize_experts,
+                )
             self.layers.append(layer)
         self.hyper_connection_mixer = _GatedResidual(
             hc_count=self.hc_count,
@@ -269,6 +348,18 @@ class AscendQwen4ExpMTP(nn.Module, SupportsPP, MixtureOfExperts):
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.embed_input_ids(input_ids)
 
+    def share_target_lm_head_if_identical(self, target_model: nn.Module) -> bool:
+        """Release the duplicate draft head only when its loaded weights match."""
+        target_head = getattr(target_model, "lm_head", None)
+        if target_head is None:
+            return False
+        draft_weight = self.lm_head.weight
+        target_weight = target_head.weight
+        if draft_weight.shape != target_weight.shape or not torch.equal(draft_weight, target_weight):
+            return False
+        self.lm_head = target_head
+        return True
+
     def forward(
         self,
         input_ids: torch.Tensor | None,
@@ -321,7 +412,10 @@ class AscendQwen4ExpMTP(nn.Module, SupportsPP, MixtureOfExperts):
                 target_base = name.replace(".mlp.experts.", ".mlp.")
                 bank = self.model.layers[int(name.split(".")[2])].mlp
                 local = bank.num_local_experts
-                expected = (bank.num_experts,) + tuple(params[f"{target_base}.0"].shape)
+                if name.endswith(".gate_up_proj"):
+                    expected = (bank.num_experts, 2 * bank.intermediate_size, bank.hidden_size)
+                else:
+                    expected = (bank.num_experts, bank.hidden_size, bank.intermediate_size)
                 if tensor.dtype != self.dtype_policy.main_dtype or tuple(tensor.shape) != expected:
                     raise ValueError(
                         f"{raw_name}: expected {self.dtype_policy.main_dtype} {expected}, "
@@ -329,9 +423,11 @@ class AscendQwen4ExpMTP(nn.Module, SupportsPP, MixtureOfExperts):
                     )
                 for index in range(local):
                     target_name = f"{target_base}.{index}"
-                    with torch.no_grad():
-                        params[target_name].copy_(tensor[tp_rank * local + index])
+                    projection = "gate_up_proj" if name.endswith(".gate_up_proj") else "down_proj"
+                    bank.load_expert_weight(projection, index, tensor[tp_rank * local + index])
                     loaded.add(target_name)
+                    if bank.quantized_experts:
+                        loaded.add(f"{target_base}_scale.{index}")
                 continue
             target = params.get(name)
             if target is not None and tuple(target.shape) == tuple(tensor.shape):

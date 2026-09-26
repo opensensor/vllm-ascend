@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -146,14 +147,17 @@ def _single_rank_tp():
         patch(f"{lmod}.get_tensor_model_parallel_world_size", return_value=1, create=True),
         patch(f"{lmod}.tensor_model_parallel_gather", side_effect=lambda x: x, create=True),
         patch(f"{lmod}.tensor_model_parallel_all_gather", side_effect=lambda x, dim=-1: x, create=True),
-        patch(f"{avmod}.lmhead_tp_enable", return_value=False),
-        patch(f"{avmod}.embedding_tp_enable", return_value=False),
-        patch(
-            f"{avmod}.get_tp_group",
-            return_value=SimpleNamespace(world_size=1, rank_in_group=0),
-        ),
         patch(f"{qmod}._resolve_attn_backend", return_value=object),
+        contextlib.ExitStack() as stack,
     ):
+        # Patch the Ascend overrides only when the NPU runtime loaded them.
+        # Importing that package on a CPU host eagerly imports torch_npu.
+        if avmod in sys.modules:
+            stack.enter_context(patch(f"{avmod}.lmhead_tp_enable", return_value=False))
+            stack.enter_context(patch(f"{avmod}.embedding_tp_enable", return_value=False))
+            stack.enter_context(
+                patch(f"{avmod}.get_tp_group", return_value=SimpleNamespace(world_size=1, rank_in_group=0))
+            )
         yield
 
 
@@ -165,6 +169,38 @@ def _build(cfg: SimpleNamespace):
     vllm_config = _vllm_config(cfg)
     with _single_rank_tp(), set_current_vllm_config(vllm_config):
         return AscendQwen4ExpForCausalLM(vllm_config=vllm_config)
+
+
+def test_expert_scale_postload_does_not_transfer_entire_module() -> None:
+    from vllm_ascend.models.qwen4_exp.model import _Qwen4ExpW8A8PostLoadMethod
+
+    method = _Qwen4ExpW8A8PostLoadMethod()
+    assert method.requires_device_loading is False
+
+    layer = SimpleNamespace(
+        num_local_experts=2,
+        params_dtype=torch.float16,
+        w13_weight_scale=torch.nn.Parameter(torch.arange(8, dtype=torch.float32).view(2, 4, 1)),
+        w13_weight_offset=torch.nn.Parameter(torch.zeros(2, 4, 1)),
+        w2_weight_scale=torch.nn.Parameter(torch.arange(6, dtype=torch.float32).view(2, 3, 1)),
+        w2_weight_offset=torch.nn.Parameter(torch.zeros(2, 3, 1)),
+    )
+    method.process_weights_after_loading(layer)
+
+    assert layer.w13_weight_scale.shape == (2, 4)
+    assert layer.w2_weight_scale.shape == (2, 3)
+    assert len(layer.w13_weight_scale_list) == len(layer.w2_weight_scale_list) == 2
+    for expert_id in range(2):
+        torch.testing.assert_close(
+            layer.w13_weight_scale_list[expert_id],
+            layer.w13_weight_scale[expert_id].to(torch.float16),
+        )
+        torch.testing.assert_close(
+            layer.w2_weight_scale_list[expert_id],
+            layer.w2_weight_scale[expert_id].to(torch.float16),
+        )
+        assert layer.w13_weight_scale_list[expert_id].data_ptr() != layer.w13_weight_scale.data_ptr()
+        assert layer.w2_weight_scale_list[expert_id].data_ptr() != layer.w2_weight_scale.data_ptr()
 
 
 # ---------------------------------------------------------------------------

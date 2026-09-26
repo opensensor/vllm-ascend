@@ -121,6 +121,10 @@ env_variables: dict[str, Callable[[], Any]] = {
     # Disabled by default until accuracy and throughput have been validated on
     # 310P hardware. Valid values: 0 or 1. This variable is not sensitive.
     "VLLM_ASCEND_310P_GDN_W8A8": lambda: _strict_binary_env("VLLM_ASCEND_310P_GDN_W8A8"),
+    # Emit one CPU-only timing summary for each finished request. Default: 0
+    # (disabled); valid values: 0 or 1. This variable is not sensitive.
+    # Use only when per-request prefill/decode diagnostics justify log volume.
+    "VLLM_ASCEND_LOG_REQUEST_TIMINGS": lambda: _strict_binary_env("VLLM_ASCEND_LOG_REQUEST_TIMINGS"),
 }
 
 # end-env-vars-definition

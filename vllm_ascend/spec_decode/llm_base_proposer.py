@@ -10,6 +10,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from vllm.compilation.breakable_cudagraph import is_breakable_cudagraph_enabled
 from vllm.config import CUDAGraphMode, VllmConfig, get_layers_from_vllm_config
 from vllm.distributed.parallel_state import (
     get_pp_group,
@@ -549,6 +550,10 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
 
     # share lm_head with the target model if needed
     def _maybe_share_lm_head(self, model: nn.Module) -> None:
+        if self.method == "mtp":
+            share_identical_head = getattr(self.model, "share_target_lm_head_if_identical", None)
+            if share_identical_head is not None and share_identical_head(model):
+                logger.info("[spec_decode/base] Sharing identical MTP and target LM head weights.")
         # some model definition do not define lm_head explicitly
         # and reuse embed_tokens for lm_head, e.g., CohereForCausalLM
         if self.method in ("eagle", "dflash", "dspark"):
@@ -618,7 +623,7 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
                     ):
                         layer_module.shared_head.head = target_lm_head
 
-        if self.vllm_config.compilation_config.cudagraph_mode.has_full_cudagraphs() and self.use_cuda_graph:
+        if self._should_wrap_outer_draft_graph():
             logger.info(
                 "[spec_decode/base] Wrapping draft model with ACLGraphWrapper:"
                 " runtime_mode=FULL, use_eagle=%s, enable_enpu=%s",
@@ -633,6 +638,18 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
                 use_eagle=self.use_eagle,
                 enable_enpu=self.enable_enpu,
             )
+
+    def _should_wrap_outer_draft_graph(self) -> bool:
+        if not self.vllm_config.compilation_config.cudagraph_mode.has_full_cudagraphs() or not self.use_cuda_graph:
+            return False
+        # The runner wraps MTP with BreakableACLGraphWrapper after load_model
+        # returns. This check must include the enabled mode, not just the
+        # current model type, or the proposer creates an outer graph first and
+        # both captures try to record into the same NPU memory pool.
+        return not (
+            self.method == "mtp"
+            and (is_breakable_cudagraph_enabled() or isinstance(self.model, BreakableACLGraphWrapper))
+        )
 
     def _maybe_share_topk_indices(self, target_language_model: nn.Module) -> None:
         if hasattr(target_language_model.model, "topk_indices_buffer"):

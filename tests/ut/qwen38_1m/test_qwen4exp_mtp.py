@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """CPU coverage for the Qwen4Exp FP16 MTP draft head."""
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -25,6 +26,39 @@ def _build(*, expert_sharding: tuple[int, int] = (0, 1), qsa: bool = False) -> A
         patch("vllm_ascend.models.qwen4_exp.mtp._resolve_expert_sharding", return_value=expert_sharding),
     ):
         return AscendQwen4ExpMTP(vllm_config=vllm_config)
+
+
+@pytest.mark.parametrize("projection,shape", [("gate_up_proj", (64, 64)), ("down_proj", (64, 32))])
+def test_quantized_draft_expert_load_and_cpu_reference(projection, shape):
+    config = _tiny_text_config(num_layers=1, moe=True, ple_layer_ids=())
+    policy = Qwen4ExpDtypePolicy()
+    bank = _MTPFP16MoE(config, policy, (0, 1), quantize_experts=True)
+    source = torch.randn(shape, generator=torch.Generator().manual_seed(17)).half()
+    bank.load_expert_weight(projection, 0, source)
+    scale = (source.float().abs().amax(dim=1) / 127).clamp_min(1e-8)
+    expected_weight = torch.round(source.float() / scale[:, None]).clamp(-127, 127).to(torch.int8).T
+    torch.testing.assert_close(getattr(bank, projection)[0], expected_weight)
+    torch.testing.assert_close(getattr(bank, projection + "_scale")[0], scale.half())
+    x = torch.randn(2, shape[1], generator=torch.Generator().manual_seed(18)).half()
+    expected = x.float() @ (expected_weight.float() * scale.half().float())
+    torch.testing.assert_close(bank._expert_linear(x, projection, 0), expected)
+
+
+def test_mtp_lm_head_sharing_requires_identical_loaded_weights():
+    draft = _build()
+    original = draft.lm_head
+    target_head = torch.nn.Linear(original.weight.shape[1], original.weight.shape[0], bias=False).half()
+    target = SimpleNamespace(lm_head=target_head)
+    with torch.no_grad():
+        original.weight.zero_()
+        target_head.weight.fill_(1)
+    assert not draft.share_target_lm_head_if_identical(target)
+    assert draft.lm_head is original
+    with torch.no_grad():
+        target_head.weight.copy_(original.weight)
+    assert draft.share_target_lm_head_if_identical(target)
+    assert draft.lm_head is target_head
+    assert not draft.share_target_lm_head_if_identical(SimpleNamespace())
 
 
 def test_mtp_uses_full_attention_without_ple_or_int8_experts():

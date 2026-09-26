@@ -14,6 +14,17 @@ def is_qwen4exp_mtp_config(model_config: object, speculative_config: object) -> 
     return any(arch in {"Qwen4ExpForCausalLM", "Qwen4ExpForConditionalGeneration"} for arch in architectures)
 
 
+def validate_mtp_ple_scheduling(is_qwen4exp_mtp: bool, async_scheduling: bool) -> None:
+    """Do not feed async sampled-token placeholders into the PLE n-gram hash.
+
+    The v1 async runner keeps sampled IDs on the device while its CPU token
+    table contains placeholders. PLE history currently comes from that table,
+    so async MTP would silently change the target model's distribution.
+    """
+    if is_qwen4exp_mtp and async_scheduling:
+        raise ValueError("Qwen4Exp MTP requires --no-async-scheduling until PLE history is device-resident")
+
+
 def qwen4exp_mtp_hidden_width(draft_model_config: object, method: str) -> int | None:
     """Return the target's complete hyperconnection width for this draft."""
     hf_config = draft_model_config.hf_config
@@ -53,6 +64,8 @@ def stage_ple_history(
         start = max(0, end - history_len)
         history = token_ids[req_idx, start:end]
         if len(history):
+            if np.any(history < 0):
+                raise ValueError("Qwen4Exp PLE history contains placeholder token IDs")
             context[req_idx, -len(history) :] = torch.as_tensor(history, dtype=context.dtype)
 
     if num_reqs:

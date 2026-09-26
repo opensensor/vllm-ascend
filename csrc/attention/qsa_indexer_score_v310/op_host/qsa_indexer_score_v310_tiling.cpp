@@ -11,6 +11,7 @@ namespace {
 constexpr int64_t QSA_COMPRESS_RATIO = 4;
 constexpr int64_t QSA_INDEX_CACHE_SCRATCH_ROWS = QSA_COMPRESS_RATIO - 1;
 constexpr int64_t MAX_INDEX_HEAD_DIM = 256;
+constexpr int64_t SCORE_CACHE_LINE_ELEMENTS = 64 / sizeof(float);
 
 ge::graphStatus Tiling(gert::TilingContext *context)
 {
@@ -47,7 +48,13 @@ ge::graphStatus Tiling(gert::TilingContext *context)
     const int64_t groupsPerBlock = cache.GetDim(1) - QSA_INDEX_CACHE_SCRATCH_ROWS;
     const int64_t maxGroups = blockTable.GetDim(1) * groupsPerBlock;
     const int64_t taskCount = query.GetDim(0) * maxGroups;
-    const uint32_t blockDim = static_cast<uint32_t>(std::min<int64_t>(taskCount, coreCount));
+    // The kernel writes scores with GlobalTensor::SetValue. A cache line must
+    // belong to one core; otherwise the final partial line of one core can
+    // race with the first line of the next core and lose scores.
+    const uint32_t blockDim = static_cast<uint32_t>(std::max<int64_t>(
+        1, std::min<int64_t>((taskCount + SCORE_CACHE_LINE_ELEMENTS - 1) / SCORE_CACHE_LINE_ELEMENTS, coreCount)));
+    const int64_t tasksPerCore = ((taskCount + blockDim - 1) / blockDim + SCORE_CACHE_LINE_ELEMENTS - 1) /
+                                 SCORE_CACHE_LINE_ELEMENTS * SCORE_CACHE_LINE_ELEMENTS;
     QsaIndexerScoreV310TilingData data;
     data.set_numTokens(query.GetDim(0));
     data.set_numHeads(query.GetDim(1));
@@ -58,7 +65,7 @@ ge::graphStatus Tiling(gert::TilingContext *context)
     data.set_maxGroupsPerSequence(maxGroups);
     data.set_numRequests(queryStartLoc.GetDim(0) - 1);
     data.set_taskCount(taskCount);
-    data.set_tasksPerCore((taskCount + blockDim - 1) / blockDim);
+    data.set_tasksPerCore(tasksPerCore);
 
     size_t *workspace = context->GetWorkspaceSizes(1);
     OP_CHECK_NULL_WITH_CONTEXT(context, workspace);

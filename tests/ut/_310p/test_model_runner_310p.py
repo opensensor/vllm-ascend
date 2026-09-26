@@ -17,6 +17,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import torch
 from vllm.config import CUDAGraphMode
 from vllm.v1.kv_cache_interface import AttentionSpec, MambaSpec, MLAAttentionSpec
@@ -30,6 +31,8 @@ from vllm_ascend._310p.model_runner_310p import (
     _get_layer_attention_backends,
     _iter_kv_cache_tensors,
 )
+from vllm_ascend._310p.prefix_mamba_state import PrefixMambaStateTier
+from vllm_ascend.attention.attention_v1 import AscendAttentionState
 from vllm_ascend.worker.model_runner_v1 import NPUModelRunner
 
 
@@ -66,6 +69,7 @@ def test_model_forward_updates_mtp_full_graph_params_before_replay() -> None:
     runner.uses_mrope = False
     runner.enable_enpu = False
     runner.speculative_config = SimpleNamespace(method="mtp")
+    runner._qwen4exp_mtp_ple = False
     runner.update_stream = MagicMock()
     runner._all_gather_hidden_states_and_aux = MagicMock()
 
@@ -105,6 +109,31 @@ def test_310p_runner_does_not_advertise_standardized_shared_kv_backing() -> None
     assert NPUModelRunner310.supports_compact_mamba_state is False
 
 
+def test_input_embedding_staging_buffer_is_not_pinned() -> None:
+    runner = object.__new__(NPUModelRunner310)
+    runner.device = torch.device("cpu")
+    runner.max_num_tokens = 2048
+    runner.inputs_embeds_size = 2560
+
+    with (
+        patch("vllm_ascend._310p.model_runner_310p.CpuGpuBuffer") as buffer_factory,
+        patch("vllm_ascend._310p.model_runner_310p.NPUModelRunner._make_buffer") as parent_make_buffer,
+    ):
+        buffer = runner._make_buffer(2048, 2560, dtype=torch.float16, numpy=False)
+        assert buffer is buffer_factory.return_value
+        buffer_factory.assert_called_once_with(
+            2048,
+            2560,
+            dtype=torch.float16,
+            device=torch.device("cpu"),
+            pin_memory=False,
+            with_numpy=False,
+        )
+
+        runner._make_buffer(1, dtype=torch.int32)
+        parent_make_buffer.assert_called_once_with(1, dtype=torch.int32, numpy=True)
+
+
 def test_glm5_next_cache_initialization_uses_shared_slot_allocator() -> None:
     runner = object.__new__(NPUModelRunner310)
     runner.model_config = SimpleNamespace(use_mla=False)
@@ -114,6 +143,7 @@ def test_glm5_next_cache_initialization_uses_shared_slot_allocator() -> None:
     runner.shared_kv_cache_layers = {}
     runner.compilation_config = SimpleNamespace(static_forward_context={})
     runner.kv_caches = []
+    runner._qsa_index_caches = {}
 
     layer_name = "model.layers.3.self_attn"
     spec = SimpleNamespace(model_version="glm5_next")
@@ -309,6 +339,7 @@ def test_single_request_runner_compacts_mamba_allocation() -> None:
     runner.runner_only_attn_layers = set()
     runner.max_num_reqs = 1
     runner.supports_compact_mamba_state = True
+    runner.num_compact_mamba_blocks = 1
     spec = MambaSpec(
         block_size=128,
         shapes=((4, 8), (2, 4)),
@@ -334,9 +365,33 @@ def test_single_request_runner_compacts_mamba_allocation() -> None:
     assert caches[layer_name][0].untyped_storage().nbytes() == spec.page_size_bytes
 
 
+def test_310p_spec_dummy_capture_keeps_decode_graph_enabled() -> None:
+    runner = object.__new__(NPUModelRunner310)
+    runner.input_batch = SimpleNamespace(num_computed_tokens_cpu=np.array([1], dtype=np.int32))
+    runner.attn_state = AscendAttentionState.ChunkedPrefill
+    runner.speculative_config = SimpleNamespace(num_speculative_tokens=1)
+    runner.uniform_decode_query_len = 2
+    kwargs = dict(
+        num_tokens=2,
+        num_reqs=1,
+        num_scheduled_tokens_np=np.array([2], dtype=np.int32),
+        max_num_scheduled_tokens=2,
+        use_cascade_attn=False,
+    )
+    with patch.object(NPUModelRunner, "_determine_batch_execution_and_padding", return_value=None) as parent:
+        runner._spec_dummy_capture = True
+        runner._determine_batch_execution_and_padding(**kwargs)
+        assert parent.call_args.kwargs["force_eager"] is False
+
+        runner._spec_dummy_capture = False
+        runner._determine_batch_execution_and_padding(**kwargs)
+        assert parent.call_args.kwargs["force_eager"] is True
+
+
 def test_single_request_runner_remaps_only_mamba_device_table() -> None:
     runner = object.__new__(NPUModelRunner310)
     runner.supports_compact_mamba_state = True
+    runner.num_compact_mamba_blocks = 1
     attention_gpu = torch.tensor([[17, 18]], dtype=torch.int32)
     mamba_gpu = torch.tensor([[91, 92]], dtype=torch.int32)
     attention_table = SimpleNamespace(
@@ -353,6 +408,242 @@ def test_single_request_runner_remaps_only_mamba_device_table() -> None:
 
     torch.testing.assert_close(attention_gpu, torch.tensor([[17, 18]], dtype=torch.int32))
     torch.testing.assert_close(mamba_gpu, torch.zeros_like(mamba_gpu))
+
+
+def test_single_request_mtp_keeps_two_distinct_mamba_states() -> None:
+    runner = object.__new__(NPUModelRunner310)
+    runner.device = torch.device("cpu")
+    runner.runner_only_attn_layers = set()
+    runner.max_num_reqs = 1
+    runner.supports_compact_mamba_state = True
+    runner.num_compact_mamba_blocks = 2
+    spec = MambaSpec(
+        block_size=128,
+        shapes=((4, 8), (2, 4)),
+        dtypes=(torch.float16, torch.float16),
+        num_speculative_blocks=1,
+    )
+    layer_name = "model.layers.0.linear_attn"
+    kv_cache_config = SimpleNamespace(
+        num_blocks=128,
+        kv_cache_groups=[SimpleNamespace(kv_cache_spec=spec, layer_names=[layer_name])],
+        kv_cache_tensors=[
+            SimpleNamespace(
+                size=128 * spec.page_size_bytes,
+                layers=[layer_name],
+                shared_by=[layer_name],
+            )
+        ],
+    )
+
+    caches = runner._allocate_kv_cache_tensors(kv_cache_config)
+    assert caches[layer_name][0].shape == (2, 4, 8)
+    assert caches[layer_name][1].shape == (2, 2, 4)
+
+    attention_gpu = torch.tensor([[17, 18, 19]], dtype=torch.int32)
+    mamba_gpu = torch.tensor([[91, 92, 93]], dtype=torch.int32)
+    runner.input_batch = SimpleNamespace(
+        block_table=SimpleNamespace(
+            block_tables=[
+                SimpleNamespace(is_mamba_group=False, block_table=SimpleNamespace(gpu=attention_gpu)),
+                SimpleNamespace(is_mamba_group=True, block_table=SimpleNamespace(gpu=mamba_gpu)),
+            ]
+        )
+    )
+    runner._remap_compact_mamba_block_tables(num_reqs=1)
+    torch.testing.assert_close(attention_gpu, torch.tensor([[17, 18, 19]], dtype=torch.int32))
+    torch.testing.assert_close(mamba_gpu, torch.tensor([[0, 1, 0]], dtype=torch.int32))
+
+
+def test_single_request_mtp_remaps_later_blocks_for_forward_and_state_copies() -> None:
+    runner = object.__new__(NPUModelRunner310)
+    runner.supports_compact_mamba_state = True
+    runner.supports_prefix_mamba_state_tier = False
+    runner.num_compact_mamba_blocks = 2
+    attention_gpu = torch.tensor([[17, 18, 19, 20]], dtype=torch.int32)
+    mamba_cpu = np.array([[100, 101, 102, 103]], dtype=np.int32)
+    mamba_gpu = torch.from_numpy(mamba_cpu.copy())
+    runner.input_batch = SimpleNamespace(
+        req_ids=["request"],
+        block_table=SimpleNamespace(
+            block_tables=[
+                SimpleNamespace(is_mamba_group=False, block_table=SimpleNamespace(gpu=attention_gpu)),
+                SimpleNamespace(is_mamba_group=True, block_table=SimpleNamespace(np=mamba_cpu, gpu=mamba_gpu)),
+            ]
+        ),
+    )
+    original = ([17, 18, 19, 20], [100, 101, 102, 103])
+    req_state = SimpleNamespace(block_ids=original)
+    runner.requests = {"request": req_state}
+
+    runner._remap_compact_mamba_block_tables(num_reqs=1)
+    torch.testing.assert_close(mamba_gpu, torch.tensor([[0, 1, 0, 1]], dtype=torch.int32))
+    np.testing.assert_array_equal(mamba_cpu, [[100, 101, 102, 103]])
+    np.testing.assert_array_equal(runner.input_batch._prefix_mamba_postprocess_tables[1], [[0, 1, 0, 1]])
+
+    runner._stage_prefix_mamba_request_ids()
+    assert req_state.block_ids == ([17, 18, 19, 20], [0, 1, 0, 1])
+    runner._restore_prefix_mamba_request_ids()
+    assert req_state.block_ids is original
+
+
+def test_prefix_mamba_remap_preserves_scheduler_ids() -> None:
+    runner = object.__new__(NPUModelRunner310)
+    runner.device = torch.device("cpu")
+    runner.supports_compact_mamba_state = True
+    runner.supports_prefix_mamba_state_tier = True
+    states = torch.zeros((4, 2), dtype=torch.float16)
+    runner._prefix_mamba_tiers = {1: PrefixMambaStateTier([(states,)], 4)}
+    attention_gpu = torch.tensor([[17, 18, 0]], dtype=torch.int32)
+    mamba_cpu = np.array([[0, 101, 102]], dtype=np.int32)
+    mamba_gpu = torch.tensor([[0, 101, 102]], dtype=torch.int32)
+    runner.input_batch = SimpleNamespace(
+        block_table=SimpleNamespace(
+            block_tables=[
+                SimpleNamespace(is_mamba_group=False, block_table=SimpleNamespace(gpu=attention_gpu)),
+                SimpleNamespace(
+                    is_mamba_group=True,
+                    num_blocks_per_row=np.array([3]),
+                    block_table=SimpleNamespace(np=mamba_cpu, gpu=mamba_gpu),
+                ),
+            ]
+        )
+    )
+
+    runner._remap_compact_mamba_block_tables(num_reqs=1)
+
+    torch.testing.assert_close(attention_gpu, torch.tensor([[17, 18, 0]], dtype=torch.int32))
+    torch.testing.assert_close(mamba_gpu, torch.tensor([[0, 1, 2]], dtype=torch.int32))
+    np.testing.assert_array_equal(mamba_cpu, [[0, 101, 102]])
+
+
+def test_prefix_mamba_fresh_ids_exclude_cached_prefix() -> None:
+    runner = object.__new__(NPUModelRunner310)
+    runner._prefix_mamba_tiers = {1: object()}
+    runner.kv_cache_config = SimpleNamespace(
+        kv_cache_groups=[
+            SimpleNamespace(kv_cache_spec=object()),
+            SimpleNamespace(kv_cache_spec=SimpleNamespace(block_size=128)),
+        ]
+    )
+    scheduler_output = SimpleNamespace(
+        scheduled_new_reqs=[SimpleNamespace(num_computed_tokens=256, block_ids=([7, 8, 9], [0, 101, 102]))],
+        scheduled_cached_reqs=SimpleNamespace(
+            req_ids=["ongoing"],
+            resumed_req_ids=set(),
+            new_block_ids=[([10], [103])],
+            num_computed_tokens=[384],
+        ),
+    )
+
+    assert runner._new_prefix_mamba_block_ids(scheduler_output) == {1: {102, 103}}
+
+
+def test_prefix_mamba_precopy_uses_slots_then_restores_scheduler_ids() -> None:
+    runner = object.__new__(NPUModelRunner310)
+    states = torch.zeros((4, 2), dtype=torch.float16)
+    tier = PrefixMambaStateTier([(states,)], 4)
+    tier.remap_table(np.array([[0, 101, 102]], dtype=np.int32), 3)
+    runner._prefix_mamba_tiers = {1: tier}
+    runner._prefix_mamba_active_columns = {1: (0, 1, 2)}
+    original = ([17, 18, 19], [0, 101, 102])
+    req_state = SimpleNamespace(block_ids=original)
+    runner.requests = {"request": req_state}
+    runner.input_batch = SimpleNamespace(
+        req_ids=["request"],
+        block_table=SimpleNamespace(
+            block_tables=[SimpleNamespace(is_mamba_group=False), SimpleNamespace(is_mamba_group=True)]
+        ),
+    )
+
+    runner._stage_prefix_mamba_request_ids()
+    assert req_state.block_ids == ([17, 18, 19], [0, 1, 2])
+    assert req_state.block_ids is not original
+
+    runner._restore_prefix_mamba_request_ids()
+    assert req_state.block_ids is original
+
+
+def test_prefix_mamba_stages_only_live_tail_at_full_context() -> None:
+    runner = object.__new__(NPUModelRunner310)
+    runner.device = torch.device("cpu")
+    runner.supports_compact_mamba_state = True
+    runner.supports_prefix_mamba_state_tier = True
+    states = torch.zeros((4, 2), dtype=torch.float16)
+    runner._prefix_mamba_tiers = {1: PrefixMambaStateTier([(states,)], 4)}
+    runner.kv_cache_config = SimpleNamespace(
+        kv_cache_groups=[
+            SimpleNamespace(),
+            SimpleNamespace(kv_cache_spec=SimpleNamespace(block_size=128, num_speculative_blocks=0)),
+        ]
+    )
+    mamba_cpu = np.arange(1, 1025, dtype=np.int32).reshape(1, -1)
+    mamba_gpu = torch.from_numpy(mamba_cpu.copy())
+    raw_ids = ([17], mamba_cpu[0].tolist())
+    req_state = SimpleNamespace(block_ids=raw_ids)
+    runner.requests = {"request": req_state}
+    runner.input_batch = SimpleNamespace(
+        req_ids=["request"],
+        num_computed_tokens_cpu=np.array([130944], dtype=np.int32),
+        block_table=SimpleNamespace(
+            block_tables=[
+                SimpleNamespace(is_mamba_group=False),
+                SimpleNamespace(
+                    is_mamba_group=True,
+                    num_blocks_per_row=np.array([1024]),
+                    block_table=SimpleNamespace(np=mamba_cpu, gpu=mamba_gpu),
+                ),
+            ]
+        ),
+    )
+
+    runner._remap_compact_mamba_block_tables(num_reqs=1, num_scheduled_tokens=np.array([128]))
+    assert torch.count_nonzero(mamba_gpu).item() == 2
+    assert mamba_gpu[0, -2:].tolist() == [1, 2]
+    np.testing.assert_array_equal(mamba_cpu, np.arange(1, 1025, dtype=np.int32).reshape(1, -1))
+
+    runner._stage_prefix_mamba_request_ids()
+    assert req_state.block_ids[1][-2:] == [1, 2]
+    assert all(block_id == 0 for block_id in req_state.block_ids[1][:-2])
+    runner._restore_prefix_mamba_request_ids()
+    assert req_state.block_ids is raw_ids
+
+
+def test_prefix_mamba_stages_cached_checkpoint_across_long_chunk() -> None:
+    runner = object.__new__(NPUModelRunner310)
+    runner.device = torch.device("cpu")
+    runner.supports_compact_mamba_state = True
+    runner.supports_prefix_mamba_state_tier = True
+    states = torch.zeros((4, 2), dtype=torch.float16)
+    runner._prefix_mamba_tiers = {1: PrefixMambaStateTier([(states,)], 4)}
+    runner.kv_cache_config = SimpleNamespace(
+        kv_cache_groups=[
+            SimpleNamespace(),
+            SimpleNamespace(kv_cache_spec=SimpleNamespace(block_size=512, num_speculative_blocks=0)),
+        ]
+    )
+    raw_table = np.arange(1, 55, dtype=np.int32).reshape(1, -1)
+    staged_table = torch.from_numpy(raw_table.copy())
+    runner.input_batch = SimpleNamespace(
+        num_computed_tokens_cpu=np.array([23424], dtype=np.int32),
+        block_table=SimpleNamespace(
+            block_tables=[
+                SimpleNamespace(is_mamba_group=False),
+                SimpleNamespace(
+                    is_mamba_group=True,
+                    num_blocks_per_row=np.array([54]),
+                    block_table=SimpleNamespace(np=raw_table, gpu=staged_table),
+                ),
+            ]
+        ),
+    )
+
+    runner._remap_compact_mamba_block_tables(num_reqs=1, num_scheduled_tokens=np.array([3783]))
+
+    assert runner._prefix_mamba_active_columns == {1: (45, 53)}
+    assert torch.count_nonzero(staged_table).item() == 2
+    assert staged_table[0, 45] != staged_table[0, 53]
+    np.testing.assert_array_equal(raw_table, np.arange(1, 55, dtype=np.int32).reshape(1, -1))
 
 
 class TestNPUModelRunner310(TestBase):

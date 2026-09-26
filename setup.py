@@ -522,6 +522,9 @@ setup(
     extras_require={},
     entry_points={
         "vllm.platform_plugins": ["ascend = vllm_ascend:register"],
+        "vllm.stat_logger_plugins": [
+            "ascend_request_timing = vllm_ascend.observability.request_timing:AscendRequestTimingLogger",
+        ],
         "vllm.general_plugins": [
             "ascend_kv_connector = vllm_ascend:register_connector",
             "ascend_model_loader = vllm_ascend:register_model_loader",

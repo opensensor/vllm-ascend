@@ -16,6 +16,8 @@ constexpr uint32_t QUERY_START_LOC = 8;
 constexpr int64_t NZ_INNER = 16;
 constexpr int64_t QSA_COMPRESS_RATIO = 4;
 constexpr int64_t MAX_HEAD_DIM = 256;
+constexpr int64_t MAX_QUERY_HEADS_PER_KV_HEAD = 24;
+constexpr int64_t MAX_DATA_COPY_BLOCK_SIZE = 65535;
 
 ge::graphStatus Tiling(gert::TilingContext *context)
 {
@@ -41,9 +43,15 @@ ge::graphStatus Tiling(gert::TilingContext *context)
 
     const int64_t numTokens = query.GetDim(0);
     const int64_t numQueryHeads = query.GetDim(1);
+    OP_CHECK_IF(numTokens <= 0 || numQueryHeads <= 0,
+                OP_LOGE(context, "query must contain tokens and heads"), return ge::GRAPH_FAILED);
     const int64_t headDim = query.GetDim(2);
     const int64_t cacheHeadDimBlocks = cache.GetDim(1);
     const int64_t cacheBlockSize = cache.GetDim(2);
+    OP_CHECK_IF(cacheBlockSize <= 0 || cacheBlockSize % QSA_COMPRESS_RATIO != 0 ||
+                    cacheBlockSize > MAX_DATA_COPY_BLOCK_SIZE,
+                OP_LOGE(context, "cache block size must be a positive multiple of compression ratio up to 65535"),
+                return ge::GRAPH_FAILED);
     OP_CHECK_IF(headDim <= 0 || headDim > MAX_HEAD_DIM || headDim % NZ_INNER != 0,
                 OP_LOGE(context, "head dimension must be a positive multiple of 16 up to 256"),
                 return ge::GRAPH_FAILED);
@@ -52,6 +60,10 @@ ge::graphStatus Tiling(gert::TilingContext *context)
     OP_CHECK_IF(cacheHeadDimBlocks % (headDim / NZ_INNER) != 0,
                 OP_LOGE(context, "cache head dimension is incompatible with query head dimension"),
                 return ge::GRAPH_FAILED);
+    const int64_t numKvHeads = cacheHeadDimBlocks / (headDim / NZ_INNER);
+    OP_CHECK_IF(numKvHeads <= 0, OP_LOGE(context, "cache must contain at least one KV head"), return ge::GRAPH_FAILED);
+    OP_CHECK_IF(numQueryHeads % numKvHeads != 0 || numQueryHeads / numKvHeads > MAX_QUERY_HEADS_PER_KV_HEAD,
+                OP_LOGE(context, "query heads per KV head must be between 1 and 24"), return ge::GRAPH_FAILED);
     OP_CHECK_IF(groups.GetDim(0) != numTokens, OP_LOGE(context, "selection rows must equal query tokens"),
                 return ge::GRAPH_FAILED);
     const int64_t *compressRatio = context->GetAttrs()->GetInt(1);
@@ -62,12 +74,21 @@ ge::graphStatus Tiling(gert::TilingContext *context)
     const int64_t *scaleQ24 = context->GetAttrs()->GetInt(0);
     OP_CHECK_NULL_WITH_CONTEXT(context, scaleQ24);
 
-    const int64_t taskCount = numTokens * numQueryHeads;
+    // Keep all query heads together for large prefills. A small decode would
+    // otherwise launch only numKvHeads tasks and leave most vector cores idle.
+    const int64_t headsPerKvHead = numQueryHeads / numKvHeads;
+    const int64_t baseTasks = numTokens * numKvHeads;
+    const int64_t desiredTiles = std::max<int64_t>(1, coreCount / baseTasks);
+    const int64_t headsPerTask = (headsPerKvHead + desiredTiles - 1) / desiredTiles;
+    const int64_t taskTilesPerKvHead = (headsPerKvHead + headsPerTask - 1) / headsPerTask;
+    const int64_t taskCount = baseTasks * taskTilesPerKvHead;
     const uint32_t blockDim = static_cast<uint32_t>(std::min<int64_t>(taskCount, coreCount));
     QsaSparseAttentionV310TilingData data;
     data.set_numTokens(numTokens);
     data.set_numQueryHeads(numQueryHeads);
-    data.set_numKvHeads(cacheHeadDimBlocks / (headDim / NZ_INNER));
+    data.set_numKvHeads(numKvHeads);
+    data.set_headsPerTask(headsPerTask);
+    data.set_taskTilesPerKvHead(taskTilesPerKvHead);
     data.set_headDim(headDim);
     data.set_cacheBlockSize(cacheBlockSize);
     data.set_cacheHeadDimBlocks(cacheHeadDimBlocks);

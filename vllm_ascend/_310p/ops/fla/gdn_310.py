@@ -67,6 +67,7 @@ def _flatten_state_indices(
     ssm_state_indices: torch.Tensor,
     cu_seqlens: torch.Tensor,
     total_tokens: int,
+    uniform_state_indices: bool = False,
 ) -> torch.Tensor:
     if ssm_state_indices.ndim == 1:
         return ssm_state_indices[:total_tokens].to(torch.int32).contiguous()
@@ -77,7 +78,7 @@ def _flatten_state_indices(
 
     # Uniform spec-decode ACL graph uses fixed q_len per request; reshape avoids
     # NPU masked_select which breaks stream capture (aclnnMaskedSelect / 107027).
-    if _EXTRA_CTX.capturing or (seq_lens.numel() > 0 and torch.all(seq_lens == seq_lens[0])):
+    if uniform_state_indices or _EXTRA_CTX.capturing or (seq_lens.numel() > 0 and torch.all(seq_lens == seq_lens[0])):
         q_per_seq = ssm_state_indices.shape[1]
         flat = ssm_state_indices[:, :q_per_seq].reshape(-1)
         return flat[:total_tokens].to(torch.int32).contiguous()
@@ -108,7 +109,14 @@ def _mask_padded_recurrent_accepted_tokens(
     ).contiguous()
 
 
-def _cached_recurrent_step_meta(attn_metadata, slot, cu_seqlens, ssm_state_indices, total_tokens):
+def _cached_recurrent_step_meta(
+    attn_metadata,
+    slot,
+    cu_seqlens,
+    ssm_state_indices,
+    total_tokens,
+    uniform_state_indices: bool = False,
+):
     """Per-step inputs for the recurrent GDN op, derived once instead of per layer.
 
     ``flat_state_indices`` and ``actual_seq_lengths`` are functions of
@@ -127,10 +135,10 @@ def _cached_recurrent_step_meta(attn_metadata, slot, cu_seqlens, ssm_state_indic
     if cache is None:
         cache = {}
         attn_metadata._gdn_recurrent_step_meta = cache
-    key = (slot, total_tokens)
+    key = (slot, total_tokens, uniform_state_indices)
     derived = cache.get(key)
     if derived is None:
-        flat_state_indices = _flatten_state_indices(ssm_state_indices, cu_seqlens, total_tokens)
+        flat_state_indices = _flatten_state_indices(ssm_state_indices, cu_seqlens, total_tokens, uniform_state_indices)
         flat_state_indices = torch.clamp_min(flat_state_indices, 0).contiguous()
         actual_seq_lengths = (cu_seqlens[1:] - cu_seqlens[:-1]).to(torch.int32).contiguous()
         derived = (flat_state_indices, actual_seq_lengths)
