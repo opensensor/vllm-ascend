@@ -161,6 +161,7 @@ class PrefixMambaStateTier:
         if device_archive_slots < 0:
             raise ValueError("Prefix Mamba device archive slot count cannot be negative")
         self.layer_states = tuple(tuple(states) for states in layer_states)
+        self._state_device = next((state.device for states in self.layer_states for state in states), None)
         self.num_slots = num_slots
         self._resident: OrderedDict[int, int] = OrderedDict()
         self._device_archive_resident: OrderedDict[int, int] = OrderedDict()
@@ -210,6 +211,13 @@ class PrefixMambaStateTier:
 
     def _device_archive_tensors(self, slot: int) -> tuple[torch.Tensor, ...]:
         return tuple(state[slot] for state in self._device_archive)
+
+    def _synchronize_device_state(self) -> None:
+        # A previous forward can leave a state write queued on another NPU
+        # stream.  The tier must not archive or overwrite that slot until the
+        # write completes; synchronizing only the current stream is insufficient.
+        if self._state_device is not None and self._state_device.type == "npu":
+            torch.npu.synchronize(self._state_device)
 
     @staticmethod
     def _copy_tensors(targets: Sequence[torch.Tensor], sources: Sequence[torch.Tensor]) -> None:
@@ -262,6 +270,8 @@ class PrefixMambaStateTier:
 
     def invalidate(self, block_ids: Sequence[int]) -> None:
         """Forget bytes belonging to newly allocated (possibly reused) IDs."""
+        if any(block_id > 0 and block_id in self._resident for block_id in block_ids):
+            self._synchronize_device_state()
         for block_id in block_ids:
             if block_id <= 0:
                 continue
@@ -276,6 +286,8 @@ class PrefixMambaStateTier:
         """Apply a scheduler CoW copy to the tier's authoritative state."""
         if source_id <= 0 or target_id <= 0:
             return
+        if source_id in self._resident or target_id in self._resident:
+            self._synchronize_device_state()
         source_slot = self._resident.get(source_id)
         if source_slot is not None:
             source = self._slot_tensors(source_slot)
@@ -380,6 +392,8 @@ class PrefixMambaStateTier:
                 f"Mamba prefix table references {len(block_ids)} states but has "
                 f"only {self.num_slots - 1} non-null NPU slots"
             )
+        if len(block_ids.difference(self._resident)) > len(self._unused_slots):
+            self._synchronize_device_state()
         for block_id in sorted(block_ids):
             self._admit(block_id, block_ids)
         for row, columns in enumerate(rows):

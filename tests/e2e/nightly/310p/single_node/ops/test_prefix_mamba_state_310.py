@@ -11,6 +11,8 @@ from vllm_ascend._310p.prefix_mamba_state import PrefixMambaStateTier
 NUM_SLOTS = 64
 NUM_STEPS = 96
 ID_STRIDE = 1000
+STREAM_DELAY_MATMUL_SIZE = 8192
+STREAM_DELAY_REPEATS = 5
 
 
 @pytest.mark.parametrize("num_windows", [2, 4])
@@ -64,3 +66,38 @@ def test_interleaved_npu_windows_spill_restore_cow_and_recycle(num_windows):
         source, target = state[mapped[0, 0]].cpu(), state[mapped[1, 0]].cpu()
         torch.testing.assert_close(source, torch.ones_like(source), rtol=0, atol=0)
         torch.testing.assert_close(target, torch.zeros_like(target), rtol=0, atol=0)
+
+
+@torch.inference_mode()
+def test_spill_waits_for_state_write_on_another_npu_stream():
+    pytest.importorskip("torch_npu")
+    if not torch.npu.is_available():
+        pytest.skip("Ascend NPU required")
+    torch.npu.set_device(0)
+    state = torch.zeros((2, 1024 * 1024), dtype=torch.float16, device="npu")
+    tier = PrefixMambaStateTier([(state,)], 2)
+    tier.remap_table(np.array([[101]], dtype=np.int32), 1)
+
+    matrix = torch.randn(
+        (STREAM_DELAY_MATMUL_SIZE, STREAM_DELAY_MATMUL_SIZE),
+        dtype=torch.float16,
+        device="npu",
+    )
+    matrix @ matrix
+    tier.remap_table(np.array([[202]], dtype=np.int32), 1)
+    tier.remap_table(np.array([[101]], dtype=np.int32), 1)
+    state[tier.slot_for(101)].zero_()
+    # Warm both the kernel and CPU snapshot/restore before timing the race.
+    torch.npu.synchronize()
+    side_stream = torch.npu.Stream(device=0)
+    with torch.npu.stream(side_stream):
+        for _ in range(STREAM_DELAY_REPEATS):
+            matrix @ matrix
+        state[tier.slot_for(101)].fill_(42)
+
+    # The host snapshot used to complete before the side-stream write.
+    tier.remap_table(np.array([[303]], dtype=np.int32), 1)
+    torch.npu.synchronize()
+    restored = tier.remap_table(np.array([[101]], dtype=np.int32), 1)
+    actual = state[restored[0, 0]].cpu()
+    torch.testing.assert_close(actual, torch.full_like(actual, 42), rtol=0, atol=0)
