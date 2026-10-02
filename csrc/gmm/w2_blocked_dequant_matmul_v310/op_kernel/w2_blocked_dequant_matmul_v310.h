@@ -139,6 +139,7 @@ public:
         const uint32_t coreId = GetBlockIdx();
         const uint32_t coreNum = GetBlockNum();
         const uint32_t nBlocks = CeilDivU<uint32_t>((uint32_t)N_, W2_TILE_N);
+        const uint32_t rows = (uint32_t)T_;
 
         AllocBuffers();
         FillTables();
@@ -161,17 +162,20 @@ public:
             SetFlag<HardEvent::MTE3_MTE2>(EVENT_ID4);
             WaitFlag<HardEvent::MTE3_MTE2>(EVENT_ID4);
 
-            GemmCoord shape{(uint32_t)T_, nActual, (uint32_t)K_};
-            auto tA = GetTile(tensorA, tla::MakeCoord((uint32_t)0, (uint32_t)0),
-                              tla::MakeShape((uint32_t)T_, (uint32_t)K_));
             auto tB = GetTile(tensorB, tla::MakeCoord((uint32_t)0, (uint32_t)0),
                               tla::MakeShape((uint32_t)K_, nActual));
-            auto tC = GetTile(tensorC, tla::MakeCoord((uint32_t)0, n0),
-                              tla::MakeShape((uint32_t)T_, nActual));
-            BlockMmad blockMmad(resource);
-            blockMmad.preSetFlags();
-            blockMmad(tA, tB, tC, shape);
-            blockMmad.finalWaitFlags();
+            for (uint32_t row = 0; row < rows; row += W2_TILE_M) {
+                const uint32_t rowCount = MinU<uint32_t>(W2_TILE_M, rows - row);
+                GemmCoord shape{rowCount, nActual, (uint32_t)K_};
+                auto tA = GetTile(tensorA, tla::MakeCoord(row, (uint32_t)0),
+                                  tla::MakeShape(rowCount, (uint32_t)K_));
+                auto tC = GetTile(tensorC, tla::MakeCoord(row, n0),
+                                  tla::MakeShape(rowCount, nActual));
+                BlockMmad blockMmad(resource);
+                blockMmad.preSetFlags();
+                blockMmad(tA, tB, tC, shape);
+                blockMmad.finalWaitFlags();
+            }
             // A core can process several N tiles and reuse the same GM
             // workspace.  Finish BlockMmad's MTE2 reads before the next tile
             // overwrites that workspace through MTE3.
@@ -457,30 +461,26 @@ private:
                         : (static_cast<int64_t>(n0) + rowBase) * packedK_ + k0 / codesPerByte_;
                     DecodeTile(codeOffset);
 
-                    // W is [N,K], while Cube consumes B=W^T [K,N]. Transpose
-                    // each 16x16 fragment into NZ order first.
+                    // W is [N,K], while Cube consumes B=W^T [K,N]. Transpose each
+                    // 16x16 fragment, then apply its [32,32] scale once to all 256
+                    // values before the already-NZ GM store.
                     const int64_t nFractal = rowBase / W2_FRACTAL_SIZE;
                     const int64_t nzColumnBlockStride = K_ * W2_FRACTAL_SIZE;
                     const int64_t nzBase = coreNzBase_ + nFractal * nzColumnBlockStride;
-                    if (!nzPacked_) {
-                        for (int64_t kFractal = 0; kFractal < W2_K_FRACTALS_PER_TILE; ++kFractal) {
-                            const int64_t offset = kFractal * W2_FRACTAL_SIZE * W2_FRACTAL_SIZE;
-                            AscendC::Transpose(nzTileUB_[offset], fractalRowsUB_[offset]);
-                            PipeBarrier<PIPE_V>();
-                        }
-                    }
-                    // One [32,32] block scale covers two adjacent 16x16 NZ
-                    // fragments. Multiplying both at once halves vector Muls
-                    // and its barriers without changing any FP16 products.
-                    for (int64_t kFractal = 0; kFractal < W2_K_FRACTALS_PER_TILE; kFractal += 2) {
+                    for (int64_t kFractal = 0; kFractal < W2_K_FRACTALS_PER_TILE;
+                         ++kFractal) {
                         const int64_t localFractalOffset =
                             kFractal * W2_FRACTAL_SIZE * W2_FRACTAL_SIZE;
                         const int64_t scaleIndex = k0 / W2_BLOCK_SIZE + kFractal / 2;
                         const half scale = static_cast<half>(scaleUB_.GetValue(scaleIndex));
                         auto nzFractal = nzPacked_ ? signedHalfUB_[localFractalOffset]
                                                    : nzTileUB_[localFractalOffset];
+                        if (!nzPacked_) {
+                            AscendC::Transpose(nzFractal, fractalRowsUB_[localFractalOffset]);
+                            PipeBarrier<PIPE_V>();
+                        }
                         Muls(nzFractal, nzFractal, scale,
-                             2 * W2_FRACTAL_SIZE * W2_FRACTAL_SIZE);
+                             W2_FRACTAL_SIZE * W2_FRACTAL_SIZE);
                         PipeBarrier<PIPE_V>();
                     }
                     SetFlag<HardEvent::V_MTE3>(EVENT_ID2);

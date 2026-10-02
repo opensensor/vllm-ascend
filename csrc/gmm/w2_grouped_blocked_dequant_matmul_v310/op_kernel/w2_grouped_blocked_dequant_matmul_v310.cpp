@@ -25,6 +25,8 @@ extern "C" __global__ __aicore__ void w2_grouped_blocked_dequant_matmul_v310(
       return;
     }
     if (end > start) {
+      // The shared kernel reuses each decoded weight tile across its
+      // internal 128-row Cube tiles.
       op.InitGeometry(x + start * k * sizeof(half),
                       codes + expert * n * packedK,
                       blockScale + expert * scaleStride * sizeof(float),

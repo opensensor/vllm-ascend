@@ -5100,7 +5100,10 @@ class NPUModelRunner(GPUModelRunner):
                     raise ValueError("GLM-Next KV cache descriptor has no layers.")
                 compact_mamba = len(shared_layers) == 1 and isinstance(
                     layer_kv_cache_spec[shared_layers[0]], MambaSpec
-                ) and layer_kv_cache_spec[shared_layers[0]].mamba_cache_mode == "none"
+                ) and layer_kv_cache_spec[shared_layers[0]].mamba_cache_mode == "none" and (
+                    descriptor.size
+                    == self.max_num_reqs * layer_kv_cache_spec[shared_layers[0]].page_size_bytes
+                )
                 glm_host_hot = getattr(descriptor, "glm_host_hot", False)
                 if not use_legacy_shared_by_layout:
                     expected_blocks = (
@@ -5257,9 +5260,18 @@ class NPUModelRunner(GPUModelRunner):
                             and layer_name_inner not in strided_attention_cache_layers
                         ):
                             continue
+                        layer_spec = layer_kv_cache_spec[layer_name_inner]
+                        compact_glm_mamba = (
+                            is_glm5_next
+                            and len(shared_layers) == 1
+                            and isinstance(layer_spec, MambaSpec)
+                            and layer_spec.mamba_cache_mode == "none"
+                            and kv_cache_tensor.size == self.max_num_reqs * layer_spec.page_size_bytes
+                        )
                         layer_size = (
-                            kv_cache_config.num_blocks
-                            * layer_kv_cache_spec[layer_name_inner].page_size_bytes
+                            kv_cache_tensor.size
+                            if compact_glm_mamba
+                            else kv_cache_config.num_blocks * layer_spec.page_size_bytes
                         )
                         if self.vllm_config.kv_transfer_config is None:
                             tensor = torch.zeros(layer_size, dtype=torch.int8, device=self.device)
@@ -5973,6 +5985,7 @@ class NPUModelRunner(GPUModelRunner):
                     if (
                         self.hybrid_with_attn_and_mamba
                         and not uses_same_raw_tensor
+                        and not is_compact_glm_mamba
                     ):
                         shapes_with_blocks = tuple(
                             (num_blocks, *shape)
@@ -6000,6 +6013,12 @@ class NPUModelRunner(GPUModelRunner):
                         )
                         continue
 
+                    # GLM's compact live KDA descriptors are private, but its
+                    # custom kernel consumes the legacy packed layout: all
+                    # blocks of the convolution state followed by all blocks
+                    # of the temporal state. Sending these descriptors through
+                    # the generic page-strided hybrid layout corrupts the state
+                    # at the first decode step.
                     state_tensors = []
                     target_idx = 0
                     start_idx = 0

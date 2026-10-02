@@ -10,6 +10,8 @@ from tools.deepseek_w2.w2_format import unpack_codes
 from vllm_ascend.models.glm5next_w2.model import _pack_codes_nz
 from vllm_ascend.utils import enable_custom_op
 
+W2_CUBE_MAX_ROWS = 128
+
 
 @pytest.fixture(autouse=True, scope="module")
 def require_kernel():
@@ -41,6 +43,20 @@ def _reference(
             output[start:end] = inputs[start:end].cpu().float() @ weight.t()
         start = end
     return output.half()
+
+
+def _standalone_projection_in_row_tiles(
+    inputs: torch.Tensor,
+    codes: torch.Tensor,
+    scales: torch.Tensor,
+) -> torch.Tensor:
+    op = torch.ops._C_ascend.npu_w2_blocked_dequant_matmul_310
+    return torch.cat(
+        [
+            op(inputs[start : start + W2_CUBE_MAX_ROWS], codes, scales)
+            for start in range(0, inputs.shape[0], W2_CUBE_MAX_ROWS)
+        ]
+    )
 
 
 @pytest.mark.parametrize("bits", [2, 4])
@@ -113,6 +129,28 @@ def test_grouped_projection_matches_sparse_glm_routes(bits: int, n: int, k: int)
         assert torch.isfinite(grouped[start:end]).all()
         torch.testing.assert_close(grouped[start:end], expected, rtol=4e-2, atol=4e-2)
     assert torch.count_nonzero(grouped[90:]) == 0
+
+
+@pytest.mark.parametrize("bits,n,k", [(4, 2048, 4096), (2, 4096, 2048)])
+def test_grouped_projection_tiles_large_expert_groups(bits: int, n: int, k: int):
+    """Keep every Cube invocation within its 128-row output allocation."""
+    torch.manual_seed(128 + bits)
+    rows = W2_CUBE_MAX_ROWS + 52
+    codes_per_byte = 8 // bits
+    canonical = torch.randint(0, 256, (1, n, k // codes_per_byte), dtype=torch.uint8)
+    nz_codes = _pack_codes_nz(canonical[0], k).unsqueeze(0).view(torch.int8).npu()
+    codes = canonical.npu()
+    scales = (torch.rand(1, n // 32, k // 32) * 0.02 + 0.005).npu()
+    inputs = torch.randn(rows, k).half().npu()
+    group_ends = torch.tensor([rows], dtype=torch.int64, device="npu")
+
+    grouped = torch.ops._C_ascend.npu_w2_grouped_blocked_dequant_matmul_310(inputs, codes, scales, group_ends)
+    grouped_nz = torch.ops._C_ascend.npu_w2_grouped_blocked_dequant_matmul_310(inputs, nz_codes, scales, group_ends)
+    expected = _standalone_projection_in_row_tiles(inputs, codes[0], scales[0])
+
+    assert torch.isfinite(grouped).all()
+    torch.testing.assert_close(grouped.cpu(), expected.cpu(), rtol=0, atol=0)
+    torch.testing.assert_close(grouped_nz.cpu(), grouped.cpu(), rtol=0, atol=0)
 
 
 @pytest.mark.parametrize("bits,n,k", [(4, 2048, 4096), (2, 4096, 2048)])
