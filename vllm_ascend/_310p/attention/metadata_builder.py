@@ -83,7 +83,11 @@ class AscendAttentionMetadataBuilder310(AscendAttentionMetadataBuilder):
         self._query_lens_cpu_buffer: torch.Tensor | None = None
         if device.type != "cpu":
             max_num_seqs = vllm_config.scheduler_config.max_num_seqs
-            self._query_lens_cpu_buffer = torch.empty(max_num_seqs, dtype=torch.int32, device="cpu", pin_memory=True)
+            speculative_config = vllm_config.speculative_config
+            max_query_rows = max_num_seqs * (
+                1 + speculative_config.num_speculative_tokens if speculative_config is not None else 1
+            )
+            self._query_lens_cpu_buffer = torch.empty(max_query_rows, dtype=torch.int32, device="cpu", pin_memory=True)
 
     def _fill_query_lens_cpu(
         self, num_reqs: int, query_start_loc_cpu: torch.Tensor, is_drafting: bool = False
@@ -91,6 +95,16 @@ class AscendAttentionMetadataBuilder310(AscendAttentionMetadataBuilder):
         """Pinned CPU per-request query lengths for ATB splitfuse (host qLensTensor)."""
         if self._query_lens_cpu_buffer is None:
             return (query_start_loc_cpu[1 : num_reqs + 1] - query_start_loc_cpu[:num_reqs]).contiguous()
+        if num_reqs > self._query_lens_cpu_buffer.numel():
+            # Speculative verification can expand the query rows beyond the
+            # scheduler's request count. Never resize a view passed as `out`:
+            # PyTorch detaches its storage and can lose the pinned host buffer.
+            self._query_lens_cpu_buffer = torch.empty(
+                num_reqs,
+                dtype=torch.int32,
+                device="cpu",
+                pin_memory=self._query_lens_cpu_buffer.is_pinned(),
+            )
         if is_drafting:
             # We are using the same buffer for multi step drafting,
             # so we have to clone the buffer or the q lens of step 0
