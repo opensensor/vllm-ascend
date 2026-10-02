@@ -185,13 +185,26 @@ a pass. Next compare W8 and W4 on identical held-out coding prompts, prompts tha
 cross cache-block boundaries, and perplexity/answer accuracy. Longer context and
 concurrency require separate gates. Check actual FULL runtime-mode statistics
 for two-token verification batches and increasing drafted/accepted counters;
-configuration or startup alone is not graph/MTP evidence. No accuracy-threshold CI YAML is
-provided yet: there are no real W4 accuracy results from which to set thresholds.
+configuration or startup alone is not graph/MTP evidence. The full 198-item
+GPQA result below is a quality observation; no accuracy-threshold CI YAML has
+been set from one benchmark run.
 
 ## Accuracy Evaluation
 
-Full-model evaluation is pending. The completed artifact passed a full
-header/index audit. Across 45 sampled real expert projections, mean relative
+The 2026-10-02 end-to-end GPQA Diamond comparison completed all 198 matched
+questions on the native W4A8 TP4/EP4 service and an RTX 6000 Pro IQ4_XS
+reference. Both scored **140/198 (70.71%)** with the AISBench-style last
+`Answer: X` extractor. Ascend produced 114 correct final responses versus 120
+on RTX; 81 versus 74 requests hit the 8,192-token limit. The extractor also
+credited 26 Ascend and 20 RTX correct letters that appeared only in unfinished
+reasoning. Across the 112 questions where both emitted a final answer, every
+letter agreed. The [complete protocol, domain breakdown, performance, and
+scoring audit](../../../../artifacts/qwen38-w4-offline/GPQA_DIAMOND_20261002.md)
+records the comparison and its limitations. This result applies to W4, not to
+the separate W8A8 checkpoint.
+
+Other full-model evaluation remains pending. The completed artifact passed a
+full header/index audit. Across 45 sampled real expert projections, mean relative
 weight RMSE was 0.103625 and mean weight cosine was 0.994629; all sampled
 reconstructions were finite. Weight cosine and Gaussian-input errors are diagnostics, not
 task-quality evidence. Earlier W8 or other-platform four-bit results cannot be
