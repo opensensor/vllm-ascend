@@ -787,6 +787,7 @@ def test_multi_request_prefix_tier_allocates_one_shared_pool() -> None:
 @pytest.mark.parametrize("preempted", [None, {"preempted"}])
 def test_prefix_mamba_update_lifecycle_and_cow_ignore_padding(preempted) -> None:
     runner = object.__new__(NPUModelRunner310)
+    runner.device = torch.device("cpu")
     states = torch.zeros((6, 2), dtype=torch.float16)
     tier = PrefixMambaStateTier([(states,)], 6)
     tier.remap_table(np.array([[101, 102, 103]], dtype=np.int32), 3)
@@ -822,14 +823,41 @@ def test_prefix_mamba_update_lifecycle_and_cow_ignore_padding(preempted) -> None
     with (
         patch.object(NPUModelRunner, "_update_states", return_value="deferred"),
         patch("vllm.v1.worker.utils.copy_kv_cache_blocks_inplace"),
-        patch("torch.npu.current_stream") as stream,
+        patch("torch.npu.synchronize") as synchronize,
     ):
         assert runner._update_states(output) == "deferred"
-        stream.return_value.synchronize.assert_called_once()
+        synchronize.assert_called_once_with(runner.device)
     assert output.kv_cache_block_copies is copies
     assert runner.mamba_state_idx == ({"ongoing": 9} if preempted else {"ongoing": 9, "preempted": 9})
     torch.testing.assert_close(states[tier.slot_for(102)], torch.full((2,), 11, dtype=torch.float16))
     torch.testing.assert_close(states[tier.slot_for(103)], torch.full((2,), 33, dtype=torch.float16))
+
+
+@pytest.mark.parametrize("change", ["new", "finished", "resumed", "preempted", "steady"])
+def test_prefix_mamba_layout_barrier_precedes_state_update(change) -> None:
+    runner = object.__new__(NPUModelRunner310)
+    runner.device = torch.device("cpu")
+    tier = MagicMock()
+    runner._prefix_mamba_tiers = {0: tier}
+    runner._new_prefix_mamba_block_ids = MagicMock(return_value={0: set()})
+    runner.kv_caches = []
+    runner.mamba_state_idx = {}
+    runner.input_batch = SimpleNamespace(block_table=SimpleNamespace(block_tables=[SimpleNamespace()]))
+    output = SimpleNamespace(
+        kv_cache_block_copies=None,
+        finished_req_ids={"finished"} if change == "finished" else set(),
+        preempted_req_ids={"preempted"} if change == "preempted" else set(),
+        scheduled_new_reqs=[SimpleNamespace(req_id="new")] if change == "new" else [],
+        scheduled_cached_reqs=SimpleNamespace(resumed_req_ids={"resumed"} if change == "resumed" else set()),
+    )
+    events = []
+    with (
+        patch("torch.npu.synchronize", side_effect=lambda _: events.append("barrier")),
+        patch.object(NPUModelRunner, "_update_states", side_effect=lambda _: events.append("update")),
+    ):
+        runner._update_states(output)
+    assert events == (["barrier", "update"] if change != "steady" else ["update"])
+    tier.invalidate.assert_called_once_with(set())
 
 
 def test_multi_request_remap_precopy_and_postprocess_follow_row_identity() -> None:
