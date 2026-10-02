@@ -161,9 +161,10 @@ capture size must be a multiple of `K + 1`. TP graph capture on 310P has a
 two-size event-id budget: a third graph exhausted HCCL capture events in the
 qualified experiments. The general MTP2 service profile therefore uses
 `[3, 6]`, keeping the interactive C1 and C2 shapes exact. C3 and C4 use eager
-decode. A separate `[9, 12]` profile qualified full graphs for C3 and C4, but
-made C1 and C2 pad to the 9-token graph and is not the interactive service
-default. Mixed prefill/decode full capture generated requests whose token count
+decode. Launch with `--c3-c4-graphs` for the qualified `[9, 12]` profile during
+four-request GPQA runs. It captures C3 and C4; C1 and C2 pad to the 9-token
+graph, so return to the default profile for interactive service. Mixed
+prefill/decode full capture generated requests whose token count
 exceeded the decode graph size and failed the GDN assertion.
 
 When a uniform decode batch cannot use any configured graph key, the model
