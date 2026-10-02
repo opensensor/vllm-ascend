@@ -85,6 +85,14 @@ prefix-Mamba NPU-to-CPU spill warnings appeared; the run continued without the
 previous acceptance collapse. This observation does not identify the cause of
 the earlier degraded server state.
 
+Three changes made this run practical: the 310P prefix-Mamba tier now waits
+for pending NPU state writers before eviction or slot reuse (`3c4e0a685`), the
+loopback GPQA runner saves each completed question and resumes missing IDs
+(`5739f1597`), and the dedicated four-request graph profile captures C3/C4
+decode shapes (`fdee915e8`). The recurrent-state ordering fix has its own NPU
+regression test. The benchmark's healthy final phase is useful operational
+evidence, but it does not isolate which change prevented the earlier collapse.
+
 ## Evidence and limits
 
 The retained local ledgers are:
