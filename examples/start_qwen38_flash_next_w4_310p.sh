@@ -54,10 +54,23 @@ WATCHDOG_LOG=${WATCHDOG_LOG:-$HOME/logs/watchdog_qwen38_native_int4_mtp_graph.lo
 AFFINITY_LOG=${AFFINITY_LOG:-$HOME/logs/affinity_qwen38_native_int4_mtp_graph.log}
 
 usage() {
-  echo "Usage: PORT=8001 $0 [--show|--check-runtime|--capture-routes]" >&2
+  echo "Usage: PORT=8001 $0 [--show|--check-runtime|--capture-routes] [--c3-c4-graphs]" >&2
 }
 
-if (( $# > 1 )) || { (( $# == 1 )) && [[ "$1" != --show && "$1" != --check-runtime && "$1" != --capture-routes ]]; }; then
+show_command=0
+check_runtime=0
+capture_routes=0
+c3_c4_graphs=0
+for option in "$@"; do
+  case "$option" in
+    --show) show_command=1 ;;
+    --check-runtime) check_runtime=1 ;;
+    --capture-routes) capture_routes=1 ;;
+    --c3-c4-graphs) c3_c4_graphs=1 ;;
+    *) usage; exit 2 ;;
+  esac
+done
+if (( show_command + check_runtime + capture_routes > 1 )); then
   usage
   exit 2
 fi
@@ -228,12 +241,16 @@ JSON
 
 speculative_config=$(printf '{"method":"mtp","num_speculative_tokens":%d}' "$NUM_SPEC_TOKENS")
 decode_query_len=$((NUM_SPEC_TOKENS + 1))
-# TP graph capture on 310P has a two-size event-id budget. Keep the interactive
-# C1 and C2 shapes exact. Capturing a third shape exhausts HCCL capture events;
-# C3 and C4 therefore use eager decode and emit the model runner's explicit
-# fallback warning. MTP verifies K+1 tokens per request, so graph sizes must be
-# scaled by the speculative query length.
-if (( MAX_NUM_SEQS == 1 )); then
+# TP graph capture on 310P has a two-size event-id budget. The default keeps
+# interactive C1/C2 exact. The qualified GPQA profile captures C3/C4 instead.
+# MTP verifies K+1 tokens per request, so scale both sizes by query length.
+if (( c3_c4_graphs )); then
+  if (( NUM_SPEC_TOKENS != 2 || MAX_NUM_SEQS != 4 )); then
+    echo "--c3-c4-graphs requires NUM_SPEC_TOKENS=2 and MAX_NUM_SEQS=4" >&2
+    exit 2
+  fi
+  capture_sizes=$(printf '[%d,%d]' "$((3 * decode_query_len))" "$((4 * decode_query_len))")
+elif (( MAX_NUM_SEQS == 1 )); then
   capture_sizes=$(printf '[%d]' "$decode_query_len")
 else
   capture_sizes=$(printf '[%d,%d]' "$decode_query_len" "$((2 * decode_query_len))")
@@ -277,17 +294,17 @@ serve_cmd=(
 )
 
 # Diagnostic only: route capture adds device memory and host transfers.
-if [[ "${1:-}" == --capture-routes ]]; then
+if (( capture_routes )); then
   serve_cmd+=(--enable-return-routed-experts)
 fi
 
-if [[ "${1:-}" == --show ]]; then
+if (( show_command )); then
   printf '%q ' "${serve_cmd[@]}"
   printf '\n'
   exit 0
 fi
 
-if [[ "${1:-}" == --check-runtime ]]; then
+if (( check_runtime )); then
   check_runtime_coherence
   exit 0
 fi

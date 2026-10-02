@@ -83,6 +83,35 @@ def test_graph_capture_sizes_keep_interactive_mtp_shapes_exact(num_spec_tokens, 
     assert "VLLM_ASCEND_LOG_REQUEST_TIMINGS=1" in LAUNCHER.read_text()
 
 
+def test_graph_capture_sizes_cover_c3_c4_for_gpqa():
+    result = subprocess.run(
+        ["bash", str(LAUNCHER), "--c3-c4-graphs", "--show"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    argv = shlex.split(result.stdout)
+    compilation_config = json.loads(argv[argv.index("--compilation-config") + 1])
+    assert compilation_config["cudagraph_capture_sizes"] == [9, 12]
+
+
+def test_c3_c4_graph_profile_rejects_unqualified_shape():
+    env = os.environ.copy()
+    env["MAX_NUM_SEQS"] = "3"
+    result = subprocess.run(
+        ["bash", str(LAUNCHER), "--c3-c4-graphs", "--show"],
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "requires NUM_SPEC_TOKENS=2 and MAX_NUM_SEQS=4" in result.stderr
+
+
 def _write_qwen_runtime(runtime_root: Path, *, extended_formatter: bool) -> None:
     model_dir = runtime_root / "vllm_ascend" / "models" / "qwen4_exp"
     model_dir.mkdir(parents=True)
