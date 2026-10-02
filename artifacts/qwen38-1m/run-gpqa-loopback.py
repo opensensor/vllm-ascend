@@ -9,13 +9,14 @@ extraction while keeping the HTTP connection on the server host.
 import argparse
 import csv
 import json
-import re
 import time
 import urllib.error
 import urllib.request
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 from threading import Lock
+
+import regex as re
 
 ALIGN_PROMPT = (
     "Answer the following multiple choice question. The last line of your "
