@@ -280,6 +280,17 @@ class TestAscendAttentionMetadataBuilder310(TestBase):
         torch.testing.assert_close(result, expected)
         assert result.data_ptr() == builder._query_lens_cpu_buffer[:3].data_ptr()
 
+    def test_fill_query_lens_cpu_expanded_speculative_batch(self):
+        builder = AscendMetadataBuilder310Direct.__new__(AscendMetadataBuilder310Direct)
+        builder._query_lens_cpu_buffer = torch.zeros(4, dtype=torch.int32, device="cpu")
+        query_start_loc_cpu = torch.arange(13, dtype=torch.int32)
+
+        result = builder._fill_query_lens_cpu(num_reqs=12, query_start_loc_cpu=query_start_loc_cpu)
+
+        torch.testing.assert_close(result, torch.ones(12, dtype=torch.int32))
+        assert builder._query_lens_cpu_buffer.numel() == 12
+        assert result.data_ptr() == builder._query_lens_cpu_buffer.data_ptr()
+
     def test_fill_query_lens_cpu_with_buffer_is_drafting(self):
         builder = AscendMetadataBuilder310Direct.__new__(AscendMetadataBuilder310Direct)
         builder._query_lens_cpu_buffer = torch.zeros(10, dtype=torch.int32, device="cpu")

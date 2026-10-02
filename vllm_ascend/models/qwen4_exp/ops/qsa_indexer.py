@@ -173,9 +173,10 @@ def _use_qsa_matmul_score_batch(
         raise ValueError("query_lens must be nonnegative and sum to the packed query token count")
     if num_tokens <= 0 or capacity <= 0 or query_start_loc_size != num_requests + 1:
         return False
+    has_long_prefill = any(length >= _QSA_MATMUL_PREFILL_MIN_TOKENS for length in lengths)
     return all(
         length >= _QSA_MATMUL_PREFILL_MIN_TOKENS
-        or (length <= max_decode_tokens and capacity >= _QSA_MATMUL_DECODE_MIN_GROUPS)
+        or (length <= max_decode_tokens and (has_long_prefill or capacity >= _QSA_MATMUL_DECODE_MIN_GROUPS))
         for length in lengths
         if length > 0
     )

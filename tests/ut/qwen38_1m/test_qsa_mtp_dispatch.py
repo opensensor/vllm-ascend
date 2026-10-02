@@ -235,6 +235,10 @@ def test_batched_qsa_group_list_covers_maximum_request_batch() -> None:
 def test_multi_request_qsa_matmul_dispatch_uses_per_request_lengths() -> None:
     assert _use_qsa_matmul_score_batch(None, 128, 2048, 1, 2, 8)
     assert _use_qsa_matmul_score_batch([3, 3, 3, 3], 12, 5856, 4, 5, 8)
+    # A decode request must not force a long prefill through the slow native
+    # scorer when the shared visible cache is still below 2,048 groups.
+    assert _use_qsa_matmul_score_batch([1920, 3], 1923, 1920, 2, 3, 8)
+    assert not _use_qsa_matmul_score_batch([1920, 9], 1929, 1920, 2, 3, 8)
     assert not _use_qsa_matmul_score_batch([0, 0], 0, 5856, 2, 3, 8)
     assert not _use_qsa_matmul_score_batch([3, 9], 12, 5856, 2, 3, 8)
     assert not _use_qsa_matmul_score_batch([3, 3], 6, 1024, 2, 3, 8)
