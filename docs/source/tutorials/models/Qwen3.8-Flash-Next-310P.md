@@ -94,6 +94,10 @@ curl --fail http://127.0.0.1:8001/v1/chat/completions \
 因此未提供包含虚构完整评测指标的 accuracy gate YAML。
 模型的理论最大上下文请看 checkpoint 配置；160000 是本硬件的服务限制，不是模型上限。
 
+2026-10-02 的 [198 题 GPQA Diamond 对比](../../../../artifacts/qwen38-w4-offline/GPQA_DIAMOND_20261002.md)
+使用的是独立的 **W4** 检查点与原生 W4A8 运行时，不是本页的 W8A8 检查点；
+该结果不能填补上述 W8 质量验证空缺。
+
 ## Performance
 
 9 月 25 日单序列实测约 14.8–16.0 tok/s（短请求最高约 17 为用户观察），不保证所有提示达到 15。
