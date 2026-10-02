@@ -352,6 +352,20 @@ class NPUModelRunner310(NPUModelRunner):
     def _update_states(self, scheduler_output: SchedulerOutput):
         block_copies = scheduler_output.kv_cache_block_copies
         prefix_tiers = getattr(self, "_prefix_mamba_tiers", None)
+        layout_changed = bool(
+            scheduler_output.finished_req_ids
+            or scheduler_output.scheduled_new_reqs
+            or scheduler_output.scheduled_cached_reqs.resumed_req_ids
+            or getattr(scheduler_output, "preempted_req_ids", None)
+        )
+        if prefix_tiers and layout_changed:
+            # A prior ACL graph can still be writing a request's recurrent
+            # state on another stream. Drain it before the base runner moves
+            # rows or this runner invalidates/reassigns prefix state slots.
+            torch.npu.synchronize(self.device)
+        elif scheduler_output.finished_req_ids:
+            # Non-prefix 310P paths also stage slot mappings on the CPU.
+            torch.npu.current_stream().synchronize()
         fresh_mamba_ids = self._new_prefix_mamba_block_ids(scheduler_output) if prefix_tiers else {}
         copied_nested_caches = bool(block_copies) and any(
             not isinstance(cache, torch.Tensor) for cache in self.kv_caches
@@ -397,15 +411,6 @@ class NPUModelRunner310(NPUModelRunner):
                     for source_id, target_id in block_copies:
                         if target_id in active_ids:
                             tier.copy(source_id, target_id)
-        if scheduler_output.finished_req_ids:
-            # condense() rewrites block_table.np (move_row). Drain the previous
-            # step's ACL graph replay on the NPU stream before the condensed
-            # CPU layout is uploaded and read as attn_metadata.block_tables.
-            # Main-line Ascend relies on the end-of-_prepare_inputs Triton
-            # slot-mapping kernel (reads block_table.gpu) for stream ordering;
-            # 310P uses CPU NumPy for slot_mapping and needs this barrier on
-            # layout-change steps only.
-            torch.npu.current_stream().synchronize()
         return deferred
 
     def _new_prefix_mamba_block_ids(self, scheduler_output: SchedulerOutput) -> dict[int, set[int]]:
