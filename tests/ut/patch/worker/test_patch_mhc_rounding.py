@@ -2,7 +2,7 @@
 
 import torch
 
-from vllm_ascend.patch.worker.patch_mhc_norm import _round_mhc_state
+from vllm_ascend.patch.worker.patch_mhc_norm import MHC_AI_CORE_ROUND_MAX_ELEMENTS, _round_mhc_state
 
 
 def test_mhc_default_rounding_matches_reference_bits():
@@ -39,3 +39,40 @@ def test_mhc_fp16_rounding_matches_cast_round_trip():
 
     assert actual.dtype == torch.float32
     torch.testing.assert_close(actual, value.to(torch.float16).to(torch.float32), rtol=0, atol=0)
+
+
+def test_mhc_golden_rounding_preserves_bf16_range():
+    # The GLM golden keeps bf16 mHC state. A fp16 round trip clips a large
+    # residual stream (to inf on CPU or max finite on 310P).
+    value = torch.tensor([1.0, 65504.0, 70000.0], dtype=torch.float32)
+
+    golden = _round_mhc_state(value)
+    fp16 = _round_mhc_state(value, use_fp16=True)
+
+    assert torch.isfinite(golden).all()
+    assert fp16[-1] != golden[-1]
+    torch.testing.assert_close(golden, value.to(torch.bfloat16).to(torch.float32), rtol=0, atol=0)
+
+
+def test_mhc_ai_core_round_is_opt_in_and_bounded(monkeypatch):
+    calls = []
+
+    def fake_round(x):
+        calls.append(x.numel())
+        return x.to(torch.bfloat16).to(torch.float32)
+
+    monkeypatch.setattr(torch.ops._C_ascend, "mhc_bf16_round_310", fake_round, raising=False)
+    small = torch.randn(4116)
+    expected = _round_mhc_state(small)
+    torch.testing.assert_close(_round_mhc_state(small, use_ai_core=True), expected, rtol=0, atol=0)
+    assert calls == [4116]
+
+    boundary = torch.randn(MHC_AI_CORE_ROUND_MAX_ELEMENTS)
+    _round_mhc_state(boundary, use_ai_core=True)
+    assert calls == [4116, MHC_AI_CORE_ROUND_MAX_ELEMENTS]
+
+    large = torch.randn(MHC_AI_CORE_ROUND_MAX_ELEMENTS + 1)
+    _round_mhc_state(large, use_ai_core=True)
+    _round_mhc_state(small[::2], use_ai_core=True)
+    _round_mhc_state(small, use_fp16=True, use_ai_core=True)
+    assert calls == [4116, MHC_AI_CORE_ROUND_MAX_ELEMENTS]

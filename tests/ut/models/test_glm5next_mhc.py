@@ -3,7 +3,6 @@
 
 import pytest
 import torch
-import torch_npu
 from torch import nn
 from vllm.model_executor.kernels.mhc.torch import mhc_post_torch, mhc_pre_torch
 
@@ -17,7 +16,7 @@ def _rms_norm(x, weight, epsilon):
 
 @pytest.mark.parametrize("post_scale", [2.0, 1.5])
 @pytest.mark.parametrize("with_norm", [False, True])
-def test_mhc_native_ops_preserve_deferred_mixing_and_input_norm(monkeypatch, post_scale, with_norm):
+def test_mhc_native_ops_preserve_deferred_mixing_and_input_norm(post_scale, with_norm):
     layer = Glm5NextDecoderLayer.__new__(Glm5NextDecoderLayer)
     nn.Module.__init__(layer)
     layer.n = 4
@@ -34,18 +33,30 @@ def test_mhc_native_ops_preserve_deferred_mixing_and_input_norm(monkeypatch, pos
     weight = torch.linspace(0.5, 1.5, 8).bfloat16() if with_norm else None
     norm_eps = 1e-5
 
-    def native_pre(x, fn, scale, base, hc_mult, iters, rms_eps, hc_eps):
-        assert hc_mult == 4
-        post, comb, y = mhc_pre_torch(x, fn, scale, base, rms_eps, hc_eps, hc_eps, 2.0, iters)
-        return y, post.squeeze(-1), comb
+    def pre_op(**kwargs):
+        post, comb, y = mhc_pre_torch(
+            kwargs["residual"],
+            kwargs["fn"],
+            kwargs["hc_scale"],
+            kwargs["hc_base"],
+            kwargs["rms_eps"],
+            kwargs["hc_pre_eps"],
+            kwargs["hc_sinkhorn_eps"],
+            kwargs["hc_post_mult_value"],
+            kwargs["sinkhorn_repeat"],
+        )
+        if kwargs["norm_weight"] is not None:
+            y = _rms_norm(y, kwargs["norm_weight"], kwargs["norm_eps"])
+        return post, comb, y
 
-    def native_post(x, residual, post, comb):
-        assert post.ndim == 3 and residual.ndim == 4
-        return mhc_post_torch(x, residual, post.unsqueeze(-1), comb)
+    def fused_post_pre_op(**kwargs):
+        mixed = mhc_post_torch(kwargs["x"], kwargs["residual"], kwargs["post_layer_mix"], kwargs["comb_res_mix"])
+        post, comb, y = pre_op(**{**kwargs, "residual": mixed})
+        return mixed, post, comb, y
 
-    monkeypatch.setattr(torch.ops._C_ascend, "npu_hc_pre_v2", native_pre, raising=False)
-    monkeypatch.setattr(torch.ops._C_ascend, "npu_hc_post", native_post, raising=False)
-    monkeypatch.setattr(torch_npu, "npu_rms_norm", lambda x, weight, epsilon: (_rms_norm(x, weight, epsilon), None))
+    layer.mhc_pre_op = pre_op
+    layer.mhc_post_op = mhc_post_torch
+    layer.mhc_fused_post_pre_op = fused_post_pre_op
 
     expected_post, expected_comb, expected_y = mhc_pre_torch(
         residual, fn, scale, base, layer.rms_norm_eps, layer.hc_eps, layer.hc_eps, post_scale, 20
@@ -62,7 +73,8 @@ def test_mhc_native_ops_preserve_deferred_mixing_and_input_norm(monkeypatch, pos
     )
     if with_norm:
         next_y = _rms_norm(next_y, weight, norm_eps)
-    actual = layer.hc_post_pre(y, residual, post, comb, fn, scale, base, norm_weight=weight, norm_eps=norm_eps)
+    torch.testing.assert_close(layer.hc_post(y, residual, post, comb), mixed)
+    actual = layer.hc_fused_post_pre(y, residual, post, comb, fn, scale, base, norm_weight=weight, norm_eps=norm_eps)
     for value, expected in zip(actual, (mixed, next_post, next_comb, next_y)):
         torch.testing.assert_close(value, expected)
     torch.testing.assert_close(residual, original)

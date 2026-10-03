@@ -69,6 +69,7 @@
 #include "attention/qsa_index_cache_update_v310/qsa_index_cache_update_310_torch_adpt.h"
 #include "attention/mla_cache_write_v310/mla_cache_write_310_torch_adpt.h"
 #include "attention/mhc_sinkhorn_v310/mhc_sinkhorn_310_torch_adpt.h"
+#include "attention/mhc_bf16_round_v310/mhc_bf16_round_310_torch_adpt.h"
 #include "attention/qwen4_exp_ple_decode_v310/qwen4exp_ple_decode_310_torch_adpt.h"
 #include "attention/k2q_csr/k2q_csr_torch_adpt.h"
 #include "attention/msa_index_score/msa_index_score_torch_adpt.h"
@@ -2900,6 +2901,10 @@ TORCH_LIBRARY_EXPAND(CONCAT(_C, _ascend), ops)
         "float epsilon=1e-6) -> Tensor");
     ops.impl("mhc_sinkhorn_310", torch::kPrivateUse1,
              &vllm_ascend::mhc_sinkhorn_310);
+
+    ops.def("mhc_bf16_round_310(Tensor input) -> Tensor");
+    ops.impl("mhc_bf16_round_310", torch::kPrivateUse1,
+             &vllm_ascend::mhc_bf16_round_310);
 
     ops.def(
         "qwen4exp_ple_decode_310(Tensor projected, Tensor hidden, "

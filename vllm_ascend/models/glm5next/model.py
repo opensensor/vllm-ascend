@@ -386,6 +386,9 @@ class Glm5NextDecoderLayer(nn.Module):
             use_310p_batched_bf16_round = bool(getattr(config, "ascend_glm_mhc_batched_round", False))
             self.mhc_pre_op.use_310p_batched_bf16_round = use_310p_batched_bf16_round
             self.mhc_fused_post_pre_op.use_310p_batched_bf16_round = use_310p_batched_bf16_round
+            use_310p_ai_core_bf16_round = bool(getattr(config, "ascend_glm_mhc_ai_core_round", False))
+            self.mhc_pre_op.use_310p_ai_core_bf16_round = use_310p_ai_core_bf16_round
+            self.mhc_fused_post_pre_op.use_310p_ai_core_bf16_round = use_310p_ai_core_bf16_round
 
     def forward(
         self,
