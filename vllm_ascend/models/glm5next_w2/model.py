@@ -1140,6 +1140,9 @@ def _build_causal_lm_cls() -> type:
             self._glm_text_config.ascend_glm_mhc_fp16_state = bool(
                 getattr(hf_config, "ascend_glm_mhc_fp16_state", False)
             )
+            self._glm_text_config.ascend_glm_mhc_batched_round = bool(
+                getattr(hf_config, "ascend_glm_mhc_batched_round", False)
+            )
             # FP16-in-checkpoint fix: the dense-MLP and shared-expert projections
             # ship as fp16 (no weight_scale_inv) but are absent from the
             # checkpoint's modules_to_not_convert. Mark them so they load through
