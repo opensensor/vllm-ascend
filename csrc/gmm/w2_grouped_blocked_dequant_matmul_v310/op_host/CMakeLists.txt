@@ -1,6 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 add_op_to_compiled_list()
+# The grouped kernel includes the standalone W2 kernel header. Register it as
+# a source dependency so edits to the shared unpack/dequant code invalidate
+# both compiled objects, including the local build-cache identity.
+set(w2_grouped_blocked_dequant_matmul_v310_depends
+    gmm/w2_blocked_dequant_matmul_v310
+    CACHE STRING "Kernel source dependencies for grouped W2/W4" FORCE)
 if(BUILD_OPEN_PROJECT)
     target_sources(op_host_aclnn PRIVATE w2_grouped_blocked_dequant_matmul_v310_def.cpp)
 endif()
