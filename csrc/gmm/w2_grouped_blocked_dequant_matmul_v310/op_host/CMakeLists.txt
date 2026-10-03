@@ -13,6 +13,8 @@ endif()
 add_ops_compile_options(
     OP_NAME W2GroupedBlockedDequantMatmulV310
     OPTIONS --cce-auto-sync=off -Wno-deprecated-declarations
+    -DGLM_W2_SCALE_PAIR
+    -DGLM_W2_GROUPED_RINT_UNPACK
     -I${CMAKE_SOURCE_DIR}/third_party/catlass/include
     -I${CMAKE_SOURCE_DIR}/moe/common
     -I${CMAKE_SOURCE_DIR}/gmm/w2_blocked_dequant_matmul_v310/op_kernel

@@ -358,11 +358,13 @@ private:
     {
         Duplicate(threeUB_, static_cast<int16_t>(fieldMask_), (int32_t)decodedTileCount_);
         Duplicate(signHalfUB_, static_cast<int16_t>(signHalf_), (int32_t)decodedTileCount_);
+#ifndef GLM_W2_GROUPED_RINT_UNPACK
         for (int64_t field = 0; field < codesPerByte_; ++field) {
             Duplicate(masksUB_[field * packedTileCount_],
                       static_cast<int16_t>(fieldMask_ << (bitsPerCode_ * field)),
                       (int32_t)packedTileCount_);
         }
+#endif
 
         // The vector unpack is field-major across the complete packed tile.
         // Gather directly into eight [N=16,K=16] row-major fragments, avoiding
@@ -409,7 +411,43 @@ private:
         SetFlag<HardEvent::MTE2_V>(EVENT_ID0);
         WaitFlag<HardEvent::MTE2_V>(EVENT_ID0);
         Cast(cH_, cU8_, RoundMode::CAST_NONE, (int32_t)packedTileCount_);
+#if defined(GLM_W2_GROUPED_RINT_UNPACK) || defined(GLM_W2_SCALE_PAIR)
+        // Release cU8_ for the next MTE2 DMA as soon as Cast finishes
+        // reading it; do not wait for the rest of the vector unpack.
+        SetFlag<HardEvent::V_MTE2>(EVENT_ID0);
+        WaitFlag<HardEvent::V_MTE2>(EVENT_ID0);
+#endif
         PipeBarrier<PIPE_V>();
+#ifdef GLM_W2_GROUPED_RINT_UNPACK
+        // Biased RINT computes floor(byte / divisor) exactly for the W2/W4
+        // dyadic divisors 4, 16, and 64. Reconstruct unsigned fields from
+        // adjacent quotients; keep the existing sign extension below.
+        Cast(fieldI16UB_, cH_, RoundMode::CAST_RINT, (int32_t)packedTileCount_);
+        PipeBarrier<PIPE_V>();
+        for (int32_t field = 1; field < codesPerByte_; ++field) {
+            const int32_t divisor = 1 << (bitsPerCode_ * field);
+            const half reciprocal = static_cast<half>(1.0f / static_cast<float>(divisor));
+            const half bias = static_cast<half>(-
+                (static_cast<float>(divisor) - 1.0f) / (2.0f * static_cast<float>(divisor)));
+            Muls(fieldHalfUB_, cH_, reciprocal, (int32_t)packedTileCount_);
+            PipeBarrier<PIPE_V>();
+            Adds(fieldHalfUB_, fieldHalfUB_, bias, (int32_t)packedTileCount_);
+            PipeBarrier<PIPE_V>();
+            Cast(fieldI16UB_[field * packedTileCount_], fieldHalfUB_,
+                 RoundMode::CAST_RINT, (int32_t)packedTileCount_);
+            PipeBarrier<PIPE_V>();
+        }
+        const int16_t radix = static_cast<int16_t>(1 << bitsPerCode_);
+        for (int32_t field = 0; field + 1 < codesPerByte_; ++field) {
+            Muls(andTmp_, fieldI16UB_[(field + 1) * packedTileCount_], radix,
+                 (int32_t)packedTileCount_);
+            PipeBarrier<PIPE_V>();
+            Sub(fieldI16UB_[field * packedTileCount_],
+                fieldI16UB_[field * packedTileCount_], andTmp_,
+                (int32_t)packedTileCount_);
+            PipeBarrier<PIPE_V>();
+        }
+#else
         Cast(c16_, cH_, RoundMode::CAST_RINT, (int32_t)packedTileCount_);
         PipeBarrier<PIPE_V>();
 
@@ -426,6 +464,7 @@ private:
                  RoundMode::CAST_RINT, (int32_t)packedTileCount_);
             PipeBarrier<PIPE_V>();
         }
+#endif
 
         // Sign-extend the two's-complement W2/W4 field in int16.
         Add(fieldI16UB_, fieldI16UB_, signHalfUB_, (int32_t)decodedTileCount_);
@@ -467,20 +506,41 @@ private:
                     const int64_t nFractal = rowBase / W2_FRACTAL_SIZE;
                     const int64_t nzColumnBlockStride = K_ * W2_FRACTAL_SIZE;
                     const int64_t nzBase = coreNzBase_ + nFractal * nzColumnBlockStride;
+#ifdef GLM_W2_SCALE_PAIR
+                    if (!nzPacked_) {
+                        for (int64_t kFractal = 0; kFractal < W2_K_FRACTALS_PER_TILE; ++kFractal) {
+                            const int64_t offset =
+                                kFractal * W2_FRACTAL_SIZE * W2_FRACTAL_SIZE;
+                            AscendC::Transpose(nzTileUB_[offset], fractalRowsUB_[offset]);
+                            PipeBarrier<PIPE_V>();
+                        }
+                    }
+                    // The two adjacent 16x16 NZ fragments share one [32,32]
+                    // block scale. One vector Muls covers both fragments.
+                    for (int64_t kFractal = 0; kFractal < W2_K_FRACTALS_PER_TILE;
+                         kFractal += 2) {
+#else
                     for (int64_t kFractal = 0; kFractal < W2_K_FRACTALS_PER_TILE;
                          ++kFractal) {
+#endif
                         const int64_t localFractalOffset =
                             kFractal * W2_FRACTAL_SIZE * W2_FRACTAL_SIZE;
                         const int64_t scaleIndex = k0 / W2_BLOCK_SIZE + kFractal / 2;
                         const half scale = static_cast<half>(scaleUB_.GetValue(scaleIndex));
                         auto nzFractal = nzPacked_ ? signedHalfUB_[localFractalOffset]
                                                    : nzTileUB_[localFractalOffset];
+#ifndef GLM_W2_SCALE_PAIR
                         if (!nzPacked_) {
                             AscendC::Transpose(nzFractal, fractalRowsUB_[localFractalOffset]);
                             PipeBarrier<PIPE_V>();
                         }
+#endif
                         Muls(nzFractal, nzFractal, scale,
+#ifdef GLM_W2_SCALE_PAIR
+                             2 * W2_FRACTAL_SIZE * W2_FRACTAL_SIZE);
+#else
                              W2_FRACTAL_SIZE * W2_FRACTAL_SIZE);
+#endif
                         PipeBarrier<PIPE_V>();
                     }
                     SetFlag<HardEvent::V_MTE3>(EVENT_ID2);
