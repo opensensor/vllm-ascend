@@ -7,8 +7,13 @@ from types import SimpleNamespace
 import pytest
 import torch
 from vllm.sampling_params import SamplingParams
+from vllm.utils.hashing import sha256
 from vllm.v1.core.kv_cache_manager import KVCacheManager
-from vllm.v1.core.kv_cache_utils import generate_scheduler_kv_cache_config
+from vllm.v1.core.kv_cache_utils import (
+    generate_scheduler_kv_cache_config,
+    get_request_block_hasher,
+    init_none_hash,
+)
 from vllm.v1.core.single_type_kv_cache_manager import (
     register_all_kvcache_specs,
 )
@@ -20,7 +25,7 @@ from vllm.v1.kv_cache_interface import (
 )
 from vllm.v1.request import Request
 
-from vllm_ascend.core.kv_cache_interface import AscendIndexerKPoolTailSpec
+from vllm_ascend.core.kv_cache_interface import AscendIndexerKPoolTailSpec, is_prefix_cacheable
 from vllm_ascend.models.glm5next.cache_config import (
     _get_glm5_next_cache_layout,
     get_glm5_next_fixed_pool_bytes,
@@ -29,6 +34,7 @@ from vllm_ascend.models.glm5next.cache_config import (
     get_glm5_next_max_memory_usage,
     get_glm5_next_pool_bytes_per_block,
 )
+from vllm_ascend.patch.platform import patch_kv_cache_coordinator
 from vllm_ascend.utils import get_kv_cache_tensor_layers, vllm_version_is
 
 
@@ -54,17 +60,17 @@ def make_config(*, retention_interval: int | None = 0):
     )
 
 
-def make_specs(pool: int = 16):
+def make_specs(pool: int = 16, block_size: int = 512):
     specs = {
         "model.layers.3.attn": MLAAttentionSpec(
-            block_size=512,
+            block_size=block_size,
             num_kv_heads=1,
             head_size=512,
             dtype=torch.bfloat16,
             model_version="glm5_next",
         ),
         "model.layers.3.indexer.k_cache": MLAAttentionSpec(
-            block_size=512,
+            block_size=block_size,
             num_kv_heads=1,
             head_size=128,
             dtype=torch.bfloat16,
@@ -84,7 +90,7 @@ def make_specs(pool: int = 16):
     }
     for layer_idx in range(3):
         specs[f"model.layers.{layer_idx}.linear_attn"] = MambaSpec(
-            block_size=512,
+            block_size=block_size,
             shapes=((3, 16), (1, 16, 16)),
             dtypes=(torch.bfloat16, torch.float32),
         )
@@ -393,6 +399,97 @@ def test_live_only_kda_rejects_prefix_caching():
     config.cache_config.enable_prefix_caching = True
     with pytest.raises(ValueError, match="does not support prefix caching"):
         get_glm5_next_kv_cache_groups(config, make_specs())
+
+
+def test_aligned_kda_prefix_cache_uses_page_backed_state():
+    config = make_config()
+    config.cache_config.enable_prefix_caching = True
+    config.cache_config.mamba_cache_mode = "align"
+    specs = make_specs()
+    for spec in specs.values():
+        if isinstance(spec, MambaSpec):
+            object.__setattr__(spec, "mamba_cache_mode", "align")
+
+    groups = get_glm5_next_kv_cache_groups(config, specs)
+    layout = _get_glm5_next_cache_layout(groups)
+    assert layout is not None and not layout.compact_mamba
+    assert get_glm5_next_fixed_pool_bytes(config, groups) == 0
+
+    bytes_per_block = get_glm5_next_pool_bytes_per_block(groups)
+    plan = get_glm5_next_kv_cache_config(config, groups, 20 * bytes_per_block)
+    assert plan.num_blocks == 20
+    placements = {name: tensor for tensor in plan.kv_cache_tensors for name in get_kv_cache_tensor_layers(tensor)}
+    main = placements[layout.mla_names[0]]
+    assert all(placements[name] is main for group in layout.mamba_groups for name in group.layer_names)
+
+    manager = KVCacheManager(
+        generate_scheduler_kv_cache_config([plan]),
+        max_model_len=config.model_config.max_model_len,
+        scheduler_block_size=512,
+        hash_block_size=512,
+        max_in_flight_tokens=config.max_in_flight_tokens,
+        enable_caching=True,
+    )
+    assert len(manager.coordinator.single_type_managers) == len(groups)
+    assert isinstance(manager.coordinator, patch_kv_cache_coordinator.AscendHybridKVCacheCoordinator)
+    cacheable = [is_prefix_cacheable(group.kv_cache_spec) for group in groups]
+    assert cacheable == [True, False, True, True, True]
+    assert [m.enable_caching for m in manager.coordinator.single_type_managers] == cacheable
+
+
+@pytest.mark.parametrize("block_size,pool", [(512, 16), (640, 4)])
+def test_aligned_kda_prefix_cache_can_reuse_a_full_prompt_block(block_size: int, pool: int):
+    init_none_hash(sha256)
+    config = make_config()
+    config.max_in_flight_tokens = block_size
+    config.cache_config.enable_prefix_caching = True
+    config.cache_config.mamba_cache_mode = "align"
+    specs = make_specs(pool=pool, block_size=block_size)
+    for spec in specs.values():
+        if isinstance(spec, MambaSpec):
+            object.__setattr__(spec, "mamba_cache_mode", "align")
+    groups = get_glm5_next_kv_cache_groups(config, specs)
+    bytes_per_block = get_glm5_next_pool_bytes_per_block(groups)
+    plan = get_glm5_next_kv_cache_config(config, groups, 256 * bytes_per_block)
+    manager = KVCacheManager(
+        generate_scheduler_kv_cache_config([plan]),
+        max_model_len=config.model_config.max_model_len,
+        scheduler_block_size=block_size,
+        hash_block_size=block_size,
+        max_in_flight_tokens=config.max_in_flight_tokens,
+        enable_caching=True,
+    )
+
+    def request(request_id: str) -> Request:
+        return Request(
+            request_id,
+            [1] * (3 * block_size),
+            SamplingParams(max_tokens=1),
+            None,
+            block_hasher=get_request_block_hasher(block_size, sha256),
+        )
+
+    first = request("prefix-a")
+    assert manager.allocate_slots(first, num_new_tokens=block_size) is not None
+    first.num_computed_tokens = block_size
+    manager.new_step_starts()
+    assert manager.allocate_slots(first, num_new_tokens=block_size) is not None
+    manager.free(first)
+    manager.new_step_starts()
+    second = request("prefix-b")
+    cached_blocks, cached_tokens, _ = manager.get_computed_blocks(second)
+    assert cached_tokens >= block_size
+    assert not cached_blocks.blocks[1]
+    assert (
+        manager.allocate_slots(
+            second,
+            num_new_tokens=block_size,
+            num_new_computed_tokens=cached_tokens,
+            new_computed_blocks=cached_blocks,
+        )
+        is not None
+    )
+    manager.free(second)
 
 
 def test_live_only_kda_rejects_speculative_decoding():
