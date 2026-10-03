@@ -48,9 +48,10 @@ try:
         """
         if use_fp16:
             return x.to(_t.float16).to(_t.float32)
-        xi = x.to(_t.float32).view(_t.int32)
-        xi = (xi + 0x7FFF + ((xi >> 16) & 1)) & -65536  # 0xFFFF0000
-        return xi.view(_t.float32)
+        # Native BF16 conversion is bit-exact for finite FP32 inputs on 310P.
+        # The integer emulation launched BitwiseAndScalar on AI CPU for every
+        # mHC state tensor, dominating prefill and slowing graph replay.
+        return x.to(_t.bfloat16).to(_t.float32)
 
     def _mhc_pre_torch_sinkhorn_310(
         residual,
