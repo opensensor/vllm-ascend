@@ -60,4 +60,37 @@ Core rounder is also slower than the native BF16 cast pair on `[640,4,4096]`
 limit must remain in place.
 
 The qualified server was restored and returned HTTP 200 from `/health` after
-these isolated tests. No candidate from this study is promoted.
+these isolated kernel tests. Neither kernel candidate was promoted.
+
+## Opt-in FP16 mHC state: faster serving candidate
+
+The existing `ascend_glm_mhc_fp16_state` HF override converts the mHC state
+through FP16 instead of BF16. This avoids the AI CPU BF16 cast pair, but FP16
+has a narrower exponent range and different rounding from the BF16 reference.
+The exact tested launcher is `serve-selective-w3-prefill-fp16-mhc-20261004.sh`.
+It changed only that override relative to the qualified Cube512/histogram
+server; Packed-W3 and QSA OPPs, TP4 graph capture, 640-token chunks, 0.70 KV
+fraction, and the 192K configured limit stayed the same. The server advertised
+240,402 KV tokens, 1.22 times that limit.
+
+| Gate | Qualified BF16 | Opt-in FP16 mHC |
+| --- | ---: | ---: |
+| Matched 7,877-token retrieval TTFT | 99.04 s | **85.74 s** |
+| 8K retrieval answer | exact | exact |
+| Strict answer suite | 17/20 | 17/20, same three misses |
+| 256-token c1 decode | 3.548 tok/s | 3.653 tok/s |
+| 256-token c4 aggregate decode | 7.939 tok/s | 8.093 tok/s |
+
+All five short completions reached 256 tokens. Nineteen of the twenty strict
+final strings were identical; the one changed response was the already-failed
+`instr_reverse` case. A 32,453-token retrieval also returned the exact code
+with 338.95 s TTFT. The paired 8K prompt served the same 7,877 tokens and
+returned the same code on both servers. These are single serving runs, so the
+small decode difference is not a firm throughput claim. The 8K TTFT gain is
+13.4% over the qualified BF16 run, or 52.5% below the pre-Cube 180.49 s run.
+
+Request records, summaries, and the exact launcher are alongside this README.
+The opt-in server is running on port 8001 as PID `1072428`. This mode remains
+experimental because FP16 can overflow above 65,504 and the full 192K prompt
+has not been tested. The BF16 launcher is preserved on the NPU host at
+`/home/matteius/experiments/glm-w3-20261004/serve-selective-w3-prefill-histogram-20261004.sh`.
