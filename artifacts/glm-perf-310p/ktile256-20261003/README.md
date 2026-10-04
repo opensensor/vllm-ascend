@@ -122,6 +122,18 @@ controlled runs, not a proven kernel-level race. The eager variant is slower
 than the known-good graph baseline, so it is not a serving replacement. The
 128-K graph server was restored after the diagnostic.
 
+One-NPU probes then captured the candidate grouped operator by itself and
+replayed it with changing activation tensors and device-side expert
+boundaries. W4 and W2 each passed **24/24 bitwise comparisons** with eager.
+A captured W4 gate/up → SiLU/multiply → W2 down chain also passed **24/24**
+changing-input comparisons. These probes used four routed rows, the real
+4096-output widths, and alternating expert distributions. They make a simple
+single-op capture failure less likely, but do not cover GLM's KDA/MLA/QSA
+state or its full-forward graph. The next diagnostic is a per-layer
+graph-versus-eager activation trace on the same concurrent prompts, starting
+at the first decode token; only after locating the first divergence should
+the 256-K optimization be revised.
+
 Local request records:
 `/tmp/glm-22k-ktile256-windows2k-calibrated-20261003.jsonl`,
 `/tmp/glm-22k-128k-windows2k-calibrated-20261003.jsonl`, and
