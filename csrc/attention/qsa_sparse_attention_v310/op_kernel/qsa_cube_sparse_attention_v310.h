@@ -14,16 +14,20 @@ constexpr int64_t QSA_COMPRESS_RATIO = 4;
 // V continue to reuse the same B1/B2 buffers.
 constexpr int64_t TOKEN_TILE = 64;
 constexpr int64_t MAX_HEAD_DIM = 256;
+constexpr int64_t GLM_LATENT_HEAD_DIM = 512;
 constexpr int64_t MAX_QUERY_HEADS = 16;
 constexpr int64_t MAX_GROUP_WIDTH = 512;
 constexpr int64_t MAX_LOCAL_BLOCK_TABLE_ENTRIES = 2048;
 constexpr int64_t INT32_ALIGNMENT = 8;
 constexpr int64_t SCALE_Q24_FACTOR = 16777216;
-constexpr int64_t QUERY_L0_ELEMENTS = MAX_QUERY_HEADS * MAX_HEAD_DIM;
 constexpr int64_t PROBABILITY_L0_ELEMENTS = MAX_QUERY_HEADS * TOKEN_TILE;
 constexpr IsResetLoad3dConfig LOAD3DV2_CONFIG = {true, true};
 
-class QsaCubeSparseAttentionV310 {
+template <int64_t HEAD_DIM>
+class QsaCubeSparseAttentionV310T {
+    static constexpr int64_t MAX_HEAD_DIM = HEAD_DIM;
+    static constexpr int64_t QUERY_L0_ELEMENTS = MAX_QUERY_HEADS * HEAD_DIM;
+
 public:
     __aicore__ inline void Init(GM_ADDR query, GM_ADDR keyCache, GM_ADDR valueCache, GM_ADDR groupIndices,
                                 GM_ADDR groupCounts, GM_ADDR tailStarts, GM_ADDR tailCounts, GM_ADDR blockTable,
@@ -606,6 +610,9 @@ private:
     bool useLocalGroups_ = false;
     bool useLocalBlockTable_ = false;
 };
+
+using QsaCubeSparseAttentionV310 = QsaCubeSparseAttentionV310T<MAX_HEAD_DIM>;
+using QsaCubeSparseAttentionV310Wide = QsaCubeSparseAttentionV310T<GLM_LATENT_HEAD_DIM>;
 
 }  // namespace NsQsaCubeSparseAttention
 

@@ -10,13 +10,21 @@ extern "C" __global__ __aicore__ void qsa_sparse_attention_v310(
     REGISTER_TILING_DEFAULT(QsaSparseAttentionV310TilingData);
     GET_TILING_DATA_WITH_STRUCT(QsaSparseAttentionV310TilingData, tilingData, tiling);
     AscendC::TPipe pipe;
-    if (tilingData.headDim == NsQsaCubeSparseAttention::MAX_HEAD_DIM &&
+    if ((tilingData.headDim == NsQsaCubeSparseAttention::MAX_HEAD_DIM ||
+         tilingData.headDim == NsQsaCubeSparseAttention::GLM_LATENT_HEAD_DIM) &&
         tilingData.headsPerTask <= NsQsaCubeSparseAttention::MAX_QUERY_HEADS &&
         tilingData.selectedGroupsWidth <= NsQsaCubeSparseAttention::MAX_GROUP_WIDTH) {
-        NsQsaCubeSparseAttention::QsaCubeSparseAttentionV310 op;
-        op.Init(query, keyCache, valueCache, groupIndices, groupCounts, tailStarts, tailCounts, blockTable,
-                queryStartLoc, output, &tilingData, &pipe);
-        op.Process();
+        if (tilingData.headDim == NsQsaCubeSparseAttention::GLM_LATENT_HEAD_DIM) {
+            NsQsaCubeSparseAttention::QsaCubeSparseAttentionV310Wide op;
+            op.Init(query, keyCache, valueCache, groupIndices, groupCounts, tailStarts, tailCounts, blockTable,
+                    queryStartLoc, output, &tilingData, &pipe);
+            op.Process();
+        } else {
+            NsQsaCubeSparseAttention::QsaCubeSparseAttentionV310 op;
+            op.Init(query, keyCache, valueCache, groupIndices, groupCounts, tailStarts, tailCounts, blockTable,
+                    queryStartLoc, output, &tilingData, &pipe);
+            op.Process();
+        }
     } else {
         NsQsaSparseAttention::QsaSparseAttentionV310 op;
         op.Init(query, keyCache, valueCache, groupIndices, groupCounts, tailStarts, tailCounts, blockTable,
