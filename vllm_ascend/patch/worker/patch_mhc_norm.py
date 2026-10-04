@@ -24,6 +24,10 @@ try:
     )
     from vllm.model_executor.layers import mhc as _mhc_mod
 
+    # Four-token decode has four mHC streams of 4096 values per token.
+    # Keep larger prefill buffers on the native path until separately gated.
+    MHC_AI_CORE_ROUND_MAX_ELEMENTS = 65_536
+
     def _mhc_rms_norm(x, weight, eps):
         # `x` (the mHC layer_input) may arrive in fp32 because the residual
         # accumulator rides fp32 on the 310P. RMSNorm normalizes away the
@@ -34,7 +38,7 @@ try:
         var = xf.square().mean(dim=-1, keepdim=True)
         return (xf * _t.rsqrt(var + eps) * weight.float()).to(weight.dtype)
 
-    def _round_mhc_state(x, use_fp16: bool = False):
+    def _round_mhc_state(x, use_fp16: bool = False, use_ai_core: bool = False):
         """Round mHC state to the reference BF16 or experimental FP16 precision.
 
         The golden runs the mHC residual + hyper-connection mixes in bf16
@@ -48,9 +52,29 @@ try:
         """
         if use_fp16:
             return x.to(_t.float16).to(_t.float32)
-        xi = x.to(_t.float32).view(_t.int32)
-        xi = (xi + 0x7FFF + ((xi >> 16) & 1)) & -65536  # 0xFFFF0000
-        return xi.view(_t.float32)
+        if (
+            use_ai_core
+            and x.dtype == _t.float32
+            and x.is_contiguous()
+            and 0 < x.numel() <= MHC_AI_CORE_ROUND_MAX_ELEMENTS
+        ):
+            return _t.ops._C_ascend.mhc_bf16_round_310(x)
+        # Native BF16 conversion is bit-exact for finite FP32 inputs on 310P.
+        # The integer emulation launched BitwiseAndScalar on AI CPU for every
+        # mHC state tensor, dominating prefill and slowing graph replay.
+        return x.to(_t.bfloat16).to(_t.float32)
+
+    def _round_mhc_outputs_batch(post_mix, comb_mix, layer_input, use_ai_core: bool = False):
+        """Round the three independent pre outputs with one BF16 cast pair.
+
+        A fused post/pre must still round its residual before computing these
+        outputs; only the already-computed outputs can share a conversion.
+        """
+        outputs = (post_mix, comb_mix, layer_input)
+        sizes = tuple(output.numel() for output in outputs)
+        flattened = _t.cat([output.reshape(-1) for output in outputs])
+        rounded = _round_mhc_state(flattened, use_ai_core=use_ai_core)
+        return tuple(piece.view_as(output) for piece, output in zip(rounded.split(sizes), outputs, strict=True))
 
     def _mhc_pre_torch_sinkhorn_310(
         residual,
@@ -119,9 +143,15 @@ try:
             sinkhorn_repeat,
         )
         use_fp16 = getattr(self, "use_310p_fp16_mhc_state", False)
-        post_mix = _round_mhc_state(post_mix, use_fp16)
-        comb_mix = _round_mhc_state(comb_mix, use_fp16)
-        layer_input = _round_mhc_state(layer_input, use_fp16)
+        use_ai_core = getattr(self, "use_310p_ai_core_bf16_round", False)
+        if getattr(self, "use_310p_batched_bf16_round", False) and not use_fp16:
+            post_mix, comb_mix, layer_input = _round_mhc_outputs_batch(
+                post_mix, comb_mix, layer_input, use_ai_core=use_ai_core
+            )
+        else:
+            post_mix = _round_mhc_state(post_mix, use_fp16, use_ai_core)
+            comb_mix = _round_mhc_state(comb_mix, use_fp16, use_ai_core)
+            layer_input = _round_mhc_state(layer_input, use_fp16, use_ai_core)
         if norm_weight is not None:
             layer_input = _mhc_rms_norm(layer_input, norm_weight, norm_eps)
         return post_mix, comb_mix, layer_input
@@ -147,7 +177,8 @@ try:
     ):
         residual_cur = _mhc_post_torch(x, residual, post_layer_mix, comb_res_mix)
         use_fp16 = getattr(self, "use_310p_fp16_mhc_state", False)
-        residual_cur = _round_mhc_state(residual_cur, use_fp16)
+        use_ai_core = getattr(self, "use_310p_ai_core_bf16_round", False)
+        residual_cur = _round_mhc_state(residual_cur, use_fp16, use_ai_core)
         pre_impl = _mhc_pre_torch_sinkhorn_310 if getattr(self, "use_310p_sinkhorn", False) else _mhc_pre_torch
         post_mix_cur, comb_mix_cur, layer_input_cur = pre_impl(
             residual_cur,
@@ -160,9 +191,14 @@ try:
             hc_post_mult_value,
             sinkhorn_repeat,
         )
-        post_mix_cur = _round_mhc_state(post_mix_cur, use_fp16)
-        comb_mix_cur = _round_mhc_state(comb_mix_cur, use_fp16)
-        layer_input_cur = _round_mhc_state(layer_input_cur, use_fp16)
+        if getattr(self, "use_310p_batched_bf16_round", False) and not use_fp16:
+            post_mix_cur, comb_mix_cur, layer_input_cur = _round_mhc_outputs_batch(
+                post_mix_cur, comb_mix_cur, layer_input_cur, use_ai_core=use_ai_core
+            )
+        else:
+            post_mix_cur = _round_mhc_state(post_mix_cur, use_fp16, use_ai_core)
+            comb_mix_cur = _round_mhc_state(comb_mix_cur, use_fp16, use_ai_core)
+            layer_input_cur = _round_mhc_state(layer_input_cur, use_fp16, use_ai_core)
         if norm_weight is not None:
             layer_input_cur = _mhc_rms_norm(layer_input_cur, norm_weight, norm_eps)
         return residual_cur, post_mix_cur, comb_mix_cur, layer_input_cur

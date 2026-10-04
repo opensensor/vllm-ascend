@@ -58,3 +58,15 @@ class AscendGDNAttentionBackend310(AscendGDNAttentionBackend):
     @staticmethod
     def get_builder_cls() -> type[AscendGDNAttentionMetadataBuilder310]:
         return AscendGDNAttentionMetadataBuilder310
+
+
+class GlmW2GDNAttentionMetadataBuilder310(GDNAttentionMetadataBuilder310):
+    """Provide the nested conv and chunk metadata consumed by GLM W2 KDA."""
+
+    _USE_COMMON_KERNEL_METADATA = True
+
+
+class GlmW2GDNAttentionBackend310(AscendGDNAttentionBackend310):
+    @staticmethod
+    def get_builder_cls() -> type[GlmW2GDNAttentionMetadataBuilder310]:
+        return GlmW2GDNAttentionMetadataBuilder310

@@ -69,7 +69,9 @@ from vllm_ascend._310p.attention.attention_mask import AttentionMaskBuilder310
 from vllm_ascend.attention.mla_v1 import (
     AscendMLABackend,
     AscendMLAImpl,
+    AscendMLAMetadata,
     AscendMLAMetadataBuilder,
+    DecodeMLAPreprocessResult,
 )
 from vllm_ascend.attention.utils import (
     notify_kv_cache_written,
@@ -90,6 +92,30 @@ _QSA_COMPRESS_RATIO = 4
 _QSA_KERNEL_BLOCK_SIZE = 32
 _NPU_TOKEN_ALIGNMENT = 32
 _NZ_INNER = 16
+
+
+def _grouped_absorbed_key_projection(
+    q_nope: torch.Tensor,
+    weight_uk_t: torch.Tensor,
+    group_list: torch.Tensor,
+) -> torch.Tensor:
+    """Project batch-major MLA queries with graph-safe 310P NZ GMM.
+
+    ``torch.bmm`` selects the legacy, non-capturable ``BatchMatMul`` aclop
+    when ``weight_uk_t`` is FRACTAL_NZ on 310P. Grouped matmul uses the Cube
+    path, accepts the same NZ weights, and is capturable without converting a
+    64-head weight back to ND on every layer.
+    """
+    num_tokens, num_heads, qk_dim = q_nope.shape
+    grouped_query = q_nope.transpose(0, 1).contiguous().view(num_heads * num_tokens, qk_dim)
+    projected = torch_npu.npu_grouped_matmul(
+        x=[grouped_query],
+        weight=[weight_uk_t],
+        group_list=group_list,
+        split_item=2,
+        group_type=0,
+    )[0]
+    return projected.view(num_heads, num_tokens, -1).transpose(0, 1)
 
 
 def _qsa_physical_cache_page(cache: torch.Tensor) -> torch.Tensor:
@@ -260,7 +286,50 @@ class AscendMLAImpl310(AscendMLAImpl):
             tuple[torch.device, int],
             tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
         ] = {}
+        self._absorbed_key_group_lists: dict[int, torch.Tensor] = {}
         self.host_kv_layer = None
+
+    def process_weights_after_loading(self, act_dtype: torch.dtype) -> None:
+        super().process_weights_after_loading(act_dtype)
+        capture_sizes = getattr(self.vllm_config.compilation_config, "cudagraph_capture_sizes", None) or ()
+        max_num_seqs = self.vllm_config.scheduler_config.max_num_seqs
+        decode_sizes = set(range(1, max_num_seqs + 1))
+        decode_sizes.update(capture_sizes)
+        for num_tokens in decode_sizes:
+            if num_tokens not in self._absorbed_key_group_lists:
+                self._absorbed_key_group_lists[num_tokens] = torch.arange(
+                    num_tokens,
+                    self.num_heads * num_tokens + 1,
+                    num_tokens,
+                    dtype=torch.int64,
+                    device=self.W_UK_T.device,
+                )
+
+    def _get_absorbed_key_group_list(self, num_tokens: int) -> torch.Tensor:
+        group_list = self._absorbed_key_group_lists.get(num_tokens)
+        if group_list is None:
+            group_list = torch.arange(
+                num_tokens,
+                self.num_heads * num_tokens + 1,
+                num_tokens,
+                dtype=torch.int64,
+                device=self.W_UK_T.device,
+            )
+            self._absorbed_key_group_lists[num_tokens] = group_list
+        return group_list
+
+    def _q_proj_and_k_up_proj(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        q_nope, q_pe = (
+            self.q_proj(x)[0]
+            .view(-1, self.num_heads, self.qk_head_dim)
+            .split([self.qk_nope_head_dim, self.qk_rope_head_dim], dim=-1)
+        )
+        ql_nope = _grouped_absorbed_key_projection(
+            q_nope,
+            self.W_UK_T,
+            self._get_absorbed_key_group_list(q_nope.shape[0]),
+        )
+        return ql_nope, q_pe
 
     def _mla_preprocess(self, layer_name, hidden_states, kv_cache, attn_metadata):
         if self.glm_indexer is None:
@@ -782,16 +851,17 @@ class AscendMLAImpl310(AscendMLAImpl):
 
     def _forward_decode(
         self,
-        q_nope: torch.Tensor,
-        q_pe: torch.Tensor,
-        k_nope: torch.Tensor,
-        k_pe: torch.Tensor,
+        decode_preprocess_res: DecodeMLAPreprocessResult,
         block_size: int,
-        attn_metadata,
-        dequant_scale_q_nope=None,
+        attn_metadata: AscendMLAMetadata,
     ) -> torch.Tensor:
-        """Use fused 310P paged-latent attention instead of unsupported FIA."""
-        del q_pe, block_size, dequant_scale_q_nope
+        """Use fused 310P paged-latent attention with the shared MLA interface."""
+        del block_size
+        q_nope = decode_preprocess_res.ql_nope
+        k_nope = decode_preprocess_res.k_nope
+        k_pe = decode_preprocess_res.k_pe
+        if q_nope is None or k_nope is None or k_pe is None:
+            raise ValueError("310P MLA decode requires query and latent KV cache tensors")
         return self._forward_decode_fused(
             q_nope,
             k_nope,

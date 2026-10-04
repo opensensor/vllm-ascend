@@ -167,6 +167,12 @@ graph, so return to the default profile for interactive service. Mixed
 prefill/decode full capture generated requests whose token count
 exceeded the decode graph size and failed the GDN assertion.
 
+The 2026-10-02 [GPQA Diamond end-to-end run](../../../../artifacts/qwen38-w4-offline/GPQA_DIAMOND_20261002.md)
+used this C3/C4 profile for its final 106 cases. All 106 completed, with no
+eager decode fallback or zero-acceptance interval in the server log. This
+qualifies the profile for that four-request workload; it does not replace the
+default interactive C1/C2 profile.
+
 When a uniform decode batch cannot use any configured graph key, the model
 runner emits a one-time warning for that batch shape with its token count,
 request count, query length, and capture sizes. Treat that warning as a

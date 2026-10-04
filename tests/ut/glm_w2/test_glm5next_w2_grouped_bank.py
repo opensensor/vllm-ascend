@@ -8,6 +8,7 @@ import torch
 
 from tools.deepseek_w2.w2_format import unpack_codes
 from vllm_ascend.models.glm5next_w2.model import (
+    GLM_NZ_INPUT_TILE,
     _pack_codes_nz,
     _PackedW2ExpertBank,
     _release_grouped_compaction_cache,
@@ -151,23 +152,26 @@ def test_resident_bank_rebuilds_projection_for_overlay_width_change():
 def test_nz_packed_codes_preserve_all_w2_w4_values():
     for bits in (2, 4):
         torch.manual_seed(bits)
-        n, k = 32, 256
+        n, k = 32, 2 * GLM_NZ_INPUT_TILE
         codes_per_byte = 8 // bits
         codes = torch.randint(0, 256, (n, k // codes_per_byte), dtype=torch.uint8)
         packed = _pack_codes_nz(codes, k)
         assert packed.shape == codes.shape
         assert packed.dtype == torch.uint8
 
-        tile_bytes = 16 * 128 // codes_per_byte
-        tiles = packed.view(n // 16, k // 128, tile_bytes)
+        tile_bytes = 16 * GLM_NZ_INPUT_TILE // codes_per_byte
+        tiles = packed.view(n // 16, k // GLM_NZ_INPUT_TILE, tile_bytes)
         unsigned = unpack_codes(codes, k, bits).to(torch.int16) & ((1 << bits) - 1)
         for n_tile in range(n // 16):
-            for k_tile in range(k // 128):
+            for k_tile in range(k // GLM_NZ_INPUT_TILE):
                 tile = tiles[n_tile, k_tile]
                 decoded = torch.stack(
                     [(tile >> (bits * field)) & ((1 << bits) - 1) for field in range(codes_per_byte)]
                 ).flatten()
-                expected = unsigned[n_tile * 16 : (n_tile + 1) * 16, k_tile * 128 : (k_tile + 1) * 128]
+                expected = unsigned[
+                    n_tile * 16 : (n_tile + 1) * 16,
+                    k_tile * GLM_NZ_INPUT_TILE : (k_tile + 1) * GLM_NZ_INPUT_TILE,
+                ]
                 assert torch.equal(decoded, expected.t().reshape(-1).to(torch.uint8))
 
 

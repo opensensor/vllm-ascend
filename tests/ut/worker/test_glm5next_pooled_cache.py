@@ -2,7 +2,6 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """CPU tests for GLM-Next model-runner pooled cache views."""
 
-from itertools import permutations
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -227,7 +226,7 @@ def test_glm5_next_runner_allocates_contiguous_slot_backings():
     assert main_rope_cache.shape == (3, 8, 1, 0)
     assert main_cache.is_contiguous()
     assert indexer_cache.shape == (3, 4, 1, 4)
-    assert tail_cache.shape == (3, 2, 2, 1)
+    assert tail_cache.shape == (3, 2, 1, 1)
     assert [cache.shape for cache in caches[MAMBA]] == [
         (4, 2, 2),
         (4, 1, 2, 2),
@@ -247,10 +246,9 @@ def test_glm5_next_runner_allocates_contiguous_slot_backings():
     assert torch.all(slot_fp32[2 * page_els_fp32 : 2 * page_els_fp32 + tail_block_els] == 7)
     assert torch.count_nonzero(slot_fp32[2 * page_els_fp32 + tail_block_els : 3 * page_els_fp32]) == 0
     assert torch.count_nonzero(slot_fp32[: 2 * page_els_fp32]) == 0
-    for cache in caches[MAMBA]:
-        assert cache.stride(0) * cache.element_size() == descriptors[MAMBA].size // plan.num_blocks
+    assert all(cache.is_contiguous() for cache in caches[MAMBA])
 
-    mamba_second_offset = caches[MAMBA][0][0].numel() * caches[MAMBA][0].element_size()
+    mamba_second_offset = caches[MAMBA][0].numel() * caches[MAMBA][0].element_size()
     assert caches[MAMBA][1].data_ptr() - raw_caches[MAMBA].data_ptr() == mamba_second_offset
     mamba_payload_size = sum(cache.numel() * cache.element_size() for cache in caches[MAMBA])
     assert mamba_payload_size == descriptors[MAMBA].size
@@ -360,33 +358,28 @@ def test_glm5_next_initialize_passes_all_pooled_views_to_cache_binding():
 
 
 @pytest.mark.parametrize("offset", [0, 64])
-def test_glm_shared_mla_mamba_pages_preserve_other_block_ids(offset):
+def test_compact_glm_mamba_keeps_packed_layout_with_offset(offset):
     config, _, plan = _make_plan(num_blocks=4)
     runner = _make_runner(config)
     raw_tensors = runner._allocate_kv_cache_tensors(plan)
-    assert raw_tensors[MAIN] is raw_tensors[MAMBA]
-    page_bytes = raw_tensors[MAIN].numel() // plan.num_blocks
-    backing = torch.zeros(offset + raw_tensors[MAIN].numel() + 64, dtype=torch.int8)
-    raw = backing[offset : offset + plan.num_blocks * page_bytes]
-    raw_tensors[MAIN] = raw_tensors[MAMBA] = raw
+    assert raw_tensors[MAIN] is not raw_tensors[MAMBA]
+    raw_size = raw_tensors[MAMBA].numel()
+    backing = torch.zeros(offset + raw_size + 64, dtype=torch.int8)
+    raw = backing[offset : offset + raw_size]
+    raw_tensors[MAMBA] = raw
     caches = runner._reshape_kv_cache_tensors(plan, raw_tensors)
-    latent, _ = caches[MAIN]
     conv, ssm = caches[MAMBA]
-    for state in (conv, ssm):
-        assert state.untyped_storage().data_ptr() == raw.untyped_storage().data_ptr()
-        assert state.stride(0) * state.element_size() == page_bytes
-    assert ssm.data_ptr() - conv.data_ptr() == conv[0].numel() * conv.element_size()
-    state_bytes = sum(state[0].numel() * state.element_size() for state in (conv, ssm))
-    for mla_id, state_id in permutations(range(plan.num_blocks), 2):
-        raw.zero_()
-        latent[mla_id].fill_(7)
+    assert conv.untyped_storage().data_ptr() == raw.untyped_storage().data_ptr()
+    assert ssm.untyped_storage().data_ptr() == raw.untyped_storage().data_ptr()
+    assert conv.is_contiguous() and ssm.is_contiguous()
+    assert ssm.data_ptr() - conv.data_ptr() == conv.numel() * conv.element_size()
+    for state_id in range(config.scheduler_config.max_num_seqs):
         conv[state_id].fill_(11)
         ssm[state_id].fill_(13)
-        torch.testing.assert_close(latent[mla_id], torch.full_like(latent[mla_id], 7))
-        latent[mla_id].fill_(17)
         torch.testing.assert_close(conv[state_id], torch.full_like(conv[state_id], 11))
         torch.testing.assert_close(ssm[state_id], torch.full_like(ssm[state_id], 13))
-        assert torch.count_nonzero(raw.view(plan.num_blocks, page_bytes)[state_id, state_bytes:]) == 0
+    state_bytes = sum(state.numel() * state.element_size() for state in (conv, ssm))
+    assert torch.count_nonzero(raw[state_bytes:]) == 0
     assert torch.count_nonzero(backing[:offset]) == 0
     assert torch.count_nonzero(backing[offset + raw.numel() :]) == 0
 

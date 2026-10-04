@@ -94,7 +94,7 @@ KDA_CONV_KERNEL_CONFIG_KEY = "linear_conv_kernel_dim"
 # module offloader cannot discover them through ``named_parameters()``.
 PACKED_EXPERTS_OFFLOAD_PARAM = "packed_experts"
 GLM_NZ_OUTPUT_TILE = 16
-GLM_NZ_INPUT_TILE = 128
+GLM_NZ_INPUT_TILE = 256
 
 
 def _with_fp16_recurrent_state_dtype(
@@ -233,7 +233,7 @@ class _PackedW2Expert:
 
 
 def _pack_codes_nz(codes: torch.Tensor, in_features: int) -> torch.Tensor:
-    """Repack one canonical expert matrix into 16×128 Cube NZ tiles.
+    """Repack one canonical expert matrix into 16×256 Cube NZ tiles.
 
     Each byte combines values from separate contiguous quarters/halves of the
     final NZ tile. The integer codes and the total byte count are unchanged.
@@ -245,7 +245,7 @@ def _pack_codes_nz(codes: torch.Tensor, in_features: int) -> torch.Tensor:
         raise ValueError("packed K must divide input features")
     codes_per_byte = in_features // packed_k
     if codes_per_byte not in (2, 4) or n % GLM_NZ_OUTPUT_TILE or in_features % GLM_NZ_INPUT_TILE:
-        raise ValueError("NZ packing requires W2/W4 codes and 16×128 tiles")
+        raise ValueError("NZ packing requires W2/W4 codes and 16×256 tiles")
 
     n_tiles = n // GLM_NZ_OUTPUT_TILE
     k_tiles = in_features // GLM_NZ_INPUT_TILE
@@ -970,10 +970,10 @@ def _install_310p_kda(layers: Iterable[Any], config: Any, dtype_policy: Glm5Next
 
             def get_attn_backend_310() -> type:
                 from vllm_ascend._310p.ops.gdn_attn_builder_310 import (
-                    AscendGDNAttentionBackend310,
+                    GlmW2GDNAttentionBackend310,
                 )
 
-                return AscendGDNAttentionBackend310
+                return GlmW2GDNAttentionBackend310
 
             self_attn.get_state_dtype = get_state_dtype_310
             self_attn.get_attn_backend = get_attn_backend_310
@@ -1139,6 +1139,9 @@ def _build_causal_lm_cls() -> type:
             )
             self._glm_text_config.ascend_glm_mhc_fp16_state = bool(
                 getattr(hf_config, "ascend_glm_mhc_fp16_state", False)
+            )
+            self._glm_text_config.ascend_glm_mhc_batched_round = bool(
+                getattr(hf_config, "ascend_glm_mhc_batched_round", False)
             )
             # FP16-in-checkpoint fix: the dense-MLP and shared-expert projections
             # ship as fp16 (no weight_scale_inv) but are absent from the

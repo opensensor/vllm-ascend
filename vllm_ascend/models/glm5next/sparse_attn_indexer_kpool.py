@@ -3,6 +3,8 @@
 """Paged GLM-5.3-Flash kpool sparse-attention indexer for Ascend."""
 
 import torch
+import torch_npu
+from vllm.compilation.breakable_cudagraph import BreakableCUDAGraphCapture
 from vllm.forward_context import get_forward_context
 from vllm.model_executor.custom_op import CustomOp
 
@@ -24,6 +26,41 @@ def _cache_tensor(cache_layer) -> torch.Tensor:
     if not isinstance(cache, torch.Tensor) or cache.numel() == 0:
         raise RuntimeError("GLM kpool cache has not been bound to the model")
     return cache
+
+
+def _masked_storage_write(
+    cache: torch.Tensor,
+    row_offsets: torch.Tensor,
+    values: torch.Tensor,
+    valid: torch.Tensor,
+) -> None:
+    """Write fixed-width rows with a capture-stable scatter.
+
+    The 310P generic scatter supports FP32 and FP16, but not BF16. Reinterpret
+    two-byte cache storage as FP16 so BF16 values are copied bit-for-bit. A
+    negative element index skips an invalid row without creating a
+    data-dependent index tensor. Valid physical rows must be unique within a
+    scheduler step.
+    """
+    if cache.element_size() == torch.float32.itemsize:
+        storage_dtype = torch.float32
+    elif cache.element_size() == torch.float16.itemsize:
+        storage_dtype = torch.float16
+    else:
+        raise TypeError(f"GLM kpool cache dtype {cache.dtype} has an unsupported element size")
+    storage_elements = cache.untyped_storage().nbytes() // cache.element_size()
+    flat_cache = cache.as_strided((storage_elements,), (1,), storage_offset=0).view(storage_dtype)
+    dimensions = torch.arange(values.shape[1], device=cache.device)
+    offsets = row_offsets[:, None] + dimensions[None, :] * cache.stride(-1)
+    invalid_offsets = torch.full_like(offsets, -1)
+    flat_offsets = torch.where(valid[:, None], offsets, invalid_offsets).reshape(-1, 1)
+    storage_values = values.contiguous().view(storage_dtype).reshape(-1)
+    if cache.device.type == "cpu":
+        # CPU-only unit tests do not have the torch_npu scatter implementation.
+        valid_elements = flat_offsets[:, 0] >= 0
+        flat_cache[flat_offsets[valid_elements, 0]] = storage_values[valid_elements]
+        return
+    torch_npu.npu_scatter_nd_update_(flat_cache, flat_offsets, storage_values)
 
 
 @CustomOp.register("sparse_attn_indexer_kpool")
@@ -111,36 +148,33 @@ class SparseAttnIndexerKpool(CustomOp):
         final_positions = indexer_metadata.raw_seq_lens[request_ids].long() - 1
         final_pool_starts = torch.div(final_positions, pool_size, rounding_mode="floor") * pool_size
         valid_state = (state_slots >= 0) & (positions >= final_pool_starts)
-        state_cache[
-            state_blocks[valid_state],
-            safe_state_slots[valid_state] % pool_size,
-        ] = torch.cat((keys[valid_state].float(), gates[valid_state].float()), dim=-1)
+        state_row_offsets = (
+            state_cache.storage_offset()
+            + state_blocks * state_cache.stride(0)
+            + (safe_state_slots % pool_size) * state_cache.stride(1)
+        )
+        _masked_storage_write(
+            state_cache,
+            state_row_offsets,
+            torch.cat((keys.float(), gates.float()), dim=-1),
+            valid_state,
+        )
 
         completed = ((positions + 1) % pool_size == 0) & (indexer_metadata.slot_mapping[:num_tokens] >= 0)
-        # Only the final token of a pool writes a compressed key.  Select
-        # before the softmax and Hadamard transform so incomplete pools do
-        # not consume the compression work during large prefills.
-        compressed = compress_kpool(pool_keys[completed], pool_gates[completed], ape)
-        pool_slots = indexer_metadata.slot_mapping[:num_tokens][completed].long()
+        # Compress fixed-shape rows; only completed pools write cache values.
+        # This trades extra compression work for capture-stable tensor shapes.
+        compressed = compress_kpool(pool_keys, pool_gates, ape)
+        pool_slots = indexer_metadata.slot_mapping[:num_tokens].long().clamp_min(0)
         block_size = key_cache.shape[1]
         # The shared GLM cache is a page-strided view of an int8 backing.
         # 310P has no IndexPutV2 binary for its BF16 advanced-indexed view;
         # write the same physical elements through a flat storage view.
-        cache_elements = key_cache.untyped_storage().nbytes() // key_cache.element_size()
-        flat_cache = key_cache.as_strided((cache_elements,), (1,), storage_offset=0)
         row_offsets = (
             key_cache.storage_offset()
             + torch.div(pool_slots, block_size, rounding_mode="floor") * key_cache.stride(0)
             + (pool_slots % block_size) * key_cache.stride(1)
         )
-        element_offsets = (
-            row_offsets[:, None] + (torch.arange(self.head_dim, device=device) * key_cache.stride(-1))[None, :]
-        )
-        flat_cache.index_copy_(
-            0,
-            element_offsets.reshape(-1),
-            compressed.to(key_cache.dtype).reshape(-1),
-        )
+        _masked_storage_write(key_cache, row_offsets, compressed.to(key_cache.dtype), completed)
 
     def forward_oot(
         self,
@@ -180,12 +214,70 @@ class SparseAttnIndexerKpool(CustomOp):
             state_metadata,
         )
 
+        capture = BreakableCUDAGraphCapture.current()
+        if capture is not None and capture._capturing:
+            # QSA's negative tail-count sentinel encodes a dense prefix and
+            # ignores group IDs while every pool fits. Clear the shared buffer
+            # in the graph so its otherwise-unused values are deterministic;
+            # the eager break only fills real indices for long contexts.
+            self.topk_indices_buffer[:num_tokens].fill_(-1)
+            from vllm_ascend.utils import weak_ref_tensor
+
+            weak_query = weak_ref_tensor(q_quant)
+            weak_weights = weak_ref_tensor(weights)
+            weak_positions = weak_ref_tensor(positions)
+
+            def select_current_tokens() -> None:
+                current_metadata = get_forward_context().attn_metadata
+                if not isinstance(current_metadata, dict):
+                    raise RuntimeError("GLM kpool graph replay requires attention metadata")
+                indexer_metadata = current_metadata[self.k_cache.prefix]
+                pool_lengths_cpu = indexer_metadata.seq_lens_cpu
+                if pool_lengths_cpu is not None:
+                    pool_lengths = pool_lengths_cpu.tolist()
+                    cache = _cache_tensor(self.k_cache)
+                    if pool_lengths and max(pool_lengths) > indexer_metadata.block_table.shape[1] * cache.shape[1]:
+                        raise RuntimeError("GLM kpool block table is shorter than the request's pooled keys")
+                    # Pooled host lengths are floor(raw_length / pool_size).
+                    # At the budget boundary a raw tail can exceed QSA's
+                    # dense-token limit, so fall back to the exact selector.
+                    if not pool_lengths or max(pool_lengths) < self.topk_tokens // index_kpool:
+                        return
+                self._select_tokens(
+                    weak_query,
+                    weak_weights,
+                    weak_positions,
+                    index_kpool,
+                    indexer_metadata,
+                )
+
+            capture.add_eager(select_current_tokens)
+            return self.topk_indices_buffer
+
+        return self._select_tokens(q_quant, weights, positions, index_kpool, indexer_metadata)
+
+    def _select_tokens(
+        self,
+        queries: torch.Tensor,
+        weights: torch.Tensor,
+        positions: torch.Tensor,
+        pool_size: int,
+        indexer_metadata,
+    ) -> torch.Tensor:
+        """Select current pooled keys using scheduler-owned host bounds."""
+        num_tokens = indexer_metadata.num_actual_tokens
+        if num_tokens > min(queries.shape[0], weights.shape[0], positions.shape[0]):
+            raise RuntimeError("GLM kpool metadata exceeds the selection tensors")
+        queries = queries[:num_tokens]
+        weights = weights[:num_tokens]
+        positions = positions[:num_tokens]
+
         cache = _cache_tensor(self.k_cache)
         block_size = cache.shape[1]
         boundaries = indexer_metadata.cum_query_lens_cpu
         if boundaries is None:
             raise RuntimeError("GLM kpool needs host query boundaries from the scheduler")
-        pool_budget = self.topk_tokens // index_kpool
+        pool_budget = self.topk_tokens // pool_size
         pool_lengths = indexer_metadata.seq_lens_cpu.tolist()
         if pool_lengths and max(pool_lengths) > indexer_metadata.block_table.shape[1] * block_size:
             raise RuntimeError("GLM kpool block table is shorter than the request's pooled keys")
@@ -195,7 +287,7 @@ class SparseAttnIndexerKpool(CustomOp):
             # every row at once and avoid per-request device launches. Keep
             # The host lengths include this step, including a pool completed
             # by its final token.
-            dense = dense_kpool_token_indices(positions, self.topk_tokens, index_kpool)
+            dense = dense_kpool_token_indices(positions, self.topk_tokens, pool_size)
             if self.topk_indices_buffer.shape[1] > dense.shape[1]:
                 self.topk_indices_buffer[:num_tokens].fill_(-1)
             self.topk_indices_buffer[:num_tokens, : dense.shape[1]].copy_(dense)
@@ -213,17 +305,17 @@ class SparseAttnIndexerKpool(CustomOp):
             if num_pools <= pool_budget:
                 logits = torch.zeros(end - start, num_pools, device=cache.device)
                 selected, _, tail_starts, tail_counts = select_kpool_groups(
-                    logits, positions[start:end], self.topk_tokens, index_kpool
+                    logits, positions[start:end], self.topk_tokens, pool_size
                 )
-                expanded = expand_kpool_groups(selected, tail_starts, tail_counts, index_kpool)
+                expanded = expand_kpool_groups(selected, tail_starts, tail_counts, pool_size)
             else:
                 expanded = score_and_select_kpool_tokens(
-                    q_quant[start:end],
+                    queries[start:end],
                     weights[start:end],
                     keys,
                     positions[start:end],
                     self.topk_tokens,
-                    index_kpool,
+                    pool_size,
                 )
             self.topk_indices_buffer[start:end, : expanded.shape[1]] = expanded
         return self.topk_indices_buffer

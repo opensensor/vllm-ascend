@@ -2,8 +2,9 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
+import pytest
 import torch
 
 from vllm_ascend.models.glm5next.kpool_ops import (
@@ -199,7 +200,8 @@ def test_indexer_completes_a_pool_across_prefill_chunks():
             )
             compression_batch_sizes.append(compress.call_args.args[0].shape[0])
 
-    assert compression_batch_sizes == [1, 0, 1]
+    # Capture-safe compression keeps a fixed row count for each invocation.
+    assert compression_batch_sizes == [6, 1, 2]
     expected = compress_kpool(keys[4:8].unsqueeze(0), gates[4:8].unsqueeze(0), ape)
     torch.testing.assert_close(key_cache[0, 1, 0], expected[0].to(key_cache.dtype))
     # One complete pool is selected; token 8 remains the mandatory tail.
@@ -266,6 +268,229 @@ def test_indexer_keeps_two_requests_in_separate_cache_pages():
     assert selected[0, 8] == selected[4, 8] == 0
     assert torch.all(selected[:, 11] == -1)
     assert dense.call_count == 1  # both requests share one batched write
+
+
+def _reference_pool_write(keys, gates, ape, positions, pool_size, index_meta, state_meta, state, cache):
+    """Original masked writer, retained as a CPU oracle for graph-safe writes."""
+    num_tokens = keys.shape[0]
+    slots = state_meta.slot_mapping[:num_tokens].long()
+    safe_slots = slots.clamp_min(0)
+    blocks = torch.div(safe_slots, pool_size, rounding_mode="floor")
+    old_state = state[blocks]
+    offsets = torch.arange(pool_size - 1, -1, -1)
+    local = torch.arange(num_tokens)[:, None] - offsets[None, :]
+    safe_local = local.clamp_min(0)
+    request_ids = torch.searchsorted(index_meta.cum_query_lens, torch.arange(num_tokens), right=True)
+    same_pool = (
+        (local >= 0)
+        & (positions[safe_local] == positions[:, None] - offsets[None, :])
+        & (request_ids[safe_local] == request_ids[:, None])
+    )
+    pool_keys = torch.where(same_pool[:, :, None], keys[safe_local].float(), old_state[:, :, :128])
+    pool_gates = torch.where(same_pool[:, :, None], gates[safe_local].float(), old_state[:, :, 128:])
+    final_positions = index_meta.raw_seq_lens[request_ids].long() - 1
+    final_starts = torch.div(final_positions, pool_size, rounding_mode="floor") * pool_size
+    valid_state = (slots >= 0) & (positions >= final_starts)
+    state[blocks[valid_state], safe_slots[valid_state] % pool_size] = torch.cat(
+        (keys[valid_state].float(), gates[valid_state].float()), dim=-1
+    )
+    completed = ((positions + 1) % pool_size == 0) & (index_meta.slot_mapping[:num_tokens] >= 0)
+    compressed = compress_kpool(pool_keys[completed], pool_gates[completed], ape)
+    pool_slots = index_meta.slot_mapping[:num_tokens][completed].long()
+    for slot, value in zip(pool_slots.tolist(), compressed):
+        cache[slot // cache.shape[1], slot % cache.shape[1], 0] = value.to(cache.dtype)
+
+
+@pytest.mark.parametrize("key_dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize(
+    ("positions", "state_slots", "key_slots", "query_ends", "raw_lengths"),
+    [
+        ([0, 1, 2], [0, 1, 2], [-1, -1, -1], [3], [3]),
+        ([3, 4, 5, 6], [3, 4, 5, 6], [0, -1, -1, -1], [4], [7]),
+        ([7, 8], [7, 8], [1, -1], [2], [9]),
+        ([0, 1, 2, 3, 0, 1, 2, 3], list(range(8)), [-1, -1, -1, 0, -1, -1, -1, 4], [4, 8], [4, 4]),
+        ([3, 0], [-1, 0], [-1, -1], [1, 2], [4, 1]),
+        ([0, 1, 2, 3], [0, 1, 2, 3], [-1, -1, -1, 0], [4], [4]),
+        ([], [], [], [0], [0]),
+    ],
+)
+def test_graph_safe_pool_writer_matches_masked_reference(
+    positions, state_slots, key_slots, query_ends, raw_lengths, key_dtype
+):
+    from vllm_ascend.models.glm5next.sparse_attn_indexer_kpool import SparseAttnIndexerKpool
+
+    torch.manual_seed(81)
+    count = len(positions)
+    keys = torch.randn(count, 128, dtype=torch.bfloat16)
+    gates = torch.randn(count, 128)
+    ape = torch.randn(4, 128)
+    state_before = torch.randn(3, 4, 256)
+    key_before = torch.randn(3, 4, 1, 128, dtype=key_dtype)
+    state_actual, state_expected = state_before.clone(), state_before.clone()
+    key_actual, key_expected = key_before.clone(), key_before.clone()
+    metadata = SimpleNamespace(
+        slot_mapping=torch.tensor(key_slots, dtype=torch.int32),
+        raw_seq_lens=torch.tensor(raw_lengths, dtype=torch.int32),
+        cum_query_lens=torch.tensor(query_ends, dtype=torch.int32),
+    )
+    state_metadata = SimpleNamespace(slot_mapping=torch.tensor(state_slots, dtype=torch.int32))
+    positions_tensor = torch.tensor(positions, dtype=torch.int32)
+    _reference_pool_write(keys, gates, ape, positions_tensor, 4, metadata, state_metadata, state_expected, key_expected)
+    indexer = SparseAttnIndexerKpool.__new__(SparseAttnIndexerKpool)
+    torch.nn.Module.__init__(indexer)
+    indexer.head_dim = 128
+    indexer.k_cache = SimpleNamespace(kv_cache=key_actual)
+    indexer.tail_cache = SimpleNamespace(kv_cache=state_actual)
+    indexer._write_pools(keys, gates, ape, positions_tensor, 4, metadata, state_metadata)
+
+    torch.testing.assert_close(state_actual, state_expected, rtol=0, atol=0)
+    torch.testing.assert_close(key_actual, key_expected, rtol=0, atol=0)
+
+
+def test_graph_safe_pool_writer_preserves_strided_storage_and_reused_page():
+    from vllm_ascend.models.glm5next.sparse_attn_indexer_kpool import SparseAttnIndexerKpool
+
+    torch.manual_seed(92)
+    backing = torch.randn(2, 8, 1, 128, dtype=torch.float16)
+    actual_backing, expected_backing = backing.clone(), backing.clone()
+    actual_keys, expected_keys = actual_backing[:, ::2], expected_backing[:, ::2]
+    actual_state = torch.randn(2, 4, 256)
+    expected_state = actual_state.clone()
+    indexer = SparseAttnIndexerKpool.__new__(SparseAttnIndexerKpool)
+    torch.nn.Module.__init__(indexer)
+    indexer.head_dim = 128
+    indexer.k_cache = SimpleNamespace(kv_cache=actual_keys)
+    indexer.tail_cache = SimpleNamespace(kv_cache=actual_state)
+    ape = torch.randn(4, 128)
+
+    for key_value in (1.0, -2.0):
+        keys = torch.full((4, 128), key_value, dtype=torch.bfloat16)
+        gates = torch.randn(4, 128)
+        positions = torch.arange(4, dtype=torch.int32)
+        metadata = SimpleNamespace(
+            slot_mapping=torch.tensor([-1, -1, -1, 0], dtype=torch.int32),
+            raw_seq_lens=torch.tensor([4], dtype=torch.int32),
+            cum_query_lens=torch.tensor([4], dtype=torch.int32),
+        )
+        state_metadata = SimpleNamespace(slot_mapping=torch.arange(4, dtype=torch.int32))
+        _reference_pool_write(keys, gates, ape, positions, 4, metadata, state_metadata, expected_state, expected_keys)
+        indexer._write_pools(keys, gates, ape, positions, 4, metadata, state_metadata)
+        torch.testing.assert_close(actual_state, expected_state, rtol=0, atol=0)
+        torch.testing.assert_close(actual_backing, expected_backing, rtol=0, atol=0)
+
+
+def test_graph_capture_keeps_kpool_selection_eager_with_current_metadata():
+    from vllm_ascend.models.glm5next.sparse_attn_indexer_kpool import SparseAttnIndexerKpool
+
+    indexer = SparseAttnIndexerKpool.__new__(SparseAttnIndexerKpool)
+    torch.nn.Module.__init__(indexer)
+    indexer.topk_indices_buffer = torch.empty(4, 12, dtype=torch.int32)
+    indexer.topk_tokens = 8
+    indexer.k_cache = SimpleNamespace(prefix="index.cache")
+    indexer.tail_cache = SimpleNamespace(prefix="index.tail")
+    indexer.skip_k_cache_insert = False
+    indexer._write_pools = Mock()
+    indexer._select_tokens = Mock(return_value=indexer.topk_indices_buffer)
+    captured_metadata = SimpleNamespace(num_actual_tokens=1)
+    replay_metadata = SimpleNamespace(num_actual_tokens=2, seq_lens_cpu=None)
+    context = SimpleNamespace(
+        attn_metadata={
+            "index.cache": captured_metadata,
+            "index.tail": SimpleNamespace(),
+        }
+    )
+
+    class Capture:
+        _capturing = True
+
+        def add_eager(self, fn):
+            context.attn_metadata["index.cache"] = replay_metadata
+            fn()
+
+    query = torch.randn(2, 2, 4)
+    keys = torch.randn(2, 4)
+    weights = torch.randn(2, 2)
+    positions = torch.arange(2, dtype=torch.int32)
+    with (
+        patch(
+            "vllm_ascend.models.glm5next.sparse_attn_indexer_kpool.get_forward_context",
+            return_value=context,
+        ),
+        patch(
+            "vllm_ascend.models.glm5next.sparse_attn_indexer_kpool.BreakableCUDAGraphCapture.current",
+            return_value=Capture(),
+        ),
+    ):
+        actual = indexer.forward_oot(
+            torch.empty(2, 1),
+            query,
+            keys,
+            weights,
+            gate_score=torch.randn(2, 4),
+            compress_ape=torch.randn(4, 4),
+            index_kpool=4,
+            positions=positions,
+        )
+
+    assert actual is indexer.topk_indices_buffer
+    indexer._select_tokens.assert_called_once()
+    assert indexer._select_tokens.call_args.args[-2] == 4
+    assert indexer._select_tokens.call_args.args[-1] is replay_metadata
+
+
+@pytest.mark.parametrize(("pool_length", "expect_eager"), [(1, False), (2, True)])
+def test_graph_capture_skips_eager_kpool_selection_below_budget(pool_length, expect_eager):
+    from vllm_ascend.models.glm5next.sparse_attn_indexer_kpool import SparseAttnIndexerKpool
+
+    indexer = SparseAttnIndexerKpool.__new__(SparseAttnIndexerKpool)
+    torch.nn.Module.__init__(indexer)
+    indexer.topk_indices_buffer = torch.full((1, 12), 99, dtype=torch.int32)
+    indexer.topk_tokens = 8
+    indexer.k_cache = SimpleNamespace(kv_cache=torch.zeros(1, 4, 1, 4), prefix="index.cache")
+    indexer.tail_cache = SimpleNamespace(prefix="index.tail")
+    indexer.skip_k_cache_insert = False
+    indexer._write_pools = Mock()
+    indexer._select_tokens = Mock(return_value=indexer.topk_indices_buffer)
+    metadata = SimpleNamespace(
+        num_actual_tokens=1,
+        seq_lens_cpu=torch.tensor([pool_length]),
+        block_table=torch.tensor([[0]]),
+    )
+    context = SimpleNamespace(attn_metadata={"index.cache": metadata, "index.tail": SimpleNamespace()})
+
+    class Capture:
+        _capturing = True
+
+        def add_eager(self, fn):
+            fn()
+
+    with (
+        patch(
+            "vllm_ascend.models.glm5next.sparse_attn_indexer_kpool.get_forward_context",
+            return_value=context,
+        ),
+        patch(
+            "vllm_ascend.models.glm5next.sparse_attn_indexer_kpool.BreakableCUDAGraphCapture.current",
+            return_value=Capture(),
+        ),
+    ):
+        output = indexer.forward_oot(
+            torch.empty(1, 1),
+            torch.empty(1, 1, 4),
+            torch.empty(1, 4),
+            torch.empty(1, 1),
+            gate_score=torch.empty(1, 4),
+            compress_ape=torch.empty(4, 4),
+            index_kpool=4,
+            positions=torch.tensor([0], dtype=torch.int32),
+        )
+
+    assert output is indexer.topk_indices_buffer
+    assert torch.all(output[0] == -1)
+    if expect_eager:
+        indexer._select_tokens.assert_called_once()
+    else:
+        indexer._select_tokens.assert_not_called()
 
 
 def test_glm_indexer_scales_head_weights_in_310p_supported_float32():

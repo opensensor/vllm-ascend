@@ -50,13 +50,15 @@ constexpr int64_t W2_BLOCK_SIZE = 32;
 constexpr uint32_t W2_FRACTAL_SIZE = 16;
 constexpr uint32_t W2_TILE_M = 128;
 constexpr uint32_t W2_TILE_N = 128;
-constexpr uint32_t W2_TILE_K = 128;
+constexpr uint32_t W2_TILE_K = 256;
 constexpr uint32_t W2_K_FRACTALS_PER_TILE = W2_TILE_K / W2_FRACTAL_SIZE;
 constexpr uint32_t W2_L1_TILE_N = 32;
+// The optional decoded-L1 path retains its independent 128-K Cube stage.
+constexpr uint32_t W2_L1_STAGE_K = 128;
 constexpr uint32_t W2_L1_MAX_K = 4096;
 constexpr uint32_t W2_L1_WEIGHT_BYTES = W2_L1_TILE_N * W2_L1_MAX_K * sizeof(half);
 constexpr uint32_t W2_L1_A_STAGES = 2;
-constexpr uint32_t W2_L1_A_STAGE_BYTES = W2_TILE_M * W2_TILE_K * sizeof(half);
+constexpr uint32_t W2_L1_A_STAGE_BYTES = W2_TILE_M * W2_L1_STAGE_K * sizeof(half);
 constexpr uint32_t W2_L1_MAX_CUBE_K = 512;
 static_assert(W2_BLOCK_SIZE == 2 * W2_FRACTAL_SIZE);
 // The unified-core CATLASS epilogue uses UB [0, 96 KiB) for a maximum-size
@@ -139,6 +141,7 @@ public:
         const uint32_t coreId = GetBlockIdx();
         const uint32_t coreNum = GetBlockNum();
         const uint32_t nBlocks = CeilDivU<uint32_t>((uint32_t)N_, W2_TILE_N);
+        const uint32_t rows = (uint32_t)T_;
 
         AllocBuffers();
         FillTables();
@@ -161,17 +164,20 @@ public:
             SetFlag<HardEvent::MTE3_MTE2>(EVENT_ID4);
             WaitFlag<HardEvent::MTE3_MTE2>(EVENT_ID4);
 
-            GemmCoord shape{(uint32_t)T_, nActual, (uint32_t)K_};
-            auto tA = GetTile(tensorA, tla::MakeCoord((uint32_t)0, (uint32_t)0),
-                              tla::MakeShape((uint32_t)T_, (uint32_t)K_));
             auto tB = GetTile(tensorB, tla::MakeCoord((uint32_t)0, (uint32_t)0),
                               tla::MakeShape((uint32_t)K_, nActual));
-            auto tC = GetTile(tensorC, tla::MakeCoord((uint32_t)0, n0),
-                              tla::MakeShape((uint32_t)T_, nActual));
-            BlockMmad blockMmad(resource);
-            blockMmad.preSetFlags();
-            blockMmad(tA, tB, tC, shape);
-            blockMmad.finalWaitFlags();
+            for (uint32_t row = 0; row < rows; row += W2_TILE_M) {
+                const uint32_t rowCount = MinU<uint32_t>(W2_TILE_M, rows - row);
+                GemmCoord shape{rowCount, nActual, (uint32_t)K_};
+                auto tA = GetTile(tensorA, tla::MakeCoord(row, (uint32_t)0),
+                                  tla::MakeShape(rowCount, (uint32_t)K_));
+                auto tC = GetTile(tensorC, tla::MakeCoord(row, n0),
+                                  tla::MakeShape(rowCount, nActual));
+                BlockMmad blockMmad(resource);
+                blockMmad.preSetFlags();
+                blockMmad(tA, tB, tC, shape);
+                blockMmad.finalWaitFlags();
+            }
             // A core can process several N tiles and reuse the same GM
             // workspace.  Finish BlockMmad's MTE2 reads before the next tile
             // overwrites that workspace through MTE3.
@@ -220,7 +226,7 @@ private:
         const uint32_t mActual = T_ == 1 ? W2_FRACTAL_SIZE : (uint32_t)T_;
         const uint32_t mAligned = AlignUpU<uint32_t>(mActual, W2_FRACTAL_SIZE);
         uint32_t cubeK = W2_L1_MAX_CUBE_K;
-        while (cubeK > W2_TILE_K &&
+        while (cubeK > W2_L1_STAGE_K &&
                (K_ % cubeK != 0 || mAligned * cubeK * sizeof(half) > W2_L1_A_STAGE_BYTES)) {
             cubeK -= W2_FRACTAL_SIZE;
         }
@@ -354,11 +360,13 @@ private:
     {
         Duplicate(threeUB_, static_cast<int16_t>(fieldMask_), (int32_t)decodedTileCount_);
         Duplicate(signHalfUB_, static_cast<int16_t>(signHalf_), (int32_t)decodedTileCount_);
+#ifndef GLM_W2_GROUPED_RINT_UNPACK
         for (int64_t field = 0; field < codesPerByte_; ++field) {
             Duplicate(masksUB_[field * packedTileCount_],
                       static_cast<int16_t>(fieldMask_ << (bitsPerCode_ * field)),
                       (int32_t)packedTileCount_);
         }
+#endif
 
         // The vector unpack is field-major across the complete packed tile.
         // Gather directly into eight [N=16,K=16] row-major fragments, avoiding
@@ -405,7 +413,43 @@ private:
         SetFlag<HardEvent::MTE2_V>(EVENT_ID0);
         WaitFlag<HardEvent::MTE2_V>(EVENT_ID0);
         Cast(cH_, cU8_, RoundMode::CAST_NONE, (int32_t)packedTileCount_);
+#if defined(GLM_W2_GROUPED_RINT_UNPACK) || defined(GLM_W2_SCALE_PAIR)
+        // Release cU8_ for the next MTE2 DMA as soon as Cast finishes
+        // reading it; do not wait for the rest of the vector unpack.
+        SetFlag<HardEvent::V_MTE2>(EVENT_ID0);
+        WaitFlag<HardEvent::V_MTE2>(EVENT_ID0);
+#endif
         PipeBarrier<PIPE_V>();
+#ifdef GLM_W2_GROUPED_RINT_UNPACK
+        // Biased RINT computes floor(byte / divisor) exactly for the W2/W4
+        // dyadic divisors 4, 16, and 64. Reconstruct unsigned fields from
+        // adjacent quotients; keep the existing sign extension below.
+        Cast(fieldI16UB_, cH_, RoundMode::CAST_RINT, (int32_t)packedTileCount_);
+        PipeBarrier<PIPE_V>();
+        for (int32_t field = 1; field < codesPerByte_; ++field) {
+            const int32_t divisor = 1 << (bitsPerCode_ * field);
+            const half reciprocal = static_cast<half>(1.0f / static_cast<float>(divisor));
+            const half bias = static_cast<half>(-
+                (static_cast<float>(divisor) - 1.0f) / (2.0f * static_cast<float>(divisor)));
+            Muls(fieldHalfUB_, cH_, reciprocal, (int32_t)packedTileCount_);
+            PipeBarrier<PIPE_V>();
+            Adds(fieldHalfUB_, fieldHalfUB_, bias, (int32_t)packedTileCount_);
+            PipeBarrier<PIPE_V>();
+            Cast(fieldI16UB_[field * packedTileCount_], fieldHalfUB_,
+                 RoundMode::CAST_RINT, (int32_t)packedTileCount_);
+            PipeBarrier<PIPE_V>();
+        }
+        const int16_t radix = static_cast<int16_t>(1 << bitsPerCode_);
+        for (int32_t field = 0; field + 1 < codesPerByte_; ++field) {
+            Muls(andTmp_, fieldI16UB_[(field + 1) * packedTileCount_], radix,
+                 (int32_t)packedTileCount_);
+            PipeBarrier<PIPE_V>();
+            Sub(fieldI16UB_[field * packedTileCount_],
+                fieldI16UB_[field * packedTileCount_], andTmp_,
+                (int32_t)packedTileCount_);
+            PipeBarrier<PIPE_V>();
+        }
+#else
         Cast(c16_, cH_, RoundMode::CAST_RINT, (int32_t)packedTileCount_);
         PipeBarrier<PIPE_V>();
 
@@ -422,6 +466,7 @@ private:
                  RoundMode::CAST_RINT, (int32_t)packedTileCount_);
             PipeBarrier<PIPE_V>();
         }
+#endif
 
         // Sign-extend the two's-complement W2/W4 field in int16.
         Add(fieldI16UB_, fieldI16UB_, signHalfUB_, (int32_t)decodedTileCount_);
@@ -457,30 +502,47 @@ private:
                         : (static_cast<int64_t>(n0) + rowBase) * packedK_ + k0 / codesPerByte_;
                     DecodeTile(codeOffset);
 
-                    // W is [N,K], while Cube consumes B=W^T [K,N]. Transpose
-                    // each 16x16 fragment into NZ order first.
+                    // W is [N,K], while Cube consumes B=W^T [K,N]. Transpose each
+                    // 16x16 fragment, then apply its [32,32] scale once to all 256
+                    // values before the already-NZ GM store.
                     const int64_t nFractal = rowBase / W2_FRACTAL_SIZE;
                     const int64_t nzColumnBlockStride = K_ * W2_FRACTAL_SIZE;
                     const int64_t nzBase = coreNzBase_ + nFractal * nzColumnBlockStride;
+#ifdef GLM_W2_SCALE_PAIR
                     if (!nzPacked_) {
                         for (int64_t kFractal = 0; kFractal < W2_K_FRACTALS_PER_TILE; ++kFractal) {
-                            const int64_t offset = kFractal * W2_FRACTAL_SIZE * W2_FRACTAL_SIZE;
+                            const int64_t offset =
+                                kFractal * W2_FRACTAL_SIZE * W2_FRACTAL_SIZE;
                             AscendC::Transpose(nzTileUB_[offset], fractalRowsUB_[offset]);
                             PipeBarrier<PIPE_V>();
                         }
                     }
-                    // One [32,32] block scale covers two adjacent 16x16 NZ
-                    // fragments. Multiplying both at once halves vector Muls
-                    // and its barriers without changing any FP16 products.
-                    for (int64_t kFractal = 0; kFractal < W2_K_FRACTALS_PER_TILE; kFractal += 2) {
+                    // The two adjacent 16x16 NZ fragments share one [32,32]
+                    // block scale. One vector Muls covers both fragments.
+                    for (int64_t kFractal = 0; kFractal < W2_K_FRACTALS_PER_TILE;
+                         kFractal += 2) {
+#else
+                    for (int64_t kFractal = 0; kFractal < W2_K_FRACTALS_PER_TILE;
+                         ++kFractal) {
+#endif
                         const int64_t localFractalOffset =
                             kFractal * W2_FRACTAL_SIZE * W2_FRACTAL_SIZE;
                         const int64_t scaleIndex = k0 / W2_BLOCK_SIZE + kFractal / 2;
                         const half scale = static_cast<half>(scaleUB_.GetValue(scaleIndex));
                         auto nzFractal = nzPacked_ ? signedHalfUB_[localFractalOffset]
                                                    : nzTileUB_[localFractalOffset];
+#ifndef GLM_W2_SCALE_PAIR
+                        if (!nzPacked_) {
+                            AscendC::Transpose(nzFractal, fractalRowsUB_[localFractalOffset]);
+                            PipeBarrier<PIPE_V>();
+                        }
+#endif
                         Muls(nzFractal, nzFractal, scale,
+#ifdef GLM_W2_SCALE_PAIR
                              2 * W2_FRACTAL_SIZE * W2_FRACTAL_SIZE);
+#else
+                             W2_FRACTAL_SIZE * W2_FRACTAL_SIZE);
+#endif
                         PipeBarrier<PIPE_V>();
                     }
                     SetFlag<HardEvent::V_MTE3>(EVENT_ID2);

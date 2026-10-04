@@ -316,6 +316,12 @@ class AscendIndexerKPoolStateSpec(AscendSlidingWindowMLASpec):
 
     cache_role: str = "indexer_state"
 
+    @property
+    def prefix_cacheable(self) -> bool:
+        # A complete hashed MLA block ends on a k-pool boundary, so this
+        # incomplete-pool tail has no historical state to restore on a hit.
+        return False
+
     def __post_init__(self) -> None:
         super().__post_init__()
         if self.dtype != torch.float32:

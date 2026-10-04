@@ -874,6 +874,11 @@ at::Tensor mhc_sinkhorn_310_meta(
     return at::empty_like(logits);
 }
 
+at::Tensor mhc_bf16_round_310_meta(const at::Tensor &input)
+{
+    return at::empty_like(input);
+}
+
 void qwen4exp_ple_decode_310_meta(
     const at::Tensor &projected,
     const at::Tensor &hidden,
@@ -2325,6 +2330,7 @@ TORCH_LIBRARY_IMPL_EXPAND(CONCAT(_C, _ascend), Meta, ops) {
     // mla_cache_write_310
     ops.impl("mla_cache_write_310", &vllm_ascend::meta::mla_cache_write_310_meta);
     ops.impl("mhc_sinkhorn_310", &vllm_ascend::meta::mhc_sinkhorn_310_meta);
+    ops.impl("mhc_bf16_round_310", &vllm_ascend::meta::mhc_bf16_round_310_meta);
     // qwen4exp_ple_decode_310
     ops.impl("qwen4exp_ple_decode_310", &vllm_ascend::meta::qwen4exp_ple_decode_310_meta);
     // chunk_gated_delta_rule_fwd_h
