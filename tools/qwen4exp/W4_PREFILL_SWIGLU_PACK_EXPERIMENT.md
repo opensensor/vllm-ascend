@@ -24,12 +24,24 @@ chunk and the older 20,480-row maximum. The model now has an opt-in
 directly to native down projection. The default remains the measured torch
 path until the NPU parity and service gates pass.
 
+## Staged CPU-side package
+
+On October 4, the host extension and a coherent five-operator 310P package
+compiled successfully on Threadripper. The package contains the four native
+W4 operators plus `RecurrentGatedDeltaRuleV310`; it is installed only under
+`/srv/ai/src/qwen38-prefill-swiglu-opp-20261004`. The isolated runtime is
+`/srv/ai/src/qwen38-prefill-swiglu-runtime-20261004`, with the new extension
+and the opt-in launcher setting. Host symbol, recurrent FP16/FP32 variant,
+launcher syntax, runtime coherence, and `--show` checks passed. The package
+has **not** been executed on an NPU. Build hashes and exact paths are in the
+[staging record](../../artifacts/qwen38-prefill-swiglu-pack-20261004/README.md).
+
 ## Gate for a later NPU window
 
-Build the host API, tiler, and kernel from one coherent custom OPP package.
-Use an isolated package path as described in the
+Use the isolated host API, tiler, and kernel package as described in the
 [310P runtime runbook](../../docs/source/developer_guide/performance_and_debug/qwen38_310p_runtime_runbook.md).
-The source-only change has not been compiled or run on NPU hardware.
+Do not promote the opt-in model path until the NPU parity and timing gates
+pass.
 
 ```bash
 python -m tools.qwen4exp.benchmark_w4_prefill_swiglu_pack_310 --dry-run
