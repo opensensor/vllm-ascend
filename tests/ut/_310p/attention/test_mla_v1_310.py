@@ -8,9 +8,11 @@ from vllm_ascend._310p.attention.mla_v1_310 import (
     AscendMLABackend310,
     AscendMLAImpl310,
     AscendMLAMetadataBuilder310,
+    _grouped_absorbed_key_projection,
     _qsa_cache_block_table,
     _write_nz_latent_cache,
 )
+from vllm_ascend.attention.mla_v1 import DecodeMLAPreprocessResult
 
 
 def test_qsa_block_table_maps_split_kernel_pages_to_shared_scheduler_pages() -> None:
@@ -43,6 +45,29 @@ def test_native_mla_impl_retains_glm_kpool_indexer() -> None:
     ):
         impl = AscendMLAImpl310(indexer=indexer)
     assert impl.glm_indexer is indexer
+
+
+def test_grouped_absorbed_key_projection_flattens_heads_for_gmm() -> None:
+    query = torch.randn(2, 3, 4)
+    weight = torch.randn(3, 4, 5)
+    group_list = torch.tensor([2, 4, 6])
+    grouped_output = torch.randn(6, 5)
+
+    with patch(
+        "vllm_ascend._310p.attention.mla_v1_310.torch_npu.npu_grouped_matmul",
+        return_value=[grouped_output],
+    ) as grouped_matmul:
+        actual = _grouped_absorbed_key_projection(query, weight, group_list)
+
+    args, kwargs = grouped_matmul.call_args
+    assert args == ()
+    assert kwargs["x"][0].shape == (6, 4)
+    assert kwargs["x"][0].is_contiguous()
+    assert kwargs["weight"] == [weight]
+    assert kwargs["group_list"] is group_list
+    assert kwargs["split_item"] == 2
+    assert kwargs["group_type"] == 0
+    torch.testing.assert_close(actual, grouped_output.view(3, 2, 5).transpose(0, 1))
 
 
 def test_native_mla_backend_publishes_nz_latent_cache_shape() -> None:
@@ -169,6 +194,7 @@ def test_native_prefill_rejects_unmerged_chunked_context() -> None:
 @pytest.mark.parametrize("position_padding", [0, 1, 2])
 def test_continued_prefill_uses_visible_paged_latent_prefix(position_padding: int) -> None:
     impl = AscendMLAImpl310.__new__(AscendMLAImpl310)
+    impl.host_kv_layer = None
     impl.W_UK_T = torch.eye(4, dtype=torch.float16).expand(2, -1, -1).contiguous()
     impl._decode_constant_buffers = {}
     impl.scale = 0.5
@@ -244,6 +270,7 @@ def test_write_nz_latent_cache_maps_slots_and_ignores_padding() -> None:
 
 def test_nope_cache_write_stores_latent_once_in_aliased_native_pages() -> None:
     impl = AscendMLAImpl310.__new__(AscendMLAImpl310)
+    impl.host_kv_layer = None
     impl.kv_lora_rank = 32
     impl.kv_a_layernorm = lambda value: value + 1
     source = torch.arange(64, dtype=torch.float16).view(2, 1, 1, 32)
@@ -264,12 +291,46 @@ def test_nope_cache_write_stores_latent_once_in_aliased_native_pages() -> None:
     torch.testing.assert_close(latent, expected)
 
 
+def test_native_decode_accepts_shared_mla_forward_interface() -> None:
+    impl = AscendMLAImpl310.__new__(AscendMLAImpl310)
+    query = torch.randn(1, 2, 4)
+    key_cache = torch.empty(2, 1, 32, 16)
+    value_cache = torch.empty_like(key_cache)
+    metadata = SimpleNamespace(decode=object())
+    result = DecodeMLAPreprocessResult(
+        ql_nope=query,
+        q_pe=torch.empty(1, 2, 0),
+        k_nope=key_cache,
+        k_pe=value_cache,
+    )
+    expected = torch.randn(1, 2, 4)
+    calls = []
+
+    def fused(*args):
+        calls.append(args)
+        return expected
+
+    impl._forward_decode_fused = fused
+
+    assert impl._forward_decode(result, 32, metadata) is expected
+    assert calls == [(query, key_cache, value_cache, metadata)]
+
+
+def test_native_decode_rejects_missing_latent_cache() -> None:
+    impl = AscendMLAImpl310.__new__(AscendMLAImpl310)
+    result = DecodeMLAPreprocessResult(ql_nope=torch.randn(1, 2, 4))
+
+    with pytest.raises(ValueError, match="requires query and latent KV cache"):
+        impl._forward_decode(result, 32, SimpleNamespace())
+
+
 def test_fused_decode_uses_constant_size_dense_prefix_metadata() -> None:
     impl = AscendMLAImpl310.__new__(AscendMLAImpl310)
+    impl.host_kv_layer = None
     impl.scale = 0.25
     impl._decode_constant_buffers = {}
     impl._v_up_proj = lambda value: value
-    query = torch.randn(2, 2, 4, dtype=torch.float16)
+    query = torch.randn(2, 2, 16, dtype=torch.float16)
     key_cache = torch.empty(4, 1, 32, 16, dtype=torch.float16)
     value_cache = torch.empty_like(key_cache)
     block_table = torch.tensor([[3, 1, 0], [2, 0, 1]], dtype=torch.int32)
@@ -305,12 +366,13 @@ def test_fused_decode_uses_constant_size_dense_prefix_metadata() -> None:
     assert args[6].tolist() == [-1, -1]
     assert torch.equal(args[7], block_table)
     assert args[8].tolist() == [0, 1, 2]
-    assert args[9:] == (0.25, 4)
+    assert args[9:] == (0.25, 4, 1)
     torch.testing.assert_close(actual, query.transpose(0, 1))
 
 
 def test_glm_kpool_decode_passes_selected_pools_and_tail_to_qsa() -> None:
     impl = AscendMLAImpl310.__new__(AscendMLAImpl310)
+    impl.host_kv_layer = None
     impl.scale = 0.25
     impl._decode_constant_buffers = {}
     impl._v_up_proj = lambda value: value
@@ -322,7 +384,7 @@ def test_glm_kpool_decode_passes_selected_pools_and_tail_to_qsa() -> None:
         topk_tokens=8,
         topk_indices_buffer=selected_tokens,
     )
-    query = torch.randn(2, 2, 4, dtype=torch.float16)
+    query = torch.randn(2, 2, 16, dtype=torch.float16)
     cache = torch.empty(4, 1, 32, 16, dtype=torch.float16)
     metadata = SimpleNamespace(
         num_decodes=2,

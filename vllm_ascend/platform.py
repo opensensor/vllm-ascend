@@ -49,6 +49,7 @@ from vllm_ascend.utils import (
     check_kv_extra_config,
     enable_sfa_dcp_replicated_indexer,
     is_moe_model,
+    model_uses_kpool_indexer,
     model_uses_sfa_sparse,
     refresh_block_size,
     update_cudagraph_capture_sizes,
@@ -272,6 +273,16 @@ class NPUPlatform(Platform):
             compatibility_backend_map[(True, False)] = "vllm_ascend._310p.attention.mla_v1_310.AscendMLABackend310"
 
         if get_current_hardware_profile().attention_backend_family is AttentionBackendFamily.COMPATIBILITY:
+            if key == (True, True):
+                # GLM's kpool indexer sets use_sparse on the upstream MLA
+                # layer, but its selected pages are consumed by the 310P MLA
+                # backend. DeepSeek-style sparse MLA is not supported here.
+                from vllm.config import get_current_vllm_config
+
+                model_config = get_current_vllm_config().model_config
+                if ascend_envs.VLLM_ASCEND_310P_ENABLE_MLA and model_uses_kpool_indexer(model_config):
+                    return "vllm_ascend._310p.attention.mla_v1_310.AscendMLABackend310"
+                raise NotImplementedError("Sparse MLA on 310P requires the enabled GLM kpool backend")
             return compatibility_backend_map.get(key, compatibility_backend_map[(False, False)])
 
         if attn_selector_config.use_pcp:

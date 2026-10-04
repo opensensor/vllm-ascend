@@ -50,13 +50,15 @@ constexpr int64_t W2_BLOCK_SIZE = 32;
 constexpr uint32_t W2_FRACTAL_SIZE = 16;
 constexpr uint32_t W2_TILE_M = 128;
 constexpr uint32_t W2_TILE_N = 128;
-constexpr uint32_t W2_TILE_K = 128;
+constexpr uint32_t W2_TILE_K = 256;
 constexpr uint32_t W2_K_FRACTALS_PER_TILE = W2_TILE_K / W2_FRACTAL_SIZE;
 constexpr uint32_t W2_L1_TILE_N = 32;
+// The optional decoded-L1 path retains its independent 128-K Cube stage.
+constexpr uint32_t W2_L1_STAGE_K = 128;
 constexpr uint32_t W2_L1_MAX_K = 4096;
 constexpr uint32_t W2_L1_WEIGHT_BYTES = W2_L1_TILE_N * W2_L1_MAX_K * sizeof(half);
 constexpr uint32_t W2_L1_A_STAGES = 2;
-constexpr uint32_t W2_L1_A_STAGE_BYTES = W2_TILE_M * W2_TILE_K * sizeof(half);
+constexpr uint32_t W2_L1_A_STAGE_BYTES = W2_TILE_M * W2_L1_STAGE_K * sizeof(half);
 constexpr uint32_t W2_L1_MAX_CUBE_K = 512;
 static_assert(W2_BLOCK_SIZE == 2 * W2_FRACTAL_SIZE);
 // The unified-core CATLASS epilogue uses UB [0, 96 KiB) for a maximum-size
@@ -224,7 +226,7 @@ private:
         const uint32_t mActual = T_ == 1 ? W2_FRACTAL_SIZE : (uint32_t)T_;
         const uint32_t mAligned = AlignUpU<uint32_t>(mActual, W2_FRACTAL_SIZE);
         uint32_t cubeK = W2_L1_MAX_CUBE_K;
-        while (cubeK > W2_TILE_K &&
+        while (cubeK > W2_L1_STAGE_K &&
                (K_ % cubeK != 0 || mAligned * cubeK * sizeof(half) > W2_L1_A_STAGE_BYTES)) {
             cubeK -= W2_FRACTAL_SIZE;
         }

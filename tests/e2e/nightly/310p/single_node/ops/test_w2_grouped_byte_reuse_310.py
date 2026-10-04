@@ -6,7 +6,7 @@ import pytest
 import torch
 import torch_npu
 
-from tools.glm_perf.operator_bench import nzpacked_codes
+from vllm_ascend.models.glm5next_w2.model import _pack_codes_nz
 from vllm_ascend.utils import enable_custom_op
 
 EXPERTS = 72
@@ -27,7 +27,7 @@ def test_grouped_w4_releases_packed_byte_after_vector_read(repeat: int) -> None:
     output_index = torch.arange(WIDTH, dtype=torch.int32).view(WIDTH, 1)
     byte_index = torch.arange(BYTE_COLUMNS, dtype=torch.int32).view(1, BYTE_COLUMNS)
     canonical = ((output_index + byte_index * 37) & 255).to(torch.uint8).unsqueeze(0)
-    packed = nzpacked_codes(canonical, WIDTH, 4).view(torch.int8)
+    packed = _pack_codes_nz(canonical[0], WIDTH).unsqueeze(0).view(torch.int8)
     codes = torch.zeros((EXPERTS, WIDTH, BYTE_COLUMNS), dtype=torch.int8, device="npu:0")
     codes[0].copy_(packed[0].npu())
     scales = torch.ones((EXPERTS, WIDTH // 32, WIDTH // 32), dtype=torch.float32, device="npu:0")

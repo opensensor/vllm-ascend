@@ -1,10 +1,15 @@
 # GLM grouped W2/W4 256-K dequant tile, 2026-10-03
 
-Status: **rejected for serving** after a concurrent retrieval A/B. The
-known-good 128-K graph server was restored. Do not mix this candidate OPP
-with 128-K NZ-packed checkpoint banks: the model loader and grouped operator
-must be changed together because the packed-code tile shape is an internal
-ABI. Its source and package remain isolated for root-cause work.
+Status: **experimental promotion** at the user's request, prioritizing the
+measured 18–20% serving decode gain while an intermittent four-request
+graph-mode correctness regression is investigated. This is not a quality
+sign-off: a calibrated 2K four-request retrieval was 2/4 exact on the first
+256-K graph server, but two full 256-output-token runs after a clean restart
+were 4/4 each, including fresh variants after quality/decode warmup; the
+128-K graph control was 8/8 across two runs. Do not mix the 256-K
+OPP with a 128-K NZ-packed model loader, or vice versa: the packed-code tile
+shape is an internal ABI. The last-known-good 128-K launcher remains
+`/home/matteius/experiments/glm-gate-a-20261002/serve-glm-prefix-22k-ai-core-round-64k-20261003.sh`.
 
 The 310P vector dequantizer previously processed one 16-output-channel by
 128-K packed tile per iteration. This candidate processes 256 K at once and
@@ -99,14 +104,16 @@ got two exact answers, one incoherent continuation (again `variant=2`), and
 one answer with extra bold markup. The same calibrated `variant=2` prompt
 passed when run alone.
 
-The matched 128-K control used the same 22,528 context, graph capture,
+The matched 128-K control used the same 22,528-token *per-request* context, graph capture,
 prefix cache, model, seed, and calibrated four-way workload. Its launcher
 differs only in the source root, grouped OPP root, and profiler output path.
 It passed **4/4 exact answers twice (8/8)**, including `variant=2` in both
 runs. Thus the candidate has a strong concurrent correctness regression
-signal despite its 18–20% serving decode gain. The known-good 128-K server
-was left healthy on port 8001. No 256-K loader/kernel change was promoted to
-the main source or committed.
+signal despite its 18–20% serving decode gain. These were four independent
+~1,735-token requests running concurrently, not four shares of one context
+window. The 128-K graph server was restored after this A/B; it was later
+replaced by the 256-K graph server for forward debugging at the user's
+explicit request.
 
 To isolate graph replay, the 256-K source and OPP were restarted with
 `--enforce-eager` while retaining the same model, prefix cache, context,
@@ -131,8 +138,53 @@ changing-input comparisons. These probes used four routed rows, the real
 single-op capture failure less likely, but do not cover GLM's KDA/MLA/QSA
 state or its full-forward graph. The next diagnostic is a per-layer
 graph-versus-eager activation trace on the same concurrent prompts, starting
-at the first decode token; only after locating the first divergence should
-the 256-K optimization be revised.
+at the first decode token. The 256-K loader and kernel are being promoted
+together, with the regression retained as a known experimental limitation.
+
+After the promotion restart, the real-weight graph server reached `/health`
+HTTP 200 and answered the calibrated four-request 2K retrieval **4/4 exact**
+on its first fresh run. This does not erase the prior 2/4 failure; it makes
+intermittency explicit. The 256-K captured operator was then tested at the
+real four-request decode route width (32 routed rows): W4 24/24, W2 24/24,
+and a W4 gate/up → activation → W2 down chain 24/24 all matched eager
+bitwise under changing inputs and expert boundaries. The first divergence
+has not yet been localized to a full-model layer or stream boundary.
+
+The promoted server's subsequent strict quality/decode warmup reproduced
+**17/20** quality (the same three misses: `instr_reverse`, `instr_first`,
+`code_slice`), **3.56 tok/s c1**, and **8.60 aggregate tok/s c4** with no
+early EOS in the 256-output-token `SHORT_PROMPT` runs. The short c4 result
+varies with runtime load; the earlier paired 7.47 tok/s remains the direct
+controlled comparison to the 128-K 6.26 tok/s run. An additional one-NPU
+probe used the same breakable-graph mechanism as GLM, with **11 eager graph
+breaks** across repeated W4→activation→W2 calls at 32 routes. It also
+matched eager bitwise for **24/24 changing-input replays**. This further
+narrows the intermittent full-serving failure to scheduling, attention/state
+metadata, or an interaction not represented by the expert-only probes.
+The graph-enabled runtime also depends on the matched GLM-specific 310P MLA
+projection, kpool fixed-shape writer, sparse-backend selection, and KDA
+metadata builder and model installer. These production graph files in the
+promotion commit match the live source byte-for-byte. Targeted remote host
+suites passed **21/21**
+MLA, **29/29** kpool, and **8/8** KDA/backend-selection checks. A third
+four-request retrieval with a 32-token cap and fresh variants passed 4/4;
+that cap intentionally changes scheduling and is not counted as a full
+256-token quality gate.
+
+A fresh four-rank CANN capture of the promoted server used one c1
+`SHORT_PROMPT` request and profiled 32 worker iterations. The complete
+`op_statistic.csv` files agree on **2,688 grouped W2/W4 calls per rank**.
+Their grouped task totals are **3.54–3.80 s**, or **41.5–43.0%** of the
+reported per-rank operator time. The next categories are `TransData`
+(1.05–1.08 s), `MatMulV2` (0.85–0.87 s), KDA (0.68–0.69 s), and AI-CPU
+`Cast` (0.51–0.58 s). These are whole-capture summed task times, including
+prefill; they are neither decode-only times nor an additive critical path.
+The per-event `kernel_details.csv` exports are **truncated at different
+timestamps**, so their apparent rank imbalance and cross-rank envelope are
+invalid. In particular, the complete operator summaries show equal grouped
+call counts, contrary to the truncated event files. Capture files live under
+`/home/matteius/experiments/glm-gate-a-20261002/profile-ktile256-20261003/`
+with token `20261004012034999`.
 
 Local request records:
 `/tmp/glm-22k-ktile256-windows2k-calibrated-20261003.jsonl`,
