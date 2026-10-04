@@ -108,10 +108,26 @@ signal despite its 18–20% serving decode gain. The known-good 128-K server
 was left healthy on port 8001. No 256-K loader/kernel change was promoted to
 the main source or committed.
 
+To isolate graph replay, the 256-K source and OPP were restarted with
+`--enforce-eager` while retaining the same model, prefix cache, context,
+seed, and calibrated four-way prompts. Its launcher is
+`serve-glm-ktile256-eager.sh` in this artifact directory; compared with the
+candidate graph launcher, it differs only in the profiler path and graph/eager
+flags. Eager passed **4/4 exact answers twice (8/8)**, including `variant=2`
+on both runs. The graph candidate's repeated incoherent answer therefore
+appears to require graph-mode execution or its scheduling interaction with
+the widened packed layout; isolated operator arithmetic and eager full-model
+serving were not sufficient to reproduce it. This is an inference from the
+controlled runs, not a proven kernel-level race. The eager variant is slower
+than the known-good graph baseline, so it is not a serving replacement. The
+128-K graph server was restored after the diagnostic.
+
 Local request records:
 `/tmp/glm-22k-ktile256-windows2k-calibrated-20261003.jsonl`,
 `/tmp/glm-22k-128k-windows2k-calibrated-20261003.jsonl`, and
-`/tmp/glm-22k-128k-windows2k-calibrated-repeat-20261003.jsonl`.
+`/tmp/glm-22k-128k-windows2k-calibrated-repeat-20261003.jsonl`, plus
+`/tmp/glm-22k-ktile256-eager-windows2k-calibrated-20261003.jsonl` and
+`/tmp/glm-22k-ktile256-eager-windows2k-repeat-20261003.jsonl`.
 
 Hardware records are on the NPU host under
 `/home/matteius/experiments/glm-gate-a-20261002/`:
