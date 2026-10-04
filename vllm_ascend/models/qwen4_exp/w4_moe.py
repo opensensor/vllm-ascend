@@ -60,7 +60,9 @@ FUSED_DOWN_OUTPUTS = 2560
 # pack and grouped-matmul operators expose a 20,480-route prefill contract.
 MAX_GROUPED_W4A16_TOKENS = 512
 MAX_GROUPED_W4A16_ROUTES = 5120
-MAX_GROUPED_NATIVE_TOKENS = 2048
+# The 1,536-token split avoids the native large-tile schedule cliff while
+# retaining the 20,480-route operator capacity for other callers.
+MAX_GROUPED_NATIVE_TOKENS = 1536
 MAX_GROUPED_NATIVE_ROUTES = 20480
 # Concurrent shared/routed GEMMs help only while decode leaves Cube headroom.
 # Multi-request MTP can split work into two-row MoE calls, where the concurrent
@@ -76,6 +78,7 @@ SHARED_EXPERT_EXECUTIONS = (
 LM_HEAD_EXECUTIONS = ("float16", "w8a8_dynamic")
 PLE_PROJECTION_EXECUTIONS = ("float16", "w8a8_dynamic")
 MTP_EXPERT_EXECUTIONS = ("w8a16_routed", "w8a8_grouped")
+GROUPED_ACTIVATION_METHODS = ("torch", "cann_swiglu_pack")
 
 
 class DeferredReduceStream:
@@ -129,6 +132,11 @@ def w4_config(config: object) -> dict | None:
     mtp_expert_execution = metadata.get("mtp_expert_execution", "w8a16_routed")
     if mtp_expert_execution not in MTP_EXPERT_EXECUTIONS:
         raise ValueError(f"mtp_expert_execution must be one of {MTP_EXPERT_EXECUTIONS}")
+    grouped_activation = metadata.get("grouped_activation", "torch")
+    if grouped_activation not in GROUPED_ACTIVATION_METHODS:
+        raise ValueError(f"grouped_activation must be one of {GROUPED_ACTIVATION_METHODS}")
+    if grouped_activation == "cann_swiglu_pack" and backend != NATIVE_INT4_BACKEND:
+        raise ValueError("experimental grouped SwiGLU pack requires native INT4")
     group = metadata.get("group_size")
     if type(group) is not int or group <= 0 or group % 2:
         raise ValueError("W4 group_size must be a positive even integer")
@@ -313,6 +321,7 @@ class W4SparseMoE(nn.Module):
             self.native_int4 and intermediate == FUSED_DOWN_INPUTS and hidden == FUSED_DOWN_OUTPUTS
         )
         self.grouped_routing = metadata["backend"] in ("cube_310_grouped", NATIVE_INT4_BACKEND)
+        self.grouped_activation = metadata.get("grouped_activation", "torch")
         self.fused_gate_up = self.device_routing
         self.num_experts = int(config.num_experts)
         self.top_k = int(config.num_experts_per_tok)
@@ -604,9 +613,16 @@ class W4SparseMoE(nn.Module):
             else:
                 inputs = inputs.index_select(0, sorted_tokens).contiguous()
                 projected = gate_up_bank.grouped_linear(inputs, group_ends)
-            gate, up = projected.to(self.compute_dtype).chunk(2, -1)
-            activation = (F.silu(gate) * up).to(self.params_dtype)
-            output = self.projections["down_proj"].grouped_linear(activation, group_ends).to(self.compute_dtype)
+            if self.grouped_activation == "cann_swiglu_pack":
+                # Opt-in until full prefill rows pass exact packing parity and
+                # a real-weight service gate on the coherent 310P OPP package.
+                packed_activation = swiglu_pack_activation_device(projected)
+                output = self.projections["down_proj"].native_linear(packed_activation, group_ends)
+            else:
+                gate, up = projected.to(self.compute_dtype).chunk(2, -1)
+                activation = (F.silu(gate) * up).to(self.params_dtype)
+                output = self.projections["down_proj"].grouped_linear(activation, group_ends)
+            output = output.to(self.compute_dtype)
             output *= dispatch.route_weights.index_select(0, dispatch.order)
             result[start:stop] = (
                 output.index_select(0, dispatch.inverse_order).reshape(tokens, self.top_k, hidden).sum(1)

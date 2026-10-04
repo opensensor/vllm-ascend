@@ -74,11 +74,11 @@ Merely exporting the two external paths lets bootstrap move the embedded host
 library to the front and silently restore its FP16-only recurrent schema.
 
 The W4 host tilers must also cover the routed rows produced by one prefill
-chunk. Qwen routes each token to eight experts, so the qualified 2,048-token
-chunk requires capacity for 16,384 routed rows. A stale custom OPP capped both
-the matmul and activation-pack tilers at 5,120 rows: decode graph capture and
-short prompts passed, but the first chunk of a cold 23K prompt failed with
-`Failed to execute tiling function`. The r2 coherent package raises both
+chunk. The target checkpoint routes each token to ten experts, so the qualified
+2,048-token chunk requires capacity for 20,480 routed rows. A stale custom OPP
+capped both the matmul and activation-pack tilers at 5,120 rows: decode graph
+capture and short prompts passed, but the first chunk of a cold 23K prompt
+failed with `Failed to execute tiling function`. The r2 coherent package raises both
 bounds to 20,480. Rebuild the host tilers whenever
 `MAX_NUM_BATCHED_TOKENS * top_k` exceeds the packaged bound, and validate with
 a prompt longer than one chunk. A decode-only startup test cannot establish
@@ -220,8 +220,16 @@ claim a cold-prefill improvement from a request that reused a live prefix cache.
 On the qualified r2 runtime, an exact uncached 23,000-token prompt took
 68.24 seconds to first token with 2,048-token chunks and 68.51 seconds with
 2,560-token chunks. Both runs preserved 4.08 concurrent 262,144-token requests,
-but the larger prompt microbatch produced no cold-prefill gain. Keep 2,048 as
-the default until a repeated sweep demonstrates a material improvement. The
+but the larger prompt microbatch produced no cold-prefill gain. That test
+did not change the model's grouped expert chunk. A later isolated native-W4
+candidate moved the kernel's large-tile switch to 128 rows per expert and
+reduced the grouped chunk to 1,536 tokens while leaving the scheduler at
+2,048. Three matched 23,410-token cold prompts had median TTFT 68.950 s,
+versus 72.864 s in saved baseline records, with identical generated-text
+hashes and zero cached tokens. See the
+[batching experiment](../../../../artifacts/qwen38-prefill-batching-20261004/README.md).
+The shared source now carries those two changes; rebuild and gate its combined
+pending operator changes before treating a new package as qualified. The
 `--warm-prefixes` capacity probe also reported `cached_tokens: 0` in this hybrid
 Mamba configuration. Treat a warmup as cached only when the response usage or
 server prefix-cache metrics prove a hit.

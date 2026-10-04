@@ -7,6 +7,7 @@ collectives, and the rest of the model. Dry-run only plans route geometry.
 """
 
 import argparse
+import hashlib
 import json
 import statistics
 import time
@@ -56,6 +57,7 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--model", type=Path)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--trace-dir", type=Path, help="new directory for separate chunk-size traces")
     parser.add_argument("--layer", type=int, default=0)
     parser.add_argument("--rank", type=int, default=0)
     parser.add_argument("--tp-size", type=int, default=4)
@@ -82,19 +84,27 @@ def main() -> None:
                     "top_k": args.top_k,
                     "route_cap": args.route_cap,
                     "cases": cases,
+                    "trace_capture": args.trace_dir is not None,
                     "npu_used": False,
                 },
                 indent=2,
             )
         )
         return
-    if args.model is None or not args.model.is_dir() or args.output is None or args.output.exists():
-        parser.error("--model must exist and --output must be a new path")
+    if (
+        args.model is None
+        or not args.model.is_dir()
+        or args.output is None
+        or args.output.exists()
+        or (args.trace_dir and args.trace_dir.exists())
+    ):
+        parser.error("--model must exist and --output/--trace-dir must be new paths")
 
     import torch
     import torch.nn.functional as F
     import torch_npu
 
+    from tools.qwen4exp.npu_profile import capture_npu_profile
     from tools.qwen4exp.profile_w4_layer_310 import load_layer
     from vllm_ascend.models.qwen4_exp.moe import route_topk
     from vllm_ascend.models.qwen4_exp.w4_moe import MAX_GROUPED_NATIVE_ROUTES
@@ -113,6 +123,8 @@ def main() -> None:
     cases = plan_cases(args.tokens, layer.top_k, args.chunks, MAX_GROUPED_NATIVE_ROUTES)
     if not all(case["within_route_cap"] for case in cases):
         parser.error("chunk exceeds the installed grouped native route cap")
+    if args.trace_dir:
+        args.trace_dir.mkdir(parents=True)
 
     generator = torch.Generator().manual_seed(1024)
     with torch.inference_mode():
@@ -154,6 +166,11 @@ def main() -> None:
                     run(size)
                 torch.npu.synchronize()
                 samples[size].append((time.perf_counter() - start) * 1000 / args.iterations)
+        trace_roots = None
+        if args.trace_dir:
+            trace_roots = {size: str(args.trace_dir / f"chunk-{size}") for size in args.chunks}
+            for size in args.chunks:
+                capture_npu_profile(lambda size=size: run(size), Path(trace_roots[size]), torch, torch_npu)
 
     record = {
         "scope": "one real-weight TP partial; precomputed router; grouped dispatch through finalization",
@@ -163,6 +180,9 @@ def main() -> None:
         "tokens": args.tokens,
         "top_k": layer.top_k,
         "route_cap": MAX_GROUPED_NATIVE_ROUTES,
+        "route_ids_sha256": hashlib.sha256(cpu_ids.numpy().tobytes()).hexdigest(),
+        "output_sha256": hashlib.sha256(reference.numpy().tobytes()).hexdigest(),
+        "trace_roots": trace_roots,
         "cases": [
             {
                 **case,

@@ -1,0 +1,893 @@
+{
+  "metric_warning": "Summed task times and reported hardware pipeline counters may overlap; neither is an additive critical-path latency or unprofiled throughput measurement.",
+  "traces": [
+    {
+      "file": "prefill-batching-20261004/traces/chunk-1024/matteius-threadripper_2235365_20261004211713894_ascend_pt/ASCEND_PROFILER_OUTPUT/kernel_details.csv",
+      "device_ids": [
+        "0"
+      ],
+      "task_count": 288,
+      "task_span_ms": 242.668503,
+      "task_union_ms": 242.128821,
+      "summed_task_ms": 244.197155,
+      "projection_shapes": [
+        {
+          "name": "QwenW4A8Int4MatmulV310",
+          "input_shapes": "",
+          "count": 12,
+          "median_task_us": 15977.811999999998,
+          "block_counts": [
+            8
+          ],
+          "pipeline_counters": {}
+        }
+      ],
+      "categories": [
+        {
+          "name": "cast_layout_or_copy",
+          "count": 72,
+          "summed_task_ms": 9.593515,
+          "mean_task_us": 133.24326388888886,
+          "median_task_us": 5.482,
+          "max_task_us": 822.656,
+          "percent_summed_task_time": 3.9285940902956056
+        },
+        {
+          "name": "other",
+          "count": 204,
+          "summed_task_ms": 41.66667,
+          "mean_task_us": 204.24838235294118,
+          "median_task_us": 45.586,
+          "max_task_us": 1294.219,
+          "percent_summed_task_time": 17.062717213064992
+        },
+        {
+          "name": "w4a8_native_int4_projection",
+          "count": 12,
+          "summed_task_ms": 192.93697,
+          "mean_task_us": 16078.080833333333,
+          "median_task_us": 15977.812,
+          "max_task_us": 22316.926,
+          "percent_summed_task_time": 79.0086886966394
+        }
+      ],
+      "top_operations": [
+        {
+          "name": "QwenW4A8Int4MatmulV310",
+          "count": 12,
+          "summed_task_ms": 192.93697,
+          "mean_task_us": 16078.080833333333,
+          "median_task_us": 15977.812,
+          "max_task_us": 22316.926,
+          "percent_summed_task_time": 79.0086886966394
+        },
+        {
+          "name": "QwenW4A8PackV310",
+          "count": 12,
+          "summed_task_ms": 11.008934,
+          "mean_task_us": 917.4111666666666,
+          "median_task_us": 916.745,
+          "max_task_us": 1294.219,
+          "percent_summed_task_time": 4.508215503165874
+        },
+        {
+          "name": "aclnnInplaceCopy_CastAiCore_Cast",
+          "count": 42,
+          "summed_task_ms": 8.481769,
+          "mean_task_us": 201.94688095238095,
+          "median_task_us": 2.734,
+          "max_task_us": 822.656,
+          "percent_summed_task_time": 3.4733283440587175
+        },
+        {
+          "name": "aclnnIndexSelect_GatherV2AiCore_GatherV2",
+          "count": 42,
+          "summed_task_ms": 8.161586,
+          "mean_task_us": 194.32347619047619,
+          "median_task_us": 45.3905,
+          "max_task_us": 1080.026,
+          "percent_summed_task_time": 3.3422117468977066
+        },
+        {
+          "name": "aclnnInplaceMul_MulAiCore_Mul",
+          "count": 6,
+          "summed_task_ms": 5.96664,
+          "mean_task_us": 994.44,
+          "median_task_us": 995.664,
+          "max_task_us": 1001.25,
+          "percent_summed_task_time": 2.4433699893022913
+        },
+        {
+          "name": "aclnnSilu_SiluAiCore_Swish",
+          "count": 12,
+          "summed_task_ms": 4.234637,
+          "mean_task_us": 352.88641666666666,
+          "median_task_us": 352.7345,
+          "max_task_us": 356.953,
+          "percent_summed_task_time": 1.7341057884151025
+        },
+        {
+          "name": "aclnnReduceSum_ReduceSumOpAiCore_ReduceSum",
+          "count": 12,
+          "summed_task_ms": 3.806563,
+          "mean_task_us": 317.2135833333333,
+          "median_task_us": 320.0,
+          "max_task_us": 621.25,
+          "percent_summed_task_time": 1.5588072678406102
+        },
+        {
+          "name": "aclnnMul_MulAiCore_Mul",
+          "count": 6,
+          "summed_task_ms": 2.475625,
+          "mean_task_us": 412.6041666666667,
+          "median_task_us": 412.7085,
+          "max_task_us": 413.229,
+          "percent_summed_task_time": 1.0137812621117555
+        },
+        {
+          "name": "aclnnSilu_SliceAiCore_Slice",
+          "count": 6,
+          "summed_task_ms": 1.761354,
+          "mean_task_us": 293.559,
+          "median_task_us": 293.724,
+          "max_task_us": 296.849,
+          "percent_summed_task_time": 0.7212835874357341
+        },
+        {
+          "name": "aclnnMul_SliceAiCore_Slice",
+          "count": 6,
+          "summed_task_ms": 1.662916,
+          "mean_task_us": 277.1526666666667,
+          "median_task_us": 277.1355,
+          "max_task_us": 279.635,
+          "percent_summed_task_time": 0.6809727164921311
+        },
+        {
+          "name": "aclnnReduceSum_CastAiCpu_Cast",
+          "count": 6,
+          "summed_task_ms": 0.942345,
+          "mean_task_us": 157.0575,
+          "median_task_us": 155.1955,
+          "max_task_us": 181.094,
+          "percent_summed_task_time": 0.3858951591798848
+        },
+        {
+          "name": "aclnnSort_SortAiCore_Sort",
+          "count": 12,
+          "summed_task_ms": 0.934817,
+          "mean_task_us": 77.90141666666668,
+          "median_task_us": 79.1535,
+          "max_task_us": 83.568,
+          "percent_summed_task_time": 0.3828124041821863
+        },
+        {
+          "name": "aclnnEqTensor_EqualAiCore_Equal",
+          "count": 6,
+          "summed_task_ms": 0.735079,
+          "mean_task_us": 122.51316666666668,
+          "median_task_us": 121.901,
+          "max_task_us": 125.443,
+          "percent_summed_task_time": 0.30101865846880976
+        },
+        {
+          "name": "aclnnInplaceCopy_TensorMoveAiCore_TensorMove",
+          "count": 6,
+          "summed_task_ms": 0.378151,
+          "mean_task_us": 63.025166666666664,
+          "median_task_us": 63.203,
+          "max_task_us": 63.828,
+          "percent_summed_task_time": 0.15485479345572228
+        },
+        {
+          "name": "aclnnCumsum_CumsumAiCpu_Cumsum",
+          "count": 6,
+          "summed_task_ms": 0.299635,
+          "mean_task_us": 49.939166666666665,
+          "median_task_us": 50.3255,
+          "max_task_us": 55.885,
+          "percent_summed_task_time": 0.12270208471511472
+        },
+        {
+          "name": "aclnnReduceSum_CastAiCore_Cast",
+          "count": 6,
+          "summed_task_ms": 0.06651,
+          "mean_task_us": 11.085,
+          "median_task_us": 9.414,
+          "max_task_us": 14.609,
+          "percent_summed_task_time": 0.0272361895452877
+        },
+        {
+          "name": "aclnnSort_CastAiCore_Cast",
+          "count": 12,
+          "summed_task_ms": 0.066433,
+          "mean_task_us": 5.536083333333333,
+          "median_task_us": 5.2995,
+          "max_task_us": 8.932,
+          "percent_summed_task_time": 0.027204657646400506
+        },
+        {
+          "name": "aclnnSubs_SubAiCore_Sub",
+          "count": 6,
+          "summed_task_ms": 0.061851,
+          "mean_task_us": 10.3085,
+          "median_task_us": 9.792,
+          "max_task_us": 12.917,
+          "percent_summed_task_time": 0.025328304910022397
+        },
+        {
+          "name": "aclnnInplaceCopy_BroadcastToAiCore_BroadcastTo",
+          "count": 6,
+          "summed_task_ms": 0.036458,
+          "mean_task_us": 6.076333333333333,
+          "median_task_us": 4.857,
+          "max_task_us": 12.474,
+          "percent_summed_task_time": 0.014929739865314975
+        },
+        {
+          "name": "aclnnGeScalar_GreaterEqual_GreaterEqual",
+          "count": 6,
+          "summed_task_ms": 0.03112,
+          "mean_task_us": 5.1866666666666665,
+          "median_task_us": 4.193,
+          "max_task_us": 10.208,
+          "percent_summed_task_time": 0.012743801212589884
+        },
+        {
+          "name": "aclnnSort_SortAiCore_MemSet",
+          "count": 12,
+          "summed_task_ms": 0.029661,
+          "mean_task_us": 2.47175,
+          "median_task_us": 2.1355,
+          "max_task_us": 7.5,
+          "percent_summed_task_time": 0.012146333154454646
+        },
+        {
+          "name": "aclnnReduceSum_ReduceSumOpAiCore_MemSet",
+          "count": 12,
+          "summed_task_ms": 0.027525,
+          "mean_task_us": 2.29375,
+          "median_task_us": 2.565,
+          "max_task_us": 2.943,
+          "percent_summed_task_time": 0.011271630089220327
+        },
+        {
+          "name": "aclnnSWhere_SelectV2AiCore_SelectV2",
+          "count": 6,
+          "summed_task_ms": 0.026224,
+          "mean_task_us": 4.370666666666667,
+          "median_task_us": 4.323,
+          "max_task_us": 4.505,
+          "percent_summed_task_time": 0.010738863849580884
+        },
+        {
+          "name": "aclnnLtScalar_LessAiCore_Less",
+          "count": 6,
+          "summed_task_ms": 0.02526,
+          "mean_task_us": 4.21,
+          "median_task_us": 3.789,
+          "max_task_us": 6.432,
+          "percent_summed_task_time": 0.010344100855720453
+        },
+        {
+          "name": "aclnnArange_ArangeAiCore_Range",
+          "count": 12,
+          "summed_task_ms": 0.024664,
+          "mean_task_us": 2.0553333333333335,
+          "median_task_us": 2.0705,
+          "max_task_us": 2.448,
+          "percent_summed_task_time": 0.010100035768229978
+        },
+        {
+          "name": "aclnnBitwiseAndTensor_LogicalAndAiCore_LogicalAnd",
+          "count": 6,
+          "summed_task_ms": 0.008202,
+          "mean_task_us": 1.367,
+          "median_task_us": 1.367,
+          "max_task_us": 1.406,
+          "percent_summed_task_time": 0.0033587614892564986
+        },
+        {
+          "name": "aclnnInplaceFillScalar_FillAiCore_Fill",
+          "count": 6,
+          "summed_task_ms": 0.006226,
+          "mean_task_us": 1.0376666666666667,
+          "median_task_us": 1.016,
+          "max_task_us": 1.146,
+          "percent_summed_task_time": 0.002549579252878683
+        }
+      ]
+    },
+    {
+      "file": "prefill-batching-20261004/traces/chunk-2048/matteius-threadripper_2235365_20261004211718846_ascend_pt/ASCEND_PROFILER_OUTPUT/kernel_details.csv",
+      "device_ids": [
+        "0"
+      ],
+      "task_count": 144,
+      "task_span_ms": 179.838506,
+      "task_union_ms": 179.369416,
+      "summed_task_ms": 181.426995,
+      "projection_shapes": [
+        {
+          "name": "QwenW4A8Int4MatmulV310",
+          "input_shapes": "",
+          "count": 6,
+          "median_task_us": 21728.5925,
+          "block_counts": [
+            8
+          ],
+          "pipeline_counters": {}
+        }
+      ],
+      "categories": [
+        {
+          "name": "cast_layout_or_copy",
+          "count": 36,
+          "summed_task_ms": 9.223516,
+          "mean_task_us": 256.20877777777775,
+          "median_task_us": 5.677,
+          "max_task_us": 1626.641,
+          "percent_summed_task_time": 5.083871890178195
+        },
+        {
+          "name": "other",
+          "count": 102,
+          "summed_task_ms": 41.766037,
+          "mean_task_us": 409.47095098039216,
+          "median_task_us": 86.1715,
+          "max_task_us": 2625.026,
+          "percent_summed_task_time": 23.020850342585458
+        },
+        {
+          "name": "w4a8_native_int4_projection",
+          "count": 6,
+          "summed_task_ms": 130.437442,
+          "mean_task_us": 21739.573666666667,
+          "median_task_us": 21728.5925,
+          "max_task_us": 29772.707,
+          "percent_summed_task_time": 71.89527776723635
+        }
+      ],
+      "top_operations": [
+        {
+          "name": "QwenW4A8Int4MatmulV310",
+          "count": 6,
+          "summed_task_ms": 130.437442,
+          "mean_task_us": 21739.573666666667,
+          "median_task_us": 21728.5925,
+          "max_task_us": 29772.707,
+          "percent_summed_task_time": 71.89527776723635
+        },
+        {
+          "name": "QwenW4A8PackV310",
+          "count": 6,
+          "summed_task_ms": 11.121146,
+          "mean_task_us": 1853.5243333333333,
+          "median_task_us": 1852.1095,
+          "max_task_us": 2625.026,
+          "percent_summed_task_time": 6.129818773661549
+        },
+        {
+          "name": "aclnnInplaceCopy_CastAiCore_Cast",
+          "count": 21,
+          "summed_task_ms": 8.550182,
+          "mean_task_us": 407.1515238095238,
+          "median_task_us": 3.021,
+          "max_task_us": 1626.641,
+          "percent_summed_task_time": 4.712739689041314
+        },
+        {
+          "name": "aclnnIndexSelect_GatherV2AiCore_GatherV2",
+          "count": 21,
+          "summed_task_ms": 8.193878,
+          "mean_task_us": 390.18466666666666,
+          "median_task_us": 89.245,
+          "max_task_us": 2185.338,
+          "percent_summed_task_time": 4.516349951119457
+        },
+        {
+          "name": "aclnnInplaceMul_MulAiCore_Mul",
+          "count": 3,
+          "summed_task_ms": 6.30315,
+          "mean_task_us": 2101.05,
+          "median_task_us": 2093.099,
+          "max_task_us": 2128.463,
+          "percent_summed_task_time": 3.47420735265995
+        },
+        {
+          "name": "aclnnSilu_SiluAiCore_Swish",
+          "count": 6,
+          "summed_task_ms": 4.209765,
+          "mean_task_us": 701.6275,
+          "median_task_us": 701.276,
+          "max_task_us": 709.01,
+          "percent_summed_task_time": 2.3203630749657735
+        },
+        {
+          "name": "aclnnReduceSum_ReduceSumOpAiCore_ReduceSum",
+          "count": 6,
+          "summed_task_ms": 3.667423,
+          "mean_task_us": 611.2371666666667,
+          "median_task_us": 610.8725,
+          "max_task_us": 1205.339,
+          "percent_summed_task_time": 2.021431816141804
+        },
+        {
+          "name": "aclnnMul_MulAiCore_Mul",
+          "count": 3,
+          "summed_task_ms": 2.422161,
+          "mean_task_us": 807.387,
+          "median_task_us": 806.875,
+          "max_task_us": 809.062,
+          "percent_summed_task_time": 1.335060970391975
+        },
+        {
+          "name": "aclnnSilu_SliceAiCore_Slice",
+          "count": 3,
+          "summed_task_ms": 1.688438,
+          "mean_task_us": 562.8126666666666,
+          "median_task_us": 561.823,
+          "max_task_us": 567.24,
+          "percent_summed_task_time": 0.930643204447056
+        },
+        {
+          "name": "aclnnMul_SliceAiCore_Slice",
+          "count": 3,
+          "summed_task_ms": 1.64651,
+          "mean_task_us": 548.8366666666666,
+          "median_task_us": 548.646,
+          "max_task_us": 550.885,
+          "percent_summed_task_time": 0.9075330823839087
+        },
+        {
+          "name": "aclnnSort_SortAiCore_Sort",
+          "count": 6,
+          "summed_task_ms": 0.954922,
+          "mean_task_us": 159.15366666666665,
+          "median_task_us": 159.6745,
+          "max_task_us": 162.63,
+          "percent_summed_task_time": 0.5263395339816989
+        },
+        {
+          "name": "aclnnEqTensor_EqualAiCore_Equal",
+          "count": 3,
+          "summed_task_ms": 0.69651,
+          "mean_task_us": 232.17,
+          "median_task_us": 232.083,
+          "max_task_us": 232.422,
+          "percent_summed_task_time": 0.38390648536068184
+        },
+        {
+          "name": "aclnnInplaceCopy_TensorMoveAiCore_TensorMove",
+          "count": 3,
+          "summed_task_ms": 0.542839,
+          "mean_task_us": 180.94633333333334,
+          "median_task_us": 180.99,
+          "max_task_us": 181.354,
+          "percent_summed_task_time": 0.2992051982120963
+        },
+        {
+          "name": "aclnnReduceSum_CastAiCpu_Cast",
+          "count": 3,
+          "summed_task_ms": 0.532474,
+          "mean_task_us": 177.49133333333333,
+          "median_task_us": 189.74,
+          "max_task_us": 192.422,
+          "percent_summed_task_time": 0.2934921564456271
+        },
+        {
+          "name": "aclnnCumsum_CumsumAiCpu_Cumsum",
+          "count": 3,
+          "summed_task_ms": 0.153802,
+          "mean_task_us": 51.26733333333333,
+          "median_task_us": 51.042,
+          "max_task_us": 53.229,
+          "percent_summed_task_time": 0.08477349250038563
+        },
+        {
+          "name": "aclnnReduceSum_CastAiCore_Cast",
+          "count": 3,
+          "summed_task_ms": 0.088386,
+          "mean_task_us": 29.462,
+          "median_task_us": 28.594,
+          "max_task_us": 31.745,
+          "percent_summed_task_time": 0.04871711621525782
+        },
+        {
+          "name": "aclnnSubs_SubAiCore_Sub",
+          "count": 3,
+          "summed_task_ms": 0.055391,
+          "mean_task_us": 18.46366666666667,
+          "median_task_us": 17.63,
+          "max_task_us": 20.339,
+          "percent_summed_task_time": 0.030530737721803747
+        },
+        {
+          "name": "aclnnSort_CastAiCore_Cast",
+          "count": 6,
+          "summed_task_ms": 0.032135,
+          "mean_task_us": 5.355833333333333,
+          "median_task_us": 5.3255,
+          "max_task_us": 5.833,
+          "percent_summed_task_time": 0.017712358626675154
+        },
+        {
+          "name": "aclnnGeScalar_GreaterEqual_GreaterEqual",
+          "count": 3,
+          "summed_task_ms": 0.021614,
+          "mean_task_us": 7.204666666666667,
+          "median_task_us": 5.781,
+          "max_task_us": 10.156,
+          "percent_summed_task_time": 0.011913331861115817
+        },
+        {
+          "name": "aclnnInplaceCopy_BroadcastToAiCore_BroadcastTo",
+          "count": 3,
+          "summed_task_ms": 0.020339,
+          "mean_task_us": 6.779666666666667,
+          "median_task_us": 4.87,
+          "max_task_us": 10.781,
+          "percent_summed_task_time": 0.011210569849321486
+        },
+        {
+          "name": "aclnnSWhere_SelectV2AiCore_SelectV2",
+          "count": 3,
+          "summed_task_ms": 0.018437,
+          "mean_task_us": 6.145666666666667,
+          "median_task_us": 6.016,
+          "max_task_us": 6.562,
+          "percent_summed_task_time": 0.010162214283491825
+        },
+        {
+          "name": "aclnnSort_SortAiCore_MemSet",
+          "count": 6,
+          "summed_task_ms": 0.018254,
+          "mean_task_us": 3.0423333333333336,
+          "median_task_us": 2.1615,
+          "max_task_us": 8.411,
+          "percent_summed_task_time": 0.010061347265328403
+        },
+        {
+          "name": "aclnnLtScalar_LessAiCore_Less",
+          "count": 3,
+          "summed_task_ms": 0.017109,
+          "mean_task_us": 5.703,
+          "median_task_us": 5.182,
+          "max_task_us": 6.745,
+          "percent_summed_task_time": 0.009430239419442515
+        },
+        {
+          "name": "aclnnReduceSum_ReduceSumOpAiCore_MemSet",
+          "count": 6,
+          "summed_task_ms": 0.013671,
+          "mean_task_us": 2.2785,
+          "median_task_us": 2.3305,
+          "max_task_us": 2.656,
+          "percent_summed_task_time": 0.007535262324110037
+        },
+        {
+          "name": "aclnnArange_ArangeAiCore_Range",
+          "count": 6,
+          "summed_task_ms": 0.013438,
+          "mean_task_us": 2.2396666666666665,
+          "median_task_us": 2.2005,
+          "max_task_us": 2.891,
+          "percent_summed_task_time": 0.007406836011366445
+        },
+        {
+          "name": "aclnnBitwiseAndTensor_LogicalAndAiCore_LogicalAnd",
+          "count": 3,
+          "summed_task_ms": 0.004427,
+          "mean_task_us": 1.4756666666666667,
+          "median_task_us": 1.406,
+          "max_task_us": 1.615,
+          "percent_summed_task_time": 0.0024400999421282372
+        },
+        {
+          "name": "aclnnInplaceFillScalar_FillAiCore_Fill",
+          "count": 3,
+          "summed_task_ms": 0.003152,
+          "mean_task_us": 1.0506666666666666,
+          "median_task_us": 1.042,
+          "max_task_us": 1.094,
+          "percent_summed_task_time": 0.0017373379303339065
+        }
+      ]
+    },
+    {
+      "file": "prefill-batching-20261004/traces/chunk-512/matteius-threadripper_2235365_20261004211707998_ascend_pt/ASCEND_PROFILER_OUTPUT/kernel_details.csv",
+      "device_ids": [
+        "0"
+      ],
+      "task_count": 576,
+      "task_span_ms": 178.291372,
+      "task_union_ms": 177.59903,
+      "summed_task_ms": 179.619575,
+      "projection_shapes": [
+        {
+          "name": "QwenW4A8Int4MatmulV310",
+          "input_shapes": "",
+          "count": 24,
+          "median_task_us": 5243.6195,
+          "block_counts": [
+            8
+          ],
+          "pipeline_counters": {}
+        }
+      ],
+      "categories": [
+        {
+          "name": "cast_layout_or_copy",
+          "count": 144,
+          "summed_task_ms": 10.188212,
+          "mean_task_us": 70.75147222222222,
+          "median_task_us": 5.9895,
+          "max_task_us": 416.146,
+          "percent_summed_task_time": 5.672105615437515
+        },
+        {
+          "name": "other",
+          "count": 408,
+          "summed_task_ms": 41.838896,
+          "mean_task_us": 102.5463137254902,
+          "median_task_us": 24.31,
+          "max_task_us": 616.302,
+          "percent_summed_task_time": 23.293060347125305
+        },
+        {
+          "name": "w4a8_native_int4_projection",
+          "count": 24,
+          "summed_task_ms": 127.592467,
+          "mean_task_us": 5316.352791666667,
+          "median_task_us": 5243.6195,
+          "max_task_us": 7068.776,
+          "percent_summed_task_time": 71.03483403743718
+        }
+      ],
+      "top_operations": [
+        {
+          "name": "QwenW4A8Int4MatmulV310",
+          "count": 24,
+          "summed_task_ms": 127.592467,
+          "mean_task_us": 5316.352791666667,
+          "median_task_us": 5243.6195,
+          "max_task_us": 7068.776,
+          "percent_summed_task_time": 71.03483403743718
+        },
+        {
+          "name": "QwenW4A8PackV310",
+          "count": 24,
+          "summed_task_ms": 10.628255,
+          "mean_task_us": 442.8439583333333,
+          "median_task_us": 442.1225,
+          "max_task_us": 616.302,
+          "percent_summed_task_time": 5.917091720097879
+        },
+        {
+          "name": "aclnnInplaceCopy_CastAiCore_Cast",
+          "count": 84,
+          "summed_task_ms": 8.258366,
+          "mean_task_us": 98.31388095238094,
+          "median_task_us": 2.695,
+          "max_task_us": 416.146,
+          "percent_summed_task_time": 4.597698218582245
+        },
+        {
+          "name": "aclnnIndexSelect_GatherV2AiCore_GatherV2",
+          "count": 84,
+          "summed_task_ms": 7.983565,
+          "mean_task_us": 95.04244047619048,
+          "median_task_us": 23.659,
+          "max_task_us": 548.88,
+          "percent_summed_task_time": 4.444707655053744
+        },
+        {
+          "name": "aclnnInplaceMul_MulAiCore_Mul",
+          "count": 12,
+          "summed_task_ms": 5.520703,
+          "mean_task_us": 460.05858333333333,
+          "median_task_us": 457.839,
+          "max_task_us": 471.562,
+          "percent_summed_task_time": 3.073553091304219
+        },
+        {
+          "name": "aclnnSilu_SiluAiCore_Swish",
+          "count": 24,
+          "summed_task_ms": 4.249191,
+          "mean_task_us": 177.049625,
+          "median_task_us": 176.888,
+          "max_task_us": 178.958,
+          "percent_summed_task_time": 2.3656614263785003
+        },
+        {
+          "name": "aclnnReduceSum_ReduceSumOpAiCore_ReduceSum",
+          "count": 24,
+          "summed_task_ms": 4.175781,
+          "mean_task_us": 173.990875,
+          "median_task_us": 173.4505,
+          "max_task_us": 328.75,
+          "percent_summed_task_time": 2.3247917160476526
+        },
+        {
+          "name": "aclnnMul_MulAiCore_Mul",
+          "count": 12,
+          "summed_task_ms": 2.584635,
+          "mean_task_us": 215.38625,
+          "median_task_us": 215.599,
+          "max_task_us": 216.51,
+          "percent_summed_task_time": 1.4389495131585741
+        },
+        {
+          "name": "aclnnSilu_SliceAiCore_Slice",
+          "count": 12,
+          "summed_task_ms": 1.87914,
+          "mean_task_us": 156.595,
+          "median_task_us": 156.5235,
+          "max_task_us": 157.812,
+          "percent_summed_task_time": 1.0461777342475063
+        },
+        {
+          "name": "aclnnMul_SliceAiCore_Slice",
+          "count": 12,
+          "summed_task_ms": 1.75638,
+          "mean_task_us": 146.365,
+          "median_task_us": 146.745,
+          "max_task_us": 148.411,
+          "percent_summed_task_time": 0.9778332901633912
+        },
+        {
+          "name": "aclnnReduceSum_CastAiCpu_Cast",
+          "count": 12,
+          "summed_task_ms": 1.628412,
+          "mean_task_us": 135.701,
+          "median_task_us": 134.5315,
+          "max_task_us": 146.172,
+          "percent_summed_task_time": 0.9065893848151015
+        },
+        {
+          "name": "aclnnSort_SortAiCore_Sort",
+          "count": 24,
+          "summed_task_ms": 0.96625,
+          "mean_task_us": 40.260416666666664,
+          "median_task_us": 39.544,
+          "max_task_us": 44.609,
+          "percent_summed_task_time": 0.5379424820485184
+        },
+        {
+          "name": "aclnnEqTensor_EqualAiCore_Equal",
+          "count": 12,
+          "summed_task_ms": 0.8,
+          "mean_task_us": 66.66666666666667,
+          "median_task_us": 66.6015,
+          "max_task_us": 67.37,
+          "percent_summed_task_time": 0.44538575486552623
+        },
+        {
+          "name": "aclnnCumsum_CumsumAiCpu_Cumsum",
+          "count": 12,
+          "summed_task_ms": 0.581198,
+          "mean_task_us": 48.433166666666665,
+          "median_task_us": 50.8465,
+          "max_task_us": 56.927,
+          "percent_summed_task_time": 0.3235716374454176
+        },
+        {
+          "name": "aclnnInplaceCopy_TensorMoveAiCore_TensorMove",
+          "count": 12,
+          "summed_task_ms": 0.319949,
+          "mean_task_us": 26.66241666666667,
+          "median_task_us": 26.5365,
+          "max_task_us": 30.26,
+          "percent_summed_task_time": 0.1781259086043378
+        },
+        {
+          "name": "aclnnSort_CastAiCore_Cast",
+          "count": 24,
+          "summed_task_ms": 0.151746,
+          "mean_task_us": 6.32275,
+          "median_task_us": 5.2475,
+          "max_task_us": 8.75,
+          "percent_summed_task_time": 0.08448188344728018
+        },
+        {
+          "name": "aclnnReduceSum_CastAiCore_Cast",
+          "count": 12,
+          "summed_task_ms": 0.082525,
+          "mean_task_us": 6.877083333333333,
+          "median_task_us": 6.6535,
+          "max_task_us": 9.297,
+          "percent_summed_task_time": 0.04594432427534694
+        },
+        {
+          "name": "aclnnSubs_SubAiCore_Sub",
+          "count": 12,
+          "summed_task_ms": 0.079894,
+          "mean_task_us": 6.657833333333333,
+          "median_task_us": 6.38,
+          "max_task_us": 9.844,
+          "percent_summed_task_time": 0.04447956187403294
+        },
+        {
+          "name": "aclnnInplaceCopy_BroadcastToAiCore_BroadcastTo",
+          "count": 12,
+          "summed_task_ms": 0.067163,
+          "mean_task_us": 5.596916666666667,
+          "median_task_us": 4.896,
+          "max_task_us": 13.594,
+          "percent_summed_task_time": 0.037391804317541674
+        },
+        {
+          "name": "aclnnGeScalar_GreaterEqual_GreaterEqual",
+          "count": 12,
+          "summed_task_ms": 0.051118,
+          "mean_task_us": 4.259833333333333,
+          "median_task_us": 3.854,
+          "max_task_us": 8.828,
+          "percent_summed_task_time": 0.02845903627151996
+        },
+        {
+          "name": "aclnnSort_SortAiCore_MemSet",
+          "count": 24,
+          "summed_task_ms": 0.050936,
+          "mean_task_us": 2.1223333333333336,
+          "median_task_us": 2.331,
+          "max_task_us": 4.635,
+          "percent_summed_task_time": 0.028357711012288053
+        },
+        {
+          "name": "aclnnReduceSum_ReduceSumOpAiCore_MemSet",
+          "count": 24,
+          "summed_task_ms": 0.049659,
+          "mean_task_us": 2.069125,
+          "median_task_us": 2.383,
+          "max_task_us": 2.604,
+          "percent_summed_task_time": 0.027646764001083957
+        },
+        {
+          "name": "aclnnArange_ArangeAiCore_Range",
+          "count": 24,
+          "summed_task_ms": 0.04763,
+          "mean_task_us": 1.9845833333333334,
+          "median_task_us": 1.888,
+          "max_task_us": 4.036,
+          "percent_summed_task_time": 0.026517154380306267
+        },
+        {
+          "name": "aclnnSWhere_SelectV2AiCore_SelectV2",
+          "count": 12,
+          "summed_task_ms": 0.043934,
+          "mean_task_us": 3.6611666666666665,
+          "median_task_us": 3.62,
+          "max_task_us": 3.854,
+          "percent_summed_task_time": 0.024459472192827535
+        },
+        {
+          "name": "aclnnLtScalar_LessAiCore_Less",
+          "count": 12,
+          "summed_task_ms": 0.041926,
+          "mean_task_us": 3.4938333333333333,
+          "median_task_us": 3.398,
+          "max_task_us": 4.531,
+          "percent_summed_task_time": 0.023341553948115063
+        },
+        {
+          "name": "aclnnBitwiseAndTensor_LogicalAndAiCore_LogicalAnd",
+          "count": 12,
+          "summed_task_ms": 0.016222,
+          "mean_task_us": 1.3518333333333332,
+          "median_task_us": 1.328,
+          "max_task_us": 1.562,
+          "percent_summed_task_time": 0.009031309644285708
+        },
+        {
+          "name": "aclnnInplaceFillScalar_FillAiCore_Fill",
+          "count": 12,
+          "summed_task_ms": 0.01253,
+          "mean_task_us": 1.0441666666666667,
+          "median_task_us": 1.042,
+          "max_task_us": 1.094,
+          "percent_summed_task_time": 0.006975854385581304
+        }
+      ]
+    }
+  ]
+}

@@ -37,6 +37,17 @@ def test_swiglu_pack_exact(rows, width):
         torch.testing.assert_close(value.cpu(), target.cpu(), rtol=0, atol=0)
 
 
+@pytest.mark.parametrize("rows", [5120, 15360, 20480])
+def test_swiglu_pack_prefill_rows_exact(rows):
+    width = 640
+    generator = torch.Generator().manual_seed(rows)
+    gate_up = (torch.randn(rows, 2 * width, generator=generator) * 1.5).half().npu()
+    expected = reference(gate_up)
+    actual = swiglu_pack_activation_device(gate_up)
+    for value, target in zip(actual, expected):
+        torch.testing.assert_close(value.cpu(), target.cpu(), rtol=0, atol=0)
+
+
 def test_swiglu_pack_changing_input_graph():
     rows, width = 30, 640
     host = torch.randn(rows, 2 * width, generator=torch.Generator().manual_seed(91)).half()
@@ -82,10 +93,10 @@ def test_swiglu_pack_model_geometry_benchmark(rows, record_property):
     assert fused_ms < baseline_ms
 
 
-def test_swiglu_pack_meta_and_rejects_prefill_rows():
+def test_swiglu_pack_meta_and_rejects_oversized_rows():
     output = torch.ops._C_ascend.npu_qwen_w4_a8_swiglu_pack_310(
         torch.empty((30, 1280), device="meta", dtype=torch.float16)
     )
     assert [tuple(value.shape) for value in output] == [(30, 320), (30, 320), (30, 5, 8), (30, 5, 8)]
     with pytest.raises(RuntimeError, match="unsupported W4A8 SwiGLU pack dimensions"):
-        swiglu_pack_activation_device(torch.empty((129, 1280), device="npu", dtype=torch.float16))
+        swiglu_pack_activation_device(torch.empty((20481, 1280), device="npu", dtype=torch.float16))

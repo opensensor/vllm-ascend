@@ -1,0 +1,80 @@
+{
+  "scope": "one real-weight TP partial; precomputed router; grouped dispatch through finalization",
+  "model": "/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i",
+  "layer": 0,
+  "rank": 0,
+  "tokens": 2048,
+  "top_k": 10,
+  "route_cap": 20480,
+  "trace_roots": {
+    "512": "/srv/ai/src/qwen38-cann-finalize-gate-20261004/prefill-batching-20261004/traces/chunk-512",
+    "1024": "/srv/ai/src/qwen38-cann-finalize-gate-20261004/prefill-batching-20261004/traces/chunk-1024",
+    "2048": "/srv/ai/src/qwen38-cann-finalize-gate-20261004/prefill-batching-20261004/traces/chunk-2048"
+  },
+  "cases": [
+    {
+      "chunk_tokens": 512,
+      "projection_calls": 4,
+      "total_projection_calls": 8,
+      "largest_call_routes": 5120,
+      "within_route_cap": true,
+      "local_routes": 6525,
+      "active_expert_visits": 442,
+      "max_expert_rows": 118,
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "median_ms": 59.448129672091454,
+      "samples_ms": [
+        59.356324995557465,
+        59.448129672091454,
+        59.53056300252987,
+        59.44397200558645,
+        59.527974672770746
+      ]
+    },
+    {
+      "chunk_tokens": 1024,
+      "projection_calls": 2,
+      "total_projection_calls": 4,
+      "largest_call_routes": 10240,
+      "within_route_cap": true,
+      "local_routes": 6525,
+      "active_expert_visits": 235,
+      "max_expert_rows": 228,
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "median_ms": 81.03459999741365,
+      "samples_ms": [
+        81.04669966269284,
+        80.98318900253314,
+        81.03459999741365,
+        80.88006266431573,
+        81.04308266774751
+      ]
+    },
+    {
+      "chunk_tokens": 2048,
+      "projection_calls": 1,
+      "total_projection_calls": 2,
+      "largest_call_routes": 20480,
+      "within_route_cap": true,
+      "local_routes": 6525,
+      "active_expert_visits": 119,
+      "max_expert_rows": 453,
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "median_ms": 59.89377333510978,
+      "samples_ms": [
+        59.89377333510978,
+        59.837867331225425,
+        59.95007032955376,
+        59.92534366669133,
+        59.77014533709735
+      ]
+    }
+  ],
+  "model_ttft_measured": false
+}

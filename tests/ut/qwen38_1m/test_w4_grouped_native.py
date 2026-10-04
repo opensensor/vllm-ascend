@@ -53,7 +53,7 @@ def test_grouped_prefill_chunk_respects_backend_route_workspace(backend, token_l
     layer = make_layer(backend)
     assert layer.grouped_chunk_tokens == min(token_limit, route_limit // layer.top_k)
     assert layer.grouped_chunk_tokens * layer.top_k <= route_limit
-    assert layer.grouped_chunk_tokens == (2048 if backend == NATIVE_INT4_BACKEND else 512)
+    assert layer.grouped_chunk_tokens == (1536 if backend == NATIVE_INT4_BACKEND else 512)
 
 
 @pytest.mark.parametrize("tokens", [1, 8, 27, 128, 513])

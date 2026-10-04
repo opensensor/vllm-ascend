@@ -18,6 +18,8 @@ constexpr int64_t MODEL_GATE_UP_INPUTS = 2560;
 constexpr int64_t MODEL_DOWN_OUTPUTS = 2560;
 constexpr int64_t MODEL_DOWN_INPUTS = 640;
 constexpr uint32_t MODEL_DECODE_COLUMNS = 320;
+// The 32-row schedule wins below this per-expert route density on 310P.
+constexpr int64_t PREFILL_LARGE_TILE_ROWS_PER_EXPERT = 128;
 
 class NativeInt4 {
  public:
@@ -224,7 +226,7 @@ __aicore__ inline void RunSchedule(GM_ADDR low, GM_ADDR high, GM_ADDR xs, GM_ADD
       op.Init(low, high, xs, sums, codes, scale, offset, weight_sum, ends, nullptr, y, td);
       op.Process();
     }
-  } else if (td->numRows > td->numExperts * 64) {
+  } else if (td->numRows > td->numExperts * PREFILL_LARGE_TILE_ROWS_PER_EXPERT) {
     native_int4::Schedule<128> op;
     op.Init(low, high, xs, sums, codes, scale, offset, weight_sum, ends, nullptr, y, td);
     op.Process();

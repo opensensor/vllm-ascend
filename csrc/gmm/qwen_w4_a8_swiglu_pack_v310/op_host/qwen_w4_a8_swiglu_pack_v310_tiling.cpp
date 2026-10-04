@@ -7,7 +7,9 @@
 #include "tiling_base/error_log.h"
 
 namespace optiling {
-constexpr int64_t MAX_ROUTES = 128, MIN_K = 256, MAX_K = 2560;
+// The kernel strides row batches across a fixed AI-core count; grouped
+// prefill uses at most 2,048 tokens x ten routed experts.
+constexpr int64_t MAX_ROUTES = 20480, MIN_K = 256, MAX_K = 2560;
 constexpr int64_t GROUP_SIZE = 128, GROUPS_PER_BATCH = 8;
 
 static ge::graphStatus TileSwigluPack(gert::TilingContext* context) {
