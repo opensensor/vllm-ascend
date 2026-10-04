@@ -92,6 +92,18 @@ def _flatten_spec_state_indices(
     return state_indices.masked_select(valid).to(torch.int32).contiguous()[:total_tokens]
 
 
+def _prefill_initial_state(
+    recurrent_state: torch.Tensor,
+    state_indices: torch.Tensor,
+    has_initial_state: torch.Tensor,
+) -> torch.Tensor:
+    """Gather FP32 KDA carry and zero fresh requests without a dynamic index."""
+    initial_state = recurrent_state[state_indices].float().contiguous()
+    fresh = ~has_initial_state.reshape((-1,) + (1,) * (initial_state.ndim - 1))
+    initial_state.masked_fill_(fresh, 0)
+    return initial_state
+
+
 def _run_recurrent(
     self_attn: Any,
     q: torch.Tensor,
@@ -162,8 +174,7 @@ def _run_prefill(
     # chunk_kda_fwd accumulates its carry in fp32.  The persistent 310P decode
     # pool is fp16 because the recurrent kernel requires fp16, so convert only
     # the small set of active request states at a prefill boundary.
-    initial_state = recurrent_state[state_indices].float().contiguous()
-    initial_state[~has_initial_state] = 0
+    initial_state = _prefill_initial_state(recurrent_state, state_indices, has_initial_state)
 
     result = torch.ops._C_ascend.chunk_kda_fwd(
         _l2norm_310p(q).contiguous(),
