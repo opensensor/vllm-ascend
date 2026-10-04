@@ -94,3 +94,28 @@ The opt-in server is running on port 8001 as PID `1072428`. This mode remains
 experimental because FP16 can overflow above 65,504 and the full 192K prompt
 has not been tested. The BF16 launcher is preserved on the NPU host at
 `/home/matteius/experiments/glm-w3-20261004/serve-selective-w3-prefill-histogram-20261004.sh`.
+
+## Prefix reuse candidate for coding sessions
+
+The launcher now accepts `on` as its twelfth argument to enable hybrid prefix
+caching. Its default is `off`, preserving the measured configuration. This is
+only a prepared candidate; the 192K Packed-W3 server has not been restarted or
+tested with prefix caching. The earlier W2/W4 hybrid-cache run reused 7,040
+tokens in a repeated 7,269-token prompt and cut warm TTFT from 169.97 s to
+7.93 s, but that run had a 22,528-token configured window. A current Kilo
+request recomputed all 30,052 prompt tokens with zero cache hits and spent
+386.06 s in prefill, making prefix reuse a more consequential coding-session
+target than another small decode-kernel gain.
+
+Capacity is the first gate. The current Packed-W3 server reports 240,402 cache
+tokens at a 0.70 KV fraction, 1.22 times its 196,608-token limit. The older
+hybrid-cache run had 25,003 versus 32,768 tokens without caching, a 0.763
+ratio on a different checkpoint. Applying that ratio to this server predicts
+about 183,000 tokens at 0.70, below the configured limit. At 0.78, a linear
+headroom estimate predicts about 204,000 tokens, but these are estimates, not
+a successful startup or a memory-safety result. The launcher already accepts
+the KV fraction as its fourth argument. When NPU testing resumes, first check
+startup cache capacity at 0.78 and the actual memory reserve, then compare a
+cold and exact repeated 30K Kilo-style prompt, single and four-stream decode,
+and the strict quality gate. Keep the 192K no-cache server until those checks
+pass.

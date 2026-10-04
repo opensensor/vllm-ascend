@@ -14,6 +14,7 @@ max_batched_tokens=${8:-640}
 prefill_route_count_mode=${9:-compare}
 profile_root=${10:-}
 qsa_opp_root=${11:-/srv/ai/src/glm-qsa-padded-20260930/opp}
+prefix_cache_mode=${12:-off}
 
 if [[ ! "$max_batched_tokens" =~ ^[1-9][0-9]*$ ]] || (( max_batched_tokens < 64 || max_batched_tokens > 1280 || max_batched_tokens % 64 )); then
   echo "max_batched_tokens must be a multiple of 64 from 64 through 1280" >&2
@@ -46,6 +47,19 @@ case "$execution_mode" in
     ;;
   *)
     echo "execution mode must be eager or graph: $execution_mode" >&2
+    exit 1
+    ;;
+esac
+
+case "$prefix_cache_mode" in
+  off)
+    prefix_cache_args=(--no-enable-prefix-caching)
+    ;;
+  on)
+    prefix_cache_args=(--enable-prefix-caching)
+    ;;
+  *)
+    echo "prefix cache mode must be off or on: $prefix_cache_mode" >&2
     exit 1
     ;;
 esac
@@ -100,7 +114,7 @@ exec /srv/ai/venvs/qwen38-w4-test-ce1862/bin/python -m vllm.entrypoints.cli.main
   --host 0.0.0.0 --port 8001 \
   --dtype float16 --tensor-parallel-size 4 \
   --max-model-len "$max_model_len" --max-num-seqs "$max_num_seqs" --max-num-batched-tokens "$max_batched_tokens" \
-  --enable-chunked-prefill --no-enable-prefix-caching \
+  --enable-chunked-prefill "${prefix_cache_args[@]}" \
   --gpu-memory-utilization 0.965 \
   --load-format glm_w2_filtered \
   "${execution_args[@]}" --trust-remote-code \
