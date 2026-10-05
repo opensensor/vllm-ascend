@@ -234,6 +234,16 @@ pending operator changes before treating a new package as qualified. The
 Mamba configuration. Treat a warmup as cached only when the response usage or
 server prefix-cache metrics prove a hit.
 
+Native INT4 grouped prefill now defaults to `cann_builtin_fp16`, which uses
+`torch_npu.npu_swiglu` before the existing down-projection pack. Other W4
+backends keep their torch activation default, and an explicit
+`grouped_activation=torch` selects the native INT4 reference path. On three
+matched 23,410-token cold prompts, mean TTFT improved from 68.920 to 67.225
+seconds and effective prompt rate from 339.7 to 348.2 tok/s. One of the three
+32-token outputs changed an opening phrase. The user accepted that difference
+for this experimental backend; broader quality and thermal comparisons remain
+open. See the [SwiGLU experiment](../../../../artifacts/qwen38-prefill-swiglu-pack-20261004/README.md).
+
 ## Known bad turns
 
 - Replacing the default loader with a generic parallel iterator lost the EP

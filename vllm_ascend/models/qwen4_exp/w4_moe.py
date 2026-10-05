@@ -79,6 +79,7 @@ LM_HEAD_EXECUTIONS = ("float16", "w8a8_dynamic")
 PLE_PROJECTION_EXECUTIONS = ("float16", "w8a8_dynamic")
 MTP_EXPERT_EXECUTIONS = ("w8a16_routed", "w8a8_grouped")
 GROUPED_ACTIVATION_METHODS = ("torch", "cann_swiglu_pack", "cann_builtin_fp16")
+DEFAULT_NATIVE_GROUPED_ACTIVATION = "cann_builtin_fp16"
 
 
 class DeferredReduceStream:
@@ -132,7 +133,9 @@ def w4_config(config: object) -> dict | None:
     mtp_expert_execution = metadata.get("mtp_expert_execution", "w8a16_routed")
     if mtp_expert_execution not in MTP_EXPERT_EXECUTIONS:
         raise ValueError(f"mtp_expert_execution must be one of {MTP_EXPERT_EXECUTIONS}")
-    grouped_activation = metadata.get("grouped_activation", "torch")
+    grouped_activation = metadata.get(
+        "grouped_activation", DEFAULT_NATIVE_GROUPED_ACTIVATION if backend == NATIVE_INT4_BACKEND else "torch"
+    )
     if grouped_activation not in GROUPED_ACTIVATION_METHODS:
         raise ValueError(f"grouped_activation must be one of {GROUPED_ACTIVATION_METHODS}")
     if grouped_activation == "cann_swiglu_pack" and backend != NATIVE_INT4_BACKEND:
@@ -323,7 +326,9 @@ class W4SparseMoE(nn.Module):
             self.native_int4 and intermediate == FUSED_DOWN_INPUTS and hidden == FUSED_DOWN_OUTPUTS
         )
         self.grouped_routing = metadata["backend"] in ("cube_310_grouped", NATIVE_INT4_BACKEND)
-        self.grouped_activation = metadata.get("grouped_activation", "torch")
+        self.grouped_activation = metadata.get(
+            "grouped_activation", DEFAULT_NATIVE_GROUPED_ACTIVATION if self.native_int4 else "torch"
+        )
         self.fused_gate_up = self.device_routing
         self.num_experts = int(config.num_experts)
         self.top_k = int(config.num_experts_per_tok)
@@ -621,7 +626,8 @@ class W4SparseMoE(nn.Module):
                 packed_activation = swiglu_pack_activation_device(projected)
                 output = self.projections["down_proj"].native_linear(packed_activation, group_ends)
             elif self.grouped_activation == "cann_builtin_fp16":
-                # Opt-in pending a full-service accuracy and latency gate.
+                # Native INT4 prefill default; preserve an explicit torch
+                # override for numerical comparisons and other workloads.
                 # Keep the import lazy for host-only model configuration.
                 import torch_npu
 

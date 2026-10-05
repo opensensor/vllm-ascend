@@ -79,9 +79,10 @@ The third answer changed only “code excerpts” to “repository excerpt” in
 opening sentence. All three requests returned 32 tokens and identical prompt
 token counts; the first two had the same output hash as baseline. MTP
 acceptance was identical for cases 0 and 1 and changed from 19/26 to 20/24
-for case 2. This is a useful speed candidate, but the output difference means
-it does not pass a strict bitwise service parity gate. Keep it opt-in pending
-broader quality checking.
+for case 2. The user accepted this small difference and promoted built-in
+FP16 SwiGLU to the native INT4 grouped-prefill default. Strict bitwise service
+parity still does not hold; the explicit `grouped_activation=torch` override
+remains available for comparisons.
 
 The [candidate request record](service-builtin-v2-20261004.jsonl) holds the
 per-request usage, hashes, TTFT, and decode times. The first two decode rates
@@ -96,6 +97,8 @@ The isolated runtime launcher currently selects
 `grouped_activation=cann_builtin_fp16`. The prepared
 [`start-builtin-service.sh`](start-builtin-service.sh) writes fresh `v2` logs;
 [`service_client.py`](service_client.py) accepts `--arm builtin_fp16` and
-recorded the three cold prompts. A broader quality check and matched thermal
-comparison remain before making this the default path. The service is running
-on port 8001; do not shut it down after reading these results.
+recorded the three cold prompts. The source default now selects this path for
+native INT4 grouped prefill. A broader quality check and matched thermal
+comparison remain before claiming general production qualification. The
+service is running on port 8001; do not shut it down after reading these
+results.

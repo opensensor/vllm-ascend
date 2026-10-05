@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Host gates for the opt-in Qwen native-W4 grouped SwiGLU pack path."""
+"""Host gates for Qwen native-W4 grouped SwiGLU activation paths."""
 
 import json
 import subprocess
@@ -42,6 +42,22 @@ def test_grouped_builtin_swiglu_requires_native_int4():
     assert w4_config(model_config(activation="cann_builtin_fp16"))["grouped_activation"] == "cann_builtin_fp16"
     with pytest.raises(ValueError, match="built-in SwiGLU requires native INT4"):
         w4_config(model_config(backend="cube_310_grouped", activation="cann_builtin_fp16"))
+
+
+@pytest.mark.parametrize(
+    "backend,expected",
+    [(NATIVE_INT4_BACKEND, "cann_builtin_fp16"), ("cube_310_grouped", "torch")],
+)
+def test_grouped_activation_default_respects_backend(backend, expected):
+    cfg = model_config(backend=backend, activation="torch")
+    del cfg.ascend_expert_quantization["grouped_activation"]
+    layer = W4SparseMoE(config=cfg, dtype_policy=Qwen4ExpDtypePolicy())
+    assert layer.grouped_activation == expected
+
+
+def test_native_grouped_activation_allows_explicit_torch_override():
+    layer = W4SparseMoE(config=model_config(activation="torch"), dtype_policy=Qwen4ExpDtypePolicy())
+    assert layer.grouped_activation == "torch"
 
 
 def test_grouped_swiglu_pack_feeds_native_down_projection_without_repacking():

@@ -32,10 +32,12 @@ from vllm_ascend.models.qwen4_exp.w4a8_int4 import (
 )
 
 
-def make_layer(backend="cube_310_grouped"):
+def make_layer(backend="cube_310_grouped", *, grouped_activation=None):
     cfg = config(num_layers=1, num_experts=7, top_k=3, shared_inter=0)
     cfg.hidden_size = cfg.moe_intermediate_size = 256
     cfg.ascend_expert_quantization.update(group_size=128, backend=backend)
+    if grouped_activation is not None:
+        cfg.ascend_expert_quantization["grouped_activation"] = grouped_activation
     if backend == NATIVE_INT4_BACKEND:
         cfg.ascend_expert_quantization["activation_quantization"] = "int8_per_group"
     require_eager_w4(SimpleNamespace(enforce_eager=False), cfg)
@@ -60,7 +62,7 @@ def test_grouped_prefill_chunk_respects_backend_route_workspace(backend, token_l
 @pytest.mark.parametrize("peers_only", [False, True])
 @pytest.mark.parametrize("backend", ["cube_310_grouped", NATIVE_INT4_BACKEND])
 def test_grouped_routes_match_slot_reference_without_host_readback(tokens, peers_only, backend):
-    layer = make_layer(backend)
+    layer = make_layer(backend, grouped_activation="torch")
     x = torch.rand(tokens, 256).half() * 0.1
     ids = torch.arange(tokens * 3).reshape(tokens, 3) % (3 if peers_only else 7)
     weights = torch.tensor([0.125, 0.375, 0.5]).expand(tokens, -1)
