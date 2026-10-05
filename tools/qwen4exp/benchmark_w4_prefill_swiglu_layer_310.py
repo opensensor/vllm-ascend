@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Gate fused SwiGLU packing in one real-weight Qwen W4 MoE TP partial.
+"""Compare opt-in SwiGLU paths in one real-weight Qwen W4 MoE TP partial.
 
 Router inputs stay fixed. Timings include grouped dispatch, both native W4
 projections, activation preparation, and route finalization. They exclude
@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 DEFAULT_TOKENS = 1536
+CANDIDATE_METHODS = ("cann_swiglu_pack", "cann_builtin_fp16")
 
 
 def main() -> None:
@@ -27,11 +28,12 @@ def main() -> None:
     parser.add_argument("--tokens", type=int, default=DEFAULT_TOKENS)
     parser.add_argument("--iterations", type=int, default=3)
     parser.add_argument("--repeats", type=int, default=5)
+    parser.add_argument("--candidate-method", choices=CANDIDATE_METHODS, default="cann_swiglu_pack")
     args = parser.parse_args()
     if args.tokens <= 0 or args.iterations <= 0 or args.repeats <= 0:
         parser.error("tokens, iterations, and repeats must be positive")
     if args.dry_run:
-        print(json.dumps({"tokens": args.tokens, "arms": ["torch", "cann_swiglu_pack"], "npu_used": False}))
+        print(json.dumps({"tokens": args.tokens, "arms": ["torch", args.candidate_method], "npu_used": False}))
         return
     if args.model is None or not args.model.is_dir() or args.output is None or args.output.exists():
         parser.error("--model must exist and --output must be a new path")
@@ -68,10 +70,10 @@ def main() -> None:
             return layer._forward_grouped(inputs, weights, ids)
 
         expected = run("torch").cpu().contiguous()
-        actual = run("cann_swiglu_pack").cpu().contiguous()
+        actual = run(args.candidate_method).cpu().contiguous()
         difference = (actual.float() - expected.float()).abs()
         bitwise_equal = bool(torch.equal(actual.view(torch.uint8), expected.view(torch.uint8)))
-        samples = {"torch": [], "cann_swiglu_pack": []}
+        samples = {"torch": [], args.candidate_method: []}
         if bitwise_equal:
             for method in samples:
                 for _ in range(2):
@@ -92,6 +94,7 @@ def main() -> None:
         "model": str(args.model),
         "layer": args.layer,
         "rank": args.rank,
+        "candidate_method": args.candidate_method,
         "tokens": args.tokens,
         "top_k": layer.top_k,
         "route_ids_sha256": hashlib.sha256(ids.cpu().numpy().tobytes()).hexdigest(),
@@ -110,7 +113,7 @@ def main() -> None:
         output.write(json.dumps(record, indent=2) + "\n")
     print(json.dumps(record), flush=True)
     if not bitwise_equal:
-        raise AssertionError("fused prefill SwiGLU pack changed real-weight layer output")
+        raise AssertionError(f"{args.candidate_method} changed real-weight layer output")
 
 
 if __name__ == "__main__":

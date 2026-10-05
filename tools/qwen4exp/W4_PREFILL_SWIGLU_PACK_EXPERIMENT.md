@@ -24,49 +24,22 @@ chunk and the older 20,480-row maximum. The model now has an opt-in
 directly to native down projection. The default remains the measured torch
 path until the NPU parity and service gates pass.
 
-## Staged CPU-side package
+## October 4 result and next gate
 
-On October 4, the host extension and a coherent five-operator 310P package
-compiled successfully on Threadripper. The package contains the four native
-W4 operators plus `RecurrentGatedDeltaRuleV310`; it is installed only under
-`/srv/ai/src/qwen38-prefill-swiglu-opp-20261004`. The isolated runtime is
-`/srv/ai/src/qwen38-prefill-swiglu-runtime-20261004`, with the new extension
-and the opt-in launcher setting. Host symbol, recurrent FP16/FP32 variant,
-launcher syntax, runtime coherence, and `--show` checks passed. The package
-has **not** been executed on an NPU. Build hashes and exact paths are in the
-[staging record](../../artifacts/qwen38-prefill-swiglu-pack-20261004/README.md).
+The custom fused path differs by one packed byte at 15,360 synthetic rows and
+was 0.6% slower in a real-weight 1,536-token layer. It is not a candidate for
+promotion under the exact-parity gate. The built-in FP16
+`torch_npu.npu_swiglu` path was 6.5% faster in that real-weight layer with
+bitwise-identical output, although it also changed one packed byte on a
+synthetic input. This leaves full-service quality and TTFT as required gates.
 
-## Gate for a later NPU window
-
-Use the isolated host API, tiler, and kernel package as described in the
-[310P runtime runbook](../../docs/source/developer_guide/performance_and_debug/qwen38_310p_runtime_runbook.md).
-Do not promote the opt-in model path until the NPU parity and timing gates
-pass.
-
-```bash
-python -m tools.qwen4exp.benchmark_w4_prefill_swiglu_pack_310 --dry-run
-ASCEND_RT_VISIBLE_DEVICES=0 python -m tools.qwen4exp.benchmark_w4_prefill_swiglu_pack_310 \
-  --output /path/to/new/prefill-swiglu-pack.jsonl \
-  --trace-dir /path/to/new/prefill-swiglu-traces
-pytest -sv tests/e2e/nightly/310p/single_node/ops/test_qwen_w4_swiglu_pack_310.py
-```
-
-The benchmark checks exact equality of all four packed outputs against the
-current FP32 SwiGLU, FP16 rounding, and pack sequence, then alternates timed
-arms at 5,120, 15,360, and 20,480 routed rows. Separate baseline and fused
-profiler captures follow the unprofiled timing at the selected 15,360-row
-shape. Enable the opt-in model path for service testing only if exact parity
-holds at all three shapes and the fused path is faster at 15,360 rows. The
-e2e test adds full prefill-row parity and rejects rows beyond the cap.
-
-If that gate passes, compare the opt-in model path on a real-weight layer and
-then matched long-prefill service requests. Record NPU temperature
-throughout sustained runs because shorter compute can improve thermal
-headroom; the existing one-card traces did not measure temperature or power.
-Alternate baseline and candidate service order, begin each arm at a comparable
-idle temperature, and sample all four devices at a fixed interval during the
-requests. Compare per-device peak temperature and sustained prefill tok/s
-separately; the host's current `npu-smi info` reports power as `NA`.
-The 48 layers and approximately 16 chunks in the 23,410-token request make
-even small per-layer savings worth measuring, but they do not establish a
-speedup before the larger-shape kernel is tested.
+The first TP4 service launch reached graph capture after loading real weights
+but failed because an older host extension omitted `chunk_fwd_o_vllm`. The
+isolated runtime extension was rebuilt from its complete source. The second
+launch served three matched 23,410-token cold prompts: mean TTFT improved
+**68.920 → 67.225 seconds (2.46%)**, and client prompt tok/s improved
+**339.7 → 348.2**. Two outputs were identical to baseline; the third changed
+one opening phrase, so the path remains opt-in pending broader quality work.
+Thermal behavior was not measured. Exact numbers, package hashes, and the
+running service status are in the
+[experiment record](../../artifacts/qwen38-prefill-swiglu-pack-20261004/README.md).

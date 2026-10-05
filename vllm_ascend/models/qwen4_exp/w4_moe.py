@@ -78,7 +78,7 @@ SHARED_EXPERT_EXECUTIONS = (
 LM_HEAD_EXECUTIONS = ("float16", "w8a8_dynamic")
 PLE_PROJECTION_EXECUTIONS = ("float16", "w8a8_dynamic")
 MTP_EXPERT_EXECUTIONS = ("w8a16_routed", "w8a8_grouped")
-GROUPED_ACTIVATION_METHODS = ("torch", "cann_swiglu_pack")
+GROUPED_ACTIVATION_METHODS = ("torch", "cann_swiglu_pack", "cann_builtin_fp16")
 
 
 class DeferredReduceStream:
@@ -137,6 +137,8 @@ def w4_config(config: object) -> dict | None:
         raise ValueError(f"grouped_activation must be one of {GROUPED_ACTIVATION_METHODS}")
     if grouped_activation == "cann_swiglu_pack" and backend != NATIVE_INT4_BACKEND:
         raise ValueError("experimental grouped SwiGLU pack requires native INT4")
+    if grouped_activation == "cann_builtin_fp16" and backend != NATIVE_INT4_BACKEND:
+        raise ValueError("experimental built-in SwiGLU requires native INT4")
     group = metadata.get("group_size")
     if type(group) is not int or group <= 0 or group % 2:
         raise ValueError("W4 group_size must be a positive even integer")
@@ -618,6 +620,13 @@ class W4SparseMoE(nn.Module):
                 # a real-weight service gate on the coherent 310P OPP package.
                 packed_activation = swiglu_pack_activation_device(projected)
                 output = self.projections["down_proj"].native_linear(packed_activation, group_ends)
+            elif self.grouped_activation == "cann_builtin_fp16":
+                # Opt-in pending a full-service accuracy and latency gate.
+                # Keep the import lazy for host-only model configuration.
+                import torch_npu
+
+                activation = torch_npu.npu_swiglu(projected, dim=-1)
+                output = self.projections["down_proj"].grouped_linear(activation, group_ends)
             else:
                 gate, up = projected.to(self.compute_dtype).chunk(2, -1)
                 activation = (F.silu(gate) * up).to(self.params_dtype)

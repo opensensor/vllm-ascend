@@ -5,7 +5,8 @@
 import json
 import subprocess
 import sys
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 import pytest
 import torch
@@ -35,6 +36,12 @@ def test_grouped_swiglu_pack_requires_native_int4():
         w4_config(model_config(backend="cube_310_grouped"))
     with pytest.raises(ValueError, match="grouped_activation"):
         w4_config(model_config(activation="unknown"))
+
+
+def test_grouped_builtin_swiglu_requires_native_int4():
+    assert w4_config(model_config(activation="cann_builtin_fp16"))["grouped_activation"] == "cann_builtin_fp16"
+    with pytest.raises(ValueError, match="built-in SwiGLU requires native INT4"):
+        w4_config(model_config(backend="cube_310_grouped", activation="cann_builtin_fp16"))
 
 
 def test_grouped_swiglu_pack_feeds_native_down_projection_without_repacking():
@@ -67,6 +74,37 @@ def test_grouped_swiglu_pack_feeds_native_down_projection_without_repacking():
     fuse.assert_called_once_with(gate_up)
     down_projection.assert_called_once()
     assert down_projection.call_args.args[0] is packed
+
+
+def test_grouped_builtin_swiglu_feeds_existing_down_projection():
+    layer = W4SparseMoE(
+        config=model_config(activation="cann_builtin_fp16"),
+        dtype_policy=Qwen4ExpDtypePolicy(),
+        expert_sharding=(1, 2),
+    )
+    tokens = 44
+    routes = tokens * layer.top_k
+    inputs = torch.zeros(tokens, 256, dtype=torch.float16)
+    weights = torch.full((tokens, layer.top_k), 1 / layer.top_k)
+    ids = torch.full((tokens, layer.top_k), layer.expert_offset, dtype=torch.int64)
+    gate_up = torch.zeros(routes, 512, dtype=torch.float16)
+    activation = torch.zeros(routes, 256, dtype=torch.float16)
+    swiglu = Mock(return_value=activation)
+    fake_swiglu = SimpleNamespace(npu_swiglu=swiglu)
+    with (
+        patch.dict(sys.modules, {"torch_npu": fake_swiglu}),
+        patch("vllm_ascend.models.qwen4_exp.w4_moe.pack_activation_device", side_effect=lambda x: (x,)),
+        patch.object(layer.projections["gate_up_proj"], "native_linear", return_value=gate_up),
+        patch.object(
+            layer.projections["down_proj"], "grouped_linear", return_value=torch.zeros_like(activation)
+        ) as down,
+        patch.object(layer.projections["down_proj"], "native_linear", side_effect=AssertionError("packed path")),
+    ):
+        output = layer._forward_grouped(inputs, weights, ids)
+    assert output.shape == (tokens, 256)
+    assert torch.count_nonzero(output) == 0
+    swiglu.assert_called_once_with(gate_up, dim=-1)
+    assert down.call_args.args[0] is activation
 
 
 def test_prefill_swiglu_benchmark_plans_selected_chunk_without_npu(tmp_path):

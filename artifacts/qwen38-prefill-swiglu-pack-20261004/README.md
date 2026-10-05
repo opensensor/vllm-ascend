@@ -1,60 +1,101 @@
-# Qwen W4 prefill SwiGLU package staging, October 4
+# Qwen W4 prefill SwiGLU experiment, October 4
 
-The fused SwiGLU-plus-INT4-pack candidate is built and staged for an isolated
-310P gate. No NPU inference, operator benchmark, or Qwen service was started
-in this handoff. NPU use remains deferred at the user's request.
+The custom fused SwiGLU-plus-INT4-pack path did not pass its synthetic exact
+parity gate and did not improve the measured real-weight layer. A second,
+opt-in candidate uses `torch_npu.npu_swiglu` in FP16 before the existing
+native-W4 down projection. It improved both the real-weight layer and all
+three matched cold-prefill requests. The Qwen candidate service remains up on
+port 8001 for handoff.
 
-## Staged artifacts on Threadripper
+## Isolated paths
 
 | Item | Path or SHA-256 |
 | --- | --- |
-| Isolated build source | `/srv/ai/src/qwen38-prefill-swiglu-src-20261004` |
-| Isolated runtime | `/srv/ai/src/qwen38-prefill-swiglu-runtime-20261004` |
+| Build source and results | `/srv/ai/src/qwen38-prefill-swiglu-src-20261004` |
+| Runtime | `/srv/ai/src/qwen38-prefill-swiglu-runtime-20261004` |
 | Coherent OPP vendor | `/srv/ai/src/qwen38-prefill-swiglu-opp-20261004/vendors/qwen38_swiglu_prefill_transformer` |
 | Five-operator installer | `725e5bfe346acf4c35e42919762c85159d90bf9c25f1bf21fa4ba7af0cdae63c` |
-| Runtime host extension | `b23c5f3b7da77daa75d9664482c847a01c2873b6d33d1acde22d3c919636b229` |
+| Rebuilt runtime host extension | `c46bb512374b2e06644949410fcd0329eeb156c2323bae5c64c679e50e62122e` |
 | Coherent host API library | `f1a9515baa78ccf4318415ec4bad710d79ad6390515d834ff74217b3e5ea89c6` |
 
-`results/build-bindings.log`, `results/build-five.log`, and
-`results/install-five.log` are under the isolated build source. The first
-build produced the host extension and four native W4 operators. The second
-produced a coherent OPP with those four operators and
-`RecurrentGatedDeltaRuleV310`. The latter was installed into the isolated
-OPP path above. The runtime launcher enables
-`grouped_activation=cann_swiglu_pack`; its only change against the retained
-batch-1536 launcher is in [candidate-launcher.diff](candidate-launcher.diff).
+The retained 1,536-token scheduler and native-W4 configuration remain the
+comparison point. The saved three-case baseline is
+[`service-batch1536.jsonl`](../qwen38-prefill-batching-20261004/service-batch1536.jsonl).
+No baseline restart is needed.
 
-## Host checks completed
+## Measurements completed before deferral
 
-- The installed host API exports both workspace-size and execution symbols
-  for all four W4 operators and the recurrent operator.
-- The recurrent kernel configuration includes FP16 and FP32 state variants.
-- The runtime's host extension includes the SwiGLU-pack Torch registration;
-  its SHA-256 matches the isolated build output.
-- `ldd` resolves the host API and extension dependencies after adding the
-  selected CANN, Torch, and torch-npu library paths.
-- The isolated runtime's `w4_moe.py` and the SwiGLU adapter and tiler match
-  commit `a4f42f565` by SHA-256. The built native-matmul source uses the
-  selected 128-row-per-expert switch, and its grouped chunk is 1,536 tokens.
-- `bash -n` and the launcher's `--check-runtime` passed. `--show` selects TP4,
-  a 2,048-token scheduler batch, the fixed cache, MTP2, decode graphs, and
-  the opt-in activation setting. These checks do not establish NPU parity.
-- The one-layer benchmark passed `py_compile`, Ruff, and its CPU-only
-  `--dry-run` path.
+| Gate | Result |
+| --- | --- |
+| Custom fused pack, 15,360 synthetic rows | One packed byte and eight replicated sum lanes differed from the current torch path; 20,480 rows also differed. |
+| Custom fused pack, real layer 0/rank 0, 1,536 tokens | Bitwise output match; median 37.039 ms versus 36.834 ms torch, 0.6% slower. |
+| Built-in FP16 SwiGLU plus pack, 15,360 synthetic rows | Median 2.684 ms versus 5.043 ms torch, but one packed byte and eight sum lanes differed. |
+| Built-in FP16 SwiGLU, real layer 0/rank 0, 1,536 tokens | Bitwise output match; median 34.504 ms versus 36.904 ms torch, 6.5% faster. |
+| Production-shape chunk-GDR head-state and new-value tests | 2 passed on one 310P. |
 
-## Queued NPU gate
+The real-layer timing covers grouped dispatch, both native-W4 projections,
+activation, and route finalization. It excludes attention, collectives, and
+service scheduling. The synthetic mismatch prevents a claim of universal
+bitwise parity even though the tested checkpoint layer matched. Copies of the
+[custom fused layer result](real-layer-v2-20261004.json),
+[built-in layer result](real-layer-builtin-20261004.json),
+[synthetic built-in probe](builtin-swiglu-probe.log), and
+[parity diagnosis](diagnose-swiglu-parity-v2.log) are saved here. The
+[formula probe](formula_probe.py) helps isolate the FP16 rounding difference.
+The originals are under the build source's `results/` directory.
 
-Use the isolated runtime and the coherent OPP above, with the OPP first in
-`ASCEND_CUSTOM_OPP_PATH` and `LD_LIBRARY_PATH` as required by the
-[310P runtime runbook](../../docs/source/developer_guide/performance_and_debug/qwen38_310p_runtime_runbook.md).
-Run the 5,120-, 15,360-, and 20,480-row
-`benchmark_w4_prefill_swiglu_pack_310.py` exact-parity/timing check first.
-If it passes, run
-`benchmark_w4_prefill_swiglu_layer_310.py` at 1,536 tokens with real layer-0
-weights. Only after exact layer parity and a favorable layer timing should
-the isolated TP4 service be started for matched cold prompts using
-[service_client.py](service_client.py). Reuse the saved batching baseline;
-there is no need to start a baseline server. Keep the candidate service up
-after measurement until the user hands the NPUs elsewhere.
+## Service attempt and packaging repair
 
-No tok/s or TTFT result has been measured for this fused activation package.
+The first TP4 built-in candidate loaded all real weights, then exited during
+graph capture because its host extension lacked the `chunk_fwd_o_vllm` Torch
+registration. That extension had been built from an older isolated source
+snapshot. The service produced no request or tok/s result; its log is
+`results/serve-builtin-20261004.log`.
+
+The host extension was rebuilt directly from the isolated runtime source,
+which contains both chunk-GDR registrations, without reinstalling the OPP.
+A standalone load of the rebuilt extension confirmed
+`chunk_gated_delta_rule_fwd_h`, `chunk_fwd_o_vllm`,
+`npu_qwen_w4_a8_pack_310`, and `npu_qwen_w4_a8_int4_matmul_310` are registered.
+The embedded OPP also contains `chunk_fwd_o_vllm` kernel configuration.
+The second TP4 startup and three real-weight requests completed successfully.
+
+## Matched cold-prefill service result
+
+Both arms used the same native-W4, 1,536-token grouped chunk, 2,048-token
+scheduler batch, TP4, MTP2, 23,410-token prompts, and 32-token deterministic
+decode setting. The saved baseline was not restarted.
+
+| Case | Baseline TTFT | Built-in FP16 TTFT | Saved | Output |
+| --- | ---: | ---: | ---: | --- |
+| 0 | 69.080 s | 67.428 s | 1.652 s | Exact text match |
+| 1 | 68.729 s | 67.152 s | 1.577 s | Exact text match |
+| 2 | 68.950 s | 67.093 s | 1.857 s | One phrase changed |
+
+Mean TTFT was **68.920 → 67.225 s**, saving **1.695 s (2.46%)**.
+Prompt tokens divided by client TTFT increased from **339.7 → 348.2 tok/s**
+(2.52%); this includes service overhead and is not an isolated kernel rate.
+The third answer changed only “code excerpts” to “repository excerpt” in its
+opening sentence. All three requests returned 32 tokens and identical prompt
+token counts; the first two had the same output hash as baseline. MTP
+acceptance was identical for cases 0 and 1 and changed from 19/26 to 20/24
+for case 2. This is a useful speed candidate, but the output difference means
+it does not pass a strict bitwise service parity gate. Keep it opt-in pending
+broader quality checking.
+
+The [candidate request record](service-builtin-v2-20261004.jsonl) holds the
+per-request usage, hashes, TTFT, and decode times. The first two decode rates
+were close to baseline; three 32-token continuations are too short to infer a
+decode throughput change. Temperature was not captured during this run because
+the telemetry script was missing from the isolated source; it is now staged
+for a later sustained comparison.
+
+## Runtime and remaining gate
+
+The isolated runtime launcher currently selects
+`grouped_activation=cann_builtin_fp16`. The prepared
+[`start-builtin-service.sh`](start-builtin-service.sh) writes fresh `v2` logs;
+[`service_client.py`](service_client.py) accepts `--arm builtin_fp16` and
+recorded the three cold prompts. A broader quality check and matched thermal
+comparison remain before making this the default path. The service is running
+on port 8001; do not shut it down after reading these results.

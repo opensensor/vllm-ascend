@@ -27,7 +27,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default="http://127.0.0.1:8001")
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--arm", choices=("swiglu_fused",), required=True)
+    parser.add_argument("--arm", choices=("swiglu_fused", "builtin_fp16"), required=True)
     parser.add_argument("--cases", type=int, default=3)
     args = parser.parse_args()
     if args.cases <= 0 or args.output.exists():

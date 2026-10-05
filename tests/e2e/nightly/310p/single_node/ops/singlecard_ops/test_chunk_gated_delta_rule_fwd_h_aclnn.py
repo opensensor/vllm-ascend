@@ -31,6 +31,12 @@ def cpu_reference(k, w, u, g, initial_state=None, chunk_size=64):
     k, w, u, g = k.float(), w.float(), u.float(), g.float()
     B, Hg, T, K = k.shape
     HV, V = u.shape[1], u.shape[3]
+    if w.shape[1] != HV:
+        raise ValueError("w must have one head per value head")
+    if HV % Hg:
+        raise ValueError("value heads must be divisible by gate/key heads")
+    if Hg != HV:
+        k = k.repeat_interleave(HV // Hg, dim=1)
     NT = T // chunk_size
     h = initial_state.float().clone() if initial_state is not None else torch.zeros(B, HV, K, V)
     h_chunks = [h.clone()]
@@ -78,7 +84,7 @@ class TestChunkGatedDeltaRuleFwdH310:
         torch.manual_seed(42)
         DTYPE = torch.float16
         k = torch.randn(B, Hg, T, K, dtype=DTYPE) * 0.1
-        w = torch.randn(B, Hg, T, K, dtype=DTYPE) * 0.1
+        w = torch.randn(B, HV, T, K, dtype=DTYPE) * 0.1
         u = torch.randn(B, HV, T, V, dtype=DTYPE) * 0.1
         g = (-torch.rand(B, HV, T) * 0.1).float()
         init = torch.randn(B, HV, K, V, dtype=DTYPE) * 0.01
@@ -113,7 +119,7 @@ class TestChunkGatedDeltaRuleFwdH310:
         torch.manual_seed(42)
         DTYPE = torch.float16
         k = torch.randn(B, Hg, T, K, dtype=DTYPE) * 0.1
-        w = torch.randn(B, Hg, T, K, dtype=DTYPE) * 0.1
+        w = torch.randn(B, HV, T, K, dtype=DTYPE) * 0.1
         u = torch.randn(B, HV, T, V, dtype=DTYPE) * 0.1
         g = (-torch.rand(B, HV, T) * 0.1).float()
         init = torch.randn(B, HV, K, V, dtype=DTYPE) * 0.01
