@@ -80,6 +80,12 @@ def queue():
                 "gate": "FP32 gate and FP16 beta parity, extremes, recurrent carry, MTP rejection/repetition",
                 "readiness": "native kernel source and wrapper staged; native compilation pending",
             },
+            {
+                "id": "moe_half_unpermute",
+                "factory": "tools.glm_perf.resident_candidates.moe_half_unpermute:replacements",
+                "gate": "exact outputs; initialized peer rows; verify fallback dispatch; c1/c4 and cold prefill",
+                "readiness": "Python resident candidate; NPU parity and recapture pending",
+            },
         ],
     }
 

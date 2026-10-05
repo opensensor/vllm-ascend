@@ -1,5 +1,9 @@
 # GLM next five experiments — 2026-10-05
 
+Follow-up: a [sixth candidate](extra-memory-traffic.md) now stages FP16 expert
+output reordering before FP32 weighting. The machine-readable queue includes it;
+the original five below retain their independent gates.
+
 Qwen owns the NPUs during preparation. This batch made no server requests,
 device calls, restarts, worker patches, or native library loads. All candidates
 are experimental. No speedup is claimed; native compilation and hardware gates
