@@ -8,8 +8,8 @@
 
 namespace optiling {
 // The kernel grid-strides fixed-size group batches and has no row-sized local
-// workspace, so a full 2,048-token top-10 prefill can pack all 20,480 routes.
-constexpr int64_t MAX_ROUTES = 20480, MIN_K = 256, MAX_K = 2560, GROUP_SIZE = 128, GROUPS_PER_BATCH = 8;
+// workspace, so an experimental 2,560-token top-10 prefill can pack all 25,600 routes.
+constexpr int64_t MAX_ROUTES = 25600, MIN_K = 256, MAX_K = 2560, GROUP_SIZE = 128, GROUPS_PER_BATCH = 8;
 static ge::graphStatus TilePack(gert::TilingContext* context) {
   OP_CHECK_NULL_WITH_CONTEXT(context, context->GetPlatformInfo());
   OP_CHECK_NULL_WITH_CONTEXT(context, context->GetInputShape(0));

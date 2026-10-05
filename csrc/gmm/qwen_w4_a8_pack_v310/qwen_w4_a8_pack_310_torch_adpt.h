@@ -4,7 +4,7 @@
 #define QWEN_W4_A8_PACK_TORCH_ADPT_H
 namespace vllm_ascend {
 std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> npu_qwen_w4_a8_pack_310(const at::Tensor& x) {
-  constexpr int64_t MAX_ROUTES = 20480, MIN_K = 256, MAX_K = 2560, GROUP_SIZE = 128, LANES = 8;
+  constexpr int64_t MAX_ROUTES = 25600, MIN_K = 256, MAX_K = 2560, GROUP_SIZE = 128, LANES = 8;
   TORCH_CHECK(x.device().type() == c10::DeviceType::PrivateUse1 && x.scalar_type() == at::kHalf && x.is_contiguous() &&
                   x.dim() == 2,
               "W4A8 pack requires contiguous NPU FP16 [R,K]");

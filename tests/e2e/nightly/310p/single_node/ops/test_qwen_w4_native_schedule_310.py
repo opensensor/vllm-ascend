@@ -103,8 +103,8 @@ def test_pack_meta_shapes_and_invalid_inputs():
             op(value)
 
 
-def test_pack_accepts_full_2k_prefill_route_capacity():
-    rows = 20480
+def test_pack_accepts_full_2560_prefill_route_capacity():
+    rows = 25600
     low, high, scale, total = pack_activation_device(torch.zeros((rows, 256), device="npu", dtype=torch.float16))
     assert [tuple(t.shape) for t in (low, high, scale, total)] == [
         (rows, 128),

@@ -1,0 +1,27 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0 -- /srv/ai/venvs/qwen38-w4-test-ce1862/bin/python
+cachedir: .pytest_cache
+rootdir: /srv/ai/src/qwen38-prefill-batch256-runtime-20261005
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collecting ... INFO 10-05 01:59:13 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-05 01:59:13 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-05 01:59:13 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 10-05 01:59:13 [__init__.py:272] Platform plugin ascend is activated
+INFO 10-05 01:59:13 [platform.py:71] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=0.
+INFO 10-05 01:59:17 [importing.py:98] Triton not installed or not compatible; certain GPU-related functions will not be available.
+W1005 01:59:19.749000 3082523 torch/_library/triton.py:53] Triton not available, find_triton_kernels = []
+collected 3 items
+
+tests/e2e/nightly/310p/single_node/ops/test_qwen_w4_grouped_native_310.py::test_native_grouped_kernel_accepts_full_2560_prefill_route_capacity [W1005 01:59:21.742074645 NPUCachingAllocator.cpp:177] Warning: The current CANN and Soc versions require processing for 32 padding size, with memory allocation. (function operator())
+PASSED
+tests/e2e/nightly/310p/single_node/ops/test_qwen_w4_native_schedule_310.py::test_pack_accepts_full_2560_prefill_route_capacity PASSED
+tests/e2e/nightly/310p/single_node/ops/test_qwen_w4_swiglu_pack_310.py::test_swiglu_pack_accepts_full_2560_prefill_route_capacity PASSED
+
+=============================== warnings summary ===============================
+../../venvs/qwen38-w4-test-ce1862/lib/python3.12/site-packages/torch/jit/_script.py:365: 14 warnings
+  /srv/ai/venvs/qwen38-w4-test-ce1862/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 3 passed, 14 warnings in 13.07s ========================

@@ -99,4 +99,15 @@ def test_swiglu_pack_meta_and_rejects_oversized_rows():
     )
     assert [tuple(value.shape) for value in output] == [(30, 320), (30, 320), (30, 5, 8), (30, 5, 8)]
     with pytest.raises(RuntimeError, match="unsupported W4A8 SwiGLU pack dimensions"):
-        swiglu_pack_activation_device(torch.empty((20481, 1280), device="npu", dtype=torch.float16))
+        swiglu_pack_activation_device(torch.empty((25601, 1280), device="npu", dtype=torch.float16))
+
+
+def test_swiglu_pack_accepts_full_2560_prefill_route_capacity():
+    rows = 25600
+    packed = swiglu_pack_activation_device(torch.zeros((rows, 512), device="npu", dtype=torch.float16))
+    assert [tuple(value.shape) for value in packed] == [
+        (rows, 128),
+        (rows, 128),
+        (rows, 2, 8),
+        (rows, 2, 8),
+    ]

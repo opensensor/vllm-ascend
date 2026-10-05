@@ -1,0 +1,423 @@
+{
+  "metric_warning": "Summed task times and reported hardware pipeline counters may overlap; neither is an additive critical-path latency or unprofiled throughput measurement.",
+  "traces": [
+    {
+      "file": "artifacts/qwen38-prefill-batch256-20261005/named-prefill-trace/rank1/kernel_details.csv",
+      "device_ids": [
+        "1"
+      ],
+      "task_count": 139694,
+      "task_span_ms": 26213.149155,
+      "task_union_ms": 25074.423631,
+      "summed_task_ms": 27168.87501,
+      "projection_shapes": [
+        {
+          "name": "QwenW4A8Int4MatmulV310",
+          "input_shapes": "\"25600,1280;25600,1280;25600,20,8;25600,20,8;128,1280,1280;128,1280,20;128,1280,20;128,1280,20;128\"",
+          "count": 192,
+          "median_task_us": 18879.595,
+          "block_counts": [
+            8
+          ],
+          "pipeline_counters": {
+            "aicore_time(us)": {
+              "samples": 192,
+              "median_us": 17688.28
+            },
+            "vec_time(us)": {
+              "samples": 192,
+              "median_us": 12005.9185
+            },
+            "mac_time(us)": {
+              "samples": 192,
+              "median_us": 501.2265
+            },
+            "scalar_time(us)": {
+              "samples": 192,
+              "median_us": 3147.874
+            },
+            "mte1_time(us)": {
+              "samples": 192,
+              "median_us": 515.4145000000001
+            },
+            "mte2_time(us)": {
+              "samples": 192,
+              "median_us": 2974.257
+            },
+            "mte3_time(us)": {
+              "samples": 192,
+              "median_us": 1610.4885
+            }
+          }
+        },
+        {
+          "name": "QwenW4A8Int4MatmulV310",
+          "input_shapes": "\"25600,320;25600,320;25600,5,8;25600,5,8;128,2560,320;128,2560,5;128,2560,5;128,2560,5;128\"",
+          "count": 192,
+          "median_task_us": 10913.307,
+          "block_counts": [
+            8
+          ],
+          "pipeline_counters": {
+            "aicore_time(us)": {
+              "samples": 192,
+              "median_us": 10149.970000000001
+            },
+            "vec_time(us)": {
+              "samples": 192,
+              "median_us": 6065.4805
+            },
+            "mac_time(us)": {
+              "samples": 192,
+              "median_us": 250.613
+            },
+            "scalar_time(us)": {
+              "samples": 192,
+              "median_us": 1872.312
+            },
+            "mte1_time(us)": {
+              "samples": 192,
+              "median_us": 263.6305
+            },
+            "mte2_time(us)": {
+              "samples": 192,
+              "median_us": 1145.654
+            },
+            "mte3_time(us)": {
+              "samples": 192,
+              "median_us": 2318.251
+            }
+          }
+        }
+      ],
+      "categories": [
+        {
+          "name": "cast_layout_or_copy",
+          "count": 62863,
+          "summed_task_ms": 3366.254844,
+          "mean_task_us": 53.54906453716812,
+          "median_task_us": 5.286,
+          "max_task_us": 4634.427,
+          "percent_summed_task_time": 12.390114948671922
+        },
+        {
+          "name": "collective",
+          "count": 424,
+          "summed_task_ms": 2670.731063,
+          "mean_task_us": 6298.894016509435,
+          "median_task_us": 3861.054,
+          "max_task_us": 31741.821,
+          "percent_summed_task_time": 9.830112811137704
+        },
+        {
+          "name": "named_attention_or_recurrence",
+          "count": 4515,
+          "summed_task_ms": 3660.050567,
+          "mean_task_us": 810.6424290143965,
+          "median_task_us": 660.859,
+          "max_task_us": 2820.625,
+          "percent_summed_task_time": 13.471483694679488
+        },
+        {
+          "name": "other",
+          "count": 60132,
+          "summed_task_ms": 8509.169332,
+          "mean_task_us": 141.5081708907071,
+          "median_task_us": 11.003,
+          "max_task_us": 4703.672,
+          "percent_summed_task_time": 31.319549774762645
+        },
+        {
+          "name": "other_matrix_multiply",
+          "count": 11376,
+          "summed_task_ms": 3233.955623,
+          "mean_task_us": 284.2787994901547,
+          "median_task_us": 318.099,
+          "max_task_us": 9667.604,
+          "percent_summed_task_time": 11.903163534778983
+        },
+        {
+          "name": "w4a8_native_int4_projection",
+          "count": 384,
+          "summed_task_ms": 5728.713581,
+          "mean_task_us": 14918.524950520834,
+          "median_task_us": 14524.0485,
+          "max_task_us": 29060.624,
+          "percent_summed_task_time": 21.08557523596926
+        }
+      ],
+      "top_operations": [
+        {
+          "name": "QwenW4A8Int4MatmulV310",
+          "count": 384,
+          "summed_task_ms": 5728.713581,
+          "mean_task_us": 14918.524950520834,
+          "median_task_us": 14524.0485,
+          "max_task_us": 29060.624,
+          "percent_summed_task_time": 21.08557523596926
+        },
+        {
+          "name": "QsaGatherValueNzV310",
+          "count": 4168,
+          "summed_task_ms": 3007.292948,
+          "mean_task_us": 721.5194213051824,
+          "median_task_us": 594.206,
+          "max_task_us": 1379.01,
+          "percent_summed_task_time": 11.068890216812845
+        },
+        {
+          "name": "aclnnInplaceCopy_CastAiCore_Cast",
+          "count": 35034,
+          "summed_task_ms": 2011.06585,
+          "mean_task_us": 57.4032611177713,
+          "median_task_us": 2.891,
+          "max_task_us": 857.682,
+          "percent_summed_task_time": 7.40209467362852
+        },
+        {
+          "name": "BatchMatMul9/v2",
+          "count": 4160,
+          "summed_task_ms": 1889.584585,
+          "mean_task_us": 454.22706370192304,
+          "median_task_us": 454.297,
+          "max_task_us": 832.344,
+          "percent_summed_task_time": 6.954960719958055
+        },
+        {
+          "name": "aclnnMul_MulAiCore_Mul",
+          "count": 5506,
+          "summed_task_ms": 1531.092485,
+          "mean_task_us": 278.0770949872866,
+          "median_task_us": 23.633,
+          "max_task_us": 1604.088,
+          "percent_summed_task_time": 5.635465157966435
+        },
+        {
+          "name": "QwenW4A8PackV310",
+          "count": 384,
+          "summed_task_ms": 890.561969,
+          "mean_task_us": 2319.1717942708333,
+          "median_task_us": 2311.341,
+          "max_task_us": 3314.01,
+          "percent_summed_task_time": 3.27787576288018
+        },
+        {
+          "name": "aclnnMatmulWeightNz_MatMulCommon_MatMulV2",
+          "count": 2260,
+          "summed_task_ms": 864.268192,
+          "mean_task_us": 382.41955398230084,
+          "median_task_us": 447.8125,
+          "max_task_us": 4237.76,
+          "percent_summed_task_time": 3.1810967207213783
+        },
+        {
+          "name": "aclnnSigmoid_SigmoidAiCore_Sigmoid",
+          "count": 1964,
+          "summed_task_ms": 759.222515,
+          "mean_task_us": 386.5695086558045,
+          "median_task_us": 138.307,
+          "max_task_us": 1098.047,
+          "percent_summed_task_time": 2.794456946489519
+        },
+        {
+          "name": "aclnnAdd_AddAiCore_Add",
+          "count": 1000,
+          "summed_task_ms": 731.337032,
+          "mean_task_us": 731.337032,
+          "median_task_us": 327.773,
+          "max_task_us": 1612.422,
+          "percent_summed_task_time": 2.6918193400750603
+        },
+        {
+          "name": "aclnnGather_GatherElements_GatherElements",
+          "count": 176,
+          "summed_task_ms": 651.688276,
+          "mean_task_us": 3702.7742954545456,
+          "median_task_us": 4131.8225,
+          "max_task_us": 4302.604,
+          "percent_summed_task_time": 2.3986575659100136
+        },
+        {
+          "name": "RmsNorm",
+          "count": 700,
+          "summed_task_ms": 602.164606,
+          "mean_task_us": 860.2351514285714,
+          "median_task_us": 1435.208,
+          "max_task_us": 1524.297,
+          "percent_summed_task_time": 2.216376665498157
+        },
+        {
+          "name": "aclnnTopk_TopkV2AiCore_TopKV2",
+          "count": 500,
+          "summed_task_ms": 499.803123,
+          "mean_task_us": 999.606246,
+          "median_task_us": 680.781,
+          "max_task_us": 4703.672,
+          "percent_summed_task_time": 1.8396165568726652
+        },
+        {
+          "name": "trans_TransData_11",
+          "count": 4160,
+          "summed_task_ms": 433.914195,
+          "mean_task_us": 104.306296875,
+          "median_task_us": 18.021,
+          "max_task_us": 439.479,
+          "percent_summed_task_time": 1.5971003394151946
+        },
+        {
+          "name": "aclnnMatmul_TransData_TransData",
+          "count": 5847,
+          "summed_task_ms": 403.012588,
+          "mean_task_us": 68.92638754917051,
+          "median_task_us": 10.208,
+          "max_task_us": 1254.635,
+          "percent_summed_task_time": 1.4833613384862785
+        },
+        {
+          "name": "aclnnMean_ReduceMeanAiCore_ReduceMean",
+          "count": 752,
+          "summed_task_ms": 342.951106,
+          "mean_task_us": 456.05200265957444,
+          "median_task_us": 680.273,
+          "max_task_us": 750.911,
+          "percent_summed_task_time": 1.2622940989414195
+        },
+        {
+          "name": "aclnnChunkFwdOVllm_ChunkFwdOVllm_ChunkFwdOVllm",
+          "count": 144,
+          "summed_task_ms": 276.352871,
+          "mean_task_us": 1919.1171597222221,
+          "median_task_us": 1919.01,
+          "max_task_us": 1934.219,
+          "percent_summed_task_time": 1.0171671476948652
+        },
+        {
+          "name": "CausalConv1dV310",
+          "count": 144,
+          "summed_task_ms": 270.870996,
+          "mean_task_us": 1881.0485833333332,
+          "median_task_us": 1881.0025,
+          "max_task_us": 1884.141,
+          "percent_summed_task_time": 0.996990106878923
+        },
+        {
+          "name": "aclnnChunkGatedDeltaRuleFwdH_ChunkGatedDeltaRuleFwdH_ChunkGatedDeltaRuleFwdH",
+          "count": 144,
+          "summed_task_ms": 262.31382,
+          "mean_task_us": 1821.62375,
+          "median_task_us": 1821.211,
+          "max_task_us": 1856.562,
+          "percent_summed_task_time": 0.9654938598063063
+        },
+        {
+          "name": "aclnnInplaceCopy_ViewCopyAiCpu_ViewCopy",
+          "count": 864,
+          "summed_task_ms": 249.892592,
+          "mean_task_us": 289.227537037037,
+          "median_task_us": 281.862,
+          "max_task_us": 581.693,
+          "percent_summed_task_time": 0.9197752645555713
+        },
+        {
+          "name": "aclnnMoeFinalizeRoutingV2_MoeFinalizeRoutingV2_MoeFinalizeRoutingV2",
+          "count": 192,
+          "summed_task_ms": 195.139289,
+          "mean_task_us": 1016.3504635416666,
+          "median_task_us": 1023.568,
+          "max_task_us": 1097.526,
+          "percent_summed_task_time": 0.7182457460169971
+        },
+        {
+          "name": "aclnnSort_SortAiCore_Sort",
+          "count": 496,
+          "summed_task_ms": 184.86885,
+          "mean_task_us": 372.71945564516125,
+          "median_task_us": 198.203,
+          "max_task_us": 1230.234,
+          "percent_summed_task_time": 0.6804435219785716
+        },
+        {
+          "name": "aclnnSoftmax_SoftmaxAiCore_SoftmaxV2",
+          "count": 4560,
+          "summed_task_ms": 182.127719,
+          "mean_task_us": 39.940289254385966,
+          "median_task_us": 37.214,
+          "max_task_us": 79.505,
+          "percent_summed_task_time": 0.6703542893585567
+        },
+        {
+          "name": "SwiGlu",
+          "count": 192,
+          "summed_task_ms": 180.762829,
+          "mean_task_us": 941.4730677083334,
+          "median_task_us": 941.094,
+          "max_task_us": 968.281,
+          "percent_summed_task_time": 0.6653305627614944
+        },
+        {
+          "name": "aclnnMatmul_MatMulCommon_MatMulV2",
+          "count": 653,
+          "summed_task_ms": 162.431573,
+          "mean_task_us": 248.74666615620214,
+          "median_task_us": 310.573,
+          "max_task_us": 1001.094,
+          "percent_summed_task_time": 0.5978590314844251
+        },
+        {
+          "name": "aclnnIndexPutImpl_IndexPut_IndexPut",
+          "count": 288,
+          "summed_task_ms": 135.835522,
+          "mean_task_us": 471.65111805555557,
+          "median_task_us": 456.979,
+          "max_task_us": 895.599,
+          "percent_summed_task_time": 0.4999674147347038
+        },
+        {
+          "name": "aclnnIndexSelect_GatherV2AiCore_GatherV2",
+          "count": 1029,
+          "summed_task_ms": 119.160056,
+          "mean_task_us": 115.80180369290572,
+          "median_task_us": 103.099,
+          "max_task_us": 213.099,
+          "percent_summed_task_time": 0.43859032056403136
+        },
+        {
+          "name": "QsaIndexCacheUpdateV310",
+          "count": 56,
+          "summed_task_ms": 118.939964,
+          "mean_task_us": 2123.9279285714288,
+          "median_task_us": 2293.6715,
+          "max_task_us": 2820.625,
+          "percent_summed_task_time": 0.43778023181387515
+        },
+        {
+          "name": "aclnnMatmulWeightNz_MatMulV3Common_MatMulV3",
+          "count": 148,
+          "summed_task_ms": 100.986345,
+          "mean_task_us": 682.340168918919,
+          "median_task_us": 688.659,
+          "max_task_us": 706.927,
+          "percent_summed_task_time": 0.371698662395223
+        },
+        {
+          "name": "aclnnInplaceMaskedFillScalar_MaskedFillAiCore_MaskedFill",
+          "count": 2301,
+          "summed_task_ms": 91.61087,
+          "mean_task_us": 39.81350282485875,
+          "median_task_us": 32.083,
+          "max_task_us": 328.828,
+          "percent_summed_task_time": 0.3371905165976911
+        },
+        {
+          "name": "aclnnInplaceCopy_TensorMoveAiCore_TensorMove",
+          "count": 3036,
+          "summed_task_ms": 88.654277,
+          "mean_task_us": 29.201013504611332,
+          "median_task_us": 8.568,
+          "max_task_us": 523.359,
+          "percent_summed_task_time": 0.32630823678701887
+        }
+      ]
+    }
+  ]
+}

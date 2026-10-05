@@ -7,7 +7,7 @@ at::Tensor npu_qwen_w4_a8_int4_matmul_310(const at::Tensor& low, const at::Tenso
                                           const at::Tensor& activation_scale, const at::Tensor& activation_sum,
                                           const at::Tensor& codes, const at::Tensor& scale, const at::Tensor& offset,
                                           const at::Tensor& weight_sum, const at::Tensor& group_ends) {
-  constexpr int64_t GROUP = 128, MAX_ROUTES = 20480, MIN_K = 256, MAX_K = 2560;
+  constexpr int64_t GROUP = 128, MAX_ROUTES = 25600, MIN_K = 256, MAX_K = 2560;
   constexpr int64_t MAX_N = 2 * MAX_K;
   constexpr int64_t DECODE_ROUTE_LIMIT = 128;
   TORCH_CHECK(low.device().type() == c10::DeviceType::PrivateUse1, "native INT4 requires NPU");

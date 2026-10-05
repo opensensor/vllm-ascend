@@ -56,14 +56,15 @@ FUSED_DOWN_INPUTS = 640
 FUSED_DOWN_OUTPUTS = 2560
 # Bound route expansion and the device count matrix independently of the
 # configured context window. Keep the established W4A16 workspace unchanged.
-# Native INT4 streams the route dimension through bounded on-chip tiles; its
-# pack and grouped-matmul operators expose a 20,480-route prefill contract.
+# Native INT4 streams the route dimension through bounded on-chip tiles. The
+# selected chunk remains 1,536 tokens; the larger capacity is for an explicit
+# projection-schedule experiment and requires a matching rebuilt OPP package.
 MAX_GROUPED_W4A16_TOKENS = 512
 MAX_GROUPED_W4A16_ROUTES = 5120
-# The 1,536-token split avoids the native large-tile schedule cliff while
-# retaining the 20,480-route operator capacity for other callers.
-MAX_GROUPED_NATIVE_TOKENS = 1536
-MAX_GROUPED_NATIVE_ROUTES = 20480
+# The selected split avoids the measured native large-tile schedule cliff.
+DEFAULT_GROUPED_NATIVE_TOKENS = 1536
+MAX_GROUPED_NATIVE_TOKENS = 2560
+MAX_GROUPED_NATIVE_ROUTES = 25600
 # Concurrent shared/routed GEMMs help only while decode leaves Cube headroom.
 # Multi-request MTP can split work into two-row MoE calls, where the concurrent
 # GEMMs contend and regress aggregate throughput. Restrict overlap to one row.
@@ -148,6 +149,16 @@ def w4_config(config: object) -> dict | None:
         raise ValueError("experimental grouped SwiGLU pack requires native INT4")
     if grouped_activation == "cann_builtin_fp16" and backend != NATIVE_INT4_BACKEND:
         raise ValueError("experimental built-in SwiGLU requires native INT4")
+    if "grouped_prefill_chunk_tokens" in metadata:
+        grouped_chunk_tokens = metadata["grouped_prefill_chunk_tokens"]
+        if backend != NATIVE_INT4_BACKEND:
+            raise ValueError("grouped_prefill_chunk_tokens requires native INT4")
+        if (
+            type(grouped_chunk_tokens) is not int
+            or not 1 <= grouped_chunk_tokens <= MAX_GROUPED_NATIVE_TOKENS
+            or grouped_chunk_tokens * int(config.num_experts_per_tok) > MAX_GROUPED_NATIVE_ROUTES
+        ):
+            raise ValueError("grouped_prefill_chunk_tokens exceeds the native INT4 route capacity")
     group = metadata.get("group_size")
     if type(group) is not int or group <= 0 or group % 2:
         raise ValueError("W4 group_size must be a positive even integer")
@@ -388,7 +399,7 @@ class W4SparseMoE(nn.Module):
         if self.top_k <= 0 or self.top_k > int(config.num_experts):
             raise ValueError("W4 top_k must be positive and no larger than num_experts")
         grouped_token_limit, grouped_route_limit = (
-            (MAX_GROUPED_NATIVE_TOKENS, MAX_GROUPED_NATIVE_ROUTES)
+            (metadata.get("grouped_prefill_chunk_tokens", DEFAULT_GROUPED_NATIVE_TOKENS), MAX_GROUPED_NATIVE_ROUTES)
             if self.native_int4
             else (MAX_GROUPED_W4A16_TOKENS, MAX_GROUPED_W4A16_ROUTES)
         )

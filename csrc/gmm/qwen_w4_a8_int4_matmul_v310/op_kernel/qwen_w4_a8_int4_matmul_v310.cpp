@@ -18,8 +18,10 @@ constexpr int64_t MODEL_GATE_UP_INPUTS = 2560;
 constexpr int64_t MODEL_DOWN_OUTPUTS = 2560;
 constexpr int64_t MODEL_DOWN_INPUTS = 640;
 constexpr uint32_t MODEL_DECODE_COLUMNS = 320;
-// The 32-row schedule wins below this per-expert route density on 310P.
-constexpr int64_t PREFILL_LARGE_TILE_ROWS_PER_EXPERT = 128;
+// Candidate: extend the 32-row schedule past the measured 1,638/1,639-token
+// cliff. The selected 1,536-token chunk is unchanged until the larger shapes
+// pass real-weight and service gates on a matching OPP package.
+constexpr int64_t PREFILL_LARGE_TILE_ROWS_PER_EXPERT = 256;
 
 class NativeInt4 {
  public:

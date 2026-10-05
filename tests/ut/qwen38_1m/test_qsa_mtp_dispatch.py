@@ -83,14 +83,19 @@ def test_qsa_selection_policy_rejects_invalid_metadata(metadata) -> None:
 
 
 def test_qsa_prefill_policy_defaults_to_retained_backend() -> None:
-    assert _qsa_prefill_policy(SimpleNamespace()) == (_QSA_PREFILL_BATCHED_GATHER, 8)
+    assert _qsa_prefill_policy(SimpleNamespace()) == (_QSA_PREFILL_BATCHED_GATHER, 8, True)
     config = SimpleNamespace(ascend_qsa_prefill={})
-    assert _qsa_prefill_policy(config) == (_QSA_PREFILL_BATCHED_GATHER, 8)
+    assert _qsa_prefill_policy(config) == (_QSA_PREFILL_BATCHED_GATHER, 8, True)
 
 
 def test_qsa_prefill_policy_accepts_explicit_group_major_tile() -> None:
     config = SimpleNamespace(ascend_qsa_prefill={"backend": _QSA_PREFILL_GROUP_MAJOR_UNION, "query_tile": 16})
-    assert _qsa_prefill_policy(config) == (_QSA_PREFILL_GROUP_MAJOR_UNION, 16)
+    assert _qsa_prefill_policy(config) == (_QSA_PREFILL_GROUP_MAJOR_UNION, 16, True)
+
+
+def test_qsa_prefill_can_disable_parallel_gather_for_service_comparison() -> None:
+    config = SimpleNamespace(ascend_qsa_prefill={"parallel_gather": False})
+    assert _qsa_prefill_policy(config) == (_QSA_PREFILL_BATCHED_GATHER, 8, False)
 
 
 @pytest.mark.parametrize(
@@ -101,6 +106,8 @@ def test_qsa_prefill_policy_accepts_explicit_group_major_tile() -> None:
         {"query_tile": 0},
         {"query_tile": 17},
         {"query_tile": True},
+        {"parallel_gather": 0},
+        {"parallel_gather": "false"},
         {"extra": True},
     ],
 )

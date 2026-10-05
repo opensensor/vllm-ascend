@@ -13,9 +13,9 @@ import statistics
 import time
 from pathlib import Path
 
-DEFAULT_ROUTE_CAP = 20480
+DEFAULT_ROUTE_CAP = 25600
 DEFAULT_TOP_K = 10
-DEFAULT_CHUNKS = (512, 1024, 2048)
+DEFAULT_CHUNKS = (1536, 1638, 1639, 2048, 2560)
 
 
 def plan_cases(tokens: int, top_k: int, chunk_sizes: list[int], route_cap: int) -> list[dict]:
@@ -61,10 +61,11 @@ def main() -> None:
     parser.add_argument("--layer", type=int, default=0)
     parser.add_argument("--rank", type=int, default=0)
     parser.add_argument("--tp-size", type=int, default=4)
-    parser.add_argument("--tokens", type=int, default=2048)
+    parser.add_argument("--tokens", type=int, default=2560)
     parser.add_argument("--top-k", type=int, default=DEFAULT_TOP_K, help="dry-run route geometry")
-    parser.add_argument("--route-cap", type=int, default=DEFAULT_ROUTE_CAP, help="dry-run route cap")
+    parser.add_argument("--route-cap", type=int, default=DEFAULT_ROUTE_CAP, help="installed OPP route cap")
     parser.add_argument("--chunks", type=int, nargs="+", default=list(DEFAULT_CHUNKS))
+    parser.add_argument("--grouped-finalize", choices=("torch", "cann_v2"), default="cann_v2")
     parser.add_argument("--iterations", type=int, default=3)
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--atol", type=float, default=0.003)
@@ -83,6 +84,7 @@ def main() -> None:
                     "tokens": args.tokens,
                     "top_k": args.top_k,
                     "route_cap": args.route_cap,
+                    "grouped_finalize": args.grouped_finalize,
                     "cases": cases,
                     "trace_capture": args.trace_dir is not None,
                     "npu_used": False,
@@ -91,6 +93,8 @@ def main() -> None:
             )
         )
         return
+    if not all(case["within_route_cap"] for case in cases):
+        parser.error("chunk exceeds the installed grouped native route cap")
     if (
         args.model is None
         or not args.model.is_dir()
@@ -118,9 +122,9 @@ def main() -> None:
     enable_custom_op()
     with torch.inference_mode():
         layer = load_layer(args.model, args.layer, args.rank, args.tp_size, NATIVE_INT4_BACKEND)
-    if args.top_k != layer.top_k or args.route_cap != MAX_GROUPED_NATIVE_ROUTES:
-        parser.error("--top-k and --route-cap must match the loaded model and installed Qwen source")
-    cases = plan_cases(args.tokens, layer.top_k, args.chunks, MAX_GROUPED_NATIVE_ROUTES)
+    if args.top_k != layer.top_k or args.route_cap > MAX_GROUPED_NATIVE_ROUTES:
+        parser.error("--top-k must match the model and --route-cap cannot exceed the Qwen source limit")
+    cases = plan_cases(args.tokens, layer.top_k, args.chunks, args.route_cap)
     if not all(case["within_route_cap"] for case in cases):
         parser.error("chunk exceeds the installed grouped native route cap")
     if args.trace_dir:
@@ -136,7 +140,7 @@ def main() -> None:
             routed_scaling_factor=layer.routed_scaling_factor,
         )
         cpu_ids = ids.cpu()
-        layer.grouped_finalize = "torch"
+        layer.grouped_finalize = args.grouped_finalize
 
         def run(chunk_tokens: int):
             layer.grouped_chunk_tokens = chunk_tokens
@@ -179,7 +183,9 @@ def main() -> None:
         "rank": args.rank,
         "tokens": args.tokens,
         "top_k": layer.top_k,
-        "route_cap": MAX_GROUPED_NATIVE_ROUTES,
+        "route_cap": args.route_cap,
+        "source_route_cap": MAX_GROUPED_NATIVE_ROUTES,
+        "grouped_finalize": args.grouped_finalize,
         "route_ids_sha256": hashlib.sha256(cpu_ids.numpy().tobytes()).hexdigest(),
         "output_sha256": hashlib.sha256(reference.numpy().tobytes()).hexdigest(),
         "trace_roots": trace_roots,

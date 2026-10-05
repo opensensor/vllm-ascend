@@ -104,8 +104,8 @@ def test_empty_experts_m_tails_and_peer_zero(rows, native):
     assert torch.isfinite(actual).all()
 
 
-def test_native_grouped_kernel_accepts_full_2k_prefill_route_capacity():
-    rows = 20480
+def test_native_grouped_kernel_accepts_full_2560_prefill_route_capacity():
+    rows = 25600
     data = values(rows)
     # All routes are peer-owned. This exercises the extended route contract
     # and full output overwrite without spending the test on a large GEMM.

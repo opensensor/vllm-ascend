@@ -1257,14 +1257,14 @@ def _qsa_step_selection_policy(
     return prefill_policy if getattr(metadata, "num_prefills", 0) > 0 else decode_policy
 
 
-def _qsa_prefill_policy(config: object) -> tuple[str, int]:
+def _qsa_prefill_policy(config: object) -> tuple[str, int, bool]:
     """Resolve the explicit QSA prefill schedule before graph capture."""
     metadata = getattr(config, _QSA_PREFILL_CONFIG_KEY, None)
     if metadata is None:
-        return _QSA_PREFILL_BATCHED_GATHER, QSA_GROUP_MAJOR_DEFAULT_QUERY_TILE
+        return _QSA_PREFILL_BATCHED_GATHER, QSA_GROUP_MAJOR_DEFAULT_QUERY_TILE, True
     if not isinstance(metadata, dict):
         raise ValueError(f"{_QSA_PREFILL_CONFIG_KEY} must be a dictionary")
-    unknown = set(metadata) - {"backend", "query_tile"}
+    unknown = set(metadata) - {"backend", "query_tile", "parallel_gather"}
     if unknown:
         raise ValueError(f"unsupported {_QSA_PREFILL_CONFIG_KEY} fields: {sorted(unknown)}")
     backend = metadata.get("backend", _QSA_PREFILL_BATCHED_GATHER)
@@ -1275,7 +1275,10 @@ def _qsa_prefill_policy(config: object) -> tuple[str, int]:
         raise ValueError("QSA group-major query_tile must be an integer")
     if query_tile < 1 or query_tile > QSA_GROUP_MAJOR_MAX_QUERY_TILE:
         raise ValueError(f"QSA group-major query_tile must be in [1, {QSA_GROUP_MAJOR_MAX_QUERY_TILE}]")
-    return backend, query_tile
+    parallel_gather = metadata.get("parallel_gather", True)
+    if not isinstance(parallel_gather, bool):
+        raise ValueError("QSA prefill parallel_gather must be a boolean")
+    return backend, query_tile, parallel_gather
 
 
 def _step_rope_cos_sin(
@@ -1360,7 +1363,7 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
             self.qsa_selection_policy,
             scope="local",
         )
-        self.qsa_prefill_backend, self.qsa_group_major_query_tile = _qsa_prefill_policy(config)
+        self.qsa_prefill_backend, self.qsa_group_major_query_tile, _ = _qsa_prefill_policy(config)
         expert_quant = w4_config(config)
         self.reuse_query_rope = expert_quant is None or expert_quant["backend"] in CUBE_DEVICE_ROUTED_BACKENDS
         # QSA arithmetic is independent of expert quantization. Both W8 and
@@ -2731,8 +2734,11 @@ class AscendQwen4ExpModel(nn.Module):
             if metadata is not None and metadata.get("shared_expert_execution") == "replicated_deferred"
             else None
         )
+        _, _, parallel_qsa_gather = _qsa_prefill_policy(config)
         self.qsa_prefill_gather_streams = (
-            QSAPrefillGatherStreams() if getattr(config, "indexer_n_heads", None) is not None else None
+            QSAPrefillGatherStreams()
+            if parallel_qsa_gather and getattr(config, "indexer_n_heads", None) is not None
+            else None
         )
         self.layers = nn.ModuleList(
             get_offloader().wrap_modules(

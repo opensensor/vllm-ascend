@@ -1,0 +1,52 @@
+[
+  {
+    "request_id": "chatcmpl-b4a2462ce62d3b4f",
+    "usage": {
+      "prompt_tokens": 32,
+      "total_tokens": 64,
+      "completion_tokens": 32,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "created_cache_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0
+      }
+    },
+    "finish_reason": "length",
+    "ttft_s": 0.38194280699826777,
+    "decode_s": 0.9623356479860377,
+    "client_decode_tok_s": 32.21329279953035,
+    "e2e_s": 1.344403622992104,
+    "text_sha256": "328b08aae3e51810b998ae4f9482dc0d32f8129280e68bc826dffa90f70e3b1e",
+    "text": "```python\n\"\"\"\nLRU (Least Recently Used) Cache Implementation\n\nThis module provides a thread-safe LRU cache implementation with O(1) time complexity",
+    "warmup": true,
+    "prior_decode_tok_s": 32.470440116001654,
+    "exact_text_match": true
+  },
+  {
+    "request_id": "chatcmpl-aa30d13d4ca0604e",
+    "usage": {
+      "prompt_tokens": 32,
+      "total_tokens": 544,
+      "completion_tokens": 512,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "created_cache_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0
+      }
+    },
+    "finish_reason": "length",
+    "ttft_s": 0.3447581699874718,
+    "decode_s": 16.032122346019605,
+    "client_decode_tok_s": 31.873509256674875,
+    "e2e_s": 16.37699531399994,
+    "text_sha256": "06920000848ede22c6a7e691f37888889eb43657efd5861e8b1d200341d31faf",
+    "text": "```python\n\"\"\"\nLRU (Least Recently Used) Cache Implementation\n\nThis module provides a thread-safe LRU cache implementation with O(1) time complexity\nfor both get and put operations.\n\nThread Safety:\n    The implementation uses a threading.Lock to ensure that all operations on the\n    internal data structures are atomic. This prevents race conditions when multiple\n    threads access the cache concurrently.\n\nComplexity:\n    - Time Complexity:\n        - get(): O(1) average case\n        - put(): O(1) average case\n        - delete(): O(1) average case\n    - Space Complexity: O(capacity) for storing up to 'capacity' items.\n\nData Structures Used:\n    - OrderedDict: Maintains insertion/access order. The most recently used item\n      is at the end, and the least recently used item is at the beginning.\n    - Lock: Ensures thread safety for concurrent access.\n\"\"\"\n\nimport threading\nfrom collections import OrderedDict\nfrom typing import Any, Optional, Hashable\n\n\nclass LRUCache:\n    \"\"\"\n    A thread-safe Least Recently Used (LRU) cache.\n    \n    The cache evicts the least recently used item when it reaches its capacity.\n    Accessing an item (via get) or updating an item (via put) marks it as most\n    recently used.\n    \n    Attributes:\n        capacity (int): Maximum number of items the cache can hold.\n        _cache (OrderedDict): Internal storage maintaining access order.\n        _lock (threading.Lock): Lock for thread-safe operations.\n    \"\"\"\n    \n    def __init__(self, capacity: int):\n        \"\"\"\n        Initialize the LRU cache with a given capacity.\n        \n        Args:\n            capacity: Maximum number of items the cache can hold. Must be positive.\n            \n        Raises:\n            ValueError: If capacity is not a positive integer.\n        \"\"\"\n        if not isinstance(capacity, int) or capacity <= 0:\n            raise ValueError(\"Capacity must be a positive integer\")\n        \n        self.capacity = capacity\n        self._cache: OrderedDict[Hashable, Any] = OrderedDict()\n        self._lock = threading.Lock()\n    \n    def get(self, key: Hashable) -> Optional[Any]:\n        \"\"\"\n        Retrieve a value from the cache.\n        \n        If the key exists, it is moved to the end (most recently used position",
+    "warmup": false,
+    "prior_decode_tok_s": 30.910185017223437,
+    "exact_text_match": false
+  }
+]

@@ -9,7 +9,7 @@
 namespace optiling {
 // Grouped prefill streams route rows through bounded M tiles. The 128-entry
 // route cache is used only by the separately capped int32 routed-decode path.
-constexpr int64_t MAX_ROUTES = 20480;
+constexpr int64_t MAX_ROUTES = 25600;
 constexpr int64_t GROUP_SIZE = 128;
 constexpr int64_t OUTPUT_TILE = 16;
 constexpr int64_t MIN_K = 256;

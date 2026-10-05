@@ -234,6 +234,23 @@ pending operator changes before treating a new package as qualified. The
 Mamba configuration. Treat a warmup as cached only when the response usage or
 server prefix-cache metrics prove a hit.
 
+A native-W4 candidate raises the source route caps to 25,600 and adds an
+explicit `grouped_prefill_chunk_tokens` model override up to 2,560. Its
+default remains 1,536. The candidate keeps the 32-row projection schedule
+across the previously measured 1,638/1,639-token cliff. An isolated 310P
+one-layer gate found bitwise-identical output and an 8.0% improvement for a
+23,410-token partial with 2,560-token chunks versus 1,536-token chunks. A
+threshold-128 control confirmed that the new projection schedule is material
+at larger chunks. A coherent five-operator package and isolated launcher
+passed a TP4/EP4 service gate: three matched 23,410-token cold prompts fell
+from 64.292 to 62.032 seconds mean TTFT against the earlier 1,536-token
+CANN-finalizer service. All reported zero cached tokens. The service reported
+4.08 concurrent 262,144-token requests and captured both decode graphs; a
+four-request workload and sustained thermal gate remain. The older
+20,480-route OPP cannot run a 2,560-token top-10 chunk. See the
+[experiment record](../../../../artifacts/qwen38-prefill-batch256-20261005/README.md)
+before changing the serving default.
+
 Native INT4 grouped prefill now defaults to `cann_builtin_fp16`, which uses
 `torch_npu.npu_swiglu` before the existing down-projection pack. Other W4
 backends keep their torch activation default, and an explicit
@@ -252,8 +269,8 @@ to 364.1 effective prompt tok/s, with zero cached tokens. One opening phrase
 changed; the other two short outputs matched. The finalizer remains opt-in
 because it changes FP16 rounding and broad quality has not been checked.
 The [combined gate](../../../../artifacts/qwen38-builtin-finalize-20261005/README.md)
-records the configuration and response checks. Its candidate service is
-running on port 8001 as `qwen38-w4-builtin-finalize-candidate`.
+records the configuration and response checks. That candidate previously ran
+on port 8001 as `qwen38-w4-builtin-finalize-candidate`.
 
 ## Known bad turns
 

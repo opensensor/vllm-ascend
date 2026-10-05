@@ -76,6 +76,20 @@ paths = ["^$"]
 stopwords = []
 commits = []
 
+# These two values are SHA-256 digests of seeded synthetic QSA key tensors,
+# recorded in the paired operator probes. Restrict the exception to that
+# evidence directory, the generic rule, and the exact measured digests.
+[[allowlists]]
+description = "Synthetic QSA tensor checksums, not API credentials"
+condition = "AND"
+paths = ["^artifacts/qwen38-prefill-batch256-20261005/qsa-zero-invalid-20261005/[^/]+\\.jsonl$"]
+rules = ["generic-api-key"]
+regexTarget = "secret"
+regexes = [
+    "^871620114fa6392be0b06ee67f532c9d8ee72ad4cb1c5b01593f0c9cc692053f$",
+    "^a3cb86a71c5fef6bc0e493da64021026a4faf65376ce722a91e016dfee2347bb$"
+]
+
 # ==============================================================================
 # 4. Inline single-line / full-file suppression comments (no config modification required)
 # ==============================================================================

@@ -5,10 +5,10 @@
 namespace vllm_ascend {
 std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> npu_qwen_w4_a8_swiglu_pack_310(
     const at::Tensor& gate_up) {
-  // Grouped prefill can pass 2,048 tokens x ten expert routes. The kernel
+  // Experimental grouped prefill can pass 2,560 tokens x ten expert routes. The kernel
   // already strides row batches across AI cores; only the validation cap was
   // limited to decode-sized inputs.
-  constexpr int64_t MAX_ROUTES = 20480, MIN_K = 256, MAX_K = 2560, GROUP_SIZE = 128, LANES = 8;
+  constexpr int64_t MAX_ROUTES = 25600, MIN_K = 256, MAX_K = 2560, GROUP_SIZE = 128, LANES = 8;
   TORCH_CHECK(gate_up.device().type() == c10::DeviceType::PrivateUse1 &&
                   gate_up.scalar_type() == at::kHalf && gate_up.is_contiguous() && gate_up.dim() == 2,
               "W4A8 SwiGLU pack requires contiguous NPU FP16 [R,2K]");

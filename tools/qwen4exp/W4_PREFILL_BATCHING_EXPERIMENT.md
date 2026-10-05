@@ -80,3 +80,36 @@ dispatch and packing. A later 2,560-token experiment still needs a matched
 OPP package with validated 25,600-row caps, exact output parity, and a
 repeated cold-prefill service A/B. Include sustained temperature and capacity
 in that gate.
+
+## Larger native-W4 batch candidate
+
+Source now has an explicit native-INT4
+`ascend_expert_quantization.grouped_prefill_chunk_tokens` override bounded by
+2,560 tokens and 25,600 top-10 routes. The default remains the measured
+1,536-token split. The native pack, experimental SwiGLU pack, and grouped
+matmul host/tiler row limits agree at 25,600. The matmul candidate moves its
+large-M switch from 128 to 256 average routes per expert. With 128 local
+experts, this keeps the existing 32-row schedule through 2,560 top-10 tokens
+instead of switching just after 1,638 tokens.
+
+The paired layer benchmark now defaults to 1,536, 1,638, 1,639, 2,048, and
+2,560-token chunks and can use `--grouped-finalize cann_v2` to match the
+current service candidate. `--route-cap` is the installed package's cap; use
+20,480 with an older package and omit the 2,560-token case. For a rebuilt
+25,600-route package, first run the pack and matmul capacity tests, then the
+real-weight layer benchmark with parity and separate traces. Only after that
+gate should the model override be used in a four-rank cold-prefill comparison.
+Check operator workspace, four-request cache capacity, generation quality,
+and sustained temperature. The grouped CANN finalizer's large-row behavior
+also remains to be verified.
+
+The [isolated 310P result](../../artifacts/qwen38-prefill-batch256-20261005/README.md)
+passed 25,600-route operator capacity and bitwise one-layer output checks.
+For a 23,410-token layer partial, 2,560-token chunks took 420.97 ms versus
+457.74 ms with 1,536-token chunks. A clean five-operator coherent OPP package
+and isolated launcher then passed a TP4/EP4 service check. Three matched cold
+prompts fell from 64.292 to 62.032 seconds mean TTFT, with zero cached tokens.
+The service reported 4.08 concurrent 262,144-token requests and captured both
+decode graphs. The two stable 32-token decode cases remained about 30 tok/s;
+there is no measured decode-speed gain. A sustained thermal, concurrent-load,
+and broader quality gate remain before changing the source default.

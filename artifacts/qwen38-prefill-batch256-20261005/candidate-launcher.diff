@@ -1,0 +1,38 @@
+--- /srv/ai/src/qwen38-prefill-batch256-runtime-20261005/examples/start_qwen38_flash_next_w4_310p.sh	2026-10-05 00:54:30.703938851 +0000
++++ /srv/ai/src/qwen38-prefill-batch256-runtime-20261005/examples/start_qwen38_flash_next_w4_310p_batch2560.sh	2026-10-05 02:14:53.921027515 +0000
+@@ -23,11 +23,11 @@
+ # This snapshot is the full source set used by the retained coherency and GPQA
+ # gates. Override it only with another runtime that passes --check-runtime and
+ # an end-to-end thinking-enabled coherency probe.
+-RUNTIME_ROOT=${QWEN38_PLUGIN_ROOT:-/srv/ai/src/qwen38-head-unified-runtime-20261001}
++RUNTIME_ROOT=${QWEN38_PLUGIN_ROOT:-/srv/ai/src/qwen38-prefill-batch256-runtime-20261005}
+ MODEL=${QWEN38_MODEL_ROOT:-/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i}
+ PYTHON_BIN=${QWEN38_PYTHON_BIN:-/srv/ai/venvs/qwen38-w4-test-ce1862/bin/python}
+ HARDWARE_ENV=${QWEN38_HARDWARE_ENV:-/srv/ai/src/qwen38-w4-hardware-20260927/qwen38-w4-hardware-env.sh}
+-COHERENT_OPP=${QWEN38_COHERENT_OPP:-/srv/ai/src/qwen38-coherent-opp-20261001-r2/vendors/qwen38_coherent_transformer}
++COHERENT_OPP=${QWEN38_COHERENT_OPP:-/srv/ai/src/qwen38-prefill-batch256-coherent-opp-20261005/vendors/qwen38_batch256_coherent_transformer}
+ RETAINED_OPP=${QWEN38_RETAINED_OPP:-/srv/ai/src/native-int4-w4a8.KiuhBN/opp-retained-good-20260928}
+ PACKAGED_OPP=${RUNTIME_ROOT}/vllm_ascend/_cann_ops_custom/vendors/custom_transformer
+ AFFINITY_HELPER=${QWEN38_AFFINITY_HELPER:-/srv/ai/src/qwen38-w4-hardware-20260927/qwen38-w4-kilo-affinity-r8.py}
+@@ -40,11 +40,11 @@
+ QUALIFIED_KV_CACHE_MEMORY_BYTES=88673894400
+ 
+ PORT=${PORT:-8001}
+-SERVED_MODEL_NAME=${SERVED_MODEL_NAME:-qwen38-w4-pipeline-c1-dispatch}
++SERVED_MODEL_NAME=${SERVED_MODEL_NAME:-qwen38-w4-batch2560-cann-finalize-candidate}
+ NUM_SPEC_TOKENS=${NUM_SPEC_TOKENS:-2}
+ MAX_MODEL_LEN=${MAX_MODEL_LEN:-262144}
+ MAX_NUM_SEQS=${MAX_NUM_SEQS:-4}
+-MAX_NUM_BATCHED_TOKENS=${MAX_NUM_BATCHED_TOKENS:-2048}
++MAX_NUM_BATCHED_TOKENS=${MAX_NUM_BATCHED_TOKENS:-2560}
+ GPU_MEM_UTIL=${GPU_MEM_UTIL:-0.965}
+ KV_CACHE_FRACTION=${KV_CACHE_FRACTION:-0.80}
+ TEMP_LIMIT=${TEMP_LIMIT:-96}
+@@ -212,6 +212,7 @@
+       "activation_quantization": "int8_per_group",
+       "grouped_activation": "cann_builtin_fp16",
+       "grouped_finalize": "cann_v2",
++      "grouped_prefill_chunk_tokens": 2560,
+       "bits": 4,
+       "format": "qwen4exp_w4a16_group_v1",
+       "group_size": 128,

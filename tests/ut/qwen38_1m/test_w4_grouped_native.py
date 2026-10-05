@@ -12,6 +12,7 @@ import torch.nn.functional as F
 from tests.ut.qwen38_1m.test_w4_moe import config
 from vllm_ascend.models.qwen4_exp.dtype_policy import Qwen4ExpDtypePolicy
 from vllm_ascend.models.qwen4_exp.w4_moe import (
+    DEFAULT_GROUPED_NATIVE_TOKENS,
     MAX_CUBE_ROUTES,
     MAX_GROUPED_NATIVE_ROUTES,
     MAX_GROUPED_NATIVE_TOKENS,
@@ -21,6 +22,7 @@ from vllm_ascend.models.qwen4_exp.w4_moe import (
     W4SparseMoE,
     require_eager_w4,
     unpack_signed_int4,
+    w4_config,
 )
 from vllm_ascend.models.qwen4_exp.w4a8_int4 import (
     NATIVE_INT4_BACKEND,
@@ -32,12 +34,14 @@ from vllm_ascend.models.qwen4_exp.w4a8_int4 import (
 )
 
 
-def make_layer(backend="cube_310_grouped", *, grouped_activation=None):
+def make_layer(backend="cube_310_grouped", *, grouped_activation=None, grouped_chunk_tokens=None):
     cfg = config(num_layers=1, num_experts=7, top_k=3, shared_inter=0)
     cfg.hidden_size = cfg.moe_intermediate_size = 256
     cfg.ascend_expert_quantization.update(group_size=128, backend=backend)
     if grouped_activation is not None:
         cfg.ascend_expert_quantization["grouped_activation"] = grouped_activation
+    if grouped_chunk_tokens is not None:
+        cfg.ascend_expert_quantization["grouped_prefill_chunk_tokens"] = grouped_chunk_tokens
     if backend == NATIVE_INT4_BACKEND:
         cfg.ascend_expert_quantization["activation_quantization"] = "int8_per_group"
     require_eager_w4(SimpleNamespace(enforce_eager=False), cfg)
@@ -48,7 +52,7 @@ def make_layer(backend="cube_310_grouped", *, grouped_activation=None):
     "backend,token_limit,route_limit",
     [
         ("cube_310_grouped", MAX_GROUPED_W4A16_TOKENS, MAX_GROUPED_W4A16_ROUTES),
-        (NATIVE_INT4_BACKEND, MAX_GROUPED_NATIVE_TOKENS, MAX_GROUPED_NATIVE_ROUTES),
+        (NATIVE_INT4_BACKEND, DEFAULT_GROUPED_NATIVE_TOKENS, MAX_GROUPED_NATIVE_ROUTES),
     ],
 )
 def test_grouped_prefill_chunk_respects_backend_route_workspace(backend, token_limit, route_limit):
@@ -56,6 +60,44 @@ def test_grouped_prefill_chunk_respects_backend_route_workspace(backend, token_l
     assert layer.grouped_chunk_tokens == min(token_limit, route_limit // layer.top_k)
     assert layer.grouped_chunk_tokens * layer.top_k <= route_limit
     assert layer.grouped_chunk_tokens == (1536 if backend == NATIVE_INT4_BACKEND else 512)
+
+
+@pytest.mark.parametrize("chunk_tokens", [1536, 1638, 1639, 2048, MAX_GROUPED_NATIVE_TOKENS])
+def test_native_grouped_prefill_chunk_can_be_selected_for_a_rebuilt_opp(chunk_tokens):
+    layer = make_layer(NATIVE_INT4_BACKEND, grouped_chunk_tokens=chunk_tokens)
+    assert layer.grouped_chunk_tokens == chunk_tokens
+    assert layer.grouped_chunk_tokens * layer.top_k <= MAX_GROUPED_NATIVE_ROUTES
+
+
+@pytest.mark.parametrize("chunk_tokens", [False, 0, -1, 2561, 1.5, "2048"])
+def test_grouped_prefill_chunk_rejects_invalid_values(chunk_tokens):
+    with pytest.raises(ValueError, match="grouped_prefill_chunk_tokens"):
+        make_layer(NATIVE_INT4_BACKEND, grouped_chunk_tokens=chunk_tokens)
+
+
+def test_grouped_prefill_chunk_is_native_only_and_route_bounded():
+    with pytest.raises(ValueError, match="requires native INT4"):
+        make_layer("cube_310_grouped", grouped_chunk_tokens=1536)
+    null_chunk = config(num_layers=1, num_experts=7, top_k=3, shared_inter=0)
+    null_chunk.hidden_size = null_chunk.moe_intermediate_size = 256
+    null_chunk.ascend_expert_quantization.update(
+        group_size=128,
+        backend=NATIVE_INT4_BACKEND,
+        activation_quantization="int8_per_group",
+        grouped_prefill_chunk_tokens=None,
+    )
+    with pytest.raises(ValueError, match="grouped_prefill_chunk_tokens"):
+        w4_config(null_chunk)
+    cfg = config(num_layers=1, num_experts=20, top_k=11, shared_inter=0)
+    cfg.hidden_size = cfg.moe_intermediate_size = 256
+    cfg.ascend_expert_quantization.update(
+        group_size=128,
+        backend=NATIVE_INT4_BACKEND,
+        activation_quantization="int8_per_group",
+        grouped_prefill_chunk_tokens=MAX_GROUPED_NATIVE_TOKENS,
+    )
+    with pytest.raises(ValueError, match="route capacity"):
+        w4_config(cfg)
 
 
 @pytest.mark.parametrize("tokens", [1, 8, 27, 128, 513])
