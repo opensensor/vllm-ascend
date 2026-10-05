@@ -1,0 +1,134 @@
+{
+  "metric_warning": "Summed task times and reported hardware pipeline counters may overlap; neither is an additive critical-path latency or unprofiled throughput measurement.",
+  "traces": [
+    {
+      "file": "artifacts/qwen38-cann-finalize-20261004/profile-followup-20261004/epilogue-traces/cann_v2/matteius-threadripper_2038866_20261004200955871_ascend_pt/ASCEND_PROFILER_OUTPUT/kernel_details.csv",
+      "device_ids": [
+        "0"
+      ],
+      "task_count": 12,
+      "task_span_ms": 2.790834,
+      "task_union_ms": 2.701927,
+      "summed_task_ms": 2.701927,
+      "projection_shapes": [],
+      "categories": [
+        {
+          "name": "cast_layout_or_copy",
+          "count": 9,
+          "summed_task_ms": 0.35388,
+          "mean_task_us": 39.32,
+          "median_task_us": 4.896,
+          "max_task_us": 111.979,
+          "percent_summed_task_time": 13.097319061543853
+        },
+        {
+          "name": "other",
+          "count": 3,
+          "summed_task_ms": 2.348047,
+          "mean_task_us": 782.6823333333334,
+          "median_task_us": 795.391,
+          "max_task_us": 800.104,
+          "percent_summed_task_time": 86.90268093845614
+        }
+      ],
+      "top_operations": [
+        {
+          "name": "aclnnMoeFinalizeRoutingV2_MoeFinalizeRoutingV2_MoeFinalizeRoutingV2",
+          "count": 3,
+          "summed_task_ms": 2.348047,
+          "mean_task_us": 782.6823333333334,
+          "median_task_us": 795.391,
+          "max_task_us": 800.104,
+          "percent_summed_task_time": 86.90268093845614
+        },
+        {
+          "name": "aclnnInplaceCopy_CastAiCore_Cast",
+          "count": 9,
+          "summed_task_ms": 0.35388,
+          "mean_task_us": 39.32,
+          "median_task_us": 4.896,
+          "max_task_us": 111.979,
+          "percent_summed_task_time": 13.097319061543853
+        }
+      ]
+    },
+    {
+      "file": "artifacts/qwen38-cann-finalize-20261004/profile-followup-20261004/epilogue-traces/torch/matteius-threadripper_2038866_20261004200951135_ascend_pt/ASCEND_PROFILER_OUTPUT/kernel_details.csv",
+      "device_ids": [
+        "0"
+      ],
+      "task_count": 18,
+      "task_span_ms": 21.490338,
+      "task_union_ms": 21.438174,
+      "summed_task_ms": 21.438174,
+      "projection_shapes": [],
+      "categories": [
+        {
+          "name": "cast_layout_or_copy",
+          "count": 3,
+          "summed_task_ms": 4.764713,
+          "mean_task_us": 1588.2376666666667,
+          "median_task_us": 1572.135,
+          "max_task_us": 1620.755,
+          "percent_summed_task_time": 22.22536770155891
+        },
+        {
+          "name": "other",
+          "count": 15,
+          "summed_task_ms": 16.673461,
+          "mean_task_us": 1111.5640666666666,
+          "median_task_us": 1201.198,
+          "max_task_us": 2169.219,
+          "percent_summed_task_time": 77.77463229844109
+        }
+      ],
+      "top_operations": [
+        {
+          "name": "aclnnIndexSelect_GatherV2AiCore_GatherV2",
+          "count": 6,
+          "summed_task_ms": 6.768827,
+          "mean_task_us": 1128.1378333333332,
+          "median_task_us": 1127.8775,
+          "max_task_us": 2169.219,
+          "percent_summed_task_time": 31.573710522174135
+        },
+        {
+          "name": "aclnnInplaceMul_MulAiCore_Mul",
+          "count": 3,
+          "summed_task_ms": 6.294921,
+          "mean_task_us": 2098.307,
+          "median_task_us": 2101.38,
+          "max_task_us": 2108.88,
+          "percent_summed_task_time": 29.363139789797398
+        },
+        {
+          "name": "aclnnInplaceCopy_CastAiCore_Cast",
+          "count": 3,
+          "summed_task_ms": 4.764713,
+          "mean_task_us": 1588.2376666666667,
+          "median_task_us": 1572.135,
+          "max_task_us": 1620.755,
+          "percent_summed_task_time": 22.22536770155891
+        },
+        {
+          "name": "aclnnReduceSum_ReduceSumOpAiCore_ReduceSum",
+          "count": 3,
+          "summed_task_ms": 3.603385,
+          "mean_task_us": 1201.1283333333333,
+          "median_task_us": 1201.198,
+          "max_task_us": 1202.604,
+          "percent_summed_task_time": 16.808264547157794
+        },
+        {
+          "name": "aclnnReduceSum_ReduceSumOpAiCore_MemSet",
+          "count": 3,
+          "summed_task_ms": 0.006328,
+          "mean_task_us": 2.1093333333333333,
+          "median_task_us": 1.823,
+          "max_task_us": 2.708,
+          "percent_summed_task_time": 0.02951743931176228
+        }
+      ]
+    }
+  ]
+}

@@ -220,6 +220,44 @@ def test_native_routed_reuses_packed_token_across_experts(tokens, width, outputs
     assert torch.count_nonzero(actual[(ids < 0) | (ids >= 3)]) == 0
 
 
+@pytest.mark.parametrize("tokens", [3, 6, 12])
+@pytest.mark.parametrize("experts", [128, 129])
+def test_native_routed_topk10_large_expert_bank_graph_replay(tokens, experts):
+    x, small_bank = payload(tokens, 256, 640)
+    banks = [bank.repeat((experts + 2) // 3, 1, 1)[:experts] for bank in small_bank]
+    rows = tokens * 10
+    ids_cpu = (torch.arange(rows, dtype=torch.int32) * 17) % experts
+    ids_cpu[:6] = torch.tensor([0, 1, 2, 127, 128, -1], dtype=torch.int32)
+    ids_cpu[-1] = experts
+    device_x = x.npu()
+    ids = ids_cpu.npu()
+    op = torch.ops._C_ascend.npu_qwen_w4_a8_int4_matmul_310
+
+    def invoke():
+        return op(*pack_activation_device(device_x), *banks, ids)
+
+    expected = routed_reference(x.repeat_interleave(10, dim=0), banks, ids_cpu)
+    torch.testing.assert_close(invoke().cpu(), expected, rtol=0.005, atol=0.003)
+    stream = torch.npu.Stream()
+    stream.wait_stream(torch.npu.current_stream())
+    with torch.npu.stream(stream):
+        for _ in range(3):
+            invoke()
+    torch.npu.current_stream().wait_stream(stream)
+    graph = torch.npu.NPUGraph()
+    with torch.npu.graph(graph, stream=stream):
+        captured = invoke()
+    for phase in range(2):
+        changed = x * (0.5 + phase)
+        routes = (ids_cpu + phase * 13) % (experts + 1)
+        routes[phase::7] = -1
+        device_x.copy_(changed)
+        ids.copy_(routes)
+        graph.replay()
+        expected = routed_reference(changed.repeat_interleave(10, dim=0), banks, routes)
+        torch.testing.assert_close(captured.cpu(), expected, rtol=0.005, atol=0.003)
+
+
 def test_native_routed_reused_activation_graph_replay():
     tokens, routes_per_token = 3, 10
     x, banks = payload(tokens, 640, 1280)

@@ -3,12 +3,16 @@
 #ifndef NATIVE_INT4_SCHEDULE_H
 #define NATIVE_INT4_SCHEDULE_H
 #include "kernel_operator.h"
+#include "native_int4_route_groups.h"
 
 namespace native_int4 {
 using namespace AscendC;
 // Separate bounded decode/MTP and prefill schedules. A packed activation tile
 // feeds N outputs; the full packed K weight tile stays in L1 across M tiles.
-template <uint32_t M, uint32_t N = 64, bool COMBINE_ROUTES = false, bool PIPELINE_EXPERT_WEIGHTS = false>
+// The direct lookup improved high fan-out operator cases but did not improve
+// the paired serving gate. Keep it available for explicit specializations.
+template <uint32_t M, uint32_t N = 64, bool COMBINE_ROUTES = false, bool PIPELINE_EXPERT_WEIGHTS = false,
+          bool ENABLE_DIRECT_LOOKUP = false>
 class Schedule {
   static constexpr uint32_t GROUP = 128, BLOCK = 16, K0 = 64, LANES = 8;
   static constexpr uint32_t A_BYTES = M * GROUP / 2, B_BYTES = N * GROUP / 2;
@@ -126,7 +130,7 @@ class Schedule {
   __aicore__ inline void ProcessRoutes() {
     int32_t expertIds[MAX_ROUTES];
     uint32_t counts[MAX_ROUTES], groupOfRow[MAX_ROUTES], starts[MAX_ROUTES + 1];
-    uint32_t groups = 0;
+    static_assert(MAX_ROUTES == MAX_ROUTE_ROWS);
     auto cachedIds = routeCache_.Get<int32_t>();
     const uint32_t aligned = rows_ / 8 * 8;
     if (aligned > 0) {
@@ -137,29 +141,9 @@ class Schedule {
       WaitFlag<HardEvent::MTE2_S>(EVENT_ID0);
     }
     for (uint32_t row = aligned; row < rows_; ++row) cachedIds.SetValue(row, routeIds_.GetValue(row));
-    for (uint32_t row = 0; row < rows_; ++row) {
-      const int32_t expert = cachedIds.GetValue(row);
-      groupOfRow[row] = MAX_ROUTES;
-      if (expert < 0 || expert >= experts_) continue;
-      uint32_t group = 0;
-      while (group < groups && expertIds[group] != expert) ++group;
-      if (group == groups) {
-        expertIds[group] = expert;
-        counts[group] = 0;
-        ++groups;
-      }
-      groupOfRow[row] = group;
-      ++counts[group];
-    }
-    starts[0] = 0;
-    for (uint32_t group = 0; group < groups; ++group) {
-      starts[group + 1] = starts[group] + counts[group];
-      counts[group] = starts[group];
-    }
-    for (uint32_t row = 0; row < rows_; ++row) {
-      sourceRows_[row] = row / broadcastFactor_;
-      if (groupOfRow[row] != MAX_ROUTES) routeRows_[counts[groupOfRow[row]]++] = row;
-    }
+    const uint32_t groups = BuildRouteGroups<ENABLE_DIRECT_LOOKUP>(cachedIds, rows_, experts_, broadcastFactor_,
+                                                                    expertIds, counts, groupOfRow, starts,
+                                                                    routeRows_, sourceRows_);
     const uint32_t tiles = n_ / N;
     const uint32_t partitions = GetBlockNum() > tiles && GetBlockNum() % tiles == 0 ? GetBlockNum() / tiles : 1;
     if constexpr (COMBINE_ROUTES) {

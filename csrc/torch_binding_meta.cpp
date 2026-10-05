@@ -830,6 +830,21 @@ at::Tensor npu_qsa_indexer_score_310_meta(
         query.options().dtype(at::kFloat));
 }
 
+at::Tensor npu_qsa_exact_topk_aicpu_310_meta(const at::Tensor& scores, int64_t topk)
+{
+    return at::empty_symint(c10::SymDimVector{scores.sym_size(0), topk}, scores.options().dtype(at::kInt));
+}
+
+at::Tensor npu_qsa_position_metadata_aicpu_310_meta(
+    const at::Tensor& positions, int64_t compress_ratio, int64_t capacity,
+    int64_t selected_width)
+{
+    (void)compress_ratio;
+    (void)capacity;
+    (void)selected_width;
+    return at::empty_symint(c10::SymDimVector{4, positions.sym_size(0)}, positions.options().dtype(at::kInt));
+}
+
 void qsa_index_cache_update_310_meta(
     at::Tensor &compressed_key_cache,
     const at::Tensor &index_keys,
@@ -2325,6 +2340,8 @@ TORCH_LIBRARY_IMPL_EXPAND(CONCAT(_C, _ascend), Meta, ops) {
     ops.impl("npu_qsa_sparse_attention_310", &vllm_ascend::meta::npu_qsa_sparse_attention_310_meta);
     // npu_qsa_indexer_score_310
     ops.impl("npu_qsa_indexer_score_310", &vllm_ascend::meta::npu_qsa_indexer_score_310_meta);
+    ops.impl("npu_qsa_exact_topk_aicpu_310", &vllm_ascend::meta::npu_qsa_exact_topk_aicpu_310_meta);
+    ops.impl("npu_qsa_position_metadata_aicpu_310", &vllm_ascend::meta::npu_qsa_position_metadata_aicpu_310_meta);
     // qsa_index_cache_update_310
     ops.impl("qsa_index_cache_update_310", &vllm_ascend::meta::qsa_index_cache_update_310_meta);
     // mla_cache_write_310

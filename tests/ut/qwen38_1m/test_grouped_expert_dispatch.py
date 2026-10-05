@@ -27,7 +27,8 @@ def test_bounded_sort_keys_preserve_exact_permutation_inverse(tokens):
     torch.testing.assert_close(dispatch.inverse_order, torch.argsort(dispatch.order), rtol=0, atol=0)
 
 
-def test_large_peer_ids_are_bounded_before_sort_key_narrowing():
+@pytest.mark.parametrize("count_mode", ["compare", "histogram"])
+def test_large_peer_ids_are_bounded_before_sort_key_narrowing(count_mode):
     # Narrowing raw global ids would wrap these values into local experts.
     ids = torch.tensor([[128, (1 << 40) + 128, -(1 << 40) + 128, 129]])
     dispatch = build_grouped_expert_dispatch(
@@ -36,6 +37,7 @@ def test_large_peer_ids_are_bounded_before_sort_key_narrowing():
         num_local_experts=2,
         expert_offset=128,
         weight_dtype=torch.float32,
+        count_mode=count_mode,
     )
     assert dispatch.counts.tolist() == [1, 1]
     assert dispatch.order.tolist() == [0, 3, 1, 2]
@@ -113,6 +115,52 @@ def test_dispatch_skew_and_all_peer_owned_routes() -> None:
     assert peer.counts.tolist() == [0, 0]
     assert peer.group_list.tolist() == [0, 0]
     torch.testing.assert_close(peer.order, torch.arange(8))
+
+
+@pytest.mark.parametrize("tokens,local_experts", [(0, 1), (1, 1), (7, 8), (640, 72)])
+def test_fixed_histogram_counts_match_comparison_counts(tokens: int, local_experts: int) -> None:
+    generator = torch.Generator().manual_seed(310)
+    ids = torch.randint(0, local_experts * 3, (tokens, 8), generator=generator)
+    weights = torch.rand((tokens, 8), generator=generator)
+    # The global expert range starts at local_experts; the other two thirds
+    # become the peer-owned sentinel. Include zero-weight local routes too.
+    weights[:, 0] = 0
+    ids = torch.where(weights != 0, ids, torch.full_like(ids, local_experts * 3))
+    kwargs = {"num_local_experts": local_experts, "expert_offset": local_experts, "weight_dtype": torch.float32}
+    reference = build_grouped_expert_dispatch(weights, ids, **kwargs)
+    candidate = build_grouped_expert_dispatch(weights, ids, count_mode="histogram", **kwargs)
+    for field in ("counts", "group_list", "order", "inverse_order", "token_indices", "route_weights"):
+        torch.testing.assert_close(getattr(candidate, field), getattr(reference, field), rtol=0, atol=0)
+
+
+def test_histogram_falls_back_when_float32_cannot_represent_route_counts() -> None:
+    ids = torch.tensor([[0, 1], [1, 0], [0, 1]])
+    weights = torch.ones_like(ids, dtype=torch.float32)
+    with (
+        patch("vllm_ascend.models.qwen4_exp.grouped_expert_dispatch._MAX_EXACT_FLOAT32_INTEGER", 4),
+        patch.object(torch, "histc", side_effect=AssertionError("histogram must not run")),
+    ):
+        dispatch = build_grouped_expert_dispatch(
+            weights,
+            ids,
+            num_local_experts=2,
+            expert_offset=0,
+            weight_dtype=torch.float32,
+            count_mode="histogram",
+        )
+    assert dispatch.counts.tolist() == [3, 3]
+
+
+def test_route_count_mode_rejects_unknown_value() -> None:
+    with pytest.raises(ValueError, match="unsupported route count mode"):
+        build_grouped_expert_dispatch(
+            torch.ones((1, 1)),
+            torch.zeros((1, 1), dtype=torch.int64),
+            num_local_experts=1,
+            expert_offset=0,
+            weight_dtype=torch.float32,
+            count_mode="unknown",  # type: ignore[arg-type]
+        )
 
 
 def test_packed_grouped_dispatch_omits_peer_rows(monkeypatch) -> None:

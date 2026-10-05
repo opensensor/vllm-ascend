@@ -82,9 +82,9 @@ def test_pipeline_is_removed_from_the_c4_kernel_specialization():
     matmul = MATMUL_KERNEL.read_text()
     down = DOWN_KERNEL.read_text()
     assert "if (td->numRows <= MODEL_C1_ROUTE_LIMIT)" in matmul
-    assert "Schedule<16, N, false, N == MODEL_DECODE_COLUMNS>" in matmul
+    assert "Schedule<16, N, false, N == MODEL_DECODE_COLUMNS, false>" in matmul
     assert "Schedule<16, N> op;" in matmul
-    assert "Schedule<16, 320, true, true> op;" in down
+    assert "Schedule<16, 320, true, true, false> op;" in down
 
 
 def test_total_route_limit_keeps_sparse_c4_on_resident_weights():

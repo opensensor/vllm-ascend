@@ -10,6 +10,7 @@ single-expert weight-only GEMMs.
 """
 
 from dataclasses import dataclass
+from typing import Literal
 
 import torch
 
@@ -46,6 +47,7 @@ def build_grouped_expert_dispatch(
     num_local_experts: int,
     expert_offset: int,
     weight_dtype: torch.dtype,
+    count_mode: Literal["compare", "histogram"] = "compare",
 ) -> GroupedExpertDispatch:
     """Sort local expert routes without synchronizing with the host.
 
@@ -62,6 +64,8 @@ def build_grouped_expert_dispatch(
         raise ValueError("topk_ids and topk_weights must be on the same device")
     if num_local_experts <= 0 or expert_offset < 0:
         raise ValueError("num_local_experts must be positive and expert_offset nonnegative")
+    if count_mode not in ("compare", "histogram"):
+        raise ValueError(f"unsupported route count mode: {count_mode}")
 
     num_tokens, top_k = topk_ids.shape
     num_routes = num_tokens * top_k
@@ -80,8 +84,20 @@ def build_grouped_expert_dispatch(
         else pair_expert
     )
     order = torch.argsort(expert_sort_key, stable=True)
-    local_expert_ids = torch.arange(num_local_experts, device=topk_ids.device, dtype=pair_expert.dtype)
-    counts = (pair_expert.unsqueeze(1) == local_expert_ids).sum(dim=0)
+    if count_mode == "histogram" and max(num_routes, num_local_experts) <= _MAX_EXACT_FLOAT32_INTEGER:
+        # The final bin holds peer-owned routes. histc has a fixed output
+        # shape, avoiding the route-by-expert comparison matrix during long
+        # prefills while keeping group boundaries on device.
+        # FP32 represents every key and count exactly under this bound.
+        counts = torch.histc(
+            expert_sort_key,
+            bins=num_local_experts + 1,
+            min=0,
+            max=num_local_experts,
+        )[:num_local_experts].to(torch.int64)
+    else:
+        local_expert_ids = torch.arange(num_local_experts, device=topk_ids.device, dtype=pair_expert.dtype)
+        counts = (pair_expert.unsqueeze(1) == local_expert_ids).sum(dim=0)
     # Inverting by scatter/index_copy is mathematically cheaper, but the 310P
     # implementations are slower than AI-Core sorting for these route sizes.
     # Avoid the INT64 -> FP32 AI-CPU cast here too; keep the unbounded integer

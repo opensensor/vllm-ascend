@@ -218,7 +218,7 @@ __aicore__ inline void RunSchedule(GM_ADDR low, GM_ADDR high, GM_ADDR xs, GM_ADD
                                    __gm__ const QwenW4A8Int4KernelTilingData* td) {
   if (td->numRows <= DECODE_ROUTE_LIMIT) {
     if (td->numRows <= MODEL_C1_ROUTE_LIMIT) {
-      native_int4::Schedule<16, N, false, N == MODEL_DECODE_COLUMNS> op;
+      native_int4::Schedule<16, N, false, N == MODEL_DECODE_COLUMNS, false> op;
       op.Init(low, high, xs, sums, codes, scale, offset, weight_sum, ends, nullptr, y, td);
       op.Process();
     } else {

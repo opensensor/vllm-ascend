@@ -16,7 +16,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from .dtype_policy import ASCEND_QWEN4EXP_DTYPE_POLICY, Qwen4ExpDtypePolicy
-from .grouped_expert_dispatch import build_grouped_expert_dispatch
+from .grouped_expert_dispatch import GroupedExpertDispatch, build_grouped_expert_dispatch
 from .moe import route_topk
 from .w4a8_int4 import (
     NATIVE_INT4_BACKEND,
@@ -78,6 +78,7 @@ SHARED_EXPERT_EXECUTIONS = (
 LM_HEAD_EXECUTIONS = ("float16", "w8a8_dynamic")
 PLE_PROJECTION_EXECUTIONS = ("float16", "w8a8_dynamic")
 MTP_EXPERT_EXECUTIONS = ("w8a16_routed", "w8a8_grouped")
+GROUPED_FINALIZE_METHODS = ("torch", "cann_v2")
 GROUPED_ACTIVATION_METHODS = ("torch", "cann_swiglu_pack", "cann_builtin_fp16")
 DEFAULT_NATIVE_GROUPED_ACTIVATION = "cann_builtin_fp16"
 
@@ -133,6 +134,11 @@ def w4_config(config: object) -> dict | None:
     mtp_expert_execution = metadata.get("mtp_expert_execution", "w8a16_routed")
     if mtp_expert_execution not in MTP_EXPERT_EXECUTIONS:
         raise ValueError(f"mtp_expert_execution must be one of {MTP_EXPERT_EXECUTIONS}")
+    grouped_finalize = metadata.get("grouped_finalize", "torch")
+    if grouped_finalize not in GROUPED_FINALIZE_METHODS:
+        raise ValueError(f"grouped_finalize must be one of {GROUPED_FINALIZE_METHODS}")
+    if grouped_finalize == "cann_v2" and backend != NATIVE_INT4_BACKEND:
+        raise ValueError("experimental cann_v2 grouped finalization requires native INT4")
     grouped_activation = metadata.get(
         "grouped_activation", DEFAULT_NATIVE_GROUPED_ACTIVATION if backend == NATIVE_INT4_BACKEND else "torch"
     )
@@ -160,6 +166,52 @@ def require_eager_w4(model_config: object, config: object) -> None:
     if metadata is not None and metadata["backend"] not in CUBE_DEVICE_ROUTED_BACKENDS:
         if not getattr(model_config, "enforce_eager", False):
             raise ValueError("Qwen4Exp W4 host routing requires --enforce-eager; use cube_310_routed for decode graphs")
+
+
+def finalize_grouped_routes(
+    routed: torch.Tensor,
+    dispatch: GroupedExpertDispatch,
+    weights: torch.Tensor,
+    accumulation_dtype: torch.dtype,
+    method: str = "torch",
+) -> torch.Tensor:
+    """Combine sorted expert rows in original token and route order.
+
+    ``cann_v2`` is an opt-in 310P experiment. Its FP16 output is widened for
+    the existing FP32 TP reduction, but the earlier FP16 rounding can change
+    model numerics and must pass a real-weight gate before serving use.
+    """
+    if routed.ndim != 2 or weights.ndim != 2 or routed.shape[0] != weights.numel():
+        raise ValueError("routed rows and [tokens, top_k] weights do not match")
+    if dispatch.inverse_order.numel() != routed.shape[0]:
+        raise ValueError("inverse expert order must cover every routed row")
+    tokens, top_k = weights.shape
+    if method == "torch":
+        ordered_weights = dispatch.route_weights.index_select(0, dispatch.order)
+        weighted = routed.to(accumulation_dtype).mul_(ordered_weights)
+        return weighted.index_select(0, dispatch.inverse_order).reshape(tokens, top_k, routed.shape[1]).sum(1)
+    if method != "cann_v2":
+        raise ValueError(f"unknown grouped finalization method: {method}")
+
+    if routed.dtype != torch.float16:
+        raise ValueError("310P grouped finalization requires FP16 routed rows")
+    # Keep torch_npu lazy so host-only loader and model tests do not initialize
+    # the NPU runtime. The installed 310P CANN build requires the scales to
+    # match the routed-row dtype, so this conversion belongs in the timing gate.
+    import torch_npu
+
+    inverse_order = dispatch.inverse_order.to(torch.int32).contiguous()
+    combined = torch_npu.npu_moe_finalize_routing(
+        routed,
+        None,
+        None,
+        None,
+        weights.to(routed.dtype).contiguous(),
+        inverse_order,
+        None,
+        2,
+    )
+    return combined.to(accumulation_dtype)
 
 
 def unpack_signed_int4(packed: torch.Tensor) -> torch.Tensor:
@@ -326,6 +378,7 @@ class W4SparseMoE(nn.Module):
             self.native_int4 and intermediate == FUSED_DOWN_INPUTS and hidden == FUSED_DOWN_OUTPUTS
         )
         self.grouped_routing = metadata["backend"] in ("cube_310_grouped", NATIVE_INT4_BACKEND)
+        self.grouped_finalize = metadata.get("grouped_finalize", "torch")
         self.grouped_activation = metadata.get(
             "grouped_activation", DEFAULT_NATIVE_GROUPED_ACTIVATION if self.native_int4 else "torch"
         )
@@ -637,11 +690,20 @@ class W4SparseMoE(nn.Module):
                 gate, up = projected.to(self.compute_dtype).chunk(2, -1)
                 activation = (F.silu(gate) * up).to(self.params_dtype)
                 output = self.projections["down_proj"].grouped_linear(activation, group_ends)
-            output = output.to(self.compute_dtype)
-            output *= dispatch.route_weights.index_select(0, dispatch.order)
-            result[start:stop] = (
-                output.index_select(0, dispatch.inverse_order).reshape(tokens, self.top_k, hidden).sum(1)
-            )
+            if self.grouped_finalize == "torch":
+                output = output.to(self.compute_dtype)
+                output *= dispatch.route_weights.index_select(0, dispatch.order)
+                result[start:stop] = (
+                    output.index_select(0, dispatch.inverse_order).reshape(tokens, self.top_k, hidden).sum(1)
+                )
+            else:
+                result[start:stop] = finalize_grouped_routes(
+                    output,
+                    dispatch,
+                    weights[start:stop],
+                    self.compute_dtype,
+                    self.grouped_finalize,
+                )
         return result
 
 

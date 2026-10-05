@@ -1,0 +1,33 @@
+INFO 10-04 16:40:22 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-04 16:40:22 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-04 16:40:22 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 10-04 16:40:22 [__init__.py:272] Platform plugin ascend is activated
+INFO 10-04 16:40:22 [platform.py:71] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=0.
+INFO 10-04 16:40:26 [importing.py:98] Triton not installed or not compatible; certain GPU-related functions will not be available.
+W1004 16:40:28.404000 1537316 torch/_library/triton.py:53] Triton not available, find_triton_kernels = []
+[W1004 16:40:32.708263894 NPUCachingAllocator.cpp:177] Warning: The current CANN and Soc versions require processing for 32 padding size, with memory allocation. (function operator())
+Traceback (most recent call last):
+  File "/srv/ai/src/qwen38-cann-finalize-gate-20261004/tools/qwen4exp/benchmark_w4_finalize_routing_310.py", line 183, in <module>
+    main()
+  File "/srv/ai/src/qwen38-cann-finalize-gate-20261004/tools/qwen4exp/benchmark_w4_finalize_routing_310.py", line 142, in main
+    max_abs = check_parity(reference, candidate, torch, args.atol, args.rtol, pattern == "all_peer")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/srv/ai/src/qwen38-cann-finalize-gate-20261004/tools/qwen4exp/benchmark_w4_finalize_routing_310.py", line 74, in check_parity
+    actual = candidate().cpu()
+             ^^^^^^^^^^^
+  File "/srv/ai/src/qwen38-cann-finalize-gate-20261004/vllm_ascend/models/qwen4_exp/w4_moe.py", line 189, in finalize_grouped_routes
+    combined = torch_npu.npu_moe_finalize_routing(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/srv/ai/venvs/qwen38-w4-test-ce1862/lib/python3.12/site-packages/torch/_ops.py", line 1279, in __call__
+    return self._op(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: npu_moe_finalize_routing:../third_party/op-plugin/op_plugin/ops/opapi/MoeFinalizeRoutingV2KernelNpuOpApi.cpp:71 NPU function error: call aclnnMoeFinalizeRoutingV2 failed, error code is 561103
+[ERROR] 2026-10-04-16:40:32 (PID:1537316, Device:0, RankID:-1) ERR00100 PTA call acl api failed.
+[PID: 1537316] 2026-10-04-16:40:32.772.731 Invalid_Argument_Tensor_Dtype(EZ0021): Parameters scales and expanded_x of MoeFinalizeRoutingV2 have incorrect dtypes invalid. Reason: 310p only supports scale and expanded_x having the same data type..
+        Solution: Check whether the dtypes of input/output tensors meet the condition.
+TraceBack (most recent call last):
+        Parameter 310p_inputs of MoeFinalizeRoutingV2 has incorrect value GRAPH_FAILED. Reason: Check 310p inputs failed..
+        Parameter CalcOpTiling() of MoeFinalizeRoutingV2 has incorrect value GRAPH_FAILED. Reason: CalcOpTiling failed..
+        Failed to execute operator aclnnMoeFinalizeRoutingV2_70_MoeFinalizeRoutingV2. Reason: Failed to execute tiling.
+        Kernel GetWorkspace failed. opType: 25
+        MoeFinalizeRoutingV2AiCore ADD_TO_LAUNCHER_LIST_AICORE failed.

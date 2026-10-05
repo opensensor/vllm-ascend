@@ -329,7 +329,7 @@ export PYTHONPATH="${RUNTIME_ROOT}:/srv/ai/src/vllm-opensensor:${PYTHONPATH:-}"
 # made graph capture validate the state tensor against the wrong dtype. The
 # r2 package also raises the W4 matmul and activation-pack tilers' grouped-
 # prefill route capacity to 20,480 rows, which covers a 2,048-token chunk with
-# eight routed experts. The older 5,120-row package passed decode capture but
+# ten routed experts. The older 5,120-row package passed decode capture but
 # failed cold prefill. The
 # embedded package must precede the retained fallback because its QSA host API
 # matches the current logical_kv_heads ABI; the retained QSA API predates that

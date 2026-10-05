@@ -713,17 +713,27 @@ if (BUILD_OPEN_PROJECT)
     )
 endif ()
 
+# Attention operators are selected by the subdirectory CMake file, so
+# OP_DIR_LIST alone does not identify an AI CPU-only package.
+include(${CMAKE_CURRENT_LIST_DIR}/aicpu_package.cmake)
+detect_aicpu_only_package(AICPU_ONLY_PACKAGE "${CMAKE_CURRENT_SOURCE_DIR}"
+                          "${ENABLE_AICPU}" ${ASCEND_OP_NAME})
+
 # ------------------------------------------------ generate adapt py ------------------------------------------------
-add_custom_target(generate_transformer_adapt_py
-        COMMAND ${HI_PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/scripts/util/ascendc_impl_build.py
-        \"\"
-        \"\"
-        \"\"
-        \"\"
-        ${ASCEND_IMPL_OUT_DIR}
-        ${ASCEND_AUTOGEN_DIR}
-        --opsinfo-dir ${base_aclnn_binary_dir} ${base_aclnn_binary_dir}/inner ${base_aclnn_binary_dir}/exc
-)
+if(AICPU_ONLY_PACKAGE)
+    add_custom_target(generate_transformer_adapt_py)
+else()
+    add_custom_target(generate_transformer_adapt_py
+            COMMAND ${HI_PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/scripts/util/ascendc_impl_build.py
+            \"\"
+            \"\"
+            \"\"
+            \"\"
+            ${ASCEND_IMPL_OUT_DIR}
+            ${ASCEND_AUTOGEN_DIR}
+            --opsinfo-dir ${base_aclnn_binary_dir} ${base_aclnn_binary_dir}/inner ${base_aclnn_binary_dir}/exc
+    )
+endif()
 
 add_dependencies(generate_transformer_adapt_py opbuild_gen_default opbuild_gen_inner opbuild_gen_exc)
 
@@ -787,15 +797,17 @@ if (BUILD_OPEN_PROJECT)
     add_custom_target(generate_ops_info ALL)
     add_dependencies(prepare_build generate_transformer_adapt_py generate_compile_cmd)
 
-    foreach (compute_unit ${ASCEND_COMPUTE_UNIT})
-        add_compile_cmd_target(
-                COMPUTE_UNIT ${compute_unit}
-        )
+    if(NOT AICPU_ONLY_PACKAGE)
+        foreach (compute_unit ${ASCEND_COMPUTE_UNIT})
+            add_compile_cmd_target(
+                    COMPUTE_UNIT ${compute_unit}
+            )
 
-        add_ops_info_target(
-                COMPUTE_UNIT ${compute_unit}
-        )
-    endforeach ()
+            add_ops_info_target(
+                    COMPUTE_UNIT ${compute_unit}
+            )
+        endforeach ()
+    endif()
 else()
     add_dependencies(tbe_ops_json_info generate_transformer_adapt_py)
 endif ()
@@ -806,14 +818,16 @@ if (ENABLE_OPS_KERNEL)
     add_custom_target(ops_transformer_config ALL)
     add_dependencies(ops_transformer_kernel ops_transformer_config)
 
-    foreach (compute_unit ${ASCEND_COMPUTE_UNIT})
-        add_bin_compile_target(
-                COMPUTE_UNIT
-                ${compute_unit}
-                OP_INFO
-                ${OP_DIR_LIST}
-        )
-    endforeach ()
+    if(NOT AICPU_ONLY_PACKAGE)
+        foreach (compute_unit ${ASCEND_COMPUTE_UNIT})
+            add_bin_compile_target(
+                    COMPUTE_UNIT
+                    ${compute_unit}
+                    OP_INFO
+                    ${OP_DIR_LIST}
+            )
+        endforeach ()
+    endif()
 endif ()
 
 if (NOT ENABLE_BUILT_IN AND BUILD_OPEN_PROJECT)

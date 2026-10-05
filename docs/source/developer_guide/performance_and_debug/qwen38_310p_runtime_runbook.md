@@ -244,6 +244,17 @@ seconds and effective prompt rate from 339.7 to 348.2 tok/s. One of the three
 for this experimental backend; broader quality and thermal comparisons remain
 open. See the [SwiGLU experiment](../../../../artifacts/qwen38-prefill-swiglu-pack-20261004/README.md).
 
+The opt-in CANN grouped finalizer was then tested with built-in SwiGLU still
+active and the 1,536-token expert chunk unchanged. In one real-weight layer,
+the local grouped MoE call fell from 34.249 to 29.671 ms. Three matching
+23,410-token requests had mean cold TTFT 67.225 to 64.292 seconds, or 348.2
+to 364.1 effective prompt tok/s, with zero cached tokens. One opening phrase
+changed; the other two short outputs matched. The finalizer remains opt-in
+because it changes FP16 rounding and broad quality has not been checked.
+The [combined gate](../../../../artifacts/qwen38-builtin-finalize-20261005/README.md)
+records the configuration and response checks. Its candidate service is
+running on port 8001 as `qwen38-w4-builtin-finalize-candidate`.
+
 ## Known bad turns
 
 - Replacing the default loader with a generic parallel iterator lost the EP

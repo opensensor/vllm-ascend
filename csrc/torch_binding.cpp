@@ -66,6 +66,8 @@
 #include "attention/qsa_sparse_attention_v310/qsa_sparse_attention_310_torch_adpt.h"
 #include "attention/qsa_gather_value_nz_v310/qsa_gather_value_nz_310_torch_adpt.h"
 #include "attention/qsa_indexer_score_v310/qsa_indexer_score_310_torch_adpt.h"
+#include "attention/qsa_exact_topk_aicpu_v310/qsa_exact_topk_aicpu_v310_torch_adpt.h"
+#include "attention/qsa_position_metadata_aicpu_v310/qsa_position_metadata_aicpu_v310_torch_adpt.h"
 #include "attention/qsa_index_cache_update_v310/qsa_index_cache_update_310_torch_adpt.h"
 #include "attention/mla_cache_write_v310/mla_cache_write_310_torch_adpt.h"
 #include "attention/mhc_sinkhorn_v310/mhc_sinkhorn_310_torch_adpt.h"
@@ -2881,6 +2883,17 @@ TORCH_LIBRARY_EXPAND(CONCAT(_C, _ascend), ops)
         "Tensor query_start_loc, Tensor positions, int compress_ratio=4) -> Tensor");
     ops.impl("npu_qsa_indexer_score_310", torch::kPrivateUse1,
              &vllm_ascend::npu_qsa_indexer_score_310);
+
+    // Experimental AI CPU QSA selection probe; serving does not call this op.
+    ops.def("npu_qsa_exact_topk_aicpu_310(Tensor scores, int topk) -> Tensor");
+    ops.impl("npu_qsa_exact_topk_aicpu_310", torch::kPrivateUse1,
+             &vllm_ascend::npu_qsa_exact_topk_aicpu_310);
+
+    // Isolated AI CPU metadata probe; the serving path does not call this op.
+    ops.def("npu_qsa_position_metadata_aicpu_310(Tensor positions, int compress_ratio, "
+            "int capacity, int selected_width) -> Tensor");
+    ops.impl("npu_qsa_position_metadata_aicpu_310", torch::kPrivateUse1,
+             &vllm_ascend::npu_qsa_position_metadata_aicpu_310);
 
     ops.def(
         "qsa_index_cache_update_310(Tensor(a!) compressed_key_cache, Tensor index_keys, "

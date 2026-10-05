@@ -10,7 +10,7 @@ extern "C" __global__ __aicore__ void qwen_w4_a8_int4_down_reduce_v310(
     GM_ADDR tiling) {
   KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC);
   auto td = reinterpret_cast<__gm__ QwenW4A8Int4DownReduceKernelTilingData*>(tiling);
-  native_int4::Schedule<16, 320, true, true> op;
+  native_int4::Schedule<16, 320, true, true, false> op;
   op.Init(low, high, activationScale, activationSum, codes, scale, offset, weightSum, routeIds, routeWeights, y, td);
   op.Process();
 }
