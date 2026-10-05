@@ -1,0 +1,71 @@
+--- a/csrc/gmm/w2_grouped_blocked_dequant_matmul_v310/op_kernel/w2_grouped_blocked_dequant_matmul_v310.cpp
++++ b/csrc/gmm/w2_grouped_blocked_dequant_matmul_v310/op_kernel/w2_grouped_blocked_dequant_matmul_v310.cpp
+@@ -2,6 +2,12 @@
+ // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+ #include "compat_310p.h"
+ #include "expert_core_groups.h"
++#ifdef GLM_W2_GROUPED_ADAPTIVE_EXPERT_LANES
++#include "adaptive_expert_core_groups.h"
++#ifdef GLM_W2_GROUPED_EXPERT_LANES
++#error "Select fixed or adaptive expert teams, not both"
++#endif
++#endif
+ #include "w2_blocked_dequant_matmul_v310.h"
+ #include "w2_grouped_blocked_dequant_matmul_v310_tiling_data.h"
+
+@@ -29,6 +35,9 @@
+       AscendC::GetBlockIdx(), AscendC::GetBlockNum(), GLM_W2_GROUPED_EXPERT_LANES, td->numRows);
+   unsigned activeExpert = 0;
+ #endif
++#ifdef GLM_W2_GROUPED_ADAPTIVE_EXPERT_LANES
++  unsigned smallExpert = 0;
++#endif
+   for (int64_t expert = 0; expert < td->numExperts; ++expert) {
+     const int64_t end = ends.GetValue(expert);
+     if (end < start || end > td->numRows) {
+@@ -36,6 +45,17 @@
+       return;
+     }
+     if (end > start) {
++#ifdef GLM_W2_GROUPED_ADAPTIVE_EXPERT_LANES
++      const auto team = GlmAdaptive::Plan(
++          AscendC::GetBlockIdx(), AscendC::GetBlockNum(),
++          GLM_W2_GROUPED_ADAPTIVE_EXPERT_LANES, td->numRows, end - start);
++      // All cores see identical boundaries; large experts retain all lanes.
++      const bool ownsExpert = team.groups == 1 || smallExpert++ % team.groups == team.group;
++      if (!ownsExpert) {
++        start = end;
++        continue;
++      }
++#endif
+ #ifdef GLM_W2_GROUPED_EXPERT_LANES
+       // Assign by active ordinal, so empty experts do not leave holes in
+       // team ownership. Every core observes the same device-side boundaries.
+@@ -87,7 +107,7 @@
+                       y + start * n * sizeof(half), user, end - start, n, k,
+                       td->codesPerByte, td->nzPacked != 0);
+ #endif
+-#ifdef GLM_W2_GROUPED_EXPERT_LANES
++#if defined(GLM_W2_GROUPED_EXPERT_LANES) || defined(GLM_W2_GROUPED_ADAPTIVE_EXPERT_LANES)
+       op.SetTileOwnership(team.lane, team.lanes);
+ #endif
+       op.Process(decodeTablesReady);
+--- /dev/null
++++ b/csrc/gmm/w2_grouped_blocked_dequant_matmul_v310/op_kernel/adaptive_expert_core_groups.h
+@@ -0,0 +1,16 @@
++// SPDX-License-Identifier: Apache-2.0
++#ifndef GLM_ADAPTIVE_EXPERT_CORE_GROUPS_H
++#define GLM_ADAPTIVE_EXPERT_CORE_GROUPS_H
++namespace GlmAdaptive {
++constexpr unsigned DECODE_ROUTE_LIMIT = 64;  // MTP1: 4 requests * 2 rows * top-8.
++constexpr unsigned LARGE_EXPERT_ROWS = 128;
++struct Team { unsigned group, groups, lane, lanes; };
++__aicore__ inline Team Plan(unsigned core, unsigned cores, unsigned requestedLanes,
++                           unsigned totalRows, unsigned expertRows) {
++  const bool split = totalRows > DECODE_ROUTE_LIMIT && expertRows < LARGE_EXPERT_ROWS &&
++                     requestedLanes > 0 && requestedLanes <= cores && cores % requestedLanes == 0;
++  const unsigned lanes = split ? requestedLanes : cores;
++  return {core / lanes, cores / lanes, core % lanes, lanes};
++}
++}  // namespace GlmAdaptive
++#endif
