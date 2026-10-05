@@ -37,7 +37,7 @@ def test_batch_admission(tokens, routes):
     plan = ExpertBatch(tokens, routes).plan()
     assert plan["hf_override"]["ascend_glm_grouped_max_routes"] == routes
     assert plan["requires_runner_reallocation"]
-    assert len(queue()["experiments"]) == 6
+    assert len(queue()["experiments"]) == 7
 
 
 @pytest.mark.parametrize(
@@ -98,6 +98,10 @@ def test_preparation_preserves_actual_recurrent_state_arguments(accepted):
     candidate = replace_input_prelude(
         original, make_preparer(module._l2norm_310p, module._safe_gate_for_layer, batch_qk=True)
     )
+    candidate = replace_input_prelude(
+        candidate, make_preparer(module._l2norm_310p, module._safe_gate_for_layer, batch_qk=True)
+    )
+    assert candidate.__glm_resident_original__ is original
     tensors = [torch.randn(1, 4, 16, 128).half() for _ in range(4)]
     state = torch.randn(12, 2)
     before = state.clone()

@@ -40,13 +40,20 @@ def rewrite_combine(source):
     return ast.fix_missing_locations(tree)
 
 
+def replace_combine(original):
+    original = getattr(original, "__glm_resident_original__", original)
+    tree = rewrite_combine(inspect.getsource(original))
+    scope = dict(original.__globals__, _candidate_combine_routes=combine_routes)
+    exec(compile(tree, inspect.getfile(original), "exec"), scope)
+    candidate = scope[original.__name__]
+    candidate.__glm_resident_original__ = original
+    return candidate
+
+
 def replacements(native_resources=None):
     # Worker-only import. Do not patch the dispatch helper shared with Qwen.
     from vllm_ascend._310p.quantization.methods.w2_dynamic import AscendW2DynamicFusedMoEMethod310
 
-    original = AscendW2DynamicFusedMoEMethod310._apply_device_grouped
-    tree = rewrite_combine(inspect.getsource(original))
-    scope = dict(original.__globals__, _candidate_combine_routes=combine_routes)
-    exec(compile(tree, inspect.getfile(original), "exec"), scope)
+    candidate = replace_combine(AscendW2DynamicFusedMoEMethod310._apply_device_grouped)
     target = "vllm_ascend._310p.quantization.methods.w2_dynamic:AscendW2DynamicFusedMoEMethod310._apply_device_grouped"
-    return {target: scope[original.__name__]}
+    return {target: candidate}

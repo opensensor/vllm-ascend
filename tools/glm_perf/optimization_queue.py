@@ -86,6 +86,13 @@ def queue():
                 "gate": "exact outputs; initialized peer rows; verify fallback dispatch; c1/c4 and cold prefill",
                 "readiness": "Python resident candidate; NPU parity and recapture pending",
             },
+            {
+                "id": "indexer_projection",
+                "factory": "tools.glm_perf.resident_candidates.indexer_projection:replacements",
+                "extra_weight_budget_bytes": 64 * 1024 * 1024,
+                "gate": "real-weight projection/pool-index parity; target/MTP; memory fit; c1/c4 and cold prefill",
+                "readiness": "capture-time preparation and Python dispatch staged; NPU numerical gate pending",
+            },
         ],
     }
 

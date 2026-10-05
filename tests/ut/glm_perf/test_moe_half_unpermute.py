@@ -7,9 +7,26 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from tools.glm_perf.resident_candidates.moe_half_unpermute import combine_routes, rewrite_combine
+from tools.glm_perf.resident_candidates.moe_half_unpermute import combine_routes, replace_combine, rewrite_combine
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+def test_repeated_prepare_uses_original_method():
+    def baseline(routed, dispatch, num_tokens, top_k, hidden, native=False):
+        if native:
+            output = None
+        else:
+            routed = routed.to(torch.float32)
+            routed *= dispatch.route_weights.index_select(0, dispatch.order)
+            output = routed.index_select(0, dispatch.inverse_order).reshape(num_tokens, top_k, hidden).sum(1)
+        return output
+
+    first = replace_combine(baseline)
+    second = replace_combine(first)
+    assert second.__glm_resident_original__ is baseline
+    dispatch = SimpleNamespace(inverse_order=torch.arange(8), route_weights=torch.ones(8, 1))
+    assert torch.equal(second(torch.ones(8, 4).half(), dispatch, 1, 8, 4), torch.full((1, 4), 8.0))
 
 
 def reference(routed, inverse, weights, order, tokens, top_k, hidden):

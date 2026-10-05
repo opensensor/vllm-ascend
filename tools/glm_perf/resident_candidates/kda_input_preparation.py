@@ -57,6 +57,7 @@ def make_preparer(normalize, safe_gate, *, batch_qk=False, gate_beta=None):
 
 
 def replace_input_prelude(original, prepare):
+    original = getattr(original, "__glm_resident_original__", original)
     tree = ast.parse(textwrap.dedent(inspect.getsource(original)))
     function = tree.body[0]
     offset = int(isinstance(function.body[0], ast.Expr) and isinstance(function.body[0].value, ast.Constant))
@@ -75,7 +76,9 @@ def replace_input_prelude(original, prepare):
     function.decorator_list = []
     scope = dict(original.__globals__, _candidate_prepare=prepare)
     exec(compile(ast.fix_missing_locations(tree), inspect.getfile(original), "exec"), scope)
-    return scope[original.__name__]
+    candidate = scope[original.__name__]
+    candidate.__glm_resident_original__ = original
+    return candidate
 
 
 def replacements(native_resources=None):

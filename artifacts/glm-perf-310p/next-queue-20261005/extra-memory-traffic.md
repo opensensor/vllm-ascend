@@ -69,7 +69,9 @@ the projection weights outside graph capture could replace these with one
 projection followed by views. It would remove one launch and one logical read
 of the hidden-state matrix; total weight elements and arithmetic are unchanged.
 
-This is an investigation item, **not a seventh ready candidate**. A wider GEMM
+This was initially an investigation item; the subsequent
+[seventh experiment](indexer-projection.md) now stages its bounded resident
+weight preparation and dispatch. Hardware qualification remains pending. A wider GEMM
 may choose different accumulation/tiling and change near-tie pool rankings.
 It also needs a resident resource with correctly versioned combined weights,
 including MTP layers, prepared outside capture. Retaining existing copies would
