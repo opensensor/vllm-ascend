@@ -531,6 +531,16 @@ class AscendMLAImpl310(AscendMLAImpl):
             prefill_meta.block_table.to(device=query.device, dtype=torch.int32),
             kv_c_and_k_pe_cache[0].shape[2],
         )
+        addressable_tokens = block_table.shape[1] * kv_c_and_k_pe_cache[0].shape[2]
+        if prefill_meta.max_seq_lens > addressable_tokens:
+            # This is scheduler-owned host metadata, so checking it adds no
+            # device synchronization. Reject a truncated MTP table before QSA
+            # can read past its final column and turn garbage into a GM address.
+            raise ValueError(
+                "310P MLA prefill block table is shorter than the visible context: "
+                f"{addressable_tokens} addressable tokens < {prefill_meta.max_seq_lens}. "
+                "Draft metadata must retain all kernel blocks per scheduler page."
+            )
         query_start_loc = prefill_meta.query_start_loc.to(device=query.device, dtype=torch.int32).contiguous()
         if self.glm_indexer is None:
             group_indices, tail_starts, tail_counts, _ = self._get_decode_constant_buffers(

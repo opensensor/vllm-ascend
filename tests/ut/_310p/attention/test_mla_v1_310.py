@@ -206,6 +206,7 @@ def test_continued_prefill_uses_visible_paged_latent_prefix(position_padding: in
             chunked_context=SimpleNamespace(seq_tot=[6]),
             input_positions=torch.tensor([5, 6, 1, 2] + [0] * position_padding),
             actual_seq_lengths_q=[2, 4],
+            max_seq_lens=7,
             block_table=torch.tensor([[2, 1], [0, 2]], dtype=torch.int32),
             query_start_loc=torch.tensor([0, 2, 4], dtype=torch.int32),
         )

@@ -176,7 +176,14 @@ class AscendMultiKVCacheGroupMTPProposer(AscendEagleProposer):
         ):
             max_logical_blocks = (self.max_model_len + logical_block_size - 1) // logical_block_size
             return max_logical_blocks * blocks_per_logical_block
-        return builder.kv_cache_spec.max_num_blocks_per_req(self.vllm_config, self.max_model_len)
+        physical_blocks = builder.kv_cache_spec.max_num_blocks_per_req(self.vllm_config, self.max_model_len)
+        # MLA's builder does not expose the indexer-specific geometry above.
+        # Its runner table still expands each scheduler page into kernel pages
+        # (640 / 32 = 20 on GLM 310P). Cropping that table to physical_blocks
+        # discards 19/20 of the request's addressable history. At 311040 context
+        # QSA then receives only 25 physical page entries and faults past 16K.
+        block_table = self.runner.input_batch.block_table[attn_group.kv_cache_group_id]
+        return physical_blocks * block_table.blocks_per_phys_block
 
     def _common_attn_metadata_for_draft_group(
         self,
