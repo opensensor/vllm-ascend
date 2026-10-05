@@ -7,6 +7,7 @@ import pytest
 
 from tools.glm_perf.resident_control import Control
 from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_native import NativeManifest
 
 
 class Server(ResidentClient):
@@ -140,3 +141,75 @@ def test_capture_error_receipts_are_collected_before_reporting_failure():
     assert "all acknowledgments" in str(error.value.__cause__)
     assert server.paused
     assert server.calls[-1] == "resident_capture"
+
+
+@pytest.mark.parametrize("failure", [None, "prepare", "load", "identity", "validation"])
+def test_native_transaction_pause_identity_and_failures(failure):
+    server = Server()
+    manifest = NativeManifest(
+        {
+            "name": "native_v1",
+            "libraries": [{"path": "/test.so", "sha256": "0" * 64}],
+            "assets": [],
+            "operators": ["native_v1::launch"],
+            "validation_source": "def validate(): return {'passed': True}",
+        }
+    )
+    original = server.request
+    loaded = False
+
+    def request(path, payload=None, method="POST"):
+        nonlocal loaded
+        op = payload.get("method") if payload else None
+        if op in ("resident_native_prepare", "resident_native_load"):
+            assert server.paused
+            server.calls.append(op)
+            if failure == "prepare" and op.endswith("prepare"):
+                raise RuntimeError("bad hash")
+            if failure == "load" and op.endswith("load"):
+                raise RuntimeError("device error")
+            if op.endswith("load"):
+                loaded = True
+            return {
+                "results": [
+                    {"rank": i, "native_digest": manifest.digest, "validation": {"passed": failure != "validation"}}
+                    for i in range(2)
+                ]
+            }
+        result = original(path, payload, method)
+        if op == "resident_status" and loaded:
+            for worker in result["results"]:
+                worker["native_loaded"] = {"native_v1": {"native_digest": manifest.digest}}
+                worker["native_failed"] = False
+            if failure == "identity":
+                result["results"][0]["weight_storage_digest"] = "changed"
+        return result
+
+    server.request = request
+    if failure:
+        with pytest.raises(RuntimeError):
+            server.load_native(manifest)
+        assert server.paused == (failure != "prepare")
+    else:
+        server.load_native(manifest)
+        assert not server.paused
+    assert "resident_apply" not in server.calls
+    assert "resident_capture" not in server.calls
+
+
+def test_native_failure_prevents_resume_and_dispatch_switch():
+    server = Server(paused=True)
+    original = server.rpc
+
+    def failed(method, *args):
+        results = original(method, *args)
+        if method == "resident_status":
+            results[0]["native_failed"] = True
+        return results
+
+    server.rpc = failed
+    with pytest.raises(RuntimeError, match="restart"):
+        server.resume()
+    with pytest.raises(RuntimeError, match="restart"):
+        server.switch(Control(uuid.uuid4().hex))
+    assert server.paused

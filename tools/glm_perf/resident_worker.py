@@ -13,6 +13,7 @@ import torch
 from vllm.compilation.monitor import set_cudagraph_capturing_enabled
 
 from tools.glm_perf.resident_control import PatchSession
+from tools.glm_perf.resident_native import NativeSession
 from vllm_ascend.compilation.acl_graph import (
     get_draft_graph_params,
     get_draft_graph_prefill_params,
@@ -86,8 +87,45 @@ class ResidentWorkerExtension:
 
     def _resident_session(self) -> PatchSession:
         if "_glm_resident_session" not in self.__dict__:
-            self._glm_resident_session = PatchSession()
+            self._glm_resident_session = PatchSession(self._resident_native_session().resources)
         return self._glm_resident_session
+
+    def _resident_native_session(self) -> NativeSession:
+        if "_glm_native_session" not in self.__dict__:
+            self._glm_native_session = NativeSession()
+        return self._glm_native_session
+
+    @staticmethod
+    def _resident_operator_exists(name: str) -> bool:
+        try:
+            torch._C._dispatch_find_schema_or_throw(name, "")
+            return True
+        except RuntimeError:
+            return False
+
+    def resident_native_prepare(self, payload: str) -> dict[str, Any]:
+        result = {"rank": torch.distributed.get_rank(), "pid": os.getpid()}
+        try:
+            self._resident_wrappers()
+            result.update(self._resident_native_session().prepare(json.loads(payload), self._resident_operator_exists))
+        except Exception as exc:
+            result["error"] = f"{type(exc).__name__}: {exc}"
+        return result
+
+    @torch.inference_mode()
+    def resident_native_load(self, digest: str) -> dict[str, Any]:
+        result = {"rank": torch.distributed.get_rank(), "pid": os.getpid()}
+        try:
+            if getattr(self.model_runner, "execute_model_state", None) is not None:
+                raise RuntimeError("worker still has a pending model execution")
+            result.update(
+                self._resident_native_session().load(
+                    digest, torch.ops.load_library, self._resident_operator_exists, torch.npu.synchronize
+                )
+            )
+        except Exception as exc:
+            result["error"] = f"{type(exc).__name__}: {exc}"
+        return result
 
     def _resident_wrappers(self) -> list[Any]:
         runner = self.model_runner
@@ -188,4 +226,6 @@ class ResidentWorkerExtension:
             "digest": setting.digest if setting else None,
             "graphs_dirty": session.graphs_dirty,
             "weight_storage_digest": storage.hexdigest(),
+            "native_failed": self._resident_native_session().failed,
+            "native_loaded": self._resident_native_session().loaded,
         }

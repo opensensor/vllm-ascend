@@ -55,7 +55,7 @@ class Replacement:
     function: Any
 
 
-def prepare_replacements(control: Control) -> list[Replacement]:
+def prepare_replacements(control: Control, native_resources=None) -> list[Replacement]:
     if not control.source:
         return []
     module = ModuleType(f"glm_candidate_{control.generation}")
@@ -64,7 +64,11 @@ def prepare_replacements(control: Control) -> list[Replacement]:
     factory = getattr(module, "replacements", None)
     if not callable(factory):
         raise ValueError("candidate must define replacements() returning a dict")
-    replacements = factory()
+    replacements = (
+        factory(native_resources=native_resources)
+        if "native_resources" in inspect.signature(factory).parameters
+        else factory()
+    )
     if not isinstance(replacements, dict) or not replacements:
         raise ValueError("candidate replacements must be a nonempty dict")
     result = []
@@ -91,7 +95,8 @@ def prepare_replacements(control: Control) -> list[Replacement]:
 class PatchSession:
     """Stage without mutation, then replace functions while workers are paused."""
 
-    def __init__(self):
+    def __init__(self, native_resources=None):
+        self.native_resources = native_resources
         self.current: Control | None = None
         self.pending: tuple[Control, list[Replacement]] | None = None
         self.originals: list[tuple[Any, str, bool, Any]] = []
@@ -99,7 +104,7 @@ class PatchSession:
 
     def prepare(self, value: Any) -> dict[str, Any]:
         control = Control.from_dict(value)
-        replacements = prepare_replacements(control)
+        replacements = prepare_replacements(control, self.native_resources)
         self.pending = (control, replacements)
         return {"generation": control.generation, "digest": control.digest, "targets": [r.target for r in replacements]}
 

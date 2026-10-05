@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from tools.glm_perf.resident_control import MODES, Control
+from tools.glm_perf.resident_native import NativeManifest
 
 
 class ResidentClient:
@@ -44,6 +45,8 @@ class ResidentClient:
 
     def switch(self, control: Control) -> list[dict[str, Any]]:
         before = self.rpc("resident_status")
+        if any(worker.get("native_failed", False) for worker in before):
+            raise RuntimeError("native load failed; restart workers before switching dispatch")
         was_paused = self.request("/is_paused", method="GET").get("is_paused")
         if not isinstance(was_paused, bool):
             raise RuntimeError("server did not report its pause state")
@@ -96,12 +99,59 @@ class ResidentClient:
 
     def resume(self) -> Any:
         workers = self.rpc("resident_status")
+        if any(worker.get("native_failed", False) for worker in workers):
+            raise RuntimeError("native load failed; restart workers before resuming")
         if any(worker.get("graphs_dirty") is not False for worker in workers):
             raise RuntimeError("graphs are incomplete; apply baseline before resuming")
         fields = ("generation", "mode", "candidate", "digest")
         if len({tuple(worker.get(field) for field in fields) for worker in workers}) != 1:
             raise RuntimeError("workers disagree; apply baseline before resuming")
         return self.request("/resume")
+
+    def load_native(self, manifest: NativeManifest) -> list[dict[str, Any]]:
+        before = self.rpc("resident_status")
+        was_paused = self.request("/is_paused", method="GET").get("is_paused")
+        if not isinstance(was_paused, bool):
+            raise RuntimeError("server did not report its pause state")
+        if self.request("/pause?mode=wait&clear_cache=true").get("status") != "paused":
+            raise RuntimeError("server did not finish draining requests")
+        mutating = False
+        try:
+            prepared = self.rpc("resident_native_prepare", manifest.payload)
+            if len({r.get("rank") for r in prepared}) != self.expected_workers or any(
+                r.get("native_digest") != manifest.digest for r in prepared
+            ):
+                raise RuntimeError("workers prepared different native manifests")
+            mutating = True
+            loaded = self.rpc("resident_native_load", manifest.digest)
+            if any(
+                r.get("native_digest") != manifest.digest or r.get("validation", {}).get("passed") is not True
+                for r in loaded
+            ):
+                raise RuntimeError("workers did not validate the same native operator")
+            after = self.rpc("resident_status")
+            fields = ("rank", "pid", "weight_storage_digest", "generation", "digest", "graphs_dirty")
+            if {tuple(r.get(f) for f in fields) for r in before} != {tuple(r.get(f) for f in fields) for r in after}:
+                raise RuntimeError("native load changed resident workers, weights or dispatch")
+            if len({r.get("rank") for r in after}) != self.expected_workers:
+                raise RuntimeError("worker ranks are not unique")
+            if any(
+                r.get("native_failed")
+                or r.get("native_loaded", {}).get(manifest.name, {}).get("native_digest") != manifest.digest
+                for r in after
+            ):
+                raise RuntimeError("native registry disagrees after loading")
+        except Exception as error:
+            if mutating:
+                raise RuntimeError(
+                    "native load failed; server remains paused. Inspect receipts before recovery"
+                ) from error
+            if not was_paused:
+                self.resume()
+            raise
+        if not was_paused:
+            self.resume()
+        return loaded
 
 
 def make_control(args: argparse.Namespace, mode: str) -> Control:
@@ -179,6 +229,8 @@ def main() -> int:
         command.add_argument("--recapture", action="store_true", help="recapture even if source is unchanged")
     commands.add_parser("status")
     commands.add_parser("resume")
+    native = commands.add_parser("load-native", help="load and validate versioned libraries without changing dispatch")
+    native.add_argument("manifest", type=Path)
     args = parser.parse_args()
     if args.expected_workers < 1 or args.timeout <= 0:
         parser.error("expected workers and timeout must be positive")
@@ -189,6 +241,8 @@ def main() -> int:
         return 0 if compare(args, client) else 1
     elif args.command == "status":
         print(json.dumps(client.rpc("resident_status"), indent=2))
+    elif args.command == "load-native":
+        print(json.dumps(client.load_native(NativeManifest(json.loads(args.manifest.read_text()))), indent=2))
     else:
         print(json.dumps(client.resume()))
     return 0
