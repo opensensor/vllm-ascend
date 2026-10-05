@@ -1,0 +1,23 @@
+{
+  "name": "rotation_v1",
+  "libraries": [
+    {
+      "path": "/home/matteius/experiments/glm-decode-fusions-resident-20261005/glm_rotation_bridge_v1.so",
+      "sha256": "95889e06a2f20b0391087ebb88e97890a6e77d132b56ff5b13bada26c04a3838"
+    }
+  ],
+  "assets": [
+    {
+      "path": "/home/matteius/experiments/glm-decode-fusions-resident-20261005/rotation.py",
+      "sha256": "f24567c3b98d2ff39a67469b99806381abb6d008ca6ea95295d660fbff9267a4"
+    },
+    {
+      "path": "/home/matteius/experiments/glm-decode-fusions-resident-20261005/rotation-v1.bin",
+      "sha256": "b1ddae1720ba9637af4c78878105f9a36d3e4d6cc177d13af7813b404154f8a2"
+    }
+  ],
+  "operators": [
+    "glm_rotation_v1::launch"
+  ],
+  "validation_source": "# SPDX-License-Identifier: Apache-2.0\ndef prepare():\n    import importlib.util\n\n    root = \"/home/matteius/experiments/glm-decode-fusions-resident-20261005\"\n    spec = importlib.util.spec_from_file_location(\"glm_rotation_candidate_v1\", root + \"/rotation.py\")\n    module = importlib.util.module_from_spec(spec)\n    spec.loader.exec_module(module)\n    return module.Rotation(root + \"/rotation-v1.bin\")\n\n\ndef validate(op):\n    import torch\n\n    from vllm_ascend.models.glm5next.kpool_ops import hadamard128\n\n    gen = torch.Generator().manual_seed(310)\n    for rows in (1, 2, 4, 8):\n        query = torch.randn(rows, 32, 128, generator=gen).bfloat16().npu()\n        expected = hadamard128(query).bfloat16().half()\n        torch.testing.assert_close(op(query), expected, rtol=0, atol=0)\n    return {\"passed\": True, \"exact\": True, \"rows\": [1, 2, 4, 8], \"input\": \"BF16\", \"output\": \"FP16\"}\n"
+}
