@@ -1,0 +1,43 @@
+{
+  "id": "chatcmpl-bb2fab273855d202",
+  "object": "chat.completion",
+  "created": 1791178983,
+  "model": "glm53-flash-selective-w3",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "```python\ndef stable_unique(items):\n    seen = set()\n    result = []\n    for item in items:\n        if item not in seen:\n            seen.add(item)\n            result.append(item)\n    return result\n\n\nassert stable_unique([\"a\", \"b\", \"a\", \"c\", \"b\"]) == [\"a\", \"b\", \"c\"]\nassert stable_unique([]) == []\nassert stable_unique([\"x\", \"x\", \"x\"]) == [\"x\"]\n```",
+        "refusal": null,
+        "annotations": null,
+        "audio": null,
+        "function_call": null,
+        "reasoning": null
+      },
+      "logprobs": null,
+      "finish_reason": "stop",
+      "stop_reason": 154827,
+      "token_ids": null,
+      "routed_experts": null
+    }
+  ],
+  "service_tier": null,
+  "system_fingerprint": "vllm-0.1.dev1+g3ab5dda29-tp4-d661983b",
+  "usage": {
+    "prompt_tokens": 45,
+    "total_tokens": 143,
+    "completion_tokens": 98,
+    "prompt_tokens_details": null,
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    }
+  },
+  "prompt_logprobs": null,
+  "prompt_token_ids": null,
+  "prompt_text": null,
+  "kv_transfer_params": null,
+  "ec_transfer_params": null,
+  "metrics": null,
+  "elapsed_seconds": 24.704950077983085
+}

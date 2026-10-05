@@ -998,6 +998,15 @@ def _install_dsa_indexer(layers: Iterable[Any], config: Any, dtype_policy: Glm5N
     return count
 
 
+def _prepare_kda_gate_weights(layers: Iterable[Any]) -> None:
+    # Loading is outside capture; these operands must outlive every graph.
+    from .kda_310 import prepare_kda_gate_weights
+
+    for layer in layers:
+        if _is_kda_layer(layer):
+            prepare_kda_gate_weights(layer.self_attn)
+
+
 def _resolve_glm_text_config(vllm_config: VllmConfig) -> Any:
     """Return the effective GLM-5.3-Flash text config.
 
@@ -1318,6 +1327,7 @@ def _build_causal_lm_cls() -> type:
             for bank in banks:
                 bank.finalize_grouped_storage()
             loaded |= super().load_weights(passthrough)
+            _prepare_kda_gate_weights(_iter_model_layers(self))
             _release_grouped_compaction_cache(banks)
             return loaded
 

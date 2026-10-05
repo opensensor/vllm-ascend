@@ -39,24 +39,26 @@ def _safe_gate(
     return lower_bound * torch.sigmoid(scale * gate)
 
 
+def prepare_kda_gate_weights(self_attn: Any) -> None:
+    """Materialize immutable gate operands after loading, outside graph capture.
+
+    Lazy initialization in decode can capture the producers in only the first
+    graph. Other batch-size graphs then consume storage whose contents depend
+    on that graph having replayed. Refresh explicitly on every weight load.
+    """
+    num_heads = self_attn.A_log.numel()
+    scale = self_attn.A_log.detach().float().exp().reshape(1, 1, num_heads, 1)
+    bias = self_attn.dt_bias.detach().float().reshape(1, 1, num_heads, -1)
+    self_attn._kda_gate_weights = (self_attn.A_log, self_attn.dt_bias, scale, bias)
+
+
 def _safe_gate_for_layer(self_attn: Any, raw_gate: torch.Tensor) -> torch.Tensor:
-    """Safe gate with the weight-only exponential cached after loading."""
-    cached = getattr(self_attn, "_kda_safe_gate_cache", None)
+    """Use load-time operands; never persist an intermediate made in forward."""
+    cached = getattr(self_attn, "_kda_gate_weights", None)
     if cached is None or cached[0] is not self_attn.A_log or cached[1] is not self_attn.dt_bias:
-        scale = torch.exp(self_attn.A_log.float()).reshape(
-            1,
-            1,
-            self_attn.A_log.numel(),
-            1,
-        )
-        bias = self_attn.dt_bias.float().reshape(
-            1,
-            1,
-            self_attn.A_log.numel(),
-            raw_gate.shape[-1],
-        )
-        cached = (self_attn.A_log, self_attn.dt_bias, scale, bias)
-        self_attn._kda_safe_gate_cache = cached
+        # Keep stand-alone calls and replaced parameters correct, including
+        # capture: each graph records its own producers in this fallback.
+        return _safe_gate(raw_gate, self_attn.A_log, self_attn.dt_bias, float(self_attn.kda_lower_bound))
     return float(self_attn.kda_lower_bound) * torch.sigmoid(cached[2] * (raw_gate.float() + cached[3]))
 
 
