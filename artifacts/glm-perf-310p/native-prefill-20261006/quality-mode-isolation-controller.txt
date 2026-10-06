@@ -1,0 +1,23 @@
+import json,uuid
+from pathlib import Path
+from dataclasses import replace
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.suite import make_groups,run_groups
+root=Path('/srv/ai/artifacts/glm-native-prefill-20261006')
+s=(root/'graph-v6'/'candidate.py').read_text()
+c=ResidentClient('http://127.0.0.1:8001',timeout=900)
+cases=[replace(x,max_tokens=128) for _,xs in make_groups(['quality'],[]) for x in xs][4:8]
+r={'complete':False,'records':[]}
+try:
+ for mode in ('direct-target','direct-draft','direct-both','graph'):
+  selected=c.switch(Control(uuid.uuid4().hex,candidate='native_v48_prefill_graph_v6',mode=mode,source=s))
+  rows=run_groups([('quality_4_1',cases)],c.base_url,'glm53-flash-selective-w3',42,timeout_s=900)
+  r['records'].append({'mode':mode,'selected':selected,'requests':rows})
+  (root/'quality-mode-isolation.json').write_text(json.dumps(r,indent=2))
+  print(mode,[(x['case_id'],x['content'],x['passed']) for x in rows],flush=True)
+  assert all(x['valid'] for x in rows)
+ r['complete']=True
+finally:
+ c.switch(Control(uuid.uuid4().hex,candidate='native_v48_prefill_graph_v6',source=s));c.resume()
+ (root/'quality-mode-isolation.json').write_text(json.dumps(r,indent=2))

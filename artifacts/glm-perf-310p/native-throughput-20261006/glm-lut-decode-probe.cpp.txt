@@ -1,0 +1,36 @@
+#include "kernel_operator.h"
+using namespace AscendC;
+extern "C" __global__ __aicore__ void glm_lut_decode_probe(GM_ADDR input, GM_ADDR output, GM_ADDR lookup, GM_ADDR config) {
+  InitSocState();
+  const uint32_t bits=reinterpret_cast<__gm__ int64_t*>(config)[0];
+  const uint32_t tiles=reinterpret_cast<__gm__ int64_t*>(config)[1];
+  const uint32_t fields=bits==3?8:4,planeElements=32768/fields,tileBytes=32768*bits/8,planes=bits==3?3:1;
+  TPipe pipe;TBuf<TPosition::VECCALC> raw,decoded,mask,gathered,temporary,packed;
+  pipe.InitBuffer(raw,16384);pipe.InitBuffer(decoded,65536);pipe.InitBuffer(mask,32768);pipe.InitBuffer(gathered,32768);
+  pipe.InitBuffer(temporary,16384);pipe.InitBuffer(packed,16384);
+  GlobalTensor<uint8_t> in,out;GlobalTensor<half> lut;
+  in.SetGlobalBuffer(reinterpret_cast<__gm__ uint8_t*>(input));out.SetGlobalBuffer(reinterpret_cast<__gm__ uint8_t*>(output));lut.SetGlobalBuffer(reinterpret_cast<__gm__ half*>(lookup));
+  auto tables=gathered.Get<half>()[8192];
+  DataCopy(tables,lut,3584);PipeBarrier<PIPE_ALL>();
+  for(uint32_t tile=GetBlockIdx();tile<tiles;tile+=GetBlockNum()){
+    DataCopy(raw.Get<uint8_t>(),in[tile*tileBytes],tileBytes);PipeBarrier<PIPE_ALL>();
+    for(uint32_t plane=0;plane<planes;plane++){
+      auto indices=plane<2?mask.Get<int32_t>()[plane*planeElements]:gathered.Get<int32_t>();
+      Cast(temporary.Get<half>(),raw.Get<uint8_t>()[plane*planeElements],RoundMode::CAST_NONE,planeElements);PipeBarrier<PIPE_V>();
+      Cast(indices,temporary.Get<half>(),RoundMode::CAST_RINT,planeElements);PipeBarrier<PIPE_V>();
+      Muls(indices,indices,static_cast<int32_t>(2),planeElements);PipeBarrier<PIPE_V>();
+    }
+    for(uint32_t field=0;field<fields;field++){
+      const uint32_t plane=field*bits/8,phase=field*bits%8,base=bits==3?1024:0;
+      auto indices=plane<2?mask.Get<uint32_t>()[plane*planeElements]:gathered.Get<uint32_t>();
+      Gather(decoded.Get<half>()[field*planeElements],tables[base+field*256],indices,static_cast<uint32_t>(0),planeElements);PipeBarrier<PIPE_V>();
+      if(bits==3&&phase>5){
+        auto next=plane+1<2?mask.Get<uint32_t>()[(plane+1)*planeElements]:gathered.Get<uint32_t>();
+        Gather(temporary.Get<half>(),tables[base+(field==2?8:9)*256],next,static_cast<uint32_t>(0),planeElements);PipeBarrier<PIPE_V>();
+        Add(decoded.Get<half>()[field*planeElements],decoded.Get<half>()[field*planeElements],temporary.Get<half>(),planeElements);PipeBarrier<PIPE_V>();
+      }
+    }
+    Cast(packed.Get<int8_t>().ReinterpretCast<int4b_t>(),decoded.Get<half>(),RoundMode::CAST_NONE,32768);PipeBarrier<PIPE_ALL>();
+    DataCopy(out[tile*16384],packed.Get<uint8_t>(),16384);PipeBarrier<PIPE_ALL>();
+  }
+}

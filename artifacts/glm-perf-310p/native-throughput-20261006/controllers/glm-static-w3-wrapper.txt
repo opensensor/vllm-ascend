@@ -1,0 +1,17 @@
+import torch
+from glm_reconstruction_v56_helpers.glm_fused_moe import NativeFusedMoE
+
+class StaticW3MoE(NativeFusedMoE):
+ def __init__(self, activation_bits):
+  from pathlib import Path
+  root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+  super().__init__(root/'build-native-fused-v56',namespace='glm_reconstruction_v56',activation_bits=activation_bits,prepared_weight_layout=True)
+  self.generic_gate,self.generic_down=self.gate_kernel,self.down_kernel
+  factory=torch.classes.glm_reconstruction_v56.Kernel
+  self.static_gate=factory(str(root/'static-w3-v1/gate_up.bin'),'glm_fused_gate_up_v1')
+  self.static_down=factory(str(root/'static-w3-v1/down.bin'),'glm_fused_down_v1')
+ def grouped(self,*args):
+  geometry=args[-1]
+  self.gate_kernel=self.static_gate if geometry.gate_bits==3 else self.generic_gate
+  self.down_kernel=self.static_down if geometry.down_bits==3 else self.generic_down
+  return super().grouped(*args)

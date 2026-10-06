@@ -9,19 +9,51 @@
 
 namespace {
 using namespace AscendC;
+constexpr uint32_t DECODE_TABLE_ELEMENTS = 4096, DECODE_TABLE_COUNT = 6;
+constexpr uint32_t DECODE_TABLE_BYTES = DECODE_TABLE_ELEMENTS * DECODE_TABLE_COUNT * sizeof(half);
+static_assert(DECODE_TABLE_BYTES + 8 * 128 * sizeof(float) <= 128 * 256 * sizeof(half),
+              "decode tables overlap weight scale broadcasts");
 constexpr uint32_t M = 16, N = GLM_INT4_OUTPUT_COLUMNS, K0 = 64, GROUP = 32, NZ_K = 256, NZ_N = 16;
 static_assert(N == 128, "fused native MoE uses 128-column tiles");
 constexpr uint32_t RAW_BYTES = N * NZ_K / 2;
 constexpr uint32_t MAX_ROWS = M - 1, MAX_K_GROUPS = 4096 / GROUP;
 constexpr uint32_t A_BYTES = M * K0 / 2, B_BYTES = N * K0 / 2;
 constexpr uint32_t ELEMENTS = M * N, LANES = 8;
+#ifdef GLM_NATIVE_WIDE_CUBE_K
+constexpr uint32_t WIDE_CUBE_K = GLM_NATIVE_WIDE_CUBE_K;
+static_assert(WIDE_CUBE_K == 128 || WIDE_CUBE_K == 256, "wide native Cube uses K128 or K256");
+#else
+constexpr uint32_t WIDE_CUBE_K = K0;
+#endif
+constexpr uint32_t WIDE_K_SEGMENTS = WIDE_CUBE_K / K0;
+constexpr uint32_t WIDE_SCALE_GROUPS = WIDE_CUBE_K / GROUP;
+constexpr uint32_t WIDE_A_BYTES = M * WIDE_CUBE_K / 2;
+constexpr uint32_t L1_A_BYTES = WIDE_A_BYTES > 2 * A_BYTES ? WIDE_A_BYTES : 2 * A_BYTES;
+#ifdef GLM_PAIR_PREFILL_SCALE_GROUPS
+constexpr bool PAIR_PREFILL_SCALE_GROUPS = true;
+#else
+constexpr bool PAIR_PREFILL_SCALE_GROUPS = false;
+#endif
+#ifdef GLM_PAIR_HIDDEN_QUANT
+constexpr uint32_t QUANT_ROWS_PER_BATCH = GlmFusedQuant::ELEMENTS / N;
+static_assert(QUANT_ROWS_PER_BATCH == 2, "pair exactly two native output rows in the quantizer");
+#else
+constexpr uint32_t QUANT_ROWS_PER_BATCH = 1;
+#endif
+constexpr uint32_t SCALE_CACHE_BYTES = 4096;
+constexpr uint32_t SCALE_INDEX_OFFSET = (N / GROUP) * MAX_K_GROUPS * (sizeof(float) + sizeof(half));
+static_assert(SCALE_INDEX_OFFSET + N * sizeof(uint32_t) <= SCALE_CACHE_BYTES, "scale indices overlap rounded weights");
+constexpr uint32_t MAX_CACHED_SCALE_ROWS = 4;
+constexpr uint32_t SCALE_PRODUCTS_OFFSET = N * NZ_K * 3 / 4;
+static_assert(SCALE_PRODUCTS_OFFSET + MAX_CACHED_SCALE_ROWS * (N / GROUP) * MAX_K_GROUPS * sizeof(float) <= N * NZ_K,
+              "combined scales overlap prepared W2/W3 byte reconstruction");
 constexpr uint32_t PRODUCT_OFFSET_BYTES = 2 * N * sizeof(uint32_t);
 constexpr uint32_t QUANT_OFFSET_BYTES = (2 * GlmFusedQuant::ELEMENTS + GlmFusedQuant::BATCH) * sizeof(uint32_t);
 // Keep the eight KiB SDK temporary region free. InitBuffer's device build
 // does not check the cumulative allocation; a larger table caused prefill NaNs.
-constexpr uint32_t COMMON_UB_BYTES = RAW_BYTES + 64 + N * NZ_K * sizeof(half) + N * NZ_K / 2 + 2 * N * NZ_K + 4096 +
-                                     (M + LANES + 1) * MAX_K_GROUPS * sizeof(float) + N * sizeof(uint32_t) +
-                                     PRODUCT_OFFSET_BYTES + N * sizeof(half) + 2 * A_BYTES +
+constexpr uint32_t COMMON_UB_BYTES = RAW_BYTES + 64 + N * NZ_K * sizeof(half) + N * NZ_K / 2 + 2 * N * NZ_K +
+                                     SCALE_CACHE_BYTES + (M + LANES + 1) * MAX_K_GROUPS * sizeof(float) +
+                                     N * sizeof(uint32_t) + PRODUCT_OFFSET_BYTES + N * sizeof(half) + 2 * A_BYTES +
                                      2 * ELEMENTS * sizeof(int32_t) + 2 * ELEMENTS * sizeof(float) +
                                      3 * ELEMENTS * sizeof(float) + ELEMENTS * sizeof(half);
 #ifdef GLM_FUSED_GATE_UP
@@ -33,7 +65,12 @@ class Projection {
  public:
   __aicore__ inline void Run(GM_ADDR x, GM_ADDR inputHigh, GM_ADDR inputScales, GM_ADDR low, GM_ADDR high, GM_ADDR xs,
                              GM_ADDR codes, GM_ADDR scales, GM_ADDR ends, GM_ADDR order, GM_ADDR weights, GM_ADDR y,
-                             const int64_t* config) {
+                             const int64_t* config
+#ifdef GLM_WEIGHT_DECODE_LUT
+                             ,
+                             GM_ADDR lookup
+#endif
+  ) {
     rows_ = config[0];
     experts_ = config[1];
     n_ = config[2];
@@ -61,16 +98,24 @@ class Projection {
 #endif
     Allocate();
     PrepareOffsets();
+#ifdef GLM_WEIGHT_DECODE_LUT
+    GlobalTensor<half> table;
+    table.SetGlobalBuffer(reinterpret_cast<__gm__ half*>(lookup));
+    if (bits_ != 4) DataCopy(decoded_.Get<half>(), table, DECODE_TABLE_COUNT * DECODE_TABLE_ELEMENTS);
+    PipeBarrier<PIPE_ALL>();
+#endif
     for (int64_t tile = GetBlockIdx(); tile < tiles; tile += GetBlockNum()) {
 #ifdef GLM_FUSED_GATE_UP
       const int64_t chunks = 1;
 #else
-      const int64_t chunks = (tokens_ + 15) / 16;
+      // Bulk prefill batches all rows of an expert. Its weighted FP32 rows
+      // are reduced by a separate AI-Core epilogue in the same stable order.
+      const int64_t chunks = tokens_ > M ? 1 : (tokens_ + M - 1) / M;
 #endif
       for (int64_t chunk = 0; chunk < chunks; ++chunk) {
-        firstToken_ = chunk * 16;
+        firstToken_ = chunk * M;
 #ifndef GLM_FUSED_GATE_UP
-        Duplicate(reduction_.Get<float>(), 0.0f, 16 * N);
+        if (tokens_ <= M) Duplicate(reduction_.Get<float>(), 0.0f, M * N);
         PipeBarrier<PIPE_ALL>();
 #endif
         int64_t first = 0;
@@ -82,9 +127,11 @@ class Projection {
           // Stable routing puts each expert's original token/slot pairs in
           // ascending order. Restrict each Cube batch to this UB reduction
           // chunk; every output column tile has exactly one core owner.
-          while (selectedFirst < end && order_.GetValue(selectedFirst) / topK_ < firstToken_) ++selectedFirst;
-          selectedEnd = selectedFirst;
-          while (selectedEnd < end && order_.GetValue(selectedEnd) / topK_ < firstToken_ + 16) ++selectedEnd;
+          if (tokens_ <= M) {
+            while (selectedFirst < end && order_.GetValue(selectedFirst) / topK_ < firstToken_) ++selectedFirst;
+            selectedEnd = selectedFirst;
+            while (selectedEnd < end && order_.GetValue(selectedEnd) / topK_ < firstToken_ + M) ++selectedEnd;
+          }
 #endif
           for (int64_t row = selectedFirst; row < selectedEnd; row += MAX_ROWS) {
             const uint32_t count = selectedEnd - row < MAX_ROWS ? selectedEnd - row : MAX_ROWS;
@@ -99,8 +146,9 @@ class Projection {
         }
 #ifndef GLM_FUSED_GATE_UP
         PipeBarrier<PIPE_ALL>();
-        for (int64_t token = firstToken_; token < tokens_ && token < firstToken_ + 16; ++token)
-          DataCopy(y_[token * n_ + tile * N], reduction_.Get<float>()[(token - firstToken_) * N], N);
+        if (tokens_ <= M)
+          for (int64_t token = firstToken_; token < tokens_ && token < firstToken_ + M; ++token)
+            DataCopy(y_[token * n_ + tile * N], reduction_.Get<float>()[(token - firstToken_) * N], N);
         PipeBarrier<PIPE_ALL>();
 #endif
       }
@@ -109,17 +157,17 @@ class Projection {
 
  private:
   __aicore__ inline void Allocate() {
-    pipe_.InitBuffer(a1_, 2 * A_BYTES);
-    pipe_.InitBuffer(a2_, 2 * A_BYTES);
-    pipe_.InitBuffer(b1_, B_BYTES);
-    pipe_.InitBuffer(b2_, B_BYTES);
+    pipe_.InitBuffer(a1_, L1_A_BYTES);
+    pipe_.InitBuffer(a2_, L1_A_BYTES);
+    pipe_.InitBuffer(b1_, WIDE_K_SEGMENTS * B_BYTES);
+    pipe_.InitBuffer(b2_, WIDE_K_SEGMENTS * B_BYTES);
     pipe_.InitBuffer(c_, 2 * ELEMENTS * sizeof(int32_t));
     pipe_.InitBuffer(raw_, RAW_BYTES + 64);
     pipe_.InitBuffer(decoded_, N * NZ_K * sizeof(half));
     pipe_.InitBuffer(packedB_, N * NZ_K / 2);
     pipe_.InitBuffer(gathered_, N * NZ_K);
     pipe_.InitBuffer(mask_, N * NZ_K);
-    pipe_.InitBuffer(scaleCache_, 4096);
+    pipe_.InitBuffer(scaleCache_, SCALE_CACHE_BYTES);
     pipe_.InitBuffer(activationScales_, (M + LANES + 1) * MAX_K_GROUPS * sizeof(float));
     pipe_.InitBuffer(outputOffsets_, N * sizeof(uint32_t));
     // Gather is used only for a single active row. Keep just its two limb
@@ -147,6 +195,11 @@ class Projection {
       for (uint32_t limbs = 1; limbs <= 2; ++limbs)
         productOffsets.SetValue((limbs - 1) * N + channel,
                                 (channel / NZ_N * limbs * M * NZ_N + channel % NZ_N) * sizeof(int32_t));
+      // Physical even/odd channel halves repeat the same four block32 scales.
+      // Keep indices after the FP32 and rounded-FP16 scale cache, without
+      // increasing the already tight down-stage UB allocation.
+      scaleCache_.Get<uint32_t>()[SCALE_INDEX_OFFSET / sizeof(uint32_t)].SetValue(
+          channel, (channel % (N / 2) / NZ_N) * (k_ / GROUP) * sizeof(float));
     }
     auto indices = activationScales_.Get<uint32_t>()[(M + LANES) * MAX_K_GROUPS];
     for (uint32_t group = 0; group < MAX_K_GROUPS; ++group) indices.SetValue(group, group * LANES * sizeof(float));
@@ -155,6 +208,33 @@ class Projection {
 #endif
     PipeBarrier<PIPE_ALL>();
   }
+#ifdef GLM_WEIGHT_DECODE_LUT
+  __aicore__ inline void LookupPair(LocalTensor<half> value, uint32_t plane, uint32_t phase, uint32_t width,
+                                    uint32_t pairs, uint32_t table) {
+    const uint16_t byteMask = ((1 << width) - 1) << phase;
+    const int16_t pairMask = static_cast<int16_t>(byteMask | (byteMask << 8));
+    auto indices = mask_.Get<int32_t>()[2048];
+    Duplicate(mask_.Get<int16_t>(), pairMask, pairs);
+    PipeBarrier<PIPE_V>();
+    And(value.ReinterpretCast<int16_t>(), raw_.Get<int16_t>()[plane * pairs], mask_.Get<int16_t>(), pairs);
+    PipeBarrier<PIPE_V>();
+    Cast(value, value.ReinterpretCast<int16_t>(), RoundMode::CAST_NONE, pairs);
+    PipeBarrier<PIPE_V>();
+    Muls(value, value, static_cast<half>(1.0f / (1 << phase)), pairs);
+    PipeBarrier<PIPE_V>();
+    Cast(indices, value, RoundMode::CAST_RINT, pairs);
+    PipeBarrier<PIPE_V>();
+    // The signed high byte may be negative; add the bias as INT32 so
+    // FP16 never rounds odd offsets above its exact integer range.
+    Adds(indices, indices, static_cast<int32_t>(2048), pairs);
+    PipeBarrier<PIPE_V>();
+    Muls(indices, indices, static_cast<int32_t>(sizeof(half)), pairs);
+    PipeBarrier<PIPE_V>();
+    Gather(value, decoded_.Get<half>()[table * DECODE_TABLE_ELEMENTS], indices.ReinterpretCast<uint32_t>(),
+           static_cast<uint32_t>(0), pairs);
+    PipeBarrier<PIPE_V>();
+  }
+#endif
   __aicore__ inline void Decode(int64_t expert, int64_t tile, int64_t kTile) {
     const uint32_t fields = bits_ == 3 ? 8 : 8 / bits_;
     const uint32_t fieldElements = NZ_N * NZ_K / fields;
@@ -180,6 +260,29 @@ class Projection {
       }
 #endif
     PipeBarrier<PIPE_ALL>();
+#ifdef GLM_WEIGHT_DECODE_LUT
+    // Reconstruct two output nibbles per lookup; never materialize the
+    // 32K individual FP16 codes. Tables occupy the otherwise dead decoded
+    // workspace, leaving its tail for the subsequent weight-scale vectors.
+    const uint32_t pairs = planeElements / 2;
+    for (uint32_t field = 0; field < fields; ++field) {
+      const uint32_t phase = field * bits_ % 8, plane = field * bits_ / 8;
+      const uint32_t low = bits_ < 8 - phase ? bits_ : 8 - phase;
+      auto value = productFloat_.Get<half>();
+      if (low == bits_)
+        LookupPair(value, plane, phase, low, pairs, bits_ == 2 ? 0 : 1);
+      else {
+        LookupPair(value, plane, phase, low, pairs, low == 2 ? 2 : 3);
+        LookupPair(value[pairs], plane + 1, 0, bits_ - low, pairs, low == 2 ? 4 : 5);
+        Add(value, value, value[pairs], pairs);
+        PipeBarrier<PIPE_V>();
+      }
+      Cast(packedB_.Get<uint8_t>()[field * pairs], value, RoundMode::CAST_NONE, pairs);
+      PipeBarrier<PIPE_V>();
+    }
+    PipeBarrier<PIPE_ALL>();
+    return;
+#endif
     Cast(gathered_.Get<half>(), raw_.Get<uint8_t>(), RoundMode::CAST_NONE, N * NZ_K * bits_ / 8);
     PipeBarrier<PIPE_V>();
     Cast(gathered_.Get<int16_t>(), gathered_.Get<half>(), RoundMode::CAST_RINT, N * NZ_K * bits_ / 8);
@@ -292,7 +395,21 @@ class Projection {
 #endif
     PipeBarrier<PIPE_ALL>();
   }
-  __aicore__ inline void Weight(uint32_t group) {
+  __aicore__ inline void Weight(uint32_t group, uint32_t wideGroups = 0) {
+    if (wideGroups) {
+      const uint32_t segments = wideGroups / 2;
+      DataCopy(b1_.Get<int8_t>(), packedB_.Get<int8_t>()[group / 2 * B_BYTES], segments * B_BYTES);
+      PipeBarrier<PIPE_ALL>();
+      LoadData2DParams load;
+      // L0B keeps K64 segments contiguous, as verified by the raw INT4
+      // probe against the exact sum of two independent K64 products.
+      load.repeatTimes = segments * N / NZ_N;
+      load.srcStride = 1;
+      load.ifTranspose = false;
+      LoadData(b2_.Get<int8_t>().ReinterpretCast<int4b_t>(), b1_.Get<int8_t>().ReinterpretCast<int4b_t>(), load);
+      PipeBarrier<PIPE_ALL>();
+      return;
+    }
     DataCopy(b1_.Get<int8_t>(), packedB_.Get<int8_t>()[group / 2 * B_BYTES], B_BYTES);
     PipeBarrier<PIPE_ALL>();
     LoadData2DParams load;
@@ -344,18 +461,52 @@ class Projection {
     load.repeatTimes = 1;
     load.srcStride = 1;
     load.ifTranspose = false;
-    for (uint32_t limb = 0; limb < (activationBits_ == 4 || sparse ? 1 : 2); ++limb)
+    const uint32_t blocks = PAIR_PREFILL_SCALE_GROUPS && activationBits_ == 4 && paired && count > M / 2
+                                ? 2
+                                : (activationBits_ == 4 || sparse ? 1 : 2);
+    for (uint32_t limb = 0; limb < blocks; ++limb)
       LoadData(a2_.Get<int8_t>()[limb * A_BYTES].ReinterpretCast<int4b_t>(),
                a1_.Get<int8_t>()[limb * A_BYTES].ReinterpretCast<int4b_t>(), load);
     PipeBarrier<PIPE_ALL>();
   }
-  __aicore__ inline void Product(uint32_t count) {
+  __aicore__ inline void ActivationWide(int64_t row, int64_t group, uint32_t count, uint32_t parts) {
+    // Decode has materialized packedB_; its raw input workspace is dead
+    // until the next K256 tile. Reuse it rather than increasing UB.
+    const uint32_t bytes = parts / 2 * A_BYTES;
+    auto packed = raw_.Get<int8_t>();
+    Duplicate(packed.ReinterpretCast<int16_t>(), static_cast<int16_t>(0), bytes / 2);
+    PipeBarrier<PIPE_ALL>();
+    for (uint32_t part = 0; part < parts; ++part) {
+      for (uint32_t m = 0; m < count; ++m) {
+#ifdef GLM_FUSED_GATE_UP
+        const int64_t source = sourceTokens_[m];
+        const int64_t offset = (source * (k_ / GROUP) + group + part) * (K0 / 2);
+        DataCopy(packed[(part / 2) * A_BYTES + (part * count + m) * K0 / 2], inputLow_[offset], K0 / 2);
+#else
+        const int64_t offset = ((row + m) * (k_ / GROUP) + group + part) * (K0 / 2);
+        DataCopy(packed[(part / 2) * A_BYTES + (part * count + m) * K0 / 2], low_[offset], K0 / 2);
+#endif
+      }
+    }
+    PipeBarrier<PIPE_ALL>();
+    DataCopy(a1_.Get<int8_t>(), packed, bytes);
+    PipeBarrier<PIPE_ALL>();
+    LoadData2DParams load;
+    load.repeatTimes = parts / 2;
+    load.srcStride = 1;
+    load.ifTranspose = false;
+    LoadData(a2_.Get<int8_t>().ReinterpretCast<int4b_t>(), a1_.Get<int8_t>().ReinterpretCast<int4b_t>(), load);
+    PipeBarrier<PIPE_ALL>();
+  }
+  __aicore__ inline void Product(uint32_t count, bool paired, uint32_t wideGroups = 0) {
     MmadParams mm;
     const bool sparse = activationBits_ == 8 && count <= (M - 1) / 2;
-    const uint32_t limbs = activationBits_ == 4 || sparse ? 1 : 2;
+    const uint32_t limbs = PAIR_PREFILL_SCALE_GROUPS && activationBits_ == 4 && paired && count > M / 2
+                               ? 2
+                               : (activationBits_ == 4 || sparse ? 1 : 2);
     mm.m = limbs * M;
     mm.n = N;
-    mm.k = K0;
+    mm.k = wideGroups ? wideGroups * GROUP : K0;
     mm.cmatrixInitVal = true;
     Mmad(c_.Get<int32_t>(), a2_.Get<int8_t>().ReinterpretCast<int4b_t>(), b2_.Get<int8_t>().ReinterpretCast<int4b_t>(),
          mm);
@@ -368,11 +519,38 @@ class Projection {
   }
   __aicore__ inline void ExtractProducts(uint32_t count, uint32_t part, bool paired) {
     const bool sparse = activationBits_ == 8 && count <= (M - 1) / 2;
-    const uint32_t limbs = activationBits_ == 4 || sparse ? 1 : 2;
+    const uint32_t limbs = PAIR_PREFILL_SCALE_GROUPS && activationBits_ == 4 && paired && count > M / 2
+                               ? 2
+                               : (activationBits_ == 4 || sparse ? 1 : 2);
     const uint32_t base = paired ? part * (activationBits_ == 8 ? 2 * count + 1 : count) : 0;
     auto raw = products_.Get<int32_t>();
     auto low = results_.Get<float>();
     auto high = low[ELEMENTS];
+#ifdef GLM_STRIDED_PRODUCT_COPY
+    if (count <= 4) {
+      // Each Cube row contributes one aligned 64-byte strip. DMA the eight
+      // strips into a contiguous INT32 row before the single FP32 cast.
+      const DataCopyParams copy{N / NZ_N, NZ_N * sizeof(int32_t) / 32,
+                                static_cast<uint16_t>((limbs * M - 1) * NZ_N * sizeof(int32_t) / 32), 0};
+      auto temporary = productFloat_.Get<int32_t>();
+      for (uint32_t m = 0; m < count; ++m) DataCopy(temporary[m * N], raw[(base + m) * NZ_N], copy);
+      PipeBarrier<PIPE_ALL>();
+      Cast(low, temporary, RoundMode::CAST_NONE, count * N);
+      PipeBarrier<PIPE_ALL>();
+      if (activationBits_ == 8) {
+        for (uint32_t m = 0; m < count; ++m)
+          DataCopy(temporary[m * N], raw[((sparse ? base + count : M) + m) * NZ_N], copy);
+        PipeBarrier<PIPE_ALL>();
+        Cast(high, temporary, RoundMode::CAST_NONE, count * N);
+        PipeBarrier<PIPE_ALL>();
+        DataCopy(temporary, raw[(sparse ? base + 2 * count : MAX_ROWS) * NZ_N], copy);
+        PipeBarrier<PIPE_ALL>();
+        Cast(low[MAX_ROWS * N], temporary, RoundMode::CAST_NONE, N);
+        PipeBarrier<PIPE_ALL>();
+      }
+      return;
+    }
+#endif
     // Sparse single-row decode benefits from one gather. For more rows the
     // strided casts avoid the growing gather cost measured on real experts.
     if (count > 1) {
@@ -443,20 +621,61 @@ class Projection {
       PipeBarrier<PIPE_ALL>();
     }
     PipeBarrier<PIPE_V>();
+    bool cachedFactors = false;
+#ifdef GLM_PREPARED_WEIGHT_LAYOUT
+    // Prepared W4 bypasses gathered_; W2/W3 reconstruction touches at most
+    // its first 24 KiB. Cache all combined scales in the remaining eight KiB
+    // for sparse decode. This removes scalar FP32 products from the K loop.
+    cachedFactors = count <= MAX_CACHED_SCALE_ROWS;
+#endif
+    auto scaleProducts = gathered_.Get<float>()[SCALE_PRODUCTS_OFFSET / sizeof(float)];
+    if (cachedFactors) {
+      for (uint32_t m = 0; m < count; ++m)
+        for (uint32_t block = 0; block < N / GROUP; ++block)
+          Mul(scaleProducts[(m * (N / GROUP) + block) * groups], cachedWeights[block * groups], sx[m * MAX_K_GROUPS],
+              groups);
+      PipeBarrier<PIPE_V>();
+    }
     bool paired = false;
 #ifdef GLM_PAIR_SCALE_GROUPS
     // Keep each K32 dot and scale independent, but put both adjacent groups
     // into unused Cube rows. Sparse decode needs one K64 Mmad/readback, not two.
-    paired = activationBits_ == 8 ? count <= (M - 2) / 4 : count <= M / 2;
+    paired = activationBits_ == 8 ? count <= (M - 2) / 4 : count <= (PAIR_PREFILL_SCALE_GROUPS ? M : M / 2);
+#endif
+#ifdef GLM_NATIVE_WIDE_CUBE_K
+    // Keep block32 dots/scales independent in unused rows. This lowers the
+    // number of Cube instructions/readbacks without changing FP32 sums.
+    // K256 handles one/two rows; K128 also fills otherwise unused rows
+    // for three/four routes. Both keep the same block32 dot products.
+    const uint32_t wideGroups =
+        activationBits_ == 4 && count <= M / 4 ? (WIDE_SCALE_GROUPS == 8 && count <= M / 8 ? 8 : 4) : 0;
+#else
+    const uint32_t wideGroups = 0;
 #endif
     for (int64_t kTile = 0; kTile < k_ / NZ_K; ++kTile) {
       Decode(expert, tile, kTile);
-      for (uint32_t inner = 0; inner < NZ_K / GROUP; inner += paired ? 2 : 1) {
+// Decode has finished writing packedB_. Its FP16 reconstruction scratch
+// can now hold the eight broadcast scale vectors for this K256 tile.
+#ifdef GLM_WEIGHT_DECODE_LUT
+      auto weightVectors = decoded_.Get<float>()[DECODE_TABLE_BYTES / sizeof(float)];
+#else
+      auto weightVectors = decoded_.Get<float>();
+#endif
+      auto scaleIndices = scaleCache_.Get<uint32_t>()[SCALE_INDEX_OFFSET / sizeof(uint32_t)];
+      if (!cachedFactors)
+        for (uint32_t inner = 0; inner < NZ_K / GROUP; ++inner)
+          Gather(weightVectors[inner * N], cachedWeights[kTile * (NZ_K / GROUP) + inner], scaleIndices,
+                 static_cast<uint32_t>(0), N);
+      PipeBarrier<PIPE_V>();
+      for (uint32_t inner = 0; inner < NZ_K / GROUP; inner += wideGroups ? wideGroups : (paired ? 2 : 1)) {
         const int64_t group = kTile * (NZ_K / GROUP) + inner;
-        if (inner % 2 == 0) Weight(inner);
-        Activation(row, group, count, paired);
-        Product(count);
-        for (uint32_t part = 0; part < (paired ? 2 : 1); ++part) {
+        if (inner % 2 == 0) Weight(inner, wideGroups);
+        if (wideGroups)
+          ActivationWide(row, group, count, wideGroups);
+        else
+          Activation(row, group, count, paired);
+        Product(count, paired, wideGroups);
+        for (uint32_t part = 0; part < (wideGroups ? wideGroups : (paired ? 2 : 1)); ++part) {
           ExtractProducts(count, part, paired);
           for (uint32_t m = 0; m < count; ++m) {
             if (activationBits_ == 8) {
@@ -469,16 +688,20 @@ class Projection {
               Add(low[m * N], low[m * N], high[m * N], N);
               PipeBarrier<PIPE_V>();
             }
-            const float activationScale = sx.GetValue(m * MAX_K_GROUPS + group + part);
-            // Even and odd channels occupy separate halves of the native
-            // tile, but each pair of strips has the same block32 scale.
-            // Apply it to both halves in one repeated vector instruction.
-            for (uint32_t column = 0; column < N / 2; column += NZ_N) {
-              const float sw = cachedWeights.GetValue(2 * column / GROUP * groups + group + part);
-              Muls(low[m * N + column], low[m * N + column], sw * activationScale, NZ_N, 2,
-                   {1, 1, N / 2 / LANES, N / 2 / LANES});
-            }
+            // Preserve (rounded weight scale * activation scale) then product
+            // scaling. Broadcast the four block32 scales in native column order.
+            // ExtractProducts has consumed the INT32 gather temporary. Reuse
+            // its full allocation for every row's factors, then scale the
+            // complete product matrix with one vector instruction.
+            auto factors = productFloat_.Get<float>()[m * N];
+            if (cachedFactors)
+              Gather(factors, scaleProducts[m * (N / GROUP) * groups + group + part], scaleIndices,
+                     static_cast<uint32_t>(0), N);
+            else
+              Muls(factors, weightVectors[(inner + part) * N], sx.GetValue(m * MAX_K_GROUPS + group + part), N);
           }
+          PipeBarrier<PIPE_V>();
+          Mul(low, low, productFloat_.Get<float>(), count * N);
           PipeBarrier<PIPE_V>();
           Add(accumulator, accumulator, low, count * N);
           PipeBarrier<PIPE_V>();
@@ -537,6 +760,38 @@ class Projection {
     Cast(output_.Get<half>(), low, RoundMode::CAST_NONE, activeElements);
 #endif
     PipeBarrier<PIPE_ALL>();
+#ifdef GLM_PAIR_HIDDEN_QUANT
+    for (uint32_t m = 0; m < count; m += QUANT_ROWS_PER_BATCH) {
+      auto input = productFloat_.Get<half>();
+      Duplicate(input, static_cast<half>(0), GlmFusedQuant::ELEMENTS);
+      PipeBarrier<PIPE_V>();
+      // Each logical row contains four independent block32 groups. The
+      // optional paired schedule fills both halves of the eight-group
+      // quantizer; the qualified default and odd tails retain zero padding.
+      for (uint32_t part = 0; part < QUANT_ROWS_PER_BATCH && m + part < count; ++part) {
+        Gather(outputRow_.Get<half>(), output_.Get<half>()[(m + part) * N], outputOffsets_.Get<uint32_t>(),
+               static_cast<uint32_t>(0), N);
+        PipeBarrier<PIPE_ALL>();
+        Adds(input[part * N], outputRow_.Get<half>(), static_cast<half>(0), N);
+        PipeBarrier<PIPE_ALL>();
+      }
+      Quantize();
+      auto packed = productFloat_.Get<int8_t>()[24 * GlmFusedQuant::ELEMENTS];
+      const uint32_t broadcastOffset =
+          7 * GlmFusedQuant::ELEMENTS + 2 * GlmFusedQuant::BATCH + 3 * GlmFusedQuant::LANES;
+      auto scales = productFloat_.Get<float>()[broadcastOffset];
+      for (uint32_t part = 0; part < QUANT_ROWS_PER_BATCH && m + part < count; ++part)
+        for (uint32_t group = 0; group < N / GROUP; ++group) {
+          const int64_t offset = ((row + m + part) * (n_ / 2 / GROUP) + tile * N / GROUP + group);
+          const uint32_t sourceGroup = part * (N / GROUP) + group;
+          DataCopy(low_[offset * K0 / 2], packed[sourceGroup * GROUP], K0 / 2);
+          if (activationBits_ == 8)
+            DataCopy(high_[offset * K0 / 2], packed[GlmFusedQuant::ELEMENTS + sourceGroup * GROUP], K0 / 2);
+          DataCopy(xs_[offset * LANES], scales[sourceGroup * LANES], LANES);
+        }
+      PipeBarrier<PIPE_ALL>();
+    }
+#else
     for (uint32_t m = 0; m < count; ++m) {
       Gather(outputRow_.Get<half>(), output_.Get<half>()[m * N], outputOffsets_.Get<uint32_t>(),
              static_cast<uint32_t>(0), N);
@@ -560,6 +815,7 @@ class Projection {
       }
       PipeBarrier<PIPE_ALL>();
     }
+#endif
   }
   __aicore__ inline void Combine(int64_t tile, int64_t row, uint32_t count) {
     auto low = results_.Get<float>();
@@ -576,8 +832,12 @@ class Projection {
       PipeBarrier<PIPE_V>();
       Muls(low, low, weight, N);
       PipeBarrier<PIPE_ALL>();
-      auto previous = reduction_.Get<float>()[(token - firstToken_) * N];
-      Add(previous, previous, low, N);
+      if (tokens_ > M) {
+        DataCopy(y_[(row + m) * n_ + tile * N], low, N);
+      } else {
+        auto previous = reduction_.Get<float>()[(token - firstToken_) * N];
+        Add(previous, previous, low, N);
+      }
       PipeBarrier<PIPE_ALL>();
     }
   }
@@ -607,11 +867,21 @@ class Projection {
 #ifdef GLM_FUSED_GATE_UP
 extern "C" __global__ __aicore__ void glm_fused_gate_up_v1(GM_ADDR x, GM_ADDR inputHigh, GM_ADDR inputScales,
                                                            GM_ADDR order, GM_ADDR codes, GM_ADDR scales, GM_ADDR ends,
-                                                           GM_ADDR low, GM_ADDR high, GM_ADDR xs, GM_ADDR tiling) {
+                                                           GM_ADDR low, GM_ADDR high, GM_ADDR xs, GM_ADDR tiling
+  #ifdef GLM_WEIGHT_DECODE_LUT
+                                                           ,
+                                                           GM_ADDR lookup
+  #endif
+) {
 #else
 extern "C" __global__ __aicore__ void glm_fused_down_v1(GM_ADDR low, GM_ADDR high, GM_ADDR xs, GM_ADDR codes,
                                                         GM_ADDR scales, GM_ADDR ends, GM_ADDR order, GM_ADDR weights,
-                                                        GM_ADDR y, GM_ADDR tiling) {
+                                                        GM_ADDR y, GM_ADDR tiling
+  #ifdef GLM_WEIGHT_DECODE_LUT
+                                                        ,
+                                                        GM_ADDR lookup
+  #endif
+) {
 #endif
   AscendC::InitSocState();
   int64_t config[8];
@@ -623,8 +893,18 @@ extern "C" __global__ __aicore__ void glm_fused_down_v1(GM_ADDR low, GM_ADDR hig
     return;
   Projection operation;
 #ifdef GLM_FUSED_GATE_UP
-  operation.Run(x, inputHigh, inputScales, low, high, xs, codes, scales, ends, order, nullptr, nullptr, config);
+  operation.Run(x, inputHigh, inputScales, low, high, xs, codes, scales, ends, order, nullptr, nullptr, config
+  #ifdef GLM_WEIGHT_DECODE_LUT
+                ,
+                lookup
+  #endif
+  );
 #else
-  operation.Run(nullptr, nullptr, nullptr, low, high, xs, codes, scales, ends, order, weights, y, config);
+  operation.Run(nullptr, nullptr, nullptr, low, high, xs, codes, scales, ends, order, weights, y, config
+  #ifdef GLM_WEIGHT_DECODE_LUT
+                ,
+                lookup
+  #endif
+  );
 #endif
 }

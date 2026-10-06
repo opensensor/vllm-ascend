@@ -10,7 +10,7 @@ import torch
 
 from tools.glm_perf.fused_moe_control import manifest
 from tools.glm_perf.fused_moe_probe import projection_reference, reference
-from tools.glm_perf.glm_fused_moe import FusedGeometry, NativeFusedMoE, fused_route_metadata
+from tools.glm_perf.glm_fused_moe import FusedGeometry, NativeFusedMoE, fused_route_metadata, sorted_token_route_ranks
 from tools.glm_perf.glm_int4 import MAX_GROUPED_ROUTES, activation_limbs, pack_nz_codes, signed_nibbles
 from tools.glm_perf.resident_candidates.expert_reconstruction import wrap_fused_moe
 
@@ -123,6 +123,77 @@ def test_fused_routes_clamp_large_peer_ids_before_int32_conversion():
     assert ends.tolist() == [1, 1]
 
 
+def test_bulk_prefill_route_ranks_preserve_expert_order_duplicates_and_peer_suffix():
+    ids = torch.tensor([[9, 8, 11, 10], [8, 99, 9, 9]])
+    weights = torch.tensor([[1, 1, 1, 0], [0, 1, 1, 1]], dtype=torch.float32)
+    order, ends = fused_route_metadata(weights, ids, 3, 8)
+    ranks = sorted_token_route_ranks(order, 2, 4)
+    assert ranks.dtype == torch.int32 and ranks.tolist() == [[0, 1, 4, 5], [2, 3, 6, 7]]
+    active = ranks < ends[-1]
+    assert active.tolist() == [[True, True, False, False], [True, True, False, False]]
+    for token in range(2):
+        expected = [position for position, route in enumerate(order.tolist()) if route // 4 == token]
+        assert ranks[token].tolist() == expected
+
+
+@pytest.mark.parametrize("tokens", (16, 17, 640))
+def test_bulk_prefill_uses_bounded_fp32_workspace_after_complete_native_down(tokens):
+    native = object.__new__(NativeFusedMoE)
+    native.weight_lookup = None
+    native.device, native.activation_bits, native.configs = torch.device("cpu"), 4, {}
+    native.scratch = {}
+    native.pack_kernel, native.gate_kernel, native.down_kernel, native.reduce_kernel = "pack", "gate", "down", "reduce"
+    calls = []
+    native.launch = lambda kernel, args, blocks: calls.append((kernel, args))
+    geometry = FusedGeometry(tokens, 2, 3, 256, 256, 4, 4, 4)
+    order = torch.arange(tokens * 2).flip(0)
+    ends = torch.tensor([0, tokens, tokens * 2])
+    output = native.grouped(
+        torch.zeros(tokens, 256, dtype=torch.float16),
+        torch.zeros(3, 512, 128, dtype=torch.int8),
+        torch.ones(3, 16, 8),
+        torch.zeros(3, 256, 128, dtype=torch.int8),
+        torch.ones(3, 8, 8),
+        torch.ones(tokens, 2),
+        order,
+        ends,
+        geometry,
+    )
+    assert output.shape == (tokens, 256) and output.dtype == torch.float32
+    if tokens <= 16:
+        assert [call[0] for call in calls] == ["pack", "gate", "down"]
+        assert calls[2][1][8] is output
+    else:
+        assert [call[0] for call in calls] == ["pack", "gate", "down", "reduce"]
+        workspace = calls[2][1][8]
+        assert workspace is calls[3][1][0] and workspace.shape == (tokens * 2, 256)
+        assert workspace.dtype == torch.float32 and workspace.numel() * workspace.element_size() == tokens * 2 * 256 * 4
+        assert calls[3][1][2] is ends and calls[3][1][3] is output
+        assert torch.equal(calls[3][1][1], sorted_token_route_ranks(order, tokens, 2))
+    first_calls = list(calls)
+    calls.clear()
+    second = native.grouped(
+        torch.zeros(tokens, 256, dtype=torch.float16),
+        torch.zeros(3, 512, 128, dtype=torch.int8),
+        torch.ones(3, 16, 8),
+        torch.zeros(3, 256, 128, dtype=torch.int8),
+        torch.ones(3, 8, 8),
+        torch.ones(tokens, 2),
+        order,
+        ends,
+        FusedGeometry(tokens, 2, 3, 256, 256, 3, 2, 4),
+    )
+    assert second is not output and second.data_ptr() != output.data_ptr()
+    if tokens == 640:
+        assert len(native.scratch) == 1
+        assert calls[0][1][1] is first_calls[0][1][1]
+        assert calls[1][1][7] is first_calls[1][1][7]
+        assert calls[2][1][8] is first_calls[2][1][8]
+    else:
+        assert not native.scratch
+        assert calls[0][1][1] is not first_calls[0][1][1]
+
+
 def test_fused_routes_reject_mismatched_input_shapes():
     with pytest.raises(ValueError, match="matching"):
         fused_route_metadata(torch.ones(1, 1), torch.zeros(1, 2, dtype=torch.int64), 2)
@@ -185,6 +256,7 @@ def test_reference_quantizes_to_requested_precision_and_reduces_duplicate_routes
 @pytest.mark.parametrize("dtype", (torch.int8, torch.uint8))
 def test_fused_geometry_accepts_both_byte_containers_and_rejects_scale_mismatch(dtype):
     native = object.__new__(NativeFusedMoE)
+    native.weight_lookup = None
     native.device = torch.device("cpu")
     native.activation_bits = 4
     args = [
@@ -309,9 +381,11 @@ def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_pat
 
 def test_input_is_quantized_once_per_token_and_shared_by_all_expert_tiles():
     native = object.__new__(NativeFusedMoE)
+    native.weight_lookup = None
     native.device = torch.device("cpu")
     native.activation_bits = 8
     native.configs = {}
+    native.scratch = {}
     native.pack_kernel, native.gate_kernel, native.down_kernel = "pack", "gate", "down"
     calls = []
     native.launch = lambda kernel, args, blocks: calls.append((kernel, args))
@@ -337,3 +411,49 @@ def test_input_is_quantized_once_per_token_and_shared_by_all_expert_tiles():
     assert calls[1][1][7].shape == (16, 8, 32)
     assert calls[1][1][7] is calls[2][1][0]
     assert output.shape == (2, 256) and output.dtype == torch.float32
+
+
+@pytest.mark.parametrize("groups", (8, 64, 128))
+def test_weight_scale_broadcast_matches_block32_in_native_channel_order(groups):
+    # The native Cube tile places even channels before odd channels. A scale
+    # belongs to the logical block32 channel, independent of this permutation.
+    logical = torch.cat((torch.arange(0, 128, 2), torch.arange(1, 128, 2)))
+    scales = torch.arange(4 * groups, dtype=torch.float32).reshape(4, groups)
+    offsets = (torch.arange(128) % 64 // 16) * groups
+    for group in (0, groups // 2, groups - 1):
+        broadcast = scales.flatten()[offsets + group]
+        assert torch.equal(broadcast, scales[logical // 32, group])
+    # Persistent gather indices must follow, rather than overlap, FP32 cached
+    # scales and their intermediate FP16 rounding storage.
+    scale_bytes = 4 * 128 * (4 + 2)
+    assert scale_bytes + 128 * 4 <= 4096
+
+
+@pytest.mark.parametrize("bits", [2, 3])
+def test_weight_lookup_reconstructs_every_two_byte_pattern(bits):
+    from tools.glm_perf.glm_fused_moe import weight_decode_table
+
+    tables = weight_decode_table().reshape(6, 4096).to(torch.int16)
+    words = torch.arange(65536)
+
+    def lookup(source, phase, width, table):
+        byte_mask = ((1 << width) - 1) << phase
+        pair = source & (byte_mask | (byte_mask << 8))
+        signed = torch.where(pair >= 32768, pair - 65536, pair)
+        return tables[table, signed // (1 << phase) + 2048]
+
+    for field in range(8 if bits == 3 else 4):
+        phase = field * bits % 8
+        low = min(bits, 8 - phase)
+        upper = words.roll(257)
+        first = lookup(words, phase, low, (0 if bits == 2 else 1) if low == bits else (2 if low == 2 else 3))
+        if low != bits:
+            first += lookup(upper, 0, bits - low, 4 if low == 2 else 5)
+        codes = []
+        for shift in (0, 8):
+            code = (words >> (phase + shift)) & ((1 << low) - 1)
+            if low != bits:
+                code |= ((upper >> shift) & ((1 << (bits - low)) - 1)) << low
+            signed = torch.where(code >= (1 << (bits - 1)), code - (1 << bits), code)
+            codes.append(signed & 15)
+        assert torch.equal(first, codes[0] + 16 * codes[1])

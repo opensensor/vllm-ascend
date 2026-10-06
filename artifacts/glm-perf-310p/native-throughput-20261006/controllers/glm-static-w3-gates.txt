@@ -1,0 +1,47 @@
+import sys,json,time,importlib.util
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+import torch,torch_npu
+from tools.glm_perf.fused_moe_profile import frozen_helper,run as profile
+from tools.glm_perf.fused_moe_probe import gate_case
+from tools.glm_perf.resident_harness import ResidentClient
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+c=ResidentClient('http://127.0.0.1:8001',timeout=900)
+c.request('/pause?mode=wait&clear_cache=true')
+try:
+ torch.set_num_threads(4);torch.npu.set_device(0);torch_npu.npu.set_compile_mode(jit_compile=False)
+ helper,options=frozen_helper(root/'build-native-fused-v56')
+ spec=importlib.util.spec_from_file_location('static_w3', '/tmp/glm-static-w3-wrapper.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+ records=[]
+ for a in (4,8):
+  native=module.StaticW3MoE(a)
+  for w in (2,3,4):
+   for n in (1,2,3,17,128):records.append(gate_case(native,w,tokens=n))
+ print('passed',len(records),flush=True)
+ for tokens in (2,640):
+  original=helper.NativeFusedMoE;captured=[];exact=[]
+  def factory(*args,**kwargs):
+   i=len(captured)
+   instance=original(*args,**kwargs) if i%4<2 else module.StaticW3MoE(kwargs['activation_bits'])
+   captured.append(instance)
+   original_grouped=instance.grouped
+   def checked(*a):
+    result=original_grouped(*a).cpu()
+    j=len(exact)
+    if j%4>=2:
+     assert torch.equal(result,exact[-2]),(tokens,j,float((result-exact[-2]).abs().max()))
+    exact.append(result)
+    return original_grouped(*a)
+   # Only capture one comparison per pipeline instance; profiling repeats do not recompare.
+   ran=[False]
+   def once(*a):
+    if ran[0]:return original_grouped(*a)
+    ran[0]=True
+    return checked(*a)
+   instance.grouped=once
+   return instance
+  helper.NativeFusedMoE=factory
+  try:profile([root/'build-native-fused-v56',root/'build-native-fused-v56'],Path('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'),root/f'static-w3-stages-t{tokens}.json',tokens=tokens,warmups=2,samples=5)
+  finally:helper.NativeFusedMoE=original
+ (root/'static-w3-gates.json').write_text(json.dumps({'complete':True,'records':records,'real_t2_t640_bitwise':True},indent=2))
+finally:c.resume()

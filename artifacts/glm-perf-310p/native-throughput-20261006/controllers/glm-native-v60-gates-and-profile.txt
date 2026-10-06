@@ -1,0 +1,35 @@
+import sys
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+import json,time
+from pathlib import Path
+from tools.glm_perf.fused_moe_probe import run as gates
+from tools.glm_perf.fused_moe_profile import run as profile
+from tools.glm_perf import fused_moe_profile as profiler
+import torch
+from tools.glm_perf.resident_harness import ResidentClient
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+checkpoint=Path('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p')
+c=ResidentClient('http://127.0.0.1:8001',timeout=900)
+c.request('/pause?mode=wait&clear_cache=true')
+try:
+ gates(root/'build-native-fused-v60',root/'native-fused-v60-gates.json',checkpoint=checkpoint,real_prefixes=tuple(f'model.language_model.layers.{i}.mlp.experts.0.' for i in (10,11,33)))
+ for tokens in (2,640):
+  original=profiler.measure
+  outputs=[];records=[]
+  def compared(native,pipeline,warmups,samples):
+   actual=pipeline().cpu();position=len(outputs)%4
+   if position>=2:
+    baseline=outputs[-2]
+    record={'weight_bits':(3,4,2)[len(outputs)//4], 'activation_bits':(8,4)[position%2], 'tokens':tokens,
+      'bitwise_equal':torch.equal(actual,baseline),'max_abs_delta':float((actual-baseline).abs().max())}
+    records.append(record)
+    assert record['bitwise_equal'],record
+   outputs.append(actual)
+   return original(native,pipeline,warmups,samples)
+  profiler.measure=compared
+  try:
+   profile([root/'build-native-fused-v45',root/'build-native-fused-v60'],checkpoint,root/f'native-fused-v45-v60-stages-t{tokens}.json',tokens=tokens,warmups=2,samples=5)
+  finally:
+   profiler.measure=original
+   (root/f'native-fused-v45-v60-t{tokens}-exactness.json').write_text(json.dumps({'complete':len(records)==6 and all(r['bitwise_equal'] for r in records),'records':records},indent=2))
+finally:c.resume()

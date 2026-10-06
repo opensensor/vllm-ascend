@@ -1,0 +1,18 @@
+import json,hashlib,subprocess
+from pathlib import Path
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+source=Path('/srv/ai/src/glm-selective-w3-nz-test-20261004/tools/glm_perf/glm_fused_moe.cpp').read_text()
+source=source.replace('    bits_ = config[4];','    if (config[4] != bits_) return;')
+source=source.replace('n_, k_, bits_, activationBits_', 'n_, k_, activationBits_')
+source=source.replace('class Projection {','class Projection {\n  static constexpr int64_t bits_ = 3;')
+build=root/'static-w3-v1';build.mkdir(exist_ok=False)
+(build/'source.cpp').write_text(source)
+cann=Path('/usr/local/Ascend/ascend-toolkit/latest').resolve();target=cann/'tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0'
+records={}
+for stage in ('gate_up','down'):
+ binary=build/(stage+'.bin')
+ command=[str(root/'build-native-fused-v56/compile-reconstruction'),str(build/'source.cpp'),str(binary),'--npu-arch=dav-2002',f'--sysroot={cann}/tools/hcc/sysroot',f'-isystem{target}',f'-isystem{target}/aarch64-target-linux-gnu', '-I/srv/ai/src/glm-selective-w3-nz-test-20261004/tools/glm_perf','-DGLM_PREPARED_WEIGHT_LAYOUT','-DGLM_PAIR_SCALE_GROUPS','-DGLM_NATIVE_WIDE_CUBE_K=128','-DGLM_PAIR_PREFILL_SCALE_GROUPS']
+ if stage=='gate_up':command+=['-DGLM_FUSED_GATE_UP']
+ subprocess.run(command,check=True)
+ records[stage]={'command':command,'sha256':hashlib.sha256(binary.read_bytes()).hexdigest()}
+(build/'provenance.json').write_text(json.dumps({'source_sha256':hashlib.sha256((build/'source.cpp').read_bytes()).hexdigest(),'binaries':records},indent=2))

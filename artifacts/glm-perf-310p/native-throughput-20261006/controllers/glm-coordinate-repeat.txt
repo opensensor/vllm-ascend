@@ -1,0 +1,14 @@
+import sys,json
+from pathlib import Path
+from dataclasses import replace
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+from tools.glm_perf.suite import make_groups,run_groups,summarize
+from tools.glm_perf.resident_harness import ResidentClient
+c=ResidentClient('http://127.0.0.1:8001',timeout=900)
+before=c._acknowledged_rpc('resident_status',matches=lambda rs:c._status_matches(rs) and all(w.get('candidate')=='native_v56_coordinate_div' for w in rs))
+groups=[(n,[replace(case,max_tokens=64) for case in cases]) for n,cases in make_groups(['short'],[]) if len(cases)==4]
+reports=[]
+for index in range(3):
+ rows=run_groups(groups,c.base_url,'glm53-flash-selective-w3',42,timeout_s=900)
+ reports.append({'records':rows,'summary':summarize(rows)});print(index,json.dumps(reports[-1]['summary']),flush=True)
+Path('/srv/ai/artifacts/glm-native-prefill-20261006/coordinate-c4-repeat.json').write_text(json.dumps({'complete':True,'before':before,'reports':reports},indent=2))

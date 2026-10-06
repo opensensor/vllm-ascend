@@ -7,11 +7,14 @@ import dataclasses
 import json
 import urllib.request
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from tools.glm_perf.resident_control import MODES, Control
 from tools.glm_perf.resident_native import NativeManifest
+
+MAX_ACKNOWLEDGMENT_READS = 16
 
 
 class ResidentClient:
@@ -42,6 +45,32 @@ class ResidentClient:
         if errors:
             raise RuntimeError(f"{method}: worker errors after collecting all acknowledgments: {errors}")
         return results
+
+    def _acknowledged_rpc(
+        self, method: str, *args: str, matches: Callable[[list[dict[str, Any]]], bool]
+    ) -> list[dict[str, Any]]:
+        # Older executor failures can leave positive replies queued on some
+        # ranks. Retry only the pure preparation; mutations are sent once and
+        # followed by status reads until every rank reports their outcome.
+        probe_method = method
+        probe_args = args
+        for _ in range(MAX_ACKNOWLEDGMENT_READS):
+            try:
+                results = self.rpc(probe_method, *probe_args)
+            except RuntimeError as error:
+                if "malformed worker acknowledgment" not in str(error):
+                    raise
+            else:
+                if matches(results):
+                    return results
+            if method not in ("resident_prepare", "resident_native_prepare"):
+                probe_method, probe_args = "resident_status", ()
+        raise RuntimeError(f"{method}: could not confirm all worker acknowledgments")
+
+    def _status_matches(self, results: list[dict[str, Any]]) -> bool:
+        return all("weight_storage_digest" in result and "graphs_dirty" in result for result in results) and (
+            len({result.get("rank") for result in results}) == self.expected_workers
+        )
 
     def switch(self, control: Control) -> list[dict[str, Any]]:
         before = self.rpc("resident_status")
@@ -98,7 +127,7 @@ class ResidentClient:
         return results
 
     def resume(self) -> Any:
-        workers = self.rpc("resident_status")
+        workers = self._acknowledged_rpc("resident_status", matches=self._status_matches)
         if any(worker.get("native_failed", False) for worker in workers):
             raise RuntimeError("native load failed; restart workers before resuming")
         if any(worker.get("graphs_dirty") is not False for worker in workers):
@@ -109,7 +138,7 @@ class ResidentClient:
         return self.request("/resume")
 
     def load_native(self, manifest: NativeManifest) -> list[dict[str, Any]]:
-        before = self.rpc("resident_status")
+        before = self._acknowledged_rpc("resident_status", matches=self._status_matches)
         was_paused = self.request("/is_paused", method="GET").get("is_paused")
         if not isinstance(was_paused, bool):
             raise RuntimeError("server did not report its pause state")
@@ -117,19 +146,44 @@ class ResidentClient:
             raise RuntimeError("server did not finish draining requests")
         mutating = False
         try:
-            prepared = self.rpc("resident_native_prepare", manifest.payload)
+            prepared = self._acknowledged_rpc(
+                "resident_native_prepare",
+                manifest.payload,
+                matches=lambda receipts: all(receipt.get("native_digest") == manifest.digest for receipt in receipts),
+            )
             if len({r.get("rank") for r in prepared}) != self.expected_workers or any(
                 r.get("native_digest") != manifest.digest for r in prepared
             ):
                 raise RuntimeError("workers prepared different native manifests")
             mutating = True
-            loaded = self.rpc("resident_native_load", manifest.digest)
+            loaded = self._acknowledged_rpc(
+                "resident_native_load",
+                manifest.digest,
+                matches=lambda receipts: all(
+                    (
+                        receipt.get("native_digest") == manifest.digest
+                        and receipt.get("validation", {}).get("passed") is True
+                    )
+                    or (
+                        receipt.get("native_loaded", {}).get(manifest.name, {}).get("native_digest") == manifest.digest
+                        and receipt["native_loaded"][manifest.name].get("validation", {}).get("passed") is True
+                        and not receipt.get("native_failed")
+                    )
+                    for receipt in receipts
+                ),
+            )
+            loaded = [
+                receipt
+                if "native_digest" in receipt
+                else {"rank": receipt["rank"], "pid": receipt["pid"], **receipt["native_loaded"][manifest.name]}
+                for receipt in loaded
+            ]
             if any(
                 r.get("native_digest") != manifest.digest or r.get("validation", {}).get("passed") is not True
                 for r in loaded
             ):
                 raise RuntimeError("workers did not validate the same native operator")
-            after = self.rpc("resident_status")
+            after = self._acknowledged_rpc("resident_status", matches=self._status_matches)
             fields = ("rank", "pid", "weight_storage_digest", "generation", "digest", "graphs_dirty")
             if {tuple(r.get(f) for f in fields) for r in before} != {tuple(r.get(f) for f in fields) for r in after}:
                 raise RuntimeError("native load changed resident workers, weights or dispatch")

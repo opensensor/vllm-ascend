@@ -1,0 +1,14 @@
+import sys,json
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+from tools.glm_perf.resident_harness import ResidentClient
+root=Path('/srv/ai/artifacts/glm-native-prefill-20261006')
+p=root/'final-v56-long-retrieval.json';d=json.loads(p.read_text())
+d['complete']=False;d['first_status_acknowledgment']=d['after'];p.write_text(json.dumps(d,indent=2))
+c=ResidentClient('http://127.0.0.1:8001',timeout=300)
+before={r['rank']:r for r in d['before']}
+after=c._acknowledged_rpc('resident_status',matches=lambda rs:c._status_matches(rs) and all(r.get('candidate')=='native_v56_prefill_graph' and r.get('generation')==before[r['rank']]['generation'] and r.get('prefill_graph',{}).get('replays',0)>=before[r['rank']]['prefill_graph']['replays']+12 for r in rs))
+d['after']=after;d['replay_deltas']=[r['prefill_graph']['replays']-before[r['rank']]['prefill_graph']['replays'] for r in sorted(after,key=lambda r:r['rank'])]
+assert all(r['valid'] and r['passed'] for r in d['records']) and min(d['replay_deltas'])>=12
+assert all(not r['graphs_dirty'] and not r['native_failed'] and r['reconstruction']['fallback_dispatches']==0 for r in after)
+d['complete']=True;p.write_text(json.dumps(d,indent=2));print(d['replay_deltas'],flush=True)

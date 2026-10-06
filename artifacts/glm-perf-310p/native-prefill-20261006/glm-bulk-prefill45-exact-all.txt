@@ -1,0 +1,5 @@
+import subprocess,sys
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-native-trace-20261006')
+for tokens in (1,2,8):
+ subprocess.run([sys.executable,str(root/'glm-bulk-prefill45-exact.py'),str(tokens)],check=True)

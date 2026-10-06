@@ -1,0 +1,233 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Two native MoE stages with UB SwiGLU/quantization and weighted down epilogue.
+
+Routing metadata remains device-resident. No FP16 gate/up, hidden activation,
+or routed-down tensor is materialized between the native stages.
+Bulk prefill uses weighted FP32 routed rows to keep complete expert batches.
+"""
+
+from dataclasses import dataclass
+
+import torch
+
+from .fused_weight_layout import pack_cube
+from .glm_int4 import MAX_GROUPED_ROUTES, pack_nz_codes, packed_weight_bits
+
+FUSED_REDUCTION_TOKENS = 16
+MAX_SHARED_SCRATCH_DECODE_TOKENS = 8
+SHARED_PREFILL_SCRATCH_TOKENS = 640
+MAX_PARTIAL_SCRATCH_SHAPES = 8
+
+
+def sorted_token_route_ranks(order, tokens, top_k):
+    """Stable expert positions per token, including the unread peer suffix.
+
+    Route positions are bounded by MAX_GROUPED_ROUTES and exactly represented
+    in FP32. Float sorting and INT32 narrowing avoid 310P AI-CPU INT64 casts.
+    """
+    positions = torch.arange(order.numel(), dtype=torch.float32, device=order.device)
+    inverse = torch.empty_like(positions).scatter_(0, order, positions)
+    return inverse.reshape(tokens, top_k).sort(dim=1).values.to(torch.int32).contiguous()
+
+
+def fused_route_metadata(weights, ids, experts, expert_offset=0):
+    """Only the stable permutation and cumulative ends consumed by our kernels."""
+    if ids.ndim != 2 or weights.shape != ids.shape or ids.dtype not in (torch.int32, torch.int64):
+        raise ValueError("fused routing requires matching [tokens, top_k] integer ids and weights")
+    if weights.device != ids.device or not 1 <= experts <= 288 or expert_offset < 0:
+        raise ValueError("invalid fused routing device or expert partition")
+    if not 1 <= ids.numel() <= MAX_GROUPED_ROUTES:
+        raise ValueError("invalid fused route count")
+    local_ids = ids.reshape(-1) - expert_offset
+    local = (local_ids >= 0) & (local_ids < experts) & (weights.reshape(-1) != 0)
+    # Clamp peer ids before narrowing. Bounded keys use AI-Core conversions;
+    # the generic descriptor also computes an unused inverse sort and cumsum.
+    keys = torch.where(local, local_ids, experts).to(torch.int32).float()
+    order = torch.argsort(keys, stable=True)
+    boundaries = torch.arange(1, experts + 1, dtype=torch.float32, device=ids.device)
+    # Counts are bounded by MAX_GROUPED_ROUTES. Boolean -> INT64 reduction
+    # dispatches an AI-CPU Cast on 310P; INT32 reduction and widening stay on
+    # AI-Core while preserving the native kernel's INT64 metadata ABI.
+    ends = (keys.unsqueeze(0) < boundaries.unsqueeze(1)).sum(dim=1, dtype=torch.int32).to(torch.int64)
+    return order.contiguous(), ends.contiguous()
+
+
+@dataclass(frozen=True)
+class FusedGeometry:
+    tokens: int
+    top_k: int
+    experts: int
+    hidden: int
+    intermediate: int
+    gate_bits: int
+    down_bits: int
+    activation_bits: int
+
+    def __post_init__(self):
+        if any(type(value) is not int for value in self.__dict__.values()):
+            raise ValueError("fused geometry requires integers")
+        if not 1 <= self.tokens * self.top_k <= MAX_GROUPED_ROUTES or self.tokens <= 0 or self.top_k <= 0:
+            raise ValueError("invalid fused route count")
+        if not 1 <= self.experts <= 288 or self.hidden not in (256, 512, 2048, 4096):
+            raise ValueError("unsupported fused bank geometry")
+        if not 256 <= self.intermediate <= 4096 or self.intermediate % 256:
+            raise ValueError("fused intermediate requires complete NZ tiles")
+        if self.gate_bits not in (2, 3, 4) or self.down_bits not in (2, 3, 4) or self.activation_bits not in (4, 8):
+            raise ValueError("unsupported fused precision")
+
+
+class NativeFusedMoE:
+    input_dtype = torch.float16
+
+    def __init__(
+        self, root, *, namespace, activation_bits, kernel_factory=None, launch=None, prepared_weight_layout=False
+    ):
+        if activation_bits not in (4, 8):
+            raise ValueError("activation bits must be 4 or 8")
+        self.activation_bits = activation_bits
+        self.prepared_weight_layout = prepared_weight_layout
+        self.launch = launch or getattr(torch.ops, namespace).launch
+        factory = kernel_factory or getattr(torch.classes, namespace).Kernel
+        self.gate_kernel = factory(str(root / "glm_fused_gate_up.bin"), "glm_fused_gate_up_v1")
+        self.down_kernel = factory(str(root / "glm_fused_down.bin"), "glm_fused_down_v1")
+        self.pack_kernel = factory(str(root / "glm_fused_pack.bin"), "glm_fused_pack_v1")
+        self.reduce_kernel = factory(str(root / "glm_fused_reduce.bin"), "glm_fused_reduce_v1")
+        self.device = torch.device("npu", torch.npu.current_device())
+        self.configs = {}
+        self.scratch = {}
+
+    def pack_weight_codes(self, signed, bits):
+        return pack_cube(signed, bits) if self.prepared_weight_layout else pack_nz_codes(signed, bits)
+
+    def geometry(self, x, gate_codes, gate_scales, down_codes, down_scales, weights, ids):
+        tensors = (x, gate_codes, gate_scales, down_codes, down_scales, weights, ids)
+        if any(t.device != self.device or not t.is_contiguous() for t in tensors):
+            raise ValueError("fused tensors must be contiguous on the prepared NPU")
+        if (
+            x.ndim != 2
+            or gate_codes.ndim != 3
+            or down_codes.ndim != 3
+            or weights.ndim != 2
+            or ids.shape != weights.shape
+        ):
+            raise ValueError("invalid fused tensor ranks")
+        if x.dtype != torch.float16 or weights.dtype != torch.float32 or ids.dtype not in (torch.int32, torch.int64):
+            raise ValueError("fused input, routes require FP16/FP32/integer")
+        if gate_codes.dtype not in (torch.int8, torch.uint8) or down_codes.dtype not in (torch.int8, torch.uint8):
+            raise ValueError("fused banks require byte storage")
+        if gate_scales.dtype != torch.float32 or down_scales.dtype != torch.float32:
+            raise ValueError("fused bank scales require FP32")
+        tokens, hidden = x.shape
+        experts, twice_inter, packed_hidden = gate_codes.shape
+        inter = twice_inter // 2
+        geometry = FusedGeometry(
+            tokens,
+            weights.shape[1],
+            experts,
+            hidden,
+            inter,
+            packed_weight_bits(hidden, packed_hidden),
+            packed_weight_bits(inter, down_codes.shape[-1]),
+            self.activation_bits,
+        )
+        if weights.shape[0] != tokens or twice_inter != 2 * inter or down_codes.shape[:2] != (experts, hidden):
+            raise ValueError("fused banks and routes disagree")
+        if gate_scales.shape != (experts, twice_inter // 32, hidden // 32) or down_scales.shape != (
+            experts,
+            hidden // 32,
+            inter // 32,
+        ):
+            raise ValueError("fused scale geometry differs")
+        return geometry
+
+    def __call__(self, x, gate_codes, gate_scales, down_codes, down_scales, weights, ids, expert_offset=0):
+        geometry = self.geometry(x, gate_codes, gate_scales, down_codes, down_scales, weights, ids)
+        order, ends = fused_route_metadata(weights, ids, geometry.experts, expert_offset)
+        return self.grouped(
+            x,
+            gate_codes,
+            gate_scales,
+            down_codes,
+            down_scales,
+            weights,
+            order,
+            ends,
+            geometry,
+        )
+
+    def grouped(self, x, gate_codes, gate_scales, down_codes, down_scales, weights, order, ends, geometry):
+        # Metadata depends only on CPU-visible shapes and precision. Preparing
+        # a first prefill geometry never reads routes or expert counts on host.
+        if geometry not in self.configs:
+            common = (geometry.tokens * geometry.top_k, geometry.experts)
+            suffix = (geometry.activation_bits, geometry.tokens, geometry.top_k)
+            gate = (*common, 2 * geometry.intermediate, geometry.hidden, geometry.gate_bits, *suffix)
+            down = (*common, geometry.hidden, geometry.intermediate, geometry.down_bits, *suffix)
+            projection_configs = tuple(
+                torch.tensor(header, dtype=torch.int64, device=self.device) for header in (gate, down)
+            )
+            pack_config = torch.tensor(
+                (geometry.tokens * geometry.hidden // 32, geometry.activation_bits), dtype=torch.int64
+            ).to(self.device)
+            self.configs[geometry] = (*projection_configs, pack_config)
+        gate_config, down_config, pack_config = self.configs[geometry]
+        # This resource executes on one serving stream. Every MoE consumes
+        # its quantized inputs and weighted rows before the next MoE overwrites
+        # them. Keep output tensors separate: callers may retain those results.
+        # One shared scratch allocation also avoids pinning a new routed-down
+        # workspace at every layer/breakable graph segment during capture.
+        scratch_key = (geometry.tokens, geometry.top_k, geometry.hidden, geometry.intermediate)
+        shared = geometry.tokens <= MAX_SHARED_SCRATCH_DECODE_TOKENS or geometry.tokens == SHARED_PREFILL_SCRATCH_TOKENS
+        if shared:
+            if scratch_key not in self.scratch:
+                self.scratch[scratch_key] = self.allocate_scratch(geometry)
+            buffers = self.scratch[scratch_key]
+        else:
+            # Keep exact-shape reuse across batches while bounding prompt-length
+            # retention. Decode and the captured prefill bucket are protected
+            # from eviction; only uncaptured partial shapes use this FIFO.
+            partial_key = ("partial", *scratch_key)
+            if partial_key not in self.scratch:
+                partial_keys = [key for key in self.scratch if key[0] == "partial"]
+                if len(partial_keys) >= MAX_PARTIAL_SCRATCH_SHAPES:
+                    del self.scratch[partial_keys[0]]
+                self.scratch[partial_key] = self.allocate_scratch(geometry)
+            buffers = self.scratch[partial_key]
+        input_low, input_high, input_scales, low, high, scales, workspace = buffers
+        output = torch.empty((geometry.tokens, geometry.hidden), dtype=torch.float32, device=self.device)
+        bulk = geometry.tokens > FUSED_REDUCTION_TOKENS
+        down_output = workspace if bulk else output
+        ranks = sorted_token_route_ranks(order, geometry.tokens, geometry.top_k) if bulk else None
+        self.launch(self.pack_kernel, [x, input_low, input_high, input_scales, pack_config], 8)
+        self.launch(
+            self.gate_kernel,
+            [input_low, input_high, input_scales, order, gate_codes, gate_scales, ends, low, high, scales, gate_config],
+            8,
+        )
+        self.launch(
+            self.down_kernel,
+            [low, high, scales, down_codes, down_scales, ends, order, weights, down_output, down_config],
+            8,
+        )
+        if bulk:
+            self.launch(self.reduce_kernel, [down_output, ranks, ends, output, down_config], 8)
+        return output
+
+    def allocate_scratch(self, geometry):
+        input_shape = (geometry.tokens, geometry.hidden // 32, 32)
+        input_low = torch.empty(input_shape, dtype=torch.int8, device=self.device)
+        input_high = torch.empty(
+            input_shape if self.activation_bits == 8 else (1,), dtype=torch.int8, device=self.device
+        )
+        input_scales = torch.empty((geometry.tokens, geometry.hidden // 32, 8), dtype=torch.float32, device=self.device)
+        routes = geometry.tokens * geometry.top_k
+        shape = (routes, geometry.intermediate // 32, 32)
+        low = torch.empty(shape, dtype=torch.int8, device=self.device)
+        high = torch.empty(shape if self.activation_bits == 8 else (1,), dtype=torch.int8, device=self.device)
+        scales = torch.empty((routes, geometry.intermediate // 32, 8), dtype=torch.float32, device=self.device)
+        workspace = (
+            torch.empty((routes, geometry.hidden), dtype=torch.float32, device=self.device)
+            if geometry.tokens > FUSED_REDUCTION_TOKENS
+            else None
+        )
+        return input_low, input_high, input_scales, low, high, scales, workspace

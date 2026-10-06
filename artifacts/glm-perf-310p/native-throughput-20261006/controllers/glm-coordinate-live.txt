@@ -1,0 +1,34 @@
+import sys,json,time,uuid,hashlib
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+binary=root/'glm-coordinate-div-v1.bin'
+gates=json.loads((root/'coordinate-div-v1-gates.json').read_text());assert gates['complete'] and all(r['exact'] for r in gates['records'])
+output=Path('/srv/ai/artifacts/glm-native-prefill-20261006/graph-qualified-v56-coordinate-v1');output.mkdir(exist_ok=False)
+s=Path('/srv/ai/artifacts/glm-native-prefill-20261006/graph-qualified-v56-v1/candidate.py').read_text()
+s=s.replace('def bf16_replacements(native_resources, prefill_wrapper=None):','def bf16_replacements(native_resources, prefill_wrapper=None, coordinate_division=None):')
+s=s.replace('    writer = namespace["_write_pools"]','    writer = namespace["_write_pools"]\n    if coordinate_division is not None:\n        writer = rewrite_floor_division(writer, source, coordinate_division)')
+s=s.replace('def qualified56_base_replacements(native_resources):','def qualified56_base_replacements(native_resources, coordinate_division=None):')
+s=s.replace('prefill_wrapper=wrap_writer))','prefill_wrapper=wrap_writer,coordinate_division=coordinate_division))')
+s+='''\nfrom tools.glm_perf.coordinate_div import NativeCoordinateDivision, rewrite_floor_division
+
+def replacements(native_resources):
+ import hashlib
+ from pathlib import Path
+ binary=Path(BINARY_PATH)
+ assert hashlib.sha256(binary.read_bytes()).hexdigest()==BINARY_HASH
+ division=NativeCoordinateDivision(binary,'glm_reconstruction_v56')
+ return extend_prefill_graphs(qualified56_base_replacements(native_resources,coordinate_division=division),native_resources=native_resources)
+'''.replace('BINARY_PATH',repr(str(binary))).replace('BINARY_HASH',repr(hashlib.sha256(binary.read_bytes()).hexdigest()))
+(output/'candidate.py').write_text(s)
+c=ResidentClient('http://127.0.0.1:8001',timeout=900)
+selected=c.switch(Control(uuid.uuid4().hex,candidate='native_v56_coordinate_div',source=s));c.resume()
+(output/'selected.json').write_text(json.dumps(selected,indent=2))
+began=time.monotonic()
+result=c.request('/v1/completions',{'model':'glm53-flash-selective-w3','prompt':[42]*1280,'max_tokens':8,'temperature':0,'ignore_eos':True})
+after=c._acknowledged_rpc('resident_status',matches=lambda rs:c._status_matches(rs) and all(r.get('candidate')=='native_v56_coordinate_div' and r.get('prefill_graph',{}).get('replays',0)>=2 for r in rs))
+assert all(not r['graphs_dirty'] and not r['native_failed'] and r['reconstruction']['fallback_dispatches']==0 for r in after)
+(output/'qualification.json').write_text(json.dumps({'complete':True,'elapsed_s':time.monotonic()-began,'response':result,'after':after},indent=2))
+print('coordinate variant qualified',flush=True)

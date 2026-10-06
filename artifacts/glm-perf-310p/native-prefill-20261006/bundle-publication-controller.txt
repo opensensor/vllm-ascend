@@ -1,0 +1,33 @@
+import sys
+sys.path.insert(0, '/srv/ai/src/glm-selective-w3-nz-test-20261004')
+import json,shutil,hashlib,os
+from pathlib import Path
+from tools.glm_perf.fused_moe_control import manifest as gate_manifest
+from tools.glm_perf.native_checkpoint import write_json,LAYOUT
+version=int(sys.argv[1]);root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+model=Path('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p')
+build=root/f'build-native-fused-v{version}';gates=root/f'native-fused-v{version}-gates.json'
+trial=json.loads((root/f'native-v{version}-bf16-v5-trial.json').read_text())
+assert trial['complete'] and len(trial['records'])==26 and all(r['valid'] for r in trial['records'])
+prior=json.loads((root/'native-v41-bf16-v5-trial.json').read_text())
+assert {r['case_id'] for r in trial['records'] if not r['passed']}=={r['case_id'] for r in prior['records'] if not r['passed']}
+assert all(r['passed'] for r in trial['records'] if r['category']=='tool')
+gate_manifest(build,gates)
+before=json.loads((model/'native-layout.json').read_text());assert before['complete'] and before['layout']==LAYOUT
+provenance=json.loads((build/'provenance.json').read_text());options=provenance['_build']
+assert options['prepared_weight_layout'] and not options.get('fp16_swiglu')
+name=f'native-kernels-v{version}';destination=model/name;staging=model/(name+'.partial')
+assert not destination.exists() and not staging.exists()
+staging.mkdir()
+shutil.copytree(build/options['helper_package'],staging/options['helper_package'])
+for filename in ('provenance.json',f'glm_reconstruction_bridge_v{version}.so','glm_fused_gate_up.bin','glm_fused_down.bin','glm_fused_pack.bin','glm_fused_reduce.bin'):
+ shutil.copy2(build/filename,staging/filename)
+shutil.copy2(gates,staging/'gates.json')
+gate_manifest(staging,staging/'gates.json')
+os.rename(staging,destination)
+after=dict(before,kernel_bundle=name,kernel_provenance_sha256=hashlib.sha256((destination/'provenance.json').read_bytes()).hexdigest())
+assert {k:v for k,v in before.items() if not k.startswith('kernel_')}=={k:v for k,v in after.items() if not k.startswith('kernel_')}
+write_json(model/'native-layout.json',after)
+receipt={'complete':True,'version':version,'before':before,'after':after,'weight_changes':0,'online_transformations':0,'bundle':str(destination)}
+(root/f'native-disk-v{version}-bundle-publication.json').write_text(json.dumps(receipt,indent=2)+'\n')
+print(json.dumps({'complete':True,'bundle':str(destination),'weight_changes':0}),flush=True)

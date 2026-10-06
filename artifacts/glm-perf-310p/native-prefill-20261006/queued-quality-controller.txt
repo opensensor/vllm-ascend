@@ -1,0 +1,45 @@
+import json,re,time,uuid,urllib.request
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
+from pathlib import Path
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.suite import make_groups,run_groups,summarize
+root=Path('/srv/ai/artifacts/glm-native-prefill-20261006')
+exp=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+c=ResidentClient('http://127.0.0.1:8001',timeout=900)
+current=(root/'graph-qualified-v45-v4/candidate.py').read_text()
+control=(exp/'native-v41-bf16-v5-candidate.py').read_text()
+cases=[replace(x,max_tokens=128) for _,xs in make_groups(['quality'],[]) for x in xs]
+result=json.loads((root/'queued-quality.json').read_text());result['complete']=False
+try:
+ for name,source in [('native_v45_qualified_prefill_graph_v4',current)]:
+  selected=c.switch(Control(uuid.uuid4().hex,candidate=name,source=source))
+  run={'candidate':name,'selected':selected,'records':[],'queues':[]};result['runs'].append(run)
+  for i in range(0,20,4):
+   c.request('/pause?mode=wait&clear_cache=true')
+   with ThreadPoolExecutor(max_workers=1) as executor:
+    task=executor.submit(run_groups,[('quality_4_'+str(i//4),cases[i:i+4])],c.base_url,'glm53-flash-selective-w3',42,timeout_s=900)
+    queue={'group':i//4,'waiting':[]};run['queues'].append(queue)
+    deadline=time.monotonic()+3
+    try:
+     while True:
+      with urllib.request.urlopen(c.base_url+'/metrics',timeout=5) as response: metrics=response.read().decode()
+      waiting=sum(float(x) for x in re.findall(r'^vllm:num_requests_waiting(?:\{[^\n]*\})?\s+([0-9.]+)',metrics,re.M))
+      queue['waiting'].append(waiting)
+      if waiting==4:break
+      if task.done():raise RuntimeError('requests completed while paused')
+      if time.monotonic()>deadline:break # paused engine does not refresh scheduler metrics
+      time.sleep(.2)
+    finally:c.request('/resume')
+    rows=task.result(timeout=900)
+   assert all(x['valid'] for x in rows)
+   run['records'].extend(rows);run['summary']=summarize(run['records'])
+   (root/'queued-quality.json').write_text(json.dumps(result,indent=2))
+   print(name,i//4,[(x['case_id'],x['content'],x['passed']) for x in rows],flush=True)
+  run['after']=c._acknowledged_rpc('resident_status',matches=c._status_matches)
+ result['complete']=True
+finally:
+ c.resume()
+ (root/'queued-quality.json').write_text(json.dumps(result,indent=2))
+print(json.dumps([(x['candidate'],x['summary']) for x in result['runs']]),flush=True)

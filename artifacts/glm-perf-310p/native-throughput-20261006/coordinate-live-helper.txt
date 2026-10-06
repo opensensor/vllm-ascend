@@ -1,0 +1,89 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Optional exact scalar coordinate division for small 310P decode tensors."""
+
+import ast
+import textwrap
+
+import torch
+
+MAX_COORDINATE_ELEMENTS = 16
+
+
+class NativeCoordinateDivision:
+    def __init__(self, kernel_path, namespace):
+        self.kernel = getattr(torch.classes, namespace).Kernel(str(kernel_path), "glm_coordinate_div_v1")
+        self.launch = getattr(torch.ops, namespace).launch
+        self.configs = {}
+
+    def __call__(self, value, divisor):
+        if not isinstance(value, torch.Tensor):
+            return value // divisor
+        if (
+            value.device.type != "npu"
+            or value.dtype != torch.int64
+            or value.numel() > MAX_COORDINATE_ELEMENTS
+            or type(divisor) is not int
+            or divisor <= 0
+        ):
+            return torch.div(value, divisor, rounding_mode="floor")
+        key = (value.numel(), divisor, value.device)
+        if key not in self.configs:
+            self.configs[key] = torch.tensor(key[:2], dtype=torch.int64, device=value.device)
+        output = torch.empty_like(value, memory_format=torch.contiguous_format)
+        self.launch(self.kernel, [value.contiguous(), output, self.configs[key]], 1)
+        return output
+
+
+def rewrite_floor_division(original, source, division):
+    """Bind the replacement explicitly as a private keyword-only dependency."""
+    tree = ast.parse(textwrap.dedent(source))
+    function = tree.body[0]
+    if not isinstance(function, ast.FunctionDef):
+        raise ValueError("expected one coordinate function")
+    if original.__closure__:
+        raise ValueError("coordinate rewrite requires a function without free variables")
+    name = "_glm_coordinate_division"
+    if name in source:
+        raise ValueError("coordinate function already has a division dependency")
+
+    class ReplaceDivision(ast.NodeTransformer):
+        count = 0
+
+        def call(self, node, left, right):
+            self.count += 1
+            return ast.copy_location(ast.Call(ast.Name(name, ast.Load()), [left, right], []), node)
+
+        def visit_BinOp(self, node):
+            self.generic_visit(node)
+            return self.call(node, node.left, node.right) if isinstance(node.op, ast.FloorDiv) else node
+
+        def visit_Call(self, node):
+            self.generic_visit(node)
+            if (
+                isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "torch"
+                and node.func.attr == "div"
+                and len(node.args) == 2
+                and len(node.keywords) == 1
+                and node.keywords[0].arg == "rounding_mode"
+                and isinstance(node.keywords[0].value, ast.Constant)
+                and node.keywords[0].value.value == "floor"
+            ):
+                return self.call(node, *node.args)
+            return node
+
+    transform = ReplaceDivision()
+    transform.visit(function)
+    if not transform.count:
+        raise ValueError("coordinate function has no floor divisions")
+    function.decorator_list = []
+    function.args.kwonlyargs.append(ast.arg(name))
+    function.args.kw_defaults.append(ast.Constant(None))
+    ast.fix_missing_locations(tree)
+    namespace = dict(original.__globals__)
+    exec(compile(tree, "<native-coordinate-division>", "exec"), namespace)
+    changed = namespace[function.name]
+    changed.__kwdefaults__[name] = division
+    changed.__glm_resident_original__ = original
+    return changed

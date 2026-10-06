@@ -1,0 +1,34 @@
+import sys,json,time,uuid
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+from tools.glm_perf.fused_moe_control import manifest
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+# Restore the qualified default's complete instruction/barrier schedule.
+for stage in ('gate_up','down','pack','reduce'):
+ filename='glm_fused_'+stage+'.bin'
+ assert (root/'build-native-fused-v45'/filename).read_bytes()==(root/'build-native-fused-v53'/filename).read_bytes(),filename
+for tokens in (1,2,8,640):
+ report=json.loads((root/f'native-fused-v41-v45-t{tokens}-exactness.json').read_text());assert report['complete'] and all(r['bitwise_equal'] for r in report['records'])
+qualified=manifest(root/'build-native-fused-v53',root/'native-fused-v53-gates.json')
+client=ResidentClient('http://127.0.0.1:8001',timeout=900)
+before=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+assert all(not r['graphs_dirty'] and not r['native_failed'] for r in before)
+source=(root/'native-v41-bf16-v5-candidate.py').read_text().replace('reconstruction_v41','reconstruction_v53')
+(root/'native-v53-bf16-v5-candidate.py').write_text(source)
+# Keep one short pause across the load, validation and graph recapture.
+assert client.request('/pause?mode=wait&clear_cache=true')['status']=='paused'
+began=time.monotonic()
+try:
+ loaded=client.load_native(qualified)
+except Exception:
+ status=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+ if all(not w.get('native_failed') and not w.get('graphs_dirty') for w in status): client.resume()
+ raise
+selected=client.switch(Control(uuid.uuid4().hex,candidate='native_v53_bf16_v5',source=source))
+assert sorted((r['pid'],r['weight_storage_digest']) for r in before)==sorted((r['pid'],r['weight_storage_digest']) for r in selected)
+assert all(not r['graphs_dirty'] and not r['native_failed'] and r['reconstruction']['fallback_dispatches']==0 and r['prepared_weight_layout']['transformed_banks']==0 and r['prepared_weight_layout']['backup_bytes']==0 for r in selected)
+client.resume()
+(root/'native-v53-bf16-v5-load.json').write_text(json.dumps({'complete':True,'before':before,'loaded':loaded,'selected':selected,'pause_s':time.monotonic()-began,'manifest':qualified.value},indent=2))
+print('v53_loaded_and_resumed',time.monotonic()-began,[(r['rank'],r['pid']) for r in selected],flush=True)

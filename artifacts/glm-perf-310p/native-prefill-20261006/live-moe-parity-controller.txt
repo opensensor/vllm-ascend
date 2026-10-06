@@ -1,0 +1,55 @@
+import json,uuid
+from pathlib import Path
+from dataclasses import replace
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.suite import make_groups,run_groups
+root=Path('/srv/ai/artifacts/glm-native-prefill-20261006')
+s=(root/'graph-v6'/'candidate.py').read_text().replace('def replacements(native_resources):','def parity_base_replacements(native_resources):')
+s+='''
+def replacements(native_resources):
+ import torch
+ import json
+ from pathlib import Path
+ from vllm.forward_context import get_forward_context
+ from vllm.config import CUDAGraphMode
+ changes=parity_base_replacements(native_resources)
+ actual=native_resources['reconstruction_v48']['fused_int4a4']
+ reference=native_resources['reconstruction_v46']['fused_int4a4']
+ audit={'checks':0,'different':0,'records':[]}
+ def wrapped(original):
+  def checked(self,grouped_op,experts,x,weights,ids,shared_expert):
+   if get_forward_context().cudagraph_runtime_mode == CUDAGraphMode.NONE:
+    args=(x.to(torch.float16).contiguous(),experts.gate_up_packed_bank,experts.gate_up_scale_bank,
+          experts.down_packed_bank,experts.down_scale_bank,weights.float().contiguous(),ids.contiguous(),experts.local_expert_offset)
+    a=actual(*args).cpu();b=reference(*args).cpu()
+    equal=torch.equal(a,b)
+    record={'check':audit['checks'],'tokens':x.shape[0],'bitwise_equal':equal,'max_abs_delta':float((a-b).abs().max())}
+    audit['checks']+=1;audit['different']+=int(not equal);audit['records'].append(record)
+    if not equal and audit['different']==1:
+     path=Path('/srv/ai/artifacts/glm-native-prefill-20261006/live-moe-parity-rank'+str(torch.distributed.get_rank())+'.pt')
+     torch.save({'input':args[0].cpu(),'weights':args[5].cpu(),'ids':args[6].cpu(),'expert_offset':args[7],'actual':a,'reference':b,'record':record},path)
+   return original(self,grouped_op,experts,x,weights,ids,shared_expert)
+  return checked
+ for target in ('vllm_ascend._310p.quantization.methods.w2_dynamic:AscendW2DynamicFusedMoEMethod310._apply_device_grouped',
+                'vllm_ascend.model_loader.glm_native_int4:NativeInt4MoEMethod._apply_device_grouped'):
+  if target in changes:changes[target]=wrapped(changes[target])
+ target='vllm_ascend._310p.worker_310p:NPUWorker310.resident_status'
+ original_status=changes[target]
+ def status(self):
+  r=original_status(self);r['live_moe_parity']=audit;return r
+ changes[target]=status
+ return changes
+'''
+(root/'live-moe-parity-candidate.py').write_text(s)
+c=ResidentClient('http://127.0.0.1:8001',timeout=900)
+try:
+ c.switch(Control(uuid.uuid4().hex,candidate='native_v48_live_moe_parity',source=s))
+ cases=[replace(x,max_tokens=128) for _,xs in make_groups(['quality'],[]) for x in xs][4:8]
+ rows=run_groups([('quality_4_1',cases)],c.base_url,'glm53-flash-selective-w3',42,timeout_s=900)
+ after=c._acknowledged_rpc('resident_status',matches=lambda r:c._status_matches(r) and all(w.get('live_moe_parity',{}).get('checks',0)>0 for w in r))
+ (root/'live-moe-parity.json').write_text(json.dumps({'complete':True,'requests':rows,'after':after},indent=2))
+ print([(x['case_id'],x['content'],x['passed']) for x in rows],flush=True)
+ print([(w['rank'],w['live_moe_parity']['checks'],w['live_moe_parity']['different'],[z for z in w['live_moe_parity']['records'] if not z['bitwise_equal']][:3]) for w in after],flush=True)
+finally:
+ c.switch(Control(uuid.uuid4().hex,candidate='native_v48_prefill_graph_v6',source=(root/'graph-v6'/'candidate.py').read_text()));c.resume()

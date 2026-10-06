@@ -1,0 +1,37 @@
+import json,time,uuid
+from pathlib import Path
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+root=Path('/srv/ai/artifacts/glm-native-prefill-20261006/graph-qualified-v45-v4');root.mkdir(exist_ok=False)
+base=Path('/home/matteius/experiments/glm-reconstruction-20261006/native-v45-bf16-v5-candidate.py').read_text().replace('def replacements(native_resources):','def qualified_base_replacements(native_resources):')
+policy=Path('/srv/ai/artifacts/glm-native-trace-20261006/prefill-graphs-v14-source.py').read_text().replace('def extend_replacements(', 'def extend_prefill_graphs(')
+source=base+'\n'+policy+'''
+def replacements(native_resources):
+ from glm_reconstruction_v53_helpers.glm_fused_moe import NativeFusedMoE
+ old=native_resources['reconstruction_v45']['fused_int4a4']
+ shared=object.__new__(NativeFusedMoE)
+ shared.__dict__.update(old.__dict__)
+ shared.scratch={}
+ shared.geometry=old.geometry
+ class PrefillBucket:
+  input_dtype=old.input_dtype
+  prepared_weight_layout=old.prepared_weight_layout
+  geometry=old.geometry
+  def __call__(self,*args,**kwargs):
+   return (shared if args[0].shape[0]==640 else old)(*args,**kwargs)
+ resources=dict(native_resources)
+ resources['reconstruction_v45']=dict(resources['reconstruction_v45'],fused_int4a4=PrefillBucket())
+ return extend_prefill_graphs(qualified_base_replacements(resources), native_resources=native_resources)
+'''
+(root/'candidate.py').write_text(source)
+c=ResidentClient('http://127.0.0.1:8001',timeout=900)
+before=c._acknowledged_rpc('resident_status',matches=c._status_matches)
+selected=c.switch(Control(uuid.uuid4().hex,candidate='native_v45_qualified_prefill_graph_v4',source=source))
+(root/'selected.json').write_text(json.dumps({'before':before,'selected':selected},indent=2))
+print('qualified v45 dispatch plus prefill bucket captured and resumed',flush=True)
+start=time.monotonic()
+r=c.request('/v1/completions',{'model':'glm53-flash-selective-w3','prompt':[42]*1280,'max_tokens':8,'temperature':0,'ignore_eos':True})
+after=c._acknowledged_rpc('resident_status',matches=lambda rs:c._status_matches(rs) and all(w.get('prefill_graph',{}).get('replays',0)>=2 for w in rs))
+assert all(not w['graphs_dirty'] and not w['native_failed'] and w['reconstruction']['fallback_dispatches']==0 for w in after)
+(root/'qualification.json').write_text(json.dumps({'complete':True,'elapsed_s':time.monotonic()-start,'response':r,'after':after},indent=2))
+print('two graph replays, decode healthy',flush=True)

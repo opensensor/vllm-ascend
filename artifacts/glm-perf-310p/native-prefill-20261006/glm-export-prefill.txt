@@ -1,0 +1,12 @@
+import json,subprocess
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+root=Path('/srv/ai/artifacts/glm-native-prefill-20261006/trace-v41')
+assert (root/'restored.json').exists()
+def export(path):
+ with (path/'export.log').open('w') as log:
+  p=subprocess.run(['/usr/local/Ascend/ascend-toolkit/latest/tools/profiler/bin/msprof','--export=on','--output='+str(path)],stdout=log,stderr=subprocess.STDOUT)
+ return {'path':str(path),'exit_code':p.returncode}
+with ThreadPoolExecutor(max_workers=4) as pool: records=list(pool.map(export,sorted((root/'prefill640').glob('rank*'))))
+(root/'export-status.json').write_text(json.dumps(records,indent=2))
+print(json.dumps(records),flush=True)

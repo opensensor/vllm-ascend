@@ -1,0 +1,35 @@
+import sys,json,time
+from dataclasses import replace
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.suite import make_groups,run_groups,summarize
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+ready=Path('/srv/ai/artifacts/glm-native-prefill-20261006/graph-qualified-v60-v1/qualification.json')
+deadline=time.monotonic()+300
+while not ready.exists():
+ if time.monotonic()>deadline: raise TimeoutError('prefill export is not complete')
+ time.sleep(2)
+status=json.loads(ready.read_text())
+assert status['complete']
+client=ResidentClient('http://127.0.0.1:8001',timeout=900)
+before=client._acknowledged_rpc('resident_status',matches=lambda rs:client._status_matches(rs) and all(r.get('candidate')=='native_v60_prefill_graph' and r.get('prefill_graph',{}).get('replays',0)>=2 for r in rs))
+assert all(r['candidate']=='native_v60_prefill_graph' and not r['graphs_dirty'] and not r['native_failed'] for r in before)
+result={'version':60,'indexer_version':5,'before':before,'complete':False,'records':[]}
+short=[(n,[replace(c,max_tokens=64) for c in cs]) for n,cs in make_groups(['short'],[])]
+quality=[c for _,cs in make_groups(['quality'],[]) for c in cs]
+groups=list(short)
+groups.extend(('quality_4_'+str(i//4),[replace(c,max_tokens=128) for c in quality[i:i+4]]) for i in range(0,len(quality),4))
+groups.extend(make_groups(['tool'],[]))
+for name,cases in groups:
+ rows=run_groups([(name,cases)],client.base_url,'glm53-flash-selective-w3',42,timeout_s=900)
+ result['records'].extend(rows);result['summary']=summarize(result['records'])
+ (root/'native-v60-prefill-graph-trial.json').write_text(json.dumps(result,indent=2))
+ print(name,json.dumps(summarize(rows)),flush=True)
+ assert all(r['valid'] for r in rows)
+result['after_requests']=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+assert sorted((r['pid'],r['weight_storage_digest']) for r in before)==sorted((r['pid'],r['weight_storage_digest']) for r in result['after_requests'])
+assert all(not r['native_failed'] and not r['graphs_dirty'] and r['reconstruction']['fallback_dispatches']==0 for r in result['after_requests'])
+result['complete']=True
+(root/'native-v60-prefill-graph-trial.json').write_text(json.dumps(result,indent=2))
+print('complete',json.dumps(result['summary']),flush=True)

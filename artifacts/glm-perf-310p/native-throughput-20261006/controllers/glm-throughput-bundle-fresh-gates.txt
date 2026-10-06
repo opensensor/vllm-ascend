@@ -1,0 +1,22 @@
+import sys,json
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+import torch,torch_npu
+from tools.glm_perf.fused_moe_profile import frozen_helper
+from tools.glm_perf.fused_moe_probe import gate_case
+from tools.glm_perf.resident_harness import ResidentClient
+model=Path('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p')
+data=json.loads((model/'native-layout.json').read_text());root=model/data['kernel_bundle']
+c=ResidentClient('http://127.0.0.1:8001',timeout=900)
+c.request('/pause?mode=wait&clear_cache=false')
+try:
+ torch.set_num_threads(4);torch.npu.set_device(0);torch_npu.npu.set_compile_mode(jit_compile=False)
+ helper,options=frozen_helper(root)
+ records=[]
+ for a in (4,8):
+  native=helper.NativeFusedMoE(root,namespace=options['namespace'],activation_bits=a,prepared_weight_layout=True)
+  for w in (2,3,4):
+   for tokens in (2,17):records.append(gate_case(native,w,tokens=tokens))
+ (root/'fresh-process-gates.json').write_text(json.dumps({'complete':True,'records':records},indent=2))
+ print('freshbundlepassed',len(records),flush=True)
+finally:c.resume()

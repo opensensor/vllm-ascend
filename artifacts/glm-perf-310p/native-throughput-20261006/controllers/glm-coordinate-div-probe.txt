@@ -1,0 +1,37 @@
+import sys,json
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+import torch,torch_npu
+from tools.glm_perf.fused_weight_layout import unpack_cube,pack_cube
+from tools.glm_perf.resident_harness import ResidentClient
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+c=ResidentClient('http://127.0.0.1:8001',timeout=900)
+c.request('/pause?mode=wait&clear_cache=true')
+try:
+ torch.set_num_threads(4);torch.npu.set_device(0);torch_npu.npu.set_compile_mode(jit_compile=False)
+ torch.ops.load_library(str(root/'build-native-fused-v56/glm_reconstruction_bridge_v56.so'))
+ kernel=torch.classes.glm_reconstruction_v56.Kernel(str(root/'glm-coordinate-div-v1.bin'),'glm_coordinate_div_v1')
+ records=[]
+ for elements in (1,2,8,16):
+  for divisor in (4,640):
+   values=torch.tensor([-2**63,-6401,-641,-640,-1,0,1,639,640,641,311039,311040,2**63-1],dtype=torch.int64).repeat(2)[:elements].npu()
+   expected=torch.div(values,divisor,rounding_mode='floor')
+   output=torch.empty_like(values);config=torch.tensor([elements,divisor],dtype=torch.int64).npu()
+   torch.ops.glm_reconstruction_v56.launch(kernel,[values,output,config],1);torch.npu.synchronize()
+   record={'elements':elements,'divisor':divisor,'exact':torch.equal(output.cpu(),expected.cpu())}
+   records.append(record);print(record,flush=True);assert record['exact'],(output.cpu(),expected.cpu())
+   graph=torch.npu.NPUGraph()
+   with torch.npu.graph(graph):torch.ops.glm_reconstruction_v56.launch(kernel,[values,output,config],1)
+   values.fill_(-641);graph.replay();torch.npu.synchronize();assert torch.equal(output.cpu(),torch.div(values,divisor,rounding_mode='floor').cpu())
+   for mode in ('native','baseline'):
+    begin,end=torch.npu.Event(enable_timing=True),torch.npu.Event(enable_timing=True)
+    times=[]
+    for _ in range(9):
+     begin.record()
+     if mode=='native':torch.ops.glm_reconstruction_v56.launch(kernel,[values,output,config],1)
+     else:torch.div(values,divisor,rounding_mode='floor')
+     end.record();torch.npu.synchronize();times.append(begin.elapsed_time(end))
+    record[mode+'_median_ms']=sorted(times)[len(times)//2]
+ (root/'coordinate-div-v1-gates.json').write_text(json.dumps({'complete':True,'records':records},indent=2))
+
+finally:c.resume()

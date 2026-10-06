@@ -32,14 +32,18 @@ def manifest(build_dir, gate_report):
     package = options["helper_package"]
     package_root = root / package
     prepared_layout = options.get("prepared_weight_layout", False)
+    lookup_args = ",weight_decode_lut=True" if options.get("weight_decode_lut") else ""
     bridge = root / f"glm_reconstruction_bridge_v{options['version']}.so"
     binaries = (bridge, root / "glm_fused_gate_up.bin", root / "glm_fused_down.bin", root / "glm_fused_pack.bin")
+    if "glm_fused_reduce.bin" in provenance:
+        binaries += (root / "glm_fused_reduce.bin",)
     for path in binaries:
         if gates.get("binaries", {}).get(path.name) != hashlib.sha256(path.read_bytes()).hexdigest():
             raise ValueError("fused gates do not identify these exact binaries")
     helpers = {name: hashlib.sha256((package_root / name).read_bytes()).hexdigest() for name in provenance["_helpers"]}
     if helpers != provenance["_helpers"]:
         raise ValueError("frozen fused helpers differ from build provenance")
+    validation_tokens = (2, 17) if "glm_fused_reduce.bin" in provenance else (2,)
     source = f"""def prepare():
     import hashlib, importlib, importlib.util, sys
     from pathlib import Path
@@ -58,7 +62,7 @@ def manifest(build_dir, gate_report):
     from {package}.glm_fused_moe import NativeFusedMoE
     build=Path({str(root)!r})
     resources={{'fused_int4a'+str(bits): NativeFusedMoE(build,namespace={namespace!r},activation_bits=bits,
-                                                     prepared_weight_layout={prepared_layout!r})
+                                                     prepared_weight_layout={prepared_layout!r}{lookup_args})
                for bits in (8,4)}}
     if {prepared_layout!r}:
         import torch
@@ -70,7 +74,8 @@ def manifest(build_dir, gate_report):
 
 def validate(resources):
     from {package}.fused_moe_probe import gate_case
-    records=[gate_case(resources['fused_int4a'+str(activation)],bits) for activation in (8,4) for bits in (2,3,4)]
+    records=[gate_case(resources['fused_int4a'+str(activation)],bits,tokens=tokens)
+             for activation in (8,4) for bits in (2,3,4) for tokens in {validation_tokens!r}]
     return {{'passed':True,'cases':len(records),'native_fused_stages':2,
              'input_quantization_passes_per_token':1,
              'fp16_intermediate_gm_bytes':0,'model_quality':'not_evaluated'}}

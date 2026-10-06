@@ -1,0 +1,29 @@
+import json,time
+from pathlib import Path
+from dataclasses import replace
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.suite import retrieval_case,load_tokenizer_json,run_groups
+root=Path('/srv/ai/artifacts/glm-native-prefill-20261006')
+client=ResidentClient('http://127.0.0.1:8001',timeout=900)
+deadline=time.monotonic()+180
+while not json.loads((root/'queued-quality.json').read_text()).get('complete'):
+ if time.monotonic()>deadline:raise TimeoutError('quality batch did not complete')
+ time.sleep(1)
+count,_=load_tokenizer_json(Path('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/tokenizer.json'))
+case=replace(retrieval_case(3840,count_tokens=count),max_tokens=64)
+client.request('/pause?mode=wait&clear_cache=true')
+client._acknowledged_rpc('resident_reset',matches=client._status_matches)
+client.resume()
+before=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+assert all(r['candidate']=='native_v45_qualified_prefill_graph_v4' and not r['graphs_dirty'] for r in before)
+print('starting',case.raw_prompt_tokens,flush=True)
+rows=run_groups([('final_cold_retrieval',[case])],client.base_url,'glm53-flash-selective-w3',42,timeout_s=900)
+min_replays={r['rank']:r['prefill_graph']['replays']+6 for r in before}
+after=client._acknowledged_rpc('resident_status',matches=lambda rs:client._status_matches(rs) and all(r.get('candidate')=='native_v45_qualified_prefill_graph_v4' and r.get('prefill_graph',{}).get('replays',0)>=min_replays[r['rank']] for r in rs))
+assert all(r['valid'] and r['passed'] for r in rows)
+assert all(a['prefill_graph']['replays']>=min_replays[a['rank']] for a in after)
+report={'complete':True,'before':before,'after':after,'requests':rows,'paused':client.request('/is_paused',method='GET')}
+(root/'final-retrieval-v4.json').write_text(json.dumps(report,indent=2))
+print([(x['ttft_s'],x['content'],x['passed']) for x in rows],flush=True)
+assert all(r['valid'] and r['passed'] for r in rows)
+assert all(a['prefill_graph']['replays']>b['prefill_graph']['replays'] for a,b in zip(after,before))

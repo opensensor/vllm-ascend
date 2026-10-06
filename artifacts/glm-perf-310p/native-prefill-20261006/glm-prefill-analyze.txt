@@ -1,0 +1,24 @@
+import csv,hashlib,importlib.util,json,sys
+from pathlib import Path
+root=Path(sys.argv[1])
+spec=importlib.util.spec_from_file_location('decode_attribution',Path('/srv/ai/artifacts/glm-native-active-rows-20261006/trace-bf16-v5/analyze.py'))
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+report={'scope':'Two 640-token cold prefill steps, all ranks; native tasks include real resident expert banks.','limitations':['Profiling perturbs latency.','Collectives can overlap or include waits; durations are not additive across categories or ranks.'],'ranks':[]}
+for rank in range(4):
+ directory=root/'prefill640'/f'rank{rank}'
+ path=next(directory.glob('PROF_*/mindstudio_profiler_output/op_summary*.csv'))
+ rows=list(csv.DictReader(path.open()));events=[]
+ for r in rows:
+  b=m.ns(r['Task Start Time(us)']);e=b+m.ns(r['Task Duration(us)'])
+  events.append((b,e,r['Op Name'],m.category(r['Op Name'],r['Task Type']),r['Stream ID']))
+ times=list(csv.DictReader(next(directory.glob('PROF_*/mindstudio_profiler_output/step_trace*.csv')).open()))
+ steps=json.loads((directory/'host-steps.json').read_text());assert len(times)==len(steps)==2
+ record={'rank':rank,'source':str(path),'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),'steps':[]}
+ for step,t in zip(steps,times):
+  end=m.ns(t['Iteration End(us)']);begin=end-m.ns(t['Iteration Time(us)'])
+  assert step['tokens']==640 and abs(begin-step['start_wall_ns'])<100000000
+  record['steps'].append({**step,**m.summarize(events,begin,end)})
+ report['ranks'].append(record)
+(root/'attribution.json').write_text(json.dumps(report,indent=2)+'\n')
+for r in report['ranks']:
+ print(r['rank'],[(round(s['span_ms'],2),[(t['name'],round(t['summed_ms'],2)) for t in s['top_tasks'][:3]]) for s in r['steps']],flush=True)

@@ -1,0 +1,28 @@
+import sys,json,time,uuid
+from pathlib import Path
+from dataclasses import replace
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.suite import load_tokenizer_json,retrieval_case,run_groups
+root=Path('/srv/ai/artifacts/glm-native-prefill-20261006')
+c=ResidentClient('http://127.0.0.1:8001',timeout=900)
+source=(root/'graph-qualified-v56-v1/candidate.py').read_text()
+selected=c.switch(Control(uuid.uuid4().hex,candidate='native_v56_prefill_graph',source=source));c.resume()
+assert all(r['prepared_weight_layout']['transformed_banks']==0 and not r['graphs_dirty'] and not r['native_failed'] for r in selected)
+(root/'final-v56-selected.json').write_text(json.dumps(selected,indent=2))
+began=time.monotonic()
+response=c.request('/v1/completions',{'model':'glm53-flash-selective-w3','prompt':[42]*1280,'max_tokens':1,'temperature':0})
+(root/'final-v56-cold-1280-max1.json').write_text(json.dumps({'elapsed_s':time.monotonic()-began,'response':response,'complete':True},indent=2))
+print('matched cold1280max1',time.monotonic()-began,flush=True)
+count,identity=load_tokenizer_json(Path('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/tokenizer.json'))
+case=replace(retrieval_case(8192,count_tokens=count,variant=8),max_tokens=32)
+before=c._acknowledged_rpc('resident_status',matches=lambda rs:c._status_matches(rs) and all(r.get('candidate')=='native_v56_prefill_graph' for r in rs))
+rows=run_groups([('final_long_cold',[case])],c.base_url,'glm53-flash-selective-w3',42,timeout_s=900,tokenizer_identity=identity)
+after=c._acknowledged_rpc('resident_status',matches=lambda rs:c._status_matches(rs) and all(r.get('candidate')=='native_v56_prefill_graph' for r in rs))
+deltas=[a['prefill_graph']['replays']-b['prefill_graph']['replays'] for b,a in zip(before,after)]
+report={'complete':True,'records':rows,'before':before,'after':after,'replay_deltas':deltas}
+(root/'final-v56-long-retrieval.json').write_text(json.dumps(report,indent=2))
+assert all(r['valid'] and r['passed'] for r in rows) and min(deltas)>=12
+assert all(not r['graphs_dirty'] and not r['native_failed'] and r['reconstruction']['fallback_dispatches']==0 for r in after)
+print('final retrieval',rows[0]['ttft_s'],rows[0]['content'],deltas,flush=True)

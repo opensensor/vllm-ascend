@@ -1,0 +1,624 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Experimental completed-pool writes; decode retains the qualified path.
+
+Build compact row metadata once per scheduler batch from existing CPU query
+boundaries. Pool phase and speculative tail validity still come from device
+positions. Never read a device scalar or compact a device boolean mask.
+"""
+
+import torch
+
+MAX_GRAPH_TOKENS = 8
+MAX_SPECULATIVE_TOKENS = 1
+POOL_SIZE = 4
+
+
+class PoolWritePlan:
+    # Resident source is executed in a private, unregistered module and may
+    # inherit postponed annotations. Avoid dataclass's module-name lookup.
+    __slots__ = ("num_tokens", "complete", "tail")
+
+    def __init__(self, num_tokens: int, complete: torch.Tensor, tail: torch.Tensor):
+        self.num_tokens = num_tokens
+        self.complete = complete  # [candidate pool base, request start, request end]
+        self.tail = tail  # [input row, request index]
+
+
+def plan_rows(boundaries: list[int], num_tokens: int) -> tuple[list[list[int]], list[list[int]]]:
+    if (
+        len(boundaries) < 2
+        or boundaries[0] != 0
+        or boundaries[-1] != num_tokens
+        or any(a > b for a, b in zip(boundaries, boundaries[1:]))
+    ):
+        raise ValueError("query boundaries must partition all actual input tokens")
+    complete, tail = [], []
+    for request, (start, end) in enumerate(zip(boundaries, boundaries[1:])):
+        # At most ceil(length / 4) completed pools, independent of device phase.
+        complete.extend([base, start, end] for base in range(start, end, POOL_SIZE))
+        # MTP1 can require the preceding pool as well as the current tail.
+        tail.extend([row, request] for row in range(max(start, end - POOL_SIZE - MAX_SPECULATIVE_TOKENS), end))
+    return complete, tail
+
+
+def make_plan(boundaries: torch.Tensor, num_tokens: int, device: torch.device) -> PoolWritePlan:
+    if boundaries.device.type != "cpu" or boundaries.ndim != 1 or boundaries.dtype not in (torch.int32, torch.int64):
+        raise ValueError("plan requires scheduler-owned CPU integer query boundaries")
+    complete, tail = plan_rows(boundaries.tolist(), num_tokens)
+    # One small CPU-to-device metadata copy per batch, shared by all layers.
+    values = [value for row in complete for value in row] + [value for row in tail for value in row]
+    packed = torch.tensor(values, dtype=torch.int64).to(device)
+    count = len(complete) * 3
+    return PoolWritePlan(num_tokens, packed[:count].view(-1, 3), packed[count:].view(-1, 2))
+
+
+def write_compact_pools(
+    keys,
+    gates,
+    ape,
+    positions,
+    index_meta,
+    state_meta,
+    state_cache,
+    key_cache,
+    plan,
+    num_speculative_tokens,
+    *,
+    compress,
+    storage_write,
+):
+    if not 0 <= num_speculative_tokens <= MAX_SPECULATIVE_TOKENS:
+        raise ValueError("completed-pool candidate is qualified only for no speculation or MTP1")
+    if plan.num_tokens != keys.shape[0] or keys.shape != gates.shape or keys.shape[-1] != 128:
+        raise ValueError("compact pool plan and key/gate geometry disagree")
+    if state_cache.shape[1:] != (POOL_SIZE, 256) or key_cache.shape[-2:] != (1, 128):
+        raise ValueError("unsupported kpool cache geometry")
+
+    count = plan.complete.shape[0]
+    if count:
+        bases, starts, ends = plan.complete.unbind(1)
+        first_positions = positions.index_select(0, starts)
+        rows = bases + (POOL_SIZE - 1 - first_positions.remainder(POOL_SIZE))
+        safe_rows = torch.minimum(rows, ends - 1)
+        selected_positions = positions.index_select(0, safe_rows)
+        state_slots = state_meta.slot_mapping.index_select(0, safe_rows).long().clamp_min(0)
+        blocks = state_slots // POOL_SIZE
+        # Gather every required previous-state row before any state write.
+        old = state_cache[blocks]
+        offsets = torch.arange(POOL_SIZE - 1, -1, -1, device=keys.device)
+        local = safe_rows[:, None] - offsets[None, :]
+        safe_local = local.clamp_min(0)
+        same_pool = (local >= starts[:, None]) & (
+            positions[safe_local] == selected_positions[:, None] - offsets[None, :]
+        )
+        pool_keys = torch.where(same_pool[:, :, None], keys[safe_local].float(), old[:, :, :128])
+        pool_gates = torch.where(same_pool[:, :, None], gates[safe_local].float(), old[:, :, 128:])
+        slots = index_meta.slot_mapping.index_select(0, safe_rows).long()
+        completed = (rows < ends) & (slots >= 0) & ((selected_positions + 1).remainder(POOL_SIZE) == 0)
+
+    if plan.tail.shape[0]:
+        tail_rows, requests = plan.tail.unbind(1)
+        slots_tail = state_meta.slot_mapping.index_select(0, tail_rows).long()
+        safe_slots = slots_tail.clamp_min(0)
+        final_positions = index_meta.raw_seq_lens.index_select(0, requests).long() - 1
+        first_retained_pool = (final_positions - num_speculative_tokens).clamp_min(0) // POOL_SIZE
+        valid = (slots_tail >= 0) & (positions.index_select(0, tail_rows) >= first_retained_pool * POOL_SIZE)
+        offsets_tail = (
+            state_cache.storage_offset()
+            + (safe_slots // POOL_SIZE) * state_cache.stride(0)
+            + safe_slots.remainder(POOL_SIZE) * state_cache.stride(1)
+        )
+        # Match the existing writer's gather dispatch: aclnnIndexSelect rejects
+        # BF16 on 310P, while advanced indexing handles this storage format.
+        values = torch.cat((keys[tail_rows].float(), gates[tail_rows].float()), dim=-1)
+        storage_write(state_cache, offsets_tail, values, valid)
+
+    if count:
+        compressed = compress(pool_keys, pool_gates, ape)
+        safe_slots = slots.clamp_min(0)
+        offsets_key = (
+            key_cache.storage_offset()
+            + (safe_slots // key_cache.shape[1]) * key_cache.stride(0)
+            + safe_slots.remainder(key_cache.shape[1]) * key_cache.stride(1)
+        )
+        storage_write(key_cache, offsets_key, compressed.to(key_cache.dtype), completed)
+
+
+def wrap_builder(original):
+    original = getattr(original, "__glm_resident_original__", original)
+
+    def build(self, common_prefix_len, common_attn_metadata, fast_build=False, **kwargs):
+        metadata = original(self, common_prefix_len, common_attn_metadata, fast_build=fast_build, **kwargs)
+        # Some builders reuse metadata; never retain a plan from another batch.
+        metadata._glm_completed_pool_plan = None
+        if metadata.num_actual_tokens > MAX_GRAPH_TOKENS and metadata.compress_ratio == POOL_SIZE:
+            boundaries = metadata.cum_query_lens_cpu
+            if boundaries is not None and boundaries.device.type == "cpu":
+                metadata._glm_completed_pool_plan = make_plan(
+                    boundaries, metadata.num_actual_tokens, metadata.positions.device
+                )
+        return metadata
+
+    build.__glm_resident_original__ = original
+    return build
+
+
+def wrap_writer(original, cache_tensor, storage_write, compress):
+    original = getattr(original, "__glm_resident_original__", original)
+
+    def write(self, keys, gates, ape, positions, pool_size, indexer_metadata, state_metadata):
+        plan = getattr(indexer_metadata, "_glm_completed_pool_plan", None)
+        speculative = getattr(self.tail_cache, "num_speculative_tokens", 0)
+        if (
+            plan is None
+            or keys.shape[0] <= MAX_GRAPH_TOKENS
+            or pool_size != POOL_SIZE
+            or not 0 <= speculative <= MAX_SPECULATIVE_TOKENS
+        ):
+            return original(self, keys, gates, ape, positions, pool_size, indexer_metadata, state_metadata)
+        return write_compact_pools(
+            keys,
+            gates,
+            ape,
+            positions,
+            indexer_metadata,
+            state_metadata,
+            cache_tensor(self.tail_cache),
+            cache_tensor(self.k_cache),
+            plan,
+            speculative,
+            compress=compress,
+            storage_write=storage_write,
+        )
+
+    write.__glm_resident_original__ = original
+    return write
+
+
+def base_replacements(native_resources=None):
+    from vllm_ascend.attention.indexer_kpool import AscendIndexerKPoolMetadataBuilder
+    from vllm_ascend.models.glm5next import sparse_attn_indexer_kpool as module
+
+    return {
+        "vllm_ascend.attention.indexer_kpool:AscendIndexerKPoolMetadataBuilder.build": wrap_builder(
+            AscendIndexerKPoolMetadataBuilder.build
+        ),
+        "vllm_ascend.models.glm5next.sparse_attn_indexer_kpool:SparseAttnIndexerKpool._write_pools": wrap_writer(
+            module.SparseAttnIndexerKpool._write_pools,
+            module._cache_tensor,
+            module._masked_storage_write,
+            module.compress_kpool,
+        ),
+    }
+
+# SPDX-License-Identifier: Apache-2.0
+"""Append to the candidate source after renaming its factory to base_replacements."""
+
+from tools.glm_perf.resident_worker import ResidentWorkerExtension
+
+
+def serving_replacements(native_resources=None):
+    changes = base_replacements(native_resources)  # noqa: F821 - appended candidate factory
+    target = "vllm_ascend.models.glm5next.sparse_attn_indexer_kpool:SparseAttnIndexerKpool._write_pools"
+    write = changes[target]
+    counts = {"compact_calls": 0, "compact_tokens": 0, "fallback_calls": 0, "max_compact_tokens": 0}
+
+    def audited(self, keys, gates, ape, positions, pool_size, indexer_metadata, state_metadata):
+        plan = getattr(indexer_metadata, "_glm_completed_pool_plan", None)
+        speculative = getattr(self.tail_cache, "num_speculative_tokens", 0)
+        if plan is not None and keys.shape[0] > 8 and pool_size == 4 and 0 <= speculative <= 1:
+            counts["compact_calls"] += 1
+            counts["compact_tokens"] += keys.shape[0]
+            counts["max_compact_tokens"] = max(counts["max_compact_tokens"], keys.shape[0])
+        else:
+            counts["fallback_calls"] += 1
+        return write(self, keys, gates, ape, positions, pool_size, indexer_metadata, state_metadata)
+
+    def status(self):
+        receipt = ResidentWorkerExtension.resident_status(self)
+        receipt["completed_pool_audit"] = dict(counts)
+        return receipt
+
+    changes[target] = audited
+    changes["vllm_ascend._310p.worker_310p:NPUWorker310.resident_status"] = status
+    return changes
+
+# SPDX-License-Identifier: Apache-2.0
+"""Resident decode-only normalization fusion; requires its validated native resource."""
+
+import inspect
+
+NORMALIZATION_BLOCK = """    comb_mix = torch.softmax(comb_logits, dim=-1) + hc_sinkhorn_eps
+    comb_mix = comb_mix / (comb_mix.sum(dim=-2, keepdim=True) + hc_sinkhorn_eps)
+    for _ in range(sinkhorn_repeat - 1):
+        comb_mix = comb_mix / (comb_mix.sum(dim=-1, keepdim=True) + hc_sinkhorn_eps)
+        comb_mix = comb_mix / (comb_mix.sum(dim=-2, keepdim=True) + hc_sinkhorn_eps)
+"""
+
+
+def wrap_pre(original, normalize):
+    original = getattr(original, "__glm_resident_original__", original)
+    source = inspect.getsource(original)
+    if source.count(NORMALIZATION_BLOCK) != 1:
+        raise ValueError("upstream mHC normalization changed; refuse partial replacement")
+    # Retain the complete current upstream implementation, signature, and
+    # surrounding arithmetic. Change only the verified normalization block.
+    replacement = """    if hc_mult == 4 and 1 <= num_tokens <= 8 and sinkhorn_repeat == 20 and hc_sinkhorn_eps == 1e-6:
+        comb_mix = _resident_normalize(torch.softmax(comb_logits, dim=-1) + hc_sinkhorn_eps)
+    else:
+""" + "".join("    " + line + "\n" for line in NORMALIZATION_BLOCK.rstrip().splitlines())
+    namespace = dict(original.__globals__, _resident_normalize=normalize)
+    exec(compile(source.replace(NORMALIZATION_BLOCK, replacement), "<resident-mhc-normalize>", "exec"), namespace)
+    wrapped = namespace[original.__name__]
+    wrapped.__glm_resident_original__ = original
+    return wrapped
+
+
+def sinkhorn_replacements(native_resources):
+    from vllm_ascend.patch.worker import patch_mhc_norm
+
+    operation = native_resources["sinkhorn_normalize_v1"]
+    return {
+        "vllm_ascend.patch.worker.patch_mhc_norm:_mhc_pre_torch": wrap_pre(patch_mhc_norm._mhc_pre_torch, operation)
+    }
+
+def qualified_replacements(native_resources):
+    changes = serving_replacements(native_resources)
+    changes.update(sinkhorn_replacements(native_resources))
+    return changes
+
+# SPDX-License-Identifier: Apache-2.0
+"""Test dispatch selection for existing DeepSeek flags, using resident weights."""
+
+DECODE_SELECTION = (False, True)
+
+
+def select_decode_flags(original, selection):
+    original = getattr(original, "__decode_flags_original__", original)
+
+    def selected(self, grouped_op, experts, x, topk_weights, topk_ids, shared_expert):
+        saved = experts.decode_swiglu, experts.decode_combine
+        enabled = tuple(flag and not experts.offload_to_cpu for flag in selection)
+        if saved == enabled:
+            return original(self, grouped_op, experts, x, topk_weights, topk_ids, shared_expert)
+        experts.decode_swiglu, experts.decode_combine = enabled
+        try:
+            return original(self, grouped_op, experts, x, topk_weights, topk_ids, shared_expert)
+        finally:
+            experts.decode_swiglu, experts.decode_combine = saved
+
+    selected.__decode_flags_original__ = original
+    return selected
+
+
+def _reconstruction_base_replacements(native_resources):
+    from vllm_ascend._310p.quantization.methods.w2_dynamic import AscendW2DynamicFusedMoEMethod310
+
+    changes = qualified_replacements(native_resources)  # noqa: F821 - composed with qualified factory
+    original = AscendW2DynamicFusedMoEMethod310._apply_device_grouped
+    changes[
+        "vllm_ascend._310p.quantization.methods.w2_dynamic:AscendW2DynamicFusedMoEMethod310._apply_device_grouped"
+    ] = select_decode_flags(original, DECODE_SELECTION)
+    target = "vllm_ascend._310p.worker_310p:NPUWorker310.resident_status"
+    status = changes[target]
+
+    def selected_status(self):
+        receipt = status(self)
+        receipt["decode_selection"] = {"swiglu": DECODE_SELECTION[0], "combine": DECODE_SELECTION[1]}
+        return receipt
+
+    changes[target] = selected_status
+    return changes
+
+
+def cast_base_replacements(native_resources):
+    from glm_reconstruction_v46_helpers.expert_reconstruction import extend_replacements
+    return extend_replacements(_reconstruction_base_replacements(native_resources), native_resources, 'fused_int4a4', resource_name='reconstruction_v46')
+
+# SPDX-License-Identifier: Apache-2.0
+"""Preserve BF16 rounding while removing indexer AI-CPU cast dispatches."""
+
+import ast
+import inspect
+import textwrap
+from pathlib import Path
+
+import torch
+
+
+def wrap_indexer(original, convert):
+    original = getattr(original, "__glm_aicore_original__", original)
+    source = inspect.getsource(original)
+    source = source.replace("k_pe = k_pe.to(torch.bfloat16)", "k_pe = _aicore_convert(k_pe, torch.bfloat16)")
+    source = source.replace("q = q.to(torch.bfloat16)", "q = _aicore_convert(q, torch.bfloat16)")
+    source = source.replace(
+        "k_pe = k_pe.reshape(-1, 1, self.rope_dim).float()",
+        "k_pe = _aicore_convert(k_pe.reshape(-1, 1, self.rope_dim), torch.float32)",
+    )
+    namespace = dict(original.__globals__, _aicore_convert=convert)
+    exec(compile(textwrap.dedent(source), "<indexer-aicore-casts>", "exec"), namespace)
+    wrapped = namespace[original.__name__]
+    wrapped.__glm_aicore_original__ = original
+    return wrapped
+
+
+def bf16_replacements(native_resources, prefill_wrapper=None):
+    from vllm_ascend.models.glm5next import attention, kpool_ops, sparse_attn_indexer_kpool
+
+    convert = native_resources["bf16_cast_v1"]
+
+    def compress(keys, gates, ape, out_dtype=torch.bfloat16):
+        if keys.shape != gates.shape or keys.shape[-2:] != ape.shape:
+            raise ValueError("K, gate, and APE shapes disagree for GLM kpool compression")
+        probabilities = torch.softmax(convert(gates, torch.float32) + convert(ape, torch.float32), dim=-2)
+        pooled = convert.round((convert(keys, torch.float32) * probabilities).sum(dim=-2))
+        rotated = kpool_ops.hadamard128(pooled)
+        return convert.round(rotated, out_dtype)
+
+    def score(queries, weights, cache, table, boundaries, positions, num_pools):
+        elements = cache.untyped_storage().nbytes() // cache.element_size()
+        flat = cache.as_strided((elements,), (1,), storage_offset=0)
+        rotated = kpool_ops.hadamard128(convert(queries, torch.float32))
+        rotated = convert.round(rotated, torch.float16).contiguous()
+        return torch.ops._C_ascend.npu_glm_kpool_score_310(
+            rotated,
+            weights.float().contiguous(),
+            flat,
+            table.int().contiguous(),
+            boundaries.int().contiguous(),
+            positions.int().contiguous(),
+            num_pools,
+            cache.shape[0],
+            cache.shape[1],
+            cache.stride(0),
+            cache.stride(1),
+            cache.storage_offset(),
+        )
+
+    # Read the authoritative method rather than an already installed resident
+    # wrapper. The transaction prepares while the previous candidate is active.
+    module_source = Path(sparse_attn_indexer_kpool.__file__).read_text()
+    tree = ast.parse(module_source)
+    owner = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "SparseAttnIndexerKpool")
+    method = next(node for node in owner.body if isinstance(node, ast.FunctionDef) and node.name == "_write_pools")
+    source = " " * method.col_offset + ast.get_source_segment(module_source, method)
+    if "compressed.to(key_cache.dtype)" not in source:
+        raise ValueError("indexer pool writer changed")
+    namespace = dict(vars(sparse_attn_indexer_kpool), _aicore_convert=convert, compress_kpool=compress)
+    source = source.replace("compressed.to(key_cache.dtype)", "_aicore_convert(compressed, key_cache.dtype)")
+    source = source.replace(
+        "compress_kpool(pool_keys, pool_gates, ape)",
+        "compress_kpool(pool_keys, pool_gates, ape, out_dtype=key_cache.dtype)",
+    )
+    exec(compile(textwrap.dedent(source), "<indexer-pool-aicore-casts>", "exec"), namespace)
+    writer = namespace["_write_pools"]
+    if prefill_wrapper is not None:
+        writer = prefill_wrapper(
+            writer,
+            sparse_attn_indexer_kpool._cache_tensor,
+            sparse_attn_indexer_kpool._masked_storage_write,
+            compress,
+        )
+    return {
+        "vllm_ascend.models.glm5next.attention:Indexer.forward": wrap_indexer(attention.Indexer.forward, convert),
+        "vllm_ascend.models.glm5next.sparse_attn_indexer_kpool:compress_kpool": compress,
+        "vllm_ascend.models.glm5next.sparse_attn_indexer_kpool:score_kpool_paged": score,
+        "vllm_ascend.models.glm5next.sparse_attn_indexer_kpool:SparseAttnIndexerKpool._write_pools": writer,
+    }
+
+def graph_base_replacements(native_resources):
+ changes=cast_base_replacements(native_resources)
+ changes.update(bf16_replacements(native_resources['bf16_cast_v5'],prefill_wrapper=wrap_writer))
+ return changes
+
+# SPDX-License-Identifier: Apache-2.0
+"""Bounded resident qualification of whole-model breakable prefill graphs.
+
+Use only with the synchronous resident harness. Runtime qualification begins
+with one full 640-token prefill request; smaller and mixed batches keep their
+existing dispatch. Attention and indexer state updates read live metadata in
+eager segments, while the surrounding model operations are captured.
+"""
+
+PREFILL_GRAPH_TOKENS = 640
+TARGET_DESCRIPTOR_POSITION = 6
+
+
+def eligible_prefill(arguments, *, capturing=False):
+    return (
+        arguments["num_tokens"] == PREFILL_GRAPH_TOKENS
+        and (arguments["num_reqs"] == 1 or capturing)
+        and arguments["max_num_scheduled_tokens"] == PREFILL_GRAPH_TOKENS
+        and not arguments.get("force_eager", False)
+        and arguments.get("force_uniform_decode") is not True
+        and not arguments.get("force_has_lora", False)
+        and arguments.get("force_num_active_loras", 0) in (None, 0)
+        and arguments.get("num_encoder_reqs", 0) == 0
+    )
+
+
+class PrefillGraphPolicy:
+    # Resident candidates execute in private modules with postponed annotations;
+    # dataclass annotation lookup requires a registered module. Keep the state
+    # on this explicit per-worker instance instead.
+    def __init__(self):
+        self.saved = {}
+        self.capturing = False
+        self.prefill_dispatches = 0
+        self.prefill_replays = 0
+
+    def configure(self, runner, mode):
+        dispatcher, config = runner.cudagraph_dispatcher, runner.compilation_config
+        if not self.saved:
+            self.saved = {
+                "sizes": list(config.cudagraph_capture_sizes),
+                "max_size": config.max_cudagraph_capture_size,
+                "mode": dispatcher.cudagraph_mode,
+                "keys": {key: set(value) for key, value in dispatcher.cudagraph_keys.items()},
+                "padding": list(dispatcher._bs_to_padded_graph_size),
+                "initialized": dispatcher.keys_initialized,
+            }
+        config.cudagraph_capture_sizes = sorted(set(self.saved["sizes"] + [PREFILL_GRAPH_TOKENS]))
+        config.max_cudagraph_capture_size = PREFILL_GRAPH_TOKENS
+        dispatcher._compute_bs_to_padded_graph_size()
+        dispatcher.initialize_cudagraph_keys(mode.FULL_AND_PIECEWISE, runner.uniform_decode_query_len)
+        dispatcher.cudagraph_keys[mode.PIECEWISE] = {
+            key for key in dispatcher.cudagraph_keys[mode.PIECEWISE] if key.num_tokens == PREFILL_GRAPH_TOKENS
+        }
+
+    def restore(self, runner):
+        if not self.saved:
+            return
+        dispatcher, config = runner.cudagraph_dispatcher, runner.compilation_config
+        config.cudagraph_capture_sizes = self.saved["sizes"]
+        config.max_cudagraph_capture_size = self.saved["max_size"]
+        dispatcher.cudagraph_mode = self.saved["mode"]
+        dispatcher.cudagraph_keys = self.saved["keys"]
+        dispatcher._bs_to_padded_graph_size = self.saved["padding"]
+        dispatcher.keys_initialized = self.saved["initialized"]
+        self.saved = {}
+
+
+def extend_prefill_graphs(changes):
+    # Worker-only imports keep this diagnostic policy testable without vLLM/NPU.
+    import torch
+    from vllm.compilation.breakable_cudagraph import eager_break_during_capture
+    from vllm.config import CUDAGraphMode
+    from vllm.forward_context import get_forward_context
+
+    from vllm_ascend._310p.model_runner_310p import NPUModelRunner310
+    from vllm_ascend._310p.worker_310p import NPUWorker310
+    from vllm_ascend.compilation.breakable_aclgraph import BreakableACLGraphWrapper
+    from vllm_ascend.models.glm5next.sparse_attn_indexer_kpool import SparseAttnIndexerKpool
+    from vllm_ascend.spec_decode.llm_base_proposer import AscendSpecDecodeBaseProposer
+    from vllm_ascend.worker.model_runner_v1 import NPUModelRunner
+
+    result = dict(changes)
+    policy = PrefillGraphPolicy()
+    runner_prefix = "vllm_ascend._310p.model_runner_310p:NPUModelRunner310."
+    worker_prefix = "vllm_ascend._310p.worker_310p:NPUWorker310."
+    original_determine = getattr(
+        NPUModelRunner310._determine_batch_execution_and_padding,
+        "__glm_prefill_original__",
+        NPUModelRunner310._determine_batch_execution_and_padding,
+    )
+    original_capture = getattr(
+        NPUModelRunner310.capture_model, "__glm_prefill_original__", NPUModelRunner310.capture_model
+    )
+    original_apply = result.get(worker_prefix + "resident_apply", NPUWorker310.resident_apply)
+    original_status = result.get(worker_prefix + "resident_status", NPUWorker310.resident_status)
+    original_replay = getattr(
+        BreakableACLGraphWrapper._replay, "__glm_prefill_original__", BreakableACLGraphWrapper._replay
+    )
+    original_indexer = getattr(
+        SparseAttnIndexerKpool.forward, "__glm_prefill_original__", SparseAttnIndexerKpool.forward
+    )
+    proposer_prefix = "vllm_ascend.spec_decode.llm_base_proposer:AscendSpecDecodeBaseProposer."
+    original_dummy = result.get(proposer_prefix + "dummy_run", AscendSpecDecodeBaseProposer.dummy_run)
+    original_propose = result.get(proposer_prefix + "_propose", AscendSpecDecodeBaseProposer._propose)
+
+    def determine(self, **arguments):
+        if not eligible_prefill(arguments, capturing=policy.capturing):
+            return original_determine(self, **arguments)
+        selected = dict(arguments, force_uniform_decode=False, use_cascade_attn=True)
+        receipt = NPUModelRunner._determine_batch_execution_and_padding(self, **selected)
+        if receipt[0] != CUDAGraphMode.PIECEWISE:
+            raise RuntimeError("qualified prefill size did not select its piecewise graph")
+        if not policy.capturing:
+            policy.prefill_dispatches += 1
+        return receipt
+
+    def capture(self):
+        policy.configure(self, CUDAGraphMode)
+        policy.capturing = True
+        try:
+            return original_capture(self)
+        finally:
+            policy.capturing = False
+
+    def apply(self, generation):
+        session = self._resident_session()
+        pending = session.pending
+        if pending is not None and session.current is not None and pending[0].digest != session.current.digest:
+            policy.restore(self.model_runner)
+        return original_apply(self, generation)
+
+    def replay(self, entry, args, kwargs):
+        if (
+            entry.batch_descriptor.num_tokens == PREFILL_GRAPH_TOKENS
+            and get_forward_context().cudagraph_runtime_mode == CUDAGraphMode.PIECEWISE
+        ):
+            policy.prefill_replays += 1
+        return original_replay(self, entry, args, kwargs)
+
+    # CustomOp stores a bound dispatch implementation at construction. Wrap
+    # forward, so already-loaded indexer instances execute this eager boundary.
+    # Its output is the preallocated top-k buffer; writes use current metadata.
+    indexer = eager_break_during_capture(original_indexer)
+
+    def draft_dummy(self, *args, **kwargs):
+        tokens = kwargs.get("num_tokens", args[0] if args else 0)
+        if policy.capturing and tokens == PREFILL_GRAPH_TOKENS:
+            # Target piecewise capture must not register an unqualified MTP
+            # graph with num_tokens / query_len dummy requests. Existing draft
+            # decode graphs are still captured at their original descriptors.
+            return None
+        return original_dummy(self, *args, **kwargs)
+
+    def draft_propose(self, num_speculative_tokens, *args, **kwargs):
+        descriptor = kwargs.get("target_model_batch_desc")
+        if descriptor is None and len(args) > TARGET_DESCRIPTOR_POSITION:
+            descriptor = args[TARGET_DESCRIPTOR_POSITION]
+        use_graph = self.use_cuda_graph
+        try:
+            if descriptor is not None and not descriptor.uniform:
+                # The target dispatcher's enlarged padding table is shared by
+                # the proposer. All nonuniform draft batches must retain the
+                # previous eager path, including short or partial prefill.
+                self.use_cuda_graph = False
+            return original_propose(self, num_speculative_tokens, *args, **kwargs)
+        finally:
+            self.use_cuda_graph = use_graph
+
+    def status(self):
+        receipt = original_status(self)
+        entries = []
+        for key, entry in self.model_runner.model.entries.items():
+            if key.num_tokens == PREFILL_GRAPH_TOKENS:
+                graph = entry.capture
+                entries.append(
+                    {
+                        "descriptor": str(key),
+                        "graphs": graph._num_graphs if graph else 0,
+                        "eager_breaks": graph._num_eager_breaks if graph else 0,
+                    }
+                )
+        receipt["prefill_graph"] = {
+            "tokens": PREFILL_GRAPH_TOKENS,
+            "scope": "single-request full prefill chunks; live attention/indexer eager boundaries",
+            "dispatches": policy.prefill_dispatches,
+            "replays": policy.prefill_replays,
+            "entries": entries,
+            "free_memory_bytes": torch.npu.mem_get_info()[0],
+        }
+        return receipt
+
+    for wrapper, original in (
+        (determine, original_determine),
+        (capture, original_capture),
+        (replay, original_replay),
+        (indexer, original_indexer),
+    ):
+        wrapper.__glm_prefill_original__ = original
+    result[runner_prefix + "_determine_batch_execution_and_padding"] = determine
+    result[runner_prefix + "capture_model"] = capture
+    result[worker_prefix + "resident_apply"] = apply
+    result[worker_prefix + "resident_status"] = status
+    result["vllm_ascend.compilation.breakable_aclgraph:BreakableACLGraphWrapper._replay"] = replay
+    result["vllm_ascend.models.glm5next.sparse_attn_indexer_kpool:SparseAttnIndexerKpool.forward"] = indexer
+    result[proposer_prefix + "dummy_run"] = draft_dummy
+    result[proposer_prefix + "_propose"] = draft_propose
+    return result
+
+def replacements(native_resources):
+ return extend_prefill_graphs(graph_base_replacements(native_resources))

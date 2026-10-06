@@ -1,0 +1,1769 @@
+{
+  "scope": "Two 640-token cold prefill steps, all ranks; native tasks include real resident expert banks.",
+  "limitations": [
+    "Profiling perturbs latency.",
+    "Collectives can overlap or include waits; durations are not additive across categories or ranks."
+  ],
+  "ranks": [
+    {
+      "rank": 0,
+      "source": "/srv/ai/artifacts/glm-native-prefill-20261006/trace-v41/prefill640/rank0/PROF_000009_20261006201018503_00327411ELRRNFCA/mindstudio_profiler_output/op_summary_20261006201257.csv",
+      "sha256": "b8a1c6fa5cfe4132b161a758e5f9a14eed6ce76898e7db328161a0259fbd427a",
+      "steps": [
+        {
+          "step": 0,
+          "tokens": 640,
+          "requests": 1,
+          "start_wall_ns": 1791317418549990723,
+          "end_wall_ns": 1791317434077619221,
+          "span_ms": 15860.735189,
+          "task_union_ms": 15842.974689,
+          "no_reported_task_ms": 17.7605,
+          "categories": {
+            "other": {
+              "count": 20973,
+              "summed_ms": 642.76749,
+              "union_ms": 641.496526
+            },
+            "copy_cast_layout": {
+              "count": 2719,
+              "summed_ms": 387.442596,
+              "union_ms": 387.44106
+            },
+            "ai_cpu_other": {
+              "count": 165,
+              "summed_ms": 39.719925,
+              "union_ms": 39.658883
+            },
+            "collective": {
+              "count": 96,
+              "summed_ms": 3860.343714,
+              "union_ms": 3860.343714
+            },
+            "other_matmul": {
+              "count": 675,
+              "summed_ms": 124.780631,
+              "union_ms": 124.780631
+            },
+            "kda_convolution": {
+              "count": 782,
+              "summed_ms": 1374.362999,
+              "union_ms": 1374.362999
+            },
+            "mhc_post": {
+              "count": 89,
+              "summed_ms": 100.451168,
+              "union_ms": 100.451168
+            },
+            "topk": {
+              "count": 172,
+              "summed_ms": 9.179099,
+              "union_ms": 5.990221
+            },
+            "native_activation_pack": {
+              "count": 43,
+              "summed_ms": 115.736792,
+              "union_ms": 115.736792
+            },
+            "native_int4_expert": {
+              "count": 86,
+              "summed_ms": 9201.725093,
+              "union_ms": 9201.725093
+            }
+          },
+          "top_tasks": [
+            {
+              "name": "glm_fused_gate_up_v1",
+              "count": 43,
+              "summed_ms": 5119.25536
+            },
+            {
+              "name": "glm_fused_down_v1",
+              "count": 43,
+              "summed_ms": 4082.469733
+            },
+            {
+              "name": "aclnnChunkKdaFwd_KdaChunkForward_ChunkKdaFwd",
+              "count": 306,
+              "summed_ms": 1305.797046
+            },
+            {
+              "name": "hcom_allReduce__503_26_1",
+              "count": 1,
+              "summed_ms": 415.349587
+            },
+            {
+              "name": "hcom_allReduce__503_90_1",
+              "count": 1,
+              "summed_ms": 326.236779
+            },
+            {
+              "name": "hcom_allReduce__503_20_1",
+              "count": 1,
+              "summed_ms": 219.620275
+            },
+            {
+              "name": "hcom_allReduce__503_70_1",
+              "count": 1,
+              "summed_ms": 190.071917
+            },
+            {
+              "name": "hcom_allReduce__503_12_1",
+              "count": 1,
+              "summed_ms": 187.865016
+            },
+            {
+              "name": "hcom_allReduce__503_60_1",
+              "count": 1,
+              "summed_ms": 179.954547
+            },
+            {
+              "name": "hcom_allReduce__503_8_1",
+              "count": 1,
+              "summed_ms": 173.958636
+            },
+            {
+              "name": "hcom_allReduce__503_16_1",
+              "count": 1,
+              "summed_ms": 170.940017
+            },
+            {
+              "name": "hcom_allReduce__503_50_1",
+              "count": 1,
+              "summed_ms": 160.937257
+            },
+            {
+              "name": "hcom_allReduce__503_10_1",
+              "count": 1,
+              "summed_ms": 156.475877
+            },
+            {
+              "name": "hcom_allReduce__503_62_1",
+              "count": 1,
+              "summed_ms": 155.165721
+            },
+            {
+              "name": "glm_bf16_cast_v1",
+              "count": 36,
+              "summed_ms": 151.767254
+            },
+            {
+              "name": "hcom_allReduce__503_46_1",
+              "count": 1,
+              "summed_ms": 150.101684
+            },
+            {
+              "name": "aclnnIndex_AsStridedAiCore_AsStrided",
+              "count": 34,
+              "summed_ms": 139.323665
+            },
+            {
+              "name": "aclnnIndexPutImpl_AsStridedAiCore_AsStrided",
+              "count": 34,
+              "summed_ms": 138.534213
+            },
+            {
+              "name": "hcom_allReduce__503_82_1",
+              "count": 1,
+              "summed_ms": 129.421477
+            },
+            {
+              "name": "aclnnIndexPutImpl_ViewCopyAiCore_ViewCopy",
+              "count": 34,
+              "summed_ms": 127.865201
+            },
+            {
+              "name": "hcom_allReduce__503_84_1",
+              "count": 1,
+              "summed_ms": 126.680279
+            },
+            {
+              "name": "hcom_allReduce__503_24_1",
+              "count": 1,
+              "summed_ms": 125.217076
+            },
+            {
+              "name": "glm_fused_pack_v1",
+              "count": 43,
+              "summed_ms": 115.736792
+            },
+            {
+              "name": "hcom_allReduce__503_54_1",
+              "count": 1,
+              "summed_ms": 114.750827
+            },
+            {
+              "name": "hcom_allReduce__503_14_1",
+              "count": 1,
+              "summed_ms": 110.586999
+            },
+            {
+              "name": "GlmMhcPostV310",
+              "count": 89,
+              "summed_ms": 100.451168
+            },
+            {
+              "name": "hcom_allReduce__503_44_1",
+              "count": 1,
+              "summed_ms": 93.387937
+            },
+            {
+              "name": "aclnnScatterNdUpdate_ScatterNdUpdateAiCore_ScatterNdUpdate",
+              "count": 24,
+              "summed_ms": 82.265362
+            },
+            {
+              "name": "aclnnReduceSum_ReduceSumOpAiCore_ReduceSum",
+              "count": 3747,
+              "summed_ms": 78.631619
+            },
+            {
+              "name": "hcom_allReduce__503_76_1",
+              "count": 1,
+              "summed_ms": 77.418928
+            }
+          ]
+        },
+        {
+          "step": 1,
+          "tokens": 640,
+          "requests": 1,
+          "start_wall_ns": 1791317434412452302,
+          "end_wall_ns": 1791317451250976820,
+          "span_ms": 17297.890635,
+          "task_union_ms": 17275.648116,
+          "no_reported_task_ms": 22.242519,
+          "categories": {
+            "other": {
+              "count": 21096,
+              "summed_ms": 637.315233,
+              "union_ms": 635.779089
+            },
+            "copy_cast_layout": {
+              "count": 2962,
+              "summed_ms": 391.95027,
+              "union_ms": 391.935531
+            },
+            "ai_cpu_other": {
+              "count": 200,
+              "summed_ms": 54.318408,
+              "union_ms": 54.318408
+            },
+            "collective": {
+              "count": 96,
+              "summed_ms": 4674.699168,
+              "union_ms": 4674.699168
+            },
+            "other_matmul": {
+              "count": 699,
+              "summed_ms": 128.230502,
+              "union_ms": 128.230502
+            },
+            "kda_convolution": {
+              "count": 782,
+              "summed_ms": 1376.323217,
+              "union_ms": 1376.323217
+            },
+            "mhc_post": {
+              "count": 89,
+              "summed_ms": 100.369892,
+              "union_ms": 100.369892
+            },
+            "sparse_attention": {
+              "count": 12,
+              "summed_ms": 758.44259,
+              "union_ms": 758.44259
+            },
+            "topk": {
+              "count": 172,
+              "summed_ms": 9.219075,
+              "union_ms": 5.998403
+            },
+            "native_activation_pack": {
+              "count": 43,
+              "summed_ms": 115.718767,
+              "union_ms": 115.718767
+            },
+            "native_int4_expert": {
+              "count": 86,
+              "summed_ms": 9041.809866,
+              "union_ms": 9041.809866
+            }
+          },
+          "top_tasks": [
+            {
+              "name": "glm_fused_gate_up_v1",
+              "count": 43,
+              "summed_ms": 5085.847367
+            },
+            {
+              "name": "glm_fused_down_v1",
+              "count": 43,
+              "summed_ms": 3955.962499
+            },
+            {
+              "name": "aclnnChunkKdaFwd_KdaChunkForward_ChunkKdaFwd",
+              "count": 306,
+              "summed_ms": 1307.370656
+            },
+            {
+              "name": "QsaSparseAttentionV310",
+              "count": 12,
+              "summed_ms": 758.44259
+            },
+            {
+              "name": "hcom_allReduce__503_122_1",
+              "count": 1,
+              "summed_ms": 503.757812
+            },
+            {
+              "name": "hcom_allReduce__503_108_1",
+              "count": 1,
+              "summed_ms": 295.603552
+            },
+            {
+              "name": "hcom_allReduce__503_166_1",
+              "count": 1,
+              "summed_ms": 291.236495
+            },
+            {
+              "name": "hcom_allReduce__503_186_1",
+              "count": 1,
+              "summed_ms": 258.43134
+            },
+            {
+              "name": "hcom_allReduce__503_170_1",
+              "count": 1,
+              "summed_ms": 249.197461
+            },
+            {
+              "name": "hcom_allReduce__503_178_1",
+              "count": 1,
+              "summed_ms": 240.635482
+            },
+            {
+              "name": "hcom_allReduce__503_176_1",
+              "count": 1,
+              "summed_ms": 210.498088
+            },
+            {
+              "name": "hcom_allReduce__503_158_1",
+              "count": 1,
+              "summed_ms": 207.937046
+            },
+            {
+              "name": "hcom_allReduce__503_164_1",
+              "count": 1,
+              "summed_ms": 206.139494
+            },
+            {
+              "name": "hcom_allReduce__503_180_1",
+              "count": 1,
+              "summed_ms": 196.912724
+            },
+            {
+              "name": "hcom_allReduce__503_112_1",
+              "count": 1,
+              "summed_ms": 190.390667
+            },
+            {
+              "name": "hcom_allReduce__503_110_1",
+              "count": 1,
+              "summed_ms": 176.411787
+            },
+            {
+              "name": "hcom_allReduce__503_104_1",
+              "count": 1,
+              "summed_ms": 171.456397
+            },
+            {
+              "name": "hcom_allReduce__503_154_1",
+              "count": 1,
+              "summed_ms": 162.978246
+            },
+            {
+              "name": "glm_bf16_cast_v1",
+              "count": 36,
+              "summed_ms": 151.657751
+            },
+            {
+              "name": "hcom_allReduce__503_190_1",
+              "count": 1,
+              "summed_ms": 141.869836
+            },
+            {
+              "name": "aclnnIndex_AsStridedAiCore_AsStrided",
+              "count": 34,
+              "summed_ms": 139.844706
+            },
+            {
+              "name": "aclnnIndexPutImpl_AsStridedAiCore_AsStrided",
+              "count": 34,
+              "summed_ms": 138.706218
+            },
+            {
+              "name": "aclnnIndexPutImpl_ViewCopyAiCore_ViewCopy",
+              "count": 34,
+              "summed_ms": 127.79947
+            },
+            {
+              "name": "hcom_allReduce__503_140_1",
+              "count": 1,
+              "summed_ms": 118.28692
+            },
+            {
+              "name": "glm_fused_pack_v1",
+              "count": 43,
+              "summed_ms": 115.718767
+            },
+            {
+              "name": "hcom_allReduce__503_116_1",
+              "count": 1,
+              "summed_ms": 113.681817
+            },
+            {
+              "name": "hcom_allReduce__503_106_1",
+              "count": 1,
+              "summed_ms": 109.977181
+            },
+            {
+              "name": "GlmMhcPostV310",
+              "count": 89,
+              "summed_ms": 100.369892
+            },
+            {
+              "name": "hcom_allReduce__503_168_1",
+              "count": 1,
+              "summed_ms": 98.094682
+            },
+            {
+              "name": "aclnnScatterNdUpdate_ScatterNdUpdateAiCore_ScatterNdUpdate",
+              "count": 24,
+              "summed_ms": 83.018511
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "rank": 1,
+      "source": "/srv/ai/artifacts/glm-native-prefill-20261006/trace-v41/prefill640/rank1/PROF_000009_20261006201018503_00327821BFEJGIOI/mindstudio_profiler_output/op_summary_20261006201257.csv",
+      "sha256": "f03207d41d5f3819b6d27adb1e6ca7ad75bd21aa92bd7fb6e7f1f41f15a4d79b",
+      "steps": [
+        {
+          "step": 0,
+          "tokens": 640,
+          "requests": 1,
+          "start_wall_ns": 1791317418549985082,
+          "end_wall_ns": 1791317434077701939,
+          "span_ms": 15860.776413,
+          "task_union_ms": 15841.923255,
+          "no_reported_task_ms": 18.853158,
+          "categories": {
+            "other": {
+              "count": 20973,
+              "summed_ms": 640.436162,
+              "union_ms": 639.295117
+            },
+            "copy_cast_layout": {
+              "count": 2719,
+              "summed_ms": 386.936442,
+              "union_ms": 386.934176
+            },
+            "ai_cpu_other": {
+              "count": 165,
+              "summed_ms": 49.906659,
+              "union_ms": 49.906659
+            },
+            "collective": {
+              "count": 96,
+              "summed_ms": 4231.096195,
+              "union_ms": 4231.096195
+            },
+            "other_matmul": {
+              "count": 675,
+              "summed_ms": 123.515708,
+              "union_ms": 123.515708
+            },
+            "kda_convolution": {
+              "count": 782,
+              "summed_ms": 1373.940119,
+              "union_ms": 1373.940119
+            },
+            "mhc_post": {
+              "count": 89,
+              "summed_ms": 99.774502,
+              "union_ms": 99.774502
+            },
+            "topk": {
+              "count": 172,
+              "summed_ms": 9.235403,
+              "union_ms": 5.931139
+            },
+            "native_activation_pack": {
+              "count": 43,
+              "summed_ms": 115.426295,
+              "union_ms": 115.426295
+            },
+            "native_int4_expert": {
+              "count": 86,
+              "summed_ms": 8824.120741,
+              "union_ms": 8824.120741
+            }
+          },
+          "top_tasks": [
+            {
+              "name": "glm_fused_gate_up_v1",
+              "count": 43,
+              "summed_ms": 4874.537977
+            },
+            {
+              "name": "glm_fused_down_v1",
+              "count": 43,
+              "summed_ms": 3949.582764
+            },
+            {
+              "name": "aclnnChunkKdaFwd_KdaChunkForward_ChunkKdaFwd",
+              "count": 306,
+              "summed_ms": 1305.275163
+            },
+            {
+              "name": "hcom_allReduce__503_18_1",
+              "count": 1,
+              "summed_ms": 401.604093
+            },
+            {
+              "name": "hcom_allReduce__503_12_1",
+              "count": 1,
+              "summed_ms": 313.239514
+            },
+            {
+              "name": "hcom_allReduce__503_88_1",
+              "count": 1,
+              "summed_ms": 249.509101
+            },
+            {
+              "name": "hcom_allReduce__503_94_1",
+              "count": 1,
+              "summed_ms": 239.118711
+            },
+            {
+              "name": "hcom_allReduce__503_36_1",
+              "count": 1,
+              "summed_ms": 208.233869
+            },
+            {
+              "name": "hcom_allReduce__503_60_1",
+              "count": 1,
+              "summed_ms": 190.502412
+            },
+            {
+              "name": "hcom_allReduce__503_20_1",
+              "count": 1,
+              "summed_ms": 177.090485
+            },
+            {
+              "name": "hcom_allReduce__503_10_1",
+              "count": 1,
+              "summed_ms": 172.288558
+            },
+            {
+              "name": "hcom_allReduce__503_22_1",
+              "count": 1,
+              "summed_ms": 165.597751
+            },
+            {
+              "name": "hcom_allReduce__503_8_1",
+              "count": 1,
+              "summed_ms": 163.9971
+            },
+            {
+              "name": "hcom_allReduce__503_46_1",
+              "count": 1,
+              "summed_ms": 161.117673
+            },
+            {
+              "name": "glm_bf16_cast_v1",
+              "count": 36,
+              "summed_ms": 152.530405
+            },
+            {
+              "name": "aclnnIndex_AsStridedAiCore_AsStrided",
+              "count": 34,
+              "summed_ms": 139.668116
+            },
+            {
+              "name": "aclnnIndexPutImpl_AsStridedAiCore_AsStrided",
+              "count": 34,
+              "summed_ms": 138.352493
+            },
+            {
+              "name": "hcom_allReduce__503_86_1",
+              "count": 1,
+              "summed_ms": 129.321764
+            },
+            {
+              "name": "aclnnIndexPutImpl_ViewCopyAiCore_ViewCopy",
+              "count": 34,
+              "summed_ms": 127.806194
+            },
+            {
+              "name": "hcom_allReduce__503_24_1",
+              "count": 1,
+              "summed_ms": 120.343926
+            },
+            {
+              "name": "glm_fused_pack_v1",
+              "count": 43,
+              "summed_ms": 115.426295
+            },
+            {
+              "name": "hcom_allReduce__503_28_1",
+              "count": 1,
+              "summed_ms": 115.335124
+            },
+            {
+              "name": "hcom_allReduce__503_64_1",
+              "count": 1,
+              "summed_ms": 107.68528
+            },
+            {
+              "name": "hcom_allReduce__503_16_1",
+              "count": 1,
+              "summed_ms": 107.202468
+            },
+            {
+              "name": "GlmMhcPostV310",
+              "count": 89,
+              "summed_ms": 99.774502
+            },
+            {
+              "name": "hcom_allReduce__503_84_1",
+              "count": 1,
+              "summed_ms": 98.724682
+            },
+            {
+              "name": "hcom_allReduce__503_14_1",
+              "count": 1,
+              "summed_ms": 95.279969
+            },
+            {
+              "name": "hcom_allReduce__503_68_1",
+              "count": 1,
+              "summed_ms": 91.019422
+            },
+            {
+              "name": "hcom_allReduce__503_78_1",
+              "count": 1,
+              "summed_ms": 90.933068
+            },
+            {
+              "name": "aclnnScatterNdUpdate_ScatterNdUpdateAiCore_ScatterNdUpdate",
+              "count": 24,
+              "summed_ms": 81.926819
+            }
+          ]
+        },
+        {
+          "step": 1,
+          "tokens": 640,
+          "requests": 1,
+          "start_wall_ns": 1791317434412528286,
+          "end_wall_ns": 1791317451251363506,
+          "span_ms": 17297.85264,
+          "task_union_ms": 17273.057008,
+          "no_reported_task_ms": 24.795632,
+          "categories": {
+            "other": {
+              "count": 21096,
+              "summed_ms": 632.147782,
+              "union_ms": 630.616769
+            },
+            "copy_cast_layout": {
+              "count": 2962,
+              "summed_ms": 389.22007,
+              "union_ms": 389.218325
+            },
+            "ai_cpu_other": {
+              "count": 200,
+              "summed_ms": 63.530264,
+              "union_ms": 63.530264
+            },
+            "collective": {
+              "count": 96,
+              "summed_ms": 5646.336901,
+              "union_ms": 5646.336901
+            },
+            "other_matmul": {
+              "count": 699,
+              "summed_ms": 126.921002,
+              "union_ms": 126.921002
+            },
+            "kda_convolution": {
+              "count": 782,
+              "summed_ms": 1375.824592,
+              "union_ms": 1375.824592
+            },
+            "mhc_post": {
+              "count": 89,
+              "summed_ms": 99.66536,
+              "union_ms": 99.66536
+            },
+            "sparse_attention": {
+              "count": 12,
+              "summed_ms": 757.588059,
+              "union_ms": 757.588059
+            },
+            "topk": {
+              "count": 172,
+              "summed_ms": 9.23608,
+              "union_ms": 6.096551
+            },
+            "native_activation_pack": {
+              "count": 43,
+              "summed_ms": 115.460177,
+              "union_ms": 115.460177
+            },
+            "native_int4_expert": {
+              "count": 86,
+              "summed_ms": 8067.401091,
+              "union_ms": 8067.401091
+            }
+          },
+          "top_tasks": [
+            {
+              "name": "glm_fused_gate_up_v1",
+              "count": 43,
+              "summed_ms": 4495.596771
+            },
+            {
+              "name": "glm_fused_down_v1",
+              "count": 43,
+              "summed_ms": 3571.80432
+            },
+            {
+              "name": "aclnnChunkKdaFwd_KdaChunkForward_ChunkKdaFwd",
+              "count": 306,
+              "summed_ms": 1306.906119
+            },
+            {
+              "name": "QsaSparseAttentionV310",
+              "count": 12,
+              "summed_ms": 757.588059
+            },
+            {
+              "name": "hcom_allReduce__503_170_1",
+              "count": 1,
+              "summed_ms": 364.797038
+            },
+            {
+              "name": "hcom_allReduce__503_184_1",
+              "count": 1,
+              "summed_ms": 351.595762
+            },
+            {
+              "name": "hcom_allReduce__503_108_1",
+              "count": 1,
+              "summed_ms": 350.851622
+            },
+            {
+              "name": "hcom_allReduce__503_132_1",
+              "count": 1,
+              "summed_ms": 329.477613
+            },
+            {
+              "name": "hcom_allReduce__503_190_1",
+              "count": 1,
+              "summed_ms": 307.392562
+            },
+            {
+              "name": "hcom_allReduce__503_114_1",
+              "count": 1,
+              "summed_ms": 263.47397
+            },
+            {
+              "name": "hcom_allReduce__503_130_1",
+              "count": 1,
+              "summed_ms": 247.464205
+            },
+            {
+              "name": "hcom_allReduce__503_164_1",
+              "count": 1,
+              "summed_ms": 234.823841
+            },
+            {
+              "name": "hcom_allReduce__503_120_1",
+              "count": 1,
+              "summed_ms": 227.092956
+            },
+            {
+              "name": "hcom_allReduce__503_174_1",
+              "count": 1,
+              "summed_ms": 226.755196
+            },
+            {
+              "name": "hcom_allReduce__503_106_1",
+              "count": 1,
+              "summed_ms": 226.311811
+            },
+            {
+              "name": "hcom_allReduce__503_166_1",
+              "count": 1,
+              "summed_ms": 200.523427
+            },
+            {
+              "name": "hcom_allReduce__503_124_1",
+              "count": 1,
+              "summed_ms": 186.57124
+            },
+            {
+              "name": "hcom_allReduce__503_152_1",
+              "count": 1,
+              "summed_ms": 177.531162
+            },
+            {
+              "name": "hcom_allReduce__503_116_1",
+              "count": 1,
+              "summed_ms": 175.863246
+            },
+            {
+              "name": "hcom_allReduce__503_104_1",
+              "count": 1,
+              "summed_ms": 171.465433
+            },
+            {
+              "name": "hcom_allReduce__503_180_1",
+              "count": 1,
+              "summed_ms": 155.424392
+            },
+            {
+              "name": "hcom_allReduce__503_162_1",
+              "count": 1,
+              "summed_ms": 152.155851
+            },
+            {
+              "name": "glm_bf16_cast_v1",
+              "count": 36,
+              "summed_ms": 151.898086
+            },
+            {
+              "name": "aclnnIndex_AsStridedAiCore_AsStrided",
+              "count": 34,
+              "summed_ms": 139.474731
+            },
+            {
+              "name": "aclnnIndexPutImpl_AsStridedAiCore_AsStrided",
+              "count": 34,
+              "summed_ms": 138.154577
+            },
+            {
+              "name": "aclnnIndexPutImpl_ViewCopyAiCore_ViewCopy",
+              "count": 34,
+              "summed_ms": 127.79494
+            },
+            {
+              "name": "hcom_allReduce__503_172_1",
+              "count": 1,
+              "summed_ms": 120.136165
+            },
+            {
+              "name": "hcom_allReduce__503_160_1",
+              "count": 1,
+              "summed_ms": 115.706999
+            },
+            {
+              "name": "glm_fused_pack_v1",
+              "count": 43,
+              "summed_ms": 115.460177
+            },
+            {
+              "name": "hcom_allReduce__503_134_1",
+              "count": 1,
+              "summed_ms": 115.418275
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "rank": 2,
+      "source": "/srv/ai/artifacts/glm-native-prefill-20261006/trace-v41/prefill640/rank2/PROF_000009_20261006201018501_00328263DDOCDHOO/mindstudio_profiler_output/op_summary_20261006201257.csv",
+      "sha256": "0f2bd3ed6c196639a68c12bad4ebb0cfa4b35b0447129fec35f21271d2ea4f5b",
+      "steps": [
+        {
+          "step": 0,
+          "tokens": 640,
+          "requests": 1,
+          "start_wall_ns": 1791317418549988148,
+          "end_wall_ns": 1791317434077566461,
+          "span_ms": 15860.69071,
+          "task_union_ms": 15842.75628,
+          "no_reported_task_ms": 17.93443,
+          "categories": {
+            "other": {
+              "count": 20973,
+              "summed_ms": 643.683767,
+              "union_ms": 642.274656
+            },
+            "copy_cast_layout": {
+              "count": 2719,
+              "summed_ms": 388.565704,
+              "union_ms": 388.563438
+            },
+            "ai_cpu_other": {
+              "count": 165,
+              "summed_ms": 42.551711,
+              "union_ms": 42.551711
+            },
+            "collective": {
+              "count": 96,
+              "summed_ms": 4030.362142,
+              "union_ms": 4030.362142
+            },
+            "other_matmul": {
+              "count": 675,
+              "summed_ms": 124.903199,
+              "union_ms": 124.903199
+            },
+            "kda_convolution": {
+              "count": 782,
+              "summed_ms": 1374.496468,
+              "union_ms": 1374.496468
+            },
+            "mhc_post": {
+              "count": 89,
+              "summed_ms": 100.361999,
+              "union_ms": 100.361999
+            },
+            "topk": {
+              "count": 172,
+              "summed_ms": 9.288872,
+              "union_ms": 6.032727
+            },
+            "native_activation_pack": {
+              "count": 43,
+              "summed_ms": 115.752022,
+              "union_ms": 115.752022
+            },
+            "native_int4_expert": {
+              "count": 86,
+              "summed_ms": 9026.340704,
+              "union_ms": 9026.340704
+            }
+          },
+          "top_tasks": [
+            {
+              "name": "glm_fused_gate_up_v1",
+              "count": 43,
+              "summed_ms": 4987.506641
+            },
+            {
+              "name": "glm_fused_down_v1",
+              "count": 43,
+              "summed_ms": 4038.834063
+            },
+            {
+              "name": "aclnnChunkKdaFwd_KdaChunkForward_ChunkKdaFwd",
+              "count": 306,
+              "summed_ms": 1306.011451
+            },
+            {
+              "name": "hcom_allReduce__503_88_1",
+              "count": 1,
+              "summed_ms": 368.372923
+            },
+            {
+              "name": "hcom_allReduce__503_26_1",
+              "count": 1,
+              "summed_ms": 362.992194
+            },
+            {
+              "name": "hcom_allReduce__503_90_1",
+              "count": 1,
+              "summed_ms": 210.210874
+            },
+            {
+              "name": "hcom_allReduce__503_76_1",
+              "count": 1,
+              "summed_ms": 193.783948
+            },
+            {
+              "name": "hcom_allReduce__503_28_1",
+              "count": 1,
+              "summed_ms": 186.395589
+            },
+            {
+              "name": "hcom_allReduce__503_56_1",
+              "count": 1,
+              "summed_ms": 181.610094
+            },
+            {
+              "name": "hcom_allReduce__503_54_1",
+              "count": 1,
+              "summed_ms": 177.319157
+            },
+            {
+              "name": "hcom_allReduce__503_18_1",
+              "count": 1,
+              "summed_ms": 171.206787
+            },
+            {
+              "name": "hcom_allReduce__503_60_1",
+              "count": 1,
+              "summed_ms": 167.578402
+            },
+            {
+              "name": "hcom_allReduce__503_80_1",
+              "count": 1,
+              "summed_ms": 163.550512
+            },
+            {
+              "name": "glm_bf16_cast_v1",
+              "count": 36,
+              "summed_ms": 152.327695
+            },
+            {
+              "name": "hcom_allReduce__503_20_1",
+              "count": 1,
+              "summed_ms": 149.193325
+            },
+            {
+              "name": "hcom_allReduce__503_46_1",
+              "count": 1,
+              "summed_ms": 142.176945
+            },
+            {
+              "name": "aclnnIndex_AsStridedAiCore_AsStrided",
+              "count": 34,
+              "summed_ms": 139.709265
+            },
+            {
+              "name": "aclnnIndexPutImpl_AsStridedAiCore_AsStrided",
+              "count": 34,
+              "summed_ms": 138.527051
+            },
+            {
+              "name": "aclnnIndexPutImpl_ViewCopyAiCore_ViewCopy",
+              "count": 34,
+              "summed_ms": 127.808143
+            },
+            {
+              "name": "glm_fused_pack_v1",
+              "count": 43,
+              "summed_ms": 115.752022
+            },
+            {
+              "name": "hcom_allReduce__503_66_1",
+              "count": 1,
+              "summed_ms": 115.075671
+            },
+            {
+              "name": "hcom_allReduce__503_32_1",
+              "count": 1,
+              "summed_ms": 110.77541
+            },
+            {
+              "name": "hcom_allReduce__503_82_1",
+              "count": 1,
+              "summed_ms": 108.895749
+            },
+            {
+              "name": "hcom_allReduce__503_72_1",
+              "count": 1,
+              "summed_ms": 106.691687
+            },
+            {
+              "name": "hcom_allReduce__503_70_1",
+              "count": 1,
+              "summed_ms": 100.54364
+            },
+            {
+              "name": "GlmMhcPostV310",
+              "count": 89,
+              "summed_ms": 100.361999
+            },
+            {
+              "name": "hcom_allReduce__503_50_1",
+              "count": 1,
+              "summed_ms": 98.782859
+            },
+            {
+              "name": "hcom_allReduce__503_42_1",
+              "count": 1,
+              "summed_ms": 98.393744
+            },
+            {
+              "name": "hcom_allReduce__503_22_1",
+              "count": 1,
+              "summed_ms": 95.033328
+            },
+            {
+              "name": "hcom_allReduce__503_84_1",
+              "count": 1,
+              "summed_ms": 90.711531
+            }
+          ]
+        },
+        {
+          "step": 1,
+          "tokens": 640,
+          "requests": 1,
+          "start_wall_ns": 1791317434412450308,
+          "end_wall_ns": 1791317451251256392,
+          "span_ms": 17297.820974,
+          "task_union_ms": 17273.405496,
+          "no_reported_task_ms": 24.415478,
+          "categories": {
+            "other": {
+              "count": 21096,
+              "summed_ms": 634.663148,
+              "union_ms": 633.129891
+            },
+            "copy_cast_layout": {
+              "count": 2962,
+              "summed_ms": 391.974978,
+              "union_ms": 391.972921
+            },
+            "ai_cpu_other": {
+              "count": 200,
+              "summed_ms": 58.982829,
+              "union_ms": 58.982829
+            },
+            "collective": {
+              "count": 96,
+              "summed_ms": 5364.581634,
+              "union_ms": 5364.581634
+            },
+            "other_matmul": {
+              "count": 699,
+              "summed_ms": 128.275512,
+              "union_ms": 128.275512
+            },
+            "kda_convolution": {
+              "count": 782,
+              "summed_ms": 1376.420058,
+              "union_ms": 1376.420058
+            },
+            "mhc_post": {
+              "count": 89,
+              "summed_ms": 100.379055,
+              "union_ms": 100.379055
+            },
+            "sparse_attention": {
+              "count": 12,
+              "summed_ms": 758.291835,
+              "union_ms": 758.291835
+            },
+            "topk": {
+              "count": 172,
+              "summed_ms": 9.282543,
+              "union_ms": 6.104053
+            },
+            "native_activation_pack": {
+              "count": 43,
+              "summed_ms": 115.729317,
+              "union_ms": 115.729317
+            },
+            "native_int4_expert": {
+              "count": 86,
+              "summed_ms": 8345.843703,
+              "union_ms": 8345.843703
+            }
+          },
+          "top_tasks": [
+            {
+              "name": "glm_fused_gate_up_v1",
+              "count": 43,
+              "summed_ms": 4685.698243
+            },
+            {
+              "name": "glm_fused_down_v1",
+              "count": 43,
+              "summed_ms": 3660.14546
+            },
+            {
+              "name": "aclnnChunkKdaFwd_KdaChunkForward_ChunkKdaFwd",
+              "count": 306,
+              "summed_ms": 1307.836648
+            },
+            {
+              "name": "QsaSparseAttentionV310",
+              "count": 12,
+              "summed_ms": 758.291835
+            },
+            {
+              "name": "hcom_allReduce__503_184_1",
+              "count": 1,
+              "summed_ms": 430.226175
+            },
+            {
+              "name": "hcom_allReduce__503_122_1",
+              "count": 1,
+              "summed_ms": 409.878884
+            },
+            {
+              "name": "hcom_allReduce__503_170_1",
+              "count": 1,
+              "summed_ms": 315.470973
+            },
+            {
+              "name": "hcom_allReduce__503_152_1",
+              "count": 1,
+              "summed_ms": 277.733136
+            },
+            {
+              "name": "hcom_allReduce__503_110_1",
+              "count": 1,
+              "summed_ms": 266.43496
+            },
+            {
+              "name": "hcom_allReduce__503_186_1",
+              "count": 1,
+              "summed_ms": 260.677278
+            },
+            {
+              "name": "hcom_allReduce__503_174_1",
+              "count": 1,
+              "summed_ms": 241.333815
+            },
+            {
+              "name": "hcom_allReduce__503_180_1",
+              "count": 1,
+              "summed_ms": 217.073191
+            },
+            {
+              "name": "hcom_allReduce__503_114_1",
+              "count": 1,
+              "summed_ms": 208.726655
+            },
+            {
+              "name": "hcom_allReduce__503_108_1",
+              "count": 1,
+              "summed_ms": 203.709416
+            },
+            {
+              "name": "hcom_allReduce__503_150_1",
+              "count": 1,
+              "summed_ms": 193.462021
+            },
+            {
+              "name": "hcom_allReduce__503_146_1",
+              "count": 1,
+              "summed_ms": 191.840016
+            },
+            {
+              "name": "hcom_allReduce__503_138_1",
+              "count": 1,
+              "summed_ms": 165.111501
+            },
+            {
+              "name": "hcom_allReduce__503_176_1",
+              "count": 1,
+              "summed_ms": 159.71171
+            },
+            {
+              "name": "glm_bf16_cast_v1",
+              "count": 36,
+              "summed_ms": 152.562282
+            },
+            {
+              "name": "hcom_allReduce__503_130_1",
+              "count": 1,
+              "summed_ms": 150.0077
+            },
+            {
+              "name": "aclnnIndex_AsStridedAiCore_AsStrided",
+              "count": 34,
+              "summed_ms": 139.839498
+            },
+            {
+              "name": "aclnnIndexPutImpl_AsStridedAiCore_AsStrided",
+              "count": 34,
+              "summed_ms": 138.666057
+            },
+            {
+              "name": "hcom_allReduce__503_132_1",
+              "count": 1,
+              "summed_ms": 137.80593
+            },
+            {
+              "name": "hcom_allReduce__503_112_1",
+              "count": 1,
+              "summed_ms": 136.815357
+            },
+            {
+              "name": "hcom_allReduce__503_172_1",
+              "count": 1,
+              "summed_ms": 133.116164
+            },
+            {
+              "name": "hcom_allReduce__503_154_1",
+              "count": 1,
+              "summed_ms": 131.566633
+            },
+            {
+              "name": "hcom_allReduce__503_148_1",
+              "count": 1,
+              "summed_ms": 129.686399
+            },
+            {
+              "name": "aclnnIndexPutImpl_ViewCopyAiCore_ViewCopy",
+              "count": 34,
+              "summed_ms": 127.757703
+            },
+            {
+              "name": "hcom_allReduce__503_124_1",
+              "count": 1,
+              "summed_ms": 126.137363
+            },
+            {
+              "name": "hcom_allReduce__503_166_1",
+              "count": 1,
+              "summed_ms": 119.45765
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "rank": 3,
+      "source": "/srv/ai/artifacts/glm-native-prefill-20261006/trace-v41/prefill640/rank3/PROF_000009_20261006201018501_00328726GMLGIREJ/mindstudio_profiler_output/op_summary_20261006201257.csv",
+      "sha256": "77199ab0080afd0c3088b21bfca3597f3daad99e28ccce4eab6ba0f7dc00e71e",
+      "steps": [
+        {
+          "step": 0,
+          "tokens": 640,
+          "requests": 1,
+          "start_wall_ns": 1791317418549951097,
+          "end_wall_ns": 1791317434077685417,
+          "span_ms": 15860.714408,
+          "task_union_ms": 15841.909876,
+          "no_reported_task_ms": 18.804532,
+          "categories": {
+            "other": {
+              "count": 20973,
+              "summed_ms": 644.825081,
+              "union_ms": 643.65839
+            },
+            "copy_cast_layout": {
+              "count": 2719,
+              "summed_ms": 389.693877,
+              "union_ms": 389.69208
+            },
+            "ai_cpu_other": {
+              "count": 165,
+              "summed_ms": 49.353901,
+              "union_ms": 49.349813
+            },
+            "collective": {
+              "count": 96,
+              "summed_ms": 4226.070462,
+              "union_ms": 4226.070462
+            },
+            "other_matmul": {
+              "count": 675,
+              "summed_ms": 123.662875,
+              "union_ms": 123.662875
+            },
+            "kda_convolution": {
+              "count": 782,
+              "summed_ms": 1380.168412,
+              "union_ms": 1380.168412
+            },
+            "mhc_post": {
+              "count": 89,
+              "summed_ms": 100.245666,
+              "union_ms": 100.245666
+            },
+            "topk": {
+              "count": 172,
+              "summed_ms": 8.991711,
+              "union_ms": 5.692779
+            },
+            "native_activation_pack": {
+              "count": 43,
+              "summed_ms": 115.633719,
+              "union_ms": 115.633719
+            },
+            "native_int4_expert": {
+              "count": 86,
+              "summed_ms": 8816.209171,
+              "union_ms": 8816.209171
+            }
+          },
+          "top_tasks": [
+            {
+              "name": "glm_fused_gate_up_v1",
+              "count": 43,
+              "summed_ms": 4909.25508
+            },
+            {
+              "name": "glm_fused_down_v1",
+              "count": 43,
+              "summed_ms": 3906.954091
+            },
+            {
+              "name": "aclnnChunkKdaFwd_KdaChunkForward_ChunkKdaFwd",
+              "count": 306,
+              "summed_ms": 1311.180735
+            },
+            {
+              "name": "hcom_allReduce__503_90_1",
+              "count": 1,
+              "summed_ms": 322.92579
+            },
+            {
+              "name": "hcom_allReduce__503_26_1",
+              "count": 1,
+              "summed_ms": 310.991858
+            },
+            {
+              "name": "hcom_allReduce__503_28_1",
+              "count": 1,
+              "summed_ms": 297.582588
+            },
+            {
+              "name": "hcom_allReduce__503_18_1",
+              "count": 1,
+              "summed_ms": 225.976628
+            },
+            {
+              "name": "hcom_allReduce__503_80_1",
+              "count": 1,
+              "summed_ms": 220.417436
+            },
+            {
+              "name": "hcom_allReduce__503_12_1",
+              "count": 1,
+              "summed_ms": 209.197254
+            },
+            {
+              "name": "hcom_allReduce__503_50_1",
+              "count": 1,
+              "summed_ms": 206.925457
+            },
+            {
+              "name": "hcom_allReduce__503_56_1",
+              "count": 1,
+              "summed_ms": 206.332072
+            },
+            {
+              "name": "hcom_allReduce__503_14_1",
+              "count": 1,
+              "summed_ms": 203.913218
+            },
+            {
+              "name": "hcom_allReduce__503_54_1",
+              "count": 1,
+              "summed_ms": 190.893505
+            },
+            {
+              "name": "hcom_allReduce__503_32_1",
+              "count": 1,
+              "summed_ms": 184.048037
+            },
+            {
+              "name": "hcom_allReduce__503_36_1",
+              "count": 1,
+              "summed_ms": 154.705564
+            },
+            {
+              "name": "glm_bf16_cast_v1",
+              "count": 36,
+              "summed_ms": 152.193608
+            },
+            {
+              "name": "hcom_allReduce__503_68_1",
+              "count": 1,
+              "summed_ms": 150.816476
+            },
+            {
+              "name": "hcom_allReduce__503_94_1",
+              "count": 1,
+              "summed_ms": 150.064289
+            },
+            {
+              "name": "hcom_allReduce__503_88_1",
+              "count": 1,
+              "summed_ms": 145.79606
+            },
+            {
+              "name": "aclnnIndex_AsStridedAiCore_AsStrided",
+              "count": 34,
+              "summed_ms": 139.849293
+            },
+            {
+              "name": "aclnnIndexPutImpl_AsStridedAiCore_AsStrided",
+              "count": 34,
+              "summed_ms": 138.888666
+            },
+            {
+              "name": "hcom_allReduce__503_86_1",
+              "count": 1,
+              "summed_ms": 129.027597
+            },
+            {
+              "name": "aclnnIndexPutImpl_ViewCopyAiCore_ViewCopy",
+              "count": 34,
+              "summed_ms": 127.818565
+            },
+            {
+              "name": "hcom_allReduce__503_24_1",
+              "count": 1,
+              "summed_ms": 120.941321
+            },
+            {
+              "name": "glm_fused_pack_v1",
+              "count": 43,
+              "summed_ms": 115.633719
+            },
+            {
+              "name": "hcom_allReduce__503_40_1",
+              "count": 1,
+              "summed_ms": 113.41765
+            },
+            {
+              "name": "hcom_allReduce__503_30_1",
+              "count": 1,
+              "summed_ms": 112.850983
+            },
+            {
+              "name": "hcom_allReduce__503_22_1",
+              "count": 1,
+              "summed_ms": 104.243978
+            },
+            {
+              "name": "GlmMhcPostV310",
+              "count": 89,
+              "summed_ms": 100.245666
+            },
+            {
+              "name": "hcom_allReduce__503_72_1",
+              "count": 1,
+              "summed_ms": 86.324917
+            }
+          ]
+        },
+        {
+          "step": 1,
+          "tokens": 640,
+          "requests": 1,
+          "start_wall_ns": 1791317434412481026,
+          "end_wall_ns": 1791317451251315104,
+          "span_ms": 17297.793343,
+          "task_union_ms": 17273.600482,
+          "no_reported_task_ms": 24.192861,
+          "categories": {
+            "other": {
+              "count": 21096,
+              "summed_ms": 633.908698,
+              "union_ms": 632.427945
+            },
+            "copy_cast_layout": {
+              "count": 2962,
+              "summed_ms": 392.440803,
+              "union_ms": 392.43911
+            },
+            "ai_cpu_other": {
+              "count": 200,
+              "summed_ms": 58.080777,
+              "union_ms": 58.014475
+            },
+            "collective": {
+              "count": 96,
+              "summed_ms": 4596.009927,
+              "union_ms": 4596.009927
+            },
+            "other_matmul": {
+              "count": 699,
+              "summed_ms": 126.613509,
+              "union_ms": 126.613509
+            },
+            "kda_convolution": {
+              "count": 782,
+              "summed_ms": 1378.171045,
+              "union_ms": 1378.171045
+            },
+            "mhc_post": {
+              "count": 89,
+              "summed_ms": 100.122262,
+              "union_ms": 100.122262
+            },
+            "sparse_attention": {
+              "count": 12,
+              "summed_ms": 759.009988,
+              "union_ms": 759.009988
+            },
+            "topk": {
+              "count": 172,
+              "summed_ms": 9.001425,
+              "union_ms": 5.668928
+            },
+            "native_activation_pack": {
+              "count": 43,
+              "summed_ms": 115.690957,
+              "union_ms": 115.690957
+            },
+            "native_int4_expert": {
+              "count": 86,
+              "summed_ms": 9116.811658,
+              "union_ms": 9116.811658
+            }
+          },
+          "top_tasks": [
+            {
+              "name": "glm_fused_gate_up_v1",
+              "count": 43,
+              "summed_ms": 5205.762228
+            },
+            {
+              "name": "glm_fused_down_v1",
+              "count": 43,
+              "summed_ms": 3911.04943
+            },
+            {
+              "name": "aclnnChunkKdaFwd_KdaChunkForward_ChunkKdaFwd",
+              "count": 306,
+              "summed_ms": 1309.605492
+            },
+            {
+              "name": "QsaSparseAttentionV310",
+              "count": 12,
+              "summed_ms": 759.009988
+            },
+            {
+              "name": "hcom_allReduce__503_176_1",
+              "count": 1,
+              "summed_ms": 383.628052
+            },
+            {
+              "name": "hcom_allReduce__503_124_1",
+              "count": 1,
+              "summed_ms": 317.067691
+            },
+            {
+              "name": "hcom_allReduce__503_186_1",
+              "count": 1,
+              "summed_ms": 309.029437
+            },
+            {
+              "name": "hcom_allReduce__503_110_1",
+              "count": 1,
+              "summed_ms": 295.631599
+            },
+            {
+              "name": "hcom_allReduce__503_122_1",
+              "count": 1,
+              "summed_ms": 282.411105
+            },
+            {
+              "name": "hcom_allReduce__503_190_1",
+              "count": 1,
+              "summed_ms": 254.816054
+            },
+            {
+              "name": "hcom_allReduce__503_132_1",
+              "count": 1,
+              "summed_ms": 234.512852
+            },
+            {
+              "name": "hcom_allReduce__503_184_1",
+              "count": 1,
+              "summed_ms": 225.315717
+            },
+            {
+              "name": "hcom_allReduce__503_146_1",
+              "count": 1,
+              "summed_ms": 224.645118
+            },
+            {
+              "name": "hcom_allReduce__503_126_1",
+              "count": 1,
+              "summed_ms": 200.030979
+            },
+            {
+              "name": "hcom_allReduce__503_152_1",
+              "count": 1,
+              "summed_ms": 192.99913
+            },
+            {
+              "name": "hcom_allReduce__503_136_1",
+              "count": 1,
+              "summed_ms": 172.669652
+            },
+            {
+              "name": "hcom_allReduce__503_120_1",
+              "count": 1,
+              "summed_ms": 170.722022
+            },
+            {
+              "name": "hcom_allReduce__503_182_1",
+              "count": 1,
+              "summed_ms": 161.916319
+            },
+            {
+              "name": "hcom_allReduce__503_164_1",
+              "count": 1,
+              "summed_ms": 154.833481
+            },
+            {
+              "name": "glm_bf16_cast_v1",
+              "count": 36,
+              "summed_ms": 152.818895
+            },
+            {
+              "name": "aclnnIndex_AsStridedAiCore_AsStrided",
+              "count": 34,
+              "summed_ms": 139.83916
+            },
+            {
+              "name": "aclnnIndexPutImpl_AsStridedAiCore_AsStrided",
+              "count": 34,
+              "summed_ms": 138.565303
+            },
+            {
+              "name": "hcom_allReduce__503_168_1",
+              "count": 1,
+              "summed_ms": 134.223716
+            },
+            {
+              "name": "aclnnIndexPutImpl_ViewCopyAiCore_ViewCopy",
+              "count": 34,
+              "summed_ms": 127.786529
+            },
+            {
+              "name": "hcom_allReduce__503_130_1",
+              "count": 1,
+              "summed_ms": 119.677103
+            },
+            {
+              "name": "glm_fused_pack_v1",
+              "count": 43,
+              "summed_ms": 115.690957
+            },
+            {
+              "name": "hcom_allReduce__503_118_1",
+              "count": 1,
+              "summed_ms": 112.252546
+            },
+            {
+              "name": "GlmMhcPostV310",
+              "count": 89,
+              "summed_ms": 100.122262
+            },
+            {
+              "name": "hcom_allReduce__503_174_1",
+              "count": 1,
+              "summed_ms": 95.38687
+            },
+            {
+              "name": "hcom_allReduce__503_128_1",
+              "count": 1,
+              "summed_ms": 87.457807
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

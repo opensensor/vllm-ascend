@@ -1,0 +1,34 @@
+import json,time,uuid
+from pathlib import Path
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+root=Path('/srv/ai/artifacts/glm-native-prefill-20261006/graph-v11');root.mkdir(parents=True,exist_ok=False)
+baseline=Path('/home/matteius/experiments/glm-reconstruction-20261006/native-v53-bf16-v5-candidate.py').read_text()
+source=baseline.replace('def replacements(native_resources):','def graph_base_replacements(native_resources):')
+policy=Path('/srv/ai/artifacts/glm-native-trace-20261006/prefill-graphs-v11-source.py').read_text().replace('def extend_replacements(', 'def extend_prefill_graphs(')
+source+='\n'+policy+'\ndef replacements(native_resources):\n return extend_prefill_graphs(graph_base_replacements(native_resources))\n'
+(root/'candidate.py').write_text(source)
+client=ResidentClient('http://127.0.0.1:8001',timeout=300)
+before=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+(root/'before.json').write_text(json.dumps(before,indent=2))
+try:
+ selected=client.switch(Control(uuid.uuid4().hex,candidate='native_v53_prefill_graph_v11',source=source))
+ (root/'selected.json').write_text(json.dumps(selected,indent=2))
+ assert all(len(w['prefill_graph']['entries'])==1 and w['prefill_graph']['entries'][0]['graphs']>1 for w in selected)
+ print('graph captured and resumed',[(w['rank'],w['prefill_graph']) for w in selected],flush=True)
+ began=time.time_ns()
+ response=client.request('/v1/completions',{'model':'glm53-flash-selective-w3','prompt':[42]*1280,'max_tokens':8,'temperature':0,'ignore_eos':True})
+ (root/'first-request.json').write_text(json.dumps({'start_wall_ns':began,'end_wall_ns':time.time_ns(),'response':response},indent=2))
+ after=client._acknowledged_rpc('resident_status',matches=lambda rs: client._status_matches(rs) and all(w.get('prefill_graph',{}).get('replays',0)>=2 for w in rs))
+ (root/'after.json').write_text(json.dumps(after,indent=2))
+ assert all(w['prefill_graph']['replays']>=2 and w['prefill_graph']['dispatches']>=2 and not w['graphs_dirty'] for w in after)
+ assert response['usage']['completion_tokens']==8 and response['choices'][0]['text'].startswith('K')
+ assert sorted((w['pid'],w['weight_storage_digest']) for w in before)==sorted((w['pid'],w['weight_storage_digest']) for w in after)
+ print('two cold prefill graph replays, decoding healthy',flush=True)
+except Exception as e:
+ (root/'failure.json').write_text(json.dumps({'error':repr(e)},indent=2))
+ restored=client.switch(Control(uuid.uuid4().hex,candidate='native_v53_bf16_v5',source=baseline))
+ client.resume()
+ (root/'restored.json').write_text(json.dumps(restored,indent=2))
+ print('qualification failed; existing v45 restored and unpaused',repr(e),flush=True)
+ raise

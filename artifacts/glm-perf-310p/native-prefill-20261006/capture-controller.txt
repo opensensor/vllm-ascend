@@ -1,0 +1,39 @@
+import json,time,uuid
+from pathlib import Path
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+root=Path('/srv/ai/artifacts/glm-native-prefill-20261006/trace-v47')
+root.mkdir(parents=True,exist_ok=False)
+old=Path('/srv/ai/artifacts/glm-native-active-rows-20261006/trace-bf16-v5')
+baseline=Path('/srv/ai/artifacts/glm-native-prefill-20261006/graph-v5/candidate.py').read_text()
+source=baseline.replace('def replacements(native_resources):','def profile_base_replacements(native_resources):')
+prof=(old/'candidate.py').read_text().replace('("c1", "c4")','("prefill640",)').replace('/srv/ai/artifacts/glm-native-active-rows-20261006/trace-bf16-v5/','/srv/ai/artifacts/glm-native-prefill-20261006/trace-v47/')
+source+='\n'+(old/'acl-profile.py').read_text()+'\n'+prof
+(root/'candidate.py').write_text(source)
+client=ResidentClient('http://127.0.0.1:8001',timeout=900)
+before=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+(root/'before.json').write_text(json.dumps(before,indent=2))
+active=False
+try:
+ client.switch(Control(uuid.uuid4().hex,candidate='native_v47_cold_prefill_trace',source=source))
+ client.request('/pause?mode=wait&clear_cache=true')
+ active=True
+ client._acknowledged_rpc('profile',True,'prefill640',matches=lambda rs: all(w.get('cann_active',w.get('cann_profile',{}).get('active')) is True for w in rs))
+ client.request('/resume')
+ start=time.time_ns()
+ response=client.request('/v1/completions',{'model':'glm53-flash-selective-w3','prompt':[42]*1280,'max_tokens':1,'temperature':0,'ignore_eos':True})
+ (root/'request.json').write_text(json.dumps({'start_wall_ns':start,'end_wall_ns':time.time_ns(),'response':response},indent=2))
+ client.request('/pause?mode=wait&clear_cache=false')
+ stopped=client._acknowledged_rpc('profile',False,'prefill640',matches=lambda rs: all(w.get('cann_active',w.get('cann_profile',{}).get('active')) is False for w in rs))
+ active=False
+ (root/'stopped.json').write_text(json.dumps(stopped,indent=2))
+ print('capture complete',flush=True)
+finally:
+ if active:
+  client.request('/pause?mode=wait&clear_cache=false')
+  client._acknowledged_rpc('profile',False,'cleanup',matches=lambda rs: all(w.get('cann_active',w.get('cann_profile',{}).get('active')) is False for w in rs))
+ restored=client.switch(Control(uuid.uuid4().hex,candidate='native_v47_prefill_graph_v5',source=baseline))
+ client.request('/resume')
+ (root/'restored.json').write_text(json.dumps(restored,indent=2))
+ assert sorted((w['pid'],w['weight_storage_digest']) for w in before)==sorted((w['pid'],w['weight_storage_digest']) for w in restored)
+ print('serving restored and unpaused',flush=True)

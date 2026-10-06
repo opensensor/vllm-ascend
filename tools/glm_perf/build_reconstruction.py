@@ -38,6 +38,11 @@ def build(
     prepared_weight_layout=False,
     pair_scale_groups=False,
     fp16_swiglu=False,
+    pair_hidden_quant=False,
+    wide_cube_k=0,
+    pair_prefill_scale_groups=False,
+    weight_decode_lut=False,
+    strided_product_copy=False,
 ):
     """Freeze helper sources and compile a unique, append-only native version."""
     if type(version) is not int or version < 1 or output_columns not in (16, 32, 64, 128):
@@ -54,6 +59,16 @@ def build(
         raise ValueError("paired scale groups require fused MoE")
     if fp16_swiglu and not fused_moe:
         raise ValueError("FP16 SwiGLU requires fused MoE")
+    if pair_hidden_quant and not fused_moe:
+        raise ValueError("paired hidden quantization requires fused MoE")
+    if strided_product_copy and not fused_moe:
+        raise ValueError("strided product copy requires fused MoE")
+    if type(wide_cube_k) is not int or wide_cube_k not in (0, 128, 256):
+        raise ValueError("wide Cube K must be 0 (disabled), 128 or 256")
+    if (wide_cube_k or pair_prefill_scale_groups or weight_decode_lut) and not (
+        fused_moe and prepared_weight_layout and pair_scale_groups
+    ):
+        raise ValueError("wide Cube and prefill scale pairing require prepared paired fused MoE")
     namespace = f"glm_reconstruction_v{version}"
     build_dir = build_dir.resolve()
     build_dir.mkdir(parents=True, exist_ok=False)
@@ -110,6 +125,11 @@ def build(
             "prepared_weight_layout": prepared_weight_layout,
             "pair_scale_groups": pair_scale_groups,
             "fp16_swiglu": fp16_swiglu,
+            "pair_hidden_quant": pair_hidden_quant,
+            "strided_product_copy": strided_product_copy,
+            "weight_decode_lut": weight_decode_lut,
+            "wide_cube_k": wide_cube_k,
+            "pair_prefill_scale_groups": pair_prefill_scale_groups,
         }
     }
     provenance["_helpers"] = {p.name: sha256(p) for p in helper_root.glob("*.py")}
@@ -142,6 +162,11 @@ def build(
                     *(["-DGLM_PREPARED_WEIGHT_LAYOUT"] if prepared_weight_layout else []),
                     *(["-DGLM_PAIR_SCALE_GROUPS"] if pair_scale_groups else []),
                     *(["-DGLM_FP16_SWIGLU"] if fp16_swiglu else []),
+                    *(["-DGLM_PAIR_HIDDEN_QUANT"] if pair_hidden_quant else []),
+                    *([f"-DGLM_NATIVE_WIDE_CUBE_K={wide_cube_k}"] if wide_cube_k else []),
+                    *(["-DGLM_STRIDED_PRODUCT_COPY"] if strided_product_copy else []),
+                    *(["-DGLM_WEIGHT_DECODE_LUT"] if weight_decode_lut else []),
+                    *(["-DGLM_PAIR_PREFILL_SCALE_GROUPS"] if pair_prefill_scale_groups else []),
                     *(["-DGLM_FUSED_GATE_UP"] if stage == "gate_up" else []),
                 ],
                 check=True,
@@ -152,6 +177,10 @@ def build(
         subprocess.run([str(compiler), str(source), str(output), *options, f"-I{HERE}"], check=True)
         provenance[output.name] = {"source_sha256": sha256(source), "binary_sha256": sha256(output)}
         provenance["glm_fused_quantize.h"] = {"source_sha256": sha256(HERE / "glm_fused_quantize.h")}
+        source = HERE / "glm_fused_reduce.cpp"
+        output = build_dir / "glm_fused_reduce.bin"
+        subprocess.run([str(compiler), str(source), str(output), *options], check=True)
+        provenance[output.name] = {"source_sha256": sha256(source), "binary_sha256": sha256(output)}
     if include_w3:
         csrc = source_root / "csrc" if (source_root / "csrc").is_dir() else source_root
         kernel = csrc / "gmm/w2_blocked_dequant_matmul_v310/op_kernel"
@@ -222,6 +251,21 @@ def main():
     parser.add_argument("--prepared-weight-layout", action="store_true")
     parser.add_argument("--pair-scale-groups", action="store_true")
     parser.add_argument("--fp16-swiglu", action="store_true", help="quality-gated FP16 SwiGLU experiment")
+    parser.add_argument("--pair-hidden-quant", action="store_true", help="quality-gated paired hidden quantization")
+    parser.add_argument(
+        "--wide-cube-k",
+        type=int,
+        choices=(0, 128, 256),
+        default=0,
+        help="pack independent block32 dots into a wider native Cube (0 disables)",
+    )
+    parser.add_argument(
+        "--pair-prefill-scale-groups",
+        action="store_true",
+        help="use M32 for paired prefill block32 dots; preserve FP32 accumulation order",
+    )
+    parser.add_argument("--weight-decode-lut", action="store_true", help="exact W2/W3 reconstruction with byte lookup")
+    parser.add_argument("--strided-product-copy", action="store_true", help="contiguous sparse Cube product casts")
     args = parser.parse_args()
     print(
         build(
@@ -237,6 +281,11 @@ def main():
             args.prepared_weight_layout,
             args.pair_scale_groups,
             args.fp16_swiglu,
+            args.pair_hidden_quant,
+            args.wide_cube_k,
+            args.pair_prefill_scale_groups,
+            args.weight_decode_lut,
+            args.strided_product_copy,
         )
     )
 

@@ -40,6 +40,10 @@ def frozen_helper(build):
         name = f"glm_fused_{stage}.bin"
         if hashlib.sha256((build / name).read_bytes()).hexdigest() != provenance[name]["binary_sha256"]:
             raise ValueError("kernel differs from provenance: " + name)
+    if "glm_fused_reduce.bin" in provenance:
+        name = "glm_fused_reduce.bin"
+        if hashlib.sha256((build / name).read_bytes()).hexdigest() != provenance[name]["binary_sha256"]:
+            raise ValueError("kernel differs from provenance: " + name)
     torch.ops.load_library(str(bridge))
     return importlib.import_module(package + ".glm_fused_moe"), options
 
@@ -48,32 +52,43 @@ def measure(native, pipeline, warmups, samples):
     for _ in range(warmups):
         pipeline()
     torch.npu.synchronize()
-    events = []
     original = native.launch
     names = {
         id(native.pack_kernel): "input_quant_once",
         id(native.gate_kernel): "gate_up_swiglu_quant",
         id(native.down_kernel): "down_weighted_reduce",
     }
+    if hasattr(native, "reduce_kernel"):
+        names[id(native.reduce_kernel)] = "stable_prefill_reduce"
+    # A bulk-prefill pipeline has four stages. Allocating two events per stage
+    # for every sample can exhaust the 310P event pool. Reuse a bounded pair
+    # per stage, resolving each sample before recording the next one.
+    events = {key: (torch.npu.Event(enable_timing=True), torch.npu.Event(enable_timing=True)) for key in names}
+    seen = set()
+    values = {name: [] for name in names.values()}
 
     def timed(kernel, args, blocks):
-        start, end = torch.npu.Event(enable_timing=True), torch.npu.Event(enable_timing=True)
+        key = id(kernel)
+        if key in seen:
+            raise RuntimeError("event profiler requires one launch per fused stage per sample")
+        start, end = events[key]
         start.record()
         original(kernel, args, blocks)
         end.record()
-        events.append((names[id(kernel)], start, end))
+        seen.add(key)
 
     native.launch = timed
     try:
         for _ in range(samples):
+            seen.clear()
             pipeline()
-        torch.npu.synchronize()
+            torch.npu.synchronize()
+            for key in seen:
+                start, end = events[key]
+                values[names[key]].append(start.elapsed_time(end))
     finally:
         native.launch = original
-    values = {name: [] for name in names.values()}
-    for name, start, end in events:
-        values[name].append(start.elapsed_time(end))
-    return {name: {"median_ms": statistics.median(ms), "samples_ms": ms} for name, ms in values.items()}
+    return {name: {"median_ms": statistics.median(ms), "samples_ms": ms} for name, ms in values.items() if ms}
 
 
 def run(builds, checkpoint, output, layers=(10, 11, 33), tokens=2, warmups=3, samples=9):
@@ -126,6 +141,8 @@ def run(builds, checkpoint, output, layers=(10, 11, 33), tokens=2, warmups=3, sa
             for build, helper, options in loaded:
                 for activation_bits in (8, 4):
                     layout_options = {"prepared_weight_layout": True} if options.get("prepared_weight_layout") else {}
+                    if options.get("weight_decode_lut"):
+                        layout_options["weight_decode_lut"] = True
                     native = helper.NativeFusedMoE(
                         build, namespace=options["namespace"], activation_bits=activation_bits, **layout_options
                     )

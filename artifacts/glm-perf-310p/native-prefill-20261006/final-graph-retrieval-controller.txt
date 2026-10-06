@@ -1,0 +1,29 @@
+import json,time,uuid
+from dataclasses import replace
+from pathlib import Path
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.suite import retrieval_case,run_groups,load_tokenizer_json
+root=Path('/srv/ai/artifacts/glm-native-prefill-20261006/graph-v11')
+source=(root/'candidate.py').read_text();client=ResidentClient('http://127.0.0.1:8001',timeout=900)
+count,_=load_tokenizer_json(Path('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/tokenizer.json'))
+case=replace(retrieval_case(3840,count_tokens=count),max_tokens=64)
+report={'complete':False,'scope':'same native v53 kernels, graph versus direct target execution, cold multi-chunk retrieval crossing pooled attention budget','records':[]}
+try:
+ for mode in ('graph','direct-target'):
+  print('starting',mode,'raw_tokens',case.raw_prompt_tokens,flush=True)
+  before=client.switch(Control(uuid.uuid4().hex,candidate='native_v53_prefill_graph_v11',mode=mode,source=source))
+  rows=run_groups([('prefill_'+mode,[case])],client.base_url,'glm53-flash-selective-w3',42,timeout_s=900)
+  after=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+  report['records'].append({'mode':mode,'requests':rows,'before':before,'after':after})
+  (root/'graph-direct-retrieval.json').write_text(json.dumps(report,indent=2))
+  assert all(r['valid'] for r in rows)
+  print(mode,[(r['ttft_s'],r['content'],r['passed']) for r in rows],flush=True)
+ assert report['records'][0]['requests'][0]['content']==report['records'][1]['requests'][0]['content']
+ assert all(record['requests'][0]['passed'] for record in report['records'])
+ report['complete']=True
+finally:
+ selected=client.switch(Control(uuid.uuid4().hex,candidate='native_v53_prefill_graph_v11',mode='graph',source=source))
+ client.resume();report['restored']=selected
+ (root/'graph-direct-retrieval.json').write_text(json.dumps(report,indent=2))
+ print('graph mode restored',flush=True)

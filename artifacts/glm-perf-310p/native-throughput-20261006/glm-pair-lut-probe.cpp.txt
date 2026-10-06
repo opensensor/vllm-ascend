@@ -1,0 +1,42 @@
+#include "kernel_operator.h"
+using namespace AscendC;
+extern "C" __global__ __aicore__ void glm_pair_lut_probe(GM_ADDR input,GM_ADDR output,GM_ADDR lookup,GM_ADDR config) {
+ InitSocState();
+ const uint32_t bits=reinterpret_cast<__gm__ int64_t*>(config)[0],tiles=reinterpret_cast<__gm__ int64_t*>(config)[1];
+ const uint32_t fields=bits==3?8:4,planeElements=32768/fields,pairs=planeElements/2,tileBytes=32768*bits/8;
+ TPipe pipe;TBuf<TPosition::VECCALC> raw,tables,mask,temporary,packed;
+ pipe.InitBuffer(raw,16384);pipe.InitBuffer(tables,65536);pipe.InitBuffer(mask,32768);pipe.InitBuffer(temporary,16384);pipe.InitBuffer(packed,16384);
+ GlobalTensor<uint8_t> in,out;GlobalTensor<half> lut;
+ in.SetGlobalBuffer(reinterpret_cast<__gm__ uint8_t*>(input));out.SetGlobalBuffer(reinterpret_cast<__gm__ uint8_t*>(output));lut.SetGlobalBuffer(reinterpret_cast<__gm__ half*>(lookup));
+ DataCopy(tables.Get<half>(),lut,24576);PipeBarrier<PIPE_ALL>();
+ for(uint32_t tile=GetBlockIdx();tile<tiles;tile+=GetBlockNum()) {
+  DataCopy(raw.Get<uint8_t>(),in[tile*tileBytes],tileBytes);PipeBarrier<PIPE_ALL>();
+  for(uint32_t field=0;field<fields;field++) {
+   const uint32_t phase=field*bits%8,plane=field*bits/8,low=bits<8-phase?bits:8-phase;
+   const uint32_t passes=low==bits?1:2;
+   for(uint32_t pass=0;pass<passes;pass++) {
+    uint32_t table=bits==2?0:1,shift=phase,width=low,sourcePlane=plane;
+    if(passes==2) {
+     table=pass==0?(low==2?2:3):(low==2?4:5);
+     if(pass) {shift=0;width=bits-low;sourcePlane++;}
+    }
+    const uint16_t byteMask=((1<<width)-1)<<shift;
+    const int16_t pairMask=static_cast<int16_t>(byteMask|(byteMask<<8));
+    auto value=temporary.Get<half>()[pass*pairs];
+    auto indices=mask.Get<int32_t>()[2048];
+    Duplicate(mask.Get<int16_t>(),pairMask,pairs);PipeBarrier<PIPE_V>();
+    And(value.ReinterpretCast<int16_t>(),raw.Get<int16_t>()[sourcePlane*pairs],mask.Get<int16_t>(),pairs);PipeBarrier<PIPE_V>();
+    Cast(value,value.ReinterpretCast<int16_t>(),RoundMode::CAST_NONE,pairs);PipeBarrier<PIPE_V>();
+    Muls(value,value,static_cast<half>(1.0f/(1<<shift)),pairs);PipeBarrier<PIPE_V>();
+    Cast(indices,value,RoundMode::CAST_RINT,pairs);PipeBarrier<PIPE_V>();
+    Adds(indices,indices,static_cast<int32_t>(2048),pairs);PipeBarrier<PIPE_V>();
+    Muls(indices,indices,static_cast<int32_t>(2),pairs);PipeBarrier<PIPE_V>();
+    Gather(value,tables.Get<half>()[table*4096],indices.ReinterpretCast<uint32_t>(),static_cast<uint32_t>(0),pairs);PipeBarrier<PIPE_V>();
+   }
+   auto value=temporary.Get<half>();
+   if(passes==2) {Add(value,value,value[pairs],pairs);PipeBarrier<PIPE_V>();}
+   Cast(packed.Get<uint8_t>()[field*pairs],value,RoundMode::CAST_NONE,pairs);PipeBarrier<PIPE_V>();
+  }
+  PipeBarrier<PIPE_ALL>();DataCopy(out[tile*16384],packed.Get<uint8_t>(),16384);PipeBarrier<PIPE_ALL>();
+ }
+}

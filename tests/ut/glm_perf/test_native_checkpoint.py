@@ -26,7 +26,19 @@ def fixture(tmp_path, bits):
         projections.append(signed)
         for expert in range(2):
             name = f"model.language_model.layers.3.mlp.experts.{expert}.{projection}_proj"
-            tensors[name + "_codes"] = pack_codes(signed[expert], bits)
+            if bits == 3:
+                # Canonical W3 stores eight fields in a little-endian 24-bit
+                # word. Keep this fixture independent of the generic packer's
+                # W2/W4 behavior and any pending W3 converter changes.
+                fields = signed[expert].int().reshape(256, -1, 8) & 7
+                words = sum(fields[..., field] << (3 * field) for field in range(8))
+                tensors[name + "_codes"] = (
+                    torch.stack([(words >> (8 * byte)) & 255 for byte in range(3)], dim=-1)
+                    .reshape(256, -1)
+                    .to(torch.uint8)
+                )
+            else:
+                tensors[name + "_codes"] = pack_codes(signed[expert], bits)
             tensors[name + "_scale"] = torch.ones(8, 8)
     save_file(tensors, str(source / "original.safetensors"))
     index = {"metadata": {}, "weight_map": dict.fromkeys(tensors, "original.safetensors")}
@@ -74,6 +86,27 @@ def test_incomplete_export_never_commits_native_manifest(tmp_path):
     with pytest.raises(FileNotFoundError):
         checkpoint.finalize(output)
     assert not json.loads((output / checkpoint.MANIFEST).read_text())["complete"]
+
+
+def test_initialization_persists_bulk_prefill_epilogue_with_native_kernel_bundle(tmp_path):
+    source, _, _, _ = fixture(tmp_path, 4)
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    options = {"fused_moe": True, "prepared_weight_layout": True, "helper_package": "test_helpers", "version": 44}
+    checkpoint.write_json(bundle / "provenance.json", {"_build": options, "_helpers": {}, "glm_fused_reduce.bin": {}})
+    for name in (
+        "glm_reconstruction_bridge_v44.so",
+        "glm_fused_gate_up.bin",
+        "glm_fused_down.bin",
+        "glm_fused_pack.bin",
+        "glm_fused_reduce.bin",
+    ):
+        (bundle / name).write_bytes(name.encode())
+    output = tmp_path / "initialized"
+    manifest = checkpoint.initialize(source, output, bundle, world_size=1)
+    assert not manifest["complete"]
+    assert (output / "native-kernels" / "glm_fused_reduce.bin").read_bytes() == b"glm_fused_reduce.bin"
+    assert (output / "original.safetensors").stat().st_ino == (source / "original.safetensors").stat().st_ino
 
 
 def test_changed_device_bytes_reject_before_export(tmp_path):

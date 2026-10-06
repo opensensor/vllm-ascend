@@ -9,6 +9,53 @@ import pytest
 from tools.glm_perf import fused_moe_profile
 
 
+def test_event_profile_uses_bounded_pairs_and_resolves_every_sample(monkeypatch):
+    clock = [0]
+    created = []
+    syncs = []
+
+    class Event:
+        def __init__(self, **kwargs):
+            created.append(self)
+
+        def record(self):
+            self.timestamp = clock[0]
+
+        def elapsed_time(self, other):
+            return other.timestamp - self.timestamp
+
+    monkeypatch.setattr(
+        fused_moe_profile.torch,
+        "npu",
+        SimpleNamespace(synchronize=lambda: syncs.append(clock[0]), Event=Event),
+        raising=False,
+    )
+    kernels = [object() for _ in range(4)]
+    durations = {id(kernel): index + 1 for index, kernel in enumerate(kernels)}
+
+    def launch(kernel, args, blocks):
+        clock[0] += durations[id(kernel)]
+
+    native = SimpleNamespace(
+        launch=launch,
+        pack_kernel=kernels[0],
+        gate_kernel=kernels[1],
+        down_kernel=kernels[2],
+        reduce_kernel=kernels[3],
+    )
+
+    def pipeline():
+        for kernel in kernels:
+            native.launch(kernel, [], 8)
+
+    report = fused_moe_profile.measure(native, pipeline, warmups=2, samples=9)
+    assert len(created) == 8
+    assert len(syncs) == 10
+    assert sorted(value["median_ms"] for value in report.values()) == [1, 2, 3, 4]
+    assert all(len(value["samples_ms"]) == 9 for value in report.values())
+    assert native.launch is launch
+
+
 def test_event_profiling_restores_launcher_after_pipeline_failure(monkeypatch):
     class Event:
         def record(self):
