@@ -1,0 +1,48 @@
+import json,time,uuid
+from dataclasses import replace
+from pathlib import Path
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.reconstruction_control import compose_source,worker_identity
+from tools.glm_perf.fused_moe_control import manifest as fused_manifest
+from tools.glm_perf.suite import make_groups,run_groups,summarize
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+client=ResidentClient('http://127.0.0.1:8001',timeout=3600)
+before=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+assert all(r['candidate']=='reconstruction_fused_int4a4' and r['prepared_weight_layout']['prepared'] and not r['graphs_dirty'] for r in before)
+assert json.loads((root/'native-fused-v29-gates.json').read_text())['complete']
+for tokens in (2,8):
+ exact=json.loads((root/f'native-fused-v28-v29-t{tokens}-exactness.json').read_text())
+ assert exact['complete'] and all(r['bitwise_equal'] for r in exact['records'])
+manifest=fused_manifest(root/'build-native-fused-v29',root/'native-fused-v29-gates.json')
+(root/'native-manifest-fused-v29.json').write_text(json.dumps(manifest.value,indent=2)+'\n')
+loaded=client.load_native(manifest)
+(root/'native-fused-v29-load-receipts.json').write_text(json.dumps(loaded,indent=2)+'\n')
+print('new_native_loaded_all_workers',[(r['rank'],r['pid'],r['validation']['passed']) for r in loaded],flush=True)
+base=Path('/home/matteius/experiments/glm-decode-flags-20261006/resident-combine.py').read_text()
+profile='fused_int4a4'
+source=compose_source(base,profile,'reconstruction_v29')
+print('switch_begin_restore_v28_and_prepare_v29',time.time(),flush=True)
+t=time.monotonic()
+selected=client.switch(Control(uuid.uuid4().hex,candidate='reconstruction_'+profile,source=source))
+result={'version':29,'profile':profile,'complete':False,'serving_active':True,'restore_prepare_and_capture_s':time.monotonic()-t,'before':before,'selected':selected,'records':[]}
+assert worker_identity(selected)==worker_identity(before)
+assert all(r['prepared_weight_layout']['prepared'] and r['reconstruction']['native_dispatches']>0 and r['reconstruction']['fallback_dispatches']==0 for r in selected)
+print('new_native_serving',json.dumps({'version':29,'switch_s':result['restore_prepare_and_capture_s'],'workers':[(r['rank'],r['pid'],r['reconstruction']['native_dispatches']) for r in selected]}),flush=True)
+short=[(n,[replace(c,max_tokens=64) for c in cs]) for n,cs in make_groups(['short'],[])]
+quality=[c for _,cs in make_groups(['quality'],[]) for c in cs]
+groups=list(short)
+groups.extend(('quality_4_'+str(i//4),[replace(c,max_tokens=128) for c in quality[i:i+4]]) for i in range(0,len(quality),4))
+groups.extend(make_groups(['tool'],[]))
+for name,cases in groups:
+ rows=run_groups([(name,cases)],client.base_url,'glm53-flash-selective-w3',42,timeout_s=900)
+ result['records'].extend(rows);result['summary']=summarize(result['records'])
+ (root/'live-forward-v29-fused_int4a4-trial.json').write_text(json.dumps(result,indent=2)+'\n')
+ print('live_native_group',name,json.dumps(summarize(rows)),flush=True)
+ if not all(r['valid'] for r in rows):raise RuntimeError('native live request failed')
+result['after_requests']=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+assert worker_identity(result['after_requests'])==worker_identity(before)
+assert all(r['reconstruction']['fallback_dispatches']==0 and not r['graphs_dirty'] for r in result['after_requests'])
+result['complete']=True
+(root/'live-forward-v29-fused_int4a4-trial.json').write_text(json.dumps(result,indent=2)+'\n')
+print('complete_new_kernels_left_serving',json.dumps(result['summary']),flush=True)

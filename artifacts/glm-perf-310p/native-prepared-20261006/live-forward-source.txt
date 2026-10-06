@@ -1,0 +1,71 @@
+import json,time,uuid
+from pathlib import Path
+from dataclasses import replace
+import psutil
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_native import NativeManifest
+from tools.glm_perf.reconstruction_control import compose_source,worker_identity
+from tools.glm_perf.fused_moe_control import manifest as fused_manifest
+from tools.glm_perf.worker_affinity import plan_bindings,apply_bindings
+from tools.glm_perf.suite import make_groups,run_groups,summarize
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+client=ResidentClient('http://127.0.0.1:8001',timeout=3600)
+server=json.loads((root/'forward-v28-server-process.json').read_text())
+process=psutil.Process(server['pid'])
+print('waiting for restarted server; corrected CPU preparation and 3600s control timeout',flush=True)
+for attempt in range(900):
+    if not process.is_running() or process.status()==psutil.STATUS_ZOMBIE:raise RuntimeError('server exited during startup')
+    try:
+        client.request('/v1/models',method='GET')
+        break
+    except OSError:time.sleep(2)
+    if attempt%15==0:print('startup_elapsed_s',attempt*2,flush=True)
+else:raise TimeoutError('server loading')
+workers=sorted((p for p in process.children(recursive=True) if 'Worker_TP' in p.name()),key=lambda p:p.name())
+assert len(workers)==4
+masks=[set(range(s,s+4))|set(range(s+32,s+36)) for s in (8,12,16,20)]
+bindings=plan_bindings(process.pid,{p.pid:m for p,m in zip(workers,masks)})
+apply_bindings(bindings)
+(root/'forward-v28-affinity.json').write_text(json.dumps(bindings,indent=2,default=str)+'\n')
+print('server_loaded',[(p.pid,p.name()) for p in workers],flush=True)
+sinkhorn=NativeManifest(json.loads(Path('/home/matteius/experiments/glm-sinkhorn-resident-20261005/native-manifest.json').read_text()))
+client.load_native(sinkhorn)
+base=Path('/home/matteius/experiments/glm-decode-flags-20261006/resident-combine.py').read_text()
+base_rows=client.switch(Control(uuid.uuid4().hex,candidate='decode_combine',source=base))
+short=[(n,[replace(c,max_tokens=64) for c in cs]) for n,cs in make_groups(['short'],[])]
+baseline=run_groups(short,client.base_url,'glm53-flash-selective-w3',42,timeout_s=900)
+(root/'live-forward-v28-baseline.json').write_text(json.dumps({'summary':summarize(baseline),'records':baseline,'workers':base_rows},indent=2)+'\n')
+assert all(r['valid'] for r in baseline)
+print('baseline',json.dumps(summarize(baseline)),flush=True)
+gates=root/'native-fused-v28-gates.json'
+assert json.loads(gates.read_text())['complete']
+manifest=fused_manifest(root/'build-native-fused-v28',gates)
+(root/'native-manifest-fused-v28.json').write_text(json.dumps(manifest.value,indent=2)+'\n')
+loaded=client.load_native(manifest)
+(root/'native-fused-v28-load-receipts.json').write_text(json.dumps(loaded,indent=2)+'\n')
+print('new_native_loaded_all_workers',[(r['rank'],r['pid'],r['validation']['passed']) for r in loaded],flush=True)
+profile='fused_int4a4'
+source=compose_source(base,profile,'reconstruction_v28')
+t=time.monotonic()
+selected=client.switch(Control(uuid.uuid4().hex,candidate='reconstruction_'+profile,source=source))
+result={'version':28,'profile':profile,'complete':False,'serving_active':True,'bank_preparation_and_capture_s':time.monotonic()-t,'selected':selected,'records':[]}
+assert worker_identity(selected)==worker_identity(base_rows)
+assert all(r.get('prepared_weight_layout',{}).get('prepared') and r['reconstruction']['native_dispatches']>0 and r['reconstruction']['fallback_dispatches']==0 for r in selected)
+print('new_native_serving',json.dumps({'profile':profile,'prepare_and_capture_s':result['bank_preparation_and_capture_s'],'workers':[(r['rank'],r['pid'],r['reconstruction']['native_dispatches']) for r in selected]}),flush=True)
+quality=[c for _,cs in make_groups(['quality'],[]) for c in cs]
+groups=list(short)
+groups.extend(('quality_4_'+str(i//4),[replace(c,max_tokens=128) for c in quality[i:i+4]]) for i in range(0,len(quality),4))
+groups.extend(make_groups(['tool'],[]))
+for name,cases in groups:
+    rows=run_groups([(name,cases)],client.base_url,'glm53-flash-selective-w3',42,timeout_s=900)
+    result['records'].extend(rows)
+    result['summary']=summarize(result['records'])
+    (root/'live-forward-v28-fused_int4a4-trial.json').write_text(json.dumps(result,indent=2)+'\n')
+    print('live_native_group',name,json.dumps(summarize(rows)),flush=True)
+    if not all(r['valid'] for r in rows):raise RuntimeError('live native request failed; inspect engine log before proceeding')
+result['after_requests']=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+assert all(r['reconstruction']['fallback_dispatches']==0 for r in result['after_requests'])
+result['complete']=True
+(root/'live-forward-v28-fused_int4a4-trial.json').write_text(json.dumps(result,indent=2)+'\n')
+print('complete_new_kernels_left_serving',json.dumps(result['summary']),flush=True)

@@ -9,7 +9,8 @@ from dataclasses import dataclass
 
 import torch
 
-from .glm_int4 import MAX_GROUPED_ROUTES, packed_weight_bits
+from .fused_weight_layout import pack_cube
+from .glm_int4 import MAX_GROUPED_ROUTES, pack_nz_codes, packed_weight_bits
 
 
 @dataclass(frozen=True)
@@ -39,10 +40,13 @@ class FusedGeometry:
 class NativeFusedMoE:
     input_dtype = torch.float16
 
-    def __init__(self, root, *, namespace, activation_bits, kernel_factory=None, launch=None):
+    def __init__(
+        self, root, *, namespace, activation_bits, kernel_factory=None, launch=None, prepared_weight_layout=False
+    ):
         if activation_bits not in (4, 8):
             raise ValueError("activation bits must be 4 or 8")
         self.activation_bits = activation_bits
+        self.prepared_weight_layout = prepared_weight_layout
         self.launch = launch or getattr(torch.ops, namespace).launch
         factory = kernel_factory or getattr(torch.classes, namespace).Kernel
         self.gate_kernel = factory(str(root / "glm_fused_gate_up.bin"), "glm_fused_gate_up_v1")
@@ -50,6 +54,9 @@ class NativeFusedMoE:
         self.pack_kernel = factory(str(root / "glm_fused_pack.bin"), "glm_fused_pack_v1")
         self.device = torch.device("npu", torch.npu.current_device())
         self.configs = {}
+
+    def pack_weight_codes(self, signed, bits):
+        return pack_cube(signed, bits) if self.prepared_weight_layout else pack_nz_codes(signed, bits)
 
     def geometry(self, x, gate_codes, gate_scales, down_codes, down_scales, weights, ids):
         tensors = (x, gate_codes, gate_scales, down_codes, down_scales, weights, ids)

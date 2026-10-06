@@ -1,0 +1,55 @@
+(APIServer pid=2875675)            ^^^^^^^^^^^^
+(APIServer pid=2875675) Exception: Call to collective_rpc method failed: RPC call to resident_capture timed out.
+(EngineCore pid=2876372) INFO 10-06 14:58:11 [scheduler.py:2619] setting pause state to PAUSED_NEW
+(EngineCore pid=2876372) INFO 10-06 14:59:11 [shm_broadcast.py:801] No available shared memory broadcast block found in 60 seconds. This typically happens when some processes are hanging or doing some time-consuming work (e.g. compilation, weight/kv cache quantization).
+(EngineCore pid=2876372) INFO 10-06 15:00:11 [shm_broadcast.py:801] No available shared memory broadcast block found in 60 seconds. This typically happens when some processes are hanging or doing some time-consuming work (e.g. compilation, weight/kv cache quantization).
+(EngineCore pid=2876372) INFO 10-06 15:01:11 [shm_broadcast.py:801] No available shared memory broadcast block found in 60 seconds. This typically happens when some processes are hanging or doing some time-consuming work (e.g. compilation, weight/kv cache quantization).
+(EngineCore pid=2876372) INFO 10-06 15:02:11 [shm_broadcast.py:801] No available shared memory broadcast block found in 60 seconds. This typically happens when some processes are hanging or doing some time-consuming work (e.g. compilation, weight/kv cache quantization).
+(EngineCore pid=2876372) INFO 10-06 15:03:11 [shm_broadcast.py:801] No available shared memory broadcast block found in 60 seconds. This typically happens when some processes are hanging or doing some time-consuming work (e.g. compilation, weight/kv cache quantization).
+(EngineCore pid=2876372) INFO 10-06 15:04:11 [shm_broadcast.py:801] No available shared memory broadcast block found in 60 seconds. This typically happens when some processes are hanging or doing some time-consuming work (e.g. compilation, weight/kv cache quantization).
+(EngineCore pid=2876372) INFO 10-06 15:05:12 [shm_broadcast.py:801] No available shared memory broadcast block found in 60 seconds. This typically happens when some processes are hanging or doing some time-consuming work (e.g. compilation, weight/kv cache quantization).
+(EngineCore pid=2876372) INFO 10-06 15:06:12 [shm_broadcast.py:801] No available shared memory broadcast block found in 60 seconds. This typically happens when some processes are hanging or doing some time-consuming work (e.g. compilation, weight/kv cache quantization).
+(EngineCore pid=2876372) INFO 10-06 15:07:12 [shm_broadcast.py:801] No available shared memory broadcast block found in 60 seconds. This typically happens when some processes are hanging or doing some time-consuming work (e.g. compilation, weight/kv cache quantization).
+(Worker_TP0 pid=2876823)
+Capturing CUDA graphs (decode, FULL):   0%|          | 0/2 [00:00<?, ?it/s]
+Capturing CUDA graphs (decode, FULL):  50%|█████     | 1/2 [00:17<00:17, 17.20s/it]
+Capturing CUDA graphs (decode, FULL): 100%|██████████| 2/2 [00:18<00:00,  7.83s/it]
+Capturing CUDA graphs (decode, FULL): 100%|██████████| 2/2 [00:18<00:00,  9.23s/it]
+(Worker_TP0 pid=2876823) INFO 10-06 15:08:10 [gpu_model_runner.py:6929] Graph capturing finished in 20 secs, took 0.49 GiB
+(EngineCore pid=2876372) INFO 10-06 15:08:11 [block_pool.py:854] Successfully reset prefix cache
+(APIServer pid=2875675) INFO:     127.0.0.1:52158 - "POST /collective_rpc HTTP/1.1" 200 OK
+(APIServer pid=2875675) INFO:     127.0.0.1:52164 - "POST /collective_rpc HTTP/1.1" 200 OK
+(APIServer pid=2875675) INFO:     127.0.0.1:52172 - "POST /collective_rpc HTTP/1.1" 200 OK
+(EngineCore pid=2876372) INFO 10-06 15:08:23 [scheduler.py:2619] setting pause state to UNPAUSED
+(APIServer pid=2875675) INFO:     127.0.0.1:52182 - "POST /resume HTTP/1.1" 200 OK
+(APIServer pid=2875675) INFO:     127.0.0.1:52198 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(EngineCore pid=2876372) ERROR 10-06 15:08:24 [core.py:1368] EngineCore encountered a fatal error.
+(EngineCore pid=2876372) ERROR 10-06 15:08:24 [core.py:1368] Traceback (most recent call last):
+(EngineCore pid=2876372) ERROR 10-06 15:08:24 [core.py:1368]   File "/srv/ai/src/vllm-opensensor/vllm/v1/engine/core.py", line 1352, in run_engine_core
+(EngineCore pid=2876372) ERROR 10-06 15:08:24 [core.py:1368]     engine_core.run_busy_loop()
+(EngineCore pid=2876372) ERROR 10-06 15:08:24 [core.py:1368]   File "/srv/ai/src/vllm-opensensor/vllm/v1/fault_tolerance/engine_core_sentinel.py", line 179, in run_with_fault_tolerance
+(EngineCore pid=2876372) ERROR 10-06 15:08:24 [core.py:1368]     busy_loop_func(self)
+(EngineCore pid=2876372) ERROR 10-06 15:08:24 [core.py:1368]   File "/srv/ai/src/vllm-opensensor/vllm/v1/engine/core.py", line 1411, in run_busy_loop
+(EngineCore pid=2876372) ERROR 10-06 15:08:24 [core.py:1368]     self._process_engine_step()
+(EngineCore pid=2876372) ERROR 10-06 15:08:24 [core.py:1368]   File "/srv/ai/src/vllm-opensensor/vllm/v1/engine/core.py", line 1464, in _process_engine_step
+(EngineCore pid=2876372) ERROR 10-06 15:08:24 [core.py:1368]     outputs, model_executed = self.step_fn()
+(EngineCore pid=2876372) ERROR 10-06 15:08:24 [core.py:1368]                               ^^^^^^^^^^^^^^
+(EngineCore pid=2876372) ERROR 10-06 15:08:24 [core.py:1368]   File "/srv/ai/src/vllm-opensensor/vllm/v1/engine/core.py", line 614, in step
+(EngineCore pid=2876372) ERROR 10-06 15:08:24 [core.py:1368]     engine_core_outputs = self.scheduler.update_from_output(
+(EngineCore pid=2876372) ERROR 10-06 15:08:24 [core.py:1368]                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2876372) ERROR 10-06 15:08:24 [core.py:1368]   File "/srv/ai/src/glm-selective-w3-nz-test-20261004/vllm_ascend/patch/platform/patch_pp_mtp.py", line 271, in _patched_update_from_output
+(EngineCore pid=2876372) ERROR 10-06 15:08:24 [core.py:1368]     engine_core_outputs = original_update_from_output(
+(EngineCore pid=2876372) ERROR 10-06 15:08:24 [core.py:1368]                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2876372) ERROR 10-06 15:08:24 [core.py:1368]   File "/srv/ai/src/vllm-opensensor/vllm/v1/core/sched/scheduler.py", line 1880, in update_from_output
+(EngineCore pid=2876372) ERROR 10-06 15:08:24 [core.py:1368]     sampled_token_ids = model_runner_output.sampled_token_ids
+(EngineCore pid=2876372) ERROR 10-06 15:08:24 [core.py:1368]                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2876372) ERROR 10-06 15:08:24 [core.py:1368] AttributeError: 'dict' object has no attribute 'sampled_token_ids'
+(EngineCore pid=2876372) INFO 10-06 15:08:24 [multiproc_executor.py:472] [shutdown] Executor: waiting for worker exit count=4
+(Worker_TP0 pid=2876823) INFO 10-06 15:08:24 [multiproc_executor.py:836] Parent process exited, terminating worker queues
+(APIServer pid=2875675) ERROR 10-06 15:08:24 [async_llm.py:829] AsyncLLM output_handler failed.
+(APIServer pid=2875675) ERROR 10-06 15:08:24 [async_llm.py:829] Traceback (most recent call last):
+(APIServer pid=2875675) ERROR 10-06 15:08:24 [async_llm.py:829]   File "/srv/ai/src/vllm-opensensor/vllm/v1/engine/async_llm.py", line 775, in output_handler
+(APIServer pid=2875675) ERROR 10-06 15:08:24 [async_llm.py:829]     outputs = await engine_core.get_output_async()
+(APIServer pid=2875675) ERROR 10-06 15:08:24 [async_llm.py:829]               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2875675) ERROR 10-06 15:08:24 [async_llm.py:829]   File "/srv/ai/src/vllm-opensensor/vllm/v1/engine/core_client.py", line 1175, in get_output_async
+(APIServer pid=2875675) ERROR 10-06 15:08:24 [async_llm.py:829]     raise self._format_exception(outputs) from None

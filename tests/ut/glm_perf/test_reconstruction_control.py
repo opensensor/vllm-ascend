@@ -3,12 +3,66 @@
 
 import hashlib
 import json
+import sys
 
 import pytest
 
 from tools.glm_perf import reconstruction_control as control
 
 BASE = "# retain this comment\ndef replacements(native_resources):\n    return {'existing': native_resources}\n"
+
+
+@pytest.mark.parametrize("timeout", ("0", "-1", "nan", "inf"))
+def test_trial_rejects_invalid_rpc_deadline_before_connecting(monkeypatch, tmp_path, timeout):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "reconstruction_control",
+            "trial",
+            "--base-source",
+            str(tmp_path / "base.py"),
+            "--profile",
+            "fused_int4a4",
+            "--output",
+            str(tmp_path / "result.json"),
+            "--timeout",
+            timeout,
+        ],
+    )
+    with pytest.raises(SystemExit) as error:
+        control.main()
+    assert error.value.code == 2
+
+
+@pytest.mark.parametrize("option,expected", (([], 3600), (["--timeout", "1800"], 1800)))
+def test_trial_uses_preparation_deadline_in_rpc_client(monkeypatch, tmp_path, option, expected):
+    source = tmp_path / "base.py"
+    source.write_text(BASE)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "reconstruction_control",
+            "trial",
+            "--base-source",
+            str(source),
+            "--profile",
+            "fused_int4a4",
+            "--output",
+            str(tmp_path / "result.json"),
+            *option,
+        ],
+    )
+    clients = []
+
+    def trial(client, *args):
+        clients.append(client)
+        return {"restored": True, "summary": {}}
+
+    monkeypatch.setattr(control, "run_trial", trial)
+    control.main()
+    assert clients[0].timeout == expected
 
 
 def test_composition_preserves_base_text_and_existing_replacements(monkeypatch):

@@ -1,0 +1,59 @@
+{
+  "assets": [
+    {
+      "path": "/home/matteius/experiments/glm-reconstruction-20261006/build-native-fused-v28/glm_fused_gate_up.bin",
+      "sha256": "f0ce367533e6fb6a41a2717646d63f5766472da6996b723eea5d6fbdff6e96b3"
+    },
+    {
+      "path": "/home/matteius/experiments/glm-reconstruction-20261006/build-native-fused-v28/glm_fused_down.bin",
+      "sha256": "7a8a2fd73f3d84719b9373483cff9f668d3e700a321a09268e39dad578255561"
+    },
+    {
+      "path": "/home/matteius/experiments/glm-reconstruction-20261006/build-native-fused-v28/glm_fused_pack.bin",
+      "sha256": "f52e744e613bb038b93b74fa8b977f022c76a69c33abd6e32c5ceb14236ef8f7"
+    },
+    {
+      "path": "/home/matteius/experiments/glm-reconstruction-20261006/build-native-fused-v28/glm_reconstruction_v28_helpers/glm_fused_moe.py",
+      "sha256": "335fc618c6e7a75d7080edbea349f29a2e689ff5612376ac6bd0923ab6d0ce07"
+    },
+    {
+      "path": "/home/matteius/experiments/glm-reconstruction-20261006/build-native-fused-v28/glm_reconstruction_v28_helpers/reconstruction_probe.py",
+      "sha256": "53671a4e566771d23f945d55037e24cc7120df8a7d21672802b5a5e2724f3d83"
+    },
+    {
+      "path": "/home/matteius/experiments/glm-reconstruction-20261006/build-native-fused-v28/glm_reconstruction_v28_helpers/fused_moe_probe.py",
+      "sha256": "4ea25bc0e2101e9a357a8a44ef92beb1ebc2dd090638c74301332e3215f86de0"
+    },
+    {
+      "path": "/home/matteius/experiments/glm-reconstruction-20261006/build-native-fused-v28/glm_reconstruction_v28_helpers/fused_weight_layout.py",
+      "sha256": "69e637defe396495ece533deb1d93dbdae65ef37cf895b06004ea28ea50cfec7"
+    },
+    {
+      "path": "/home/matteius/experiments/glm-reconstruction-20261006/build-native-fused-v28/glm_reconstruction_v28_helpers/expert_reconstruction.py",
+      "sha256": "81932eba7e21ec14b52f0072adb77ab46c65c5d472dec00ebcdc38e7d721ef5f"
+    },
+    {
+      "path": "/home/matteius/experiments/glm-reconstruction-20261006/build-native-fused-v28/glm_reconstruction_v28_helpers/glm_int4.py",
+      "sha256": "be71985a4fd66c3f99d950abb5da4f8383ad607c421c8b3bfbe1ec3564e0a843"
+    },
+    {
+      "path": "/home/matteius/experiments/glm-reconstruction-20261006/build-native-fused-v28/glm_reconstruction_v28_helpers/__init__.py",
+      "sha256": "6c6ec57de9f82ef42d82760f144a4571cb16b3cd6de33aaa7aa9fd65e8ab1fa1"
+    },
+    {
+      "path": "/home/matteius/experiments/glm-reconstruction-20261006/build-native-fused-v28/glm_reconstruction_v28_helpers/reconstruction_native.py",
+      "sha256": "9bf814f721c063009c3e211841a55f7940c849c99d018d0822227f1cc3f5752c"
+    }
+  ],
+  "libraries": [
+    {
+      "path": "/home/matteius/experiments/glm-reconstruction-20261006/build-native-fused-v28/glm_reconstruction_bridge_v28.so",
+      "sha256": "25e1e024ece98cad45730dd95f8f2a0327b5323ac6d96e9147f7b42afa6a580d"
+    }
+  ],
+  "name": "reconstruction_v28",
+  "operators": [
+    "glm_reconstruction_v28::launch"
+  ],
+  "validation_source": "def prepare():\n    import hashlib, importlib, importlib.util, sys\n    from pathlib import Path\n    package='glm_reconstruction_v28_helpers'\n    root=Path('/home/matteius/experiments/glm-reconstruction-20261006/build-native-fused-v28/glm_reconstruction_v28_helpers')\n    if package not in sys.modules:\n        spec=importlib.util.spec_from_file_location(package,root/'__init__.py',submodule_search_locations=[str(root)])\n        module=importlib.util.module_from_spec(spec)\n        sys.modules[package]=module\n        spec.loader.exec_module(module)\n    if Path(sys.modules[package].__file__).resolve() != (root/'__init__.py').resolve():\n        raise ValueError('fused helper package belongs to another build')\n    for name, expected in {'glm_fused_moe.py': '335fc618c6e7a75d7080edbea349f29a2e689ff5612376ac6bd0923ab6d0ce07', 'reconstruction_probe.py': '53671a4e566771d23f945d55037e24cc7120df8a7d21672802b5a5e2724f3d83', 'fused_moe_probe.py': '4ea25bc0e2101e9a357a8a44ef92beb1ebc2dd090638c74301332e3215f86de0', 'fused_weight_layout.py': '69e637defe396495ece533deb1d93dbdae65ef37cf895b06004ea28ea50cfec7', 'expert_reconstruction.py': '81932eba7e21ec14b52f0072adb77ab46c65c5d472dec00ebcdc38e7d721ef5f', 'glm_int4.py': 'be71985a4fd66c3f99d950abb5da4f8383ad607c421c8b3bfbe1ec3564e0a843', '__init__.py': '6c6ec57de9f82ef42d82760f144a4571cb16b3cd6de33aaa7aa9fd65e8ab1fa1', 'reconstruction_native.py': '9bf814f721c063009c3e211841a55f7940c849c99d018d0822227f1cc3f5752c'}.items():\n        if hashlib.sha256((root/name).read_bytes()).hexdigest()!=expected:\n            raise ValueError('fused helper changed: '+name)\n    from glm_reconstruction_v28_helpers.glm_fused_moe import NativeFusedMoE\n    build=Path('/home/matteius/experiments/glm-reconstruction-20261006/build-native-fused-v28')\n    resources={'fused_int4a'+str(bits): NativeFusedMoE(build,namespace='glm_reconstruction_v28',activation_bits=bits,\n                                                     prepared_weight_layout=True)\n               for bits in (8,4)}\n    if True:\n        import torch\n        from glm_reconstruction_v28_helpers.fused_weight_layout import PreparedWeightLayout\n        report=Path('/home/matteius/experiments/glm-reconstruction-20261006/build-native-fused-v28')/('weight-layout-rank'+str(torch.distributed.get_rank())+'.json')\n        resources['_weight_layout']=PreparedWeightLayout(torch.npu.synchronize,torch.distributed.get_world_size(),\n                                                         report_path=report)\n    return resources\n\ndef validate(resources):\n    from glm_reconstruction_v28_helpers.fused_moe_probe import gate_case\n    records=[gate_case(resources['fused_int4a'+str(activation)],bits) for activation in (8,4) for bits in (2,3,4)]\n    return {'passed':True,'cases':len(records),'native_fused_stages':2,\n             'input_quantization_passes_per_token':1,\n             'fp16_intermediate_gm_bytes':0,'model_quality':'not_evaluated'}\n"
+}

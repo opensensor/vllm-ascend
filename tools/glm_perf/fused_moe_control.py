@@ -31,6 +31,7 @@ def manifest(build_dir, gate_report):
     namespace = options["namespace"]
     package = options["helper_package"]
     package_root = root / package
+    prepared_layout = options.get("prepared_weight_layout", False)
     bridge = root / f"glm_reconstruction_bridge_v{options['version']}.so"
     binaries = (bridge, root / "glm_fused_gate_up.bin", root / "glm_fused_down.bin", root / "glm_fused_pack.bin")
     for path in binaries:
@@ -55,12 +56,21 @@ def manifest(build_dir, gate_report):
         if hashlib.sha256((root/name).read_bytes()).hexdigest()!=expected:
             raise ValueError('fused helper changed: '+name)
     from {package}.glm_fused_moe import NativeFusedMoE
-    return {{'fused_int4a'+str(bits): NativeFusedMoE(Path({str(root)!r}),namespace={namespace!r},activation_bits=bits)
-            for bits in (8,4)}}
+    build=Path({str(root)!r})
+    resources={{'fused_int4a'+str(bits): NativeFusedMoE(build,namespace={namespace!r},activation_bits=bits,
+                                                     prepared_weight_layout={prepared_layout!r})
+               for bits in (8,4)}}
+    if {prepared_layout!r}:
+        import torch
+        from {package}.fused_weight_layout import PreparedWeightLayout
+        report=Path({str(root)!r})/('weight-layout-rank'+str(torch.distributed.get_rank())+'.json')
+        resources['_weight_layout']=PreparedWeightLayout(torch.npu.synchronize,torch.distributed.get_world_size(),
+                                                         report_path=report)
+    return resources
 
 def validate(resources):
     from {package}.fused_moe_probe import gate_case
-    records=[gate_case(native,bits) for native in resources.values() for bits in (2,3,4)]
+    records=[gate_case(resources['fused_int4a'+str(activation)],bits) for activation in (8,4) for bits in (2,3,4)]
     return {{'passed':True,'cases':len(records),'native_fused_stages':2,
              'input_quantization_passes_per_token':1,
              'fp16_intermediate_gm_bytes':0,'model_quality':'not_evaluated'}}

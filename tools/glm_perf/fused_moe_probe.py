@@ -7,7 +7,7 @@ import json
 import torch
 
 from .glm_fused_moe import FusedGeometry, NativeFusedMoE
-from .glm_int4 import pack_nz_codes, unpack_canonical_codes
+from .glm_int4 import unpack_canonical_codes
 
 
 def projection_reference(inputs, signed, scales, activation_bits):
@@ -76,7 +76,7 @@ def gate_case(native, bits, tokens=2, hidden=256, inter=256, real=None):
     offset = 5
     ids += offset
     gx, gi, gw = x.npu(), ids.npu(), weights.npu()
-    gc, dc = pack_nz_codes(gate, bits).npu(), pack_nz_codes(down, bits).npu()
+    gc, dc = native.pack_weight_codes(gate, bits).npu(), native.pack_weight_codes(down, bits).npu()
     ggs, gds = gs.npu(), ds.npu()
     geometry = FusedGeometry(tokens, 2, experts, hidden, inter, bits, bits, native.activation_bits)
 
@@ -98,8 +98,8 @@ def gate_case(native, bits, tokens=2, hidden=256, inter=256, real=None):
     gw.copy_((weights * 0.75).npu())
     gate = torch.roll(gate, 1, -1)
     down = torch.roll(down, 2, -1)
-    gc.copy_(pack_nz_codes(gate, bits).npu())
-    dc.copy_(pack_nz_codes(down, bits).npu())
+    gc.copy_(native.pack_weight_codes(gate, bits).npu())
+    dc.copy_(native.pack_weight_codes(down, bits).npu())
     graph.replay()
     torch.npu.synchronize()
     check(actual)
@@ -146,7 +146,12 @@ def run(build_dir, output, *, checkpoint=None, real_prefixes=()):
     }
     try:
         for activation_bits in (8, 4):
-            native = NativeFusedMoE(build_dir, namespace=namespace, activation_bits=activation_bits)
+            native = NativeFusedMoE(
+                build_dir,
+                namespace=namespace,
+                activation_bits=activation_bits,
+                prepared_weight_layout=options.get("prepared_weight_layout", False),
+            )
             for bits in (2, 3, 4):
                 for tokens in (1, 2, 3, 17, 128):
                     record = gate_case(native, bits, tokens)

@@ -35,6 +35,8 @@ def build(
     tile_pipeline=False,
     all_bits=False,
     fused_moe=False,
+    prepared_weight_layout=False,
+    pair_scale_groups=False,
 ):
     """Freeze helper sources and compile a unique, append-only native version."""
     if type(version) is not int or version < 1 or output_columns not in (16, 32, 64, 128):
@@ -45,6 +47,10 @@ def build(
         raise ValueError("all bit widths require the tile pipeline")
     if fused_moe and (not all_bits or output_columns != 128):
         raise ValueError("fused MoE requires all bits and a 128-column tile")
+    if prepared_weight_layout and not fused_moe:
+        raise ValueError("prepared weight layout requires fused MoE")
+    if pair_scale_groups and not fused_moe:
+        raise ValueError("paired scale groups require fused MoE")
     namespace = f"glm_reconstruction_v{version}"
     build_dir = build_dir.resolve()
     build_dir.mkdir(parents=True, exist_ok=False)
@@ -54,7 +60,7 @@ def build(
     (helper_root / "__init__.py").write_text("# SPDX-License-Identifier: Apache-2.0\n")
     helpers = ("glm_int4.py", "reconstruction_native.py", "reconstruction_probe.py")
     if fused_moe:
-        helpers += ("glm_fused_moe.py", "fused_moe_probe.py")
+        helpers += ("glm_fused_moe.py", "fused_moe_probe.py", "fused_weight_layout.py")
     for name in helpers:
         shutil.copy2(HERE / name, helper_root / name)
     shutil.copy2(HERE / "resident_candidates/expert_reconstruction.py", helper_root / "expert_reconstruction.py")
@@ -98,6 +104,8 @@ def build(
             "all_bits": all_bits,
             "prefill_native": all_bits,
             "fused_moe": fused_moe,
+            "prepared_weight_layout": prepared_weight_layout,
+            "pair_scale_groups": pair_scale_groups,
         }
     }
     provenance["_helpers"] = {p.name: sha256(p) for p in helper_root.glob("*.py")}
@@ -127,6 +135,8 @@ def build(
                     str(output),
                     *options,
                     f"-I{HERE}",
+                    *(["-DGLM_PREPARED_WEIGHT_LAYOUT"] if prepared_weight_layout else []),
+                    *(["-DGLM_PAIR_SCALE_GROUPS"] if pair_scale_groups else []),
                     *(["-DGLM_FUSED_GATE_UP"] if stage == "gate_up" else []),
                 ],
                 check=True,
@@ -204,6 +214,8 @@ def main():
     parser.add_argument("--tile-pipeline", action="store_true")
     parser.add_argument("--all-bits", action="store_true")
     parser.add_argument("--fused-moe", action="store_true")
+    parser.add_argument("--prepared-weight-layout", action="store_true")
+    parser.add_argument("--pair-scale-groups", action="store_true")
     args = parser.parse_args()
     print(
         build(
@@ -216,6 +228,8 @@ def main():
             args.tile_pipeline,
             args.all_bits,
             args.fused_moe,
+            args.prepared_weight_layout,
+            args.pair_scale_groups,
         )
     )
 

@@ -119,15 +119,18 @@ def run(builds, checkpoint, output, layers=(10, 11, 33), tokens=2, warmups=3, sa
             hidden, inter = gate.shape[-1], down.shape[-1]
             bits = codes.shape[-1] * 8 // inter
             x = torch.randn(tokens, hidden, generator=torch.Generator().manual_seed(5704)).half().npu()
-            gc, dc, ggs, gds = pack_nz_codes(gate, bits).npu(), pack_nz_codes(down, bits).npu(), gs.npu(), ds.npu()
+            ggs, gds = gs.npu(), ds.npu()
             weights = torch.ones(tokens, 1).npu()
             order = torch.arange(tokens, dtype=torch.int64).npu()
             ends = torch.tensor([tokens], dtype=torch.int64).npu()
             for build, helper, options in loaded:
                 for activation_bits in (8, 4):
+                    layout_options = {"prepared_weight_layout": True} if options.get("prepared_weight_layout") else {}
                     native = helper.NativeFusedMoE(
-                        build, namespace=options["namespace"], activation_bits=activation_bits
+                        build, namespace=options["namespace"], activation_bits=activation_bits, **layout_options
                     )
+                    pack = getattr(native, "pack_weight_codes", pack_nz_codes)
+                    gc, dc = pack(gate, bits).npu(), pack(down, bits).npu()
                     geometry = helper.FusedGeometry(tokens, 1, 1, hidden, inter, bits, bits, activation_bits)
 
                     pipeline = partial(native.grouped, x, gc, ggs, dc, gds, weights, order, ends, geometry)

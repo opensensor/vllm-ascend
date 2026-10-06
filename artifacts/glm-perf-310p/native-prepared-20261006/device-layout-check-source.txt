@@ -1,0 +1,45 @@
+import json
+from pathlib import Path
+from types import SimpleNamespace
+import torch, torch_npu
+from safetensors import safe_open
+from tools.glm_perf.fused_weight_layout import PreparedWeightLayout, pack_cube, tensor_digest
+from tools.glm_perf.glm_int4 import pack_nz_codes, unpack_canonical_codes
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+checkpoint=Path('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p')
+torch.set_num_threads(4)
+torch.npu.set_device(0)
+torch_npu.npu.set_compile_mode(jit_compile=False)
+index=json.loads((checkpoint/'model.safetensors.index.json').read_text())['weight_map']
+records=[]
+for layer,bits in ((10,3),(11,4),(33,2)):
+    prefix=f'model.language_model.layers.{layer}.mlp.experts.0.'
+    values=[]
+    for projection in ('gate','up','down'):
+        pair=[]
+        for suffix in ('_codes','_scale'):
+            key=prefix+projection+'_proj'+suffix
+            with safe_open(str(checkpoint/index[key]),framework='pt',device='cpu') as f: pair.append(f.get_tensor(key))
+        codes,scales=pair
+        values.append((unpack_canonical_codes(codes,scales.shape[-1]*32),scales))
+    gate=torch.cat([v[0] for v in values[:2]],0)[None]
+    gs=torch.cat([v[1] for v in values[:2]],0)[None]
+    down,ds=values[2][0][None],values[2][1][None]
+    bank=SimpleNamespace(gate_up_packed_bank=pack_nz_codes(gate,bits).npu(),gate_up_scale_bank=gs.npu(),
+                         down_packed_bank=pack_nz_codes(down,bits).npu(),down_scale_bank=ds.npu())
+    module=SimpleNamespace(w2_experts=bank)
+    model=SimpleNamespace(modules=lambda: iter([module]))
+    original=[tensor_digest(t.cpu()) for t in (bank.gate_up_packed_bank,bank.down_packed_bank)]
+    pointers=[t.data_ptr() for t in (bank.gate_up_packed_bank,bank.down_packed_bank)]
+    layout=PreparedWeightLayout(torch.npu.synchronize)
+    layout.prepare([model])
+    for actual,signed in ((bank.gate_up_packed_bank,gate),(bank.down_packed_bank,down)):
+        assert torch.equal(actual.cpu(),pack_cube(signed,bits))
+    layout.restore()
+    assert original==[tensor_digest(t.cpu()) for t in (bank.gate_up_packed_bank,bank.down_packed_bank)]
+    assert pointers==[t.data_ptr() for t in (bank.gate_up_packed_bank,bank.down_packed_bank)]
+    row={'layer':layer,'weight_bits':bits,'all_expert_codes_preserved':True,'device_storage_preserved':True,
+         'all_original_bytes_restored':True,'transaction':layout.receipt}
+    records.append(row)
+    print(json.dumps(row),flush=True)
+(root/'native-fused-v28-device-layout.json').write_text(json.dumps({'complete':True,'records':records},indent=2)+'\n')

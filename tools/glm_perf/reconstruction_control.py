@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """Compose reconstruction trials with the exact current resident candidate.
 
-Never stop workers, rewrite model weights, or change OPP paths. Every trial
+Never stop workers, change quantized codes, or change OPP paths. A prepared
+layout trial temporarily reorders banks losslessly and restores verified byte
+backups before baseline capture. Every trial
 restores the supplied base source, including existing fusions, in a finally
 block. Native library registration remains append-only.
 """
@@ -11,6 +13,7 @@ import ast
 import hashlib
 import inspect
 import json
+import math
 import uuid
 from dataclasses import replace
 from pathlib import Path
@@ -24,6 +27,7 @@ from tools.glm_perf.suite import make_groups, run_groups, summarize
 
 BASE_FACTORY = "_reconstruction_base_replacements"
 SELECTIONS = (*PROFILES, "w4a8", "int4a8", "fused_int4a8", "fused_int4a4")
+PREPARED_TRIAL_TIMEOUT_SECONDS = 3600
 
 
 def compose_source(base_source, profile, resource_name="reconstruction_v1"):
@@ -375,7 +379,15 @@ def main():
     trial.add_argument("--native-resource", default="reconstruction_v1")
     trial.add_argument("--require-full-coverage", action="store_true")
     trial.add_argument("--quality", action="store_true", help="include 20 exact-answer cases and one tool call")
+    trial.add_argument(
+        "--timeout",
+        type=float,
+        default=PREPARED_TRIAL_TIMEOUT_SECONDS,
+        help="control/request deadline; weight preparation must finish within this RPC",
+    )
     args = parser.parse_args()
+    if args.command == "trial" and (not math.isfinite(args.timeout) or args.timeout <= 0):
+        parser.error("--timeout must be finite and positive")
     if args.output.exists():
         raise FileExistsError(args.output)
     if args.command == "plan":
@@ -384,7 +396,7 @@ def main():
         args.output.write_text(manifest(args.build_dir, args.gate_report, args.include_w3).payload + "\n")
     else:
         result = run_trial(
-            ResidentClient(args.base_url),
+            ResidentClient(args.base_url, timeout=args.timeout),
             args.base_source.read_text(),
             args.profile,
             args.output,

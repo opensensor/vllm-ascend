@@ -1,0 +1,15 @@
+import json,time,torch
+from pathlib import Path
+from tools.glm_perf.fused_weight_layout import convert_host_bytes
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+torch.set_num_threads(4)
+records=[]
+for bits in (2,3,4):
+ for experts in (1,8):
+  original=torch.randint(-128,127,(experts,4096,4096*bits//8),dtype=torch.int8)
+  t=time.monotonic();new=convert_host_bytes(original,4096,to_cube=True);packed=time.monotonic()-t
+  t=time.monotonic();inverse=convert_host_bytes(new,4096,to_cube=False);unpacked=time.monotonic()-t
+  assert torch.equal(inverse,original)
+  row={'bits':bits,'experts':experts,'bytes':original.numel(),'pack_s':packed,'inverse_s':unpacked,'per_expert_total_s':(packed+unpacked)/experts,'all_bytes_exact':True}
+  print(json.dumps(row),flush=True);records.append(row)
+(root/'host-weight-layout-timing.json').write_text(json.dumps({'complete':True,'records':records},indent=2)+'\n')

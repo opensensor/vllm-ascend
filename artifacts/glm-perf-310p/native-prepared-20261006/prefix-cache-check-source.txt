@@ -1,0 +1,24 @@
+import json,time,urllib.request
+from pathlib import Path
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+base='http://127.0.0.1:8001'
+def call(path,payload=None):
+ req=urllib.request.Request(base+path,data=json.dumps(payload).encode() if payload is not None else None,headers={'Content-Type':'application/json'})
+ with urllib.request.urlopen(req,timeout=1200) as r:
+  data=r.read().decode()
+ return data if path=='/metrics' else json.loads(data)
+seed=call('/tokenize',{'model':'glm53-flash-selective-w3','prompt':'The quick brown fox jumps over the lazy dog. '})['tokens']
+assert seed and all(isinstance(i,int) for i in seed)
+prompt=(seed*200)[:1281]
+assert len(prompt)==1281
+report={'purpose':'identical token prefix replay on active native INT4 v28; no dispatch or cache reset','tokens':len(prompt),'before_metrics':call('/metrics'),'requests':[]}
+out=root/'prefix-cache-v28.json'
+for attempt in range(2):
+ t=time.monotonic()
+ response=call('/v1/completions',{'model':'glm53-flash-selective-w3','prompt':prompt,'max_tokens':2,'temperature':0,'seed':42})
+ record={'attempt':attempt,'elapsed_s':time.monotonic()-t,'response':response,'metrics':call('/metrics')}
+ report['requests'].append(record)
+ out.write_text(json.dumps(report,indent=2)+'\n')
+ print(json.dumps({'attempt':attempt,'elapsed_s':record['elapsed_s'],'usage':response.get('usage')}),flush=True)
+report['complete']=True
+out.write_text(json.dumps(report,indent=2)+'\n')

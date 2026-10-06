@@ -192,6 +192,10 @@ def test_fused_wrapper_counts_rejected_bank_as_fallback():
         == "original"
     )
     assert audit["fallback_dispatches"] == 2 and audit["native_dispatches"] == 0
+    native.prepared_weight_layout = True
+    with pytest.raises(ValueError, match="complete native geometry"):
+        wrapped(None, None, experts, torch.ones(1, 256), torch.ones(1, 2), torch.zeros(1, 2, dtype=torch.int64), None)
+    assert audit["fallback_dispatches"] == 2
 
 
 def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_path):

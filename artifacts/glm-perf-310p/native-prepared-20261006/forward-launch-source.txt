@@ -1,0 +1,26 @@
+import hashlib,json,os,socket,subprocess
+from pathlib import Path
+import psutil
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+previous=Path('/home/matteius/experiments/glm-decode-flags-20261006')
+saved=json.loads((previous/'candidate-config.json').read_text())
+assert not any('VLLM::Worker' in p.info.get('name','') or 'VLLMWorker' in p.info.get('name','') for p in psutil.process_iter(['name'])),'existing worker; do not restart'
+with socket.socket() as s:
+ assert s.connect_ex(('127.0.0.1',8001))!=0,'server already listening'
+for name,digest in saved['source_hashes'].items():
+ assert hashlib.sha256((Path(saved['cwd'])/name).read_bytes()).hexdigest()==digest
+command=saved['command']
+environment=dict(os.environ)
+environment.update(ASCEND_CUSTOM_OPP_PATH=':'.join(saved['opp_stack']),
+ PYTHONPATH=':'.join([str(previous),'/home/matteius/experiments/glm-kpool-live-score-20261005',saved['cwd'],'/srv/ai/src/vllm-opensensor',environment.get('PYTHONPATH','')]),
+ ASCEND_RT_VISIBLE_DEVICES='0,1,2,3',SOC_VERSION='ascend310p1',TASK_QUEUE_ENABLE='1',OMP_NUM_THREADS='1',
+ VLLM_SERVER_DEV_MODE='1',VLLM_USE_BREAKABLE_CUDAGRAPH='1',VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS='3000',
+ VLLM_ASCEND_310P_ENABLE_MLA='1',VLLM_ASCEND_310P_GLM_HOST_KV='0',VLLM_ASCEND_KV_CACHE_FRACTION='0.75',VLLM_ASCEND_LOG_REQUEST_TIMINGS='1')
+environment['LD_LIBRARY_PATH']=':'.join([str(Path(v)/'op_api/lib') for v in saved['host_stack']]+[environment.get('LD_LIBRARY_PATH','')])
+environment.pop('ASCEND_LAUNCH_BLOCKING',None)
+log=root/'serve-forward-v28.log'
+with log.open('xb') as output:
+ process=subprocess.Popen(command,cwd=saved['cwd'],env=environment,stdin=subprocess.DEVNULL,stdout=output,stderr=subprocess.STDOUT,start_new_session=True)
+record={'pid':process.pid,'created':psutil.Process(process.pid).create_time(),'log':str(log),'command':command,'cwd':saved['cwd'],'reason':'fix forward after long preparation RPC left stale replies; new kernels will be installed with CPU byte preparation and 3600s control timeout'}
+(root/'forward-v28-server-process.json').write_text(json.dumps(record,indent=2)+'\n')
+print(json.dumps(record),flush=True)

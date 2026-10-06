@@ -134,6 +134,15 @@ class Projection {
     const uint32_t planeElements = N * NZ_K / fields;
     const uint32_t planes = bits_ == 3 ? 3 : 1;
     const uint32_t packedBytes = NZ_N * NZ_K * bits_ / 8;
+#ifdef GLM_PREPARED_WEIGHT_LAYOUT
+    const int64_t offset = ((expert * (n_ / N) + tile) * (k_ / NZ_K) + kTile) * (N * NZ_K * bits_ / 8);
+    if (bits_ == 4) {
+      DataCopy(packedB_.Get<uint8_t>(), codes_[offset], RAW_BYTES);
+      PipeBarrier<PIPE_ALL>();
+      return;
+    }
+    DataCopy(raw_.Get<uint8_t>(), codes_[offset], N * NZ_K * bits_ / 8);
+#else
     // Batch each byte plane across all output strips. Uniform fields then
     // need one vector conversion, rather than scalar setup for every strip.
     for (uint32_t plane = 0; plane < planes; ++plane)
@@ -142,6 +151,7 @@ class Projection {
         DataCopy(raw_.Get<uint8_t>()[plane * planeElements + strip * fieldElements],
                  codes_[offset + plane * fieldElements], fieldElements);
       }
+#endif
     PipeBarrier<PIPE_ALL>();
     Cast(gathered_.Get<half>(), raw_.Get<uint8_t>(), RoundMode::CAST_NONE, N * NZ_K * bits_ / 8);
     PipeBarrier<PIPE_V>();
@@ -194,6 +204,12 @@ class Projection {
       Cast(values.ReinterpretCast<half>(), values, RoundMode::CAST_NONE, N * NZ_K / 2);
       PipeBarrier<PIPE_V>();
     }
+#ifdef GLM_PREPARED_WEIGHT_LAYOUT
+    // Preparation placed codes in native K64/channel order. W2/W3 only
+    // expand signed fields to INT4; no per-inference transpose is required.
+    Cast(packedB_.Get<int8_t>().ReinterpretCast<int4b_t>(), decoded.ReinterpretCast<half>(), RoundMode::CAST_NONE,
+         N * NZ_K);
+#else
     if (bits_ == 3) {
       // Four fields cover K=128. Reorder those planes in UB so a single
       // four-repeat transpose can consume each full K=64 tile. Using two
@@ -232,6 +248,7 @@ class Projection {
            RoundMode::CAST_NONE, N * K0);
       PipeBarrier<PIPE_V>();
     }
+#endif
     PipeBarrier<PIPE_ALL>();
   }
   __aicore__ inline void Weight(uint32_t group) {
@@ -248,43 +265,51 @@ class Projection {
     GlmFusedQuant::Run(productFloat_.Get<uint8_t>(), products_.Get<half>(), products_.Get<uint32_t>()[512],
                        activationBits_);
   }
-  __aicore__ inline void Activation(int64_t row, int64_t group, uint32_t count) {
+  __aicore__ inline void Activation(int64_t row, int64_t group, uint32_t count, bool paired) {
+    const bool sparse = activationBits_ == 8 && count <= (M - 1) / 2;
     auto packed = packedA_.Get<int8_t>();
-    Duplicate(packed.ReinterpretCast<int16_t>(), static_cast<int16_t>(0), A_BYTES);
+    Duplicate(packed.ReinterpretCast<int16_t>(), static_cast<int16_t>(0), sparse ? A_BYTES / 2 : A_BYTES);
     PipeBarrier<PIPE_ALL>();
-    for (uint32_t m = 0; m < count; ++m) {
+    for (uint32_t part = 0; part < (paired ? 2 : 1); ++part) {
+      const uint32_t base = paired ? part * (activationBits_ == 8 ? 2 * count + 1 : count) : 0;
+      for (uint32_t m = 0; m < count; ++m) {
 #ifdef GLM_FUSED_GATE_UP
-      const int64_t token = sourceTokens_[m];
-      const int64_t offset = (token * (k_ / GROUP) + group) * (K0 / 2);
-      DataCopy(packed[m * K0 / 2], inputLow_[offset], K0 / 2);
-      if (activationBits_ == 8) DataCopy(packed[A_BYTES + m * K0 / 2], inputHigh_[offset], K0 / 2);
+        const int64_t token = sourceTokens_[m];
+        const int64_t offset = (token * (k_ / GROUP) + group + part) * (K0 / 2);
+        DataCopy(packed[(base + m) * K0 / 2], inputLow_[offset], K0 / 2);
+        if (activationBits_ == 8)
+          DataCopy(packed[sparse ? (base + count + m) * K0 / 2 : A_BYTES + m * K0 / 2], inputHigh_[offset], K0 / 2);
 #else
-      const int64_t offset = ((row + m) * (k_ / GROUP) + group) * (K0 / 2);
-      DataCopy(packed[m * K0 / 2], low_[offset], K0 / 2);
-      if (activationBits_ == 8) DataCopy(packed[A_BYTES + m * K0 / 2], high_[offset], K0 / 2);
+        const int64_t offset = ((row + m) * (k_ / GROUP) + group + part) * (K0 / 2);
+        DataCopy(packed[(base + m) * K0 / 2], low_[offset], K0 / 2);
+        if (activationBits_ == 8)
+          DataCopy(packed[sparse ? (base + count + m) * K0 / 2 : A_BYTES + m * K0 / 2], high_[offset], K0 / 2);
 #endif
+      }
+      PipeBarrier<PIPE_ALL>();
+      if (activationBits_ == 8) {
+        uint64_t biasMask[2] = {(group + part) % 2 ? 0xff00UL : 0xffUL, 0};
+        const uint32_t biasRow = sparse ? base + 2 * count : MAX_ROWS;
+        Duplicate(packed.ReinterpretCast<uint16_t>()[biasRow * K0 / 4], static_cast<uint16_t>(0x1111), biasMask, 1, 1,
+                  8);
+      }
+      PipeBarrier<PIPE_ALL>();
     }
-    PipeBarrier<PIPE_ALL>();
-    if (activationBits_ == 8) {
-      uint64_t biasMask[2] = {group % 2 ? 0xff00UL : 0xffUL, 0};
-      Duplicate(packed.ReinterpretCast<uint16_t>()[MAX_ROWS * K0 / 4], static_cast<uint16_t>(0x1111), biasMask, 1, 1,
-                8);
-    }
-    PipeBarrier<PIPE_ALL>();
-    DataCopy(a1_.Get<int8_t>(), packed, 2 * A_BYTES);
+    DataCopy(a1_.Get<int8_t>(), packed, sparse ? A_BYTES : 2 * A_BYTES);
     PipeBarrier<PIPE_ALL>();
     LoadData2DParams load;
     load.repeatTimes = 1;
     load.srcStride = 1;
     load.ifTranspose = false;
-    for (uint32_t limb = 0; limb < (activationBits_ == 4 ? 1 : 2); ++limb)
+    for (uint32_t limb = 0; limb < (activationBits_ == 4 || sparse ? 1 : 2); ++limb)
       LoadData(a2_.Get<int8_t>()[limb * A_BYTES].ReinterpretCast<int4b_t>(),
                a1_.Get<int8_t>()[limb * A_BYTES].ReinterpretCast<int4b_t>(), load);
     PipeBarrier<PIPE_ALL>();
   }
-  __aicore__ inline void Product() {
+  __aicore__ inline void Product(uint32_t count) {
     MmadParams mm;
-    const uint32_t limbs = activationBits_ == 4 ? 1 : 2;
+    const bool sparse = activationBits_ == 8 && count <= (M - 1) / 2;
+    const uint32_t limbs = activationBits_ == 4 || sparse ? 1 : 2;
     mm.m = limbs * M;
     mm.n = N;
     mm.k = K0;
@@ -300,15 +325,25 @@ class Projection {
     auto raw = productFloat_.Get<float>();
     Cast(raw, products_.Get<int32_t>(), RoundMode::CAST_NONE, limbs * ELEMENTS);
     PipeBarrier<PIPE_V>();
+  }
+  __aicore__ inline void ExtractProducts(uint32_t count, uint32_t part, bool paired) {
+    const bool sparse = activationBits_ == 8 && count <= (M - 1) / 2;
+    const uint32_t limbs = activationBits_ == 4 || sparse ? 1 : 2;
+    const uint32_t base = paired ? part * (activationBits_ == 8 ? 2 * count + 1 : count) : 0;
+    auto raw = productFloat_.Get<float>();
     auto low = results_.Get<float>();
     auto high = low[ELEMENTS];
     // L0C is [N/16,2M,16]. Restore row-major low/high limb vectors without
     // changing the logical 32x32 scale groups.
     for (uint32_t strip = 0; strip < N / NZ_N; ++strip) {
-      Adds(low[strip * NZ_N], raw[strip * limbs * M * NZ_N], 0.0f, NZ_N, M, {1, 1, N / LANES, NZ_N / LANES});
-      if (activationBits_ == 8)
-        Adds(high[strip * NZ_N], raw[strip * limbs * M * NZ_N + M * NZ_N], 0.0f, NZ_N, M,
+      Adds(low[strip * NZ_N], raw[strip * limbs * M * NZ_N + base * NZ_N], 0.0f, NZ_N, count,
+           {1, 1, N / LANES, NZ_N / LANES});
+      if (activationBits_ == 8) {
+        Adds(high[strip * NZ_N], raw[strip * limbs * M * NZ_N + (sparse ? base + count : M) * NZ_N], 0.0f, NZ_N, count,
              {1, 1, N / LANES, NZ_N / LANES});
+        Adds(low[MAX_ROWS * N + strip * NZ_N],
+             raw[strip * limbs * M * NZ_N + (sparse ? base + 2 * count : MAX_ROWS) * NZ_N], 0.0f, NZ_N);
+      }
     }
     PipeBarrier<PIPE_V>();
   }
@@ -342,32 +377,44 @@ class Projection {
       PipeBarrier<PIPE_ALL>();
     }
     PipeBarrier<PIPE_V>();
+    bool paired = false;
+#ifdef GLM_PAIR_SCALE_GROUPS
+    // Keep each K32 dot and scale independent, but put both adjacent groups
+    // into unused Cube rows. Sparse decode needs one K64 Mmad/readback, not two.
+    paired = activationBits_ == 8 ? count <= (M - 2) / 4 : count <= M / 2;
+#endif
     for (int64_t kTile = 0; kTile < k_ / NZ_K; ++kTile) {
       Decode(expert, tile, kTile);
-      for (uint32_t inner = 0; inner < NZ_K / GROUP; ++inner) {
+      for (uint32_t inner = 0; inner < NZ_K / GROUP; inner += paired ? 2 : 1) {
         const int64_t group = kTile * (NZ_K / GROUP) + inner;
         if (inner % 2 == 0) Weight(inner);
-        Activation(row, group, count);
-        Product();
-        for (uint32_t m = 0; m < count; ++m) {
-          if (activationBits_ == 8) {
-            Muls(high[m * N], high[m * N], 16.0f, N);
-            PipeBarrier<PIPE_V>();
-            Add(low[m * N], low[m * N], high[m * N], N);
-            PipeBarrier<PIPE_V>();
-            Muls(high[m * N], low[MAX_ROWS * N], 8.0f, N);
-            PipeBarrier<PIPE_V>();
-            Add(low[m * N], low[m * N], high[m * N], N);
-            PipeBarrier<PIPE_V>();
-          }
-          const float activationScale = sx.GetValue(m * MAX_K_GROUPS + group);
-          for (uint32_t column = 0; column < N; column += NZ_N) {
-            const uint32_t logical = column < N / 2 ? 2 * column : 2 * (column - N / 2) + 1;
-            const float sw = static_cast<float>(roundedWeights.GetValue(logical / GROUP * groups + group));
-            Muls(low[m * N + column], low[m * N + column], sw * activationScale, NZ_N);
+        Activation(row, group, count, paired);
+        Product(count);
+        for (uint32_t part = 0; part < (paired ? 2 : 1); ++part) {
+          ExtractProducts(count, part, paired);
+          for (uint32_t m = 0; m < count; ++m) {
+            if (activationBits_ == 8) {
+              Muls(high[m * N], high[m * N], 16.0f, N);
+              PipeBarrier<PIPE_V>();
+              Add(low[m * N], low[m * N], high[m * N], N);
+              PipeBarrier<PIPE_V>();
+              Muls(high[m * N], low[MAX_ROWS * N], 8.0f, N);
+              PipeBarrier<PIPE_V>();
+              Add(low[m * N], low[m * N], high[m * N], N);
+              PipeBarrier<PIPE_V>();
+            }
+            const float activationScale = sx.GetValue(m * MAX_K_GROUPS + group + part);
+            // Even and odd channels occupy separate halves of the native
+            // tile, but each pair of strips has the same block32 scale.
+            // Apply it to both halves in one repeated vector instruction.
+            for (uint32_t column = 0; column < N / 2; column += NZ_N) {
+              const float sw = static_cast<float>(roundedWeights.GetValue(2 * column / GROUP * groups + group + part));
+              Muls(low[m * N + column], low[m * N + column], sw * activationScale, NZ_N, 2,
+                   {1, 1, N / 2 / LANES, N / 2 / LANES});
+            }
           }
           PipeBarrier<PIPE_V>();
-          Add(accumulator[m * N], accumulator[m * N], low[m * N], N);
+          Add(accumulator, accumulator, low, count * N);
           PipeBarrier<PIPE_V>();
         }
       }

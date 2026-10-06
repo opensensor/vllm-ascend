@@ -1,0 +1,27 @@
+import json
+from pathlib import Path
+import torch
+from tools.glm_perf.fused_moe_probe import run
+from tools.glm_perf import fused_moe_profile as profile
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+ckpt=Path('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p')
+run(root/'build-native-fused-v29',root/'native-fused-v29-gates.json',checkpoint=ckpt,real_prefixes=tuple(f'model.language_model.layers.{layer}.mlp.experts.0.' for layer in (10,11,33)))
+print('all_component_and_real_weight_gates_passed',flush=True)
+for tokens in (2,8):
+ outputs=[];records=[];original=profile.measure
+ def compared(native,pipeline,warmups,samples):
+  actual=pipeline().cpu();index=len(outputs);position=index%4
+  if position>=2:
+   baseline=outputs[index-position+position%2]
+   records.append({'tokens':tokens,'weight_bits':(3,4,2)[index//4],'activation_bits':(8,4)[position%2],'elements':actual.numel(),'max_abs_delta':float((actual-baseline).abs().max()),'bitwise_equal':torch.equal(actual,baseline)})
+  outputs.append(actual)
+  return original(native,pipeline,warmups,samples)
+ profile.measure=compared
+ try:
+  profile.run([root/'build-native-fused-v28',root/'build-native-fused-v29'],ckpt,root/f'native-fused-v28-v29-t{tokens}-stage-events.json',tokens=tokens)
+ finally:
+  profile.measure=original
+  payload={'complete':len(records)==6,'scope':'one real expert per precision, same synthetic inputs; compare arithmetic to frozen v28; no live throughput claim','records':records}
+  (root/f'native-fused-v28-v29-t{tokens}-exactness.json').write_text(json.dumps(payload,indent=2)+'\n')
+ assert len(records)==6 and all(r['bitwise_equal'] for r in records)
+ print('exact_output_comparison_passed',tokens,flush=True)

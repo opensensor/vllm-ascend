@@ -1,0 +1,26 @@
+import json
+from pathlib import Path
+import torch
+from tools.glm_perf import fused_moe_profile as profile
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+outputs=[];records=[];original=profile.measure
+
+def compared(native,pipeline,warmups,samples):
+ actual=pipeline().cpu();index=len(outputs);position=index%6
+ if position>=2:
+  baseline=outputs[index-position+(position%2)]
+  records.append({'weight_bits':(3,4,2)[index//6],'activation_bits':(8,4)[position%2],
+                  'version':(22,23,24)[position//2],
+                  'elements':actual.numel(),'exact_elements':int((actual==baseline).sum()),
+                  'max_abs_delta':float((actual-baseline).abs().max()),'bitwise_equal':torch.equal(actual,baseline)})
+ outputs.append(actual)
+ return original(native,pipeline,warmups,samples)
+profile.measure=compared
+try:
+ profile.run([root/'build-native-fused-v22',root/'build-native-fused-v23',root/'build-native-fused-v24'],
+             Path('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'),root/'native-fused-v22-v23-v24-stage-events.json')
+finally:
+ profile.measure=original
+ payload={'complete':len(records)==12,'scope':'same real expert and two synthetic activation rows, prepared topk1 routing; exact pipeline outputs versus v22, no serving quality claim','records':records}
+ (root/'native-fused-v22-v23-v24-exactness.json').write_text(json.dumps(payload,indent=2)+'\n')
+ print(json.dumps(payload),flush=True)

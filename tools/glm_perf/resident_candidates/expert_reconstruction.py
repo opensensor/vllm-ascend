@@ -5,6 +5,7 @@ METHOD_TARGET = (
     "vllm_ascend._310p.quantization.methods.w2_dynamic:AscendW2DynamicFusedMoEMethod310._apply_device_grouped"
 )
 STATUS_TARGET = "vllm_ascend._310p.worker_310p:NPUWorker310.resident_status"
+PERMANENT_METHOD_TARGET = "vllm_ascend.model_loader.glm_native_int4:NativeInt4MoEMethod._apply_device_grouped"
 
 
 def wrap_projection(original, projection, audit=None, fused_pipeline=False):
@@ -67,6 +68,10 @@ def extend_replacements(changes, native_resources, profile, resource_name="recon
         if profile.startswith("fused_int4a")
         else wrap_projection(original, projection, audit, fused_pipeline=profile == "int4a8")
     )
+    if profile.startswith("fused_int4a"):
+        from vllm_ascend.model_loader.glm_native_int4 import NativeInt4MoEMethod
+
+        result[PERMANENT_METHOD_TARGET] = wrap_fused_moe(NativeInt4MoEMethod._apply_device_grouped, projection, audit)
     original_status = result.get(STATUS_TARGET, NPUWorker310.resident_status)
 
     def selected_status(self):
@@ -76,6 +81,10 @@ def extend_replacements(changes, native_resources, profile, resource_name="recon
         return receipt
 
     result[STATUS_TARGET] = selected_status
+    if getattr(projection, "prepared_weight_layout", False):
+        # Preparation runs only while paused, before graph capture; the apply
+        # hook restores exact original bytes before baseline hooks are removed.
+        result = native_resources[resource_name]["_weight_layout"].wrap_worker_hooks(result, NPUWorker310)
     return result
 
 
@@ -95,6 +104,8 @@ def wrap_fused_moe(original, native, audit):
         try:
             geometry = native.geometry(inputs, *banks, weights, ids)
         except ValueError:
+            if getattr(native, "prepared_weight_layout", False):
+                raise ValueError("prepared weight banks require complete native geometry") from None
             audit["fallback_dispatches"] += 2
             return original(self, grouped_op, experts, x, topk_weights, topk_ids, shared_expert)
         audit["native_dispatches"] += 2

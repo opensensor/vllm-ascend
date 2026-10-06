@@ -1,0 +1,463 @@
+{
+  "summary": {
+    "request_count": 5,
+    "valid": true,
+    "passed": true,
+    "early_eos_count": 0,
+    "groups": {
+      "short_1": {
+        "requests": 1,
+        "valid_requests": 1,
+        "aggregate_decode_tokens_per_s": 5.190070164029275,
+        "per_request_decode_p50": 5.190070164029275,
+        "per_request_decode_p95": 5.190070164029275,
+        "ttft_p50_s": 3.1012470420100726,
+        "ttft_p95_s": 3.1012470420100726,
+        "fairness_min_max_ratio": 1.0,
+        "early_eos_count": 0
+      },
+      "short_4": {
+        "requests": 4,
+        "valid_requests": 4,
+        "aggregate_decode_tokens_per_s": 14.401221126522309,
+        "per_request_decode_p50": 3.6741012120600036,
+        "per_request_decode_p95": 3.7478629451400285,
+        "ttft_p50_s": 5.199415824492462,
+        "ttft_p95_s": 5.19961371953832,
+        "fairness_min_max_ratio": 0.9606321299658994,
+        "early_eos_count": 0
+      }
+    }
+  },
+  "records": [
+    {
+      "case_id": "short_1_0",
+      "category": "short",
+      "group_id": "short_1",
+      "target_prompt_tokens": 25,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": null,
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 64,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Generate a long numbered list of distinct everyday objects, starting at one. Continue writing until the response token limit stops you.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 308655.52355139,
+      "content": "1. Fork\n2. Spoon\n3. Knife\n4. Plate\n5. Bowl\n6. Mug\n7. Glass\n8. Kettle\n9. Toaster\n10. Blender\n11. Fridge\n12. Stove\n13.",
+      "reasoning": "Generate a long numbered list of everyday objects.",
+      "tool_calls": [],
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 36,
+        "total_tokens": 100,
+        "completion_tokens": 64,
+        "completion_tokens_details": {
+          "reasoning_tokens": 9
+        }
+      },
+      "end_s": 308670.956142905,
+      "first_token_s": 308658.624798432,
+      "last_token_s": 308670.956038276,
+      "ttft_s": 3.1012470420100726,
+      "elapsed_s": 15.432591515011154,
+      "decode_s": 12.331239844032098,
+      "decode_tokens_per_s": 5.190070164029275,
+      "stream_event_gap_p50_s": 0.36953299649758264,
+      "stream_event_gap_p95_s": 0.46234714610618527,
+      "stream_events": 33,
+      "prompt_token_target_error": 11,
+      "early_eos": false,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": false,
+      "speed_sample_complete": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "short_4_0",
+      "category": "short",
+      "group_id": "short_4",
+      "target_prompt_tokens": 25,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": null,
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 64,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Generate a long numbered list of distinct everyday objects, starting at one. Continue writing until the response token limit stops you.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 308670.958252036,
+      "content": "1. Fork\n2. Spoon\n3. Knife\n4. Plate\n5. Bowl\n6. Mug\n7. Glass\n8. Kettle\n9. Toaster\n10. Blender\n11. Fridge\n12. Stove\n13.",
+      "reasoning": "Generate a long numbered list of everyday objects.",
+      "tool_calls": [],
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 36,
+        "total_tokens": 100,
+        "completion_tokens": 64,
+        "completion_tokens_details": {
+          "reasoning_tokens": 9
+        }
+      },
+      "end_s": 308693.933402379,
+      "first_token_s": 308676.157266051,
+      "last_token_s": 308693.933234319,
+      "ttft_s": 5.199014014971908,
+      "elapsed_s": 22.975150342972483,
+      "decode_s": 17.77596826798981,
+      "decode_tokens_per_s": 3.6003664630324757,
+      "stream_event_gap_p50_s": 0.5404042050067801,
+      "stream_event_gap_p95_s": 0.6458006064553046,
+      "stream_events": 33,
+      "prompt_token_target_error": 11,
+      "early_eos": false,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": false,
+      "speed_sample_complete": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "short_4_1",
+      "category": "short",
+      "group_id": "short_4",
+      "target_prompt_tokens": 25,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": null,
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 64,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Generate a long numbered list of distinct everyday objects, starting at one. Continue writing until the response token limit stops you.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 308670.95797535,
+      "content": "1. Fork\n2. Spoon\n3. Knife\n4. Plate\n5. Bowl\n6. Mug\n7. Glass\n8. Kettle\n9. Toaster\n10. Blender\n11. Fridge\n12. Stove\n13.",
+      "reasoning": "Generate a long numbered list of everyday objects.",
+      "tool_calls": [],
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 36,
+        "total_tokens": 100,
+        "completion_tokens": 64,
+        "completion_tokens_details": {
+          "reasoning_tokens": 9
+        }
+      },
+      "end_s": 308693.233906193,
+      "first_token_s": 308676.157341896,
+      "last_token_s": 308693.233718386,
+      "ttft_s": 5.199366546003148,
+      "elapsed_s": 22.27593084302498,
+      "decode_s": 17.076376490003895,
+      "decode_tokens_per_s": 3.7478677070316455,
+      "stream_event_gap_p50_s": 0.5358727170096245,
+      "stream_event_gap_p95_s": 0.5904908384400187,
+      "stream_events": 33,
+      "prompt_token_target_error": 11,
+      "early_eos": false,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": false,
+      "speed_sample_complete": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "short_4_2",
+      "category": "short",
+      "group_id": "short_4",
+      "target_prompt_tokens": 25,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": null,
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 64,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Generate a long numbered list of distinct everyday objects, starting at one. Continue writing until the response token limit stops you.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 308670.957692963,
+      "content": "1. Fork\n2. Spoon\n3. Knife\n4. Plate\n5. Bowl\n6. Mug\n7. Glass\n8. Kettle\n9. Toaster\n10. Blender\n11. Fridge\n12. Stove\n13.",
+      "reasoning": "Generate a long numbered list of everyday objects.",
+      "tool_calls": [],
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 36,
+        "total_tokens": 100,
+        "completion_tokens": 64,
+        "completion_tokens_details": {
+          "reasoning_tokens": 9
+        }
+      },
+      "end_s": 308693.933481549,
+      "first_token_s": 308676.157158066,
+      "last_token_s": 308693.93334518,
+      "ttft_s": 5.199465102981776,
+      "elapsed_s": 22.97578858595807,
+      "decode_s": 17.7761871140101,
+      "decode_tokens_per_s": 3.600322138236221,
+      "stream_event_gap_p50_s": 0.5404029930068646,
+      "stream_event_gap_p95_s": 0.6458956318849232,
+      "stream_events": 33,
+      "prompt_token_target_error": 11,
+      "early_eos": false,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": false,
+      "speed_sample_complete": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "short_4_3",
+      "category": "short",
+      "group_id": "short_4",
+      "target_prompt_tokens": 25,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": null,
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 64,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Generate a long numbered list of distinct everyday objects, starting at one. Continue writing until the response token limit stops you.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 308670.957434892,
+      "content": "1. Fork\n2. Spoon\n3. Knife\n4. Plate\n5. Bowl\n6. Mug\n7. Glass\n8. Kettle\n9. Toaster\n10. Blender\n11. Fridge\n12. Stove\n13.",
+      "reasoning": "Generate a long numbered list of everyday objects.",
+      "tool_calls": [],
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 36,
+        "total_tokens": 100,
+        "completion_tokens": 64,
+        "completion_tokens_details": {
+          "reasoning_tokens": 9
+        }
+      },
+      "end_s": 308693.234023015,
+      "first_token_s": 308676.157074838,
+      "last_token_s": 308693.233595973,
+      "ttft_s": 5.199639945989475,
+      "elapsed_s": 22.276588123000693,
+      "decode_s": 17.076521134993527,
+      "decode_tokens_per_s": 3.747835961087531,
+      "stream_event_gap_p50_s": 0.535864045494236,
+      "stream_event_gap_p95_s": 0.5905022113380255,
+      "stream_events": 33,
+      "prompt_token_target_error": 11,
+      "early_eos": false,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": false,
+      "speed_sample_complete": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    }
+  ],
+  "workers": [
+    {
+      "pid": 95816,
+      "rank": 0,
+      "generation": "29381dd4adf04a0398992f9107b4b2fc",
+      "mode": "graph",
+      "candidate": "decode_combine",
+      "digest": "4a40c9fbba8af6f3bb2c093a871a0bcf028be3a18af39813f982a2ec51b63da9",
+      "graphs_dirty": false,
+      "weight_storage_digest": "ec23809661c6fbed3fabce7e858fa67faf16dedce224e18396ec9906e5747e78",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 46,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      }
+    },
+    {
+      "pid": 96191,
+      "rank": 1,
+      "generation": "29381dd4adf04a0398992f9107b4b2fc",
+      "mode": "graph",
+      "candidate": "decode_combine",
+      "digest": "4a40c9fbba8af6f3bb2c093a871a0bcf028be3a18af39813f982a2ec51b63da9",
+      "graphs_dirty": false,
+      "weight_storage_digest": "df3a1cf45fd6daa716a175fccf221b9ec5c81a487ada73552318770ca86f9829",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 46,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      }
+    },
+    {
+      "pid": 96617,
+      "rank": 2,
+      "generation": "29381dd4adf04a0398992f9107b4b2fc",
+      "mode": "graph",
+      "candidate": "decode_combine",
+      "digest": "4a40c9fbba8af6f3bb2c093a871a0bcf028be3a18af39813f982a2ec51b63da9",
+      "graphs_dirty": false,
+      "weight_storage_digest": "6aa02cf88cd2e080c25b1dcde1f5169007ba61cccd362f6ea9198b8a6d36205f",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 46,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      }
+    },
+    {
+      "pid": 97080,
+      "rank": 3,
+      "generation": "29381dd4adf04a0398992f9107b4b2fc",
+      "mode": "graph",
+      "candidate": "decode_combine",
+      "digest": "4a40c9fbba8af6f3bb2c093a871a0bcf028be3a18af39813f982a2ec51b63da9",
+      "graphs_dirty": false,
+      "weight_storage_digest": "01b2ba00751740c3ce71aeb927cf0e9f423bd1a950003e83b9a1516d9ea36a40",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 46,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      }
+    }
+  ]
+}

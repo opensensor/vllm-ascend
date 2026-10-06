@@ -1,0 +1,1343 @@
+{
+  "summary": {
+    "request_count": 21,
+    "valid": true,
+    "passed": false,
+    "early_eos_count": 20,
+    "groups": {
+      "quality_4_0": {
+        "requests": 4,
+        "valid_requests": 4,
+        "aggregate_decode_tokens_per_s": 14.780304782314783,
+        "per_request_decode_p50": 4.54879712048327,
+        "per_request_decode_p95": 4.54879712048327,
+        "ttft_p50_s": 6.044926676520845,
+        "ttft_p95_s": 6.484495958543266,
+        "fairness_min_max_ratio": 1.0,
+        "early_eos_count": 4
+      },
+      "quality_4_1": {
+        "requests": 4,
+        "valid_requests": 4,
+        "aggregate_decode_tokens_per_s": 5.841675122284789,
+        "per_request_decode_p50": 3.908685651646608,
+        "per_request_decode_p95": 4.4822984764970215,
+        "ttft_p50_s": 5.290552511491114,
+        "ttft_p95_s": 5.290842023896403,
+        "fairness_min_max_ratio": 0.7196027612441155,
+        "early_eos_count": 4
+      },
+      "quality_4_2": {
+        "requests": 4,
+        "valid_requests": 4,
+        "aggregate_decode_tokens_per_s": 5.662539366770032,
+        "per_request_decode_p50": 4.939672015516958,
+        "per_request_decode_p95": 5.846289725250951,
+        "ttft_p50_s": 5.921925218019169,
+        "ttft_p95_s": 5.922198159416439,
+        "fairness_min_max_ratio": 0.6612245597235107,
+        "early_eos_count": 4
+      },
+      "quality_4_3": {
+        "requests": 4,
+        "valid_requests": 4,
+        "aggregate_decode_tokens_per_s": 8.694672621904452,
+        "per_request_decode_p50": 3.41597404708559,
+        "per_request_decode_p95": 3.4160543486373864,
+        "ttft_p50_s": 6.292635939491447,
+        "ttft_p95_s": 6.293189947376959,
+        "fairness_min_max_ratio": 0.9999477621230278,
+        "early_eos_count": 4
+      },
+      "quality_4_4": {
+        "requests": 4,
+        "valid_requests": 4,
+        "aggregate_decode_tokens_per_s": 23.45270312881214,
+        "per_request_decode_p50": 7.407361308343135,
+        "per_request_decode_p95": 7.407395077708111,
+        "ttft_p50_s": 6.390747651021229,
+        "ttft_p95_s": 6.391236249581562,
+        "fairness_min_max_ratio": 0.999989869178776,
+        "early_eos_count": 4
+      },
+      "tool": {
+        "requests": 1,
+        "valid_requests": 1,
+        "aggregate_decode_tokens_per_s": 9.118994956583819,
+        "per_request_decode_p50": 9.118994956583819,
+        "per_request_decode_p95": 9.118994956583819,
+        "ttft_p50_s": 6.495918144995812,
+        "ttft_p95_s": 6.495918144995812,
+        "fairness_min_max_ratio": 1.0,
+        "early_eos_count": 0
+      }
+    }
+  },
+  "records": [
+    {
+      "case_id": "arith_add",
+      "category": "arithmetic",
+      "group_id": "quality_4_0",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "45",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Compute 17 + 28. Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 306380.609200518,
+      "content": "45",
+      "reasoning": "45",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 25,
+        "total_tokens": 29,
+        "completion_tokens": 4,
+        "completion_tokens_details": {
+          "reasoning_tokens": 1
+        }
+      },
+      "end_s": 306387.814825682,
+      "first_token_s": 306386.213773044,
+      "last_token_s": 306387.093126397,
+      "ttft_s": 5.604572526004631,
+      "elapsed_s": 7.205625164031517,
+      "decode_s": 0.8793533529969864,
+      "decode_tokens_per_s": 4.54879712048327,
+      "stream_event_gap_p50_s": 0.8793533529969864,
+      "stream_event_gap_p95_s": 0.8793533529969864,
+      "stream_events": 2,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "arith_sub",
+      "category": "arithmetic",
+      "group_id": "quality_4_0",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "54",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Compute 91 - 37. Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 306380.608682493,
+      "content": "54",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 25,
+        "total_tokens": 28,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 306387.093341957,
+      "first_token_s": 306387.093202933,
+      "last_token_s": 306387.093202933,
+      "ttft_s": 6.4845204400480725,
+      "elapsed_s": 6.4846594640403055,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "arith_mul",
+      "category": "arithmetic",
+      "group_id": "quality_4_0",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "91",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Compute 13 * 7. Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 306380.608964659,
+      "content": "91",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 25,
+        "total_tokens": 28,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 306387.814914551,
+      "first_token_s": 306387.093321889,
+      "last_token_s": 306387.093321889,
+      "ttft_s": 6.48435723001603,
+      "elapsed_s": 7.205949891998898,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "arith_div",
+      "category": "arithmetic",
+      "group_id": "quality_4_0",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "12",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Compute 144 / 12. Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 306380.608400476,
+      "content": "12",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 25,
+        "total_tokens": 28,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 306386.214044611,
+      "first_token_s": 306386.213896599,
+      "last_token_s": 306386.213896599,
+      "ttft_s": 5.6054961230256595,
+      "elapsed_s": 5.605644135037437,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "arith_mod",
+      "category": "arithmetic",
+      "group_id": "quality_4_1",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "2",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Compute the remainder of 83 divided by 9. Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 306387.816611579,
+      "content": "2",
+      "reasoning": "83 = 9*9+2 \u2192 2",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 29,
+        "total_tokens": 43,
+        "completion_tokens": 14,
+        "completion_tokens_details": {
+          "reasoning_tokens": 11
+        }
+      },
+      "end_s": 306396.453454615,
+      "first_token_s": 306392.173751232,
+      "last_token_s": 306396.453345608,
+      "ttft_s": 4.357139653002378,
+      "elapsed_s": 8.63684303604532,
+      "decode_s": 4.279594376042951,
+      "decode_tokens_per_s": 3.2713380684794817,
+      "stream_event_gap_p50_s": 0.4315543749835342,
+      "stream_event_gap_p95_s": 0.9174420844181441,
+      "stream_events": 8,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "instr_upper",
+      "category": "instruction",
+      "group_id": "quality_4_1",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "CEDAR",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Write the word cedar in uppercase. Answer with that word only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 306387.816404876,
+      "content": "CEDAR",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 25,
+        "total_tokens": 29,
+        "completion_tokens": 4,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 306393.987266824,
+      "first_token_s": 306393.107214401,
+      "last_token_s": 306393.107214401,
+      "ttft_s": 5.29080952500226,
+      "elapsed_s": 6.170861947990488,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "instr_reverse",
+      "category": "instruction",
+      "group_id": "quality_4_1",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "pmal",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Reverse the characters in 'lamp'. Answer with the result only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 306387.816854801,
+      "content": "pial",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 25,
+        "total_tokens": 29,
+        "completion_tokens": 4,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 306394.858372432,
+      "first_token_s": 306393.107150299,
+      "last_token_s": 306393.987038279,
+      "ttft_s": 5.290295497979969,
+      "elapsed_s": 7.041517630976159,
+      "decode_s": 0.8798879800015129,
+      "decode_tokens_per_s": 4.546033234813734,
+      "stream_event_gap_p50_s": 0.8798879800015129,
+      "stream_event_gap_p95_s": 0.8798879800015129,
+      "stream_events": 2,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": false,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": false,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "instr_first",
+      "category": "instruction",
+      "group_id": "quality_4_1",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "red",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "From red, blue, green, give the first color. Answer with one word only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 306387.816179116,
+      "content": "Red",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 30,
+        "total_tokens": 33,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 306393.107237054,
+      "first_token_s": 306393.107026875,
+      "last_token_s": 306393.107026875,
+      "ttft_s": 5.290847758995369,
+      "elapsed_s": 5.2910579379531555,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": false,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": false,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "instr_count",
+      "category": "instruction",
+      "group_id": "quality_4_2",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "4",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "How many words are in 'one two three four'? Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 306396.455675329,
+      "content": "4",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 29,
+        "total_tokens": 32,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 306402.377617559,
+      "first_token_s": 306402.377427518,
+      "last_token_s": 306402.377427518,
+      "ttft_s": 5.921752188995015,
+      "elapsed_s": 5.92194222996477,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "instr_sort",
+      "category": "instruction",
+      "group_id": "quality_4_2",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "a,b,c",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Sort the letters c, a, b alphabetically. Answer with comma-separated letters and no spaces.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 306396.45544967,
+      "content": "a,b,c",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 37,
+        "completion_tokens": 5,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 306404.02125201,
+      "first_token_s": 306402.377547917,
+      "last_token_s": 306403.218304426,
+      "ttft_s": 5.922098247043323,
+      "elapsed_s": 7.565802340046503,
+      "decode_s": 0.840756508987397,
+      "decode_tokens_per_s": 5.947025026332506,
+      "stream_event_gap_p50_s": 0.840756508987397,
+      "stream_event_gap_p95_s": 0.840756508987397,
+      "stream_events": 2,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "code_python",
+      "category": "code",
+      "group_id": "quality_4_2",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "10",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "In Python, what does sum([2, 3, 5]) return? Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 306396.455143808,
+      "content": "10",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 35,
+        "total_tokens": 38,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 306403.21832227,
+      "first_token_s": 306402.377359599,
+      "last_token_s": 306402.377359599,
+      "ttft_s": 5.922215791011695,
+      "elapsed_s": 6.7631784620461985,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "code_slice",
+      "category": "code",
+      "group_id": "quality_4_2",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "lan",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "In Python, what is 'planet'[1:4]? Answer with the substring only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 306396.454815664,
+      "content": "`lan`",
+      "reasoning": "'planet' = p l a n e t; [1:4] = 'lan'",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 30,
+        "total_tokens": 55,
+        "completion_tokens": 25,
+        "completion_tokens_details": {
+          "reasoning_tokens": 20
+        }
+      },
+      "end_s": 306408.208709069,
+      "first_token_s": 306401.444822851,
+      "last_token_s": 306407.802394546,
+      "ttft_s": 4.990007187006995,
+      "elapsed_s": 11.753893405024428,
+      "decode_s": 6.357571694999933,
+      "decode_tokens_per_s": 3.932319004701411,
+      "stream_event_gap_p50_s": 0.3920033809845336,
+      "stream_event_gap_p95_s": 0.8821033272688509,
+      "stream_events": 13,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": false,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": false,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "code_len",
+      "category": "code",
+      "group_id": "quality_4_3",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "2",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "In Python, what does len({'a': 1, 'b': 2}) return? Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 306408.210747425,
+      "content": "2",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 38,
+        "total_tokens": 41,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 306414.503230204,
+      "first_token_s": 306414.502996259,
+      "last_token_s": 306414.502996259,
+      "ttft_s": 6.292248834040947,
+      "elapsed_s": 6.292482779012062,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "code_bool",
+      "category": "code",
+      "group_id": "quality_4_3",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "False",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "In Python, what is bool([])? Answer True or False only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 306408.210255911,
+      "content": "False",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 306414.503339953,
+      "first_token_s": 306414.50311784,
+      "last_token_s": 306414.50311784,
+      "ttft_s": 6.292861928988714,
+      "elapsed_s": 6.293084042030387,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "code_range",
+      "category": "code",
+      "group_id": "quality_4_3",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "[0, 1, 2]",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "In Python, what is list(range(3))? Answer with the list literal only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 306408.210518871,
+      "content": "[0, 1, 2]",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 29,
+        "total_tokens": 40,
+        "completion_tokens": 11,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 306417.72334979,
+      "first_token_s": 306414.502928821,
+      "last_token_s": 306417.723177913,
+      "ttft_s": 6.29240994999418,
+      "elapsed_s": 9.512830918945838,
+      "decode_s": 3.2202490919735283,
+      "decode_tokens_per_s": 3.415884823139149,
+      "stream_event_gap_p50_s": 0.8129120739758946,
+      "stream_event_gap_p95_s": 0.8270590910426108,
+      "stream_events": 5,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "retrieval_short_1",
+      "category": "retrieval",
+      "group_id": "quality_4_3",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "BLUE-ORCHID-7319",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Fact: the access code is BLUE-ORCHID-7319. What is the access code? Answer with the code only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 306408.209962884,
+      "content": "BLUE-ORCHID-7319",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 40,
+        "total_tokens": 51,
+        "completion_tokens": 11,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 306417.723437728,
+      "first_token_s": 306414.503210717,
+      "last_token_s": 306417.72329159,
+      "ttft_s": 6.293247832974885,
+      "elapsed_s": 9.51347484398866,
+      "decode_s": 3.2200808729976416,
+      "decode_tokens_per_s": 3.4160632710320304,
+      "stream_event_gap_p50_s": 0.8128018245042767,
+      "stream_event_gap_p95_s": 0.8270275881572161,
+      "stream_events": 5,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "retrieval_short_2",
+      "category": "retrieval",
+      "group_id": "quality_4_4",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "Sable Meridian",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Fact: the ship's name is Sable Meridian. What is the ship's name? Answer with the name only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 306417.725398837,
+      "content": "Sable Meridian",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 37,
+        "total_tokens": 43,
+        "completion_tokens": 6,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 306425.674194169,
+      "first_token_s": 306424.115764331,
+      "last_token_s": 306424.925773475,
+      "ttft_s": 6.39036549400771,
+      "elapsed_s": 7.948795331991278,
+      "decode_s": 0.8100091440137476,
+      "decode_tokens_per_s": 7.4073237868264945,
+      "stream_event_gap_p50_s": 0.8100091440137476,
+      "stream_event_gap_p95_s": 0.8100091440137476,
+      "stream_events": 2,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "retrieval_short_3",
+      "category": "retrieval",
+      "group_id": "quality_4_4",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "RQ-218",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Fact: the sample's label is RQ-218. What is the sample's label? Answer with the label only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 306417.724879189,
+      "content": "RQ-218",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 37,
+        "total_tokens": 43,
+        "completion_tokens": 6,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 306425.67423118,
+      "first_token_s": 306424.115835537,
+      "last_token_s": 306424.925836475,
+      "ttft_s": 6.3909563480410725,
+      "elapsed_s": 7.949351991002914,
+      "decode_s": 0.8100009379559197,
+      "decode_tokens_per_s": 7.407398829859775,
+      "stream_event_gap_p50_s": 0.8100009379559197,
+      "stream_event_gap_p95_s": 0.8100009379559197,
+      "stream_events": 2,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "retrieval_short_4",
+      "category": "retrieval",
+      "group_id": "quality_4_4",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "Oslo",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Fact: the warehouse is in Oslo. In which city is the warehouse? Answer with the city only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 306417.725156366,
+      "content": "Oslo",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 33,
+        "total_tokens": 37,
+        "completion_tokens": 4,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 306424.925856332,
+      "first_token_s": 306424.11569532,
+      "last_token_s": 306424.11569532,
+      "ttft_s": 6.390538954001386,
+      "elapsed_s": 7.200699965993408,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "retrieval_short_5",
+      "category": "retrieval",
+      "group_id": "quality_4_4",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "Thursday",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Fact: the appointment is on Thursday. On which day is the appointment? Answer with the day only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 306417.724602052,
+      "content": "Thursday",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 33,
+        "total_tokens": 36,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 306424.115994389,
+      "first_token_s": 306424.115887696,
+      "last_token_s": 306424.115887696,
+      "ttft_s": 6.3912856439710595,
+      "elapsed_s": 6.391392336983699,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "tool_order_status",
+      "category": "tool",
+      "group_id": "tool",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": null,
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 256,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_order_status",
+              "description": "Look up the status of an order by its ID.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "order_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "order_id"
+                ]
+              }
+            }
+          }
+        ],
+        "tool_choice": "auto"
+      },
+      "prompt": "Check the status of order A-1042 using the order status tool.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 306425.674614959,
+      "content": "",
+      "reasoning": "",
+      "tool_calls": [
+        {
+          "id": "chatcmpl-tool-95a89719bd4ef9ff",
+          "name": "get_order_status",
+          "arguments": "{\"order_id\": \"A-1042\"}"
+        }
+      ],
+      "finish_reason": "tool_calls",
+      "usage": {
+        "prompt_tokens": 177,
+        "total_tokens": 194,
+        "completion_tokens": 17,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 306434.03488662,
+      "first_token_s": 306432.170533104,
+      "last_token_s": 306434.034773635,
+      "ttft_s": 6.495918144995812,
+      "elapsed_s": 8.360271661018487,
+      "decode_s": 1.8642405309947208,
+      "decode_tokens_per_s": 9.118994956583819,
+      "stream_event_gap_p50_s": 0.36742815352045,
+      "stream_event_gap_p95_s": 0.7109505791537232,
+      "stream_events": 5,
+      "prompt_token_target_error": null,
+      "early_eos": false,
+      "passed": true,
+      "tool_call_success": true,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    }
+  ]
+}
