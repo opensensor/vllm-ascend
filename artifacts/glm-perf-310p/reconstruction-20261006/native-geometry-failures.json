@@ -1,0 +1,2742 @@
+{
+  "selected": [
+    {
+      "pid": 2876823,
+      "rank": 0,
+      "generation": "35854e10d5a044e0ae7a59623d44abe2",
+      "mode": "graph",
+      "candidate": "native_geometry_audit",
+      "digest": "a2fe86731c5fe54055e5d10d2e54c0354cd0b546147555477bf3323dbb15c7b6",
+      "graphs_dirty": false,
+      "weight_storage_digest": "ec23809661c6fbed3fabce7e858fa67faf16dedce224e18396ec9906e5747e78",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v1": {
+          "native_name": "reconstruction_v1",
+          "native_digest": "4d731a07a50dc7e3ce5bf231482313662e4b84eb602991bdd8ebc4985f7fe264",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v2": {
+          "native_name": "reconstruction_v2",
+          "native_digest": "037f151106e24eeed0a19eb501caff995743884b3d29e524245ff05af5c4ed06",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v5": {
+          "native_name": "reconstruction_v5",
+          "native_digest": "52f68b0edc61b5ac4d2790a52c17c1a4053e04f3675868661647469da2d5f2ad",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v8": {
+          "native_name": "reconstruction_v8",
+          "native_digest": "5a50df3e90049805e52e2922f766db645527719a36290f77d43de3d13d1533dd",
+          "validation": {
+            "passed": true,
+            "cases": 36,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 46,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "int4a8",
+        "native_dispatches": 336,
+        "fallback_dispatches": 8,
+        "bank_coverage": {
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 24,
+            "fallback": 2
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 24,
+            "fallback": 2
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 24,
+            "fallback": 2
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 24,
+            "fallback": 2
+          }
+        },
+        "fused_pipeline_calls": 172
+      },
+      "native_geometry_failures": [
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                64,
+                4096
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                4096,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                1024
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                4194304,
+                1024,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                128
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                16384,
+                128,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                64,
+                2048
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                2048,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                512
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                2097152,
+                512,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                64
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                8192,
+                64,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                64,
+                4096
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                4096,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                1024
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                4194304,
+                1024,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                128
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                16384,
+                128,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                64,
+                2048
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                2048,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                512
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                2097152,
+                512,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                64
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                8192,
+                64,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                16,
+                4096
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                4096,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                1024
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                4194304,
+                1024,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                128
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                16384,
+                128,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                16,
+                2048
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                2048,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                512
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                2097152,
+                512,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                64
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                8192,
+                64,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                16,
+                4096
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                4096,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                1024
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                4194304,
+                1024,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                128
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                16384,
+                128,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                16,
+                2048
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                2048,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                512
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                2097152,
+                512,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                64
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                8192,
+                64,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:0",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "pid": 2877237,
+      "rank": 1,
+      "generation": "35854e10d5a044e0ae7a59623d44abe2",
+      "mode": "graph",
+      "candidate": "native_geometry_audit",
+      "digest": "a2fe86731c5fe54055e5d10d2e54c0354cd0b546147555477bf3323dbb15c7b6",
+      "graphs_dirty": false,
+      "weight_storage_digest": "df3a1cf45fd6daa716a175fccf221b9ec5c81a487ada73552318770ca86f9829",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v1": {
+          "native_name": "reconstruction_v1",
+          "native_digest": "4d731a07a50dc7e3ce5bf231482313662e4b84eb602991bdd8ebc4985f7fe264",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v2": {
+          "native_name": "reconstruction_v2",
+          "native_digest": "037f151106e24eeed0a19eb501caff995743884b3d29e524245ff05af5c4ed06",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v5": {
+          "native_name": "reconstruction_v5",
+          "native_digest": "52f68b0edc61b5ac4d2790a52c17c1a4053e04f3675868661647469da2d5f2ad",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v8": {
+          "native_name": "reconstruction_v8",
+          "native_digest": "5a50df3e90049805e52e2922f766db645527719a36290f77d43de3d13d1533dd",
+          "validation": {
+            "passed": true,
+            "cases": 36,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 46,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "int4a8",
+        "native_dispatches": 336,
+        "fallback_dispatches": 8,
+        "bank_coverage": {
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 24,
+            "fallback": 2
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 24,
+            "fallback": 2
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 24,
+            "fallback": 2
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 24,
+            "fallback": 2
+          }
+        },
+        "fused_pipeline_calls": 172
+      },
+      "native_geometry_failures": [
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                64,
+                4096
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                4096,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                1024
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                4194304,
+                1024,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                128
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                16384,
+                128,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                64,
+                2048
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                2048,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                512
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                2097152,
+                512,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                64
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                8192,
+                64,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                64,
+                4096
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                4096,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                1024
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                4194304,
+                1024,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                128
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                16384,
+                128,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                64,
+                2048
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                2048,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                512
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                2097152,
+                512,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                64
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                8192,
+                64,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                16,
+                4096
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                4096,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                1024
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                4194304,
+                1024,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                128
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                16384,
+                128,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                16,
+                2048
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                2048,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                512
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                2097152,
+                512,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                64
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                8192,
+                64,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                16,
+                4096
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                4096,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                1024
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                4194304,
+                1024,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                128
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                16384,
+                128,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                16,
+                2048
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                2048,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                512
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                2097152,
+                512,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                64
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                8192,
+                64,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:1",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "pid": 2877601,
+      "rank": 2,
+      "generation": "35854e10d5a044e0ae7a59623d44abe2",
+      "mode": "graph",
+      "candidate": "native_geometry_audit",
+      "digest": "a2fe86731c5fe54055e5d10d2e54c0354cd0b546147555477bf3323dbb15c7b6",
+      "graphs_dirty": false,
+      "weight_storage_digest": "6aa02cf88cd2e080c25b1dcde1f5169007ba61cccd362f6ea9198b8a6d36205f",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v1": {
+          "native_name": "reconstruction_v1",
+          "native_digest": "4d731a07a50dc7e3ce5bf231482313662e4b84eb602991bdd8ebc4985f7fe264",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v2": {
+          "native_name": "reconstruction_v2",
+          "native_digest": "037f151106e24eeed0a19eb501caff995743884b3d29e524245ff05af5c4ed06",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v5": {
+          "native_name": "reconstruction_v5",
+          "native_digest": "52f68b0edc61b5ac4d2790a52c17c1a4053e04f3675868661647469da2d5f2ad",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v8": {
+          "native_name": "reconstruction_v8",
+          "native_digest": "5a50df3e90049805e52e2922f766db645527719a36290f77d43de3d13d1533dd",
+          "validation": {
+            "passed": true,
+            "cases": 36,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 46,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "int4a8",
+        "native_dispatches": 336,
+        "fallback_dispatches": 8,
+        "bank_coverage": {
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 24,
+            "fallback": 2
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 24,
+            "fallback": 2
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 24,
+            "fallback": 2
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 24,
+            "fallback": 2
+          }
+        },
+        "fused_pipeline_calls": 172
+      },
+      "native_geometry_failures": [
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                64,
+                4096
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                4096,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                1024
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                4194304,
+                1024,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                128
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                16384,
+                128,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                64,
+                2048
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                2048,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                512
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                2097152,
+                512,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                64
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                8192,
+                64,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                64,
+                4096
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                4096,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                1024
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                4194304,
+                1024,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                128
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                16384,
+                128,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                64,
+                2048
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                2048,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                512
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                2097152,
+                512,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                64
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                8192,
+                64,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                16,
+                4096
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                4096,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                1024
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                4194304,
+                1024,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                128
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                16384,
+                128,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                16,
+                2048
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                2048,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                512
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                2097152,
+                512,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                64
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                8192,
+                64,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                16,
+                4096
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                4096,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                1024
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                4194304,
+                1024,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                128
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                16384,
+                128,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                16,
+                2048
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                2048,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                512
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                2097152,
+                512,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                64
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                8192,
+                64,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:2",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "pid": 2878087,
+      "rank": 3,
+      "generation": "35854e10d5a044e0ae7a59623d44abe2",
+      "mode": "graph",
+      "candidate": "native_geometry_audit",
+      "digest": "a2fe86731c5fe54055e5d10d2e54c0354cd0b546147555477bf3323dbb15c7b6",
+      "graphs_dirty": false,
+      "weight_storage_digest": "01b2ba00751740c3ce71aeb927cf0e9f423bd1a950003e83b9a1516d9ea36a40",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v1": {
+          "native_name": "reconstruction_v1",
+          "native_digest": "4d731a07a50dc7e3ce5bf231482313662e4b84eb602991bdd8ebc4985f7fe264",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v2": {
+          "native_name": "reconstruction_v2",
+          "native_digest": "037f151106e24eeed0a19eb501caff995743884b3d29e524245ff05af5c4ed06",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v5": {
+          "native_name": "reconstruction_v5",
+          "native_digest": "52f68b0edc61b5ac4d2790a52c17c1a4053e04f3675868661647469da2d5f2ad",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v8": {
+          "native_name": "reconstruction_v8",
+          "native_digest": "5a50df3e90049805e52e2922f766db645527719a36290f77d43de3d13d1533dd",
+          "validation": {
+            "passed": true,
+            "cases": 36,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 46,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "int4a8",
+        "native_dispatches": 336,
+        "fallback_dispatches": 8,
+        "bank_coverage": {
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 24,
+            "fallback": 2
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 24,
+            "fallback": 2
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 24,
+            "fallback": 2
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 24,
+            "fallback": 2
+          }
+        },
+        "fused_pipeline_calls": 172
+      },
+      "native_geometry_failures": [
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                64,
+                4096
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                4096,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                1024
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                4194304,
+                1024,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                128
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                16384,
+                128,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                64,
+                2048
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                2048,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                512
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                2097152,
+                512,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                64
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                8192,
+                64,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                64,
+                4096
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                4096,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                1024
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                4194304,
+                1024,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                128
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                16384,
+                128,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                64,
+                2048
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                2048,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                512
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                2097152,
+                512,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                64
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                8192,
+                64,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                16,
+                4096
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                4096,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                1024
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                4194304,
+                1024,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                128
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                16384,
+                128,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                16,
+                2048
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                2048,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                512
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                2097152,
+                512,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                64
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                8192,
+                64,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                16,
+                4096
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                4096,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                1024
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                4194304,
+                1024,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                128
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                16384,
+                128,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "reason": "native W4 requires FP16/NZ byte/FP32/INT64 tensors",
+          "tensors": [
+            {
+              "shape": [
+                16,
+                2048
+              ],
+              "dtype": "torch.float16",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                2048,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                4096,
+                512
+              ],
+              "dtype": "torch.uint8",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                2097152,
+                512,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72,
+                128,
+                64
+              ],
+              "dtype": "torch.float32",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                8192,
+                64,
+                1
+              ]
+            },
+            {
+              "shape": [
+                72
+              ],
+              "dtype": "torch.int64",
+              "device": "npu:3",
+              "contiguous": true,
+              "stride": [
+                1
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "restored": [
+    {
+      "pid": 2876823,
+      "rank": 0,
+      "generation": "a79dd33d0e0a4bb8af7d51ec31ae4ee1",
+      "mode": "graph",
+      "candidate": "decode_combine",
+      "digest": "4a40c9fbba8af6f3bb2c093a871a0bcf028be3a18af39813f982a2ec51b63da9",
+      "graphs_dirty": false,
+      "weight_storage_digest": "ec23809661c6fbed3fabce7e858fa67faf16dedce224e18396ec9906e5747e78",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v1": {
+          "native_name": "reconstruction_v1",
+          "native_digest": "4d731a07a50dc7e3ce5bf231482313662e4b84eb602991bdd8ebc4985f7fe264",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v2": {
+          "native_name": "reconstruction_v2",
+          "native_digest": "037f151106e24eeed0a19eb501caff995743884b3d29e524245ff05af5c4ed06",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v5": {
+          "native_name": "reconstruction_v5",
+          "native_digest": "52f68b0edc61b5ac4d2790a52c17c1a4053e04f3675868661647469da2d5f2ad",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v8": {
+          "native_name": "reconstruction_v8",
+          "native_digest": "5a50df3e90049805e52e2922f766db645527719a36290f77d43de3d13d1533dd",
+          "validation": {
+            "passed": true,
+            "cases": 36,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 46,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      }
+    },
+    {
+      "pid": 2877237,
+      "rank": 1,
+      "generation": "a79dd33d0e0a4bb8af7d51ec31ae4ee1",
+      "mode": "graph",
+      "candidate": "decode_combine",
+      "digest": "4a40c9fbba8af6f3bb2c093a871a0bcf028be3a18af39813f982a2ec51b63da9",
+      "graphs_dirty": false,
+      "weight_storage_digest": "df3a1cf45fd6daa716a175fccf221b9ec5c81a487ada73552318770ca86f9829",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v1": {
+          "native_name": "reconstruction_v1",
+          "native_digest": "4d731a07a50dc7e3ce5bf231482313662e4b84eb602991bdd8ebc4985f7fe264",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v2": {
+          "native_name": "reconstruction_v2",
+          "native_digest": "037f151106e24eeed0a19eb501caff995743884b3d29e524245ff05af5c4ed06",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v5": {
+          "native_name": "reconstruction_v5",
+          "native_digest": "52f68b0edc61b5ac4d2790a52c17c1a4053e04f3675868661647469da2d5f2ad",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v8": {
+          "native_name": "reconstruction_v8",
+          "native_digest": "5a50df3e90049805e52e2922f766db645527719a36290f77d43de3d13d1533dd",
+          "validation": {
+            "passed": true,
+            "cases": 36,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 46,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      }
+    },
+    {
+      "pid": 2877601,
+      "rank": 2,
+      "generation": "a79dd33d0e0a4bb8af7d51ec31ae4ee1",
+      "mode": "graph",
+      "candidate": "decode_combine",
+      "digest": "4a40c9fbba8af6f3bb2c093a871a0bcf028be3a18af39813f982a2ec51b63da9",
+      "graphs_dirty": false,
+      "weight_storage_digest": "6aa02cf88cd2e080c25b1dcde1f5169007ba61cccd362f6ea9198b8a6d36205f",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v1": {
+          "native_name": "reconstruction_v1",
+          "native_digest": "4d731a07a50dc7e3ce5bf231482313662e4b84eb602991bdd8ebc4985f7fe264",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v2": {
+          "native_name": "reconstruction_v2",
+          "native_digest": "037f151106e24eeed0a19eb501caff995743884b3d29e524245ff05af5c4ed06",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v5": {
+          "native_name": "reconstruction_v5",
+          "native_digest": "52f68b0edc61b5ac4d2790a52c17c1a4053e04f3675868661647469da2d5f2ad",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v8": {
+          "native_name": "reconstruction_v8",
+          "native_digest": "5a50df3e90049805e52e2922f766db645527719a36290f77d43de3d13d1533dd",
+          "validation": {
+            "passed": true,
+            "cases": 36,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 46,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      }
+    },
+    {
+      "pid": 2878087,
+      "rank": 3,
+      "generation": "a79dd33d0e0a4bb8af7d51ec31ae4ee1",
+      "mode": "graph",
+      "candidate": "decode_combine",
+      "digest": "4a40c9fbba8af6f3bb2c093a871a0bcf028be3a18af39813f982a2ec51b63da9",
+      "graphs_dirty": false,
+      "weight_storage_digest": "01b2ba00751740c3ce71aeb927cf0e9f423bd1a950003e83b9a1516d9ea36a40",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v1": {
+          "native_name": "reconstruction_v1",
+          "native_digest": "4d731a07a50dc7e3ce5bf231482313662e4b84eb602991bdd8ebc4985f7fe264",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v2": {
+          "native_name": "reconstruction_v2",
+          "native_digest": "037f151106e24eeed0a19eb501caff995743884b3d29e524245ff05af5c4ed06",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v5": {
+          "native_name": "reconstruction_v5",
+          "native_digest": "52f68b0edc61b5ac4d2790a52c17c1a4053e04f3675868661647469da2d5f2ad",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v8": {
+          "native_name": "reconstruction_v8",
+          "native_digest": "5a50df3e90049805e52e2922f766db645527719a36290f77d43de3d13d1533dd",
+          "validation": {
+            "passed": true,
+            "cases": 36,
+            "weight_format": "unchanged_signed_block32",
+            "activation_format": "new_group32_int8",
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 46,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      }
+    }
+  ]
+}

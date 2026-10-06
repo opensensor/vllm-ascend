@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "target": "dav-2002",
+  "device": 0,
+  "evidence_files": {
+    "kernel_operator_vec_binary_scalar_impl.h": {
+      "path": "/usr/local/Ascend/ascend-toolkit/latest/asc/impl/basic_api/dav_m200/kernel_operator_vec_binary_scalar_impl.h",
+      "sha256": "d11433c0e4cb39597619f3e753f2cbd3b063b462a4e1263f5b2b48189aaca0a4"
+    },
+    "debug-pipeline-gather.cpp": {
+      "path": "/home/matteius/experiments/glm-reconstruction-20261006/debug-pipeline-gather.cpp",
+      "sha256": "5b4032cd98134b19dce308b3474838e8d3cd1ed6004007c7ab0c8e9f2b61afcf"
+    },
+    "debug-pipeline-gather.bin": {
+      "path": "/home/matteius/experiments/glm-reconstruction-20261006/debug-pipeline-gather.bin",
+      "sha256": "b938cbdfcddfa2c28ee8ef729f0d2f1c3c1ceb0f763233376e27f7346c517127"
+    }
+  },
+  "sdk_excerpt": [
+    "// ShiftLeft::Level 2",
+    "template <typename T, bool isSetMask = true>",
+    "__aicore__ inline void ShiftLeftImpl(__ubuf__ T* dst, __ubuf__ T* src, const T& scalarValue, const int32_t& count)",
+    "{",
+    "    ASCENDC_REPORT_NOT_SUPPORT(false, \"ShiftLeft\");",
+    "}",
+    "",
+    "/* **************************************************************************************************",
+    " * ShiftRight                                             *",
+    " * ************************************************************************************************* */",
+    "// ShiftRight::Level 0",
+    "template <typename T, bool isSetMask = true>",
+    "__aicore__ inline void ShiftRightImpl(__ubuf__ T* dst, __ubuf__ T* src, const T& scalarValue, const uint64_t mask[],",
+    "    uint8_t repeatTime, const UnaryRepeatParams& repeatParams, bool roundEn = false)",
+    "{",
+    "    ASCENDC_REPORT_NOT_SUPPORT(false, \"ShiftRight\");",
+    "}",
+    "",
+    "template <typename T, bool isSetMask = true>",
+    "__aicore__ inline void ShiftRightImpl(__ubuf__ T* dst, __ubuf__ T* src, const T& scalarValue, const uint64_t mask,",
+    "    uint8_t repeatTime, const UnaryRepeatParams& repeatParams, bool roundEn = false)",
+    "{",
+    "    ASCENDC_REPORT_NOT_SUPPORT(false, \"ShiftRight\");",
+    "}",
+    "",
+    "// ShiftRight::Level 2",
+    "template <typename T, bool isSetMask = true>",
+    "__aicore__ inline void ShiftRightImpl(__ubuf__ T* dst, __ubuf__ T* src, const T& scalarValue, const int32_t& count)",
+    "{",
+    "    ASCENDC_REPORT_NOT_SUPPORT(false, \"ShiftRight\");",
+    "}"
+  ],
+  "observed_probe": {
+    "gather_mismatches": 0,
+    "shift_input": 7,
+    "shift_amount": 4,
+    "element_count": 16384,
+    "expected_shift_output": 112,
+    "actual_shift_unique": [
+      7
+    ]
+  },
+  "failed_pipeline_gate": "native-pipeline-v4-gates.json",
+  "conclusion": "This target SDK leaves vector shifts unsupported; compilation alone did not validate the operation."
+}

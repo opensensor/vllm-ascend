@@ -1,0 +1,87 @@
+{
+  "build_options": {
+    "namespace": "glm_reconstruction_v13",
+    "version": 13,
+    "output_columns": 128,
+    "helper_package": "glm_reconstruction_v13_helpers",
+    "tile_pipeline": true,
+    "all_bits": true,
+    "prefill_native": true,
+    "fused_moe": true
+  },
+  "scope": "one real W4 expert, two synthetic activation rows, prepared routing; device events include native launch intervals",
+  "records": [
+    {
+      "activation_bits": 8,
+      "stage_ms": {
+        "input_quant_once": {
+          "median_ms": 0.0364839993417263,
+          "samples_ms": [
+            0.13411499559879303,
+            0.03622400015592575,
+            0.036302000284194946,
+            0.0364839993417263,
+            0.03648500144481659
+          ]
+        },
+        "gate_up_swiglu_quant": {
+          "median_ms": 2.708307981491089,
+          "samples_ms": [
+            2.7289841175079346,
+            2.7079429626464844,
+            2.708307981491089,
+            2.7101049423217773,
+            2.705677032470703
+          ]
+        },
+        "down_weighted_reduce": {
+          "median_ms": 1.3438800573349,
+          "samples_ms": [
+            1.3440109491348267,
+            1.3438279628753662,
+            1.3438019752502441,
+            1.3441660404205322,
+            1.3438800573349
+          ]
+        }
+      }
+    },
+    {
+      "activation_bits": 4,
+      "stage_ms": {
+        "input_quant_once": {
+          "median_ms": 0.0338280014693737,
+          "samples_ms": [
+            0.2086459994316101,
+            0.03411500155925751,
+            0.033541999757289886,
+            0.03372399881482124,
+            0.0338280014693737
+          ]
+        },
+        "gate_up_swiglu_quant": {
+          "median_ms": 2.4573440551757812,
+          "samples_ms": [
+            2.4775779247283936,
+            2.4579429626464844,
+            2.45645809173584,
+            2.4573440551757812,
+            2.4563798904418945
+          ]
+        },
+        "down_weighted_reduce": {
+          "median_ms": 1.21247398853302,
+          "samples_ms": [
+            1.2123949527740479,
+            1.2126820087432861,
+            1.21247398853302,
+            1.2144789695739746,
+            1.2115620374679565
+          ]
+        }
+      }
+    }
+  ],
+  "measurement_source": "import hashlib,json,statistics\nfrom pathlib import Path\nimport torch,torch_npu\nfrom safetensors import safe_open\nfrom tools.glm_perf.glm_int4 import pack_nz_codes,unpack_canonical_codes\nfrom tools.glm_perf.glm_fused_moe import FusedGeometry,NativeFusedMoE\n\nroot=Path('/home/matteius/experiments/glm-reconstruction-20261006')\nbuild=root/'build-native-fused-v13'\ncheckpoint=Path('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p')\nprefix='model.language_model.layers.11.mlp.experts.0.'\nindex=json.loads((checkpoint/'model.safetensors.index.json').read_text())['weight_map']\ntorch.npu.set_device(0)\ntorch_npu.npu.set_compile_mode(jit_compile=False)\ntorch.ops.load_library(str(build/'glm_reconstruction_bridge_v13.so'))\nvalues=[]\nfor projection in ('gate','up','down'):\n pair=[]\n for suffix in ('_codes','_scale'):\n  key=prefix+projection+'_proj'+suffix\n  with safe_open(str(checkpoint/index[key]),framework='pt',device='cpu') as handle:\n   pair.append(handle.get_tensor(key))\n codes,scales=pair\n values.append((unpack_canonical_codes(codes,scales.shape[1]*32),scales.float()))\ngate=torch.cat([v[0] for v in values[:2]],0)[None]\ngs=torch.cat([v[1] for v in values[:2]],0)[None]\ndown,ds=values[2][0][None],values[2][1][None]\nx=torch.randn(2,4096,generator=torch.Generator().manual_seed(5704)).half().npu()\ngc,dc,ggs,gds=pack_nz_codes(gate,4).npu(),pack_nz_codes(down,4).npu(),gs.npu(),ds.npu()\nweights=torch.ones(2,1).npu();order=torch.tensor([0,1],dtype=torch.int64).npu();ends=torch.tensor([2],dtype=torch.int64).npu()\nreport={'build_options':json.loads((build/'provenance.json').read_text())['_build'],'scope':'one real W4 expert, two synthetic activation rows, prepared routing; device events include native launch intervals','records':[]}\nfor bits in (8,4):\n native=NativeFusedMoE(build,namespace='glm_reconstruction_v13',activation_bits=bits)\n geometry=FusedGeometry(2,1,1,4096,2048,4,4,bits)\n def pipeline():\n  return native.grouped(x,gc,ggs,dc,gds,weights,order,ends,geometry)\n for _ in range(3):\n  pipeline()\n torch.npu.synchronize()\n events=[]\n original=native.launch\n names={id(native.pack_kernel):'input_quant_once',id(native.gate_kernel):'gate_up_swiglu_quant',id(native.down_kernel):'down_weighted_reduce'}\n def timed(kernel,args,blocks):\n  start,end=torch.npu.Event(enable_timing=True),torch.npu.Event(enable_timing=True)\n  start.record()\n  original(kernel,args,blocks)\n  end.record()\n  events.append((names[id(kernel)],start,end))\n native.launch=timed\n try:\n  for _ in range(5):\n   pipeline()\n  torch.npu.synchronize()\n finally:\n  native.launch=original\n samples={name:[] for name in names.values()}\n for name,start,end in events:\n  samples[name].append(start.elapsed_time(end))\n report['records'].append({'activation_bits':bits,'stage_ms':{name:{'median_ms':statistics.median(ms),'samples_ms':ms} for name,ms in samples.items()}})\n(root/'native-fused-v13-stage-events.json').write_text(json.dumps(report,indent=2)+'\\n')\nprint(json.dumps(report),flush=True)\n",
+  "measurement_source_sha256": "0f499cde7127355017f3c62fc5b214bb3ba368df730e1cf19698db8671d92304"
+}
