@@ -1,0 +1,30 @@
+import sys
+sys.path.insert(0, '/srv/ai/src/glm-selective-w3-nz-test-20261004')
+import json
+from pathlib import Path
+import torch,torch_npu
+from tools.glm_perf.fused_moe_profile import frozen_helper
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+torch.set_num_threads(4);torch.npu.set_device(0);torch_npu.npu.set_compile_mode(jit_compile=False)
+helper,_=frozen_helper(root/'build-native-fused-v39')
+records=[]
+for tokens in (2,8,128,640):
+ for dtype in (torch.int32,torch.int64):
+  for offset in (0,72,216):
+   generator=torch.Generator().manual_seed(6000+tokens+offset)
+   ids=torch.randint(0,288,(tokens,8),generator=generator,dtype=dtype)
+   weights=torch.randint(0,4,(tokens,8),generator=generator).float()
+   if dtype==torch.int64: ids[0,0]=1<<32
+   keys=[int(i)-offset if 0<=int(i)-offset<72 and float(w)!=0 else 72 for i,w in zip(ids.flatten(),weights.flatten())]
+   expected_order=torch.tensor(sorted(range(len(keys)),key=lambda i:keys[i]),dtype=torch.int64)
+   expected_ends=torch.tensor([sum(k<e for k in keys) for e in range(1,73)],dtype=torch.int64)
+   gi,gw=ids.npu(),weights.npu()
+   order,ends=helper.fused_route_metadata(gw,gi,72,offset)
+   assert torch.equal(order.cpu(),expected_order) and torch.equal(ends.cpu(),expected_ends)
+   graph=torch.npu.NPUGraph()
+   with torch.npu.graph(graph): order,ends=helper.fused_route_metadata(gw,gi,72,offset)
+   gw.zero_();graph.replay();torch.npu.synchronize()
+   assert torch.equal(order.cpu(),torch.arange(tokens*8)) and torch.equal(ends.cpu(),torch.zeros(72,dtype=torch.int64))
+   records.append({'tokens':tokens,'id_dtype':str(dtype),'offset':offset,'stable_order_exact':True,'group_ends_exact':True,'changed_weight_graph_replay':True})
+(root/'native-fused-v39-routing-gates.json').write_text(json.dumps({'complete':len(records)==24,'records':records},indent=2)+'\n')
+print(json.dumps({'complete':True,'cases':len(records)}),flush=True)

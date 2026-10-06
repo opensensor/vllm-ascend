@@ -37,6 +37,7 @@ def build(
     fused_moe=False,
     prepared_weight_layout=False,
     pair_scale_groups=False,
+    fp16_swiglu=False,
 ):
     """Freeze helper sources and compile a unique, append-only native version."""
     if type(version) is not int or version < 1 or output_columns not in (16, 32, 64, 128):
@@ -51,6 +52,8 @@ def build(
         raise ValueError("prepared weight layout requires fused MoE")
     if pair_scale_groups and not fused_moe:
         raise ValueError("paired scale groups require fused MoE")
+    if fp16_swiglu and not fused_moe:
+        raise ValueError("FP16 SwiGLU requires fused MoE")
     namespace = f"glm_reconstruction_v{version}"
     build_dir = build_dir.resolve()
     build_dir.mkdir(parents=True, exist_ok=False)
@@ -106,6 +109,7 @@ def build(
             "fused_moe": fused_moe,
             "prepared_weight_layout": prepared_weight_layout,
             "pair_scale_groups": pair_scale_groups,
+            "fp16_swiglu": fp16_swiglu,
         }
     }
     provenance["_helpers"] = {p.name: sha256(p) for p in helper_root.glob("*.py")}
@@ -137,6 +141,7 @@ def build(
                     f"-I{HERE}",
                     *(["-DGLM_PREPARED_WEIGHT_LAYOUT"] if prepared_weight_layout else []),
                     *(["-DGLM_PAIR_SCALE_GROUPS"] if pair_scale_groups else []),
+                    *(["-DGLM_FP16_SWIGLU"] if fp16_swiglu else []),
                     *(["-DGLM_FUSED_GATE_UP"] if stage == "gate_up" else []),
                 ],
                 check=True,
@@ -216,6 +221,7 @@ def main():
     parser.add_argument("--fused-moe", action="store_true")
     parser.add_argument("--prepared-weight-layout", action="store_true")
     parser.add_argument("--pair-scale-groups", action="store_true")
+    parser.add_argument("--fp16-swiglu", action="store_true", help="quality-gated FP16 SwiGLU experiment")
     args = parser.parse_args()
     print(
         build(
@@ -230,6 +236,7 @@ def main():
             args.fused_moe,
             args.prepared_weight_layout,
             args.pair_scale_groups,
+            args.fp16_swiglu,
         )
     )
 

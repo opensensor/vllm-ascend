@@ -10,8 +10,8 @@ import torch
 
 from tools.glm_perf.fused_moe_control import manifest
 from tools.glm_perf.fused_moe_probe import projection_reference, reference
-from tools.glm_perf.glm_fused_moe import FusedGeometry, NativeFusedMoE
-from tools.glm_perf.glm_int4 import activation_limbs, pack_nz_codes, signed_nibbles
+from tools.glm_perf.glm_fused_moe import FusedGeometry, NativeFusedMoE, fused_route_metadata
+from tools.glm_perf.glm_int4 import MAX_GROUPED_ROUTES, activation_limbs, pack_nz_codes, signed_nibbles
 from tools.glm_perf.resident_candidates.expert_reconstruction import wrap_fused_moe
 
 
@@ -49,6 +49,19 @@ def test_contiguous_decoder_and_cube_cast_pack_preserve_every_signed_code(bits):
     assert torch.equal(actual, expected)
 
 
+@pytest.mark.parametrize("bits", (2, 3, 4))
+def test_byte_mask_sign_extension_stays_exact_through_half_for_all_codes(bits):
+    raw = torch.arange(256, dtype=torch.int16)
+    sign = 1 << (bits - 1)
+    for phase in range(8 - bits + 1):
+        mask = ((1 << bits) - 1) << phase
+        expected = (raw.int() >> phase) & ((1 << bits) - 1)
+        expected = ((expected + sign) & ((1 << bits) - 1)) - sign
+        masked = ((raw + (sign << phase)) & mask).half()
+        actual = masked * (1.0 / (1 << phase)) - sign
+        assert torch.equal(actual.float(), expected.float())
+
+
 @pytest.mark.parametrize("activation_bits", (4, 8))
 def test_adjacent_scale_groups_share_weight_tile_without_mixing_integer_products(activation_bits):
     x = torch.linspace(-1, 1, 64).reshape(1, 64).half()
@@ -70,6 +83,56 @@ def test_adjacent_scale_groups_share_weight_tile_without_mixing_integer_products
         if activation_bits == 8:
             integer += 16 * (b @ weights) + 8 * (bias @ weights)
         assert integer == quant[0, group] @ weights[selected]
+
+
+def test_a4_integer_to_half_shortcut_preserves_rounding_ties_and_clamping():
+    # Keep the division and nearest-even decision in FP32. Only the already
+    # integral code changes its intermediate storage, including boundary ties.
+    ties = torch.arange(-10, 11, dtype=torch.float32) + 0.5
+    values = torch.cat(
+        (
+            torch.nextafter(ties, torch.full_like(ties, -torch.inf)),
+            ties,
+            torch.nextafter(ties, torch.full_like(ties, torch.inf)),
+        )
+    )
+    integers = values.round().to(torch.int32)
+    original = integers.float().clamp(-7, 7).half()
+    direct = integers.half().clamp(-7, 7)
+    assert torch.equal(direct, original)
+    assert torch.equal(direct.float(), values.round().clamp(-7, 7))
+
+
+@pytest.mark.parametrize("dtype", (torch.int32, torch.int64))
+def test_fused_routes_keep_stable_duplicates_and_exclude_peer_and_zero_weight(dtype):
+    ids = torch.tensor([[9, 8, 11, 10], [8, 99, 9, 9]], dtype=dtype)
+    weights = torch.tensor([[1, 1, 1, 0], [0, 1, 1, 1]], dtype=torch.float32)
+    order, ends = fused_route_metadata(weights, ids, 3, 8)
+    assert order.tolist() == [1, 0, 6, 7, 2, 3, 4, 5]
+    assert ends.tolist() == [1, 4, 4]
+    assert order.dtype == ends.dtype == torch.int64
+    assert order.is_contiguous() and ends.is_contiguous()
+    _, empty = fused_route_metadata(torch.zeros_like(weights), ids, 3, 8)
+    assert empty.tolist() == [0, 0, 0]
+
+
+def test_fused_routes_clamp_large_peer_ids_before_int32_conversion():
+    ids = torch.tensor([[1 << 32, -1, 0]], dtype=torch.int64)
+    order, ends = fused_route_metadata(torch.ones(1, 3), ids, 2)
+    assert order.tolist() == [2, 0, 1]
+    assert ends.tolist() == [1, 1]
+
+
+def test_fused_routes_reject_mismatched_input_shapes():
+    with pytest.raises(ValueError, match="matching"):
+        fused_route_metadata(torch.ones(1, 1), torch.zeros(1, 2, dtype=torch.int64), 2)
+
+
+@pytest.mark.parametrize("routes", (0, MAX_GROUPED_ROUTES + 1))
+def test_fused_routes_reject_counts_outside_int32_reduction_contract(routes):
+    ids = torch.zeros(1, routes, dtype=torch.int64)
+    with pytest.raises(ValueError, match="route count"):
+        fused_route_metadata(torch.ones(1, routes), ids, 2)
 
 
 @pytest.mark.parametrize(

@@ -1,0 +1,3614 @@
+{
+  "version": 31,
+  "loaded": [
+    {
+      "rank": 0,
+      "pid": 327411,
+      "native_name": "reconstruction_v31",
+      "native_digest": "35dac5dddb22612a754dd935f65323482655b2482680fb558d8bfc34a70eb5c3",
+      "validation": {
+        "passed": true,
+        "cases": 6,
+        "native_fused_stages": 2,
+        "input_quantization_passes_per_token": 1,
+        "fp16_intermediate_gm_bytes": 0,
+        "model_quality": "not_evaluated"
+      }
+    },
+    {
+      "rank": 1,
+      "pid": 327821,
+      "native_name": "reconstruction_v31",
+      "native_digest": "35dac5dddb22612a754dd935f65323482655b2482680fb558d8bfc34a70eb5c3",
+      "validation": {
+        "passed": true,
+        "cases": 6,
+        "native_fused_stages": 2,
+        "input_quantization_passes_per_token": 1,
+        "fp16_intermediate_gm_bytes": 0,
+        "model_quality": "not_evaluated"
+      }
+    },
+    {
+      "rank": 2,
+      "pid": 328263,
+      "native_name": "reconstruction_v31",
+      "native_digest": "35dac5dddb22612a754dd935f65323482655b2482680fb558d8bfc34a70eb5c3",
+      "validation": {
+        "passed": true,
+        "cases": 6,
+        "native_fused_stages": 2,
+        "input_quantization_passes_per_token": 1,
+        "fp16_intermediate_gm_bytes": 0,
+        "model_quality": "not_evaluated"
+      }
+    },
+    {
+      "rank": 3,
+      "pid": 328726,
+      "native_name": "reconstruction_v31",
+      "native_digest": "35dac5dddb22612a754dd935f65323482655b2482680fb558d8bfc34a70eb5c3",
+      "validation": {
+        "passed": true,
+        "cases": 6,
+        "native_fused_stages": 2,
+        "input_quantization_passes_per_token": 1,
+        "fp16_intermediate_gm_bytes": 0,
+        "model_quality": "not_evaluated"
+      }
+    }
+  ],
+  "selected": [
+    {
+      "pid": 327411,
+      "rank": 0,
+      "generation": "3c8c718545da4c89b4967f5850628e7b",
+      "mode": "graph",
+      "candidate": "native_disk_v31",
+      "digest": "3bcfb4382d177e9ead962717793ebdc6fbda2641e047c31acf24268e089a2f9b",
+      "graphs_dirty": false,
+      "weight_storage_digest": "b2eebbf2f9b2c1033c28c49970002310c27b5e2fec52b6a6c601f8cb85897aa3",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v31": {
+          "native_name": "reconstruction_v31",
+          "native_digest": "35dac5dddb22612a754dd935f65323482655b2482680fb558d8bfc34a70eb5c3",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 46,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 344,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 172,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      }
+    },
+    {
+      "pid": 327821,
+      "rank": 1,
+      "generation": "3c8c718545da4c89b4967f5850628e7b",
+      "mode": "graph",
+      "candidate": "native_disk_v31",
+      "digest": "3bcfb4382d177e9ead962717793ebdc6fbda2641e047c31acf24268e089a2f9b",
+      "graphs_dirty": false,
+      "weight_storage_digest": "9e4d83b49d88029af1b68bd56d76e9ee964af7f6c8da34505ca0574f5ff902ee",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v31": {
+          "native_name": "reconstruction_v31",
+          "native_digest": "35dac5dddb22612a754dd935f65323482655b2482680fb558d8bfc34a70eb5c3",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 46,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 344,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 172,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      }
+    },
+    {
+      "pid": 328263,
+      "rank": 2,
+      "generation": "3c8c718545da4c89b4967f5850628e7b",
+      "mode": "graph",
+      "candidate": "native_disk_v31",
+      "digest": "3bcfb4382d177e9ead962717793ebdc6fbda2641e047c31acf24268e089a2f9b",
+      "graphs_dirty": false,
+      "weight_storage_digest": "589a47f26b97beb0009d6f28866c10a7f39c5c8eaf5f217b826428e050803e96",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v31": {
+          "native_name": "reconstruction_v31",
+          "native_digest": "35dac5dddb22612a754dd935f65323482655b2482680fb558d8bfc34a70eb5c3",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 46,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 344,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 172,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      }
+    },
+    {
+      "pid": 328726,
+      "rank": 3,
+      "generation": "3c8c718545da4c89b4967f5850628e7b",
+      "mode": "graph",
+      "candidate": "native_disk_v31",
+      "digest": "3bcfb4382d177e9ead962717793ebdc6fbda2641e047c31acf24268e089a2f9b",
+      "graphs_dirty": false,
+      "weight_storage_digest": "ee37b0c7a546e73a8b2fc665a0118b4fcfcc247c0e3cf138fe8db20bfb597598",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v31": {
+          "native_name": "reconstruction_v31",
+          "native_digest": "35dac5dddb22612a754dd935f65323482655b2482680fb558d8bfc34a70eb5c3",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 46,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 344,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 172,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      }
+    }
+  ],
+  "switch_s": 6.2003753680037335,
+  "permanent_checkpoint": true,
+  "corrected_mtp": true,
+  "complete": true,
+  "serving_active": true,
+  "before": [
+    {
+      "pid": 327411,
+      "rank": 0,
+      "generation": "9d9c4afe1ecf41ff97fddbc32da9a3f9",
+      "mode": "graph",
+      "candidate": "native_disk_v29",
+      "digest": "4a40c9fbba8af6f3bb2c093a871a0bcf028be3a18af39813f982a2ec51b63da9",
+      "graphs_dirty": false,
+      "weight_storage_digest": "b2eebbf2f9b2c1033c28c49970002310c27b5e2fec52b6a6c601f8cb85897aa3",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 58,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      }
+    },
+    {
+      "pid": 327821,
+      "rank": 1,
+      "generation": "9d9c4afe1ecf41ff97fddbc32da9a3f9",
+      "mode": "graph",
+      "candidate": "native_disk_v29",
+      "digest": "4a40c9fbba8af6f3bb2c093a871a0bcf028be3a18af39813f982a2ec51b63da9",
+      "graphs_dirty": false,
+      "weight_storage_digest": "9e4d83b49d88029af1b68bd56d76e9ee964af7f6c8da34505ca0574f5ff902ee",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 58,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      }
+    },
+    {
+      "pid": 328263,
+      "rank": 2,
+      "generation": "9d9c4afe1ecf41ff97fddbc32da9a3f9",
+      "mode": "graph",
+      "candidate": "native_disk_v29",
+      "digest": "4a40c9fbba8af6f3bb2c093a871a0bcf028be3a18af39813f982a2ec51b63da9",
+      "graphs_dirty": false,
+      "weight_storage_digest": "589a47f26b97beb0009d6f28866c10a7f39c5c8eaf5f217b826428e050803e96",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 58,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      }
+    },
+    {
+      "pid": 328726,
+      "rank": 3,
+      "generation": "9d9c4afe1ecf41ff97fddbc32da9a3f9",
+      "mode": "graph",
+      "candidate": "native_disk_v29",
+      "digest": "4a40c9fbba8af6f3bb2c093a871a0bcf028be3a18af39813f982a2ec51b63da9",
+      "graphs_dirty": false,
+      "weight_storage_digest": "ee37b0c7a546e73a8b2fc665a0118b4fcfcc247c0e3cf138fe8db20bfb597598",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 58,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      }
+    }
+  ],
+  "records": [
+    {
+      "case_id": "short_1_0",
+      "category": "short",
+      "group_id": "short_1",
+      "target_prompt_tokens": 25,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": null,
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 64,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Generate a long numbered list of distinct everyday objects, starting at one. Continue writing until the response token limit stops you.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318642.215985871,
+      "content": "1. Fork\n2. Spoon\n3. Knife\n4. Plate\n5. Bowl\n6. Mug\n7. Glass\n8. Napkin\n9. Tablecloth\n10. Salt shaker\n11. Pepper shaker\n12. Ketchup",
+      "reasoning": "Generate a long numbered list of everyday objects.",
+      "tool_calls": [],
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 36,
+        "total_tokens": 100,
+        "completion_tokens": 64,
+        "completion_tokens_details": {
+          "reasoning_tokens": 9
+        }
+      },
+      "end_s": 318654.614915003,
+      "first_token_s": 318644.968801581,
+      "last_token_s": 318654.614746292,
+      "ttft_s": 2.7528157100314274,
+      "elapsed_s": 12.398929132032208,
+      "decode_s": 9.645944710995536,
+      "decode_tokens_per_s": 6.634912589437256,
+      "stream_event_gap_p50_s": 0.29261696999310516,
+      "stream_event_gap_p95_s": 0.30656819221039766,
+      "stream_events": 33,
+      "prompt_token_target_error": 11,
+      "early_eos": false,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": false,
+      "speed_sample_complete": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "short_4_0",
+      "category": "short",
+      "group_id": "short_4",
+      "target_prompt_tokens": 25,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": null,
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 64,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Generate a long numbered list of distinct everyday objects, starting at one. Continue writing until the response token limit stops you.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318654.618338783,
+      "content": "1. Fork\n2. Spoon\n3. Knife\n4. Plate\n5. Bowl\n6. Mug\n7. Glass\n8. Kettle\n9. Toaster\n10. Blender\n11. Fridge\n12. Stove\n13.",
+      "reasoning": "Write a long numbered list of everyday objects.",
+      "tool_calls": [],
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 36,
+        "total_tokens": 100,
+        "completion_tokens": 64,
+        "completion_tokens_details": {
+          "reasoning_tokens": 9
+        }
+      },
+      "end_s": 318680.843425525,
+      "first_token_s": 318663.465948326,
+      "last_token_s": 318680.843190718,
+      "ttft_s": 8.84760954300873,
+      "elapsed_s": 26.22508674202254,
+      "decode_s": 17.377242391987238,
+      "decode_tokens_per_s": 3.6829779176879542,
+      "stream_event_gap_p50_s": 0.5203393989650067,
+      "stream_event_gap_p95_s": 0.6234140210843179,
+      "stream_events": 33,
+      "prompt_token_target_error": 11,
+      "early_eos": false,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": false,
+      "speed_sample_complete": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "short_4_1",
+      "category": "short",
+      "group_id": "short_4",
+      "target_prompt_tokens": 25,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": null,
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 64,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Generate a long numbered list of distinct everyday objects, starting at one. Continue writing until the response token limit stops you.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318654.618069451,
+      "content": "1. Fork\n2. Spoon\n3. Knife\n4. Plate\n5. Bowl\n6. Mug\n7. Glass\n8. Kettle\n9. Toaster\n10. Blender\n11. Fridge\n12. Stove\n13",
+      "reasoning": "Produce a long numbered list of everyday objects.",
+      "tool_calls": [],
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 36,
+        "total_tokens": 100,
+        "completion_tokens": 64,
+        "completion_tokens_details": {
+          "reasoning_tokens": 10
+        }
+      },
+      "end_s": 318680.843525354,
+      "first_token_s": 318663.466111186,
+      "last_token_s": 318680.843367354,
+      "ttft_s": 8.848041735007428,
+      "elapsed_s": 26.225455902982503,
+      "decode_s": 17.377256167994346,
+      "decode_tokens_per_s": 3.682974997967517,
+      "stream_event_gap_p50_s": 0.5242440950241871,
+      "stream_event_gap_p95_s": 0.6168451199890114,
+      "stream_events": 34,
+      "prompt_token_target_error": 11,
+      "early_eos": false,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": false,
+      "speed_sample_complete": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "short_4_2",
+      "category": "short",
+      "group_id": "short_4",
+      "target_prompt_tokens": 25,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": null,
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 64,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Generate a long numbered list of distinct everyday objects, starting at one. Continue writing until the response token limit stops you.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318654.617787174,
+      "content": "1. Fork\n2. Spoon\n3. Knife\n4. Plate\n5. Bowl\n6. Mug\n7. Glass\n8. Kettle\n9. Toaster\n10. Blender\n11. Broom\n12. Mop\n13.",
+      "reasoning": "Generate a long numbered list of everyday objects.",
+      "tool_calls": [],
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 36,
+        "total_tokens": 100,
+        "completion_tokens": 64,
+        "completion_tokens_details": {
+          "reasoning_tokens": 9
+        }
+      },
+      "end_s": 318680.290399635,
+      "first_token_s": 318657.376276344,
+      "last_token_s": 318680.290243238,
+      "ttft_s": 2.7584891699953005,
+      "elapsed_s": 25.672612460970413,
+      "decode_s": 22.913966893975157,
+      "decode_tokens_per_s": 2.7930563178402656,
+      "stream_event_gap_p50_s": 0.5242266319692135,
+      "stream_event_gap_p95_s": 0.6321872303960845,
+      "stream_events": 34,
+      "prompt_token_target_error": 11,
+      "early_eos": false,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": false,
+      "speed_sample_complete": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "short_4_3",
+      "category": "short",
+      "group_id": "short_4",
+      "target_prompt_tokens": 25,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": null,
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 64,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Generate a long numbered list of distinct everyday objects, starting at one. Continue writing until the response token limit stops you.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318654.61755847,
+      "content": "1. Fork\n2. Spoon\n3. Knife\n4. Plate\n5. Bowl\n6. Mug\n7. Glass\n8. Kettle\n9. Toaster\n10. Blender\n11. Fridge\n12. Oven\n",
+      "reasoning": "Long numbered list of everyday objects. Just generate many items.",
+      "tool_calls": [],
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 36,
+        "total_tokens": 100,
+        "completion_tokens": 64,
+        "completion_tokens_details": {
+          "reasoning_tokens": 12
+        }
+      },
+      "end_s": 318681.137262199,
+      "first_token_s": 318663.466189645,
+      "last_token_s": 318681.137149244,
+      "ttft_s": 8.848631175002083,
+      "elapsed_s": 26.519703729019966,
+      "decode_s": 17.670959599025082,
+      "decode_tokens_per_s": 3.621761435272079,
+      "stream_event_gap_p50_s": 0.5203316844708752,
+      "stream_event_gap_p95_s": 0.6159627531131264,
+      "stream_events": 35,
+      "prompt_token_target_error": 11,
+      "early_eos": false,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": false,
+      "speed_sample_complete": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "arith_add",
+      "category": "arithmetic",
+      "group_id": "quality_4_0",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "45",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Compute 17 + 28. Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318681.140730926,
+      "content": "45",
+      "reasoning": "45",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 25,
+        "total_tokens": 29,
+        "completion_tokens": 4,
+        "completion_tokens_details": {
+          "reasoning_tokens": 1
+        }
+      },
+      "end_s": 318687.444847871,
+      "first_token_s": 318686.286351327,
+      "last_token_s": 318686.890362045,
+      "ttft_s": 5.145620401017368,
+      "elapsed_s": 6.3041169450152665,
+      "decode_s": 0.6040107179433107,
+      "decode_tokens_per_s": 6.622399042222656,
+      "stream_event_gap_p50_s": 0.6040107179433107,
+      "stream_event_gap_p95_s": 0.6040107179433107,
+      "stream_events": 2,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "arith_sub",
+      "category": "arithmetic",
+      "group_id": "quality_4_0",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "54",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Compute 91 - 37. Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318681.14095944,
+      "content": "54",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 25,
+        "total_tokens": 28,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 318686.890154871,
+      "first_token_s": 318686.889985148,
+      "last_token_s": 318686.889985148,
+      "ttft_s": 5.749025708006229,
+      "elapsed_s": 5.749195431009866,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "arith_mul",
+      "category": "arithmetic",
+      "group_id": "quality_4_0",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "91",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Compute 13 * 7. Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318681.140467044,
+      "content": "91",
+      "reasoning": "91",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 25,
+        "total_tokens": 29,
+        "completion_tokens": 4,
+        "completion_tokens_details": {
+          "reasoning_tokens": 1
+        }
+      },
+      "end_s": 318687.444769141,
+      "first_token_s": 318686.286264922,
+      "last_token_s": 318686.890111448,
+      "ttft_s": 5.1457978779799305,
+      "elapsed_s": 6.304302096948959,
+      "decode_s": 0.6038465260062367,
+      "decode_tokens_per_s": 6.624199739055363,
+      "stream_event_gap_p50_s": 0.6038465260062367,
+      "stream_event_gap_p95_s": 0.6038465260062367,
+      "stream_events": 2,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "arith_div",
+      "category": "arithmetic",
+      "group_id": "quality_4_0",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "12",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Compute 144 / 12. Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318681.140232448,
+      "content": "12",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 25,
+        "total_tokens": 28,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 318686.890382734,
+      "first_token_s": 318686.890259891,
+      "last_token_s": 318686.890259891,
+      "ttft_s": 5.750027442991268,
+      "elapsed_s": 5.7501502860104665,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "arith_mod",
+      "category": "arithmetic",
+      "group_id": "quality_4_1",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "2",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Compute the remainder of 83 divided by 9. Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318687.448810477,
+      "content": "2",
+      "reasoning": "83 = 9*9+2 \u2192 2",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 29,
+        "total_tokens": 43,
+        "completion_tokens": 14,
+        "completion_tokens_details": {
+          "reasoning_tokens": 11
+        }
+      },
+      "end_s": 318696.334067113,
+      "first_token_s": 318693.155212527,
+      "last_token_s": 318696.333932427,
+      "ttft_s": 5.706402050040197,
+      "elapsed_s": 8.885256636014674,
+      "decode_s": 3.1787198999663815,
+      "decode_tokens_per_s": 4.40428865725101,
+      "stream_event_gap_p50_s": 0.3077551330206916,
+      "stream_event_gap_p95_s": 0.6703706401982344,
+      "stream_events": 8,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "instr_upper",
+      "category": "instruction",
+      "group_id": "quality_4_1",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "CEDAR",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Write the word cedar in uppercase. Answer with that word only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318687.449168478,
+      "content": "CEDAR",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 25,
+        "total_tokens": 29,
+        "completion_tokens": 4,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 318694.482244848,
+      "first_token_s": 318693.836090214,
+      "last_token_s": 318693.836090214,
+      "ttft_s": 6.386921736004297,
+      "elapsed_s": 7.033076369960327,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "instr_reverse",
+      "category": "instruction",
+      "group_id": "quality_4_1",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "pmal",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Reverse the characters in 'lamp'. Answer with the result only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318687.44899103,
+      "content": "maip",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 25,
+        "total_tokens": 29,
+        "completion_tokens": 4,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 318695.116560879,
+      "first_token_s": 318693.835942704,
+      "last_token_s": 318694.48195122,
+      "ttft_s": 6.386951674008742,
+      "elapsed_s": 7.667569848999847,
+      "decode_s": 0.6460085160215385,
+      "decode_tokens_per_s": 6.191868838872453,
+      "stream_event_gap_p50_s": 0.6460085160215385,
+      "stream_event_gap_p95_s": 0.6460085160215385,
+      "stream_events": 2,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": false,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": false,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "instr_first",
+      "category": "instruction",
+      "group_id": "quality_4_1",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "red",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "From red, blue, green, give the first color. Answer with one word only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318687.448530504,
+      "content": "Red",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 30,
+        "total_tokens": 33,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 318693.836256831,
+      "first_token_s": 318693.836152553,
+      "last_token_s": 318693.836152553,
+      "ttft_s": 6.38762204896193,
+      "elapsed_s": 6.387726326996926,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": false,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": false,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "instr_count",
+      "category": "instruction",
+      "group_id": "quality_4_2",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "4",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "How many words are in 'one two three four'? Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318696.33815128,
+      "content": "4",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 29,
+        "total_tokens": 32,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 318704.941644111,
+      "first_token_s": 318704.94152778,
+      "last_token_s": 318704.94152778,
+      "ttft_s": 8.603376500017475,
+      "elapsed_s": 8.603492830996402,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "instr_sort",
+      "category": "instruction",
+      "group_id": "quality_4_2",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "a,b,c",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Sort the letters c, a, b alphabetically. Answer with comma-separated letters and no spaces.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318696.337855598,
+      "content": "a,b,c",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 37,
+        "completion_tokens": 5,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 318705.548527933,
+      "first_token_s": 318704.941464079,
+      "last_token_s": 318705.548381886,
+      "ttft_s": 8.603608481003903,
+      "elapsed_s": 9.210672335000709,
+      "decode_s": 0.6069178069592454,
+      "decode_tokens_per_s": 8.238347833375979,
+      "stream_event_gap_p50_s": 0.6069178069592454,
+      "stream_event_gap_p95_s": 0.6069178069592454,
+      "stream_events": 2,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "code_python",
+      "category": "code",
+      "group_id": "quality_4_2",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "10",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "In Python, what does sum([2, 3, 5]) return? Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318696.337661719,
+      "content": "10",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 35,
+        "total_tokens": 38,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 318704.941583346,
+      "first_token_s": 318704.307099586,
+      "last_token_s": 318704.307099586,
+      "ttft_s": 7.969437866995577,
+      "elapsed_s": 8.603921626985539,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "code_slice",
+      "category": "code",
+      "group_id": "quality_4_2",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "lan",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "In Python, what is 'planet'[1:4]? Answer with the substring only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318696.337464394,
+      "content": "`'lan'`",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 30,
+        "total_tokens": 37,
+        "completion_tokens": 7,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 318705.864364856,
+      "first_token_s": 318704.30724886,
+      "last_token_s": 318705.548501994,
+      "ttft_s": 7.969784466025885,
+      "elapsed_s": 9.526900461991318,
+      "decode_s": 1.241253133979626,
+      "decode_tokens_per_s": 5.63946209550106,
+      "stream_event_gap_p50_s": 0.620626566989813,
+      "stream_event_gap_p95_s": 0.6327994197781663,
+      "stream_events": 3,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": false,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": false,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "code_len",
+      "category": "code",
+      "group_id": "quality_4_3",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "2",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "In Python, what does len({'a': 1, 'b': 2}) return? Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318705.868763391,
+      "content": "2",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 38,
+        "total_tokens": 41,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 318714.83185663,
+      "first_token_s": 318714.831560177,
+      "last_token_s": 318714.831560177,
+      "ttft_s": 8.96279678598512,
+      "elapsed_s": 8.963093238999136,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "code_bool",
+      "category": "code",
+      "group_id": "quality_4_3",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "False",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "In Python, what is bool([])? Answer True or False only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318705.869015751,
+      "content": "False",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 318714.831720031,
+      "first_token_s": 318714.83143021,
+      "last_token_s": 318714.83143021,
+      "ttft_s": 8.962414458976127,
+      "elapsed_s": 8.962704279983882,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "code_range",
+      "category": "code",
+      "group_id": "quality_4_3",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "[0, 1, 2]",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "In Python, what is list(range(3))? Answer with the list literal only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318705.86852622,
+      "content": "[0, 1, 2]",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 29,
+        "total_tokens": 40,
+        "completion_tokens": 11,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 318716.728403949,
+      "first_token_s": 318714.142735536,
+      "last_token_s": 318716.728271227,
+      "ttft_s": 8.274209316004999,
+      "elapsed_s": 10.859877729031723,
+      "decode_s": 2.585535691003315,
+      "decode_tokens_per_s": 4.2544374994612655,
+      "stream_event_gap_p50_s": 0.6359262329933699,
+      "stream_event_gap_p95_s": 0.6812678655260243,
+      "stream_events": 5,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "retrieval_short_1",
+      "category": "retrieval",
+      "group_id": "quality_4_3",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "BLUE-ORCHID-7319",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Fact: the access code is BLUE-ORCHID-7319. What is the access code? Answer with the code only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318705.869286185,
+      "content": "BLUE-ORCHID-7319",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 40,
+        "total_tokens": 51,
+        "completion_tokens": 11,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 318717.020679105,
+      "first_token_s": 318714.831691627,
+      "last_token_s": 318717.02058718,
+      "ttft_s": 8.962405441969167,
+      "elapsed_s": 11.151392920000944,
+      "decode_s": 2.1888955530012026,
+      "decode_tokens_per_s": 5.025365410842861,
+      "stream_event_gap_p50_s": 0.6297996965004131,
+      "stream_event_gap_p95_s": 0.6367721862450708,
+      "stream_events": 5,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "retrieval_short_2",
+      "category": "retrieval",
+      "group_id": "quality_4_4",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "Sable Meridian",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Fact: the ship's name is Sable Meridian. What is the ship's name? Answer with the name only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318717.02469929,
+      "content": "Sable Meridian",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 37,
+        "total_tokens": 43,
+        "completion_tokens": 6,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 318727.538901943,
+      "first_token_s": 318726.321344441,
+      "last_token_s": 318726.952705071,
+      "ttft_s": 9.296645150985569,
+      "elapsed_s": 10.514202653022949,
+      "decode_s": 0.6313606300391257,
+      "decode_tokens_per_s": 9.503284992015066,
+      "stream_event_gap_p50_s": 0.6313606300391257,
+      "stream_event_gap_p95_s": 0.6313606300391257,
+      "stream_events": 2,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "retrieval_short_3",
+      "category": "retrieval",
+      "group_id": "quality_4_4",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "RQ-218",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Fact: the sample's label is RQ-218. What is the sample's label? Answer with the label only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318717.025562902,
+      "content": "RQ-218",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 37,
+        "total_tokens": 43,
+        "completion_tokens": 6,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 318727.538977516,
+      "first_token_s": 318726.321425495,
+      "last_token_s": 318726.952793639,
+      "ttft_s": 9.295862593047787,
+      "elapsed_s": 10.513414614018984,
+      "decode_s": 0.6313681439496577,
+      "decode_tokens_per_s": 9.503171893446705,
+      "stream_event_gap_p50_s": 0.6313681439496577,
+      "stream_event_gap_p95_s": 0.6313681439496577,
+      "stream_events": 2,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "retrieval_short_4",
+      "category": "retrieval",
+      "group_id": "quality_4_4",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "Oslo",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Fact: the warehouse is in Oslo. In which city is the warehouse? Answer with the city only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318717.025234738,
+      "content": "Oslo",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 33,
+        "total_tokens": 37,
+        "completion_tokens": 4,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 318726.952990474,
+      "first_token_s": 318726.321479578,
+      "last_token_s": 318726.321479578,
+      "ttft_s": 9.296244839963038,
+      "elapsed_s": 9.927755735989194,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "retrieval_short_5",
+      "category": "retrieval",
+      "group_id": "quality_4_4",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "Thursday",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Fact: the appointment is on Thursday. On which day is the appointment? Answer with the day only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318717.024962751,
+      "content": "Thursday",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 33,
+        "total_tokens": 36,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 318725.643682739,
+      "first_token_s": 318725.643580014,
+      "last_token_s": 318725.643580014,
+      "ttft_s": 8.618617262982298,
+      "elapsed_s": 8.618719987978693,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "tool_order_status",
+      "category": "tool",
+      "group_id": "tool",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": null,
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 256,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_order_status",
+              "description": "Look up the status of an order by its ID.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "order_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "order_id"
+                ]
+              }
+            }
+          }
+        ],
+        "tool_choice": "auto"
+      },
+      "prompt": "Check the status of order A-1042 using the order status tool.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 318727.542323419,
+      "content": "",
+      "reasoning": "",
+      "tool_calls": [
+        {
+          "id": "chatcmpl-tool-a002135171830061",
+          "name": "get_order_status",
+          "arguments": "{\"order_id\": \"A-1042\"}"
+        }
+      ],
+      "finish_reason": "tool_calls",
+      "usage": {
+        "prompt_tokens": 177,
+        "total_tokens": 194,
+        "completion_tokens": 17,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 318737.486132004,
+      "first_token_s": 318736.009531616,
+      "last_token_s": 318737.485990154,
+      "ttft_s": 8.467208196991123,
+      "elapsed_s": 9.943808584997896,
+      "decode_s": 1.4764585379743949,
+      "decode_tokens_per_s": 11.514038195290533,
+      "stream_event_gap_p50_s": 0.2935961470066104,
+      "stream_event_gap_p95_s": 0.5572113401343813,
+      "stream_events": 5,
+      "prompt_token_target_error": null,
+      "early_eos": false,
+      "passed": true,
+      "tool_call_success": true,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    }
+  ],
+  "summary": {
+    "request_count": 26,
+    "valid": true,
+    "passed": false,
+    "early_eos_count": 20,
+    "groups": {
+      "short_1": {
+        "requests": 1,
+        "valid_requests": 1,
+        "aggregate_decode_tokens_per_s": 6.634912589437256,
+        "per_request_decode_p50": 6.634912589437256,
+        "per_request_decode_p95": 6.634912589437256,
+        "ttft_p50_s": 2.7528157100314274,
+        "ttft_p95_s": 2.7528157100314274,
+        "fairness_min_max_ratio": 1.0,
+        "early_eos_count": 0
+      },
+      "short_4": {
+        "requests": 4,
+        "valid_requests": 4,
+        "aggregate_decode_tokens_per_s": 10.774014956318418,
+        "per_request_decode_p50": 3.6523682166197977,
+        "per_request_decode_p95": 3.6829774797298884,
+        "ttft_p50_s": 8.847825639008079,
+        "ttft_p95_s": 8.848542759002886,
+        "fairness_min_max_ratio": 0.7583690101497131,
+        "early_eos_count": 0
+      },
+      "quality_4_0": {
+        "requests": 4,
+        "valid_requests": 4,
+        "aggregate_decode_tokens_per_s": 23.175081402878877,
+        "per_request_decode_p50": 6.623299390639009,
+        "per_request_decode_p95": 6.624109704213727,
+        "ttft_p50_s": 5.44741179299308,
+        "ttft_p95_s": 5.7498771827435124,
+        "fairness_min_max_ratio": 0.999728163868295,
+        "early_eos_count": 4
+      },
+      "quality_4_1": {
+        "requests": 4,
+        "valid_requests": 4,
+        "aggregate_decode_tokens_per_s": 7.864801173662518,
+        "per_request_decode_p50": 5.298078748061732,
+        "per_request_decode_p95": 6.102489829791381,
+        "ttft_p50_s": 6.386936705006519,
+        "ttft_p95_s": 6.387521492718951,
+        "fairness_min_max_ratio": 0.7113019949003049,
+        "early_eos_count": 4
+      },
+      "quality_4_2": {
+        "requests": 4,
+        "valid_requests": 4,
+        "aggregate_decode_tokens_per_s": 14.499730211672306,
+        "per_request_decode_p50": 6.938904964438519,
+        "per_request_decode_p95": 8.108403546482233,
+        "ttft_p50_s": 8.28658048302168,
+        "ttft_p95_s": 8.603573683855938,
+        "fairness_min_max_ratio": 0.6845379934862588,
+        "early_eos_count": 4
+      },
+      "quality_4_3": {
+        "requests": 4,
+        "valid_requests": 4,
+        "aggregate_decode_tokens_per_s": 9.729479995366873,
+        "per_request_decode_p50": 4.639901455152064,
+        "per_request_decode_p95": 4.986819015273781,
+        "ttft_p50_s": 8.962409950472647,
+        "ttft_p95_s": 8.96273943693377,
+        "fairness_min_max_ratio": 0.8465926657356655,
+        "early_eos_count": 4
+      },
+      "quality_4_4": {
+        "requests": 4,
+        "valid_requests": 4,
+        "aggregate_decode_tokens_per_s": 14.512528465586897,
+        "per_request_decode_p50": 9.503228442730887,
+        "per_request_decode_p95": 9.503279337086648,
+        "ttft_p50_s": 9.296053716505412,
+        "ttft_p95_s": 9.29658510433219,
+        "fairness_min_max_ratio": 0.9999880990027705,
+        "early_eos_count": 4
+      },
+      "tool": {
+        "requests": 1,
+        "valid_requests": 1,
+        "aggregate_decode_tokens_per_s": 11.514038195290533,
+        "per_request_decode_p50": 11.514038195290533,
+        "per_request_decode_p95": 11.514038195290533,
+        "ttft_p50_s": 8.467208196991123,
+        "ttft_p95_s": 8.467208196991123,
+        "fairness_min_max_ratio": 1.0,
+        "early_eos_count": 0
+      }
+    }
+  },
+  "after_requests": [
+    {
+      "pid": 327411,
+      "rank": 0,
+      "generation": "3c8c718545da4c89b4967f5850628e7b",
+      "mode": "graph",
+      "candidate": "native_disk_v31",
+      "digest": "3bcfb4382d177e9ead962717793ebdc6fbda2641e047c31acf24268e089a2f9b",
+      "graphs_dirty": false,
+      "weight_storage_digest": "b2eebbf2f9b2c1033c28c49970002310c27b5e2fec52b6a6c601f8cb85897aa3",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v31": {
+          "native_name": "reconstruction_v31",
+          "native_digest": "35dac5dddb22612a754dd935f65323482655b2482680fb558d8bfc34a70eb5c3",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 144,
+        "compact_tokens": 11700,
+        "fallback_calls": 46,
+        "max_compact_tokens": 177
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 1376,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R800:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R800:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R800:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R800:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R800:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R800:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R872:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R872:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R872:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R872:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R872:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R872:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R520:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R520:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R520:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R520:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R520:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R520:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R232:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R232:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R232:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R232:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R232:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R232:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R848:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R848:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R848:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R848:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R848:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R848:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R264:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R264:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R264:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R264:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R264:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R264:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 688,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      }
+    },
+    {
+      "pid": 327821,
+      "rank": 1,
+      "generation": "3c8c718545da4c89b4967f5850628e7b",
+      "mode": "graph",
+      "candidate": "native_disk_v31",
+      "digest": "3bcfb4382d177e9ead962717793ebdc6fbda2641e047c31acf24268e089a2f9b",
+      "graphs_dirty": false,
+      "weight_storage_digest": "9e4d83b49d88029af1b68bd56d76e9ee964af7f6c8da34505ca0574f5ff902ee",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v31": {
+          "native_name": "reconstruction_v31",
+          "native_digest": "35dac5dddb22612a754dd935f65323482655b2482680fb558d8bfc34a70eb5c3",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 144,
+        "compact_tokens": 11700,
+        "fallback_calls": 46,
+        "max_compact_tokens": 177
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 1376,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R800:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R800:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R800:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R800:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R800:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R800:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R872:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R872:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R872:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R872:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R872:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R872:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R520:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R520:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R520:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R520:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R520:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R520:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R232:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R232:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R232:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R232:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R232:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R232:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R848:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R848:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R848:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R848:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R848:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R848:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R264:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R264:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R264:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R264:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R264:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R264:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 688,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      }
+    },
+    {
+      "pid": 328263,
+      "rank": 2,
+      "generation": "3c8c718545da4c89b4967f5850628e7b",
+      "mode": "graph",
+      "candidate": "native_disk_v31",
+      "digest": "3bcfb4382d177e9ead962717793ebdc6fbda2641e047c31acf24268e089a2f9b",
+      "graphs_dirty": false,
+      "weight_storage_digest": "589a47f26b97beb0009d6f28866c10a7f39c5c8eaf5f217b826428e050803e96",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v31": {
+          "native_name": "reconstruction_v31",
+          "native_digest": "35dac5dddb22612a754dd935f65323482655b2482680fb558d8bfc34a70eb5c3",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 144,
+        "compact_tokens": 11700,
+        "fallback_calls": 46,
+        "max_compact_tokens": 177
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 1376,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R800:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R800:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R800:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R800:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R800:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R800:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R872:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R872:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R872:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R872:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R872:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R872:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R520:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R520:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R520:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R520:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R520:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R520:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R232:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R232:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R232:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R232:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R232:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R232:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R848:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R848:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R848:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R848:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R848:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R848:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R264:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R264:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R264:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R264:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R264:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R264:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 688,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      }
+    },
+    {
+      "pid": 328726,
+      "rank": 3,
+      "generation": "3c8c718545da4c89b4967f5850628e7b",
+      "mode": "graph",
+      "candidate": "native_disk_v31",
+      "digest": "3bcfb4382d177e9ead962717793ebdc6fbda2641e047c31acf24268e089a2f9b",
+      "graphs_dirty": false,
+      "weight_storage_digest": "ee37b0c7a546e73a8b2fc665a0118b4fcfcc247c0e3cf138fe8db20bfb597598",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v31": {
+          "native_name": "reconstruction_v31",
+          "native_digest": "35dac5dddb22612a754dd935f65323482655b2482680fb558d8bfc34a70eb5c3",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 144,
+        "compact_tokens": 11700,
+        "fallback_calls": 46,
+        "max_compact_tokens": 177
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 1376,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R800:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R800:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R800:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R800:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R800:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R800:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R872:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R872:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R872:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R872:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R872:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R872:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R520:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R520:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R520:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R520:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R520:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R520:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R232:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R232:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R232:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R232:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R232:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R232:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R848:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R848:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R848:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R848:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R848:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R848:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R264:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R264:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R264:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R264:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R264:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R264:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 688,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,814 @@
+{
+  "complete": true,
+  "scope": "one real expert per layer, synthetic activations, prepared topk1 routing; device launch intervals",
+  "quality_evaluated": false,
+  "tokens": 8,
+  "warmups": 3,
+  "samples": 9,
+  "records": [
+    {
+      "build_options": {
+        "namespace": "glm_reconstruction_v29",
+        "version": 29,
+        "output_columns": 128,
+        "helper_package": "glm_reconstruction_v29_helpers",
+        "tile_pipeline": true,
+        "all_bits": true,
+        "prefill_native": true,
+        "fused_moe": true,
+        "prepared_weight_layout": true,
+        "pair_scale_groups": true
+      },
+      "provenance_sha256": "ad60872d878a7c752ad51f239c26b31c244d3561d274e148681f42e9b1a2b452",
+      "tensor_prefix": "model.language_model.layers.10.mlp.experts.0.",
+      "checkpoint_tensor_hashes": {
+        "gate": "2734b3b42cb2832e8640442750b35dcb34e184f0ad000b6b137365ea3e4cf0b5",
+        "up": "b14ceb69212e93cb8054bf7a7a8b14cc3f8ea54db82a83e715dfb5b6f9a02bdd",
+        "down": "06b93c79698b761d88d23f296aa4ee1b16dc1b86d03e61527d59593fec669cf3"
+      },
+      "weight_bits": 3,
+      "activation_bits": 8,
+      "stage_ms": {
+        "input_quant_once": {
+          "median_ms": 0.12505200505256653,
+          "samples_ms": [
+            0.16335999965667725,
+            0.12440100312232971,
+            0.12437500059604645,
+            0.12505200505256653,
+            0.1249219998717308,
+            0.12427099794149399,
+            0.12770800292491913,
+            0.12575499713420868,
+            0.12567700445652008
+          ]
+        },
+        "gate_up_swiglu_quant": {
+          "median_ms": 1.8542439937591553,
+          "samples_ms": [
+            1.8753900527954102,
+            1.8518489599227905,
+            1.8510420322418213,
+            1.8558850288391113,
+            1.8542439937591553,
+            1.8533329963684082,
+            1.8558599948883057,
+            1.8526300191879272,
+            1.8546359539031982
+          ]
+        },
+        "down_weighted_reduce": {
+          "median_ms": 0.8825259804725647,
+          "samples_ms": [
+            0.8830199837684631,
+            0.8807550072669983,
+            0.9052339792251587,
+            0.8813289999961853,
+            0.8825259804725647,
+            0.8829690217971802,
+            0.8838539719581604,
+            0.8806769847869873,
+            0.8806250095367432
+          ]
+        }
+      }
+    },
+    {
+      "build_options": {
+        "namespace": "glm_reconstruction_v29",
+        "version": 29,
+        "output_columns": 128,
+        "helper_package": "glm_reconstruction_v29_helpers",
+        "tile_pipeline": true,
+        "all_bits": true,
+        "prefill_native": true,
+        "fused_moe": true,
+        "prepared_weight_layout": true,
+        "pair_scale_groups": true
+      },
+      "provenance_sha256": "ad60872d878a7c752ad51f239c26b31c244d3561d274e148681f42e9b1a2b452",
+      "tensor_prefix": "model.language_model.layers.10.mlp.experts.0.",
+      "checkpoint_tensor_hashes": {
+        "gate": "2734b3b42cb2832e8640442750b35dcb34e184f0ad000b6b137365ea3e4cf0b5",
+        "up": "b14ceb69212e93cb8054bf7a7a8b14cc3f8ea54db82a83e715dfb5b6f9a02bdd",
+        "down": "06b93c79698b761d88d23f296aa4ee1b16dc1b86d03e61527d59593fec669cf3"
+      },
+      "weight_bits": 3,
+      "activation_bits": 4,
+      "stage_ms": {
+        "input_quant_once": {
+          "median_ms": 0.11437500268220901,
+          "samples_ms": [
+            0.489452987909317,
+            0.1145310029387474,
+            0.11427100002765656,
+            0.11414100229740143,
+            0.11427100002765656,
+            0.11437500268220901,
+            0.11627600342035294,
+            0.11651100218296051,
+            0.11377599835395813
+          ]
+        },
+        "gate_up_swiglu_quant": {
+          "median_ms": 1.1153119802474976,
+          "samples_ms": [
+            1.1344269514083862,
+            1.1457289457321167,
+            1.114974021911621,
+            1.115468978881836,
+            1.1153119802474976,
+            1.1159900426864624,
+            1.1152609586715698,
+            1.1144269704818726,
+            1.1150000095367432
+          ]
+        },
+        "down_weighted_reduce": {
+          "median_ms": 0.5191670060157776,
+          "samples_ms": [
+            0.5193229913711548,
+            0.5197910070419312,
+            0.5191670060157776,
+            0.5192710161209106,
+            0.5191149711608887,
+            0.5193229913711548,
+            0.5190619826316833,
+            0.5189059972763062,
+            0.518775999546051
+          ]
+        }
+      }
+    },
+    {
+      "build_options": {
+        "namespace": "glm_reconstruction_v31",
+        "version": 31,
+        "output_columns": 128,
+        "helper_package": "glm_reconstruction_v31_helpers",
+        "tile_pipeline": true,
+        "all_bits": true,
+        "prefill_native": true,
+        "fused_moe": true,
+        "prepared_weight_layout": true,
+        "pair_scale_groups": true
+      },
+      "provenance_sha256": "8221d9b4797eb42cc619a357525c96febda1f422b899bbffa3a611c7bc85791a",
+      "tensor_prefix": "model.language_model.layers.10.mlp.experts.0.",
+      "checkpoint_tensor_hashes": {
+        "gate": "2734b3b42cb2832e8640442750b35dcb34e184f0ad000b6b137365ea3e4cf0b5",
+        "up": "b14ceb69212e93cb8054bf7a7a8b14cc3f8ea54db82a83e715dfb5b6f9a02bdd",
+        "down": "06b93c79698b761d88d23f296aa4ee1b16dc1b86d03e61527d59593fec669cf3"
+      },
+      "weight_bits": 3,
+      "activation_bits": 8,
+      "stage_ms": {
+        "input_quant_once": {
+          "median_ms": 0.12479099631309509,
+          "samples_ms": [
+            0.23512999713420868,
+            0.12476599961519241,
+            0.12481799721717834,
+            0.125,
+            0.12502600252628326,
+            0.12416599690914154,
+            0.12450499832630157,
+            0.12460900098085403,
+            0.12479099631309509
+          ]
+        },
+        "gate_up_swiglu_quant": {
+          "median_ms": 1.8236459493637085,
+          "samples_ms": [
+            1.8448959589004517,
+            1.822759985923767,
+            1.8216140270233154,
+            1.8464839458465576,
+            1.8236459493637085,
+            1.824193000793457,
+            1.821640968322754,
+            1.8228390216827393,
+            1.8240890502929688
+          ]
+        },
+        "down_weighted_reduce": {
+          "median_ms": 0.8634380102157593,
+          "samples_ms": [
+            0.8636199831962585,
+            0.8632820248603821,
+            0.863906979560852,
+            0.8637499809265137,
+            0.8629950284957886,
+            0.8633599877357483,
+            0.8642709851264954,
+            0.8634380102157593,
+            0.8632810115814209
+          ]
+        }
+      }
+    },
+    {
+      "build_options": {
+        "namespace": "glm_reconstruction_v31",
+        "version": 31,
+        "output_columns": 128,
+        "helper_package": "glm_reconstruction_v31_helpers",
+        "tile_pipeline": true,
+        "all_bits": true,
+        "prefill_native": true,
+        "fused_moe": true,
+        "prepared_weight_layout": true,
+        "pair_scale_groups": true
+      },
+      "provenance_sha256": "8221d9b4797eb42cc619a357525c96febda1f422b899bbffa3a611c7bc85791a",
+      "tensor_prefix": "model.language_model.layers.10.mlp.experts.0.",
+      "checkpoint_tensor_hashes": {
+        "gate": "2734b3b42cb2832e8640442750b35dcb34e184f0ad000b6b137365ea3e4cf0b5",
+        "up": "b14ceb69212e93cb8054bf7a7a8b14cc3f8ea54db82a83e715dfb5b6f9a02bdd",
+        "down": "06b93c79698b761d88d23f296aa4ee1b16dc1b86d03e61527d59593fec669cf3"
+      },
+      "weight_bits": 3,
+      "activation_bits": 4,
+      "stage_ms": {
+        "input_quant_once": {
+          "median_ms": 0.11424499750137329,
+          "samples_ms": [
+            0.26169198751449585,
+            0.11424499750137329,
+            0.11356800049543381,
+            0.11434900015592575,
+            0.11325500160455704,
+            0.1138020008802414,
+            0.11648400127887726,
+            0.11698000133037567,
+            0.11390600353479385
+          ]
+        },
+        "gate_up_swiglu_quant": {
+          "median_ms": 1.1084109544754028,
+          "samples_ms": [
+            1.13447904586792,
+            1.108620047569275,
+            1.1089320182800293,
+            1.1084630489349365,
+            1.1082810163497925,
+            1.1077860593795776,
+            1.1084109544754028,
+            1.1076819896697998,
+            1.10807204246521
+          ]
+        },
+        "down_weighted_reduce": {
+          "median_ms": 0.5112760066986084,
+          "samples_ms": [
+            0.5106769800186157,
+            0.5317190289497375,
+            0.5112760066986084,
+            0.509323000907898,
+            0.5115630030632019,
+            0.5095829963684082,
+            0.5113540291786194,
+            0.5105990171432495,
+            0.5120310187339783
+          ]
+        }
+      }
+    },
+    {
+      "build_options": {
+        "namespace": "glm_reconstruction_v29",
+        "version": 29,
+        "output_columns": 128,
+        "helper_package": "glm_reconstruction_v29_helpers",
+        "tile_pipeline": true,
+        "all_bits": true,
+        "prefill_native": true,
+        "fused_moe": true,
+        "prepared_weight_layout": true,
+        "pair_scale_groups": true
+      },
+      "provenance_sha256": "ad60872d878a7c752ad51f239c26b31c244d3561d274e148681f42e9b1a2b452",
+      "tensor_prefix": "model.language_model.layers.11.mlp.experts.0.",
+      "checkpoint_tensor_hashes": {
+        "gate": "41834ee72952ece1c510d641ce28d9e993ed14d17fa4850e3fad23e1df70602f",
+        "up": "0de3634633c4ab24257cad04ef1cc5292c052d4a40469187cb9aacbfd75742d1",
+        "down": "8777accd42cbd49b3ea965b8c9332c41f76b2f6bc9dcaed46610f6a8c25112e1"
+      },
+      "weight_bits": 4,
+      "activation_bits": 8,
+      "stage_ms": {
+        "input_quant_once": {
+          "median_ms": 0.12473999708890915,
+          "samples_ms": [
+            0.26242199540138245,
+            0.12468799948692322,
+            0.12520800530910492,
+            0.12512999773025513,
+            0.12468700110912323,
+            0.12450499832630157,
+            0.12476599961519241,
+            0.12473999708890915,
+            0.12442699819803238
+          ]
+        },
+        "gate_up_swiglu_quant": {
+          "median_ms": 1.542968988418579,
+          "samples_ms": [
+            1.562474012374878,
+            1.5425519943237305,
+            1.540624976158142,
+            1.560884952545166,
+            1.5417699813842773,
+            1.5424220561981201,
+            1.542968988418579,
+            1.5433330535888672,
+            1.5430209636688232
+          ]
+        },
+        "down_weighted_reduce": {
+          "median_ms": 0.7271869778633118,
+          "samples_ms": [
+            0.7277340292930603,
+            0.7253119945526123,
+            0.7252609729766846,
+            0.728177011013031,
+            0.7271869778633118,
+            0.7273179888725281,
+            0.7270830273628235,
+            0.725130021572113,
+            0.7290629744529724
+          ]
+        }
+      }
+    },
+    {
+      "build_options": {
+        "namespace": "glm_reconstruction_v29",
+        "version": 29,
+        "output_columns": 128,
+        "helper_package": "glm_reconstruction_v29_helpers",
+        "tile_pipeline": true,
+        "all_bits": true,
+        "prefill_native": true,
+        "fused_moe": true,
+        "prepared_weight_layout": true,
+        "pair_scale_groups": true
+      },
+      "provenance_sha256": "ad60872d878a7c752ad51f239c26b31c244d3561d274e148681f42e9b1a2b452",
+      "tensor_prefix": "model.language_model.layers.11.mlp.experts.0.",
+      "checkpoint_tensor_hashes": {
+        "gate": "41834ee72952ece1c510d641ce28d9e993ed14d17fa4850e3fad23e1df70602f",
+        "up": "0de3634633c4ab24257cad04ef1cc5292c052d4a40469187cb9aacbfd75742d1",
+        "down": "8777accd42cbd49b3ea965b8c9332c41f76b2f6bc9dcaed46610f6a8c25112e1"
+      },
+      "weight_bits": 4,
+      "activation_bits": 4,
+      "stage_ms": {
+        "input_quant_once": {
+          "median_ms": 0.1145320013165474,
+          "samples_ms": [
+            0.25968700647354126,
+            0.1145320013165474,
+            0.11419200152158737,
+            0.11437500268220901,
+            0.11393199861049652,
+            0.11598899960517883,
+            0.11723999679088593,
+            0.11682300269603729,
+            0.11369799822568893
+          ]
+        },
+        "gate_up_swiglu_quant": {
+          "median_ms": 0.8042190074920654,
+          "samples_ms": [
+            0.8515099883079529,
+            0.8203639984130859,
+            0.8039849996566772,
+            0.804714024066925,
+            0.8034369945526123,
+            0.8033599853515625,
+            0.8053910136222839,
+            0.8042190074920654,
+            0.8033069968223572
+          ]
+        },
+        "down_weighted_reduce": {
+          "median_ms": 0.36398398876190186,
+          "samples_ms": [
+            0.3637239933013916,
+            0.3642440140247345,
+            0.3836199939250946,
+            0.36398398876190186,
+            0.36333298683166504,
+            0.3633590042591095,
+            0.36494800448417664,
+            0.36559900641441345,
+            0.3637239933013916
+          ]
+        }
+      }
+    },
+    {
+      "build_options": {
+        "namespace": "glm_reconstruction_v31",
+        "version": 31,
+        "output_columns": 128,
+        "helper_package": "glm_reconstruction_v31_helpers",
+        "tile_pipeline": true,
+        "all_bits": true,
+        "prefill_native": true,
+        "fused_moe": true,
+        "prepared_weight_layout": true,
+        "pair_scale_groups": true
+      },
+      "provenance_sha256": "8221d9b4797eb42cc619a357525c96febda1f422b899bbffa3a611c7bc85791a",
+      "tensor_prefix": "model.language_model.layers.11.mlp.experts.0.",
+      "checkpoint_tensor_hashes": {
+        "gate": "41834ee72952ece1c510d641ce28d9e993ed14d17fa4850e3fad23e1df70602f",
+        "up": "0de3634633c4ab24257cad04ef1cc5292c052d4a40469187cb9aacbfd75742d1",
+        "down": "8777accd42cbd49b3ea965b8c9332c41f76b2f6bc9dcaed46610f6a8c25112e1"
+      },
+      "weight_bits": 4,
+      "activation_bits": 8,
+      "stage_ms": {
+        "input_quant_once": {
+          "median_ms": 0.12473899871110916,
+          "samples_ms": [
+            0.37775999307632446,
+            0.125,
+            0.12453100085258484,
+            0.12473899871110916,
+            0.12632900476455688,
+            0.12502700090408325,
+            0.12437500059604645,
+            0.12455800175666809,
+            0.12445300072431564
+          ]
+        },
+        "gate_up_swiglu_quant": {
+          "median_ms": 1.5105990171432495,
+          "samples_ms": [
+            1.5449219942092896,
+            1.5105470418930054,
+            1.5105990171432495,
+            1.528777003288269,
+            1.510025978088379,
+            1.5082809925079346,
+            1.5110939741134644,
+            1.5108850002288818,
+            1.5104949474334717
+          ]
+        },
+        "down_weighted_reduce": {
+          "median_ms": 0.707889974117279,
+          "samples_ms": [
+            0.7084119915962219,
+            0.7079690098762512,
+            0.707709014415741,
+            0.7084890007972717,
+            0.7078120112419128,
+            0.7078649997711182,
+            0.707889974117279,
+            0.7077609896659851,
+            0.7079690098762512
+          ]
+        }
+      }
+    },
+    {
+      "build_options": {
+        "namespace": "glm_reconstruction_v31",
+        "version": 31,
+        "output_columns": 128,
+        "helper_package": "glm_reconstruction_v31_helpers",
+        "tile_pipeline": true,
+        "all_bits": true,
+        "prefill_native": true,
+        "fused_moe": true,
+        "prepared_weight_layout": true,
+        "pair_scale_groups": true
+      },
+      "provenance_sha256": "8221d9b4797eb42cc619a357525c96febda1f422b899bbffa3a611c7bc85791a",
+      "tensor_prefix": "model.language_model.layers.11.mlp.experts.0.",
+      "checkpoint_tensor_hashes": {
+        "gate": "41834ee72952ece1c510d641ce28d9e993ed14d17fa4850e3fad23e1df70602f",
+        "up": "0de3634633c4ab24257cad04ef1cc5292c052d4a40469187cb9aacbfd75742d1",
+        "down": "8777accd42cbd49b3ea965b8c9332c41f76b2f6bc9dcaed46610f6a8c25112e1"
+      },
+      "weight_bits": 4,
+      "activation_bits": 4,
+      "stage_ms": {
+        "input_quant_once": {
+          "median_ms": 0.11437500268220901,
+          "samples_ms": [
+            0.2714579999446869,
+            0.11421900242567062,
+            0.1140109971165657,
+            0.1138020008802414,
+            0.11437500268220901,
+            0.1146870031952858,
+            0.11648400127887726,
+            0.11447899788618088,
+            0.1137240007519722
+          ]
+        },
+        "gate_up_swiglu_quant": {
+          "median_ms": 0.7957029938697815,
+          "samples_ms": [
+            0.8154429793357849,
+            0.7962239980697632,
+            0.7960150241851807,
+            0.7950530052185059,
+            0.7960940003395081,
+            0.7955210208892822,
+            0.7949479818344116,
+            0.7948960065841675,
+            0.7957029938697815
+          ]
+        },
+        "down_weighted_reduce": {
+          "median_ms": 0.35559898614883423,
+          "samples_ms": [
+            0.35609400272369385,
+            0.3842970132827759,
+            0.3565880060195923,
+            0.37325501441955566,
+            0.3553130030632019,
+            0.3552350103855133,
+            0.35447999835014343,
+            0.35559898614883423,
+            0.35559898614883423
+          ]
+        }
+      }
+    },
+    {
+      "build_options": {
+        "namespace": "glm_reconstruction_v29",
+        "version": 29,
+        "output_columns": 128,
+        "helper_package": "glm_reconstruction_v29_helpers",
+        "tile_pipeline": true,
+        "all_bits": true,
+        "prefill_native": true,
+        "fused_moe": true,
+        "prepared_weight_layout": true,
+        "pair_scale_groups": true
+      },
+      "provenance_sha256": "ad60872d878a7c752ad51f239c26b31c244d3561d274e148681f42e9b1a2b452",
+      "tensor_prefix": "model.language_model.layers.33.mlp.experts.0.",
+      "checkpoint_tensor_hashes": {
+        "gate": "18d3115d5103a8cb651f51399b6085fd6c8b8045838eda36dec36789efa5ac7c",
+        "up": "c80d065a68442f30645307f2e456e14da5abb5a9ef9bbef9987faa6491667f08",
+        "down": "1283c288c333ced54850ab6743acf137e4bacde642935019e7c556e9e9f96039"
+      },
+      "weight_bits": 2,
+      "activation_bits": 8,
+      "stage_ms": {
+        "input_quant_once": {
+          "median_ms": 0.1249219998717308,
+          "samples_ms": [
+            0.2342970073223114,
+            0.12510399520397186,
+            0.12481799721717834,
+            0.1249219998717308,
+            0.12442699819803238,
+            0.125,
+            0.12458299845457077,
+            0.125,
+            0.12432300299406052
+          ]
+        },
+        "gate_up_swiglu_quant": {
+          "median_ms": 1.7920310497283936,
+          "samples_ms": [
+            1.8277599811553955,
+            1.7916409969329834,
+            1.7953389883041382,
+            1.7919269800186157,
+            1.7951819896697998,
+            1.7915359735488892,
+            1.7920310497283936,
+            1.7922650575637817,
+            1.7916409969329834
+          ]
+        },
+        "down_weighted_reduce": {
+          "median_ms": 0.8525779843330383,
+          "samples_ms": [
+            0.8525779843330383,
+            0.850911021232605,
+            0.8520830273628235,
+            0.8517699837684631,
+            0.8719789981842041,
+            0.8526819944381714,
+            0.8525789976119995,
+            0.8526819944381714,
+            0.8522130250930786
+          ]
+        }
+      }
+    },
+    {
+      "build_options": {
+        "namespace": "glm_reconstruction_v29",
+        "version": 29,
+        "output_columns": 128,
+        "helper_package": "glm_reconstruction_v29_helpers",
+        "tile_pipeline": true,
+        "all_bits": true,
+        "prefill_native": true,
+        "fused_moe": true,
+        "prepared_weight_layout": true,
+        "pair_scale_groups": true
+      },
+      "provenance_sha256": "ad60872d878a7c752ad51f239c26b31c244d3561d274e148681f42e9b1a2b452",
+      "tensor_prefix": "model.language_model.layers.33.mlp.experts.0.",
+      "checkpoint_tensor_hashes": {
+        "gate": "18d3115d5103a8cb651f51399b6085fd6c8b8045838eda36dec36789efa5ac7c",
+        "up": "c80d065a68442f30645307f2e456e14da5abb5a9ef9bbef9987faa6491667f08",
+        "down": "1283c288c333ced54850ab6743acf137e4bacde642935019e7c556e9e9f96039"
+      },
+      "weight_bits": 2,
+      "activation_bits": 4,
+      "stage_ms": {
+        "input_quant_once": {
+          "median_ms": 0.11414100229740143,
+          "samples_ms": [
+            0.18273399770259857,
+            0.11481700092554092,
+            0.11445300281047821,
+            0.1138020008802414,
+            0.1140109971165657,
+            0.11385499686002731,
+            0.1137240007519722,
+            0.11414100229740143,
+            0.11414100229740143
+          ]
+        },
+        "gate_up_swiglu_quant": {
+          "median_ms": 1.0523960590362549,
+          "samples_ms": [
+            1.0760420560836792,
+            1.0523960590362549,
+            1.0523439645767212,
+            1.0652610063552856,
+            1.0541399717330933,
+            1.0529680252075195,
+            1.0520579814910889,
+            1.0519269704818726,
+            1.0515880584716797
+          ]
+        },
+        "down_weighted_reduce": {
+          "median_ms": 0.48794299364089966,
+          "samples_ms": [
+            0.4888800084590912,
+            0.48786500096321106,
+            0.4880729913711548,
+            0.4880470037460327,
+            0.48794299364089966,
+            0.4878639876842499,
+            0.4878639876842499,
+            0.487839013338089,
+            0.488411009311676
+          ]
+        }
+      }
+    },
+    {
+      "build_options": {
+        "namespace": "glm_reconstruction_v31",
+        "version": 31,
+        "output_columns": 128,
+        "helper_package": "glm_reconstruction_v31_helpers",
+        "tile_pipeline": true,
+        "all_bits": true,
+        "prefill_native": true,
+        "fused_moe": true,
+        "prepared_weight_layout": true,
+        "pair_scale_groups": true
+      },
+      "provenance_sha256": "8221d9b4797eb42cc619a357525c96febda1f422b899bbffa3a611c7bc85791a",
+      "tensor_prefix": "model.language_model.layers.33.mlp.experts.0.",
+      "checkpoint_tensor_hashes": {
+        "gate": "18d3115d5103a8cb651f51399b6085fd6c8b8045838eda36dec36789efa5ac7c",
+        "up": "c80d065a68442f30645307f2e456e14da5abb5a9ef9bbef9987faa6491667f08",
+        "down": "1283c288c333ced54850ab6743acf137e4bacde642935019e7c556e9e9f96039"
+      },
+      "weight_bits": 2,
+      "activation_bits": 8,
+      "stage_ms": {
+        "input_quant_once": {
+          "median_ms": 0.12484300136566162,
+          "samples_ms": [
+            0.22130200266838074,
+            0.125,
+            0.12533900141716003,
+            0.12466199696063995,
+            0.12484300136566162,
+            0.12463600188493729,
+            0.12437500059604645,
+            0.12497399747371674,
+            0.1246350035071373
+          ]
+        },
+        "gate_up_swiglu_quant": {
+          "median_ms": 1.7598700523376465,
+          "samples_ms": [
+            1.799921989440918,
+            1.76078200340271,
+            1.759323000907898,
+            1.759323000907898,
+            1.7777869701385498,
+            1.7588540315628052,
+            1.760077953338623,
+            1.7598700523376465,
+            1.7584120035171509
+          ]
+        },
+        "down_weighted_reduce": {
+          "median_ms": 0.8318750262260437,
+          "samples_ms": [
+            0.8323699831962585,
+            0.8315879702568054,
+            0.8324480056762695,
+            0.8316400051116943,
+            0.8314319849014282,
+            0.832735002040863,
+            0.8311200141906738,
+            0.8328649997711182,
+            0.8318750262260437
+          ]
+        }
+      }
+    },
+    {
+      "build_options": {
+        "namespace": "glm_reconstruction_v31",
+        "version": 31,
+        "output_columns": 128,
+        "helper_package": "glm_reconstruction_v31_helpers",
+        "tile_pipeline": true,
+        "all_bits": true,
+        "prefill_native": true,
+        "fused_moe": true,
+        "prepared_weight_layout": true,
+        "pair_scale_groups": true
+      },
+      "provenance_sha256": "8221d9b4797eb42cc619a357525c96febda1f422b899bbffa3a611c7bc85791a",
+      "tensor_prefix": "model.language_model.layers.33.mlp.experts.0.",
+      "checkpoint_tensor_hashes": {
+        "gate": "18d3115d5103a8cb651f51399b6085fd6c8b8045838eda36dec36789efa5ac7c",
+        "up": "c80d065a68442f30645307f2e456e14da5abb5a9ef9bbef9987faa6491667f08",
+        "down": "1283c288c333ced54850ab6743acf137e4bacde642935019e7c556e9e9f96039"
+      },
+      "weight_bits": 2,
+      "activation_bits": 4,
+      "stage_ms": {
+        "input_quant_once": {
+          "median_ms": 0.11395800113677979,
+          "samples_ms": [
+            0.2717190086841583,
+            0.1141669973731041,
+            0.11395800113677979,
+            0.1144540011882782,
+            0.11398400366306305,
+            0.11296900361776352,
+            0.11382800340652466,
+            0.113646000623703,
+            0.1137240007519722
+          ]
+        },
+        "gate_up_swiglu_quant": {
+          "median_ms": 1.0463279485702515,
+          "samples_ms": [
+            1.0815110206604004,
+            1.046146035194397,
+            1.045964002609253,
+            1.0463279485702515,
+            1.0459380149841309,
+            1.046718955039978,
+            1.0466669797897339,
+            1.0474480390548706,
+            1.045469045639038
+          ]
+        },
+        "down_weighted_reduce": {
+          "median_ms": 0.4794270098209381,
+          "samples_ms": [
+            0.4801560044288635,
+            0.4794270098209381,
+            0.4981769919395447,
+            0.47992199659347534,
+            0.4792709946632385,
+            0.47807300090789795,
+            0.47822898626327515,
+            0.47940099239349365,
+            0.47955799102783203
+          ]
+        }
+      }
+    }
+  ]
+}

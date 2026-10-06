@@ -1,0 +1,46 @@
+import sys,json,uuid,hashlib,time
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+from tools.glm_perf.resident_native import NativeManifest
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.reconstruction_control import compose_source
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006');build=root/'build-bf16-cast-v4'
+assert json.loads((build/'gates.json').read_text())['complete']
+def entry(path):return {'path':str(path),'sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
+source=f'''def prepare():
+ import importlib.util
+ from pathlib import Path
+ root=Path({str(build)!r})
+ spec=importlib.util.spec_from_file_location('glm_bf16_v4_helper',root/'bf16_cast.py')
+ module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+ return {{'bf16_cast_v1':module.NativeBF16Cast(root,'glm_bf16_v4')}}
+def validate(resources):
+ import torch
+ convert=resources['bf16_cast_v1']
+ value=torch.tensor([0.,-0.,1.00390625,-1.00390625,65504.,70000.,1e-30,-1e-30],device='npu')
+ actual=convert(value,torch.bfloat16);expected=value.bfloat16()
+ assert torch.equal(actual.cpu().view(torch.int16),expected.cpu().view(torch.int16))
+ return {{'passed':True,'cases':1}}
+'''
+assert json.loads((build/'compression-gates.json').read_text())['complete']
+manifest=NativeManifest({'name':'bf16_cast_v5','libraries':[entry(build/'glm_bf16_bridge_v4.so')],'assets':[entry(build/name) for name in ('glm_bf16_cast.bin','bf16_cast.py','candidate.py','gates.json')],'operators':['glm_bf16_v4::launch'],'validation_source':source})
+client=ResidentClient('http://127.0.0.1:8001',timeout=900)
+before=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+loaded=client.load_native(manifest)
+base=compose_source(Path('/home/matteius/experiments/glm-decode-flags-20261006/resident-combine.py').read_text(),'fused_int4a4','reconstruction_v41')
+extra=(build/'candidate.py').read_text().replace('def replacements(native_resources, prefill_wrapper=None):','def bf16_replacements(native_resources, prefill_wrapper=None):')
+source=base.replace('def replacements(native_resources):','def cast_base_replacements(native_resources):')+'\n'+extra+'''\ndef replacements(native_resources):
+ changes=cast_base_replacements(native_resources)
+ changes.update(bf16_replacements(native_resources['bf16_cast_v5'],prefill_wrapper=wrap_writer))
+ return changes
+'''
+(root/'native-v41-bf16-v5-candidate.py').write_text(source)
+began=time.monotonic();rows=client.switch(Control(uuid.uuid4().hex,candidate='native_v41_bf16_v5',source=source));switch_s=time.monotonic()-began
+assert sorted((r['pid'],r['weight_storage_digest']) for r in rows)==sorted((r['pid'],r['weight_storage_digest']) for r in before)
+result={'before':before,'loaded':loaded,'selected':rows,'switch_s':switch_s,'complete':False}
+response=client.request('/v1/completions',{'model':'glm53-flash-selective-w3','prompt':'def multiply(a,b): return','max_tokens':16,'ignore_eos':True,'temperature':0})
+assert response['usage']['completion_tokens']==16
+result.update(response=response,complete=True)
+(root/'native-v41-bf16-v5-load.json').write_text(json.dumps(result,indent=2))
+print('bf16_loaded_and_serving',switch_s,response['choices'][0]['text'],flush=True)

@@ -1,0 +1,7 @@
+import json
+from pathlib import Path
+from tools.glm_perf.fused_moe_probe import run
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+run(root/'build-native-fused-v38', root/'native-fused-v38-gates.json',
+    checkpoint=Path('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'),
+    real_prefixes=tuple(f'model.language_model.layers.{layer}.mlp.experts.0.' for layer in (10,11,33)))

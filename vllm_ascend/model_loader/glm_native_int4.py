@@ -14,6 +14,7 @@ from vllm.model_executor.model_loader import register_model_loader
 from vllm.model_executor.model_loader.default_loader import DefaultModelLoader
 
 from tools.glm_perf.fused_moe_profile import frozen_helper
+from tools.glm_perf.indexer_bundle import install as install_indexer_bundle
 from tools.glm_perf.native_checkpoint import INDEX, LAYOUT, MANIFEST, NativeInt4MoEMethod, selected_weights
 
 LOAD_FORMAT = "glm_native_int4"
@@ -88,6 +89,9 @@ class GlmNativeInt4Loader(DefaultModelLoader):
         for module, bank in zip(owners, banks):
             bank.native_weight_layout = LAYOUT
             module._method = NativeInt4MoEMethod(native)
+        indexers = 0
+        if "indexer_kernel_bundle" in manifest:
+            indexers = install_indexer_bundle(model, self.folder / manifest["indexer_kernel_bundle"])
         model._native_int4_load_report = {
             "layout": LAYOUT,
             "activation_bits": manifest["activation_bits"],
@@ -95,6 +99,7 @@ class GlmNativeInt4Loader(DefaultModelLoader):
             "native_code_tensors": self.native_code_tensors,
             "transformed_code_tensors": 0,
             "layout_backup_bytes": 0,
+            "aicore_bf16_indexers": indexers,
         }
         logger.info("GLM native INT4 loaded directly: %s", model._native_int4_load_report)
 

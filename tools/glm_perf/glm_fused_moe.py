@@ -13,6 +13,28 @@ from .fused_weight_layout import pack_cube
 from .glm_int4 import MAX_GROUPED_ROUTES, pack_nz_codes, packed_weight_bits
 
 
+def fused_route_metadata(weights, ids, experts, expert_offset=0):
+    """Only the stable permutation and cumulative ends consumed by our kernels."""
+    if ids.ndim != 2 or weights.shape != ids.shape or ids.dtype not in (torch.int32, torch.int64):
+        raise ValueError("fused routing requires matching [tokens, top_k] integer ids and weights")
+    if weights.device != ids.device or not 1 <= experts <= 288 or expert_offset < 0:
+        raise ValueError("invalid fused routing device or expert partition")
+    if not 1 <= ids.numel() <= MAX_GROUPED_ROUTES:
+        raise ValueError("invalid fused route count")
+    local_ids = ids.reshape(-1) - expert_offset
+    local = (local_ids >= 0) & (local_ids < experts) & (weights.reshape(-1) != 0)
+    # Clamp peer ids before narrowing. Bounded keys use AI-Core conversions;
+    # the generic descriptor also computes an unused inverse sort and cumsum.
+    keys = torch.where(local, local_ids, experts).to(torch.int32).float()
+    order = torch.argsort(keys, stable=True)
+    boundaries = torch.arange(1, experts + 1, dtype=torch.float32, device=ids.device)
+    # Counts are bounded by MAX_GROUPED_ROUTES. Boolean -> INT64 reduction
+    # dispatches an AI-CPU Cast on 310P; INT32 reduction and widening stay on
+    # AI-Core while preserving the native kernel's INT64 metadata ABI.
+    ends = (keys.unsqueeze(0) < boundaries.unsqueeze(1)).sum(dim=1, dtype=torch.int32).to(torch.int64)
+    return order.contiguous(), ends.contiguous()
+
+
 @dataclass(frozen=True)
 class FusedGeometry:
     tokens: int
@@ -100,19 +122,8 @@ class NativeFusedMoE:
         return geometry
 
     def __call__(self, x, gate_codes, gate_scales, down_codes, down_scales, weights, ids, expert_offset=0):
-        # Worker-only import preserves CPU planning and reference tests.
-        from vllm_ascend.models.qwen4_exp.grouped_expert_dispatch import build_grouped_expert_dispatch
-
         geometry = self.geometry(x, gate_codes, gate_scales, down_codes, down_scales, weights, ids)
-        sentinel = expert_offset + geometry.experts
-        selected = torch.where(weights != 0, ids, torch.full_like(ids, sentinel))
-        dispatch = build_grouped_expert_dispatch(
-            weights,
-            selected,
-            num_local_experts=geometry.experts,
-            expert_offset=expert_offset,
-            weight_dtype=torch.float32,
-        )
+        order, ends = fused_route_metadata(weights, ids, geometry.experts, expert_offset)
         return self.grouped(
             x,
             gate_codes,
@@ -120,8 +131,8 @@ class NativeFusedMoE:
             down_codes,
             down_scales,
             weights,
-            dispatch.order.contiguous(),
-            dispatch.group_list.to(torch.int64).contiguous(),
+            order,
+            ends,
             geometry,
         )
 

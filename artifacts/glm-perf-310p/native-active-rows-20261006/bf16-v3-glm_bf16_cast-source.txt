@@ -1,0 +1,95 @@
+// SPDX-License-Identifier: Apache-2.0
+// Exact BF16 bit conversion on 310P AI-Core, including unaligned tails.
+#include "kernel_operator.h"
+namespace {
+using namespace AscendC;
+constexpr int64_t TILE = 256;
+class Convert {
+ public:
+  __aicore__ inline void Run(GM_ADDR input, GM_ADDR output, int64_t elements, int64_t decode) {
+    in32_.SetGlobalBuffer(reinterpret_cast<__gm__ uint32_t*>(input));
+    in16_.SetGlobalBuffer(reinterpret_cast<__gm__ uint16_t*>(input));
+    out32_.SetGlobalBuffer(reinterpret_cast<__gm__ uint32_t*>(output));
+    out16_.SetGlobalBuffer(reinterpret_cast<__gm__ uint16_t*>(output));
+    pipe_.InitBuffer(source_, TILE * sizeof(uint32_t));
+    pipe_.InitBuffer(destination_, TILE * sizeof(uint32_t));
+    auto words = source_.Get<uint32_t>();
+    auto shorts = source_.Get<uint16_t>();
+    auto result32 = destination_.Get<uint32_t>();
+    auto result16 = destination_.Get<uint16_t>();
+    for (int64_t offset = GetBlockIdx() * TILE; offset < elements; offset += GetBlockNum() * TILE) {
+      const int32_t count = elements - offset < TILE ? elements - offset : TILE;
+      const int32_t aligned = count / 16 * 16;
+      if (aligned) {
+        if (decode) DataCopy(shorts, in16_[offset], aligned);
+        else DataCopy(words, in32_[offset], aligned);
+        SetFlag<HardEvent::MTE2_S>(EVENT_ID0);
+        WaitFlag<HardEvent::MTE2_S>(EVENT_ID0);
+        for (int32_t i = 0; i < aligned; ++i) {
+          if (decode == 1) result32.SetValue(i, static_cast<uint32_t>(shorts.GetValue(i)) << 16);
+          else if (decode == 2) result16.SetValue(i, RoundHalf(shorts.GetValue(i)));
+          else if (decode == 3) result16.SetValue(i, DecodeHalf(shorts.GetValue(i)));
+          else result16.SetValue(i, Round(words.GetValue(i)));
+        }
+        SetFlag<HardEvent::S_MTE3>(EVENT_ID0);
+        WaitFlag<HardEvent::S_MTE3>(EVENT_ID0);
+        if (decode == 1) DataCopy(out32_[offset], result32, aligned);
+        else DataCopy(out16_[offset], result16, aligned);
+        SetFlag<HardEvent::MTE3_S>(EVENT_ID0);
+        WaitFlag<HardEvent::MTE3_S>(EVENT_ID0);
+      }
+      for (int32_t i = aligned; i < count; ++i) {
+        if (decode == 1) out32_.SetValue(offset + i, static_cast<uint32_t>(in16_.GetValue(offset + i)) << 16);
+        else if (decode == 2) out16_.SetValue(offset + i, RoundHalf(in16_.GetValue(offset + i)));
+        else if (decode == 3) out16_.SetValue(offset + i, DecodeHalf(in16_.GetValue(offset + i)));
+        else out16_.SetValue(offset + i, Round(in32_.GetValue(offset + i)));
+      }
+      PipeBarrier<PIPE_ALL>();
+    }
+  }
+ private:
+  __aicore__ inline uint16_t DecodeHalf(uint16_t bits) {
+    const uint16_t sign = bits & 0x8000U;
+    const uint32_t exponent = (bits >> 7) & 255U;
+    const uint32_t mantissa = bits & 127U;
+    if (exponent == 255) return sign | (mantissa ? 0x7e00U : 0x7c00U);
+    if (exponent >= 143) return sign | 0x7c00U;
+    if (exponent >= 113) return sign | ((exponent - 112U) << 10) | (mantissa << 3);
+    if (exponent < 102) return sign;
+    const uint32_t significand = 128U + mantissa;
+    if (exponent >= 110) return sign | (significand << (exponent - 110U));
+    const uint32_t shift = 110U - exponent;
+    const uint32_t quotient = significand >> shift;
+    const uint32_t remainder = significand & ((1U << shift) - 1U);
+    const uint32_t midpoint = 1U << (shift - 1U);
+    return sign | (quotient + (remainder > midpoint || (remainder == midpoint && (quotient & 1U))));
+  }
+  __aicore__ inline uint16_t RoundHalf(uint16_t bits) {
+    const uint32_t sign = static_cast<uint32_t>(bits & 0x8000U) << 16;
+    uint32_t exponent = (bits >> 10) & 31U;
+    uint32_t mantissa = bits & 1023U;
+    if (exponent == 31) return static_cast<uint16_t>((sign >> 16) | (mantissa ? 0x7fc0U : 0x7f80U));
+    if (exponent) return Round(sign | ((exponent + 112U) << 23) | (mantissa << 13));
+    if (!mantissa) return static_cast<uint16_t>(sign >> 16);
+    exponent = 113;
+    while (mantissa < 1024) { mantissa <<= 1; --exponent; }
+    return Round(sign | (exponent << 23) | ((mantissa & 1023U) << 13));
+  }
+  __aicore__ inline uint16_t Round(uint32_t bits) {
+    if ((bits & 0x7f800000U) == 0x7f800000U && (bits & 0x007fffffU))
+      return static_cast<uint16_t>((bits >> 16 & 0x8000U) | 0x7fc0U);
+    return static_cast<uint16_t>((bits + 0x7fffU + ((bits >> 16) & 1U)) >> 16);
+  }
+  TPipe pipe_;
+  TBuf<TPosition::VECCALC> source_, destination_;
+  GlobalTensor<uint32_t> in32_, out32_;
+  GlobalTensor<uint16_t> in16_, out16_;
+};
+}
+extern "C" __global__ __aicore__ void glm_bf16_cast_v1(GM_ADDR input, GM_ADDR output, GM_ADDR config) {
+  AscendC::InitSocState();
+  auto values = reinterpret_cast<__gm__ int64_t*>(config);
+  if (values[0] <= 0 || values[1] < 0 || values[1] > 3) return;
+  Convert operation;
+  operation.Run(input, output, values[0], values[1]);
+}

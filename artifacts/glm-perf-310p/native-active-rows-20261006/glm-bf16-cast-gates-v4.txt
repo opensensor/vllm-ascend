@@ -1,0 +1,44 @@
+import sys,json,time
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+import torch,torch_npu
+from tools.glm_perf.bf16_cast import NativeBF16Cast
+from tools.glm_perf.fused_moe_profile import frozen_helper
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006');build=root/'build-bf16-cast-v4'
+torch.set_num_threads(4);torch.npu.set_device(0);torch_npu.npu.set_compile_mode(jit_compile=False)
+frozen_helper(root/'build-native-fused-v41');convert=NativeBF16Cast(build,'glm_reconstruction_v41');records=[]
+for dtype in (torch.float16,torch.float32,torch.bfloat16):
+ for target in (torch.float16,torch.float32,torch.bfloat16):
+  if dtype==target or torch.bfloat16 not in (dtype,target):continue
+  for count in (1,7,16,127,128,256,4096,32768):
+   generator=torch.Generator().manual_seed(1600+count)
+   bits=torch.randint(-(1<<31),(1<<31)-1,(count,),generator=generator,dtype=torch.int32)
+   sample=bits.view(torch.float32).to(dtype).npu()
+   expected=sample.to(target).cpu()
+   actual=convert(sample,target).cpu()
+   equal=torch.equal(actual.view(torch.int16 if target!=torch.float32 else torch.int32),expected.view(torch.int16 if target!=torch.float32 else torch.int32))
+   record={'input_dtype':str(dtype),'output_dtype':str(target),'count':count,'bitwise_equal':equal}
+   records.append(record)
+   if not equal:
+    mismatches=(actual.view(torch.int16 if target!=torch.float32 else torch.int32)!=expected.view(torch.int16 if target!=torch.float32 else torch.int32)).nonzero().flatten()[:10]
+    print('FAILED',record,'input',sample.cpu()[mismatches],'actual',actual[mismatches].view(torch.int16 if target!=torch.float32 else torch.int32),'expected',expected[mismatches].view(torch.int16 if target!=torch.float32 else torch.int32), 'source_bits',sample.cpu()[mismatches].view(torch.int16 if dtype!=torch.float32 else torch.int32),flush=True)
+    raise AssertionError(record)
+   graph=torch.npu.NPUGraph()
+   with torch.npu.graph(graph):out=convert(sample,target)
+   sample.zero_();graph.replay();torch.npu.synchronize()
+   assert torch.equal(out.cpu(),torch.zeros(count,dtype=target))
+   record['changed_input_replay']=True
+ print('dtypepassed',str(dtype),flush=True)
+for count in (1,7,16,127,128,256,4096,32768):
+ sample=torch.randint(-(1<<31),(1<<31)-1,(count,),generator=torch.Generator().manual_seed(count),dtype=torch.int32).view(torch.float32).npu()
+ initial=sample.clone()
+ for target in (torch.float32,torch.float16):
+  sample.copy_(initial)
+  actual=convert.round(sample,target);expected=sample.bfloat16().to(target)
+  assert torch.equal(actual.cpu().view(torch.int16 if target==torch.float16 else torch.int32),expected.cpu().view(torch.int16 if target==torch.float16 else torch.int32)),(count,target)
+  graph=torch.npu.NPUGraph()
+  with torch.npu.graph(graph):out=convert.round(sample,target)
+  sample.zero_();graph.replay();torch.npu.synchronize();assert torch.equal(out.cpu(),torch.zeros(count,dtype=target))
+  records.append({'round_output':str(target),'count':count,'bitwise_equal':True,'changed_input_replay':True})
+(build/'gates.json').write_text(json.dumps({'complete':True,'records':records},indent=2))
+print('complete',len(records),flush=True)

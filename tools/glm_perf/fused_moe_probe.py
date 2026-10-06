@@ -6,7 +6,7 @@ import json
 
 import torch
 
-from .glm_fused_moe import FusedGeometry, NativeFusedMoE
+from .glm_fused_moe import NativeFusedMoE
 from .glm_int4 import unpack_canonical_codes
 
 
@@ -78,11 +78,9 @@ def gate_case(native, bits, tokens=2, hidden=256, inter=256, real=None):
     gx, gi, gw = x.npu(), ids.npu(), weights.npu()
     gc, dc = native.pack_weight_codes(gate, bits).npu(), native.pack_weight_codes(down, bits).npu()
     ggs, gds = gs.npu(), ds.npu()
-    geometry = FusedGeometry(tokens, 2, experts, hidden, inter, bits, bits, native.activation_bits)
 
     def pipeline():
-        order, ends = route_metadata(gi, gw, experts, offset)
-        return native.grouped(gx, gc, ggs, dc, gds, gw, order, ends, geometry)
+        return native(gx, gc, ggs, dc, gds, gw, gi, offset)
 
     def check(actual):
         expected = reference(gx.cpu(), gate, gs, down, ds, gw.cpu(), gi.cpu(), native.activation_bits, offset)

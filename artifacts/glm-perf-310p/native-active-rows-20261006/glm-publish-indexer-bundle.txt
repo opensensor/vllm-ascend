@@ -1,0 +1,29 @@
+import sys,json,hashlib,shutil,os
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+from tools.glm_perf.bf16_control import manifest
+from tools.glm_perf.native_checkpoint import write_json
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006');model=Path('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p')
+trial=json.loads((root/'native-v41-bf16-v5-trial.json').read_text());assert trial['complete'] and all(r['valid'] for r in trial['records'])
+audit=json.loads(Path('/srv/ai/artifacts/glm-native-active-rows-20261006/trace-bf16-v5/zero-cast-audit.json').read_text());assert audit['complete'] and len(audit['records'])==8
+build=root/'build-bf16-cast-v4';name='indexer-kernels-v5';destination=model/name;staging=model/(name+'.partial')
+assert not destination.exists() and not staging.exists();staging.mkdir()
+for filename in ('glm_bf16_cast.bin','glm_bf16_bridge_v4.so','glm_bf16_cast.cpp','bf16_cast.py','candidate.py','gates.json','compression-gates.json'):
+ shutil.copy2(build/filename,staging/filename)
+options={'namespace':'glm_bf16_v4','bridge':'glm_bf16_bridge_v4.so','name':'bf16_cast_v5_permanent'}
+(staging/'options.json').write_text(json.dumps(options,indent=2))
+digests={filename:hashlib.sha256((staging/filename).read_bytes()).hexdigest() for filename in ('glm_bf16_cast.bin','glm_bf16_bridge_v4.so','bf16_cast.py','candidate.py')}
+for filename in ('gates.json','compression-gates.json'):
+ data=json.loads((staging/filename).read_text());data['binaries']=digests
+ (staging/filename).write_text(json.dumps(data,indent=2))
+# No checkpoint manifest references this directory until validation succeeds.
+os.rename(staging,destination)
+qualified=manifest(destination);qualified.verify_files()
+(destination/'manifest.json').write_text(qualified.payload+'\n')
+before=json.loads((model/'native-layout.json').read_text())
+assert before['kernel_bundle']=='native-kernels-v41'
+after=dict(before,indexer_kernel_bundle=name)
+write_json(model/'native-layout.json',after)
+receipt={'complete':True,'before':before,'after':after,'weight_changes':0,'online_transformations':0,'bundle':str(destination),'manifest':qualified.value}
+(root/'indexer-v5-bundle-publication.json').write_text(json.dumps(receipt,indent=2))
+print('permanent_indexer_bundle_published',destination,flush=True)

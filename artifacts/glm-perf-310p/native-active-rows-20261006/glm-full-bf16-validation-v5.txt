@@ -1,0 +1,27 @@
+import json,sys,importlib.util
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+import torch,torch_npu
+from tools.glm_perf.bf16_cast import NativeBF16Cast
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006/build-bf16-cast-v4')
+torch.set_num_threads(4);torch.npu.set_device(0);torch_npu.npu.set_compile_mode(jit_compile=False)
+torch.ops.load_library(str(root/'glm_bf16_bridge_v4.so'));convert=NativeBF16Cast(root,'glm_bf16_v4')
+spec=importlib.util.spec_from_file_location('cold_bf16_candidate',root/'candidate.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+changes=module.replacements({'bf16_cast_v1':convert});compress=changes['vllm_ascend.models.glm5next.sparse_attn_indexer_kpool:compress_kpool']
+from vllm_ascend.models.glm5next.kpool_ops import compress_kpool
+records=[]
+for rows in (1,2,8,128):
+ for dtype in (torch.float32,torch.bfloat16):
+  g=torch.Generator().manual_seed(145+rows)
+  keys=torch.randn(rows,4,128,generator=g).to(dtype).npu();gates=torch.randn(rows,4,128,generator=g).to(dtype).npu();ape=torch.randn(4,128,generator=g).npu()
+  ref=compress_kpool(keys,gates,ape).cpu();actual=compress(keys,gates,ape).cpu()
+  assert torch.equal(ref.view(torch.int16),actual.view(torch.int16)),(rows,dtype)
+  actual_half=compress(keys,gates,ape,out_dtype=torch.float16).cpu()
+  reference_half=compress_kpool(keys,gates,ape).half().cpu()
+  assert torch.equal(actual_half.view(torch.int16),reference_half.view(torch.int16)),('half',rows,dtype)
+  graph=torch.npu.NPUGraph()
+  with torch.npu.graph(graph):out=compress(keys,gates,ape)
+  keys.zero_();graph.replay();torch.npu.synchronize();assert torch.equal(out.cpu(),torch.zeros(rows,128,dtype=torch.bfloat16))
+  records.append({'rows':rows,'dtype':str(dtype),'bitwise_equal':True,'changed_input_replay':True})
+(root/'compression-gates.json').write_text(json.dumps({'complete':True,'records':records},indent=2))
+print('compressionpassed',len(records),flush=True)

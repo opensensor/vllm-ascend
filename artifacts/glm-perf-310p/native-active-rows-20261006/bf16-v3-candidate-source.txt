@@ -1,0 +1,70 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Preserve BF16 rounding while removing indexer AI-CPU cast dispatches."""
+
+import ast
+import inspect
+from pathlib import Path
+import textwrap
+
+import torch
+
+
+def wrap_indexer(original, convert):
+    original = getattr(original, "__glm_aicore_original__", original)
+    source = inspect.getsource(original)
+    source = source.replace("k_pe = k_pe.to(torch.bfloat16)", "k_pe = _aicore_convert(k_pe, torch.bfloat16)")
+    source = source.replace("q = q.to(torch.bfloat16)", "q = _aicore_convert(q, torch.bfloat16)")
+    source = source.replace("k_pe = k_pe.reshape(-1, 1, self.rope_dim).float()", "k_pe = _aicore_convert(k_pe.reshape(-1, 1, self.rope_dim), torch.float32)")
+    namespace = dict(original.__globals__, _aicore_convert=convert)
+    exec(compile(textwrap.dedent(source), "<indexer-aicore-casts>", "exec"), namespace)
+    wrapped = namespace[original.__name__]
+    wrapped.__glm_aicore_original__ = original
+    return wrapped
+
+
+def replacements(native_resources):
+    from vllm_ascend.models.glm5next import attention, kpool_ops, sparse_attn_indexer_kpool
+
+    convert = native_resources["bf16_cast_v1"]
+
+    def compress(keys, gates, ape):
+        if keys.shape != gates.shape or keys.shape[-2:] != ape.shape:
+            raise ValueError("K, gate, and APE shapes disagree for GLM kpool compression")
+        probabilities = torch.softmax(convert(gates, torch.float32) + convert(ape, torch.float32), dim=-2)
+        pooled = convert((convert(keys, torch.float32) * probabilities).sum(dim=-2), torch.bfloat16)
+        rotated = kpool_ops.hadamard128(convert(pooled, torch.float32))
+        return convert(rotated, torch.bfloat16)
+
+    def score(queries, weights, cache, table, boundaries, positions, num_pools):
+        elements = cache.untyped_storage().nbytes() // cache.element_size()
+        flat = cache.as_strided((elements,), (1,), storage_offset=0)
+        rotated = kpool_ops.hadamard128(convert(queries, torch.float32))
+        rotated = convert(convert(rotated, torch.bfloat16), torch.float16).contiguous()
+        return torch.ops._C_ascend.npu_glm_kpool_score_310(
+            rotated, weights.float().contiguous(), flat, table.int().contiguous(), boundaries.int().contiguous(),
+            positions.int().contiguous(), num_pools, cache.shape[0], cache.shape[1], cache.stride(0), cache.stride(1),
+            cache.storage_offset(),
+        )
+
+    # Read the authoritative method rather than an already installed resident
+    # wrapper. The transaction prepares while the previous candidate is active.
+    module_source = Path(sparse_attn_indexer_kpool.__file__).read_text()
+    tree = ast.parse(module_source)
+    owner = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "SparseAttnIndexerKpool")
+    method = next(node for node in owner.body if isinstance(node, ast.FunctionDef) and node.name == "_write_pools")
+    source = " " * method.col_offset + ast.get_source_segment(module_source, method)
+    if "compressed.to(key_cache.dtype)" not in source:
+        raise ValueError("indexer pool writer changed")
+    namespace = dict(vars(sparse_attn_indexer_kpool), _aicore_convert=convert)
+    source = source.replace("compressed.to(key_cache.dtype)", "_aicore_convert(compressed, key_cache.dtype)")
+    exec(compile(textwrap.dedent(source), "<indexer-pool-aicore-casts>", "exec"), namespace)
+    from tools.glm_perf.resident_candidates.kpool_completed_prefill import wrap_writer
+
+    writer = wrap_writer(namespace["_write_pools"], sparse_attn_indexer_kpool._cache_tensor,
+                         sparse_attn_indexer_kpool._masked_storage_write, compress)
+    return {
+        "vllm_ascend.models.glm5next.attention:Indexer.forward": wrap_indexer(attention.Indexer.forward, convert),
+        "vllm_ascend.models.glm5next.sparse_attn_indexer_kpool:compress_kpool": compress,
+        "vllm_ascend.models.glm5next.sparse_attn_indexer_kpool:score_kpool_paged": score,
+        "vllm_ascend.models.glm5next.sparse_attn_indexer_kpool:SparseAttnIndexerKpool._write_pools": writer,
+    }

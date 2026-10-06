@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "complete": false,
+  "build_options": {
+    "namespace": "glm_reconstruction_v35",
+    "version": 35,
+    "output_columns": 128,
+    "helper_package": "glm_reconstruction_v35_helpers",
+    "tile_pipeline": true,
+    "all_bits": true,
+    "prefill_native": true,
+    "fused_moe": true,
+    "prepared_weight_layout": true,
+    "pair_scale_groups": true,
+    "fp16_swiglu": false
+  },
+  "binaries": {
+    "glm_reconstruction_bridge_v35.so": "8c0073d97af092eab795049872ed83152aa302a33c4afc7d9a2c16b031eed65e",
+    "glm_fused_gate_up.bin": "81d8a3a777f9f645e7979a6e7e1dbe1d1851e880c0cfb9a0a40dfbf0d4926d58",
+    "glm_fused_down.bin": "2eefc752d65b430fb9cf8c473084978d00769a73f19003a9d86f31dfa1d66772",
+    "glm_fused_pack.bin": "8ecb752ea2eba654b411638e734426c4bc6c36b19932731727e774748a4989e4"
+  },
+  "records": [
+    {
+      "weight_bits": 2,
+      "activation_bits": 8,
+      "tokens": 1,
+      "hidden": 256,
+      "intermediate": 256,
+      "passed": true,
+      "graph_changed_inputs_routes_weights": true,
+      "all_peer_output_zero": true,
+      "native_stages": [
+        "input_quant_once",
+        "gate_up_swiglu_quant",
+        "down_weighted_reduce"
+      ],
+      "input_quantization_passes_per_token": 1,
+      "fp16_intermediate_gm_bytes": 0
+    },
+    {
+      "weight_bits": 2,
+      "activation_bits": 8,
+      "tokens": 2,
+      "hidden": 256,
+      "intermediate": 256,
+      "passed": true,
+      "graph_changed_inputs_routes_weights": true,
+      "all_peer_output_zero": true,
+      "native_stages": [
+        "input_quant_once",
+        "gate_up_swiglu_quant",
+        "down_weighted_reduce"
+      ],
+      "input_quantization_passes_per_token": 1,
+      "fp16_intermediate_gm_bytes": 0
+    },
+    {
+      "weight_bits": 2,
+      "activation_bits": 8,
+      "tokens": 3,
+      "hidden": 256,
+      "intermediate": 256,
+      "passed": true,
+      "graph_changed_inputs_routes_weights": true,
+      "all_peer_output_zero": true,
+      "native_stages": [
+        "input_quant_once",
+        "gate_up_swiglu_quant",
+        "down_weighted_reduce"
+      ],
+      "input_quantization_passes_per_token": 1,
+      "fp16_intermediate_gm_bytes": 0
+    }
+  ],
+  "real_weight_records": [],
+  "error": "Tensor-likes are not close!\n\nMismatched elements: 768 / 4352 (17.6%)\nGreatest absolute difference: nan at index (5, 0) (up to 0.002 allowed)\nGreatest relative difference: nan at index (5, 0) (up to 0.002 allowed)"
+}

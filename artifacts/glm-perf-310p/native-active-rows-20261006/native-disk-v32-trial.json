@@ -1,0 +1,5174 @@
+{
+  "version": 32,
+  "loaded": [
+    {
+      "rank": 0,
+      "pid": 327411,
+      "native_name": "reconstruction_v32",
+      "native_digest": "d0bf0c9b2a48c7bb9e0facdf950da17cc4e142592e363e6c8519fc6d8d0ea924",
+      "validation": {
+        "passed": true,
+        "cases": 6,
+        "native_fused_stages": 2,
+        "input_quantization_passes_per_token": 1,
+        "fp16_intermediate_gm_bytes": 0,
+        "model_quality": "not_evaluated"
+      }
+    },
+    {
+      "rank": 1,
+      "pid": 327821,
+      "native_name": "reconstruction_v32",
+      "native_digest": "d0bf0c9b2a48c7bb9e0facdf950da17cc4e142592e363e6c8519fc6d8d0ea924",
+      "validation": {
+        "passed": true,
+        "cases": 6,
+        "native_fused_stages": 2,
+        "input_quantization_passes_per_token": 1,
+        "fp16_intermediate_gm_bytes": 0,
+        "model_quality": "not_evaluated"
+      }
+    },
+    {
+      "rank": 2,
+      "pid": 328263,
+      "native_name": "reconstruction_v32",
+      "native_digest": "d0bf0c9b2a48c7bb9e0facdf950da17cc4e142592e363e6c8519fc6d8d0ea924",
+      "validation": {
+        "passed": true,
+        "cases": 6,
+        "native_fused_stages": 2,
+        "input_quantization_passes_per_token": 1,
+        "fp16_intermediate_gm_bytes": 0,
+        "model_quality": "not_evaluated"
+      }
+    },
+    {
+      "rank": 3,
+      "pid": 328726,
+      "native_name": "reconstruction_v32",
+      "native_digest": "d0bf0c9b2a48c7bb9e0facdf950da17cc4e142592e363e6c8519fc6d8d0ea924",
+      "validation": {
+        "passed": true,
+        "cases": 6,
+        "native_fused_stages": 2,
+        "input_quantization_passes_per_token": 1,
+        "fp16_intermediate_gm_bytes": 0,
+        "model_quality": "not_evaluated"
+      }
+    }
+  ],
+  "selected": [
+    {
+      "pid": 327411,
+      "rank": 0,
+      "generation": "a1875b5bfe514ffa8e28d26bcaa27b70",
+      "mode": "graph",
+      "candidate": "native_disk_v32",
+      "digest": "629c017929ed1de0289a91e8365c17c77b6fa0aa988296bf74959e9925e29617",
+      "graphs_dirty": false,
+      "weight_storage_digest": "b2eebbf2f9b2c1033c28c49970002310c27b5e2fec52b6a6c601f8cb85897aa3",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v31": {
+          "native_name": "reconstruction_v31",
+          "native_digest": "35dac5dddb22612a754dd935f65323482655b2482680fb558d8bfc34a70eb5c3",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v32": {
+          "native_name": "reconstruction_v32",
+          "native_digest": "d0bf0c9b2a48c7bb9e0facdf950da17cc4e142592e363e6c8519fc6d8d0ea924",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 46,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 344,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 172,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      }
+    },
+    {
+      "pid": 327821,
+      "rank": 1,
+      "generation": "a1875b5bfe514ffa8e28d26bcaa27b70",
+      "mode": "graph",
+      "candidate": "native_disk_v32",
+      "digest": "629c017929ed1de0289a91e8365c17c77b6fa0aa988296bf74959e9925e29617",
+      "graphs_dirty": false,
+      "weight_storage_digest": "9e4d83b49d88029af1b68bd56d76e9ee964af7f6c8da34505ca0574f5ff902ee",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v31": {
+          "native_name": "reconstruction_v31",
+          "native_digest": "35dac5dddb22612a754dd935f65323482655b2482680fb558d8bfc34a70eb5c3",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v32": {
+          "native_name": "reconstruction_v32",
+          "native_digest": "d0bf0c9b2a48c7bb9e0facdf950da17cc4e142592e363e6c8519fc6d8d0ea924",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 46,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 344,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 172,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      }
+    },
+    {
+      "pid": 328263,
+      "rank": 2,
+      "generation": "a1875b5bfe514ffa8e28d26bcaa27b70",
+      "mode": "graph",
+      "candidate": "native_disk_v32",
+      "digest": "629c017929ed1de0289a91e8365c17c77b6fa0aa988296bf74959e9925e29617",
+      "graphs_dirty": false,
+      "weight_storage_digest": "589a47f26b97beb0009d6f28866c10a7f39c5c8eaf5f217b826428e050803e96",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v31": {
+          "native_name": "reconstruction_v31",
+          "native_digest": "35dac5dddb22612a754dd935f65323482655b2482680fb558d8bfc34a70eb5c3",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v32": {
+          "native_name": "reconstruction_v32",
+          "native_digest": "d0bf0c9b2a48c7bb9e0facdf950da17cc4e142592e363e6c8519fc6d8d0ea924",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 46,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 344,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 172,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      }
+    },
+    {
+      "pid": 328726,
+      "rank": 3,
+      "generation": "a1875b5bfe514ffa8e28d26bcaa27b70",
+      "mode": "graph",
+      "candidate": "native_disk_v32",
+      "digest": "629c017929ed1de0289a91e8365c17c77b6fa0aa988296bf74959e9925e29617",
+      "graphs_dirty": false,
+      "weight_storage_digest": "ee37b0c7a546e73a8b2fc665a0118b4fcfcc247c0e3cf138fe8db20bfb597598",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v31": {
+          "native_name": "reconstruction_v31",
+          "native_digest": "35dac5dddb22612a754dd935f65323482655b2482680fb558d8bfc34a70eb5c3",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v32": {
+          "native_name": "reconstruction_v32",
+          "native_digest": "d0bf0c9b2a48c7bb9e0facdf950da17cc4e142592e363e6c8519fc6d8d0ea924",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 46,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 344,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 172,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      }
+    }
+  ],
+  "switch_s": 6.255300269986037,
+  "permanent_checkpoint": true,
+  "corrected_mtp": true,
+  "complete": true,
+  "serving_active": true,
+  "before": [
+    {
+      "pid": 327411,
+      "rank": 0,
+      "generation": "3c8c718545da4c89b4967f5850628e7b",
+      "mode": "graph",
+      "candidate": "native_disk_v31",
+      "digest": "3bcfb4382d177e9ead962717793ebdc6fbda2641e047c31acf24268e089a2f9b",
+      "graphs_dirty": false,
+      "weight_storage_digest": "b2eebbf2f9b2c1033c28c49970002310c27b5e2fec52b6a6c601f8cb85897aa3",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v31": {
+          "native_name": "reconstruction_v31",
+          "native_digest": "35dac5dddb22612a754dd935f65323482655b2482680fb558d8bfc34a70eb5c3",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 144,
+        "compact_tokens": 11700,
+        "fallback_calls": 46,
+        "max_compact_tokens": 177
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 1376,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R800:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R800:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R800:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R800:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R800:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R800:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R872:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R872:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R872:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R872:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R872:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R872:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R520:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R520:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R520:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R520:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R520:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R520:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R232:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R232:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R232:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R232:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R232:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R232:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R848:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R848:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R848:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R848:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R848:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R848:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R264:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R264:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R264:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R264:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R264:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R264:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 688,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      }
+    },
+    {
+      "pid": 327821,
+      "rank": 1,
+      "generation": "3c8c718545da4c89b4967f5850628e7b",
+      "mode": "graph",
+      "candidate": "native_disk_v31",
+      "digest": "3bcfb4382d177e9ead962717793ebdc6fbda2641e047c31acf24268e089a2f9b",
+      "graphs_dirty": false,
+      "weight_storage_digest": "9e4d83b49d88029af1b68bd56d76e9ee964af7f6c8da34505ca0574f5ff902ee",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v31": {
+          "native_name": "reconstruction_v31",
+          "native_digest": "35dac5dddb22612a754dd935f65323482655b2482680fb558d8bfc34a70eb5c3",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 144,
+        "compact_tokens": 11700,
+        "fallback_calls": 46,
+        "max_compact_tokens": 177
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 1376,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R800:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R800:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R800:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R800:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R800:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R800:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R872:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R872:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R872:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R872:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R872:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R872:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R520:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R520:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R520:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R520:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R520:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R520:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R232:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R232:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R232:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R232:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R232:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R232:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R848:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R848:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R848:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R848:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R848:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R848:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R264:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R264:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R264:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R264:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R264:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R264:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 688,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      }
+    },
+    {
+      "pid": 328263,
+      "rank": 2,
+      "generation": "3c8c718545da4c89b4967f5850628e7b",
+      "mode": "graph",
+      "candidate": "native_disk_v31",
+      "digest": "3bcfb4382d177e9ead962717793ebdc6fbda2641e047c31acf24268e089a2f9b",
+      "graphs_dirty": false,
+      "weight_storage_digest": "589a47f26b97beb0009d6f28866c10a7f39c5c8eaf5f217b826428e050803e96",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v31": {
+          "native_name": "reconstruction_v31",
+          "native_digest": "35dac5dddb22612a754dd935f65323482655b2482680fb558d8bfc34a70eb5c3",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 144,
+        "compact_tokens": 11700,
+        "fallback_calls": 46,
+        "max_compact_tokens": 177
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 1376,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R800:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R800:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R800:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R800:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R800:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R800:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R872:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R872:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R872:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R872:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R872:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R872:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R520:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R520:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R520:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R520:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R520:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R520:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R232:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R232:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R232:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R232:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R232:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R232:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R848:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R848:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R848:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R848:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R848:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R848:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R264:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R264:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R264:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R264:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R264:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R264:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 688,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      }
+    },
+    {
+      "pid": 328726,
+      "rank": 3,
+      "generation": "3c8c718545da4c89b4967f5850628e7b",
+      "mode": "graph",
+      "candidate": "native_disk_v31",
+      "digest": "3bcfb4382d177e9ead962717793ebdc6fbda2641e047c31acf24268e089a2f9b",
+      "graphs_dirty": false,
+      "weight_storage_digest": "ee37b0c7a546e73a8b2fc665a0118b4fcfcc247c0e3cf138fe8db20bfb597598",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v31": {
+          "native_name": "reconstruction_v31",
+          "native_digest": "35dac5dddb22612a754dd935f65323482655b2482680fb558d8bfc34a70eb5c3",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 144,
+        "compact_tokens": 11700,
+        "fallback_calls": 46,
+        "max_compact_tokens": 177
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 1376,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R800:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R800:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R800:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R800:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R800:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R800:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R872:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R872:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R872:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R872:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R872:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R872:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R520:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R520:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R520:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R520:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R520:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R520:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R232:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R232:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R232:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R232:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R232:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R232:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R848:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R848:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R848:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R848:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R848:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R848:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R264:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R264:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R264:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R264:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R264:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R264:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 688,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      }
+    }
+  ],
+  "records": [
+    {
+      "case_id": "short_1_0",
+      "category": "short",
+      "group_id": "short_1",
+      "target_prompt_tokens": 25,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": null,
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 64,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Generate a long numbered list of distinct everyday objects, starting at one. Continue writing until the response token limit stops you.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319156.051671655,
+      "content": "1. Fork\n2. Spoon\n3. Knife\n4. Plate\n5. Bowl\n6. Cup\n7. Mug\n8. Glass\n9. Napkin\n10. Tablecloth\n11. Broom\n12. Mop\n13",
+      "reasoning": "Generate numbered list of everyday objects until token limit.",
+      "tool_calls": [],
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 36,
+        "total_tokens": 100,
+        "completion_tokens": 64,
+        "completion_tokens_details": {
+          "reasoning_tokens": 10
+        }
+      },
+      "end_s": 319168.529351178,
+      "first_token_s": 319158.814346134,
+      "last_token_s": 319168.529233133,
+      "ttft_s": 2.7626744790468365,
+      "elapsed_s": 12.477679522999097,
+      "decode_s": 9.71488699899055,
+      "decode_tokens_per_s": 6.587827527654215,
+      "stream_event_gap_p50_s": 0.2936541975068394,
+      "stream_event_gap_p95_s": 0.31058769844821654,
+      "stream_events": 33,
+      "prompt_token_target_error": 11,
+      "early_eos": false,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": false,
+      "speed_sample_complete": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "short_4_0",
+      "category": "short",
+      "group_id": "short_4",
+      "target_prompt_tokens": 25,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": null,
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 64,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Generate a long numbered list of distinct everyday objects, starting at one. Continue writing until the response token limit stops you.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319168.533393796,
+      "content": "1. Fork\n2. Spoon\n3. Knife\n4. Plate\n5. Bowl\n6. Mug\n7. Glass\n8. Kettle\n9. Toaster\n10. Blender\n11. Fridge\n12. Stove\n13.",
+      "reasoning": "Generate a long numbered list of everyday objects.",
+      "tool_calls": [],
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 36,
+        "total_tokens": 100,
+        "completion_tokens": 64,
+        "completion_tokens_details": {
+          "reasoning_tokens": 9
+        }
+      },
+      "end_s": 319194.395266595,
+      "first_token_s": 319177.36443004,
+      "last_token_s": 319194.395161655,
+      "ttft_s": 8.831036243995186,
+      "elapsed_s": 25.861872798996046,
+      "decode_s": 17.030731614970136,
+      "decode_tokens_per_s": 3.7579125457971245,
+      "stream_event_gap_p50_s": 0.5210307429952081,
+      "stream_event_gap_p95_s": 0.5925127566501033,
+      "stream_events": 33,
+      "prompt_token_target_error": 11,
+      "early_eos": false,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": false,
+      "speed_sample_complete": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "short_4_1",
+      "category": "short",
+      "group_id": "short_4",
+      "target_prompt_tokens": 25,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": null,
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 64,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Generate a long numbered list of distinct everyday objects, starting at one. Continue writing until the response token limit stops you.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319168.533880311,
+      "content": "1. Fork\n2. Spoon\n3. Knife\n4. Plate\n5. Bowl\n6. Mug\n7. Glass\n8. Kettle\n9. Toaster\n10. Blender\n11. Fridge\n12. Stove\n13. Oven\n",
+      "reasoning": "Long numbered list of everyday objects.",
+      "tool_calls": [],
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 36,
+        "total_tokens": 100,
+        "completion_tokens": 64,
+        "completion_tokens_details": {
+          "reasoning_tokens": 7
+        }
+      },
+      "end_s": 319194.983656477,
+      "first_token_s": 319177.364341802,
+      "last_token_s": 319194.983357148,
+      "ttft_s": 8.83046149101574,
+      "elapsed_s": 26.449776166002266,
+      "decode_s": 17.619015345990192,
+      "decode_tokens_per_s": 3.6324390860222153,
+      "stream_event_gap_p50_s": 0.5214103549951687,
+      "stream_event_gap_p95_s": 0.5926307448069564,
+      "stream_events": 34,
+      "prompt_token_target_error": 11,
+      "early_eos": false,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": false,
+      "speed_sample_complete": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "short_4_2",
+      "category": "short",
+      "group_id": "short_4",
+      "target_prompt_tokens": 25,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": null,
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 64,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Generate a long numbered list of distinct everyday objects, starting at one. Continue writing until the response token limit stops you.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319168.533654522,
+      "content": "1. Fork\n2. Spoon\n3. Knife\n4. Plate\n5. Bowl\n6. Mug\n7. Glass\n8. Kettle\n9. Toaster\n10. Blender\n11. Fridge\n12. Stove\n13",
+      "reasoning": "Produce a long numbered list of everyday objects.",
+      "tool_calls": [],
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 36,
+        "total_tokens": 100,
+        "completion_tokens": 64,
+        "completion_tokens_details": {
+          "reasoning_tokens": 10
+        }
+      },
+      "end_s": 319194.983797876,
+      "first_token_s": 319177.364511756,
+      "last_token_s": 319194.983598747,
+      "ttft_s": 8.830857234017458,
+      "elapsed_s": 26.450143354013562,
+      "decode_s": 17.619086991006043,
+      "decode_tokens_per_s": 3.632424315327455,
+      "stream_event_gap_p50_s": 0.5214106949861161,
+      "stream_event_gap_p95_s": 0.5926980408024974,
+      "stream_events": 34,
+      "prompt_token_target_error": 11,
+      "early_eos": false,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": false,
+      "speed_sample_complete": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "short_4_3",
+      "category": "short",
+      "group_id": "short_4",
+      "target_prompt_tokens": 25,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": null,
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 64,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Generate a long numbered list of distinct everyday objects, starting at one. Continue writing until the response token limit stops you.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319168.533161133,
+      "content": "1. Fork\n2. Spoon\n3. Knife\n4. Plate\n5. Bowl\n6. Mug\n7. Glass\n8. Kettle\n9. Toaster\n10. Blender\n11. Fridge\n12.",
+      "reasoning": "Generate numbered list of everyday objects until token limit. Write many items.",
+      "tool_calls": [],
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 36,
+        "total_tokens": 100,
+        "completion_tokens": 64,
+        "completion_tokens_details": {
+          "reasoning_tokens": 14
+        }
+      },
+      "end_s": 319194.983741278,
+      "first_token_s": 319171.257824185,
+      "last_token_s": 319194.983486213,
+      "ttft_s": 2.7246630520094186,
+      "elapsed_s": 26.45058014499955,
+      "decode_s": 23.725662028009538,
+      "decode_tokens_per_s": 2.697501124497358,
+      "stream_event_gap_p50_s": 0.5235041819978505,
+      "stream_event_gap_p95_s": 0.6156562795396895,
+      "stream_events": 35,
+      "prompt_token_target_error": 11,
+      "early_eos": false,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": false,
+      "speed_sample_complete": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "arith_add",
+      "category": "arithmetic",
+      "group_id": "quality_4_0",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "45",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Compute 17 + 28. Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319194.988181812,
+      "content": "45",
+      "reasoning": "45",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 25,
+        "total_tokens": 29,
+        "completion_tokens": 4,
+        "completion_tokens_details": {
+          "reasoning_tokens": 1
+        }
+      },
+      "end_s": 319201.297748181,
+      "first_token_s": 319200.113090416,
+      "last_token_s": 319200.730649198,
+      "ttft_s": 5.124908604018856,
+      "elapsed_s": 6.309566368989181,
+      "decode_s": 0.6175587819889188,
+      "decode_tokens_per_s": 6.477116214131944,
+      "stream_event_gap_p50_s": 0.6175587819889188,
+      "stream_event_gap_p95_s": 0.6175587819889188,
+      "stream_events": 2,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "arith_sub",
+      "category": "arithmetic",
+      "group_id": "quality_4_0",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "54",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Compute 91 - 37. Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319194.988492413,
+      "content": "54",
+      "reasoning": "54",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 25,
+        "total_tokens": 29,
+        "completion_tokens": 4,
+        "completion_tokens_details": {
+          "reasoning_tokens": 1
+        }
+      },
+      "end_s": 319201.595142231,
+      "first_token_s": 319200.113278083,
+      "last_token_s": 319201.297711341,
+      "ttft_s": 5.1247856699628755,
+      "elapsed_s": 6.606649817957077,
+      "decode_s": 1.1844332580221817,
+      "decode_tokens_per_s": 3.377142589426587,
+      "stream_event_gap_p50_s": 1.1844332580221817,
+      "stream_event_gap_p95_s": 1.1844332580221817,
+      "stream_events": 2,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "arith_mul",
+      "category": "arithmetic",
+      "group_id": "quality_4_0",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "91",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Compute 13 * 7. Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319194.988776954,
+      "content": "91",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 25,
+        "total_tokens": 28,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 319201.29795812,
+      "first_token_s": 319200.730712158,
+      "last_token_s": 319200.730712158,
+      "ttft_s": 5.741935204016045,
+      "elapsed_s": 6.30918116599787,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "arith_div",
+      "category": "arithmetic",
+      "group_id": "quality_4_0",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "12",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Compute 144 / 12. Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319194.987914935,
+      "content": "12",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 25,
+        "total_tokens": 28,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 319200.730918581,
+      "first_token_s": 319200.730776521,
+      "last_token_s": 319200.730776521,
+      "ttft_s": 5.742861586040817,
+      "elapsed_s": 5.743003646028228,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "arith_mod",
+      "category": "arithmetic",
+      "group_id": "quality_4_1",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "2",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Compute the remainder of 83 divided by 9. Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319201.600160354,
+      "content": "2",
+      "reasoning": "83 = 9*9+2 \u2192 2",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 29,
+        "total_tokens": 43,
+        "completion_tokens": 14,
+        "completion_tokens_details": {
+          "reasoning_tokens": 11
+        }
+      },
+      "end_s": 319212.006300442,
+      "first_token_s": 319208.582304226,
+      "last_token_s": 319211.711769077,
+      "ttft_s": 6.982143872010056,
+      "elapsed_s": 10.406140087987296,
+      "decode_s": 3.129464850993827,
+      "decode_tokens_per_s": 4.473608321740379,
+      "stream_event_gap_p50_s": 0.3094331750180572,
+      "stream_event_gap_p95_s": 0.6475665369944181,
+      "stream_events": 8,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "instr_upper",
+      "category": "instruction",
+      "group_id": "quality_4_1",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "CEDAR",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Write the word cedar in uppercase. Answer with that word only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319201.600429255,
+      "content": "CEDAR",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 25,
+        "total_tokens": 29,
+        "completion_tokens": 4,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 319209.860322547,
+      "first_token_s": 319209.221336014,
+      "last_token_s": 319209.221336014,
+      "ttft_s": 7.620906758995261,
+      "elapsed_s": 8.259893292037304,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "instr_reverse",
+      "category": "instruction",
+      "group_id": "quality_4_1",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "pmal",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Reverse the characters in 'lamp'. Answer with the result only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319201.599878508,
+      "content": "pial",
+      "reasoning": "pial",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 25,
+        "total_tokens": 31,
+        "completion_tokens": 6,
+        "completion_tokens_details": {
+          "reasoning_tokens": 2
+        }
+      },
+      "end_s": 319210.511520241,
+      "first_token_s": 319208.582161364,
+      "last_token_s": 319210.511287348,
+      "ttft_s": 6.982282855955418,
+      "elapsed_s": 8.911641732964199,
+      "decode_s": 1.9291259840247221,
+      "decode_tokens_per_s": 3.1102167767613818,
+      "stream_event_gap_p50_s": 0.6390068210312165,
+      "stream_event_gap_p95_s": 0.6500188952195458,
+      "stream_events": 4,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": false,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": false,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "instr_first",
+      "category": "instruction",
+      "group_id": "quality_4_1",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "red",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "From red, blue, green, give the first color. Answer with one word only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319201.599613775,
+      "content": "Red",
+      "reasoning": "First color listed: red.",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 30,
+        "total_tokens": 39,
+        "completion_tokens": 9,
+        "completion_tokens_details": {
+          "reasoning_tokens": 6
+        }
+      },
+      "end_s": 319210.511593891,
+      "first_token_s": 319203.946617635,
+      "last_token_s": 319210.511463083,
+      "ttft_s": 2.347003860049881,
+      "elapsed_s": 8.911980116041377,
+      "decode_s": 6.564845447952393,
+      "decode_tokens_per_s": 1.3709385957908793,
+      "stream_event_gap_p50_s": 0.6451804669923149,
+      "stream_event_gap_p95_s": 4.037970430229326,
+      "stream_events": 5,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": false,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": false,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "instr_count",
+      "category": "instruction",
+      "group_id": "quality_4_2",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "4",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "How many words are in 'one two three four'? Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319212.011795042,
+      "content": "4",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 29,
+        "total_tokens": 32,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 319221.274379429,
+      "first_token_s": 319220.612622013,
+      "last_token_s": 319220.612622013,
+      "ttft_s": 8.60082697100006,
+      "elapsed_s": 9.262584386975504,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "instr_sort",
+      "category": "instruction",
+      "group_id": "quality_4_2",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "a,b,c",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Sort the letters c, a, b alphabetically. Answer with comma-separated letters and no spaces.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319212.012086105,
+      "content": "a,b,c",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 37,
+        "completion_tokens": 5,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 319221.274463298,
+      "first_token_s": 319220.612681476,
+      "last_token_s": 319221.274316559,
+      "ttft_s": 8.600595370982774,
+      "elapsed_s": 9.262377192964777,
+      "decode_s": 0.661635083029978,
+      "decode_tokens_per_s": 7.557035786407136,
+      "stream_event_gap_p50_s": 0.661635083029978,
+      "stream_event_gap_p95_s": 0.661635083029978,
+      "stream_events": 2,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "code_python",
+      "category": "code",
+      "group_id": "quality_4_2",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "10",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "In Python, what does sum([2, 3, 5]) return? Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319212.011408356,
+      "content": "10",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 35,
+        "total_tokens": 38,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 319219.922371431,
+      "first_token_s": 319219.922245982,
+      "last_token_s": 319219.922245982,
+      "ttft_s": 7.91083762596827,
+      "elapsed_s": 7.910963075002655,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "code_slice",
+      "category": "code",
+      "group_id": "quality_4_2",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "lan",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "In Python, what is 'planet'[1:4]? Answer with the substring only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319212.011594901,
+      "content": "`lan`",
+      "reasoning": "'planet' indices: p0 l1 a2 n3 e4 t5 \u2192 [1:4] = 'lan'",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 30,
+        "total_tokens": 62,
+        "completion_tokens": 32,
+        "completion_tokens_details": {
+          "reasoning_tokens": 27
+        }
+      },
+      "end_s": 319226.050656042,
+      "first_token_s": 319219.922109943,
+      "last_token_s": 319225.736521457,
+      "ttft_s": 7.910515042021871,
+      "elapsed_s": 14.03906114102574,
+      "decode_s": 5.8144115139730275,
+      "decode_tokens_per_s": 5.503566426816973,
+      "stream_event_gap_p50_s": 0.29865928599610925,
+      "stream_event_gap_p95_s": 0.6673266633762978,
+      "stream_events": 18,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": false,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": false,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "code_len",
+      "category": "code",
+      "group_id": "quality_4_3",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "2",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "In Python, what does len({'a': 1, 'b': 2}) return? Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319226.056343749,
+      "content": "2",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 38,
+        "total_tokens": 41,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 319235.001231707,
+      "first_token_s": 319235.001046374,
+      "last_token_s": 319235.001046374,
+      "ttft_s": 8.94470262498362,
+      "elapsed_s": 8.944887958001345,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "code_bool",
+      "category": "code",
+      "group_id": "quality_4_3",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "False",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "In Python, what is bool([])? Answer True or False only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319226.055638187,
+      "content": "False",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 319235.001144801,
+      "first_token_s": 319235.000822238,
+      "last_token_s": 319235.000822238,
+      "ttft_s": 8.945184051000979,
+      "elapsed_s": 8.94550661399262,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "code_range",
+      "category": "code",
+      "group_id": "quality_4_3",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "[0, 1, 2]",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "In Python, what is list(range(3))? Answer with the list literal only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319226.055894474,
+      "content": "[0, 1, 2]",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 29,
+        "total_tokens": 40,
+        "completion_tokens": 11,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 319236.890989724,
+      "first_token_s": 319234.323820301,
+      "last_token_s": 319236.890842454,
+      "ttft_s": 8.267925827007275,
+      "elapsed_s": 10.835095250047743,
+      "decode_s": 2.5670221530017443,
+      "decode_tokens_per_s": 4.2851207914731715,
+      "stream_event_gap_p50_s": 0.6414939609821886,
+      "stream_event_gap_p95_s": 0.6719752024771879,
+      "stream_events": 5,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "retrieval_short_1",
+      "category": "retrieval",
+      "group_id": "quality_4_3",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "BLUE-ORCHID-7319",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Fact: the access code is BLUE-ORCHID-7319. What is the access code? Answer with the code only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319226.056109182,
+      "content": "BLUE-ORCHID-7319",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 40,
+        "total_tokens": 51,
+        "completion_tokens": 11,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 319237.183530264,
+      "first_token_s": 319235.000746985,
+      "last_token_s": 319237.183428581,
+      "ttft_s": 8.944637803011574,
+      "elapsed_s": 11.127421081997454,
+      "decode_s": 2.182681595964823,
+      "decode_tokens_per_s": 5.039672309665308,
+      "stream_event_gap_p50_s": 0.6229022144980263,
+      "stream_event_gap_p95_s": 0.6435356570844306,
+      "stream_events": 5,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "retrieval_short_2",
+      "category": "retrieval",
+      "group_id": "quality_4_4",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "Sable Meridian",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Fact: the ship's name is Sable Meridian. What is the ship's name? Answer with the name only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319237.189740685,
+      "content": "Sable Meridian",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 37,
+        "total_tokens": 43,
+        "completion_tokens": 6,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 319247.522334919,
+      "first_token_s": 319246.595506954,
+      "last_token_s": 319247.207543845,
+      "ttft_s": 9.405766269017477,
+      "elapsed_s": 10.332594234030694,
+      "decode_s": 0.6120368909905665,
+      "decode_tokens_per_s": 9.803330629774864,
+      "stream_event_gap_p50_s": 0.6120368909905665,
+      "stream_event_gap_p95_s": 0.6120368909905665,
+      "stream_events": 2,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "retrieval_short_3",
+      "category": "retrieval",
+      "group_id": "quality_4_4",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "RQ-218",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Fact: the sample's label is RQ-218. What is the sample's label? Answer with the label only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319237.189994658,
+      "content": "RQ-218",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 37,
+        "total_tokens": 43,
+        "completion_tokens": 6,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 319247.20777751,
+      "first_token_s": 319245.93976128,
+      "last_token_s": 319246.595691745,
+      "ttft_s": 8.74976662202971,
+      "elapsed_s": 10.017782851995435,
+      "decode_s": 0.6559304649708793,
+      "decode_tokens_per_s": 9.147311064849498,
+      "stream_event_gap_p50_s": 0.6559304649708793,
+      "stream_event_gap_p95_s": 0.6559304649708793,
+      "stream_events": 2,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "retrieval_short_4",
+      "category": "retrieval",
+      "group_id": "quality_4_4",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "Oslo",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Fact: the warehouse is in Oslo. In which city is the warehouse? Answer with the city only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319237.189528201,
+      "content": "Oslo",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 33,
+        "total_tokens": 37,
+        "completion_tokens": 4,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 319247.207841191,
+      "first_token_s": 319246.595747681,
+      "last_token_s": 319246.595747681,
+      "ttft_s": 9.406219479977153,
+      "elapsed_s": 10.018312989966944,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "retrieval_short_5",
+      "category": "retrieval",
+      "group_id": "quality_4_4",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "Thursday",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Fact: the appointment is on Thursday. On which day is the appointment? Answer with the day only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319237.189347236,
+      "content": "Thursday",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 33,
+        "total_tokens": 36,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 319246.59576776,
+      "first_token_s": 319246.595578379,
+      "last_token_s": 319246.595578379,
+      "ttft_s": 9.406231142987963,
+      "elapsed_s": 9.406420523999259,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "tool_order_status",
+      "category": "tool",
+      "group_id": "tool",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": null,
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 256,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_order_status",
+              "description": "Look up the status of an order by its ID.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "order_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "order_id"
+                ]
+              }
+            }
+          }
+        ],
+        "tool_choice": "auto"
+      },
+      "prompt": "Check the status of order A-1042 using the order status tool.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 319247.527231461,
+      "content": "",
+      "reasoning": "",
+      "tool_calls": [
+        {
+          "id": "chatcmpl-tool-bd6838ae10b00028",
+          "name": "get_order_status",
+          "arguments": "{\"order_id\": \"A-1042\"}"
+        }
+      ],
+      "finish_reason": "tool_calls",
+      "usage": {
+        "prompt_tokens": 177,
+        "total_tokens": 194,
+        "completion_tokens": 17,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 319257.458875612,
+      "first_token_s": 319255.966368303,
+      "last_token_s": 319257.458735115,
+      "ttft_s": 8.439136841974687,
+      "elapsed_s": 9.931644150987267,
+      "decode_s": 1.4923668120172806,
+      "decode_tokens_per_s": 11.391301296107322,
+      "stream_event_gap_p50_s": 0.29599383150343783,
+      "stream_event_gap_p95_s": 0.5646417834883324,
+      "stream_events": 5,
+      "prompt_token_target_error": null,
+      "early_eos": false,
+      "passed": true,
+      "tool_call_success": true,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    }
+  ],
+  "summary": {
+    "request_count": 26,
+    "valid": true,
+    "passed": false,
+    "early_eos_count": 20,
+    "groups": {
+      "short_1": {
+        "requests": 1,
+        "valid_requests": 1,
+        "aggregate_decode_tokens_per_s": 6.587827527654215,
+        "per_request_decode_p50": 6.587827527654215,
+        "per_request_decode_p95": 6.587827527654215,
+        "ttft_p50_s": 2.7626744790468365,
+        "ttft_p95_s": 2.7626744790468365,
+        "fairness_min_max_ratio": 1.0,
+        "early_eos_count": 0
+      },
+      "short_4": {
+        "requests": 4,
+        "valid_requests": 4,
+        "aggregate_decode_tokens_per_s": 10.789953319802919,
+        "per_request_decode_p50": 3.632431700674835,
+        "per_request_decode_p95": 3.739091526830888,
+        "ttft_p50_s": 8.830659362516599,
+        "ttft_p95_s": 8.831009392498526,
+        "fairness_min_max_ratio": 0.7178190262874165,
+        "early_eos_count": 0
+      },
+      "quality_4_0": {
+        "requests": 4,
+        "valid_requests": 4,
+        "aggregate_decode_tokens_per_s": 11.818126545492847,
+        "per_request_decode_p50": 4.927129401779266,
+        "per_request_decode_p95": 6.322117532896676,
+        "ttft_p50_s": 5.43342190401745,
+        "ttft_p95_s": 5.742722628737101,
+        "fairness_min_max_ratio": 0.5213960160322966,
+        "early_eos_count": 4
+      },
+      "quality_4_1": {
+        "requests": 4,
+        "valid_requests": 4,
+        "aggregate_decode_tokens_per_s": 4.249756137611965,
+        "per_request_decode_p50": 3.1102167767613818,
+        "per_request_decode_p95": 4.337269167242479,
+        "ttft_p50_s": 6.982213363982737,
+        "ttft_p95_s": 7.525113173539284,
+        "fairness_min_max_ratio": 0.30645029631417076,
+        "early_eos_count": 4
+      },
+      "quality_4_2": {
+        "requests": 4,
+        "valid_requests": 4,
+        "aggregate_decode_tokens_per_s": 7.395417386035307,
+        "per_request_decode_p50": 6.530301106612054,
+        "per_request_decode_p95": 7.454362318427627,
+        "ttft_p50_s": 8.255716498475522,
+        "ttft_p95_s": 8.600792230997467,
+        "fairness_min_max_ratio": 0.7282705259536094,
+        "early_eos_count": 4
+      },
+      "quality_4_3": {
+        "requests": 4,
+        "valid_requests": 4,
+        "aggregate_decode_tokens_per_s": 9.791550890296575,
+        "per_request_decode_p50": 4.662396550569239,
+        "per_request_decode_p95": 5.0019447337557015,
+        "ttft_p50_s": 8.944670213997597,
+        "ttft_p95_s": 8.945111837098375,
+        "fairness_min_max_ratio": 0.8502776625486097,
+        "early_eos_count": 4
+      },
+      "quality_4_4": {
+        "requests": 4,
+        "valid_requests": 4,
+        "aggregate_decode_tokens_per_s": 14.98679704622517,
+        "per_request_decode_p50": 9.475320847312181,
+        "per_request_decode_p95": 9.770529651528596,
+        "ttft_p50_s": 9.405992874497315,
+        "ttft_p95_s": 9.406229393536341,
+        "fairness_min_max_ratio": 0.9330819708423492,
+        "early_eos_count": 4
+      },
+      "tool": {
+        "requests": 1,
+        "valid_requests": 1,
+        "aggregate_decode_tokens_per_s": 11.391301296107322,
+        "per_request_decode_p50": 11.391301296107322,
+        "per_request_decode_p95": 11.391301296107322,
+        "ttft_p50_s": 8.439136841974687,
+        "ttft_p95_s": 8.439136841974687,
+        "fairness_min_max_ratio": 1.0,
+        "early_eos_count": 0
+      }
+    }
+  },
+  "after_requests": [
+    {
+      "pid": 327411,
+      "rank": 0,
+      "generation": "a1875b5bfe514ffa8e28d26bcaa27b70",
+      "mode": "graph",
+      "candidate": "native_disk_v32",
+      "digest": "629c017929ed1de0289a91e8365c17c77b6fa0aa988296bf74959e9925e29617",
+      "graphs_dirty": false,
+      "weight_storage_digest": "b2eebbf2f9b2c1033c28c49970002310c27b5e2fec52b6a6c601f8cb85897aa3",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v31": {
+          "native_name": "reconstruction_v31",
+          "native_digest": "35dac5dddb22612a754dd935f65323482655b2482680fb558d8bfc34a70eb5c3",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v32": {
+          "native_name": "reconstruction_v32",
+          "native_digest": "d0bf0c9b2a48c7bb9e0facdf950da17cc4e142592e363e6c8519fc6d8d0ea924",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 156,
+        "compact_tokens": 11700,
+        "fallback_calls": 46,
+        "max_compact_tokens": 177
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 1462,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R800:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R800:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R800:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R800:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R800:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R800:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R240:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R240:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R240:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R240:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R240:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R240:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R648:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R648:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R648:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R648:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R648:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R648:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R280:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R280:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R280:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R280:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R280:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R280:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R744:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R744:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R744:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R744:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R744:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R744:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R232:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R232:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R232:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R232:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R232:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R232:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R848:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R848:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R848:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R848:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R848:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R848:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R296:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R296:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R296:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R296:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R296:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R296:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R840:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R840:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R840:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R840:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R840:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R840:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 731,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      }
+    },
+    {
+      "pid": 327821,
+      "rank": 1,
+      "generation": "a1875b5bfe514ffa8e28d26bcaa27b70",
+      "mode": "graph",
+      "candidate": "native_disk_v32",
+      "digest": "629c017929ed1de0289a91e8365c17c77b6fa0aa988296bf74959e9925e29617",
+      "graphs_dirty": false,
+      "weight_storage_digest": "9e4d83b49d88029af1b68bd56d76e9ee964af7f6c8da34505ca0574f5ff902ee",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v31": {
+          "native_name": "reconstruction_v31",
+          "native_digest": "35dac5dddb22612a754dd935f65323482655b2482680fb558d8bfc34a70eb5c3",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v32": {
+          "native_name": "reconstruction_v32",
+          "native_digest": "d0bf0c9b2a48c7bb9e0facdf950da17cc4e142592e363e6c8519fc6d8d0ea924",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 156,
+        "compact_tokens": 11700,
+        "fallback_calls": 46,
+        "max_compact_tokens": 177
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 1462,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R800:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R800:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R800:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R800:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R800:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R800:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R240:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R240:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R240:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R240:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R240:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R240:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R648:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R648:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R648:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R648:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R648:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R648:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R280:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R280:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R280:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R280:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R280:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R280:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R744:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R744:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R744:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R744:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R744:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R744:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R232:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R232:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R232:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R232:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R232:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R232:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R848:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R848:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R848:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R848:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R848:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R848:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R296:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R296:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R296:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R296:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R296:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R296:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R840:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R840:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R840:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R840:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R840:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R840:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 731,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      }
+    },
+    {
+      "pid": 328263,
+      "rank": 2,
+      "generation": "a1875b5bfe514ffa8e28d26bcaa27b70",
+      "mode": "graph",
+      "candidate": "native_disk_v32",
+      "digest": "629c017929ed1de0289a91e8365c17c77b6fa0aa988296bf74959e9925e29617",
+      "graphs_dirty": false,
+      "weight_storage_digest": "589a47f26b97beb0009d6f28866c10a7f39c5c8eaf5f217b826428e050803e96",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v31": {
+          "native_name": "reconstruction_v31",
+          "native_digest": "35dac5dddb22612a754dd935f65323482655b2482680fb558d8bfc34a70eb5c3",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v32": {
+          "native_name": "reconstruction_v32",
+          "native_digest": "d0bf0c9b2a48c7bb9e0facdf950da17cc4e142592e363e6c8519fc6d8d0ea924",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 156,
+        "compact_tokens": 11700,
+        "fallback_calls": 46,
+        "max_compact_tokens": 177
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 1462,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R800:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R800:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R800:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R800:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R800:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R800:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R240:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R240:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R240:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R240:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R240:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R240:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R648:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R648:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R648:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R648:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R648:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R648:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R280:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R280:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R280:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R280:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R280:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R280:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R744:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R744:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R744:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R744:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R744:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R744:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R232:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R232:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R232:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R232:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R232:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R232:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R848:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R848:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R848:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R848:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R848:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R848:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R296:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R296:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R296:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R296:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R296:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R296:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R840:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R840:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R840:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R840:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R840:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R840:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 731,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      }
+    },
+    {
+      "pid": 328726,
+      "rank": 3,
+      "generation": "a1875b5bfe514ffa8e28d26bcaa27b70",
+      "mode": "graph",
+      "candidate": "native_disk_v32",
+      "digest": "629c017929ed1de0289a91e8365c17c77b6fa0aa988296bf74959e9925e29617",
+      "graphs_dirty": false,
+      "weight_storage_digest": "ee37b0c7a546e73a8b2fc665a0118b4fcfcc247c0e3cf138fe8db20bfb597598",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v31": {
+          "native_name": "reconstruction_v31",
+          "native_digest": "35dac5dddb22612a754dd935f65323482655b2482680fb558d8bfc34a70eb5c3",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v32": {
+          "native_name": "reconstruction_v32",
+          "native_digest": "d0bf0c9b2a48c7bb9e0facdf950da17cc4e142592e363e6c8519fc6d8d0ea924",
+          "validation": {
+            "passed": true,
+            "cases": 6,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 156,
+        "compact_tokens": 11700,
+        "fallback_calls": 46,
+        "max_compact_tokens": 177
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 1462,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R800:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R800:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R800:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R800:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R800:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R800:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R240:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R240:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R240:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R240:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R240:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R240:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R648:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R648:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R648:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R648:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R648:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R648:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R280:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R280:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R280:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R280:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R280:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R280:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R744:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R744:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R744:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R744:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R744:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R744:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R232:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R232:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R232:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R232:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R232:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R232:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R848:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R848:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R848:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R848:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R848:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R848:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R296:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R296:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R296:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R296:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R296:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R296:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R840:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R840:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R840:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R840:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R840:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R840:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 731,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      }
+    }
+  ]
+}

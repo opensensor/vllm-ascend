@@ -1,0 +1,13 @@
+import sys,json
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+from tools.glm_perf.resident_harness import ResidentClient
+client=ResidentClient('http://127.0.0.1:8001',timeout=900)
+rows=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+assert all(r['candidate']=='native_v41_bf16_v5' and not r['graphs_dirty'] and not r['native_failed'] and r['reconstruction']['fallback_dispatches']==0 and r['prepared_weight_layout']['transformed_banks']==0 and r['prepared_weight_layout']['backup_bytes']==0 for r in rows)
+assert not client.request('/is_paused',method='GET')['is_paused']
+response=client.request('/v1/completions',{'model':'glm53-flash-selective-w3','prompt':'def multiply(a,b): return','max_tokens':8,'ignore_eos':True,'temperature':0})
+assert response['usage']['completion_tokens']==8
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+(root/'native-v41-bf16-v5-final-serving.json').write_text(json.dumps({'complete':True,'status':rows,'response':response},indent=2))
+print('final_serving',[(r['rank'],r['pid']) for r in rows],response['choices'][0]['text'],flush=True)

@@ -1,0 +1,39 @@
+import sys
+sys.path.insert(0, '/srv/ai/src/glm-selective-w3-nz-test-20261004')
+import json,importlib.util
+from pathlib import Path
+import torch,torch_npu
+from tools.glm_perf.fused_moe_profile import frozen_helper
+root=Path('/srv/ai/artifacts/glm-native-active-rows-20261006/routing-casts')
+root.mkdir(exist_ok=False)
+torch.set_num_threads(4);torch.npu.set_device(0);torch_npu.npu.set_compile_mode(jit_compile=False)
+helper,_=frozen_helper(Path('/home/matteius/experiments/glm-reconstruction-20261006/build-native-fused-v40'))
+spec=importlib.util.spec_from_file_location('routing_cast_acl_profile','/srv/ai/artifacts/glm-native-active-rows-20261006/trace-v39/acl-profile.py')
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+ids64=torch.arange(16,dtype=torch.int64).reshape(2,8).npu();ids32=ids64.int();keys=ids32.flatten().float()
+weights=torch.ones(2,8).npu();boundaries=torch.arange(1,73,device='npu',dtype=torch.float32)
+comparisons=keys[None,:]<boundaries[:,None]
+counts=comparisons.sum(-1)
+cases=(('narrow_int64_to_int32',lambda:ids64.int()),
+ ('int32_to_float32',lambda:ids32.float()),
+ ('stable_argsort_float32',lambda:torch.argsort(keys,stable=True)),
+ ('sum_bool_to_int64',lambda:comparisons.sum(-1)),
+ ('sum_bool_via_int32',lambda:comparisons.sum(-1,dtype=torch.int32).long()),
+ ('cumsum_int64',lambda:counts.cumsum(0)),
+ ('fused_route_int64',lambda:helper.fused_route_metadata(weights,ids64,72)),
+ ('fused_route_int32',lambda:helper.fused_route_metadata(weights,ids32,72)))
+records=[]
+for label,fn in cases:
+ out=fn();graph=torch.npu.NPUGraph()
+ with torch.npu.graph(graph):out=fn()
+ graph.replay();torch.npu.synchronize()
+ profiler=m.AclProfile()
+ try:
+  profiler.start(str(root/label),0)
+  for _ in range(43):graph.replay()
+  torch.npu.synchronize()
+ finally:profiler.stop()
+ records.append({'label':label,'graph_replays':43,'complete':True})
+ print(json.dumps(records[-1]),flush=True)
+ del graph,out
+(root/'capture.json').write_text(json.dumps({'complete':True,'tokens':2,'topk':8,'experts':72,'records':records},indent=2)+'\n')

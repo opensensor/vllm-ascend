@@ -1,0 +1,28 @@
+import json,sys
+from pathlib import Path
+import torch
+from tools.glm_perf import fused_moe_profile as profile
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+tokens=int(sys.argv[1]);records=[];outputs=[];original=profile.measure
+
+def compared(native,pipeline,warmups,samples):
+ actual=pipeline().cpu();position=len(outputs)%4
+ if position>=2:
+  baseline=outputs[-2]
+  record={'weight_bits':(3,4,2)[len(outputs)//4], 'activation_bits':(8,4)[position%2],
+    'tokens':tokens,'elements':actual.numel(),'bitwise_equal':torch.equal(actual,baseline),
+    'max_abs_delta':float((actual-baseline).abs().max())}
+  records.append(record)
+  assert record['bitwise_equal'], record
+ outputs.append(actual)
+ return original(native,pipeline,warmups,samples)
+profile.measure=compared
+try:
+ profile.run([root/'build-native-fused-v38',root/'build-native-fused-v39'],
+   Path('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'),root/f'native-fused-v38-v39-t{tokens}-stage-events.json',tokens=tokens)
+finally:
+ profile.measure=original
+ report={'complete':len(records)==6 and all(r['bitwise_equal'] for r in records),
+   'scope':'matched real experts and synthetic activations, fixed topk1 routing; not model throughput','records':records}
+ (root/f'native-fused-v38-v39-t{tokens}-exactness.json').write_text(json.dumps(report,indent=2)+'\n')
+ print(json.dumps(report),flush=True)

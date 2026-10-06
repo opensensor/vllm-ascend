@@ -1,0 +1,60 @@
+import sys
+sys.path.insert(0, '/srv/ai/src/glm-selective-w3-nz-test-20261004')
+import json,time,uuid
+from dataclasses import replace
+from pathlib import Path
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+def worker_identity(rows):
+ return sorted((r["rank"],r["pid"],r["weight_storage_digest"]) for r in rows)
+from tools.glm_perf.suite import make_groups,run_groups,summarize
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+client=ResidentClient('http://127.0.0.1:8001',timeout=3600)
+from tools.glm_perf.fused_moe_control import manifest as fused_manifest
+from tools.glm_perf.reconstruction_control import compose_source
+before=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+assert all(not r['graphs_dirty'] and not r['native_failed'] for r in before)
+for tokens in (1,2,8):
+ report=json.loads((root/f'native-fused-v40-v41-t{tokens}-exactness.json').read_text())
+ assert report['complete'] and all(r['bitwise_equal'] for r in report['records'])
+routing=json.loads((root/'native-fused-v41-routing-gates.json').read_text())
+assert routing['complete'] and len(routing['records'])==24
+manifest=fused_manifest(root/'build-native-fused-v41',root/'native-fused-v41-gates.json')
+(root/'native-manifest-fused-v41.json').write_text(json.dumps(manifest.value,indent=2)+'\n')
+loaded=client.load_native(manifest)
+(root/'native-fused-v41-live-load.json').write_text(json.dumps(loaded,indent=2)+'\n')
+base=Path('/home/matteius/experiments/glm-decode-flags-20261006/resident-combine.py').read_text()
+source=compose_source(base,'fused_int4a4','reconstruction_v41')
+began=time.monotonic()
+selected=client.switch(Control(uuid.uuid4().hex,candidate='native_disk_v41',source=source))
+switch_s=time.monotonic()-began
+assert worker_identity(selected)==worker_identity(before)
+assert all(r['prepared_weight_layout']['prepared'] and r['prepared_weight_layout']['persistent']
+ and r['prepared_weight_layout']['backup_bytes']==0 and r['prepared_weight_layout']['transformed_banks']==0
+ and r['reconstruction']['fallback_dispatches']==0 for r in selected)
+print('v41_loaded_and_serving',json.dumps({'switch_s':switch_s,'workers':[(r['rank'],r['pid']) for r in selected],
+ 'transformed_banks':0,'backup_bytes':0}),flush=True)
+result={'version':41,'loaded':loaded,'selected':selected,'switch_s':switch_s,'permanent_checkpoint':True,'corrected_mtp':True,'complete':False,'serving_active':True,'before':before,'records':[]}
+export_status=Path('/srv/ai/artifacts/glm-native-active-rows-20261006/trace-v39/export-status.json')
+export_deadline=time.monotonic()+300
+while not export_status.exists():
+ if time.monotonic()>export_deadline:raise TimeoutError('trace exports have not released the benchmark host')
+ time.sleep(0.25)
+assert all(r['exit_code']==0 for r in json.loads(export_status.read_text()))
+short=[(n,[replace(c,max_tokens=64) for c in cs]) for n,cs in make_groups(['short'],[])]
+quality=[c for _,cs in make_groups(['quality'],[]) for c in cs]
+groups=list(short)
+groups.extend(('quality_4_'+str(i//4),[replace(c,max_tokens=128) for c in quality[i:i+4]]) for i in range(0,len(quality),4))
+groups.extend(make_groups(['tool'],[]))
+for name,cases in groups:
+ rows=run_groups([(name,cases)],client.base_url,'glm53-flash-selective-w3',42,timeout_s=900)
+ result['records'].extend(rows);result['summary']=summarize(result['records'])
+ (root/'native-disk-v41-trial.json').write_text(json.dumps(result,indent=2)+'\n')
+ print('live_native_group',name,json.dumps(summarize(rows)),flush=True)
+ if not all(r['valid'] for r in rows):raise RuntimeError('native live request failed')
+result['after_requests']=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+assert worker_identity(result['after_requests'])==worker_identity(before)
+assert all(not r['graphs_dirty'] and not r['native_failed'] and r['reconstruction']['fallback_dispatches']==0 for r in result['after_requests'])
+result['complete']=True
+(root/'native-disk-v41-trial.json').write_text(json.dumps(result,indent=2)+'\n')
+print('complete_new_kernels_left_serving',json.dumps(result['summary']),flush=True)

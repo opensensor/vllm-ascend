@@ -127,3 +127,25 @@ def test_direct_loader_stages_native_code_bytes_without_changing_layout(tmp_path
     module.GlmNativeInt4Loader(config_type()).load_weights(model, config)
     assert len(copied) == 3
     assert all(source != staged and equal for source, staged, equal in copied)
+
+
+def test_direct_loader_composes_optional_permanent_indexer_bundle(tmp_path, loader_module, monkeypatch):
+    module, config_type = loader_module
+    model, config, _ = checkpoint(tmp_path)
+    path = tmp_path / MANIFEST
+    data = json.loads(path.read_text())
+    data["indexer_kernel_bundle"] = "indexer-kernels-v5"
+    path.write_text(json.dumps(data))
+    calls = []
+
+    def install(loaded_model, bundle):
+        assert loaded_model is model
+        assert len(model.loaded) > 0
+        calls.append(bundle)
+        return 1
+
+    monkeypatch.setattr(module, "install_indexer_bundle", install)
+    module.GlmNativeInt4Loader(config_type()).load_weights(model, config)
+    assert calls == [tmp_path / "indexer-kernels-v5"]
+    assert model._native_int4_load_report["aicore_bf16_indexers"] == 1
+    assert model._native_int4_load_report["transformed_code_tensors"] == 0

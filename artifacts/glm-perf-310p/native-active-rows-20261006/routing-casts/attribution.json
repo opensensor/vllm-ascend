@@ -1,0 +1,326 @@
+{
+  "complete": true,
+  "scope": "isolated graph replay, routing-only stages, not full model",
+  "records": [
+    {
+      "label": "narrow_int64_to_int32",
+      "graph_replays": 43,
+      "complete": true,
+      "ai_cpu_casts": 0,
+      "ai_cpu_casts_per_replay": 0.0,
+      "ai_cpu_cast_mean_us": null,
+      "task_families": [
+        {
+          "type": "AI_CORE",
+          "name": "aclnnInplaceCopy_CastAiCore_Cast",
+          "count": 43
+        }
+      ]
+    },
+    {
+      "label": "int32_to_float32",
+      "graph_replays": 43,
+      "complete": true,
+      "ai_cpu_casts": 0,
+      "ai_cpu_casts_per_replay": 0.0,
+      "ai_cpu_cast_mean_us": null,
+      "task_families": [
+        {
+          "type": "AI_CORE",
+          "name": "aclnnInplaceCopy_CastAiCore_Cast",
+          "count": 43
+        }
+      ]
+    },
+    {
+      "label": "stable_argsort_float32",
+      "graph_replays": 43,
+      "complete": true,
+      "ai_cpu_casts": 0,
+      "ai_cpu_casts_per_replay": 0.0,
+      "ai_cpu_cast_mean_us": null,
+      "task_families": [
+        {
+          "type": "AI_CORE",
+          "name": "aclnnSort_SortAiCore_MemSet",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnSort_SortAiCore_Sort",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnSort_CastAiCore_Cast",
+          "count": 43
+        }
+      ]
+    },
+    {
+      "label": "sum_bool_to_int64",
+      "graph_replays": 43,
+      "complete": true,
+      "ai_cpu_casts": 43,
+      "ai_cpu_casts_per_replay": 1.0,
+      "ai_cpu_cast_mean_us": 127.8512558139535,
+      "task_families": [
+        {
+          "type": "AI_CORE",
+          "name": "aclnnReduceSum_CastAiCore_Cast",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnReduceSum_ReduceSumOpAiCore_MemSet",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnReduceSum_ReduceSumOpAiCore_ReduceSum",
+          "count": 43
+        },
+        {
+          "type": "AI_CPU",
+          "name": "Cast",
+          "count": 43
+        }
+      ]
+    },
+    {
+      "label": "sum_bool_via_int32",
+      "graph_replays": 43,
+      "complete": true,
+      "ai_cpu_casts": 0,
+      "ai_cpu_casts_per_replay": 0.0,
+      "ai_cpu_cast_mean_us": null,
+      "task_families": [
+        {
+          "type": "AI_CORE",
+          "name": "aclnnReduceSum_CastAiCore_Cast",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnInplaceCopy_CastAiCore_Cast",
+          "count": 43
+        }
+      ]
+    },
+    {
+      "label": "cumsum_int64",
+      "graph_replays": 43,
+      "complete": true,
+      "ai_cpu_casts": 0,
+      "ai_cpu_casts_per_replay": 0.0,
+      "ai_cpu_cast_mean_us": null,
+      "task_families": [
+        {
+          "type": "AI_CPU",
+          "name": "Cumsum",
+          "count": 43
+        }
+      ]
+    },
+    {
+      "label": "fused_route_int64",
+      "graph_replays": 43,
+      "complete": true,
+      "ai_cpu_casts": 43,
+      "ai_cpu_casts_per_replay": 1.0,
+      "ai_cpu_cast_mean_us": 127.06206976744186,
+      "task_families": [
+        {
+          "type": "AI_CORE",
+          "name": "aclnnSubs_SubAiCore_Sub",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnGeScalar_GreaterEqual_GreaterEqual",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnLtScalar_LessAiCore_Less",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnBitwiseAndTensor_LogicalAndAiCore_LogicalAnd",
+          "count": 86
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnNeScalar_NotEqualAiCore_NotEqual",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnInplaceFillScalar_FillAiCore_Fill",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnSWhere_SelectV2AiCore_SelectV2",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnInplaceCopy_CastAiCore_Cast",
+          "count": 86
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnSort_SortAiCore_MemSet",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnSort_SortAiCore_Sort",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnSort_CastAiCore_Cast",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnArange_ArangeAiCore_Range",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnLtTensor_LessAiCore_Less",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnReduceSum_CastAiCore_Cast",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnReduceSum_ReduceSumOpAiCore_MemSet",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnReduceSum_ReduceSumOpAiCore_ReduceSum",
+          "count": 43
+        },
+        {
+          "type": "AI_CPU",
+          "name": "Cast",
+          "count": 43
+        }
+      ]
+    },
+    {
+      "label": "fused_route_int32",
+      "graph_replays": 43,
+      "complete": true,
+      "ai_cpu_casts": 43,
+      "ai_cpu_casts_per_replay": 1.0,
+      "ai_cpu_cast_mean_us": 120.39911627906977,
+      "task_families": [
+        {
+          "type": "AI_CORE",
+          "name": "aclnnSubs_SubAiCore_Sub",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnGeScalar_CastAiCore_Cast",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnGeScalar_GreaterEqual_GreaterEqual",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnLtScalar_CastAiCore_Cast",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnLtScalar_LessAiCore_Less",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnBitwiseAndTensor_LogicalAndAiCore_LogicalAnd",
+          "count": 86
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnNeScalar_NotEqualAiCore_NotEqual",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnInplaceFillScalar_FillAiCore_Fill",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnSWhere_SelectV2AiCore_SelectV2",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnInplaceCopy_CastAiCore_Cast",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnSort_SortAiCore_MemSet",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnSort_SortAiCore_Sort",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnSort_CastAiCore_Cast",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnArange_ArangeAiCore_Range",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnLtTensor_LessAiCore_Less",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnReduceSum_CastAiCore_Cast",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnReduceSum_ReduceSumOpAiCore_MemSet",
+          "count": 43
+        },
+        {
+          "type": "AI_CORE",
+          "name": "aclnnReduceSum_ReduceSumOpAiCore_ReduceSum",
+          "count": 43
+        },
+        {
+          "type": "AI_CPU",
+          "name": "Cast",
+          "count": 43
+        }
+      ]
+    }
+  ]
+}
