@@ -24,7 +24,10 @@ __aicore__ inline void Run(LocalTensor<uint8_t> storage, LocalTensor<half> padde
   auto indices = broadcast[LANES * BATCH].ReinterpretCast<uint32_t>();
   for (uint32_t group = 0; group < BATCH; ++group)
     for (uint32_t k = 0; k < 2 * GROUP; ++k)
-      offsets.SetValue(group * 2 * GROUP + k, (k < GROUP ? group * GROUP + k : ELEMENTS) * sizeof(half));
+      offsets.SetValue(group * 2 * GROUP + k, (k >= (group % 2) * GROUP && k < (group % 2 + 1) * GROUP
+                                                   ? group * GROUP + k - (group % 2) * GROUP
+                                                   : ELEMENTS) *
+                                                  sizeof(half));
   Duplicate(limb[ELEMENTS], static_cast<half>(0), GROUP);
   for (uint32_t i = 0; i < BATCH; ++i) indices.SetValue(i, i * 2 * sizeof(float));
   PipeBarrier<PIPE_ALL>();

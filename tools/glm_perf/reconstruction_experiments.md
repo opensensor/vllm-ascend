@@ -1,6 +1,7 @@
 # GLM 310P 原生低位 MoE 实验
 
 完整硬件及在线结果见 [实验记录](../../artifacts/glm-perf-310p/reconstruction-20261006/README.md)。
+后续布局调度及全链路结果见 [原生 INT4 调度实验](../../artifacts/glm-perf-310p/native-schedule-20261006/README.md)。
 
 ## 内核融合边界
 
@@ -25,6 +26,12 @@ W2/W3 在 UB 精确扩展为 INT4；UB nibble 提取含精确 FP16 归一化，C
 SwiGLU 和 scale/累加仍使用浮点数学。A4 引入更大的激活量化误差，两种
 模式均需要完整模型质量 gate，不能用算子参考通过代替。
 
+v22 在 UB 按 byte plane 批量解码，用完整 K=64 tile 与相邻两个 K=32
+scale groups 共享权重。激活及 A8 bias row 只启用对应的 K 半区，仍保留
+原有每组 scale 与数值参考。W3 planes 在 UB 重排，使用四次 repeat 的
+转置，避免重复的小转置。FP16 signed codes 只用于 UB 中的格式转换与
+INT4 pack；矩阵乘是 INT4。scale、token index 在单次 projection 内缓存。
+
 `int4a8` 是早期组合入口，使用独立 projection、SwiGLU 和 combine；
 `w4a8` 仅覆盖 W4。它们不能充当上述内核融合实现的结果。
 `gm`、`l1`、`l1_singleton` 保留 W3 FP16 reconstruction 调度筛选。
@@ -32,12 +39,12 @@ SwiGLU 和 scale/累加仍使用浮点数学。A4 引入更大的激活量化误
 ## 构建与独立 gate
 
 使用服务匹配的 CANN、torch-npu；每个新版本采用未使用的 namespace 和
-目录。v13 已在线注册，下面以 v14 为新构建例子。
+目录。v22 已在线注册，下面以 v23 为新构建例子。
 
 ```bash
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
 python -m tools.glm_perf.build_reconstruction \
-  --build-dir /tmp/glm-fused-v14 --version 13 \
+  --build-dir /tmp/glm-fused-v23 --version 23 \
   --output-columns 128 --tile-pipeline --all-bits --fused-moe
 ```
 
@@ -46,8 +53,8 @@ from pathlib import Path
 from tools.glm_perf.fused_moe_probe import run
 
 run(
-    Path("/tmp/glm-fused-v14"),
-    Path("/tmp/glm-fused-v14-gates.json"),
+    Path("/tmp/glm-fused-v23"),
+    Path("/tmp/glm-fused-v23-gates.json"),
     checkpoint=Path("/srv/ai/models/GLM-5.3-Flash-selective-W3-310p"),
     real_prefixes=tuple(
         f"model.language_model.layers.{layer}.mlp.experts.0."
@@ -71,16 +78,16 @@ run(
 
 ```bash
 python -m tools.glm_perf.reconstruction_control manifest \
-  --build-dir /tmp/glm-fused-v14 --gate-report /tmp/glm-fused-v14-gates.json \
-  --output /tmp/glm-fused-v14-manifest.json
+  --build-dir /tmp/glm-fused-v23 --gate-report /tmp/glm-fused-v23-gates.json \
+  --output /tmp/glm-fused-v23-manifest.json
 python -m tools.glm_perf.resident_harness --base-url http://127.0.0.1:8001 \
-  load-native /tmp/glm-fused-v14-manifest.json
+  load-native /tmp/glm-fused-v23-manifest.json
 python -m tools.glm_perf.reconstruction_control trial \
   --base-url http://127.0.0.1:8001 \
   --base-source /home/matteius/experiments/glm-decode-flags-20261006/resident-combine.py \
-  --profile fused_int4a8 --native-resource reconstruction_v14 \
+  --profile fused_int4a8 --native-resource reconstruction_v23 \
   --max-tokens 64 --require-full-coverage --quality \
-  --output /tmp/glm-fused-v14-a8-trial.json
+  --output /tmp/glm-fused-v23-a8-trial.json
 ```
 
 再用 `--profile fused_int4a4`、新的 output 路径测试 A4。manifest 要求六种

@@ -1,0 +1,80 @@
+import hashlib,json,statistics,subprocess
+from pathlib import Path
+import torch,torch_npu
+from safetensors import safe_open
+from tools.glm_perf.glm_int4 import pack_nz_codes,unpack_canonical_codes
+from tools.glm_perf.glm_fused_moe import FusedGeometry,NativeFusedMoE
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+build=root/'build-native-fused-v13'
+out=root/'schedule-ablation-v13'
+out.mkdir(exist_ok=False)
+source_root=root/'v13-source/tools/glm_perf'
+source=(source_root/'glm_fused_moe.cpp').read_text()
+cann=Path('/usr/local/Ascend/ascend-toolkit/latest')
+target=cann/'tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0'
+options=['--npu-arch=dav-2002',f'--sysroot={cann}/tools/hcc/sysroot',f'-isystem{target}',f'-isystem{target}/aarch64-target-linux-gnu',f'-I{source_root}']
+def replace_body(text, anchor, body):
+ start=text.index('{',text.index(anchor));level=1;end=start+1
+ while level:
+  level+=(text[end]=='{')-(text[end]=='}');end+=1
+ return text[:start+1]+'\n'+body+'\n'+text[end-1:]
+variants={'baseline':source}
+variants['no_decode']=replace_body(source,'void Decode(', 'Duplicate(packedB_.Get<uint16_t>(), static_cast<uint16_t>(0), PREPARED_WORDS); PipeBarrier<PIPE_ALL>();')
+s=source
+for name in ('Weight','Activation'):
+ s=replace_body(s,'void '+name+'(', '')
+s=replace_body(s,'void Product(', 'Duplicate(results_.Get<float>(), 0.0f, 2 * ELEMENTS); PipeBarrier<PIPE_ALL>();')
+variants['no_group_math']=s
+anchor='for (uint32_t m = 0; m < count; ++m) {'
+start=source.index(anchor,source.index('void Accumulate('));stop=source.index('\n      }\n    }\n  }',start)
+variants['no_epilogue']=source[:start]+source[stop:]
+# Diagnostic binaries intentionally have invalid numerics; never load in serving workers.
+for name,s in variants.items():
+ if name=='baseline':continue
+ path=out/(name+'.cpp');path.write_text(s)
+ for stage in ('gate_up','down'):
+  subprocess.run([str(build/'compile-reconstruction'),str(path),str(out/(name+'-'+stage+'.bin')),*options,*(['-DGLM_FUSED_GATE_UP'] if stage=='gate_up' else [])],check=True)
+ print('compiled',name,flush=True)
+torch.npu.set_device(0);torch_npu.npu.set_compile_mode(jit_compile=False)
+torch.ops.load_library(str(build/'glm_reconstruction_bridge_v13.so'))
+factory=torch.classes.glm_reconstruction_v13.Kernel
+checkpoint=Path('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p')
+index=json.loads((checkpoint/'model.safetensors.index.json').read_text())['weight_map']
+report={'scope':'cold diagnostic, one real expert, two synthetic rows, prepared routes, median device events; ablation outputs intentionally invalid, never registered with server','records':[]}
+for layer,bits in ((11,4),(10,3),(33,2)):
+ values=[];prefix=f'model.language_model.layers.{layer}.mlp.experts.0.'
+ for projection in ('gate','up','down'):
+  pair=[]
+  for suffix in ('_codes','_scale'):
+   key=prefix+projection+'_proj'+suffix
+   with safe_open(str(checkpoint/index[key]),framework='pt',device='cpu') as f:pair.append(f.get_tensor(key))
+  codes,scales=pair;values.append((unpack_canonical_codes(codes,scales.shape[1]*32),scales.float()))
+ gate=torch.cat([v[0] for v in values[:2]],0)[None];gs=torch.cat([v[1] for v in values[:2]],0)[None]
+ down,ds=values[2][0][None],values[2][1][None]
+ x=torch.randn(2,4096,generator=torch.Generator().manual_seed(5704)).half().npu()
+ gc,dc,ggs,gds=pack_nz_codes(gate,bits).npu(),pack_nz_codes(down,bits).npu(),gs.npu(),ds.npu()
+ weights=torch.ones(2,1).npu();order=torch.tensor([0,1],dtype=torch.int64).npu();ends=torch.tensor([2],dtype=torch.int64).npu()
+ for activation in (8,4):
+  for name in variants:
+   native=NativeFusedMoE(build,namespace='glm_reconstruction_v13',activation_bits=activation)
+   if name!='baseline':
+    native.gate_kernel=factory(str(out/(name+'-gate_up.bin')),'glm_fused_gate_up_v1')
+    native.down_kernel=factory(str(out/(name+'-down.bin')),'glm_fused_down_v1')
+   geometry=FusedGeometry(2,1,1,4096,2048,bits,bits,activation)
+   def pipeline():return native.grouped(x,gc,ggs,dc,gds,weights,order,ends,geometry)
+   for _ in range(3):pipeline()
+   torch.npu.synchronize();events=[];original=native.launch
+   names={id(native.pack_kernel):'input_quant_once',id(native.gate_kernel):'gate_up_swiglu_quant',id(native.down_kernel):'down_weighted_reduce'}
+   def timed(kernel,args,blocks):
+    start,end=torch.npu.Event(enable_timing=True),torch.npu.Event(enable_timing=True)
+    start.record();original(kernel,args,blocks);end.record();events.append((names[id(kernel)],start,end))
+   native.launch=timed
+   for _ in range(9):pipeline()
+   torch.npu.synchronize();samples={n:[] for n in names.values()}
+   for stage,start,end in events:samples[stage].append(start.elapsed_time(end))
+   record={'weight_bits':bits,'activation_bits':activation,'variant':name,'stage_ms':{n:{'median_ms':statistics.median(ms),'samples_ms':ms} for n,ms in samples.items()}}
+   report['records'].append(record);print(json.dumps(record),flush=True)
+   (out/'report.json').write_text(json.dumps(report,indent=2)+'\n')
+report['complete']=True
+report['sources']={n:hashlib.sha256(s.encode()).hexdigest() for n,s in variants.items()}
+(out/'report.json').write_text(json.dumps(report,indent=2)+'\n')

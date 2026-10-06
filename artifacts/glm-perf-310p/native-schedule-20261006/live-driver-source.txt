@@ -1,0 +1,65 @@
+import importlib.util
+import json
+from dataclasses import replace
+from pathlib import Path
+
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_native import NativeManifest
+from tools.glm_perf.suite import make_groups, run_groups, summarize
+
+root = Path('/home/matteius/experiments/glm-reconstruction-20261006')
+spec = importlib.util.spec_from_file_location('fused_v22_control', root/'v22-source/tools/glm_perf/reconstruction_control.py')
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+client = ResidentClient('http://127.0.0.1:8001')
+manifest = NativeManifest(json.loads((root/'native-manifest-fused-v22.json').read_text()))
+receipts = client.load_native(manifest)
+(root/'native-fused-v22-load-receipts.json').write_text(json.dumps(receipts,indent=2)+'\n')
+print('native_loaded',json.dumps([{'rank':r['rank'],'validation':r['validation']} for r in receipts]),flush=True)
+short = [(name,[replace(case,max_tokens=64) for case in cases]) for name,cases in make_groups(['short'],[])]
+
+def baseline(label):
+    rows = run_groups(short,client.base_url,'glm53-flash-selective-w3',42,timeout_s=900)
+    payload = {'summary':summarize(rows),'records':rows,'status':client._acknowledged_rpc('resident_status',matches=client._status_matches)}
+    (root/f'live-fused-v22-baseline-{label}.json').write_text(json.dumps(payload,indent=2)+'\n')
+    print(label,json.dumps(payload['summary']),flush=True)
+
+baseline('before')
+original_switch = client.switch
+
+def logged_switch(control):
+    rows = original_switch(control)
+    if control.candidate.startswith('reconstruction_fused_'):
+        print('capture',control.candidate,json.dumps([{'rank':r['rank'],'audit':r.get('reconstruction')} for r in rows]),flush=True)
+    return rows
+
+client.switch = logged_switch
+original_run_groups = module.run_groups
+def progress(groups, *args, **kwargs):
+    result = []
+    for name, cases in groups:
+        rows = original_run_groups([(name,cases)], *args, **kwargs)
+        result.extend(rows)
+        print('request_group',name,json.dumps(summarize(rows)),flush=True)
+        (root/f'live-fused-v22-{current_profile}-partial.json').write_text(json.dumps({'records':result,'complete':False},indent=2)+'\n')
+    return result
+module.run_groups = progress
+for profile in ('fused_int4a8','fused_int4a4'):
+    current_profile = profile
+    try:
+        result = module.run_trial(client,Path('/home/matteius/experiments/glm-decode-flags-20261006/resident-combine.py').read_text(),
+                                  profile,root/f'live-fused-v22-{profile}-trial.json','glm53-flash-selective-w3',64,
+                                  'reconstruction_v22',require_full_coverage=True,quality=True)
+        print(profile,json.dumps({'restored':result['restored'],'summary':result['summary']}),flush=True)
+    except Exception as error:
+        print('trial_error',profile,type(error).__name__,str(error),flush=True)
+        path = root/f'live-fused-v22-{profile}-trial.json'
+        if path.exists():
+            result=json.loads(path.read_text())
+            print('trial_results',profile,json.dumps({'restored':result.get('restored'),'summary':result.get('summary')}),flush=True)
+        else:
+            raise
+    baseline('after-'+profile)
+final = {'paused':client.request('/is_paused',method='GET'),'workers':client._acknowledged_rpc('resident_status',matches=client._status_matches)}
+(root/'resident-status-fused-v22-after.json').write_text(json.dumps(final,indent=2)+'\n')
+print('finished',flush=True)

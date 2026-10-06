@@ -1,0 +1,29 @@
+# Compiler diagnostic excerpt; generic SDK runtime footer omitted.
+ACLRTC failed (176003): === Compile Log ===
+/tmp/asrtc_src-5d9a20/glm_reconstruction.asc:243:7: error: no matching function for call to 'Duplicate'
+      Duplicate(packed.ReinterpretCast<uint16_t>()[MAX_ROWS * K0 / 4], static_cast<uint16_t>(0x1111), biasMask, 1, 1, 8);
+      ^~~~~~~~~
+/usr/local/Ascend/cann-9.1.0/asc/include/basic_api/../../impl/basic_api/kernel_operator_vec_duplicate_intf_impl.h:62:24: note: candidate function template not viable: no known conversion from 'const uint64_t[2]' (aka 'const unsigned long[2]') to 'uint64_t' (aka 'unsigned long') for 3rd argument
+__aicore__ inline void Duplicate(const LocalTensor<T>& dst, const T& scalarValue, uint64_t mask,
+                       ^
+/usr/local/Ascend/cann-9.1.0/asc/include/basic_api/../../impl/basic_api/kernel_operator_vec_duplicate_intf_impl.h:84:24: note: candidate function template not viable: no known conversion from 'const uint64_t[2]' (aka 'const unsigned long[2]') to 'uint64_t *' (aka 'unsigned long *') for 3rd argument
+__aicore__ inline void Duplicate(const LocalTensor<T>& dst, const T& scalarValue, uint64_t mask[],
+                       ^
+/usr/local/Ascend/cann-9.1.0/asc/include/basic_api/../../impl/basic_api/kernel_operator_vec_duplicate_intf_impl.h:113:24: note: candidate function template not viable: requires 3 arguments, but 6 were provided
+__aicore__ inline void Duplicate(const LocalTensor<T>& dst, const T& scalarValue, const int32_t& count)
+                       ^
+1 error generated.
+
+
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/matteius/experiments/glm-reconstruction-20261006/v18-source/tools/glm_perf/build_reconstruction.py", line 224, in <module>
+    main()
+  File "/home/matteius/experiments/glm-reconstruction-20261006/v18-source/tools/glm_perf/build_reconstruction.py", line 209, in main
+    build(
+  File "/home/matteius/experiments/glm-reconstruction-20261006/v18-source/tools/glm_perf/build_reconstruction.py", line 123, in build
+    subprocess.run(
+  File "/usr/local/python3.12.13/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/home/matteius/experiments/glm-reconstruction-20261006/build-native-fused-v18/compile-reconstruction', '/home/matteius/experiments/glm-reconstruction-20261006/v18-source/tools/glm_perf/glm_fused_moe.cpp', '/home/matteius/experiments/glm-reconstruction-20261006/build-native-fused-v18/glm_fused_gate_up.bin', '--npu-arch=dav-2002', '--sysroot=/usr/local/Ascend/cann-9.1.0/tools/hcc/sysroot', '-isystem/usr/local/Ascend/cann-9.1.0/tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0', '-isystem/usr/local/Ascend/cann-9.1.0/tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0/aarch64-target-linux-gnu', '-I/home/matteius/experiments/glm-reconstruction-20261006/v18-source/tools/glm_perf', '-DGLM_FUSED_GATE_UP']' returned non-zero exit status 1.

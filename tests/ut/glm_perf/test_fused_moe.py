@@ -11,7 +11,65 @@ import torch
 from tools.glm_perf.fused_moe_control import manifest
 from tools.glm_perf.fused_moe_probe import projection_reference, reference
 from tools.glm_perf.glm_fused_moe import FusedGeometry, NativeFusedMoE
+from tools.glm_perf.glm_int4 import activation_limbs, pack_nz_codes, signed_nibbles
 from tools.glm_perf.resident_candidates.expert_reconstruction import wrap_fused_moe
+
+
+@pytest.mark.parametrize("bits", (2, 3, 4))
+def test_contiguous_decoder_and_cube_cast_pack_preserve_every_signed_code(bits):
+    generator = torch.Generator().manual_seed(901 + bits)
+    signed = torch.randint(-(1 << (bits - 1)), 1 << (bits - 1), (1, 128, 256), generator=generator, dtype=torch.int8)
+    fields = 8 if bits == 3 else 8 // bits
+    raw = pack_nz_codes(signed, bits).view(torch.uint8).int().reshape(8, -1)
+    width = 4096 // fields
+    decoded = []
+    for field in range(fields):
+        phase, plane = field * bits % 8, field * bits // 8
+        low_bits = min(bits, 8 - phase)
+        values = (
+            (
+                (raw[:, plane * width : (plane + 1) * width] & (((1 << low_bits) - 1) << phase)).half()
+                * (1.0 / (1 << phase))
+            )
+            .round()
+            .to(torch.int16)
+            .int()
+        )
+        if low_bits < bits:
+            values |= (raw[:, (plane + 1) * width : (plane + 2) * width] & ((1 << (bits - low_bits)) - 1)) << low_bits
+        sign = 1 << (bits - 1)
+        decoded.append(((values + sign) & ((1 << bits) - 1)) - sign)
+    logical = torch.cat(decoded, -1).reshape(8, 4, 64, 16).permute(1, 0, 3, 2).reshape(4, 128, 64)
+    physical = torch.cat((torch.arange(0, 128, 2), torch.arange(1, 128, 2)))
+    cube = logical[:, physical].to(torch.int8)
+    pairs = cube.int().reshape(4, 128, 32, 2) & 15
+    packed = (pairs[..., 0] | (pairs[..., 1] << 4)).to(torch.uint8)
+    actual = signed_nibbles(packed).flatten(-2)
+    expected = signed[0, physical].reshape(128, 4, 64).permute(1, 0, 2)
+    assert torch.equal(actual, expected)
+
+
+@pytest.mark.parametrize("activation_bits", (4, 8))
+def test_adjacent_scale_groups_share_weight_tile_without_mixing_integer_products(activation_bits):
+    x = torch.linspace(-1, 1, 64).reshape(1, 64).half()
+    weights = torch.arange(64).remainder(16).sub(8).int()
+    if activation_bits == 8:
+        low, high, _, quant = activation_limbs(x)
+    else:
+        groups = x.float().reshape(1, 2, 32)
+        scale = groups.abs().amax(-1) / 7
+        quant = (groups / scale[..., None]).round().clamp(-7, 7).int()
+        low, high = quant, torch.zeros_like(quant)
+    for group in (0, 1):
+        # Each row activates only its own half of the full K=64 weight tile.
+        a, b, bias = (torch.zeros(64, dtype=torch.int32) for _ in range(3))
+        selected = slice(group * 32, (group + 1) * 32)
+        a[selected], b[selected] = low[0, group], high[0, group]
+        bias[selected] = 1
+        integer = a @ weights
+        if activation_bits == 8:
+            integer += 16 * (b @ weights) + 8 * (bias @ weights)
+        assert integer == quant[0, group] @ weights[selected]
 
 
 @pytest.mark.parametrize(
@@ -186,7 +244,6 @@ def test_input_is_quantized_once_per_token_and_shared_by_all_expert_tiles():
     native = object.__new__(NativeFusedMoE)
     native.device = torch.device("cpu")
     native.activation_bits = 8
-    native.offsets = {bits: torch.zeros(8, dtype=torch.int64) for bits in (2, 3, 4)}
     native.configs = {}
     native.pack_kernel, native.gate_kernel, native.down_kernel = "pack", "gate", "down"
     calls = []

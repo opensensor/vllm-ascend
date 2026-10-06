@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 import torch
 
-from .glm_int4 import MAX_GROUPED_ROUTES, packed_weight_bits, pipeline_gather_offsets
+from .glm_int4 import MAX_GROUPED_ROUTES, packed_weight_bits
 
 
 @dataclass(frozen=True)
@@ -49,9 +49,6 @@ class NativeFusedMoE:
         self.down_kernel = factory(str(root / "glm_fused_down.bin"), "glm_fused_down_v1")
         self.pack_kernel = factory(str(root / "glm_fused_pack.bin"), "glm_fused_pack_v1")
         self.device = torch.device("npu", torch.npu.current_device())
-        self.offsets = {
-            bits: pipeline_gather_offsets(128, bits).to(torch.int32).view(torch.int64) for bits in (2, 3, 4)
-        }
         self.configs = {}
 
     def geometry(self, x, gate_codes, gate_scales, down_codes, down_scales, weights, ids):
@@ -130,8 +127,7 @@ class NativeFusedMoE:
             gate = (*common, 2 * geometry.intermediate, geometry.hidden, geometry.gate_bits, *suffix)
             down = (*common, geometry.hidden, geometry.intermediate, geometry.down_bits, *suffix)
             projection_configs = tuple(
-                torch.cat((torch.tensor(header, dtype=torch.int64), self.offsets[bits])).to(self.device)
-                for header, bits in ((gate, geometry.gate_bits), (down, geometry.down_bits))
+                torch.tensor(header, dtype=torch.int64, device=self.device) for header in (gate, down)
             )
             pack_config = torch.tensor(
                 (geometry.tokens * geometry.hidden // 32, geometry.activation_bits), dtype=torch.int64
