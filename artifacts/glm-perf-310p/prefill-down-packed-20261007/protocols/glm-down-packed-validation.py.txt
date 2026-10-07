@@ -1,0 +1,20 @@
+import hashlib,json
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+short=json.loads((root/'v916-down-packed-cold-live.json').read_text())
+long=json.loads((root/'v916-down-packed-long-live.json').read_text())
+gates=json.loads((root/'v916-gates.json').read_text())
+assert short['complete'] and long['complete'] and gates['complete']
+assert len(gates['records'])==30 and len(gates['real_weight_records'])==12
+assert all(r['passed'] for r in gates['records']+gates['real_weight_records'])
+source=(root/'v916-mixed-candidate.py').read_bytes();digest=hashlib.sha256(source).hexdigest()
+identity=lambda rows:sorted((r['rank'],r['pid'],r['weight_storage_digest']) for r in rows)
+assert identity(short['before'])==identity(short['final'])==identity(long['before'])==identity(long['final'])
+assert all(r['candidate']=='native_v916_prefill_v913_decode' and r['digest']==digest and not r['native_failed'] and not r['graphs_dirty'] and r['reconstruction']['fallback_dispatches']==0 and r['prefill_graph']['replays']>=12 for r in long['final'])
+assert not long['paused']['is_paused']
+assert all(r['routed_down_pack']['shape']==[238,32,2048] and r['routed_down_pack']['bytes']==15597568 for r in long['final'])
+baseline,candidate=(short['medians_1280_s'][str(v)] for v in (914,916))
+long_base,long_new=(long['single_samples_7680_s'][str(v)] for v in (914,916))
+payload={'complete':True,'quality_evaluated':False,'candidate':'native_v916_prefill_v913_decode','source_sha256':digest,'cpu_tests':{'passed':530,'scope':'isolated HEAD plus this change; glm_perf suite with three pre-existing experiment modules excluded','excluded':['test_kpool_rotation_direct.py','test_moe_half_unpermute.py','test_next_optimization_queue.py']},'real_weight_gates':{'paired_exact_replay':66,'independent_math_replay':30,'real_reference':12},'short_prompt':{'tokens':1280,'samples_per_build':2,'baseline_median_ttft_s':baseline,'candidate_median_ttft_s':candidate,'time_reduction_percent':100*(1-candidate/baseline)},'long_prompt':{'tokens':7680,'samples_per_build':1,'baseline_ttft_s':long_base,'candidate_ttft_s':long_new,'observed_time_reduction_percent':100*(1-long_new/long_base),'scope':'one pair; not a statistical median comparison'},'worker_pid_and_weight_storage_retained':True,'final':long['final'],'paused':long['paused']}
+(root/'down-packed-validation.json').write_text(json.dumps(payload,indent=2)+'\n')
+print(json.dumps({k:payload[k] for k in ('candidate','source_sha256','short_prompt','long_prompt','paused')},indent=2))
