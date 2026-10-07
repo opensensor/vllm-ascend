@@ -1,0 +1,43 @@
+import hashlib,json,re,signal,sys,time,urllib.request,uuid
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+sys.path.insert(0,str(root/'source-v6'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+client=ResidentClient('http://127.0.0.1:8001',timeout=900)
+baseline=(root/'v905-candidate.py').read_text();source=(root/'v909-mixed-candidate.py').read_text()
+compile(source,'mixed candidate','exec')
+result={'complete':False,'cancelled_user_requests':False,'benchmark_requests_sent':0}
+out=root/'v909-mixed-applied.json';started=time.monotonic();last_report=-60
+for _ in range(3600):
+ with urllib.request.urlopen(client.base_url+'/metrics',timeout=30) as response:
+  values=[float(value) for value in re.findall(r'^vllm:num_requests_(?:running|waiting)(?:\{[^\n]*\})?\s+([0-9.eE+-]+)$',response.read().decode(),re.M)]
+ if values and not any(values): break
+ if time.monotonic()-last_report>60:
+  print('waiting for idle; serving unchanged',values,flush=True);last_report=time.monotonic()
+ time.sleep(1)
+else: raise RuntimeError('no idle window; server untouched')
+# Pause immediately in the idle window, before status RPCs. If a request races
+# this transition, wait for it to finish; never use abort/keep mode.
+paused=False;applied=False
+try:
+ assert client.request('/pause?mode=wait&clear_cache=true')['status']=='paused';paused=True
+ before=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+ assert all(r['candidate']=='native_v905_prefill_graph' and not r['graphs_dirty'] and not r['native_failed'] for r in before)
+ assert all(r['native_loaded']['reconstruction_v909']['validation']['passed'] for r in before)
+ result['before']=before
+ selected=client.switch(Control(uuid.uuid4().hex,candidate='native_v909_prefill_v905_decode',source=source));applied=True
+ assert sorted((r['rank'],r['pid'],r['weight_storage_digest']) for r in before)==sorted((r['rank'],r['pid'],r['weight_storage_digest']) for r in selected)
+ assert all(r['prefill_decode_dispatch']['prefill_resource']=='reconstruction_v909' and r['prefill_decode_dispatch']['decode_resource']=='reconstruction_v905' for r in selected)
+ result['selected']=selected;result['complete']=True
+ out.write_text(json.dumps(result,indent=2))
+ client.resume();paused=False
+ result['pause_state']=client.request('/is_paused',method='GET');out.write_text(json.dumps(result,indent=2))
+ print('mixed candidate applied, same workers/weights, service resumed',flush=True)
+except BaseException as error:
+ result['error']=repr(error);out.write_text(json.dumps(result,indent=2))
+ if paused:
+  current=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+  if not any(r['native_failed'] for r in current):
+   client.switch(Control(uuid.uuid4().hex,candidate='native_v905_prefill_graph',source=baseline));client.resume()
+ raise

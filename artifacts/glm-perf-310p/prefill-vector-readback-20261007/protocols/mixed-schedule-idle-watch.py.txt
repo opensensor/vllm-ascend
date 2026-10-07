@@ -1,0 +1,19 @@
+import re,subprocess,time,urllib.request
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+python='/srv/ai/venvs/qwen38-w4-test-ce1862/bin/python'
+started=time.monotonic()
+while time.monotonic()-started<5400:
+ with urllib.request.urlopen('http://127.0.0.1:8001/metrics',timeout=30) as response:
+  values=[float(value) for value in re.findall(r'^vllm:num_requests_(?:running|waiting)(?:\{[^\n]*\})?\s+([0-9.eE+-]+)$',response.read().decode(),re.M)]
+ if values and not any(values): break
+ print('waiting for idle',round(time.monotonic()-started),values,flush=True)
+ time.sleep(30)
+else: raise RuntimeError('idle window did not arrive; server untouched')
+print('idle window found',flush=True)
+with (root/'mixed-schedule-gates.log').open('w') as log:
+ subprocess.run([python,str(root/'glm-mixed-schedule-gates.py')],cwd='/tmp',stdout=log,stderr=subprocess.STDOUT,check=True)
+print('mixed real-weight gates passed',flush=True)
+with (root/'v909-mixed-live.log').open('w') as log:
+ subprocess.run([python,str(root/'mixed-schedule-live.py'),'909'],cwd='/tmp',stdout=log,stderr=subprocess.STDOUT,check=True)
+print('mixed live comparison complete',flush=True)

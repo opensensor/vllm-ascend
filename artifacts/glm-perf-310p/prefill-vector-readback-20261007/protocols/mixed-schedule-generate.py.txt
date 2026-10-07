@@ -1,0 +1,29 @@
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+source=(root/'v909-candidate.py').read_text().replace('def replacements(native_resources):','def mixed_base_replacements(native_resources):')
+source+='\n'+(root/'source-v6/tools/glm_perf/resident_candidates/prefill_decode.py').read_text()+'\n'
+source+='''
+def replacements(native_resources):
+    prefill = native_resources['reconstruction_v909']['fused_int4a4']
+    decode = native_resources['reconstruction_v905']['fused_int4a4']
+    dispatch = PrefillDecodeNative(prefill, decode)
+    selected = dict(native_resources)
+    selected['reconstruction_v909'] = dict(native_resources['reconstruction_v909'])
+    selected['reconstruction_v909']['fused_int4a4'] = dispatch
+    changes = mixed_base_replacements(selected)
+    target = 'vllm_ascend._310p.worker_310p:NPUWorker310.resident_status'
+    previous = changes[target]
+    def mixed_status(self):
+        result = previous(self)
+        result['prefill_decode_dispatch'] = {'prefill_resource': 'reconstruction_v909',
+            'decode_resource': 'reconstruction_v905', 'decode_max_tokens': FUSED_REDUCTION_TOKENS,
+            'scope': 'capture and Python dispatches; replay does not increment Python counters',
+            'dispatches': dict(dispatch.dispatches)}
+        return result
+    mixed_status.__dict__.update(getattr(previous, '__dict__', {}))
+    changes[target] = mixed_status
+    return changes
+'''
+compile(source,'mixed candidate','exec')
+(root/'v909-mixed-candidate.py').write_text(source)
+print('mixed candidate ready',len(source),'bytes')

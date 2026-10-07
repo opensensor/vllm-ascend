@@ -1,0 +1,45 @@
+import json,re,signal,subprocess,sys,urllib.request
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+source=root/'source-v5'
+sys.path.insert(0,str(source))
+from tools.glm_perf.resident_harness import ResidentClient
+client=ResidentClient('http://127.0.0.1:8001',timeout=900)
+python='/srv/ai/venvs/qwen38-w4-test-ce1862/bin/python'
+with urllib.request.urlopen(client.base_url+'/metrics',timeout=30) as response:
+ metrics=response.read().decode()
+values=[float(value) for value in re.findall(r'^vllm:num_requests_(?:running|waiting)(?:\{[^\n]*\})?\s+([0-9.eE+-]+)$',metrics,re.M)]
+if not values or any(values):
+ raise RuntimeError('server is busy; no independent NPU work started')
+before=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+assert all(row['candidate']=='native_v905_prefill_graph' and not row['graphs_dirty'] and not row['native_failed'] for row in before)
+(root/'brcb-scale-before-gates.json').write_text(json.dumps(before,indent=2))
+def stop(signum,frame):
+ raise KeyboardInterrupt('gate controller interrupted')
+signal.signal(signal.SIGINT,stop)
+signal.signal(signal.SIGTERM,stop)
+
+def run(name,code):
+ with (root/(name+'.log')).open('w') as log:
+  result=subprocess.run([python,'-c',"import sys;sys.path.insert(0,"+repr(str(source))+");"+code],cwd='/tmp',stdout=log,stderr=subprocess.STDOUT)
+ print(name,'exit',result.returncode,flush=True)
+ if result.returncode:
+  raise RuntimeError(name+' failed; inspect log')
+
+try:
+ receipt=client.request('/pause?mode=wait&clear_cache=true')
+ assert receipt['status']=='paused'
+ (root/'brcb-scale-pause.json').write_text(json.dumps(receipt,indent=2))
+ print('idle service paused; weights and graphs unchanged',flush=True)
+ for version in (909,):
+  build=root/f'build-v{version}'
+  args=[str(source/'tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py'),'--baseline-build-dir',str(root/'build-v905'),'--candidate-build-dir',str(build),'--checkpoint','/srv/ai/models/GLM-5.3-Flash-selective-W3-310p','--junitxml='+str(root/f'v{version}-paired.xml')]
+  run(f'v{version}-paired',"import runpy;sys.argv="+repr(args)+";runpy.run_path(sys.argv[0],run_name='__main__')")
+  run(f'v{version}-gates',"import importlib;from pathlib import Path;from tools.glm_perf.fused_moe_profile import frozen_helper;build=Path("+repr(str(build))+");helper,options=frozen_helper(build);probe=importlib.import_module(options['helper_package']+'.fused_moe_probe');probe.run(build,Path("+repr(str(root/f'v{version}-gates.json'))+"),checkpoint=Path('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'),real_prefixes=tuple(f'model.language_model.layers.{layer}.mlp.experts.0.' for layer in (10,11,33)))")
+ for tokens in (2,31,640):
+  run(f'brcb-scale-profile-{tokens}',"from pathlib import Path;from tools.glm_perf.fused_moe_profile import run;run([Path(p) for p in "+repr([str(root/f'build-v{v}') for v in (905,909)])+"],Path('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'),Path("+repr(str(root/f'brcb-scale-profile-{tokens}.json'))+"),tokens="+str(tokens)+",warmups=2,samples=5)")
+finally:
+ client.resume()
+ after=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+ (root/'brcb-scale-after-gates.json').write_text(json.dumps(after,indent=2))
+ print('service resumed on v905',flush=True)

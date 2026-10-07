@@ -100,6 +100,10 @@ def test_mismatched_route_dtype_rejected_before_any_kernel_load(tmp_path, half_r
         {"share_gate_up_input": 1},
         {"cache_gate_up_activations": True},
         {"cache_gate_up_activations": 1},
+        {"vector_scale_products": True},
+        {"vector_scale_products": 1},
+        {"gather_product_matrix": True},
+        {"gather_product_matrix": 1},
         {
             "fused_moe": True,
             "all_bits": True,
@@ -126,8 +130,10 @@ def test_bad_prefill_flags_fail_before_creating_build(tmp_path, options):
 
 @pytest.mark.parametrize("cache,half_routes", [(False, False), (True, False), (False, True), (True, True)])
 @pytest.mark.parametrize("share_input,cache_activations", [(False, False), (True, False), (True, True)])
+@pytest.mark.parametrize("vector_scales", [False, True])
+@pytest.mark.parametrize("gather_products", [False, True])
 def test_builder_freezes_matching_projection_reducer_flags(
-    tmp_path, monkeypatch, cache, half_routes, share_input, cache_activations
+    tmp_path, monkeypatch, cache, half_routes, share_input, cache_activations, vector_scales, gather_products
 ):
     commands = []
 
@@ -156,15 +162,21 @@ def test_builder_freezes_matching_projection_reducer_flags(
         fp16_route_workspace=half_routes,
         share_gate_up_input=share_input,
         cache_gate_up_activations=cache_activations,
+        vector_scale_products=vector_scales,
+        gather_product_matrix=gather_products,
     )
     provenance = json.loads((output / "provenance.json").read_text())
     assert provenance["_build"]["prefill_weight_cache"] is cache
     assert provenance["_build"]["fp16_route_workspace"] is half_routes
     assert provenance["_build"]["share_gate_up_input"] is share_input
     assert provenance["_build"]["cache_gate_up_activations"] is cache_activations
+    assert provenance["_build"]["vector_scale_products"] is vector_scales
+    assert provenance["_build"]["gather_product_matrix"] is gather_products
     for command in commands:
         if len(command) > 1 and Path(command[1]).name == "glm_fused_moe.cpp":
             assert ("-DGLM_PREFILL_WEIGHT_CACHE" in command) is cache
+            assert ("-DGLM_VECTOR_SCALE_PRODUCTS" in command) is vector_scales
+            assert ("-DGLM_GATHER_PRODUCT_MATRIX" in command) is gather_products
             assert ("-DGLM_FP16_ROUTE_WORKSPACE" in command) is half_routes
             assert ("-DGLM_SHARE_GATE_UP_INPUT" in command) is (share_input and "gate_up" in Path(command[2]).name)
             assert ("-DGLM_CACHE_GATE_UP_ACTIVATIONS" in command) is (
@@ -173,6 +185,22 @@ def test_builder_freezes_matching_projection_reducer_flags(
         if len(command) > 1 and Path(command[1]).name == "glm_fused_reduce.cpp":
             assert ("-DGLM_FP16_ROUTE_WORKSPACE" in command) is half_routes
     assert "glm_fused_reduce.bin" in provenance
+
+
+@pytest.mark.parametrize("conflict", ["weight_decode_lut", "strided_product_copy", "repeat_product_cast"])
+def test_matrix_gather_rejects_overlapping_scratch_and_readback_schedules(tmp_path, conflict):
+    options = {
+        "fused_moe": True,
+        "all_bits": True,
+        "tile_pipeline": True,
+        "output_columns": 128,
+        "prepared_weight_layout": True,
+        "gather_product_matrix": True,
+        conflict: True,
+    }
+    with pytest.raises(ValueError, match="matrix product gather needs"):
+        builder.build(tmp_path / "output", tmp_path, tmp_path, **options)
+    assert not (tmp_path / "output").exists()
 
 
 def test_cli_passes_w3_and_prefill_flags_to_builder(tmp_path, monkeypatch):
@@ -188,9 +216,11 @@ def test_cli_passes_w3_and_prefill_flags_to_builder(tmp_path, monkeypatch):
             "--fp16-route-workspace",
             "--share-gate-up-input",
             "--cache-gate-up-activations",
+            "--vector-scale-products",
+            "--gather-product-matrix",
         ],
     )
     calls = []
     monkeypatch.setattr(builder, "build", lambda *args: calls.append(args))
     builder.main()
-    assert calls[0][-6:] == (True, True, True, True, True, True)
+    assert calls[0][-8:] == (True, True, True, True, True, True, True, True)

@@ -1,0 +1,1187 @@
+// SPDX-License-Identifier: Apache-2.0
+// Native INT4 products on unchanged GLM NZ W2/W3/W4 banks and block32 scales.
+// Two fused native stages: gate/up+SwiGLU+activation quant, and down+FP32 weighted reduction.
+#include "kernel_operator.h"
+#include "glm_fused_quantize.h"
+#ifndef GLM_INT4_OUTPUT_COLUMNS
+  #define GLM_INT4_OUTPUT_COLUMNS 128
+#endif
+
+namespace {
+using namespace AscendC;
+constexpr uint32_t DECODE_TABLE_ELEMENTS = 4096, DECODE_TABLE_COUNT = 6;
+constexpr uint32_t DECODE_TABLE_BYTES = DECODE_TABLE_ELEMENTS * DECODE_TABLE_COUNT * sizeof(half);
+static_assert(DECODE_TABLE_BYTES + 8 * 128 * sizeof(float) <= 128 * 256 * sizeof(half),
+              "decode tables overlap weight scale broadcasts");
+constexpr uint32_t M = 16, N = GLM_INT4_OUTPUT_COLUMNS, K0 = 64, GROUP = 32, NZ_K = 256, NZ_N = 16;
+static_assert(N == 128, "fused native MoE uses 128-column tiles");
+constexpr uint32_t RAW_BYTES = N * NZ_K / 2;
+constexpr uint32_t MAX_ROWS = M - 1, MAX_K_GROUPS = 4096 / GROUP;
+#ifdef GLM_PREFILL_WEIGHT_CACHE
+constexpr uint32_t MAX_WEIGHT_K = MAX_K_GROUPS * GROUP;
+constexpr uint32_t CACHED_PROJECTION_BYTES = N * MAX_WEIGHT_K / 2;
+  #ifdef GLM_FUSED_GATE_UP
+constexpr uint32_t L1_WEIGHT_BYTES = 2 * CACHED_PROJECTION_BYTES;
+  #else
+constexpr uint32_t L1_WEIGHT_BYTES = CACHED_PROJECTION_BYTES;
+  #endif
+#endif
+constexpr uint32_t A_BYTES = M * K0 / 2, B_BYTES = N * K0 / 2;
+constexpr uint32_t ELEMENTS = M * N, LANES = 8;
+#ifdef GLM_NATIVE_WIDE_CUBE_K
+constexpr uint32_t WIDE_CUBE_K = GLM_NATIVE_WIDE_CUBE_K;
+static_assert(WIDE_CUBE_K == 128 || WIDE_CUBE_K == 256, "wide native Cube uses K128 or K256");
+#else
+constexpr uint32_t WIDE_CUBE_K = K0;
+#endif
+constexpr uint32_t WIDE_K_SEGMENTS = WIDE_CUBE_K / K0;
+constexpr uint32_t WIDE_SCALE_GROUPS = WIDE_CUBE_K / GROUP;
+constexpr uint32_t WIDE_A_BYTES = M * WIDE_CUBE_K / 2;
+constexpr uint32_t L1_A_BYTES = WIDE_A_BYTES > 2 * A_BYTES ? WIDE_A_BYTES : 2 * A_BYTES;
+#ifdef GLM_CACHE_GATE_UP_ACTIVATIONS
+  #if !defined(GLM_FUSED_GATE_UP) || !defined(GLM_SHARE_GATE_UP_INPUT)
+    #error "activation reuse requires the shared-input gate/up stage"
+  #endif
+// One fixed slot per block32 group accommodates both A8 limbs or paired
+// A4 rows. Wide products occupy the beginning of their group's slot range.
+constexpr uint32_t ACTIVATION_CACHE_SLOT_BYTES = 2 * A_BYTES;
+constexpr uint32_t L1_ACTIVATION_CACHE_BYTES = MAX_K_GROUPS * ACTIVATION_CACHE_SLOT_BYTES;
+#endif
+#ifdef GLM_PAIR_PREFILL_SCALE_GROUPS
+constexpr bool PAIR_PREFILL_SCALE_GROUPS = true;
+#else
+constexpr bool PAIR_PREFILL_SCALE_GROUPS = false;
+#endif
+#ifdef GLM_PAIR_HIDDEN_QUANT
+constexpr uint32_t QUANT_ROWS_PER_BATCH = GlmFusedQuant::ELEMENTS / N;
+static_assert(QUANT_ROWS_PER_BATCH == 2, "pair exactly two native output rows in the quantizer");
+#else
+constexpr uint32_t QUANT_ROWS_PER_BATCH = 1;
+#endif
+constexpr uint32_t SCALE_CACHE_BYTES = 4096;
+constexpr uint32_t SCALE_INDEX_OFFSET = (N / GROUP) * MAX_K_GROUPS * (sizeof(float) + sizeof(half));
+static_assert(SCALE_INDEX_OFFSET + N * sizeof(uint32_t) <= SCALE_CACHE_BYTES, "scale indices overlap rounded weights");
+constexpr uint32_t MAX_CACHED_SCALE_ROWS = 4;
+constexpr uint32_t MAX_REPEAT_CAST_ROWS = 4;
+constexpr uint32_t SCALE_PRODUCTS_OFFSET = N * NZ_K * 3 / 4;
+#ifdef GLM_VECTOR_SCALE_PRODUCTS
+  #ifndef GLM_PREPARED_WEIGHT_LAYOUT
+    #error "vector scale products require prepared weights"
+  #endif
+// Prepared W2/W3 reconstruction (including lookup indices) uses at most
+// the first 24 KiB of mask_. Retain row-broadcast indices in its spare tail.
+constexpr uint32_t SCALE_ROW_INDEX_OFFSET = N * NZ_K * 3 / 4;
+static_assert(SCALE_ROW_INDEX_OFFSET + ELEMENTS * sizeof(uint32_t) <= N * NZ_K,
+              "scale row indices exceed mask scratch");
+#endif
+static_assert(SCALE_PRODUCTS_OFFSET + MAX_CACHED_SCALE_ROWS * (N / GROUP) * MAX_K_GROUPS * sizeof(float) <= N * NZ_K,
+              "combined scales overlap prepared W2/W3 byte reconstruction");
+constexpr uint32_t PRODUCT_OFFSET_BYTES = 2 * N * sizeof(uint32_t);
+constexpr uint32_t QUANT_OFFSET_BYTES = (2 * GlmFusedQuant::ELEMENTS + GlmFusedQuant::BATCH) * sizeof(uint32_t);
+// Keep the eight KiB SDK temporary region free. InitBuffer's device build
+// does not check the cumulative allocation; a larger table caused prefill NaNs.
+constexpr uint32_t COMMON_UB_BYTES = RAW_BYTES + 64 + N * NZ_K * sizeof(half) + N * NZ_K / 2 + 2 * N * NZ_K +
+                                     SCALE_CACHE_BYTES + (M + LANES + 1) * MAX_K_GROUPS * sizeof(float) +
+                                     N * sizeof(uint32_t) + PRODUCT_OFFSET_BYTES + N * sizeof(half) + 2 * A_BYTES +
+                                     2 * ELEMENTS * sizeof(int32_t) + 2 * ELEMENTS * sizeof(float) +
+                                     3 * ELEMENTS * sizeof(float) + ELEMENTS * sizeof(half);
+#ifdef GLM_FUSED_GATE_UP
+static_assert(COMMON_UB_BYTES + QUANT_OFFSET_BYTES <= TOTAL_VEC_LOCAL_SIZE, "gate/up exceeds usable UB");
+#else
+static_assert(COMMON_UB_BYTES + M * N * sizeof(float) <= TOTAL_VEC_LOCAL_SIZE, "down exceeds usable UB");
+#endif
+class Projection {
+ public:
+  __aicore__ inline void Run(GM_ADDR x, GM_ADDR inputHigh, GM_ADDR inputScales, GM_ADDR low, GM_ADDR high, GM_ADDR xs,
+                             GM_ADDR codes, GM_ADDR scales, GM_ADDR ends, GM_ADDR order, GM_ADDR weights, GM_ADDR y,
+                             const int64_t* config
+#ifdef GLM_WEIGHT_DECODE_LUT
+                             ,
+                             GM_ADDR lookup
+#endif
+  ) {
+    rows_ = config[0];
+    experts_ = config[1];
+    n_ = config[2];
+    k_ = config[3];
+#ifdef GLM_STATIC_WEIGHT_BITS
+    if (config[4] != GLM_STATIC_WEIGHT_BITS) return;
+#else
+    bits_ = config[4];
+#endif
+    activationBits_ = config[5];
+    tokens_ = config[6];
+    topK_ = config[7];
+    low_.SetGlobalBuffer(reinterpret_cast<__gm__ int8_t*>(low));
+    high_.SetGlobalBuffer(reinterpret_cast<__gm__ int8_t*>(high));
+    xs_.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(xs));
+    codes_.SetGlobalBuffer(reinterpret_cast<__gm__ uint8_t*>(codes));
+    scales_.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(scales));
+    ends_.SetGlobalBuffer(reinterpret_cast<__gm__ int64_t*>(ends));
+    order_.SetGlobalBuffer(reinterpret_cast<__gm__ int64_t*>(order));
+#ifdef GLM_FUSED_GATE_UP
+    inputLow_.SetGlobalBuffer(reinterpret_cast<__gm__ int8_t*>(x));
+    inputHigh_.SetGlobalBuffer(reinterpret_cast<__gm__ int8_t*>(inputHigh));
+    inputScales_.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(inputScales));
+    const int64_t tiles = n_ / N / 2;
+#else
+    weights_.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(weights));
+    y_.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(y));
+  #ifdef GLM_FP16_ROUTE_WORKSPACE
+    routedHalf_.SetGlobalBuffer(reinterpret_cast<__gm__ half*>(y));
+  #endif
+    const int64_t tiles = n_ / N;
+#endif
+    Allocate();
+    PrepareOffsets();
+#ifdef GLM_WEIGHT_DECODE_LUT
+    GlobalTensor<half> table;
+    table.SetGlobalBuffer(reinterpret_cast<__gm__ half*>(lookup));
+    if (bits_ != 4) DataCopy(decoded_.Get<half>(), table, DECODE_TABLE_COUNT * DECODE_TABLE_ELEMENTS);
+    PipeBarrier<PIPE_ALL>();
+#endif
+    for (int64_t tile = GetBlockIdx(); tile < tiles; tile += GetBlockNum()) {
+#ifdef GLM_FUSED_GATE_UP
+      const int64_t chunks = 1;
+#else
+      // Bulk prefill batches all rows of an expert. Its weighted FP32 rows
+      // are reduced by a separate AI-Core epilogue in the same stable order.
+      const int64_t chunks = tokens_ > M ? 1 : (tokens_ + M - 1) / M;
+#endif
+      for (int64_t chunk = 0; chunk < chunks; ++chunk) {
+        firstToken_ = chunk * M;
+#ifndef GLM_FUSED_GATE_UP
+        if (tokens_ <= M) Duplicate(reduction_.Get<float>(), 0.0f, M * N);
+        PipeBarrier<PIPE_ALL>();
+#endif
+        int64_t first = 0;
+        for (int64_t expert = 0; expert < experts_; ++expert) {
+          const int64_t end = ends_.GetValue(expert);
+          if (end < first || end > rows_) return;
+          int64_t selectedFirst = first, selectedEnd = end;
+#ifndef GLM_FUSED_GATE_UP
+          // Stable routing puts each expert's original token/slot pairs in
+          // ascending order. Restrict each Cube batch to this UB reduction
+          // chunk; every output column tile has exactly one core owner.
+          if (tokens_ <= M) {
+            while (selectedFirst < end && order_.GetValue(selectedFirst) / topK_ < firstToken_) ++selectedFirst;
+            selectedEnd = selectedFirst;
+            while (selectedEnd < end && order_.GetValue(selectedEnd) / topK_ < firstToken_ + M) ++selectedEnd;
+          }
+#endif
+#ifdef GLM_PREFILL_WEIGHT_CACHE
+          cacheActive_ = false;
+          // Only multibatch prefill amortizes reconstruction. Rebuild from
+          // live banks for every expert/tile on every launch (including replay).
+          if (tokens_ > M && selectedEnd - selectedFirst > MAX_ROWS) PrepareExpert(expert, tile);
+#endif
+          for (int64_t row = selectedFirst; row < selectedEnd; row += MAX_ROWS) {
+            const uint32_t count = selectedEnd - row < MAX_ROWS ? selectedEnd - row : MAX_ROWS;
+#ifdef GLM_FUSED_GATE_UP
+            GateUp(expert, tile, row, count);
+#else
+            Accumulate(expert, tile, row, count);
+            Combine(tile, row, count);
+#endif
+          }
+          first = end;
+        }
+#ifndef GLM_FUSED_GATE_UP
+        PipeBarrier<PIPE_ALL>();
+        if (tokens_ <= M)
+          for (int64_t token = firstToken_; token < tokens_ && token < firstToken_ + M; ++token)
+            DataCopy(y_[token * n_ + tile * N], reduction_.Get<float>()[(token - firstToken_) * N], N);
+        PipeBarrier<PIPE_ALL>();
+#endif
+      }
+    }
+  }
+
+ private:
+  __aicore__ inline void Allocate() {
+#ifdef GLM_CACHE_GATE_UP_ACTIVATIONS
+    pipe_.InitBuffer(a1_, L1_ACTIVATION_CACHE_BYTES);
+#else
+    pipe_.InitBuffer(a1_, L1_A_BYTES);
+#endif
+    pipe_.InitBuffer(a2_, L1_A_BYTES);
+#ifdef GLM_PREFILL_WEIGHT_CACHE
+    pipe_.InitBuffer(b1_, L1_WEIGHT_BYTES);
+#else
+    pipe_.InitBuffer(b1_, WIDE_K_SEGMENTS * B_BYTES);
+#endif
+    pipe_.InitBuffer(b2_, WIDE_K_SEGMENTS * B_BYTES);
+    pipe_.InitBuffer(c_, 2 * ELEMENTS * sizeof(int32_t));
+    pipe_.InitBuffer(raw_, RAW_BYTES + 64);
+    pipe_.InitBuffer(decoded_, N * NZ_K * sizeof(half));
+    pipe_.InitBuffer(packedB_, N * NZ_K / 2);
+    pipe_.InitBuffer(gathered_, N * NZ_K);
+    pipe_.InitBuffer(mask_, N * NZ_K);
+    pipe_.InitBuffer(scaleCache_, SCALE_CACHE_BYTES);
+    pipe_.InitBuffer(activationScales_, (M + LANES + 1) * MAX_K_GROUPS * sizeof(float));
+    pipe_.InitBuffer(outputOffsets_, N * sizeof(uint32_t));
+    // Gather is used only for a single active row. Keep just its two limb
+    // layouts; a full-M table would exhaust the 310P's usable UB budget.
+    pipe_.InitBuffer(productOffsets_, PRODUCT_OFFSET_BYTES);
+    pipe_.InitBuffer(outputRow_, N * sizeof(half));
+#ifdef GLM_FUSED_GATE_UP
+    pipe_.InitBuffer(quantOffsets_, QUANT_OFFSET_BYTES);
+#endif
+    pipe_.InitBuffer(packedA_, 2 * A_BYTES);
+    pipe_.InitBuffer(products_, 2 * ELEMENTS * sizeof(int32_t));
+    pipe_.InitBuffer(productFloat_, 2 * ELEMENTS * sizeof(float));
+#ifndef GLM_FUSED_GATE_UP
+    pipe_.InitBuffer(reduction_, 16 * N * sizeof(float));
+#endif
+    pipe_.InitBuffer(results_, 3 * ELEMENTS * sizeof(float));
+    pipe_.InitBuffer(output_, ELEMENTS * sizeof(half));
+  }
+  __aicore__ inline void PrepareOffsets() {
+    auto outputOffsets = outputOffsets_.Get<uint32_t>();
+    for (uint32_t channel = 0; channel < N; ++channel) {
+      const uint32_t physical = channel / 2 + (channel % 2 ? N / 2 : 0);
+      outputOffsets.SetValue(channel, physical * sizeof(half));
+      auto productOffsets = productOffsets_.Get<uint32_t>();
+      for (uint32_t limbs = 1; limbs <= 2; ++limbs)
+        productOffsets.SetValue((limbs - 1) * N + channel,
+                                (channel / NZ_N * limbs * M * NZ_N + channel % NZ_N) * sizeof(int32_t));
+      // Physical even/odd channel halves repeat the same four block32 scales.
+      // Keep indices after the FP32 and rounded-FP16 scale cache, without
+      // increasing the already tight down-stage UB allocation.
+      scaleCache_.Get<uint32_t>()[SCALE_INDEX_OFFSET / sizeof(uint32_t)].SetValue(
+          channel, (channel % (N / 2) / NZ_N) * (k_ / GROUP) * sizeof(float));
+    }
+    auto indices = activationScales_.Get<uint32_t>()[(M + LANES) * MAX_K_GROUPS];
+    for (uint32_t group = 0; group < MAX_K_GROUPS; ++group) indices.SetValue(group, group * LANES * sizeof(float));
+#ifdef GLM_VECTOR_SCALE_PRODUCTS
+    if (tokens_ > M) {
+      auto rows = mask_.Get<int32_t>()[SCALE_ROW_INDEX_OFFSET / sizeof(int32_t)];
+      for (uint32_t m = 0; m < M; ++m)
+        Duplicate(rows[m * N], static_cast<int32_t>(m * MAX_K_GROUPS * sizeof(float)), N);
+    }
+#endif
+#ifdef GLM_FUSED_GATE_UP
+    GlmFusedQuant::Prepare(quantOffsets_.Get<uint32_t>(), quantOffsets_.Get<uint32_t>()[2 * GlmFusedQuant::ELEMENTS]);
+#endif
+    PipeBarrier<PIPE_ALL>();
+  }
+#ifdef GLM_WEIGHT_DECODE_LUT
+  __aicore__ inline void LookupPair(LocalTensor<half> value, uint32_t plane, uint32_t phase, uint32_t width,
+                                    uint32_t pairs, uint32_t table) {
+    const uint16_t byteMask = ((1 << width) - 1) << phase;
+    const int16_t pairMask = static_cast<int16_t>(byteMask | (byteMask << 8));
+    auto indices = mask_.Get<int32_t>()[2048];
+    Duplicate(mask_.Get<int16_t>(), pairMask, pairs);
+    PipeBarrier<PIPE_V>();
+    And(value.ReinterpretCast<int16_t>(), raw_.Get<int16_t>()[plane * pairs], mask_.Get<int16_t>(), pairs);
+    PipeBarrier<PIPE_V>();
+    Cast(value, value.ReinterpretCast<int16_t>(), RoundMode::CAST_NONE, pairs);
+    PipeBarrier<PIPE_V>();
+    Muls(value, value, static_cast<half>(1.0f / (1 << phase)), pairs);
+    PipeBarrier<PIPE_V>();
+    Cast(indices, value, RoundMode::CAST_RINT, pairs);
+    PipeBarrier<PIPE_V>();
+    // The signed high byte may be negative; add the bias as INT32 so
+    // FP16 never rounds odd offsets above its exact integer range.
+    Adds(indices, indices, static_cast<int32_t>(2048), pairs);
+    PipeBarrier<PIPE_V>();
+    Muls(indices, indices, static_cast<int32_t>(sizeof(half)), pairs);
+    PipeBarrier<PIPE_V>();
+    Gather(value, decoded_.Get<half>()[table * DECODE_TABLE_ELEMENTS], indices.ReinterpretCast<uint32_t>(),
+           static_cast<uint32_t>(0), pairs);
+    PipeBarrier<PIPE_V>();
+  }
+#endif
+  __aicore__ inline void Decode(int64_t expert, int64_t tile, int64_t kTile) {
+    const uint32_t fields = bits_ == 3 ? 8 : 8 / bits_;
+    const uint32_t fieldElements = NZ_N * NZ_K / fields;
+    const uint32_t planeElements = N * NZ_K / fields;
+    const uint32_t planes = bits_ == 3 ? 3 : 1;
+    const uint32_t packedBytes = NZ_N * NZ_K * bits_ / 8;
+#ifdef GLM_PREPARED_WEIGHT_LAYOUT
+    const int64_t offset = ((expert * (n_ / N) + tile) * (k_ / NZ_K) + kTile) * (N * NZ_K * bits_ / 8);
+    if (bits_ == 4) {
+      DataCopy(packedB_.Get<uint8_t>(), codes_[offset], RAW_BYTES);
+      PipeBarrier<PIPE_ALL>();
+      return;
+    }
+    DataCopy(raw_.Get<uint8_t>(), codes_[offset], N * NZ_K * bits_ / 8);
+#else
+    // Batch each byte plane across all output strips. Uniform fields then
+    // need one vector conversion, rather than scalar setup for every strip.
+    for (uint32_t plane = 0; plane < planes; ++plane)
+      for (uint32_t strip = 0; strip < N / NZ_N; ++strip) {
+        const int64_t offset = ((expert * (n_ / NZ_N) + tile * (N / NZ_N) + strip) * (k_ / NZ_K) + kTile) * packedBytes;
+        DataCopy(raw_.Get<uint8_t>()[plane * planeElements + strip * fieldElements],
+                 codes_[offset + plane * fieldElements], fieldElements);
+      }
+#endif
+    PipeBarrier<PIPE_ALL>();
+#ifdef GLM_WEIGHT_DECODE_LUT
+    // Reconstruct two output nibbles per lookup; never materialize the
+    // 32K individual FP16 codes. Tables occupy the otherwise dead decoded
+    // workspace, leaving its tail for the subsequent weight-scale vectors.
+    const uint32_t pairs = planeElements / 2;
+    for (uint32_t field = 0; field < fields; ++field) {
+      const uint32_t phase = field * bits_ % 8, plane = field * bits_ / 8;
+      const uint32_t low = bits_ < 8 - phase ? bits_ : 8 - phase;
+      auto value = productFloat_.Get<half>();
+      if (low == bits_)
+        LookupPair(value, plane, phase, low, pairs, bits_ == 2 ? 0 : 1);
+      else {
+        LookupPair(value, plane, phase, low, pairs, low == 2 ? 2 : 3);
+        LookupPair(value[pairs], plane + 1, 0, bits_ - low, pairs, low == 2 ? 4 : 5);
+        Add(value, value, value[pairs], pairs);
+        PipeBarrier<PIPE_V>();
+      }
+      Cast(packedB_.Get<uint8_t>()[field * pairs], value, RoundMode::CAST_NONE, pairs);
+      PipeBarrier<PIPE_V>();
+    }
+    PipeBarrier<PIPE_ALL>();
+    return;
+#endif
+    Cast(gathered_.Get<half>(), raw_.Get<uint8_t>(), RoundMode::CAST_NONE, N * NZ_K * bits_ / 8);
+    PipeBarrier<PIPE_V>();
+    Cast(gathered_.Get<int16_t>(), gathered_.Get<half>(), RoundMode::CAST_RINT, N * NZ_K * bits_ / 8);
+    PipeBarrier<PIPE_V>();
+    auto decoded = decoded_.Get<int16_t>();
+#ifdef GLM_STATIC_WEIGHT_BITS
+  #pragma unroll
+#endif
+    for (uint32_t field = 0; field < fields; ++field) {
+      const uint32_t phase = field * bits_ % 8;
+      const uint32_t plane = field * bits_ / 8;
+      const uint32_t lowBits = bits_ < 8 - phase ? bits_ : 8 - phase;
+      auto destination = decoded[field * planeElements];
+      auto source = gathered_.Get<int16_t>()[plane * planeElements];
+      const int16_t sign = 1 << (bits_ - 1);
+      Duplicate(mask_.Get<int16_t>(), static_cast<int16_t>(((1 << lowBits) - 1) << phase), planeElements);
+      PipeBarrier<PIPE_V>();
+      if (lowBits == bits_) {
+        // Fold two's-complement sign extension into the byte mask. All
+        // intermediate integers and power-of-two scaling are exact in half;
+        // avoid half->INT16->half solely to apply the sign afterward.
+        Adds(destination, source, static_cast<int16_t>(sign << phase), planeElements);
+        PipeBarrier<PIPE_V>();
+        And(destination, destination, mask_.Get<int16_t>(), planeElements);
+        PipeBarrier<PIPE_V>();
+        Cast(destination.ReinterpretCast<half>(), destination, RoundMode::CAST_NONE, planeElements);
+        PipeBarrier<PIPE_V>();
+        Muls(destination.ReinterpretCast<half>(), destination.ReinterpretCast<half>(),
+             static_cast<half>(1.0f / (1 << phase)), planeElements);
+        PipeBarrier<PIPE_V>();
+        Adds(destination.ReinterpretCast<half>(), destination.ReinterpretCast<half>(), static_cast<half>(-sign),
+             planeElements);
+        PipeBarrier<PIPE_V>();
+        continue;
+      }
+#ifdef GLM_W3_FLOAT_FRAGMENTS
+      // A crossing W3 field is unsigned low bits plus a signed high
+      // fragment. Both fragments and their sum are exact in FP16. Decode
+      // that sign before combining, avoiding the low fragment's integer
+      // round trip and the merged field's subsequent sign-extension casts.
+      And(destination, source, mask_.Get<int16_t>(), planeElements);
+      PipeBarrier<PIPE_V>();
+      auto low = destination.ReinterpretCast<half>();
+      Cast(low, destination, RoundMode::CAST_NONE, planeElements);
+      PipeBarrier<PIPE_V>();
+      Muls(low, low, static_cast<half>(1.0f / (1 << phase)), planeElements);
+      const uint32_t highBits = bits_ - lowBits;
+      auto high = mask_.Get<int16_t>()[planeElements];
+      Duplicate(mask_.Get<int16_t>(), static_cast<int16_t>((1 << highBits) - 1), planeElements);
+      PipeBarrier<PIPE_V>();
+      if (highBits == 1) {
+        And(high, gathered_.Get<int16_t>()[(plane + 1) * planeElements], mask_.Get<int16_t>(), planeElements);
+        PipeBarrier<PIPE_V>();
+        Cast(high.ReinterpretCast<half>(), high, RoundMode::CAST_NONE, planeElements);
+        PipeBarrier<PIPE_V>();
+        Muls(high.ReinterpretCast<half>(), high.ReinterpretCast<half>(), static_cast<half>(-sign), planeElements);
+      } else {
+        Adds(high, gathered_.Get<int16_t>()[(plane + 1) * planeElements], static_cast<int16_t>(1 << (highBits - 1)),
+             planeElements);
+        PipeBarrier<PIPE_V>();
+        And(high, high, mask_.Get<int16_t>(), planeElements);
+        PipeBarrier<PIPE_V>();
+        Cast(high.ReinterpretCast<half>(), high, RoundMode::CAST_NONE, planeElements);
+        PipeBarrier<PIPE_V>();
+        Muls(high.ReinterpretCast<half>(), high.ReinterpretCast<half>(), static_cast<half>(1 << lowBits),
+             planeElements);
+        PipeBarrier<PIPE_V>();
+        Adds(high.ReinterpretCast<half>(), high.ReinterpretCast<half>(), static_cast<half>(-sign), planeElements);
+      }
+      PipeBarrier<PIPE_V>();
+      Add(low, low, high.ReinterpretCast<half>(), planeElements);
+      PipeBarrier<PIPE_V>();
+      continue;
+#endif
+      And(destination, source, mask_.Get<int16_t>(), planeElements);
+      PipeBarrier<PIPE_V>();
+      Cast(destination.ReinterpretCast<half>(), destination, RoundMode::CAST_NONE, planeElements);
+      PipeBarrier<PIPE_V>();
+      Muls(destination.ReinterpretCast<half>(), destination.ReinterpretCast<half>(),
+           static_cast<half>(1.0f / (1 << phase)), planeElements);
+      PipeBarrier<PIPE_V>();
+      Cast(destination, destination.ReinterpretCast<half>(), RoundMode::CAST_RINT, planeElements);
+      PipeBarrier<PIPE_V>();
+      if (lowBits < bits_) {
+        Duplicate(mask_.Get<int16_t>(), static_cast<int16_t>((1 << (bits_ - lowBits)) - 1), planeElements);
+        PipeBarrier<PIPE_V>();
+        And(mask_.Get<int16_t>()[planeElements], gathered_.Get<int16_t>()[(plane + 1) * planeElements],
+            mask_.Get<int16_t>(), planeElements);
+        PipeBarrier<PIPE_V>();
+        Muls(mask_.Get<int16_t>()[planeElements], mask_.Get<int16_t>()[planeElements],
+             static_cast<int16_t>(1 << lowBits), planeElements);
+        PipeBarrier<PIPE_V>();
+        Or(destination.ReinterpretCast<uint16_t>(), destination.ReinterpretCast<uint16_t>(),
+           mask_.Get<uint16_t>()[planeElements], planeElements);
+        PipeBarrier<PIPE_V>();
+      }
+      // Cross-byte W3 fields still merge both fragments as integers.
+      Adds(destination, destination, sign, planeElements);
+      Duplicate(mask_.Get<int16_t>(), static_cast<int16_t>((1 << bits_) - 1), planeElements);
+      PipeBarrier<PIPE_V>();
+      And(destination, destination, mask_.Get<int16_t>(), planeElements);
+      PipeBarrier<PIPE_V>();
+      Adds(destination, destination, static_cast<int16_t>(-sign), planeElements);
+      PipeBarrier<PIPE_V>();
+      Cast(destination.ReinterpretCast<half>(), destination, RoundMode::CAST_NONE, planeElements);
+      PipeBarrier<PIPE_V>();
+    }
+#ifdef GLM_PREPARED_WEIGHT_LAYOUT
+    // Preparation placed codes in native K64/channel order. W2/W3 only
+    // expand signed fields to INT4; no per-inference transpose is required.
+    Cast(packedB_.Get<int8_t>().ReinterpretCast<int4b_t>(), decoded.ReinterpretCast<half>(), RoundMode::CAST_NONE,
+         N * NZ_K);
+#else
+    if (bits_ == 3) {
+      // Four fields cover K=128. Reorder those planes in UB so a single
+      // four-repeat transpose can consume each full K=64 tile. Using two
+      // small transposes per tile is much slower on 310P's unified core.
+      constexpr uint16_t FRAGMENT_BLOCKS = (NZ_N * 32 * sizeof(half)) / 32;
+      const DataCopyParams copy{N / NZ_N, FRAGMENT_BLOCKS, 0, 3 * FRAGMENT_BLOCKS};
+      for (uint32_t halfTile = 0; halfTile < 2; ++halfTile) {
+        for (uint32_t field = 0; field < 4; ++field)
+          DataCopy(mask_.Get<half>()[field * fieldElements],
+                   decoded.ReinterpretCast<half>()[(halfTile * 4 + field) * planeElements], copy);
+        PipeBarrier<PIPE_ALL>();
+        DataCopy(decoded.ReinterpretCast<half>()[halfTile * N * NZ_K / 2], mask_.Get<half>(), N * NZ_K / 2);
+        PipeBarrier<PIPE_ALL>();
+      }
+    }
+    const uint32_t contiguousK = bits_ == 3 ? NZ_K / 2 : NZ_K / fields;
+    for (uint32_t group = 0; group < NZ_K / K0; ++group) {
+      for (uint32_t strip = 0; strip < N / NZ_N; ++strip) {
+        uint64_t srcList[16], dstList[16];
+        for (uint32_t lane = 0; lane < 16; ++lane) {
+          const uint32_t channel = strip * NZ_N + lane;
+          const uint32_t physical = channel / 2 + (channel % 2 ? N / 2 : 0);
+          const uint32_t offset = (group * K0 / contiguousK) * N * contiguousK + strip * NZ_N * contiguousK +
+                                  (group * K0 % contiguousK) * NZ_N + lane * NZ_N;
+          srcList[lane] = reinterpret_cast<uint64_t>(decoded.ReinterpretCast<half>()[offset].GetPhyAddr());
+          dstList[lane] = reinterpret_cast<uint64_t>(gathered_.Get<half>()[physical * K0].GetPhyAddr());
+        }
+        TransDataTo5HDParams trans;
+        trans.repeatTimes = K0 / NZ_N;
+        trans.dstRepStride = 1;
+        trans.srcRepStride = NZ_N;
+        TransDataTo5HD<half>(dstList, srcList, trans);
+        PipeBarrier<PIPE_V>();
+      }
+      Cast(packedB_.Get<int8_t>()[group * B_BYTES].ReinterpretCast<int4b_t>(), gathered_.Get<half>(),
+           RoundMode::CAST_NONE, N * K0);
+      PipeBarrier<PIPE_V>();
+    }
+#endif
+    PipeBarrier<PIPE_ALL>();
+  }
+  __aicore__ inline void Weight(uint32_t group, uint32_t wideGroups = 0) {
+#ifdef GLM_PREFILL_WEIGHT_CACHE
+    if (cacheActive_) {
+      const uint32_t offset =
+          cacheProjection_ * CACHED_PROJECTION_BYTES + cacheKTile_ * RAW_BYTES + group / 2 * B_BYTES;
+      LoadData2DParams load;
+      load.repeatTimes = (wideGroups ? wideGroups / 2 : 1) * N / NZ_N;
+      load.srcStride = 1;
+      load.ifTranspose = false;
+      LoadData(b2_.Get<int8_t>().ReinterpretCast<int4b_t>(), b1_.Get<int8_t>()[offset].ReinterpretCast<int4b_t>(),
+               load);
+      PipeBarrier<PIPE_ALL>();
+      return;
+    }
+#endif
+    if (wideGroups) {
+      const uint32_t segments = wideGroups / 2;
+      DataCopy(b1_.Get<int8_t>(), packedB_.Get<int8_t>()[group / 2 * B_BYTES], segments * B_BYTES);
+      PipeBarrier<PIPE_ALL>();
+      LoadData2DParams load;
+      // L0B keeps K64 segments contiguous, as verified by the raw INT4
+      // probe against the exact sum of two independent K64 products.
+      load.repeatTimes = segments * N / NZ_N;
+      load.srcStride = 1;
+      load.ifTranspose = false;
+      LoadData(b2_.Get<int8_t>().ReinterpretCast<int4b_t>(), b1_.Get<int8_t>().ReinterpretCast<int4b_t>(), load);
+      PipeBarrier<PIPE_ALL>();
+      return;
+    }
+    DataCopy(b1_.Get<int8_t>(), packedB_.Get<int8_t>()[group / 2 * B_BYTES], B_BYTES);
+    PipeBarrier<PIPE_ALL>();
+    LoadData2DParams load;
+    load.repeatTimes = N / NZ_N;
+    load.srcStride = 1;
+    load.ifTranspose = false;
+    LoadData(b2_.Get<int8_t>().ReinterpretCast<int4b_t>(), b1_.Get<int8_t>().ReinterpretCast<int4b_t>(), load);
+    PipeBarrier<PIPE_ALL>();
+  }
+  __aicore__ inline void Quantize() {
+#ifdef GLM_FUSED_GATE_UP
+    GlmFusedQuant::Run(productFloat_.Get<uint8_t>(), products_.Get<half>(), quantOffsets_.Get<uint32_t>(),
+                       quantOffsets_.Get<uint32_t>()[2 * GlmFusedQuant::ELEMENTS], activationBits_);
+#endif
+  }
+  __aicore__ inline void Activation(int64_t row, int64_t group, uint32_t count, bool paired) {
+    const bool sparse = activationBits_ == 8 && count <= (M - 1) / 2;
+#ifdef GLM_CACHE_GATE_UP_ACTIVATIONS
+    const uint32_t cacheOffset = group * ACTIVATION_CACHE_SLOT_BYTES;
+    if (!reuseActivations_) {
+#endif
+      auto packed = packedA_.Get<int8_t>();
+      Duplicate(packed.ReinterpretCast<int16_t>(), static_cast<int16_t>(0), sparse ? A_BYTES / 2 : A_BYTES);
+      PipeBarrier<PIPE_ALL>();
+      for (uint32_t part = 0; part < (paired ? 2 : 1); ++part) {
+        const uint32_t base = paired ? part * (activationBits_ == 8 ? 2 * count + 1 : count) : 0;
+        for (uint32_t m = 0; m < count; ++m) {
+#ifdef GLM_FUSED_GATE_UP
+          const int64_t token = sourceTokens_[m];
+          const int64_t offset = (token * (k_ / GROUP) + group + part) * (K0 / 2);
+          DataCopy(packed[(base + m) * K0 / 2], inputLow_[offset], K0 / 2);
+          if (activationBits_ == 8)
+            DataCopy(packed[sparse ? (base + count + m) * K0 / 2 : A_BYTES + m * K0 / 2], inputHigh_[offset], K0 / 2);
+#else
+        const int64_t offset = ((row + m) * (k_ / GROUP) + group + part) * (K0 / 2);
+        DataCopy(packed[(base + m) * K0 / 2], low_[offset], K0 / 2);
+        if (activationBits_ == 8)
+          DataCopy(packed[sparse ? (base + count + m) * K0 / 2 : A_BYTES + m * K0 / 2], high_[offset], K0 / 2);
+#endif
+        }
+        PipeBarrier<PIPE_ALL>();
+        if (activationBits_ == 8) {
+          uint64_t biasMask[2] = {(group + part) % 2 ? 0xff00UL : 0xffUL, 0};
+          const uint32_t biasRow = sparse ? base + 2 * count : MAX_ROWS;
+          Duplicate(packed.ReinterpretCast<uint16_t>()[biasRow * K0 / 4], static_cast<uint16_t>(0x1111), biasMask, 1, 1,
+                    8);
+        }
+        PipeBarrier<PIPE_ALL>();
+      }
+#ifdef GLM_CACHE_GATE_UP_ACTIVATIONS
+      DataCopy(a1_.Get<int8_t>()[cacheOffset], packed, sparse ? A_BYTES : 2 * A_BYTES);
+    }
+#else
+    DataCopy(a1_.Get<int8_t>(), packed, sparse ? A_BYTES : 2 * A_BYTES);
+#endif
+    PipeBarrier<PIPE_ALL>();
+    LoadData2DParams load;
+    load.repeatTimes = 1;
+    load.srcStride = 1;
+    load.ifTranspose = false;
+    const uint32_t blocks = PAIR_PREFILL_SCALE_GROUPS && activationBits_ == 4 && paired && count > M / 2
+                                ? 2
+                                : (activationBits_ == 4 || sparse ? 1 : 2);
+    for (uint32_t limb = 0; limb < blocks; ++limb)
+      LoadData(a2_.Get<int8_t>()[limb * A_BYTES].ReinterpretCast<int4b_t>(),
+#ifdef GLM_CACHE_GATE_UP_ACTIVATIONS
+               a1_.Get<int8_t>()[cacheOffset + limb * A_BYTES].ReinterpretCast<int4b_t>(), load);
+#else
+               a1_.Get<int8_t>()[limb * A_BYTES].ReinterpretCast<int4b_t>(), load);
+#endif
+    PipeBarrier<PIPE_ALL>();
+  }
+  __aicore__ inline void ActivationWide(int64_t row, int64_t group, uint32_t count, uint32_t parts) {
+    // Decode has materialized packedB_; its raw input workspace is dead
+    // until the next K256 tile. Reuse it rather than increasing UB.
+    const uint32_t bytes = parts / 2 * A_BYTES;
+#ifdef GLM_CACHE_GATE_UP_ACTIVATIONS
+    const uint32_t cacheOffset = group * ACTIVATION_CACHE_SLOT_BYTES;
+    if (!reuseActivations_) {
+#endif
+      auto packed = raw_.Get<int8_t>();
+      Duplicate(packed.ReinterpretCast<int16_t>(), static_cast<int16_t>(0), bytes / 2);
+      PipeBarrier<PIPE_ALL>();
+      for (uint32_t part = 0; part < parts; ++part) {
+        for (uint32_t m = 0; m < count; ++m) {
+#ifdef GLM_FUSED_GATE_UP
+          const int64_t source = sourceTokens_[m];
+          const int64_t offset = (source * (k_ / GROUP) + group + part) * (K0 / 2);
+          DataCopy(packed[(part / 2) * A_BYTES + (part * count + m) * K0 / 2], inputLow_[offset], K0 / 2);
+#else
+        const int64_t offset = ((row + m) * (k_ / GROUP) + group + part) * (K0 / 2);
+        DataCopy(packed[(part / 2) * A_BYTES + (part * count + m) * K0 / 2], low_[offset], K0 / 2);
+#endif
+        }
+      }
+      PipeBarrier<PIPE_ALL>();
+#ifdef GLM_CACHE_GATE_UP_ACTIVATIONS
+      DataCopy(a1_.Get<int8_t>()[cacheOffset], packed, bytes);
+    }
+#else
+    DataCopy(a1_.Get<int8_t>(), packed, bytes);
+#endif
+    PipeBarrier<PIPE_ALL>();
+    LoadData2DParams load;
+    load.repeatTimes = parts / 2;
+    load.srcStride = 1;
+    load.ifTranspose = false;
+    LoadData(a2_.Get<int8_t>().ReinterpretCast<int4b_t>(),
+#ifdef GLM_CACHE_GATE_UP_ACTIVATIONS
+             a1_.Get<int8_t>()[cacheOffset].ReinterpretCast<int4b_t>(), load);
+#else
+             a1_.Get<int8_t>().ReinterpretCast<int4b_t>(), load);
+#endif
+    PipeBarrier<PIPE_ALL>();
+  }
+  __aicore__ inline void Product(uint32_t count, bool paired, uint32_t wideGroups = 0) {
+    MmadParams mm;
+    const bool sparse = activationBits_ == 8 && count <= (M - 1) / 2;
+    const uint32_t limbs = PAIR_PREFILL_SCALE_GROUPS && activationBits_ == 4 && paired && count > M / 2
+                               ? 2
+                               : (activationBits_ == 4 || sparse ? 1 : 2);
+    mm.m = limbs * M;
+    mm.n = N;
+    mm.k = wideGroups ? wideGroups * GROUP : K0;
+    mm.cmatrixInitVal = true;
+    Mmad(c_.Get<int32_t>(), a2_.Get<int8_t>().ReinterpretCast<int4b_t>(), b2_.Get<int8_t>().ReinterpretCast<int4b_t>(),
+         mm);
+    PipeBarrier<PIPE_ALL>();
+    const DataCopyParams copy{N / NZ_N, static_cast<uint16_t>(limbs), 0, 0};
+    DataCopyEnhancedParams enhanced;
+    enhanced.blockMode = BlockMode::BLOCK_MODE_MATRIX;
+    DataCopy(products_.Get<int32_t>(), c_.Get<int32_t>(), copy, enhanced);
+    PipeBarrier<PIPE_ALL>();
+  }
+  __aicore__ inline void ExtractProducts(uint32_t count, uint32_t part, bool paired) {
+    const bool sparse = activationBits_ == 8 && count <= (M - 1) / 2;
+    const uint32_t limbs = PAIR_PREFILL_SCALE_GROUPS && activationBits_ == 4 && paired && count > M / 2
+                               ? 2
+                               : (activationBits_ == 4 || sparse ? 1 : 2);
+    const uint32_t base = paired ? part * (activationBits_ == 8 ? 2 * count + 1 : count) : 0;
+    auto raw = products_.Get<int32_t>();
+    auto low = results_.Get<float>();
+    auto high = low[ELEMENTS];
+#ifdef GLM_STRIDED_PRODUCT_COPY
+    if (count <= 4) {
+      // Each Cube row contributes one aligned 64-byte strip. DMA the eight
+      // strips into a contiguous INT32 row before the single FP32 cast.
+      const DataCopyParams copy{N / NZ_N, NZ_N * sizeof(int32_t) / 32,
+                                static_cast<uint16_t>((limbs * M - 1) * NZ_N * sizeof(int32_t) / 32), 0};
+      auto temporary = productFloat_.Get<int32_t>();
+      for (uint32_t m = 0; m < count; ++m) DataCopy(temporary[m * N], raw[(base + m) * NZ_N], copy);
+      PipeBarrier<PIPE_ALL>();
+      Cast(low, temporary, RoundMode::CAST_NONE, count * N);
+      PipeBarrier<PIPE_ALL>();
+      if (activationBits_ == 8) {
+        for (uint32_t m = 0; m < count; ++m)
+          DataCopy(temporary[m * N], raw[((sparse ? base + count : M) + m) * NZ_N], copy);
+        PipeBarrier<PIPE_ALL>();
+        Cast(high, temporary, RoundMode::CAST_NONE, count * N);
+        PipeBarrier<PIPE_ALL>();
+        DataCopy(temporary, raw[(sparse ? base + 2 * count : MAX_ROWS) * NZ_N], copy);
+        PipeBarrier<PIPE_ALL>();
+        Cast(low[MAX_ROWS * N], temporary, RoundMode::CAST_NONE, N);
+        PipeBarrier<PIPE_ALL>();
+      }
+      return;
+    }
+#endif
+#ifdef GLM_REPEAT_PRODUCT_CAST
+    if (count <= MAX_REPEAT_CAST_ROWS) {
+      // Repeat across the eight N16 strips of one Cube row. This preserves
+      // every INT32 dot while avoiding a gather or eight per-strip casts.
+      const UnaryRepeatParams repeat{1, 1, NZ_N / LANES, static_cast<uint8_t>(limbs * M * NZ_N / LANES)};
+      for (uint32_t m = 0; m < count; ++m) {
+        Cast(low[m * N], raw[(base + m) * NZ_N], RoundMode::CAST_NONE, static_cast<uint64_t>(NZ_N), N / NZ_N, repeat);
+        if (activationBits_ == 8)
+          Cast(high[m * N], raw[((sparse ? base + count : M) + m) * NZ_N], RoundMode::CAST_NONE,
+               static_cast<uint64_t>(NZ_N), N / NZ_N, repeat);
+      }
+      if (activationBits_ == 8)
+        Cast(low[MAX_ROWS * N], raw[(sparse ? base + 2 * count : MAX_ROWS) * NZ_N], RoundMode::CAST_NONE,
+             static_cast<uint64_t>(NZ_N), N / NZ_N, repeat);
+      PipeBarrier<PIPE_V>();
+      return;
+    }
+#endif
+    // Sparse single-row decode benefits from one gather. For more rows the
+    // strided casts avoid the growing gather cost measured on real experts.
+    if (count > 1) {
+      for (uint32_t strip = 0; strip < N / NZ_N; ++strip) {
+        Cast(low[strip * NZ_N], raw[strip * limbs * M * NZ_N + base * NZ_N], RoundMode::CAST_NONE, NZ_N, count,
+             {1, 1, N / LANES, NZ_N / LANES});
+        if (activationBits_ == 8) {
+          Cast(high[strip * NZ_N], raw[strip * limbs * M * NZ_N + (sparse ? base + count : M) * NZ_N],
+               RoundMode::CAST_NONE, NZ_N, count, {1, 1, N / LANES, NZ_N / LANES});
+          Cast(low[MAX_ROWS * N + strip * NZ_N],
+               raw[strip * limbs * M * NZ_N + (sparse ? base + 2 * count : MAX_ROWS) * NZ_N], RoundMode::CAST_NONE,
+               NZ_N);
+        }
+      }
+      PipeBarrier<PIPE_V>();
+      return;
+    }
+    // Gather moves the INT32 bit patterns without floating arithmetic. A single
+    // contiguous cast replaces eight per-strip casts and their scalar setup.
+    auto temporary = productFloat_.Get<int32_t>();
+    auto offsets = productOffsets_.Get<uint32_t>()[(limbs - 1) * N];
+    Gather(temporary, raw[base * NZ_N], offsets, static_cast<uint32_t>(0), count * N);
+    PipeBarrier<PIPE_V>();
+    Cast(low, temporary, RoundMode::CAST_NONE, count * N);
+    if (activationBits_ == 8) {
+      PipeBarrier<PIPE_V>();
+      Gather(temporary, raw[(sparse ? base + count : M) * NZ_N], offsets, static_cast<uint32_t>(0), count * N);
+      PipeBarrier<PIPE_V>();
+      Cast(high, temporary, RoundMode::CAST_NONE, count * N);
+      PipeBarrier<PIPE_V>();
+      Gather(temporary, raw[(sparse ? base + 2 * count : MAX_ROWS) * NZ_N], offsets, static_cast<uint32_t>(0), N);
+      PipeBarrier<PIPE_V>();
+      Cast(low[MAX_ROWS * N], temporary, RoundMode::CAST_NONE, N);
+    }
+    PipeBarrier<PIPE_V>();
+  }
+  __aicore__ inline void PrepareScales(int64_t expert, int64_t tile, LocalTensor<float> destination) {
+    const uint32_t groups = k_ / GROUP;
+    for (uint32_t block = 0; block < N / GROUP; ++block) {
+      const int64_t index = (expert * (n_ / GROUP) + tile * N / GROUP + block) * groups;
+      DataCopy(destination[block * groups], scales_[index], groups);
+    }
+    PipeBarrier<PIPE_ALL>();
+    auto rounded = scaleCache_.Get<half>()[2 * (N / GROUP) * MAX_K_GROUPS];
+    Cast(rounded, destination, RoundMode::CAST_NONE, (N / GROUP) * groups);
+    PipeBarrier<PIPE_V>();
+    Cast(destination, rounded, RoundMode::CAST_NONE, (N / GROUP) * groups);
+    PipeBarrier<PIPE_ALL>();
+  }
+#ifdef GLM_PREFILL_WEIGHT_CACHE
+  __aicore__ inline void PrepareExpert(int64_t expert, int64_t tile) {
+    cacheTile_ = tile;
+    const uint32_t projections =
+  #ifdef GLM_FUSED_GATE_UP
+        2;
+  #else
+        1;
+  #endif
+    for (uint32_t projection = 0; projection < projections; ++projection) {
+      const int64_t weightTile = tile + projection * (n_ / N / 2);
+      for (int64_t kt = 0; kt < k_ / NZ_K; ++kt) {
+        Decode(expert, weightTile, kt);
+        DataCopy(b1_.Get<int8_t>()[projection * CACHED_PROJECTION_BYTES + kt * RAW_BYTES], packedB_.Get<int8_t>(),
+                 RAW_BYTES);
+        PipeBarrier<PIPE_ALL>();
+      }
+    }
+    PrepareScales(expert, tile, scaleCache_.Get<float>());
+  #ifdef GLM_FUSED_GATE_UP
+    // Decode no longer touches packedB_ while the L1 cache is active.
+    // Its existing 16 KiB UB buffer holds up scales without a new UB allocation.
+    PrepareScales(expert, tile + n_ / N / 2, packedB_.Get<float>());
+  #endif
+    cacheActive_ = true;
+  }
+#endif
+  __aicore__ inline void Accumulate(int64_t expert, int64_t tile, int64_t row, uint32_t count
+#ifdef GLM_SHARE_GATE_UP_INPUT
+                                    ,
+                                    bool reuseInput = false
+#endif
+  ) {
+#ifdef GLM_CACHE_GATE_UP_ACTIVATIONS
+    // Gate always rewrites every slot used by this batch before up reuses it.
+    reuseActivations_ = reuseInput;
+#endif
+    auto low = results_.Get<float>();
+    auto high = low[ELEMENTS];
+    auto accumulator = high[ELEMENTS];
+    Duplicate(accumulator, 0.0f, count * N);
+    const uint32_t groups = k_ / GROUP;
+    auto cachedWeights = scaleCache_.Get<float>();
+#ifdef GLM_PREFILL_WEIGHT_CACHE
+    cacheProjection_ = tile == cacheTile_ ? 0 : 1;
+    if (cacheActive_) {
+      if (cacheProjection_) cachedWeights = packedB_.Get<float>();
+    } else
+#endif
+      PrepareScales(expert, tile, cachedWeights);
+    auto sx = activationScales_.Get<float>();
+    auto temporary = sx[M * MAX_K_GROUPS];
+    auto indices = activationScales_.Get<uint32_t>()[(M + LANES) * MAX_K_GROUPS];
+#ifdef GLM_SHARE_GATE_UP_INPUT
+    if (!reuseInput) {
+#endif
+      for (uint32_t m = 0; m < count; ++m) {
+        sourceTokens_[m] = order_.GetValue(row + m) / topK_;
+#ifdef GLM_FUSED_GATE_UP
+        DataCopy(temporary, inputScales_[(sourceTokens_[m] * groups) * LANES], groups * LANES);
+#else
+      DataCopy(temporary, xs_[((row + m) * groups) * LANES], groups * LANES);
+#endif
+        PipeBarrier<PIPE_ALL>();
+        Gather(sx[m * MAX_K_GROUPS], temporary, indices, static_cast<uint32_t>(0), groups);
+        PipeBarrier<PIPE_ALL>();
+      }
+#ifdef GLM_SHARE_GATE_UP_INPUT
+    }
+#endif
+    PipeBarrier<PIPE_V>();
+    bool cachedFactors = false;
+#ifdef GLM_PREPARED_WEIGHT_LAYOUT
+    // Prepared W4 bypasses gathered_; W2/W3 reconstruction touches at most
+    // its first 24 KiB. Cache all combined scales in the remaining eight KiB
+    // for sparse decode. This removes scalar FP32 products from the K loop.
+    cachedFactors = count <= MAX_CACHED_SCALE_ROWS;
+#endif
+    auto scaleProducts = gathered_.Get<float>()[SCALE_PRODUCTS_OFFSET / sizeof(float)];
+    if (cachedFactors) {
+      for (uint32_t m = 0; m < count; ++m)
+        for (uint32_t block = 0; block < N / GROUP; ++block)
+          Mul(scaleProducts[(m * (N / GROUP) + block) * groups], cachedWeights[block * groups], sx[m * MAX_K_GROUPS],
+              groups);
+      PipeBarrier<PIPE_V>();
+    }
+    bool paired = false;
+#ifdef GLM_PAIR_SCALE_GROUPS
+    // Keep each K32 dot and scale independent, but put both adjacent groups
+    // into unused Cube rows. Sparse decode needs one K64 Mmad/readback, not two.
+    paired = activationBits_ == 8 ? count <= (M - 2) / 4 : count <= (PAIR_PREFILL_SCALE_GROUPS ? M : M / 2);
+#endif
+#ifdef GLM_NATIVE_WIDE_CUBE_K
+    // Keep block32 dots/scales independent in unused rows. This lowers the
+    // number of Cube instructions/readbacks without changing FP32 sums.
+    // K256 handles one/two rows; K128 also fills otherwise unused rows
+    // for three/four routes. Both keep the same block32 dot products.
+    const uint32_t wideGroups =
+        activationBits_ == 4 && count <= M / 4 ? (WIDE_SCALE_GROUPS == 8 && count <= M / 8 ? 8 : 4) : 0;
+#else
+    const uint32_t wideGroups = 0;
+#endif
+    for (int64_t kTile = 0; kTile < k_ / NZ_K; ++kTile) {
+#ifdef GLM_PREFILL_WEIGHT_CACHE
+      cacheKTile_ = kTile;
+      if (!cacheActive_)
+#endif
+        Decode(expert, tile, kTile);
+// Decode has finished writing packedB_. Its FP16 reconstruction scratch
+// can now hold the eight broadcast scale vectors for this K256 tile.
+#ifdef GLM_WEIGHT_DECODE_LUT
+      auto weightVectors = decoded_.Get<float>()[DECODE_TABLE_BYTES / sizeof(float)];
+#else
+      auto weightVectors = decoded_.Get<float>();
+#endif
+      auto scaleIndices = scaleCache_.Get<uint32_t>()[SCALE_INDEX_OFFSET / sizeof(uint32_t)];
+      if (!cachedFactors)
+        for (uint32_t inner = 0; inner < NZ_K / GROUP; ++inner)
+          Gather(weightVectors[inner * N], cachedWeights[kTile * (NZ_K / GROUP) + inner], scaleIndices,
+                 static_cast<uint32_t>(0), N);
+      PipeBarrier<PIPE_V>();
+      for (uint32_t inner = 0; inner < NZ_K / GROUP; inner += wideGroups ? wideGroups : (paired ? 2 : 1)) {
+        const int64_t group = kTile * (NZ_K / GROUP) + inner;
+        if (inner % 2 == 0) Weight(inner, wideGroups);
+        if (wideGroups)
+          ActivationWide(row, group, count, wideGroups);
+        else
+          Activation(row, group, count, paired);
+        Product(count, paired, wideGroups);
+        for (uint32_t part = 0; part < (wideGroups ? wideGroups : (paired ? 2 : 1)); ++part) {
+          ExtractProducts(count, part, paired);
+          for (uint32_t m = 0; m < count; ++m) {
+            if (activationBits_ == 8) {
+              Muls(high[m * N], high[m * N], 16.0f, N);
+              PipeBarrier<PIPE_V>();
+              Add(low[m * N], low[m * N], high[m * N], N);
+              PipeBarrier<PIPE_V>();
+              Muls(high[m * N], low[MAX_ROWS * N], 8.0f, N);
+              PipeBarrier<PIPE_V>();
+              Add(low[m * N], low[m * N], high[m * N], N);
+              PipeBarrier<PIPE_V>();
+            }
+            // Preserve (rounded weight scale * activation scale) then product
+            // scaling. Broadcast the four block32 scales in native column order.
+            // ExtractProducts has consumed the INT32 gather temporary. Reuse
+            // its full allocation for every row's factors, then scale the
+            // complete product matrix with one vector instruction.
+#ifdef GLM_VECTOR_SCALE_PRODUCTS
+            if (tokens_ > M && !cachedFactors) continue;
+#endif
+            auto factors = productFloat_.Get<float>()[m * N];
+            if (cachedFactors)
+              Gather(factors, scaleProducts[m * (N / GROUP) * groups + group + part], scaleIndices,
+                     static_cast<uint32_t>(0), N);
+            else
+              Muls(factors, weightVectors[(inner + part) * N], sx.GetValue(m * MAX_K_GROUPS + group + part), N);
+          }
+          PipeBarrier<PIPE_V>();
+#ifdef GLM_VECTOR_SCALE_PRODUCTS
+          if (tokens_ > M && !cachedFactors) {
+            auto factors = productFloat_.Get<float>();
+            auto rowIndices = mask_.Get<uint32_t>()[SCALE_ROW_INDEX_OFFSET / sizeof(uint32_t)];
+            Gather(factors, sx[group + part], rowIndices, static_cast<uint32_t>(0), count * N);
+            PipeBarrier<PIPE_V>();
+            // Two 64-lane instructions broadcast the same weight vector to
+            // every row. Keep weight * activation before scaling the dot.
+            constexpr uint32_t FLOAT_VECTOR_ELEMENTS = 64;
+            const BinaryRepeatParams broadcast{1, 1, 1, N / LANES, 0, N / LANES};
+            for (uint32_t column = 0; column < N; column += FLOAT_VECTOR_ELEMENTS)
+              Mul(factors[column], weightVectors[(inner + part) * N + column], factors[column],
+                  static_cast<uint64_t>(FLOAT_VECTOR_ELEMENTS), count, broadcast);
+            PipeBarrier<PIPE_V>();
+          }
+#endif
+          Mul(low, low, productFloat_.Get<float>(), count * N);
+          PipeBarrier<PIPE_V>();
+          Add(accumulator, accumulator, low, count * N);
+          PipeBarrier<PIPE_V>();
+        }
+      }
+    }
+  }
+  __aicore__ inline void GateUp(int64_t expert, int64_t tile, int64_t row, uint32_t count) {
+    auto low = results_.Get<float>();
+    auto high = low[ELEMENTS];
+    auto accum = high[ELEMENTS];
+    const uint32_t activeElements = count * N;
+    Accumulate(expert, tile, row, count);
+    Cast(output_.Get<half>(), accum, RoundMode::CAST_NONE, activeElements);
+    PipeBarrier<PIPE_ALL>();
+    // The preceding gate projection leaves sourceTokens_ and sx intact.
+    // Reuse only within this row batch and kernel launch, never across replay.
+    Accumulate(expert, tile + n_ / N / 2, row, count
+#ifdef GLM_SHARE_GATE_UP_INPUT
+               ,
+               true
+#endif
+    );
+    Cast(products_.Get<half>(), accum, RoundMode::CAST_NONE, activeElements);
+    PipeBarrier<PIPE_V>();
+#ifdef GLM_FP16_SWIGLU
+    // Projection outputs already round to half. This opt-in experiment also
+    // rounds the nonlinear operations; FP32 projection/reduction stays intact.
+    auto gate = output_.Get<half>();
+    auto up = products_.Get<half>();
+    auto sigmoid = results_.Get<half>();
+    Muls(sigmoid, gate, static_cast<half>(-1), activeElements);
+    PipeBarrier<PIPE_V>();
+    Exp(sigmoid, sigmoid, activeElements);
+    PipeBarrier<PIPE_V>();
+    Adds(sigmoid, sigmoid, static_cast<half>(1), activeElements);
+    PipeBarrier<PIPE_V>();
+    Div(gate, gate, sigmoid, activeElements);
+    PipeBarrier<PIPE_V>();
+    Mul(gate, gate, up, activeElements);
+    PipeBarrier<PIPE_V>();
+    Mins(gate, gate, static_cast<half>(65504), activeElements);
+    PipeBarrier<PIPE_V>();
+    Maxs(gate, gate, static_cast<half>(-65504), activeElements);
+#else
+    Cast(high, products_.Get<half>(), RoundMode::CAST_NONE, activeElements);
+    Cast(low, output_.Get<half>(), RoundMode::CAST_NONE, activeElements);
+    PipeBarrier<PIPE_V>();
+    Muls(accum, low, -1.0f, activeElements);
+    PipeBarrier<PIPE_V>();
+    Exp(accum, accum, activeElements);
+    PipeBarrier<PIPE_V>();
+    Adds(accum, accum, 1.0f, activeElements);
+    PipeBarrier<PIPE_V>();
+    Div(low, low, accum, activeElements);
+    PipeBarrier<PIPE_V>();
+    Mul(low, low, high, activeElements);
+    PipeBarrier<PIPE_V>();
+    Mins(low, low, 65504.0f, activeElements);
+    PipeBarrier<PIPE_V>();
+    Maxs(low, low, -65504.0f, activeElements);
+    PipeBarrier<PIPE_V>();
+    Cast(output_.Get<half>(), low, RoundMode::CAST_NONE, activeElements);
+#endif
+    PipeBarrier<PIPE_ALL>();
+#ifdef GLM_PAIR_HIDDEN_QUANT
+    for (uint32_t m = 0; m < count; m += QUANT_ROWS_PER_BATCH) {
+      auto input = productFloat_.Get<half>();
+      Duplicate(input, static_cast<half>(0), GlmFusedQuant::ELEMENTS);
+      PipeBarrier<PIPE_V>();
+      // Each logical row contains four independent block32 groups. The
+      // optional paired schedule fills both halves of the eight-group
+      // quantizer; the qualified default and odd tails retain zero padding.
+      for (uint32_t part = 0; part < QUANT_ROWS_PER_BATCH && m + part < count; ++part) {
+        Gather(outputRow_.Get<half>(), output_.Get<half>()[(m + part) * N], outputOffsets_.Get<uint32_t>(),
+               static_cast<uint32_t>(0), N);
+        PipeBarrier<PIPE_ALL>();
+        Adds(input[part * N], outputRow_.Get<half>(), static_cast<half>(0), N);
+        PipeBarrier<PIPE_ALL>();
+      }
+      Quantize();
+      auto packed = productFloat_.Get<int8_t>()[24 * GlmFusedQuant::ELEMENTS];
+      const uint32_t broadcastOffset =
+          7 * GlmFusedQuant::ELEMENTS + 2 * GlmFusedQuant::BATCH + 3 * GlmFusedQuant::LANES;
+      auto scales = productFloat_.Get<float>()[broadcastOffset];
+      for (uint32_t part = 0; part < QUANT_ROWS_PER_BATCH && m + part < count; ++part)
+        for (uint32_t group = 0; group < N / GROUP; ++group) {
+          const int64_t offset = ((row + m + part) * (n_ / 2 / GROUP) + tile * N / GROUP + group);
+          const uint32_t sourceGroup = part * (N / GROUP) + group;
+          DataCopy(low_[offset * K0 / 2], packed[sourceGroup * GROUP], K0 / 2);
+          if (activationBits_ == 8)
+            DataCopy(high_[offset * K0 / 2], packed[GlmFusedQuant::ELEMENTS + sourceGroup * GROUP], K0 / 2);
+          DataCopy(xs_[offset * LANES], scales[sourceGroup * LANES], LANES);
+        }
+      PipeBarrier<PIPE_ALL>();
+    }
+#else
+    for (uint32_t m = 0; m < count; ++m) {
+      Gather(outputRow_.Get<half>(), output_.Get<half>()[m * N], outputOffsets_.Get<uint32_t>(),
+             static_cast<uint32_t>(0), N);
+      PipeBarrier<PIPE_ALL>();
+      auto input = productFloat_.Get<half>();
+      Duplicate(input, static_cast<half>(0), GlmFusedQuant::ELEMENTS);
+      PipeBarrier<PIPE_V>();
+      Adds(input, outputRow_.Get<half>(), static_cast<half>(0), N);
+      PipeBarrier<PIPE_ALL>();
+      Quantize();
+      auto packed = productFloat_.Get<int8_t>()[24 * GlmFusedQuant::ELEMENTS];
+      const uint32_t broadcastOffset =
+          7 * GlmFusedQuant::ELEMENTS + 2 * GlmFusedQuant::BATCH + 3 * GlmFusedQuant::LANES;
+      auto scales = productFloat_.Get<float>()[broadcastOffset];
+      for (uint32_t group = 0; group < N / GROUP; ++group) {
+        const int64_t offset = ((row + m) * (n_ / 2 / GROUP) + tile * N / GROUP + group);
+        DataCopy(low_[offset * K0 / 2], packed[group * GROUP], K0 / 2);
+        if (activationBits_ == 8)
+          DataCopy(high_[offset * K0 / 2], packed[GlmFusedQuant::ELEMENTS + group * GROUP], K0 / 2);
+        DataCopy(xs_[offset * LANES], scales[group * LANES], LANES);
+      }
+      PipeBarrier<PIPE_ALL>();
+    }
+#endif
+  }
+  __aicore__ inline void Combine(int64_t tile, int64_t row, uint32_t count) {
+    auto low = results_.Get<float>();
+    auto accum = low[2 * ELEMENTS];
+    Cast(output_.Get<half>(), accum, RoundMode::CAST_NONE, count * N);
+    PipeBarrier<PIPE_ALL>();
+    for (uint32_t m = 0; m < count; ++m) {
+      Gather(outputRow_.Get<half>(), output_.Get<half>()[m * N], outputOffsets_.Get<uint32_t>(),
+             static_cast<uint32_t>(0), N);
+      PipeBarrier<PIPE_ALL>();
+#ifdef GLM_FP16_ROUTE_WORKSPACE
+      if (tokens_ > M) {
+        // This half rounding already exists in the original down epilogue.
+        // Defer its exact FP32 route multiply to the stable reducer.
+        DataCopy(routedHalf_[(row + m) * n_ + tile * N], outputRow_.Get<half>(), N);
+        PipeBarrier<PIPE_ALL>();
+        continue;
+      }
+#endif
+      const int64_t route = order_.GetValue(row + m), token = route / topK_;
+      const float weight = weights_.GetValue(route);
+      Cast(low, outputRow_.Get<half>(), RoundMode::CAST_NONE, N);
+      PipeBarrier<PIPE_V>();
+      Muls(low, low, weight, N);
+      PipeBarrier<PIPE_ALL>();
+      if (tokens_ > M) {
+        DataCopy(y_[(row + m) * n_ + tile * N], low, N);
+      } else {
+        auto previous = reduction_.Get<float>()[(token - firstToken_) * N];
+        Add(previous, previous, low, N);
+      }
+      PipeBarrier<PIPE_ALL>();
+    }
+  }
+  int64_t rows_, experts_, n_, k_, activationBits_, tokens_, topK_, firstToken_;
+#ifdef GLM_STATIC_WEIGHT_BITS
+  static constexpr int64_t bits_ = GLM_STATIC_WEIGHT_BITS;
+  static_assert(bits_ == 3, "this specialized entry accepts only W3 banks");
+#else
+  int64_t bits_;
+#endif
+  int64_t sourceTokens_[M];
+#ifdef GLM_CACHE_GATE_UP_ACTIVATIONS
+  bool reuseActivations_ = false;
+#endif
+#ifdef GLM_PREFILL_WEIGHT_CACHE
+  bool cacheActive_ = false;
+  int64_t cacheTile_ = 0;
+  uint32_t cacheProjection_ = 0, cacheKTile_ = 0;
+#endif
+  TPipe pipe_;
+  TBuf<TPosition::A1> a1_;
+  TBuf<TPosition::A2> a2_;
+  TBuf<TPosition::B1> b1_;
+  TBuf<TPosition::B2> b2_;
+  TBuf<TPosition::CO1> c_;
+  TBuf<TPosition::VECCALC> raw_, mask_, decoded_, outputOffsets_, productOffsets_, outputRow_, scaleCache_,
+      activationScales_;
+  TBuf<TPosition::VECCALC> quantOffsets_;
+  TBuf<TPosition::VECCALC> gathered_, packedB_, packedA_, products_, results_, output_;
+  TBuf<TPosition::VECCALC> productFloat_, reduction_;
+  GlobalTensor<int8_t> low_, high_;
+  GlobalTensor<uint8_t> codes_;
+  GlobalTensor<float> xs_, scales_;
+  GlobalTensor<int64_t> ends_;
+  GlobalTensor<int8_t> inputLow_, inputHigh_;
+  GlobalTensor<float> inputScales_;
+  GlobalTensor<float> y_, weights_;
+#ifdef GLM_FP16_ROUTE_WORKSPACE
+  GlobalTensor<half> routedHalf_;
+#endif
+  GlobalTensor<int64_t> order_;
+};
+}  // namespace
+#ifdef GLM_FUSED_GATE_UP
+  #ifdef GLM_STATIC_WEIGHT_BITS
+    #define GLM_FUSED_ENTRY glm_fused_gate_up_w3_v1
+  #else
+    #define GLM_FUSED_ENTRY glm_fused_gate_up_v1
+  #endif
+#else
+  #ifdef GLM_STATIC_WEIGHT_BITS
+    #define GLM_FUSED_ENTRY glm_fused_down_w3_v1
+  #else
+    #define GLM_FUSED_ENTRY glm_fused_down_v1
+  #endif
+#endif
+#ifdef GLM_FUSED_GATE_UP
+extern "C" __global__ __aicore__ void GLM_FUSED_ENTRY(GM_ADDR x, GM_ADDR inputHigh, GM_ADDR inputScales, GM_ADDR order,
+                                                      GM_ADDR codes, GM_ADDR scales, GM_ADDR ends, GM_ADDR low,
+                                                      GM_ADDR high, GM_ADDR xs, GM_ADDR tiling
+  #ifdef GLM_WEIGHT_DECODE_LUT
+                                                      ,
+                                                      GM_ADDR lookup
+  #endif
+) {
+#else
+extern "C" __global__ __aicore__ void GLM_FUSED_ENTRY(GM_ADDR low, GM_ADDR high, GM_ADDR xs, GM_ADDR codes,
+                                                      GM_ADDR scales, GM_ADDR ends, GM_ADDR order, GM_ADDR weights,
+                                                      GM_ADDR y, GM_ADDR tiling
+  #ifdef GLM_WEIGHT_DECODE_LUT
+                                                      ,
+                                                      GM_ADDR lookup
+  #endif
+) {
+#endif
+  AscendC::InitSocState();
+  int64_t config[8];
+  const auto source = reinterpret_cast<__gm__ int64_t*>(tiling);
+  for (unsigned i = 0; i < 8; ++i) config[i] = source[i];
+  if (config[0] <= 0 || config[0] > 65536 || config[1] <= 0 || config[2] <= 0 || config[2] % 128 || config[3] <= 0 ||
+      config[3] > 4096 || config[3] % 256 || config[4] < 2 || config[4] > 4 || (config[5] != 4 && config[5] != 8) ||
+      config[6] <= 0 || config[7] <= 0 || config[6] * config[7] != config[0])
+    return;
+  Projection operation;
+#ifdef GLM_FUSED_GATE_UP
+  operation.Run(x, inputHigh, inputScales, low, high, xs, codes, scales, ends, order, nullptr, nullptr, config
+  #ifdef GLM_WEIGHT_DECODE_LUT
+                ,
+                lookup
+  #endif
+  );
+#else
+  operation.Run(nullptr, nullptr, nullptr, low, high, xs, codes, scales, ends, order, weights, y, config
+  #ifdef GLM_WEIGHT_DECODE_LUT
+                ,
+                lookup
+  #endif
+  );
+#endif
+}
