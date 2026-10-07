@@ -100,6 +100,33 @@ def test_direct_loader_uses_authoritative_native_bytes_and_never_packs(tmp_path,
     assert model._native_int4_load_report["layout_backup_bytes"] == 0
 
 
+@pytest.mark.parametrize("half_routes", [False, True])
+def test_direct_loader_uses_compiled_route_workspace_dtype(tmp_path, loader_module, monkeypatch, half_routes):
+    module, config_type = loader_module
+    model, config, owner = checkpoint(tmp_path)
+    calls = []
+    instance = object()
+
+    def create(*args, **kwargs):
+        calls.append(kwargs)
+        return instance
+
+    monkeypatch.setattr(
+        module,
+        "frozen_helper",
+        lambda root: (
+            SimpleNamespace(NativeFusedMoE=create),
+            {"namespace": "test_native", "fp16_route_workspace": half_routes},
+        ),
+    )
+    module.GlmNativeInt4Loader(config_type()).load_weights(model, config)
+    expected = {"namespace": "test_native", "activation_bits": 4, "prepared_weight_layout": True}
+    if half_routes:
+        expected["fp16_route_workspace"] = True
+    assert calls == [expected] and owner._method.native is instance
+    assert model._native_int4_load_report["transformed_code_tensors"] == 0
+
+
 def test_loader_rejects_incomplete_checkpoint_before_weight_read(tmp_path, loader_module):
     module, config_type = loader_module
     model, config, _ = checkpoint(tmp_path)

@@ -1,0 +1,20 @@
+HOT SWAPPED 903 same workers and weights; graphs captured
+cold1280 23.949711672961712
+Traceback (most recent call last):
+  File "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/live.py", line 38, in <module>
+    short=[(n,[replace(case,max_tokens=64) for case in cases]) for n,cases in make_groups(['short'],[])]
+                                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tools/glm_perf/suite.py", line 431, in make_groups
+    quality, tool = load_quality_cases()
+                    ^^^^^^^^^^^^^^^^^^^^
+  File "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tools/glm_perf/suite.py", line 64, in load_quality_cases
+    data = json.loads(path.read_text())
+                      ^^^^^^^^^^^^^^^^
+  File "/usr/local/python3.12.13/lib/python3.12/pathlib.py", line 1027, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python3.12.13/lib/python3.12/pathlib.py", line 1013, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tools/glm_perf/workloads.json'
+[ERROR] 2026-10-07-18:08:18 (PID:3725788, Device:-1, RankID:-1) ERR99999 UNKNOWN applicaiton exception

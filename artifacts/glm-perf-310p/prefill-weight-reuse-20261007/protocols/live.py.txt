@@ -1,0 +1,60 @@
+import sys,json,time,uuid,hashlib
+from pathlib import Path
+from dataclasses import replace
+sys.path.insert(0,'/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1')
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.fused_moe_control import manifest
+from tools.glm_perf.suite import make_groups,run_groups,summarize
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+version=int(sys.argv[1]);c=ResidentClient('http://127.0.0.1:8001',timeout=900)
+original=(root/'original-candidate.py').read_text();expected=hashlib.sha256(original.encode()).hexdigest()
+before=c._acknowledged_rpc('resident_status',matches=c._status_matches)
+assert all(r['candidate']=='native_v56_prefill_graph' and r['digest']==expected and not r['graphs_dirty'] and not r['native_failed'] for r in before)
+identity=sorted((r['rank'],r['pid'],r['weight_storage_digest']) for r in before)
+result={'version':version,'complete':False,'before':before,'records':[]}
+(root/f'v{version}-live.json').write_text(json.dumps(result,indent=2))
+qualified=manifest(root/f'build-v{version}',root/f'v{version}-gates.json')
+source=original.replace('reconstruction_v56',f'reconstruction_v{version}')
+source=source.replace('def replacements(native_resources):','def memory_base_replacements(native_resources):')
+source+="\ndef replacements(native_resources):\n changes=memory_base_replacements(native_resources)\n target='vllm_ascend._310p.worker_310p:NPUWorker310.resident_status'\n previous=changes[target]\n native=native_resources['reconstruction_VERSION']['fused_int4a4']\n def memory_status(self):\n  result=previous(self)\n  result['prefill_memory_reuse']={'fp16_route_workspace':native.fp16_route_workspace,'workspace_dtype':str(native.route_workspace_dtype),'scratch':[]}\n  for key,values in native.scratch.items():\n   workspace=values[-1]\n   if workspace is not None:\n    result['prefill_memory_reuse']['scratch'].append({'geometry':list(key),'shape':list(workspace.shape),'dtype':str(workspace.dtype),'bytes':workspace.numel()*workspace.element_size()})\n  return result\n memory_status.__dict__.update(getattr(previous,'__dict__',{}))\n changes[target]=memory_status\n return changes\n".replace('reconstruction_VERSION',f'reconstruction_v{version}')
+compile(source,'qualified candidate','exec');(root/f'v{version}-candidate.py').write_text(source)
+swapped=False
+try:
+ loaded=c.load_native(qualified);result['loaded']=loaded
+ selected=c.switch(Control(uuid.uuid4().hex,candidate=f'native_v{version}_prefill_graph',source=source));swapped=True
+ result['selected']=selected
+ assert sorted((r['rank'],r['pid'],r['weight_storage_digest']) for r in selected)==identity
+ assert all(r['prepared_weight_layout']['transformed_banks']==0 and r['prepared_weight_layout']['backup_bytes']==0 for r in selected)
+ c.resume();print('HOT SWAPPED',version,'same workers and weights; graphs captured',flush=True)
+ began=time.monotonic()
+ response=c.request('/v1/completions',{'model':'glm53-flash-selective-w3','prompt':[42]*1280,'max_tokens':8,'temperature':0,'ignore_eos':True})
+ result['cold_prefill_1280']={'elapsed_s':time.monotonic()-began,'response':response}
+ workers=c._acknowledged_rpc('resident_status',matches=lambda rs:c._status_matches(rs) and all(r.get('candidate')==f'native_v{version}_prefill_graph' and r.get('prefill_graph',{}).get('replays',0)>=2 for r in rs))
+ assert all(not r['graphs_dirty'] and not r['native_failed'] and r['reconstruction']['fallback_dispatches']==0 for r in workers)
+ result['after_cold']=workers
+ (root/f'v{version}-live.json').write_text(json.dumps(result,indent=2))
+ print('cold1280',result['cold_prefill_1280']['elapsed_s'],flush=True)
+ short=[(n,[replace(case,max_tokens=64) for case in cases]) for n,cases in make_groups(['short'],[])]
+ quality=[case for _,cases in make_groups(['quality'],[]) for case in cases]
+ groups=list(short)+[(f'quality_4_{i//4}',[replace(case,max_tokens=128) for case in quality[i:i+4]]) for i in range(0,len(quality),4)]+make_groups(['tool'],[])
+ for name,cases in groups:
+  rows=run_groups([(name,cases)],c.base_url,'glm53-flash-selective-w3',42,timeout_s=900)
+  result['records'].extend(rows);result['summary']=summarize(result['records'])
+  (root/f'v{version}-live.json').write_text(json.dumps(result,indent=2))
+  print(name,json.dumps(summarize(rows)),flush=True)
+  assert all(r['valid'] for r in rows)
+ after=c._acknowledged_rpc('resident_status',matches=c._status_matches)
+ assert sorted((r['rank'],r['pid'],r['weight_storage_digest']) for r in after)==identity
+ assert all(not r['graphs_dirty'] and not r['native_failed'] and r['reconstruction']['fallback_dispatches']==0 for r in after)
+ result['after']=after;result['complete']=True
+ (root/f'v{version}-live.json').write_text(json.dumps(result,indent=2))
+ print('LIVE COMPLETE',json.dumps(result['summary']),flush=True)
+except BaseException as error:
+ result['error']=repr(error);(root/f'v{version}-live.json').write_text(json.dumps(result,indent=2))
+ # A load failure needs inspection; do not issue another irreversible native
+ # load. Graph-switch errors can restore the verified original source.
+ status=c._acknowledged_rpc('resident_status',matches=c._status_matches)
+ if not any(r.get('native_failed') for r in status):
+  c.switch(Control(uuid.uuid4().hex,candidate='native_v56_prefill_graph',source=original));c.resume()
+ raise

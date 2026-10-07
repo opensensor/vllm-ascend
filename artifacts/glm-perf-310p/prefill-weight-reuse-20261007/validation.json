@@ -1,0 +1,72 @@
+{
+  "base_commit": "374f4f2b89c503615213875f1a9f6b640cf21f52",
+  "status": "v903_hot_swapped_real_weight_gates_and_26_request_suite_complete",
+  "source_sha256": {
+    "tools/glm_perf/build_reconstruction.py": "c748a87bd42cabb94363df6f3fac9aeb2002f60eb24710843c5600f7f8ce85ce",
+    "tools/glm_perf/glm_fused_moe.py": "fd425c852a5d03255ece0c452fcdda35207ba7014afbf2e7779e54b98fc3edfd",
+    "tools/glm_perf/glm_fused_moe.cpp": "e823928b5b4d8b02faf71ee492b43475dd2bab1bb5b7843d3d69f6447bffabf8",
+    "tools/glm_perf/glm_fused_reduce.cpp": "b92ff4e2d55cd00d98dd510af137bcc60f67d3566967b9acbb94fd33512db8fc",
+    "tools/glm_perf/fused_moe_control.py": "f1e5be18235ed98d89c76c2d3ca8c12408885cec8f341b14bf18c9710f16f258",
+    "tools/glm_perf/fused_moe_profile.py": "eea9a76dd7803316cc61f7f64dd492029e4a36a1d5e8958ab47b7e07fc9e39c2",
+    "tools/glm_perf/fused_moe_probe.py": "b267fc7afc804921d677a4656e96d9287457e34f54bd59098fe4e5021ee3296c",
+    "tests/ut/glm_perf/test_fused_moe.py": "1ea30fb6962977745b0f248c5736e39887f123d837a798ed4b2fb93fd09082d9",
+    "tests/ut/glm_perf/test_prefill_memory_reuse.py": "768ee0232951de8ca2ddb203999231effa30b209e671af4f9e727440616d3956",
+    "tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py": "8f1cc97b8ea91b1ea29682fa51085b679008c3477b978f9efd44a07a04cad65f",
+    "vllm_ascend/model_loader/glm_native_int4.py": "02ba90cca30c60b1f8ea5738e1086b3d79c3c72409db8edf6656dcda3884f23d",
+    "tests/ut/glm_perf/test_native_loader.py": "505f1f84271ed879d15e3088487c69089d5d327b6d6d98fea3c8fb91f096c943"
+  },
+  "checks": {
+    "targeted_cpu": {
+      "passed": 116
+    },
+    "isolated_cpu": {
+      "passed": 418,
+      "excluded": [
+        "test_kpool_rotation_direct.py",
+        "test_moe_half_unpermute.py",
+        "test_next_optimization_queue.py"
+      ]
+    },
+    "npu_tests": {
+      "paired_per_build": 42,
+      "paired_builds": [
+        901,
+        902,
+        903
+      ],
+      "paired_total": 126,
+      "independent_arithmetic_per_build": 30,
+      "independent_real_weight_per_build": 12
+    },
+    "cann_compilation": {
+      "builds": [
+        901,
+        902,
+        903
+      ],
+      "passed": true
+    },
+    "live_server": {
+      "candidate": "native_v903_prefill_graph",
+      "api_pid": 2826435,
+      "worker_pids": [
+        2827551,
+        2827949,
+        2828351,
+        2828744
+      ],
+      "requests": 26,
+      "quality": "17/20",
+      "tool_passed": true,
+      "c1_tok_s": 9.257031744463637,
+      "c4_aggregate_tok_s": 14.148949853469233,
+      "cold_1280_seconds": [
+        23.949711672961712,
+        24.12405098095769
+      ],
+      "route_workspace_bytes_per_rank": 41943040,
+      "permanent_expert_bundle": "native-kernels-v56",
+      "matched_comparison": "interrupted_when_user_started_check"
+    }
+  }
+}

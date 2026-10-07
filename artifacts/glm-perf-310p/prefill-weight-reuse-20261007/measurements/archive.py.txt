@@ -1,0 +1,21 @@
+from pathlib import Path
+import tarfile
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+archive=root/'evidence-pre-live.tar'
+with tarfile.open(archive,'w') as tar:
+ for path in sorted(root.glob('*')):
+  if path.is_file() and path.suffix in ('.json','.xml','.log','.py') and 'live' not in path.name:
+   tar.add(path,arcname='measurements/'+path.name)
+ for version in (901,902,903):
+  build=root/f'build-v{version}'
+  for path in sorted(build.rglob('*')):
+   if path.is_file() and '__pycache__' not in path.parts and path.suffix in ('.py','.json','.bin'):
+    name='frozen-builds/'+str(path.relative_to(root))
+    if path.suffix=='.py': name+='.txt'
+    tar.add(path,arcname=name)
+ for path in sorted((root/'source-v1/tools/glm_perf').glob('*')):
+  if path.is_file() and path.name in ('glm_fused_moe.cpp','glm_fused_reduce.cpp','glm_fused_quantize.h','build_reconstruction.py','fused_moe_control.py','fused_moe_profile.py','workloads.json'):
+   tar.add(path,arcname='frozen-sources/'+path.name+'.txt')
+ for name in ('independent-gates.py','live.py','test-prefill-memory-reuse-v2.py','original-candidate.py'):
+  tar.add(root/name,arcname='protocols/'+name+'.txt')
+print(archive,archive.stat().st_size)

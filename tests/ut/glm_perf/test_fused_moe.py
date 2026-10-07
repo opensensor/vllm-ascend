@@ -334,7 +334,16 @@ def test_fused_wrapper_counts_rejected_bank_as_fallback():
 
 
 @pytest.mark.parametrize("specialize_w3", [False, True])
-def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_path, specialize_w3):
+@pytest.mark.parametrize(
+    "prefill_options",
+    [
+        {},
+        {"prefill_weight_cache": True},
+        {"fp16_route_workspace": True},
+        {"prefill_weight_cache": True, "fp16_route_workspace": True},
+    ],
+)
+def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_path, specialize_w3, prefill_options):
     namespace = "glm_reconstruction_v997"
     package = namespace + "_helpers"
     helper = tmp_path / package
@@ -347,6 +356,7 @@ def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_pat
         "helper_package": package,
         "fused_moe": True,
         "specialize_w3": specialize_w3,
+        **prefill_options,
     }
     (tmp_path / "provenance.json").write_text(json.dumps({"_build": options, "_helpers": helpers}))
     names = ("glm_reconstruction_bridge_v997.so", "glm_fused_gate_up.bin", "glm_fused_down.bin", "glm_fused_pack.bin")
@@ -355,6 +365,16 @@ def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_pat
     for name in names:
         (tmp_path / name).write_bytes(name.encode())
     row = {"passed": True, "graph_changed_inputs_routes_weights": True, "fp16_intermediate_gm_bytes": 0, "tokens": 128}
+    if prefill_options.get("fp16_route_workspace"):
+        row.update(
+            top_k=2,
+            hidden=256,
+            route_workspace_dtype="torch.float16",
+            fp16_gate_up_hidden_gm_bytes=0,
+            weighted_fp32_workspace_bytes=0,
+            unweighted_fp16_workspace_bytes=128 * 2 * 256 * 2,
+            fp16_intermediate_gm_bytes=128 * 2 * 256 * 2,
+        )
     records = [dict(row, weight_bits=w, activation_bits=a) for w in (2, 3, 4) for a in (4, 8)]
     gates = {
         "complete": True,
@@ -372,6 +392,9 @@ def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_pat
     payload = manifest(tmp_path, report).value
     compile(payload["validation_source"], "fused manifest", "exec")
     assert payload["operators"] == [namespace + "::launch"]
+    assert ("fp16_route_workspace=True" in payload["validation_source"]) is bool(
+        prefill_options.get("fp16_route_workspace")
+    )
     if specialize_w3:
         specialized = tmp_path / "glm_fused_down_w3.bin"
         assert str(specialized) in {entry["path"] for entry in payload["assets"]}
@@ -385,11 +408,21 @@ def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_pat
     with pytest.raises(ValueError, match="real-weight gates"):
         manifest(tmp_path, report)
     gates["real_weight_records"] = records
-    gates["records"] = [dict(r, tokens=2) for r in records]
+    gates["records"] = [
+        dict(r, tokens=2, fp16_intermediate_gm_bytes=0, unweighted_fp16_workspace_bytes=0) for r in records
+    ]
     write()
     with pytest.raises(ValueError, match="prefill gates"):
         manifest(tmp_path, report)
     gates["records"] = records
+    if prefill_options:
+        gates["real_weight_records"] = [
+            dict(r, tokens=2, fp16_intermediate_gm_bytes=0, unweighted_fp16_workspace_bytes=0) for r in records
+        ]
+        write()
+        with pytest.raises(ValueError, match="real-weight multibatch"):
+            manifest(tmp_path, report)
+        gates["real_weight_records"] = records
     write()
     (tmp_path / names[1]).write_bytes(b"changed")
     with pytest.raises(ValueError, match="exact binaries"):

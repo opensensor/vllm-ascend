@@ -80,11 +80,13 @@ class GlmNativeInt4Loader(DefaultModelLoader):
         if self.native_code_tensors != expected:
             raise ValueError("native GLM loader did not read every local code tensor")
         helper, options = frozen_helper(self.folder / manifest["kernel_bundle"])
+        route_options = {"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}
         native = helper.NativeFusedMoE(
             self.folder / manifest["kernel_bundle"],
             namespace=options["namespace"],
             activation_bits=manifest["activation_bits"],
             prepared_weight_layout=True,
+            **route_options,
         )
         for module, bank in zip(owners, banks):
             bank.native_weight_layout = LAYOUT

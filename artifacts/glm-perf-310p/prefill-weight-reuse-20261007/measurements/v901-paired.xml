@@ -1,0 +1,1387 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="42" skipped="0" tests="42" time="5.834" timestamp="2026-10-07T17:59:32.226327+00:00" hostname="matteius-threadripper"><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W3-2-4]" time="4.310"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (3, tensor([[[ 2,  0, -1,  ...,  1,  0,  1],
+         [ 0,  1,  2,  ...,  0,  0, -1],
+         [ 2,  2,  0,  ...,  1, ...158, 0.0175, 0.0175,  ..., 0.0175, 0.0175, 0.0175],
+         [0.0175, 0.0158, 0.0175,  ..., 0.0223, 0.0175, 0.0159]]]))
+activation_bits = 4, tokens = 2
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W3-2-8]" time="0.003"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (3, tensor([[[ 2,  0, -1,  ...,  1,  0,  1],
+         [ 0,  1,  2,  ...,  0,  0, -1],
+         [ 2,  2,  0,  ...,  1, ...158, 0.0175, 0.0175,  ..., 0.0175, 0.0175, 0.0175],
+         [0.0175, 0.0158, 0.0175,  ..., 0.0223, 0.0175, 0.0159]]]))
+activation_bits = 8, tokens = 2
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W3-15-4]" time="0.014"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (3, tensor([[[ 2,  0, -1,  ...,  1,  0,  1],
+         [ 0,  1,  2,  ...,  0,  0, -1],
+         [ 2,  2,  0,  ...,  1, ...158, 0.0175, 0.0175,  ..., 0.0175, 0.0175, 0.0175],
+         [0.0175, 0.0158, 0.0175,  ..., 0.0223, 0.0175, 0.0159]]]))
+activation_bits = 4, tokens = 15
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W3-15-8]" time="0.003"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (3, tensor([[[ 2,  0, -1,  ...,  1,  0,  1],
+         [ 0,  1,  2,  ...,  0,  0, -1],
+         [ 2,  2,  0,  ...,  1, ...158, 0.0175, 0.0175,  ..., 0.0175, 0.0175, 0.0175],
+         [0.0175, 0.0158, 0.0175,  ..., 0.0223, 0.0175, 0.0159]]]))
+activation_bits = 8, tokens = 15
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W3-16-4]" time="0.003"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (3, tensor([[[ 2,  0, -1,  ...,  1,  0,  1],
+         [ 0,  1,  2,  ...,  0,  0, -1],
+         [ 2,  2,  0,  ...,  1, ...158, 0.0175, 0.0175,  ..., 0.0175, 0.0175, 0.0175],
+         [0.0175, 0.0158, 0.0175,  ..., 0.0223, 0.0175, 0.0159]]]))
+activation_bits = 4, tokens = 16
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W3-16-8]" time="0.002"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (3, tensor([[[ 2,  0, -1,  ...,  1,  0,  1],
+         [ 0,  1,  2,  ...,  0,  0, -1],
+         [ 2,  2,  0,  ...,  1, ...158, 0.0175, 0.0175,  ..., 0.0175, 0.0175, 0.0175],
+         [0.0175, 0.0158, 0.0175,  ..., 0.0223, 0.0175, 0.0159]]]))
+activation_bits = 8, tokens = 16
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W3-17-4]" time="0.003"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (3, tensor([[[ 2,  0, -1,  ...,  1,  0,  1],
+         [ 0,  1,  2,  ...,  0,  0, -1],
+         [ 2,  2,  0,  ...,  1, ...158, 0.0175, 0.0175,  ..., 0.0175, 0.0175, 0.0175],
+         [0.0175, 0.0158, 0.0175,  ..., 0.0223, 0.0175, 0.0159]]]))
+activation_bits = 4, tokens = 17
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W3-17-8]" time="0.003"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (3, tensor([[[ 2,  0, -1,  ...,  1,  0,  1],
+         [ 0,  1,  2,  ...,  0,  0, -1],
+         [ 2,  2,  0,  ...,  1, ...158, 0.0175, 0.0175,  ..., 0.0175, 0.0175, 0.0175],
+         [0.0175, 0.0158, 0.0175,  ..., 0.0223, 0.0175, 0.0159]]]))
+activation_bits = 8, tokens = 17
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W3-30-4]" time="0.007"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (3, tensor([[[ 2,  0, -1,  ...,  1,  0,  1],
+         [ 0,  1,  2,  ...,  0,  0, -1],
+         [ 2,  2,  0,  ...,  1, ...158, 0.0175, 0.0175,  ..., 0.0175, 0.0175, 0.0175],
+         [0.0175, 0.0158, 0.0175,  ..., 0.0223, 0.0175, 0.0159]]]))
+activation_bits = 4, tokens = 30
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W3-30-8]" time="0.004"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (3, tensor([[[ 2,  0, -1,  ...,  1,  0,  1],
+         [ 0,  1,  2,  ...,  0,  0, -1],
+         [ 2,  2,  0,  ...,  1, ...158, 0.0175, 0.0175,  ..., 0.0175, 0.0175, 0.0175],
+         [0.0175, 0.0158, 0.0175,  ..., 0.0223, 0.0175, 0.0159]]]))
+activation_bits = 8, tokens = 30
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W3-31-4]" time="0.003"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (3, tensor([[[ 2,  0, -1,  ...,  1,  0,  1],
+         [ 0,  1,  2,  ...,  0,  0, -1],
+         [ 2,  2,  0,  ...,  1, ...158, 0.0175, 0.0175,  ..., 0.0175, 0.0175, 0.0175],
+         [0.0175, 0.0158, 0.0175,  ..., 0.0223, 0.0175, 0.0159]]]))
+activation_bits = 4, tokens = 31
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W3-31-8]" time="0.003"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (3, tensor([[[ 2,  0, -1,  ...,  1,  0,  1],
+         [ 0,  1,  2,  ...,  0,  0, -1],
+         [ 2,  2,  0,  ...,  1, ...158, 0.0175, 0.0175,  ..., 0.0175, 0.0175, 0.0175],
+         [0.0175, 0.0158, 0.0175,  ..., 0.0223, 0.0175, 0.0159]]]))
+activation_bits = 8, tokens = 31
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W3-640-4]" time="0.026"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (3, tensor([[[ 2,  0, -1,  ...,  1,  0,  1],
+         [ 0,  1,  2,  ...,  0,  0, -1],
+         [ 2,  2,  0,  ...,  1, ...158, 0.0175, 0.0175,  ..., 0.0175, 0.0175, 0.0175],
+         [0.0175, 0.0158, 0.0175,  ..., 0.0223, 0.0175, 0.0159]]]))
+activation_bits = 4, tokens = 640
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W3-640-8]" time="0.014"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (3, tensor([[[ 2,  0, -1,  ...,  1,  0,  1],
+         [ 0,  1,  2,  ...,  0,  0, -1],
+         [ 2,  2,  0,  ...,  1, ...158, 0.0175, 0.0175,  ..., 0.0175, 0.0175, 0.0175],
+         [0.0175, 0.0158, 0.0175,  ..., 0.0223, 0.0175, 0.0159]]]))
+activation_bits = 8, tokens = 640
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W4-2-4]" time="0.483"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (4, tensor([[[ 0, -5,  4,  ...,  0, -2, -3],
+         [-1,  1,  0,  ...,  2,  3, -1],
+         [ 0,  1,  1,  ..., -1, ...097, 0.0085, 0.0074,  ..., 0.0080, 0.0094, 0.0080],
+         [0.0085, 0.0074, 0.0092,  ..., 0.0080, 0.0083, 0.0094]]]))
+activation_bits = 4, tokens = 2
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W4-2-8]" time="0.002"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (4, tensor([[[ 0, -5,  4,  ...,  0, -2, -3],
+         [-1,  1,  0,  ...,  2,  3, -1],
+         [ 0,  1,  1,  ..., -1, ...097, 0.0085, 0.0074,  ..., 0.0080, 0.0094, 0.0080],
+         [0.0085, 0.0074, 0.0092,  ..., 0.0080, 0.0083, 0.0094]]]))
+activation_bits = 8, tokens = 2
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W4-15-4]" time="0.003"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (4, tensor([[[ 0, -5,  4,  ...,  0, -2, -3],
+         [-1,  1,  0,  ...,  2,  3, -1],
+         [ 0,  1,  1,  ..., -1, ...097, 0.0085, 0.0074,  ..., 0.0080, 0.0094, 0.0080],
+         [0.0085, 0.0074, 0.0092,  ..., 0.0080, 0.0083, 0.0094]]]))
+activation_bits = 4, tokens = 15
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W4-15-8]" time="0.002"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (4, tensor([[[ 0, -5,  4,  ...,  0, -2, -3],
+         [-1,  1,  0,  ...,  2,  3, -1],
+         [ 0,  1,  1,  ..., -1, ...097, 0.0085, 0.0074,  ..., 0.0080, 0.0094, 0.0080],
+         [0.0085, 0.0074, 0.0092,  ..., 0.0080, 0.0083, 0.0094]]]))
+activation_bits = 8, tokens = 15
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W4-16-4]" time="0.002"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (4, tensor([[[ 0, -5,  4,  ...,  0, -2, -3],
+         [-1,  1,  0,  ...,  2,  3, -1],
+         [ 0,  1,  1,  ..., -1, ...097, 0.0085, 0.0074,  ..., 0.0080, 0.0094, 0.0080],
+         [0.0085, 0.0074, 0.0092,  ..., 0.0080, 0.0083, 0.0094]]]))
+activation_bits = 4, tokens = 16
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W4-16-8]" time="0.002"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (4, tensor([[[ 0, -5,  4,  ...,  0, -2, -3],
+         [-1,  1,  0,  ...,  2,  3, -1],
+         [ 0,  1,  1,  ..., -1, ...097, 0.0085, 0.0074,  ..., 0.0080, 0.0094, 0.0080],
+         [0.0085, 0.0074, 0.0092,  ..., 0.0080, 0.0083, 0.0094]]]))
+activation_bits = 8, tokens = 16
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W4-17-4]" time="0.002"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (4, tensor([[[ 0, -5,  4,  ...,  0, -2, -3],
+         [-1,  1,  0,  ...,  2,  3, -1],
+         [ 0,  1,  1,  ..., -1, ...097, 0.0085, 0.0074,  ..., 0.0080, 0.0094, 0.0080],
+         [0.0085, 0.0074, 0.0092,  ..., 0.0080, 0.0083, 0.0094]]]))
+activation_bits = 4, tokens = 17
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W4-17-8]" time="0.003"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (4, tensor([[[ 0, -5,  4,  ...,  0, -2, -3],
+         [-1,  1,  0,  ...,  2,  3, -1],
+         [ 0,  1,  1,  ..., -1, ...097, 0.0085, 0.0074,  ..., 0.0080, 0.0094, 0.0080],
+         [0.0085, 0.0074, 0.0092,  ..., 0.0080, 0.0083, 0.0094]]]))
+activation_bits = 8, tokens = 17
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W4-30-4]" time="0.003"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (4, tensor([[[ 0, -5,  4,  ...,  0, -2, -3],
+         [-1,  1,  0,  ...,  2,  3, -1],
+         [ 0,  1,  1,  ..., -1, ...097, 0.0085, 0.0074,  ..., 0.0080, 0.0094, 0.0080],
+         [0.0085, 0.0074, 0.0092,  ..., 0.0080, 0.0083, 0.0094]]]))
+activation_bits = 4, tokens = 30
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W4-30-8]" time="0.002"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (4, tensor([[[ 0, -5,  4,  ...,  0, -2, -3],
+         [-1,  1,  0,  ...,  2,  3, -1],
+         [ 0,  1,  1,  ..., -1, ...097, 0.0085, 0.0074,  ..., 0.0080, 0.0094, 0.0080],
+         [0.0085, 0.0074, 0.0092,  ..., 0.0080, 0.0083, 0.0094]]]))
+activation_bits = 8, tokens = 30
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W4-31-4]" time="0.003"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (4, tensor([[[ 0, -5,  4,  ...,  0, -2, -3],
+         [-1,  1,  0,  ...,  2,  3, -1],
+         [ 0,  1,  1,  ..., -1, ...097, 0.0085, 0.0074,  ..., 0.0080, 0.0094, 0.0080],
+         [0.0085, 0.0074, 0.0092,  ..., 0.0080, 0.0083, 0.0094]]]))
+activation_bits = 4, tokens = 31
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W4-31-8]" time="0.002"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (4, tensor([[[ 0, -5,  4,  ...,  0, -2, -3],
+         [-1,  1,  0,  ...,  2,  3, -1],
+         [ 0,  1,  1,  ..., -1, ...097, 0.0085, 0.0074,  ..., 0.0080, 0.0094, 0.0080],
+         [0.0085, 0.0074, 0.0092,  ..., 0.0080, 0.0083, 0.0094]]]))
+activation_bits = 8, tokens = 31
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W4-640-4]" time="0.016"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (4, tensor([[[ 0, -5,  4,  ...,  0, -2, -3],
+         [-1,  1,  0,  ...,  2,  3, -1],
+         [ 0,  1,  1,  ..., -1, ...097, 0.0085, 0.0074,  ..., 0.0080, 0.0094, 0.0080],
+         [0.0085, 0.0074, 0.0092,  ..., 0.0080, 0.0083, 0.0094]]]))
+activation_bits = 4, tokens = 640
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W4-640-8]" time="0.014"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (4, tensor([[[ 0, -5,  4,  ...,  0, -2, -3],
+         [-1,  1,  0,  ...,  2,  3, -1],
+         [ 0,  1,  1,  ..., -1, ...097, 0.0085, 0.0074,  ..., 0.0080, 0.0094, 0.0080],
+         [0.0085, 0.0074, 0.0092,  ..., 0.0080, 0.0083, 0.0094]]]))
+activation_bits = 8, tokens = 640
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W2-2-4]" time="0.439"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (2, tensor([[[ 0,  0,  0,  ...,  0, -1,  1],
+         [ 0,  0,  0,  ...,  1,  0,  0],
+         [ 0,  1,  0,  ...,  0, ...409, 0.0409, 0.0372,  ..., 0.0372, 0.0372, 0.0372],
+         [0.0409, 0.0372, 0.0335,  ..., 0.0335, 0.0484, 0.0484]]]))
+activation_bits = 4, tokens = 2
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W2-2-8]" time="0.002"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (2, tensor([[[ 0,  0,  0,  ...,  0, -1,  1],
+         [ 0,  0,  0,  ...,  1,  0,  0],
+         [ 0,  1,  0,  ...,  0, ...409, 0.0409, 0.0372,  ..., 0.0372, 0.0372, 0.0372],
+         [0.0409, 0.0372, 0.0335,  ..., 0.0335, 0.0484, 0.0484]]]))
+activation_bits = 8, tokens = 2
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W2-15-4]" time="0.003"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (2, tensor([[[ 0,  0,  0,  ...,  0, -1,  1],
+         [ 0,  0,  0,  ...,  1,  0,  0],
+         [ 0,  1,  0,  ...,  0, ...409, 0.0409, 0.0372,  ..., 0.0372, 0.0372, 0.0372],
+         [0.0409, 0.0372, 0.0335,  ..., 0.0335, 0.0484, 0.0484]]]))
+activation_bits = 4, tokens = 15
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W2-15-8]" time="0.002"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (2, tensor([[[ 0,  0,  0,  ...,  0, -1,  1],
+         [ 0,  0,  0,  ...,  1,  0,  0],
+         [ 0,  1,  0,  ...,  0, ...409, 0.0409, 0.0372,  ..., 0.0372, 0.0372, 0.0372],
+         [0.0409, 0.0372, 0.0335,  ..., 0.0335, 0.0484, 0.0484]]]))
+activation_bits = 8, tokens = 15
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W2-16-4]" time="0.002"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (2, tensor([[[ 0,  0,  0,  ...,  0, -1,  1],
+         [ 0,  0,  0,  ...,  1,  0,  0],
+         [ 0,  1,  0,  ...,  0, ...409, 0.0409, 0.0372,  ..., 0.0372, 0.0372, 0.0372],
+         [0.0409, 0.0372, 0.0335,  ..., 0.0335, 0.0484, 0.0484]]]))
+activation_bits = 4, tokens = 16
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W2-16-8]" time="0.002"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (2, tensor([[[ 0,  0,  0,  ...,  0, -1,  1],
+         [ 0,  0,  0,  ...,  1,  0,  0],
+         [ 0,  1,  0,  ...,  0, ...409, 0.0409, 0.0372,  ..., 0.0372, 0.0372, 0.0372],
+         [0.0409, 0.0372, 0.0335,  ..., 0.0335, 0.0484, 0.0484]]]))
+activation_bits = 8, tokens = 16
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W2-17-4]" time="0.002"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (2, tensor([[[ 0,  0,  0,  ...,  0, -1,  1],
+         [ 0,  0,  0,  ...,  1,  0,  0],
+         [ 0,  1,  0,  ...,  0, ...409, 0.0409, 0.0372,  ..., 0.0372, 0.0372, 0.0372],
+         [0.0409, 0.0372, 0.0335,  ..., 0.0335, 0.0484, 0.0484]]]))
+activation_bits = 4, tokens = 17
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W2-17-8]" time="0.002"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (2, tensor([[[ 0,  0,  0,  ...,  0, -1,  1],
+         [ 0,  0,  0,  ...,  1,  0,  0],
+         [ 0,  1,  0,  ...,  0, ...409, 0.0409, 0.0372,  ..., 0.0372, 0.0372, 0.0372],
+         [0.0409, 0.0372, 0.0335,  ..., 0.0335, 0.0484, 0.0484]]]))
+activation_bits = 8, tokens = 17
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W2-30-4]" time="0.002"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (2, tensor([[[ 0,  0,  0,  ...,  0, -1,  1],
+         [ 0,  0,  0,  ...,  1,  0,  0],
+         [ 0,  1,  0,  ...,  0, ...409, 0.0409, 0.0372,  ..., 0.0372, 0.0372, 0.0372],
+         [0.0409, 0.0372, 0.0335,  ..., 0.0335, 0.0484, 0.0484]]]))
+activation_bits = 4, tokens = 30
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W2-30-8]" time="0.002"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (2, tensor([[[ 0,  0,  0,  ...,  0, -1,  1],
+         [ 0,  0,  0,  ...,  1,  0,  0],
+         [ 0,  1,  0,  ...,  0, ...409, 0.0409, 0.0372,  ..., 0.0372, 0.0372, 0.0372],
+         [0.0409, 0.0372, 0.0335,  ..., 0.0335, 0.0484, 0.0484]]]))
+activation_bits = 8, tokens = 30
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W2-31-4]" time="0.002"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (2, tensor([[[ 0,  0,  0,  ...,  0, -1,  1],
+         [ 0,  0,  0,  ...,  1,  0,  0],
+         [ 0,  1,  0,  ...,  0, ...409, 0.0409, 0.0372,  ..., 0.0372, 0.0372, 0.0372],
+         [0.0409, 0.0372, 0.0335,  ..., 0.0335, 0.0484, 0.0484]]]))
+activation_bits = 4, tokens = 31
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W2-31-8]" time="0.002"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (2, tensor([[[ 0,  0,  0,  ...,  0, -1,  1],
+         [ 0,  0,  0,  ...,  1,  0,  0],
+         [ 0,  1,  0,  ...,  0, ...409, 0.0409, 0.0372,  ..., 0.0372, 0.0372, 0.0372],
+         [0.0409, 0.0372, 0.0335,  ..., 0.0335, 0.0484, 0.0484]]]))
+activation_bits = 8, tokens = 31
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W2-640-4]" time="0.020"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (2, tensor([[[ 0,  0,  0,  ...,  0, -1,  1],
+         [ 0,  0,  0,  ...,  1,  0,  0],
+         [ 0,  1,  0,  ...,  0, ...409, 0.0409, 0.0372,  ..., 0.0372, 0.0372, 0.0372],
+         [0.0409, 0.0372, 0.0335,  ..., 0.0335, 0.0484, 0.0484]]]))
+activation_bits = 4, tokens = 640
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase><testcase classname="test_prefill_memory_reuse_310" name="test_real_multibatch_exact_replay[real-W2-640-8]" time="0.014"><failure message="TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'">bundles = ([('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/native-kernels-v56', (&lt;module 'glm_reconstruction_v56_h...lper_package': 'glm_reconstruction_v901_helpers', ...}))], PosixPath('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'))
+real_weights = (2, tensor([[[ 0,  0,  0,  ...,  0, -1,  1],
+         [ 0,  0,  0,  ...,  1,  0,  0],
+         [ 0,  1,  0,  ...,  0, ...409, 0.0409, 0.0372,  ..., 0.0372, 0.0372, 0.0372],
+         [0.0409, 0.0372, 0.0335,  ..., 0.0335, 0.0484, 0.0484]]]))
+activation_bits = 8, tokens = 640
+
+    @pytest.mark.parametrize("activation_bits", [4, 8])
+    @pytest.mark.parametrize("tokens", [2, 15, 16, 17, 30, 31, 640])
+    def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, tokens):
+        builds, _ = bundles
+        bits, gate, gs, down, ds = real_weights
+        generator = torch.Generator().manual_seed(7321 + bits + tokens)
+        x = torch.randn(tokens, gate.shape[-1], generator=generator).half().npu()
+        # Duplicates exercise stable expert ordering. Mixed zero/peer slots and
+        # all-peer replay must never consume unwritten half workspace rows.
+        ids = torch.zeros(tokens, 2, dtype=torch.int64).npu()
+        ids[::3, 1] = 1
+        weights = torch.rand(tokens, 2, generator=generator).npu()
+        weights[::4, 0] = 0
+        gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+        graphs, outputs, natives = [], [], []
+        for directory, (helper, options) in builds:
+&gt;           native = helper.NativeFusedMoE(
+                Path(directory),
+                namespace=options["namespace"],
+                activation_bits=activation_bits,
+                prepared_weight_layout=True,
+                weight_decode_lut=options.get("weight_decode_lut", False),
+                **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+            )
+E           TypeError: NativeFusedMoE.__init__() got an unexpected keyword argument 'weight_decode_lut'
+
+/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1/tests/e2e/nightly/310p/single_node/ops/test_prefill_memory_reuse_310.py:88: TypeError</failure></testcase></testsuite></testsuites>

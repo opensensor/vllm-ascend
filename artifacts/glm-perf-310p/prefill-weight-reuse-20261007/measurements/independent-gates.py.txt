@@ -1,0 +1,10 @@
+import sys,json,importlib
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v1')
+from tools.glm_perf.fused_moe_profile import frozen_helper
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+version=int(sys.argv[1]);build=root/f'build-v{version}'
+helper,options=frozen_helper(build)
+probe=importlib.import_module(options['helper_package']+'.fused_moe_probe')
+probe.run(build,root/f'v{version}-gates.json',checkpoint=Path('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p'),real_prefixes=tuple(f'model.language_model.layers.{layer}.mlp.experts.0.' for layer in (10,11,33)))
+print('independent gates completed',version,flush=True)
