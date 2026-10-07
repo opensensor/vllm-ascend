@@ -1,0 +1,121 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Direct grouped W3 projections for isolated resident reconstruction trials.
+
+Prepare metadata while paused, before capture. The serving wrapper falls back
+for every geometry outside that prepared set; it never reads routes on the host.
+"""
+
+from dataclasses import dataclass
+
+import torch
+
+MAX_DECODE_ROUTES = 64
+MAX_EXPERT_ROWS = 128
+OUTPUT_TILE = 128
+INPUT_TILE = 256
+SCALE_BLOCK = 32
+MAX_CORES = 8
+W3_BITS = 3
+W3_MODE = 3  # Eight signed codes in three bytes, not three codes per byte.
+PROFILES = ("gm", "l1", "l1_singleton")
+DECODE_ROWS = (1, 2, 4, 8, 16, 32, 64)
+GLM_GEOMETRIES = ((2048, 4096), (4096, 4096), (4096, 2048))
+
+
+@dataclass(frozen=True)
+class ProjectionGeometry:
+    rows: int
+    experts: int
+    n: int
+    k: int
+
+    def __post_init__(self):
+        values = (self.rows, self.experts, self.n, self.k)
+        if any(type(value) is not int for value in values):
+            raise ValueError("projection dimensions must be integers")
+        if not 1 <= self.rows <= MAX_DECODE_ROUTES or not 1 <= self.experts <= 288:
+            raise ValueError("projection supports 1..64 routes and 1..288 experts")
+        if self.n <= 0 or self.n % OUTPUT_TILE or self.k < INPUT_TILE or self.k > 4096 or self.k % INPUT_TILE:
+            raise ValueError("projection requires N divisible by 128 and K divisible by 256, at most 4096")
+
+    @property
+    def blocks(self):
+        return min(MAX_CORES, self.n // OUTPUT_TILE)
+
+    @property
+    def workspace_elements(self):
+        return self.blocks * OUTPUT_TILE * self.k
+
+    def tiling(self, profile):
+        if profile not in PROFILES:
+            raise ValueError("unknown reconstruction profile")
+        resident_rows = {"gm": 0, "l1": MAX_EXPERT_ROWS, "l1_singleton": 1}[profile]
+        return (self.rows, self.experts, self.n, self.k, W3_MODE, 1, resident_rows)
+
+
+def geometry_for(inputs, codes, scales, ends):
+    if inputs.ndim != 2 or codes.ndim != 3 or scales.ndim != 3 or ends.ndim != 1:
+        raise ValueError("expected x[R,K], codes[E,N,packedK], scales[E,N/32,K/32], ends[E]")
+    geometry = ProjectionGeometry(inputs.shape[0], codes.shape[0], codes.shape[1], inputs.shape[1])
+    if codes.shape[2] * 8 != geometry.k * W3_BITS:
+        raise ValueError("direct reconstruction requires packed W3")
+    if scales.shape != (geometry.experts, geometry.n // SCALE_BLOCK, geometry.k // SCALE_BLOCK):
+        raise ValueError("block scale shape differs from the packed bank")
+    if ends.shape != (geometry.experts,):
+        raise ValueError("group boundary count differs from expert count")
+    if (inputs.dtype, codes.dtype, scales.dtype, ends.dtype) != (
+        torch.float16,
+        torch.int8,
+        torch.float32,
+        torch.int64,
+    ):
+        raise ValueError("direct reconstruction requires FP16/NZ INT8/FP32/INT64 storage")
+    if any(tensor.device != inputs.device or not tensor.is_contiguous() for tensor in (inputs, codes, scales, ends)):
+        raise ValueError("projection tensors must be contiguous on one device")
+    return geometry
+
+
+class ReconstructionProjection:
+    def __init__(
+        self, binary, profile, geometries, *, kernel_factory=None, launch=None, namespace="glm_reconstruction_v1"
+    ):
+        # Importing this module registers and allocates nothing. NativeSession
+        # calls this constructor only after validating the bridge and assets.
+        self.profile = profile
+        geometries = tuple(geometries)
+        if not geometries or len(set(geometries)) != len(geometries):
+            raise ValueError("prepared geometries must be nonempty and unique")
+        configs = {geometry: geometry.tiling(profile) for geometry in geometries}
+        if kernel_factory is None:
+            kernel_factory = getattr(torch.classes, namespace).Kernel
+        self.kernel = kernel_factory(str(binary), "glm_reconstruction_v1")
+        self.launch = launch if launch is not None else getattr(torch.ops, namespace).launch
+        self.configs = {geometry: torch.tensor(config, dtype=torch.int64).npu() for geometry, config in configs.items()}
+
+    def supports(self, inputs, codes, scales, ends):
+        try:
+            geometry = geometry_for(inputs, codes, scales, ends)
+        except ValueError:
+            return False
+        return (
+            geometry in self.configs and inputs.device.type == "npu" and self.configs[geometry].device == inputs.device
+        )
+
+    def __call__(self, inputs, codes, scales, ends, zero_outputs=True):
+        geometry = geometry_for(inputs, codes, scales, ends)
+        if type(zero_outputs) is not bool:
+            raise ValueError("zero_outputs must be boolean")
+        if geometry not in self.configs:
+            raise ValueError("projection geometry was not prepared on this NPU")
+        if inputs.device.type != "npu" or self.configs[geometry].device != inputs.device:
+            raise ValueError("projection geometry was not prepared on this NPU")
+        # The decoder writes expert-owned rows. Explicit zeros also satisfy
+        # zero_outputs=False callers while keeping padded peer rows defined.
+        output = torch.zeros((geometry.rows, geometry.n), dtype=torch.float16, device=inputs.device)
+        workspace = torch.empty(geometry.workspace_elements, dtype=torch.float16, device=inputs.device)
+        self.launch(
+            self.kernel,
+            [inputs, codes, scales, ends, output, workspace, self.configs[geometry]],
+            geometry.blocks,
+        )
+        return output

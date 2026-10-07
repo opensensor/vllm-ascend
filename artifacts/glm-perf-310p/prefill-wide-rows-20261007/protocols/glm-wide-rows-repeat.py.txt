@@ -1,0 +1,66 @@
+import hashlib,json,re,statistics,sys,time,urllib.request,uuid
+from dataclasses import replace
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+sys.path.insert(0,str(root/'source-v7'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.suite import make_groups,run_groups,summarize
+client=ResidentClient('http://127.0.0.1:8001',timeout=900)
+base='native_v909_prefill_v905_decode';candidate='native_v910_prefill_v905_decode'
+sources={base:(root/'v909-mixed-candidate.py').read_text(),candidate:(root/'v910-mixed-candidate.py').read_text()}
+out=root/'v910-decode-repeated.json'
+if out.exists(): raise FileExistsError(out)
+trial=json.loads((root/'v910-wide-rows-live.json').read_text())
+assert trial['complete'] and trial['retention_checks']['quality_not_worse'] and trial['retention_checks']['tool_passed']
+# Decide the noise band before collecting these independent repetitions.
+# Six interleaved suites, exact same decode resource; both median throughput
+# checks must be within 2%, with no quality or worker-state regression.
+TOLERANCE=0.02
+result={'complete':False,'predeclared_relative_tolerance':TOLERANCE,'scope':'3 interleaved repetitions per schedule; 64 generated short tokens; same v905 decode resource','trials':[]}
+identity=None
+best=base
+log=Path('/home/matteius/experiments/glm-reconstruction-20261006/serve-native-disk-head-nz-recovery-20261007-v2.log');offset=log.stat().st_size
+def save(): out.write_text(json.dumps(result,indent=2)+'\n')
+def idle():
+ with urllib.request.urlopen(client.base_url+'/metrics',timeout=30) as response: metrics=response.read().decode()
+ values=[float(value) for value in re.findall(r'^vllm:num_requests_(?:running|waiting)(?:\{[^\n]*\})?\s+([0-9.eE+-]+)$',metrics,re.M)]
+ assert values and not any(values),'external request active; preserve its work'
+def status(expected=None):
+ rows=client._acknowledged_rpc('resident_status',matches=lambda rows:client._status_matches(rows) and (expected is None or all(r['candidate']==expected and r['digest']==hashlib.sha256(sources[expected].encode()).hexdigest() for r in rows)))
+ if identity is not None: assert sorted((r['rank'],r['pid'],r['weight_storage_digest']) for r in rows)==identity
+ assert all(not r['graphs_dirty'] and not r['native_failed'] and r['reconstruction']['fallback_dispatches']==0 for r in rows)
+ return rows
+print('waiting for external requests to finish; no pause or switch while busy',flush=True)
+while True:
+ try: idle();break
+ except AssertionError: time.sleep(1)
+try:
+ idle();before=status(base);result['before']=before
+ identity=sorted((r['rank'],r['pid'],r['weight_storage_digest']) for r in before)
+ for index,name in enumerate((base,candidate,candidate,base,base,candidate)):
+  idle();client.switch(Control(uuid.uuid4().hex,candidate=name,source=sources[name]));client.resume()
+  workers=status(name)
+  groups=[(n,[replace(case,max_tokens=64) for case in cases]) for n,cases in make_groups(['short'],[])]
+  records=[]
+  for group,cases in groups:
+   idle();rows=run_groups([(group,cases)],client.base_url,'glm53-flash-selective-w3',42,timeout_s=900)
+   assert all(r['valid'] and r['passed'] for r in rows)
+   records.extend(rows)
+  row={'candidate':name,'index':index,'records':records,'summary':summarize(records),'workers_before':workers,'workers_after':status(name)}
+  result['trials'].append(row);save()
+  print(index,name,json.dumps(row['summary']),flush=True)
+ medians={}
+ for name in (base,candidate):
+  medians[name]={g:statistics.median(r['summary']['groups'][g]['aggregate_decode_tokens_per_s'] for r in result['trials'] if r['candidate']==name) for g in ('short_1','short_4')}
+ result['medians']=medians
+ result['checks']={g:medians[candidate][g]>=medians[base][g]*(1-TOLERANCE) for g in ('short_1','short_4')}
+ result['checks']['same_output_texts']=all(all([r['records'][j]['content'] for r in result['trials']]==[result['trials'][0]['records'][j]['content']]*6) for j in range(5))
+ if all(result['checks'].values()): best=candidate
+ result['complete']=True;save();print('MEDIANS',json.dumps(medians),'CHECKS',json.dumps(result['checks']),flush=True)
+finally:
+ idle();client.switch(Control(uuid.uuid4().hex,candidate=best,source=sources[best]));client.resume()
+ result['final']=status(best);result['pause_state']=client.request('/is_paused',method='GET');save()
+ with log.open('rb') as stream:
+  stream.seek(offset);(root/'v910-decode-repeated-server.log').write_bytes(stream.read())
+ print('FINAL',best,'paused',result['pause_state'],flush=True)

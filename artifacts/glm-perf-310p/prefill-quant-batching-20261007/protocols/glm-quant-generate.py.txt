@@ -1,0 +1,6 @@
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+for version in (911,912):
+ source=(root/'v910-mixed-candidate.py').read_text().replace('v910',f'v{version}')
+ compile(source,'quant candidate','exec');(root/f'v{version}-mixed-candidate.py').write_text(source)
+ print('candidate ready',version,flush=True)
