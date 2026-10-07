@@ -47,6 +47,7 @@ def bundles(pytestconfig):
         "prefill_rows_32",
         "quad_hidden_quant",
         "direct_hidden_gather",
+        "route_packed_input",
     )
     assert any(candidate[1].get(flag, False) != baseline[1].get(flag, False) for flag in flags)
     assert baseline[1]["namespace"] != candidate[1]["namespace"]

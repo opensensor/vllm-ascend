@@ -1,0 +1,17 @@
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+source=(root/'v912-prefill-v913-decode-candidate.py').read_text().replace('v912','v914')
+old='''  for key,values in native.scratch.items():
+   workspace=values[-1]'''
+new='''  for key,values in native.scratch.items():
+   if key[0]=='route-input':
+    result['routed_input_pack']={'geometry':list(key),'packed_shape':list(values[0].shape),
+     'scale_shape':list(values[1].shape),'packed_bytes':values[0].numel()*values[0].element_size(),
+     'scale_bytes':values[1].numel()*values[1].element_size(),
+     'scope':'INT4 and compact FP32 scales; regenerated on each graph replay'}
+    continue
+   workspace=values[-1]'''
+assert old in source;source=source.replace(old,new)
+compile(source,'routed input candidate','exec')
+(root/'v914-mixed-candidate.py').write_text(source)
+print('candidate ready',len(source),flush=True)
