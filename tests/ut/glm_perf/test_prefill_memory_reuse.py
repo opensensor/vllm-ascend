@@ -225,9 +225,10 @@ def test_cli_passes_w3_and_prefill_flags_to_builder(tmp_path, monkeypatch):
             "--route-packed-down",
             "--route-compact-down-scales",
             "--raw-hidden-scales",
+            "--raw-input-scales",
         ],
     )
     calls = []
     monkeypatch.setattr(builder, "build", lambda *args: calls.append(args))
     builder.main()
-    assert calls[0][-15:] == (True,) * 15
+    assert calls[0][-16:] == (True,) * 16

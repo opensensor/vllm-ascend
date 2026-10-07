@@ -1,0 +1,16 @@
+import hashlib,json
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+p=json.loads((root/'v919-input-scales-cold-live.json').read_text());g=json.loads((root/'v919-gates.json').read_text())
+assert p['complete'] and g['complete']
+assert len(g['records'])==30 and len(g['real_weight_records'])==12 and all(r['passed'] for r in g['records']+g['real_weight_records'])
+final=p['final'];best=p['selected_version'];digest=hashlib.sha256((root/f'v{best}-mixed-candidate.py').read_bytes()).hexdigest()
+identity=lambda rows:sorted((r['rank'],r['pid'],r['weight_storage_digest']) for r in rows)
+assert identity(p['before'])==identity(final)
+assert all(r['candidate']==f'native_v{best}_prefill_v913_decode' and r['digest']==digest and not r['native_failed'] and not r['graphs_dirty'] and r['reconstruction']['fallback_dispatches']==0 and r['prefill_graph']['replays']>=2 for r in final)
+assert not p['paused']['is_paused']
+if best==919:assert all(r['original_input_scales']['shape']==[640,128] and r['original_input_scales']['bytes']==327680 for r in final)
+baseline,new=(p['medians_1280_s'][str(v)] for v in (918,919))
+payload={'complete':True,'quality_evaluated':False,'selected_version':best,'source_sha256':digest,'cpu_tests':{'passed':573,'scope':'isolated HEAD plus this change; glm_perf excluding three unrelated experimental modules','excluded':['test_kpool_rotation_direct.py','test_moe_half_unpermute.py','test_next_optimization_queue.py']},'real_weight_gates':{'paired_exact_replay':66,'independent_math_replay':30,'real_reference':12},'short_prompt':{'tokens':1280,'samples_per_build':2,'baseline_median_ttft_s':baseline,'candidate_median_ttft_s':new,'time_reduction_percent':100*(1-new/baseline)},'worker_pid_and_weight_storage_retained':True,'final':final,'paused':p['paused']}
+(root/'input-scales-validation.json').write_text(json.dumps(payload,indent=2)+'\n')
+print(json.dumps({k:payload[k] for k in ('selected_version','source_sha256','short_prompt','paused')},indent=2))
