@@ -29,7 +29,14 @@ from vllm_ascend.utils import maybe_trans_nz
 
 class AscendUnquantizedEmbeddingMethod310(UnquantizedEmbeddingMethod):
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
-        layer.weight_nz = maybe_trans_nz(layer.weight)
+        packed_weight = maybe_trans_nz(layer.weight)
+        if isinstance(layer, AscendParallelLMHead):
+            # The head consumes only GEMM weights. Keep one resident copy;
+            # embedding lookup still needs its original ND weight below.
+            layer.weight.data = packed_weight
+            layer.weight_nz = layer.weight.data
+        else:
+            layer.weight_nz = packed_weight
 
     def apply(
         self,
@@ -88,5 +95,9 @@ class AscendParallelLMHead310(AscendParallelLMHead):
             disable_tp=disable_tp,  # type: ignore[call-arg]
         )
 
-        if quant_config is None:
+        # Partially quantized models can leave the head unquantized even
+        # when the model has a quantization config. Prepare its NZ weight
+        # once at load rather than converting the full vocabulary each step.
+        # Preserve specialized methods supplied by the quantization config.
+        if quant_config is None or type(self.quant_method) is UnquantizedEmbeddingMethod:
             self.quant_method = AscendUnquantizedEmbeddingMethod310()

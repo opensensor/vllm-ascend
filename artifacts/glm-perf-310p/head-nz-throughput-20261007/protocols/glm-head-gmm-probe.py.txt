@@ -1,0 +1,17 @@
+import sys,json,uuid,dataclasses
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+root=Path('/srv/ai/artifacts/glm-native-prefill-20261006')
+c=ResidentClient('http://127.0.0.1:8001',timeout=900)
+c.request('/pause?mode=wait&clear_cache=true')
+try:
+ control=Control(uuid.uuid4().hex,candidate='head_gmm_probe',source=Path('/tmp/glm-head-gmm-probe-candidate.py').read_text())
+ receipts=c._acknowledged_rpc('resident_prepare',json.dumps(dataclasses.asdict(control)),matches=lambda rs:all(r.get('generation')==control.generation and r.get('digest')==control.digest for r in rs))
+ (root/'head-gmm-probe-receipts.json').write_text(json.dumps(receipts,indent=2))
+finally:
+ source=(root/'graph-qualified-v56-v1/candidate.py').read_text()
+ c.switch(Control(uuid.uuid4().hex,candidate='native_v56_single_nz_head_prefill_graph',source=source,recapture=True))
+ c.resume()
+print('probe complete; service resumed',flush=True)

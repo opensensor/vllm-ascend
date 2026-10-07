@@ -1,0 +1,53 @@
+import sys,json,uuid,dataclasses
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_native import NativeManifest
+from tools.glm_perf.fused_moe_control import manifest as fused_manifest
+from tools.glm_perf.bf16_control import manifest as bf16_manifest
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006');model=Path('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p');art=Path('/srv/ai/artifacts/glm-native-prefill-20261006')
+c=ResidentClient('http://127.0.0.1:8001',timeout=900);c.request('/pause?mode=wait&clear_cache=true')
+sinkhorn=NativeManifest(json.loads(Path('/home/matteius/experiments/glm-sinkhorn-resident-20261005/native-manifest.json').read_text()))
+loaded=c.load_native(sinkhorn)
+ffn=fused_manifest(model/'native-kernels-v56',model/'native-kernels-v56/gates.json');cast=bf16_manifest(model/'indexer-kernels-v6')
+# The permanent loader has registered these exact libraries already. Adopt
+# only after verifying the loaded library bytes and running their validators.
+source='''def replacements(native_resources):
+ import gc,torch,json
+ from types import ModuleType
+ from tools.glm_perf.resident_native import NativeManifest,file_digest
+ from pathlib import Path
+ from vllm_ascend._310p.worker_310p import NPUWorker310
+ worker=[w for w in gc.get_objects() if isinstance(w,NPUWorker310)]
+ if len(worker)!=1:raise ValueError('expected one resident worker')
+ session=worker[0]._resident_native_session()
+ for value in _permanent_manifests:
+  manifest=NativeManifest(value);manifest.verify_files()
+  if manifest.name in session.loaded:continue
+  for library in value['libraries']:
+   if not any(Path(p).is_file() and file_digest(Path(p))==library['sha256'] for p in torch.ops.loaded_libraries):
+    raise ValueError('permanent native library bytes are not loaded')
+  if not all(worker[0]._resident_operator_exists(op) for op in value['operators']):raise ValueError('operator missing')
+  session.failed=True
+  module=ModuleType('adopt_'+manifest.name);exec(compile(value['validation_source'],'<adopt-permanent-native>','exec'),module.__dict__)
+  resource=module.prepare();validation=module.validate(resource)
+  if validation.get('passed') is not True:raise ValueError('permanent validation failed')
+  torch.npu.synchronize();manifest.verify_files()
+  receipt={'native_name':manifest.name,'native_digest':manifest.digest,'validation':dict(validation,adopted_permanent_symbols=True)}
+  session.loaded[manifest.name]=receipt;session.resources[manifest.name]=resource;session.failed=False
+ adopted=session.resources['bf16_cast_v6_permanent']
+ native_resources['bf16_cast_v5']=adopted if isinstance(adopted,dict) else {'bf16_cast_v1':adopted}
+ return {'vllm_ascend._310p.worker_310p:NPUWorker310.resident_status':NPUWorker310.resident_status}
+'''
+source='_permanent_manifests='+repr([ffn.value,cast.value])+'\n'+source
+control=Control(uuid.uuid4().hex,candidate='adopt_permanent_runtime',source=source)
+prepared=c._acknowledged_rpc('resident_prepare',json.dumps(dataclasses.asdict(control)),matches=lambda rs:all(r.get('generation')==control.generation and r.get('digest')==control.digest for r in rs))
+print('permanent expert and indexer resources adopted and arithmetic gated',flush=True)
+source=(art/'graph-qualified-v56-v1/candidate.py').read_text()
+selected=c.switch(Control(uuid.uuid4().hex,candidate='native_v56_prefill_graph',source=source));c.resume()
+response=c.request('/v1/completions',{'model':'glm53-flash-selective-w3','prompt':'Write only OK.','max_tokens':8,'temperature':0})
+status=c._acknowledged_rpc('resident_status',matches=lambda rs:c._status_matches(rs) and all(r.get('candidate')=='native_v56_prefill_graph' and not r.get('graphs_dirty') and not r.get('native_failed') for r in rs))
+assert all(r['prepared_weight_layout']['transformed_banks']==0 and r['prepared_weight_layout']['backup_bytes']==0 and r['reconstruction']['fallback_dispatches']==0 for r in status)
+(root/'cold-runtime-restored-20261007.json').write_text(json.dumps(dict(complete=True,sinkhorn=loaded,adoption=prepared,selected=selected,workers=status,response=response),indent=2))
+print('cold runtime restored and API response qualified',response,flush=True)

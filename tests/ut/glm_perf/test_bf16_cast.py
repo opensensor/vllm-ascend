@@ -54,3 +54,20 @@ def changed_indexer(self, q):
 def test_indexer_rewrite_rejects_changed_source_contract():
     with pytest.raises(ValueError, match="query conversion changed"):
         wrap_indexer(changed_indexer, lambda value, dtype: value.to(dtype))
+
+
+@pytest.mark.parametrize("mode", range(6))
+def test_first_descriptor_uses_device_fills_and_is_cached(monkeypatch, mode):
+    native = object.__new__(NativeBF16Cast)
+    native.kernel = "kernel"
+    native.configs = {}
+    calls = []
+    native.launch = lambda *args: calls.append(args)
+    source = torch.randn(333)
+    monkeypatch.setattr(torch, "tensor", lambda *args, **kwargs: pytest.fail("host tensor creation in graph path"))
+    native._convert(source, torch.float32, mode)
+    descriptor = calls[0][1][2]
+    assert descriptor.dtype == torch.int64 and descriptor.device == source.device
+    assert descriptor.tolist() == [source.numel(), mode]
+    native._convert(source, torch.float32, mode)
+    assert calls[1][1][2] is descriptor

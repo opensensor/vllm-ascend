@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Native post mixer retaining FP32 expert inputs and FP16-rounded mHC state."""
+
+import torch
+
+GLM_HIDDEN_SIZE = 4096
+RESIDUAL_STREAMS = 4
+MAX_DECODE_ROWS = 8
+PREFILL_GRAPH_ROWS = 640
+
+
+def supported_inputs(x, residual, post_mix, comb_mix):
+    if (
+        x.ndim != 2
+        or x.dtype not in (torch.float16, torch.float32)
+        or not x.is_contiguous()
+        or not (1 <= x.shape[0] <= MAX_DECODE_ROWS or x.shape[0] == PREFILL_GRAPH_ROWS)
+        or x.shape[1] != GLM_HIDDEN_SIZE
+    ):
+        return False
+    rows = x.shape[0]
+    shapes = (
+        (rows, RESIDUAL_STREAMS, GLM_HIDDEN_SIZE),
+        (rows, RESIDUAL_STREAMS, 1),
+        (rows, RESIDUAL_STREAMS, RESIDUAL_STREAMS),
+    )
+    return all(
+        value.dtype == torch.float32 and value.shape == shape and value.device == x.device and value.is_contiguous()
+        for value, shape in zip((residual, post_mix, comb_mix), shapes, strict=True)
+    )
+
+
+class NativeMhcPost:
+    def __init__(self, root, namespace, *, finish_only=False):
+        self.finish_only = finish_only
+        factory = getattr(torch.classes, namespace).Kernel
+        self.kernels = {
+            dtype: factory(str(root / f"mhc_post_fp{bits}.bin"), f"glm_mhc_post_fp{bits}_v1")
+            for dtype, bits in ((torch.float16, 16), (torch.float32, 32))
+        }
+        self.launch = getattr(torch.ops, namespace).launch
+        self.configs = {}
+
+    def __call__(self, x, residual, post_mix, comb_mix):
+        if not supported_inputs(x, residual, post_mix, comb_mix):
+            raise ValueError("native mHC requires qualified GLM rows, precision and contiguous streams")
+        key = (x.shape, x.device)
+        if key not in self.configs:
+            self.configs[key] = torch.tensor(tuple(x.shape), dtype=torch.int64).to(x.device)
+        if self.finish_only:
+            # Preserve the backend BMM reduction exactly. Fuse only the
+            # broadcast product, residual addition and state rounding.
+            residual = torch.einsum("nij,nih->njh", comb_mix, residual).contiguous()
+        output = torch.empty_like(residual)
+        self.launch(self.kernels[x.dtype], [x, residual, post_mix, comb_mix, output, self.configs[key]], 8)
+        return output
+
+
+def wrap_post(original, native):
+    original = getattr(original, "__glm_native_post_original__", original)
+
+    def post(x, residual, post_mix, comb_mix):
+        if supported_inputs(x, residual, post_mix, comb_mix):
+            return native(x, residual, post_mix, comb_mix)
+        return original(x, residual, post_mix, comb_mix)
+
+    post.__glm_native_post_original__ = original
+    return post

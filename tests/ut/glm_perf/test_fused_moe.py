@@ -333,16 +333,25 @@ def test_fused_wrapper_counts_rejected_bank_as_fallback():
     assert audit["fallback_dispatches"] == 2
 
 
-def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_path):
+@pytest.mark.parametrize("specialize_w3", [False, True])
+def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_path, specialize_w3):
     namespace = "glm_reconstruction_v997"
     package = namespace + "_helpers"
     helper = tmp_path / package
     helper.mkdir()
     (helper / "__init__.py").write_text("")
     helpers = {"__init__.py": hashlib.sha256(b"").hexdigest()}
-    options = {"namespace": namespace, "version": 997, "helper_package": package, "fused_moe": True}
+    options = {
+        "namespace": namespace,
+        "version": 997,
+        "helper_package": package,
+        "fused_moe": True,
+        "specialize_w3": specialize_w3,
+    }
     (tmp_path / "provenance.json").write_text(json.dumps({"_build": options, "_helpers": helpers}))
     names = ("glm_reconstruction_bridge_v997.so", "glm_fused_gate_up.bin", "glm_fused_down.bin", "glm_fused_pack.bin")
+    if specialize_w3:
+        names += ("glm_fused_gate_up_w3.bin", "glm_fused_down_w3.bin")
     for name in names:
         (tmp_path / name).write_bytes(name.encode())
     row = {"passed": True, "graph_changed_inputs_routes_weights": True, "fp16_intermediate_gm_bytes": 0, "tokens": 128}
@@ -363,6 +372,14 @@ def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_pat
     payload = manifest(tmp_path, report).value
     compile(payload["validation_source"], "fused manifest", "exec")
     assert payload["operators"] == [namespace + "::launch"]
+    if specialize_w3:
+        specialized = tmp_path / "glm_fused_down_w3.bin"
+        assert str(specialized) in {entry["path"] for entry in payload["assets"]}
+        original = specialized.read_bytes()
+        specialized.write_bytes(b"tampered specialized stage")
+        with pytest.raises(ValueError, match="exact binaries"):
+            manifest(tmp_path, report)
+        specialized.write_bytes(original)
     gates["real_weight_records"] = []
     write()
     with pytest.raises(ValueError, match="real-weight gates"):
@@ -457,3 +474,31 @@ def test_weight_lookup_reconstructs_every_two_byte_pattern(bits):
             signed = torch.where(code >= (1 << (bits - 1)), code - (1 << bits), code)
             codes.append(signed & 15)
         assert torch.equal(first, codes[0] + 16 * codes[1])
+
+
+@pytest.mark.parametrize("stage", ["gate", "down"])
+@pytest.mark.parametrize("bits", [2, 3, 4])
+def test_specialized_stage_selected_only_for_w3(stage, bits):
+    native = NativeFusedMoE.__new__(NativeFusedMoE)
+    setattr(native, stage + "_kernel", "generic")
+    setattr(native, stage + "_w3_kernel", "specialized")
+    assert native.stage_kernel(stage, bits) == ("specialized" if bits == 3 else "generic")
+
+
+def test_existing_bundle_without_specialized_files_retains_generic_dispatch():
+    native = NativeFusedMoE.__new__(NativeFusedMoE)
+    native.gate_kernel, native.down_kernel = "gate", "down"
+    assert native.stage_kernel("gate", 3) == "gate"
+    assert native.stage_kernel("down", 3) == "down"
+
+
+def test_partial_w3_bundle_rejected_before_loading_a_kernel(tmp_path):
+    (tmp_path / "glm_fused_gate_up_w3.bin").write_bytes(b"partial")
+    with pytest.raises(ValueError, match="both fused stage binaries"):
+        NativeFusedMoE(
+            tmp_path,
+            namespace="unused",
+            activation_bits=4,
+            launch=lambda *args: None,
+            kernel_factory=lambda *args: pytest.fail("partial load"),
+        )

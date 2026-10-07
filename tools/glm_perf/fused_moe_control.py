@@ -37,6 +37,8 @@ def manifest(build_dir, gate_report):
     binaries = (bridge, root / "glm_fused_gate_up.bin", root / "glm_fused_down.bin", root / "glm_fused_pack.bin")
     if "glm_fused_reduce.bin" in provenance:
         binaries += (root / "glm_fused_reduce.bin",)
+    if options.get("specialize_w3"):
+        binaries += (root / "glm_fused_gate_up_w3.bin", root / "glm_fused_down_w3.bin")
     for path in binaries:
         if gates.get("binaries", {}).get(path.name) != hashlib.sha256(path.read_bytes()).hexdigest():
             raise ValueError("fused gates do not identify these exact binaries")

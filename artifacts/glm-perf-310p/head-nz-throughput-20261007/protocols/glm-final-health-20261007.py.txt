@@ -1,0 +1,29 @@
+import sys,json,time,uuid,dataclasses
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006');c=ResidentClient('http://127.0.0.1:8001',timeout=900)
+c.request('/pause?mode=wait&clear_cache=true');c.resume()
+payload=dict(model='glm53-flash-selective-w3',prompt=[42]*1280,max_tokens=8,temperature=0,ignore_eos=True)
+records=[]
+for label in ('cold','cached'):
+ began=time.monotonic();r=c.request('/v1/completions',payload);elapsed=time.monotonic()-began
+ assert r['usage']['completion_tokens']==8 and r['choices'][0]['text']
+ records.append(dict(label=label,elapsed_s=elapsed,response=r));print(label,elapsed,r['usage'],flush=True)
+workers=c._acknowledged_rpc('resident_status',matches=lambda rs:c._status_matches(rs) and all(r.get('candidate')=='native_v56_prefill_graph' and r.get('prefill_graph',{}).get('replays',0)>=2 for r in rs))
+assert all(not r['graphs_dirty'] and not r['native_failed'] and r['prepared_weight_layout']['transformed_banks']==0 and r['prepared_weight_layout']['backup_bytes']==0 and r['reconstruction']['fallback_dispatches']==0 for r in workers)
+source='''def replacements():
+ import gc,json,torch,torch_npu
+ from pathlib import Path
+ from vllm_ascend._310p.worker_310p import NPUWorker310
+ heads=[obj for obj in gc.get_objects() if type(obj).__name__=='AscendParallelLMHead310']
+ rows=[{'format':torch_npu.get_npu_format(h.weight),'method':type(h.quant_method).__name__,'shape':tuple(h.weight.shape),'nz_alias':h.weight_nz.data_ptr()==h.weight.data_ptr(),'registered_parameters':list(dict(h.named_parameters()))} for h in heads]
+ if len(rows)!=1 or not all(r['format']==29 and r['nz_alias'] and r['registered_parameters']==['weight'] for r in rows):raise ValueError('single-copy cold NZ head check failed')
+ Path('/home/matteius/experiments/glm-reconstruction-20261006/cold-nz-head-final-rank'+str(torch.distributed.get_rank())+'.json').write_text(json.dumps({'complete':True,'records':rows},indent=2))
+ return {'vllm_ascend._310p.worker_310p:NPUWorker310.resident_status':NPUWorker310.resident_status}
+'''
+control=Control(uuid.uuid4().hex,candidate='cold_head_metadata_audit',source=source)
+prepared=c._acknowledged_rpc('resident_prepare',json.dumps(dataclasses.asdict(control)),matches=lambda rs:all(r.get('generation')==control.generation and r.get('digest')==control.digest for r in rs))
+(root/'final-health-20261007.json').write_text(json.dumps(dict(complete=True,records=records,workers=workers,head_audit=prepared,log=str(root/'serve-native-disk-head-nz-recovery-20261007-v2.log')),indent=2))
+print('final serving healthy; graphs and cache exercised; one NZ head per worker',flush=True)

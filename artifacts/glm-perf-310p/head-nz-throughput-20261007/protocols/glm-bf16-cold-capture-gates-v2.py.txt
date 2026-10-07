@@ -1,0 +1,25 @@
+import sys,json,importlib.util,hashlib
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+import torch,torch_npu
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006');bundle=Path('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/indexer-kernels-v5')
+helper=root/'indexer-capture-helper-v2';helper.mkdir(exist_ok=False)
+(helper/'bf16_cast.py').write_bytes(Path('/tmp/bf16_cast_capture_safe_v1.py').read_bytes())
+spec=importlib.util.spec_from_file_location('cold_capture_cast',helper/'bf16_cast.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+torch.set_num_threads(4);torch.npu.set_device(0);torch_npu.npu.set_compile_mode(jit_compile=False);torch.ops.load_library(str(bundle/'glm_bf16_bridge_v4.so'))
+records=[];generator=torch.Generator().manual_seed(7805)
+for mode,source_dtype,result_dtype in ((0,torch.float32,torch.bfloat16),(1,torch.bfloat16,torch.float32),(2,torch.float16,torch.bfloat16),(3,torch.bfloat16,torch.float16),(4,torch.float32,torch.float32),(5,torch.float32,torch.float16)):
+ for count in (1,333,8192):
+  native=m.NativeBF16Cast(bundle,'glm_bf16_v4')
+  value=torch.randn(count,generator=generator).to(source_dtype).npu();expected=(value.bfloat16() if mode in (0,2,4,5) else value).to(result_dtype).cpu()
+  assert not native.configs
+  graph=torch.npu.NPUGraph()
+  with torch.npu.graph(graph):actual=native._convert(value,result_dtype,mode)
+  graph.replay();torch.npu.synchronize();observed=actual.cpu();storage=torch.int16 if result_dtype in (torch.bfloat16,torch.float16) else torch.int32
+  assert torch.equal(observed.view(storage),expected.view(storage)),(mode,count)
+  value.copy_(torch.randn(count,generator=generator).to(source_dtype).npu());graph.replay();torch.npu.synchronize()
+  expected=(value.bfloat16() if mode in (0,2,4,5) else value).to(result_dtype).cpu()
+  assert torch.equal(actual.cpu().view(storage),expected.view(storage)),('replay',mode,count)
+  records.append(dict(mode=mode,count=count,bitwise_equal=True,changed_input_replay=True,first_call_inside_capture=True));print(records[-1],flush=True)
+output=dict(complete=True,records=records,helper_sha256=hashlib.sha256((helper/'bf16_cast.py').read_bytes()).hexdigest())
+(root/'bf16-cold-capture-gates-v2.json').write_text(json.dumps(output,indent=2));print('cold capture gates complete',flush=True)

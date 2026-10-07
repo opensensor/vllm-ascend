@@ -58,6 +58,10 @@ def measure(native, pipeline, warmups, samples):
         id(native.gate_kernel): "gate_up_swiglu_quant",
         id(native.down_kernel): "down_weighted_reduce",
     }
+    for attribute, name in (("gate_w3_kernel", "gate_up_swiglu_quant"), ("down_w3_kernel", "down_weighted_reduce")):
+        kernel = getattr(native, attribute, None)
+        if kernel is not None:
+            names[id(kernel)] = name
     if hasattr(native, "reduce_kernel"):
         names[id(native.reduce_kernel)] = "stable_prefill_reduce"
     # A bulk-prefill pipeline has four stages. Allocating two events per stage
@@ -69,7 +73,7 @@ def measure(native, pipeline, warmups, samples):
 
     def timed(kernel, args, blocks):
         key = id(kernel)
-        if key in seen:
+        if any(names[previous] == names[key] for previous in seen):
             raise RuntimeError("event profiler requires one launch per fused stage per sample")
         start, end = events[key]
         start.record()

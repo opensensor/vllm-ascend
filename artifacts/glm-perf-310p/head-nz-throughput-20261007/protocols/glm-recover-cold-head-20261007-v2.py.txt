@@ -1,0 +1,27 @@
+import os,json,hashlib,subprocess,time,socket,signal
+from pathlib import Path
+import psutil
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+old=json.loads((root/'native-disk-v29-server-process.json').read_text())
+previous=Path('/home/matteius/experiments/glm-decode-flags-20261006');saved=json.loads((previous/'candidate-config.json').read_text())
+assert not any(p.info['name'] in ('VLLM::Worker','VLLMWorker') for p in psutil.process_iter(['name']))
+source=Path(old['cwd']);head=source/'vllm_ascend/_310p/ops/vocab_parallel_embedding.py'
+assert hashlib.sha256(head.read_bytes()).hexdigest()=='1899752dbbb5bb8e677d78a9b615729ad380aeb063ffc40a83ab2e7bec123587'
+command=old['command'];assert command[command.index('serve')+1]=='/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p'
+manifest=json.loads(Path(command[command.index('serve')+1],'native-layout.json').read_text());assert manifest['complete']
+environment=dict(os.environ)
+environment.update(ASCEND_CUSTOM_OPP_PATH=':'.join(saved['opp_stack']),
+ PYTHONPATH=':'.join([str(previous),'/home/matteius/experiments/glm-kpool-live-score-20261005',str(source),'/srv/ai/src/vllm-opensensor',environment.get('PYTHONPATH','')]),
+ ASCEND_RT_VISIBLE_DEVICES='0,1,2,3',SOC_VERSION='ascend310p1',TASK_QUEUE_ENABLE='1',OMP_NUM_THREADS='1',
+ VLLM_SERVER_DEV_MODE='1',VLLM_USE_BREAKABLE_CUDAGRAPH='1',VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS='3000',
+ VLLM_ASCEND_310P_ENABLE_MLA='1',VLLM_ASCEND_310P_GLM_HOST_KV='0',VLLM_ASCEND_KV_CACHE_FRACTION='0.75',VLLM_ASCEND_LOG_REQUEST_TIMINGS='1')
+environment['LD_LIBRARY_PATH']=':'.join([str(Path(v)/'op_api/lib') for v in saved['host_stack']]+[environment.get('LD_LIBRARY_PATH','')]);environment.pop('ASCEND_LAUNCH_BLOCKING',None)
+with socket.socket() as sock:
+ assert sock.connect_ex(('127.0.0.1',8001))!=0
+assert manifest['indexer_kernel_bundle']=='indexer-kernels-v6'
+log=root/'serve-native-disk-head-nz-recovery-20261007-v2.log'
+with log.open('xb') as output:
+ process=subprocess.Popen(command,cwd=source,env=environment,stdin=subprocess.DEVNULL,stdout=output,stderr=subprocess.STDOUT,start_new_session=True)
+record=dict(pid=process.pid,created=psutil.Process(process.pid).create_time(),log=str(log),command=command,cwd=str(source),previous=old['pid'],reason='recover a rank-local recapture OOM; identical disk checkpoint and flags; cold-load single-copy NZ head',head_source_sha256=hashlib.sha256(head.read_bytes()).hexdigest())
+(root/'native-disk-head-nz-recovery-20261007-v2.json').write_text(json.dumps(record,indent=2))
+print(json.dumps(record),flush=True)

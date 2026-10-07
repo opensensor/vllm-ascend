@@ -144,6 +144,10 @@ def initialize(source, output, bundle, world_size=4, activation_bits=4):
         "provenance.json",
     ):
         shutil.copy2(bundle / name, target_bundle / name)
+    if options.get("specialize_w3"):
+        for stage in ("gate_up", "down"):
+            name = f"glm_fused_{stage}_w3.bin"
+            shutil.copy2(bundle / name, target_bundle / name)
     if "glm_fused_reduce.bin" in provenance:
         shutil.copy2(bundle / "glm_fused_reduce.bin", target_bundle / "glm_fused_reduce.bin")
     config["ascend_glm_expert_layout"] = LAYOUT

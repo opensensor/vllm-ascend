@@ -88,11 +88,18 @@ def test_incomplete_export_never_commits_native_manifest(tmp_path):
     assert not json.loads((output / checkpoint.MANIFEST).read_text())["complete"]
 
 
-def test_initialization_persists_bulk_prefill_epilogue_with_native_kernel_bundle(tmp_path):
+@pytest.mark.parametrize("specialize_w3", [False, True])
+def test_initialization_persists_bulk_prefill_epilogue_with_native_kernel_bundle(tmp_path, specialize_w3):
     source, _, _, _ = fixture(tmp_path, 4)
     bundle = tmp_path / "bundle"
     bundle.mkdir()
-    options = {"fused_moe": True, "prepared_weight_layout": True, "helper_package": "test_helpers", "version": 44}
+    options = {
+        "fused_moe": True,
+        "prepared_weight_layout": True,
+        "helper_package": "test_helpers",
+        "version": 44,
+        "specialize_w3": specialize_w3,
+    }
     checkpoint.write_json(bundle / "provenance.json", {"_build": options, "_helpers": {}, "glm_fused_reduce.bin": {}})
     for name in (
         "glm_reconstruction_bridge_v44.so",
@@ -102,10 +109,16 @@ def test_initialization_persists_bulk_prefill_epilogue_with_native_kernel_bundle
         "glm_fused_reduce.bin",
     ):
         (bundle / name).write_bytes(name.encode())
+    if specialize_w3:
+        for name in ("glm_fused_gate_up_w3.bin", "glm_fused_down_w3.bin"):
+            (bundle / name).write_bytes(name.encode())
     output = tmp_path / "initialized"
     manifest = checkpoint.initialize(source, output, bundle, world_size=1)
     assert not manifest["complete"]
     assert (output / "native-kernels" / "glm_fused_reduce.bin").read_bytes() == b"glm_fused_reduce.bin"
+    if specialize_w3:
+        for name in ("glm_fused_gate_up_w3.bin", "glm_fused_down_w3.bin"):
+            assert (output / "native-kernels" / name).read_bytes() == name.encode()
     assert (output / "original.safetensors").stat().st_ino == (source / "original.safetensors").stat().st_ino
 
 

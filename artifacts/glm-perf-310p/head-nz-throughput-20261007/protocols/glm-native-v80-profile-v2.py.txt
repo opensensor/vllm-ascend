@@ -1,0 +1,37 @@
+import sys
+sys.path.insert(0,"/srv/ai/src/glm-selective-w3-nz-test-20261004")
+import json,time
+from pathlib import Path
+import importlib.util
+spec=importlib.util.spec_from_file_location("tools.glm_perf.special_probe80","/tmp/glm-main-specialized-probe-v80.py")
+module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);gates=module.run
+spec=importlib.util.spec_from_file_location("tools.glm_perf.special_profiler80","/tmp/glm-main-specialized-profiler-v80.py")
+profiler=importlib.util.module_from_spec(spec);spec.loader.exec_module(profiler);profile=profiler.run
+import torch
+from tools.glm_perf.resident_harness import ResidentClient
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+checkpoint=Path('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p')
+c=ResidentClient('http://127.0.0.1:8001',timeout=900)
+c.request('/pause?mode=wait&clear_cache=true')
+try:
+ assert (root/'native-fused-v80-gates.json').exists()
+ for tokens in (2,640):
+  original=profiler.measure
+  outputs=[];records=[]
+  def compared(native,pipeline,warmups,samples):
+   actual=pipeline().cpu();position=len(outputs)%4
+   if position>=2:
+    baseline=outputs[-2]
+    record={'weight_bits':(3,4,2)[len(outputs)//4], 'activation_bits':(8,4)[position%2], 'tokens':tokens,
+      'bitwise_equal':torch.equal(actual,baseline),'max_abs_delta':float((actual-baseline).abs().max())}
+    records.append(record)
+    assert record['bitwise_equal'],record
+   outputs.append(actual)
+   return original(native,pipeline,warmups,samples)
+  profiler.measure=compared
+  try:
+   profile([root/'build-native-fused-v56',root/'build-native-fused-v80'],checkpoint,root/f'native-fused-v56-v80-stages-t{tokens}-v2.json',tokens=tokens,warmups=2,samples=5)
+  finally:
+   profiler.measure=original
+   (root/f'native-fused-v56-v80-t{tokens}-exactness-v2.json').write_text(json.dumps({'complete':len(records)==6 and all(r['bitwise_equal'] for r in records),'records':records},indent=2))
+finally:c.resume()

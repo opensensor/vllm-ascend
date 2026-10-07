@@ -1,0 +1,12 @@
+import sys,subprocess,json
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+from tools.glm_perf.resident_harness import ResidentClient
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+c=ResidentClient('http://127.0.0.1:8001',timeout=900)
+c.request('/pause?mode=wait&clear_cache=false')
+try:
+ result=subprocess.run([sys.executable,'-m','pytest','-q','--noconftest','/tmp/test_unquantized_lm_head_nz_310.py'],cwd='/tmp',check=False)
+ (root/'head-cold-test.json').write_text(json.dumps(dict(complete=True,returncode=result.returncode),indent=2))
+ assert result.returncode==0
+finally:c.resume()

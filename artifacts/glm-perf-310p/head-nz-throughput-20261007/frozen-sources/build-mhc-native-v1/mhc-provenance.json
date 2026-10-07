@@ -1,0 +1,35 @@
+{
+  "namespace": "glm_reconstruction_v76",
+  "version": 76,
+  "source_sha256": "46c1e068fb16e502cfcf7d407b4118158e6faf8cb02c3a2660e1eaa2a0358e76",
+  "helper_sha256": "38bc05601fcff30581a68101058663c3a8b0a4556a1aaa798dee7dd3a827327e",
+  "binaries": {
+    "mhc_post_fp16.bin": {
+      "sha256": "107bd590354f57f3538e22140836acd0f1d35f857c4ca25b4126f240e2fa4313",
+      "command": [
+        "/home/matteius/experiments/glm-reconstruction-20261006/build-mhc-native-v1/compile-reconstruction",
+        "/home/matteius/experiments/glm-reconstruction-20261006/build-mhc-native-v1/mhc_post_kernel.cpp",
+        "/home/matteius/experiments/glm-reconstruction-20261006/build-mhc-native-v1/mhc_post_fp16.bin",
+        "--npu-arch=dav-2002",
+        "--sysroot=/usr/local/Ascend/cann-9.1.0/tools/hcc/sysroot",
+        "-isystem/usr/local/Ascend/cann-9.1.0/tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0",
+        "-isystem/usr/local/Ascend/cann-9.1.0/tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0/aarch64-target-linux-gnu"
+      ]
+    },
+    "mhc_post_fp32.bin": {
+      "sha256": "1fc71529a80290691022d2348c9f11116cc600c59503dce66ea728a112f7041b",
+      "command": [
+        "/home/matteius/experiments/glm-reconstruction-20261006/build-mhc-native-v1/compile-reconstruction",
+        "/home/matteius/experiments/glm-reconstruction-20261006/build-mhc-native-v1/mhc_post_kernel.cpp",
+        "/home/matteius/experiments/glm-reconstruction-20261006/build-mhc-native-v1/mhc_post_fp32.bin",
+        "--npu-arch=dav-2002",
+        "--sysroot=/usr/local/Ascend/cann-9.1.0/tools/hcc/sysroot",
+        "-isystem/usr/local/Ascend/cann-9.1.0/tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0",
+        "-isystem/usr/local/Ascend/cann-9.1.0/tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0/aarch64-target-linux-gnu",
+        "-DGLM_MHC_FP32_INPUT"
+      ]
+    }
+  },
+  "state_rounding": "fp16_in_fp32_storage",
+  "fp32_input_preserved": true
+}

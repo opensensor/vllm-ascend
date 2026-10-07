@@ -1,0 +1,41 @@
+import sys,json,uuid
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.suite import make_groups,run_groups
+from dataclasses import replace
+root=Path('/srv/ai/artifacts/glm-native-prefill-20261006');exp=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+shadow=json.loads((root/'repeat-decode-shadow-v1/result.json').read_text());assert shadow['complete']
+for rank in shadow['after']:
+ rows=[r for r in rank['decode_shadow']['records'] if r['input_nonzero'] and r['output_nonzero']]
+ assert len(rows)>=40 and all(r['bitwise_equal'] for r in rows)
+c=ResidentClient('http://127.0.0.1:8001',timeout=900)
+quality=[r for _,rs in make_groups(['quality'],[]) for r in rs][4:8]
+paired=dict(complete=False,before=[],after=[])
+for trial in range(3):
+ rows=run_groups([(f'before_{trial}',[replace(case,max_tokens=128) for case in quality])],c.base_url,'glm53-flash-selective-w3',42,timeout_s=900)
+ paired['before'].extend(rows);(exp/'paired-reverse-stability.json').write_text(json.dumps(paired,indent=2))
+ print('baseline quality slice',trial,[(r['case_id'],r['content'],r['passed']) for r in rows],flush=True)
+out=root/'graph-qualified-v73-finish-mhc-v1';out.mkdir(exist_ok=False)
+base=(root/'graph-qualified-v73-v1/candidate.py').read_text().replace('def replacements(native_resources):','def repeat_finish_base_replacements(native_resources):')
+source=base+'''
+def replacements(native_resources):
+ from vllm_ascend.patch.worker import patch_mhc_norm
+ changes=repeat_finish_base_replacements(native_resources)
+ target='vllm_ascend.patch.worker.patch_mhc_norm:_mhc_post_torch'
+ operation=native_resources['mhc_finish_v1']
+ original=changes.get(target,patch_mhc_norm._mhc_post_torch)
+ changes[target]=operation['wrap_post'](original,operation['native'])
+ return changes
+'''
+(out/'candidate.py').write_text(source)
+selected=c.switch(Control(uuid.uuid4().hex,candidate='native_v73_finish_mhc_prefill_graph',source=source));(out/'selected.json').write_text(json.dumps(selected,indent=2));c.resume()
+response=c.request('/v1/completions',{'model':'glm53-flash-selective-w3','prompt':[42]*1280,'max_tokens':8,'temperature':0,'ignore_eos':True})
+after=c._acknowledged_rpc('resident_status',matches=lambda rs:c._status_matches(rs) and all(r.get('candidate')=='native_v73_finish_mhc_prefill_graph' and r.get('prefill_graph',{}).get('replays',0)>=2 for r in rs))
+assert all(not r['graphs_dirty'] and not r['native_failed'] and r['reconstruction']['fallback_dispatches']==0 for r in after)
+(out/'qualification.json').write_text(json.dumps(dict(complete=True,response=response,after=after),indent=2));print('repeat readback + exact post epilogue qualified',flush=True)
+for trial in range(3):
+ rows=run_groups([(f'after_{trial}',[replace(case,max_tokens=128) for case in quality])],c.base_url,'glm53-flash-selective-w3',42,timeout_s=900)
+ paired['after'].extend(rows);(exp/'paired-reverse-stability.json').write_text(json.dumps(paired,indent=2));print('new quality slice',trial,[(r['case_id'],r['content'],r['passed']) for r in rows],flush=True)
+paired['complete']=True;(exp/'paired-reverse-stability.json').write_text(json.dumps(paired,indent=2))

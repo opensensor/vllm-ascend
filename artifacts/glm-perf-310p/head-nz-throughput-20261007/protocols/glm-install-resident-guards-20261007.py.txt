@@ -1,0 +1,19 @@
+import sys,json,uuid,dataclasses
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+source='''def replacements():
+ import importlib.util,hashlib,json,torch
+ from pathlib import Path
+ from tools.glm_perf import resident_worker
+ from vllm_ascend._310p.worker_310p import NPUWorker310
+ path=Path('/tmp/glm-resident-worker-guards-20261007.py')
+ spec=importlib.util.spec_from_file_location('qualified_resident_guards',path);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+ names=('_resident_error','resident_prepare','resident_apply','resident_capture','resident_native_prepare','resident_native_load','resident_reset')
+ for name in names:setattr(resident_worker.ResidentWorkerExtension,name,getattr(module.ResidentWorkerExtension,name))
+ Path('/home/matteius/experiments/glm-reconstruction-20261006/resident-guard-install-rank'+str(torch.distributed.get_rank())+'.json').write_text(json.dumps({'complete':True,'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),'methods':names},indent=2))
+ return {'vllm_ascend._310p.worker_310p:NPUWorker310.resident_status':NPUWorker310.resident_status}
+'''
+c=ResidentClient('http://127.0.0.1:8001',timeout=300);control=Control(uuid.uuid4().hex,candidate='resident_rpc_guard_install',source=source)
+r=c._acknowledged_rpc('resident_prepare',json.dumps(dataclasses.asdict(control)),matches=lambda rs:all(w.get('generation')==control.generation and w.get('digest')==control.digest for w in rs));print('guarded worker RPC implementations installed',flush=True)

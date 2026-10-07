@@ -1,0 +1,23 @@
+import sys,subprocess,json,uuid
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.fused_moe_control import manifest
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006')
+version="mhc-finish-v1";c=ResidentClient('http://127.0.0.1:8001',timeout=900)
+try:
+ for stage in ('live','benchmark'):
+  with (root/f'native-fused-v{version}-{stage}.log').open('w') as log:
+   subprocess.run([sys.executable,f'/tmp/glm-mhc-finish-{stage}.py'],cwd='/tmp',stdout=log,stderr=subprocess.STDOUT,check=True,timeout=1000)
+  print(version,stage,'complete',flush=True)
+finally:
+ c.load_native(manifest(root/'build-native-fused-v56',root/'native-fused-v56-gates.json'))
+ source=Path('/srv/ai/artifacts/glm-native-prefill-20261006/graph-qualified-v56-v1/candidate.py').read_text()
+ selected=c.switch(Control(uuid.uuid4().hex,candidate='native_v56_prefill_graph',source=source))
+ c.resume()
+ response=c.request('/v1/completions',{'model':'glm53-flash-selective-w3','prompt':'Write only OK.','max_tokens':8,'temperature':0})
+ status=c._acknowledged_rpc('resident_status',matches=lambda rs:c._status_matches(rs) and all(r.get('candidate')=='native_v56_prefill_graph' and not r.get('graphs_dirty') and not r.get('native_failed') for r in rs))
+ assert all(r['prepared_weight_layout']['transformed_banks']==0 and r['prepared_weight_layout']['backup_bytes']==0 and r['reconstruction']['fallback_dispatches']==0 for r in status)
+ (root/f'native-v{version}-restored-v56.json').write_text(json.dumps({'complete':True,'selected':selected,'workers':status,'response':response},indent=2))
+ print('restored v56 and resumed',flush=True)

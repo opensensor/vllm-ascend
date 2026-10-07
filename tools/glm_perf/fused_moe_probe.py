@@ -136,6 +136,8 @@ def run(build_dir, output, *, checkpoint=None, real_prefixes=()):
     bridge = f"glm_reconstruction_bridge_v{options['version']}.so"
     torch.ops.load_library(str(build_dir / bridge))
     names = (bridge, "glm_fused_gate_up.bin", "glm_fused_down.bin", "glm_fused_pack.bin")
+    if options.get("specialize_w3"):
+        names += ("glm_fused_gate_up_w3.bin", "glm_fused_down_w3.bin")
     if (build_dir / "glm_fused_reduce.bin").exists():
         names += ("glm_fused_reduce.bin",)
     payload = {

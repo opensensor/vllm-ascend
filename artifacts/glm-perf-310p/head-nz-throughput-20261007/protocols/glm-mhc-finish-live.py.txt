@@ -1,0 +1,74 @@
+import sys,json,uuid,hashlib
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_native import NativeManifest
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006');build=root/'build-mhc-finish-v1'
+gates=json.loads((root/'mhc-finish-gates.json').read_text());assert gates['complete'] and gates['fp32_tie_input_preserved']
+for name,digest in gates['assets'].items():assert hashlib.sha256((build/name).read_bytes()).hexdigest()==digest
+for rank in range(4):
+ audit=json.loads((root/f'mhc-state-flags-rank{rank}.json').read_text())
+ fused=[r for r in audit['records'] if r['type']=='MHCFusedPostPreOp']
+ assert audit['complete'] and len(fused)>=40 and all(r['fp16'] for r in fused)
+validation='''def prepare():
+ import importlib.util
+ from pathlib import Path
+ build=Path('/home/matteius/experiments/glm-reconstruction-20261006/build-mhc-finish-v1')
+ spec=importlib.util.spec_from_file_location('qualified_mhc_finish_v1',build/'mhc_post_native.py')
+ module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+ return {'native':module.NativeMhcPost(build,'glm_reconstruction_v77',finish_only=True),'wrap_post':module.wrap_post}
+
+def validate(resources):
+ import torch
+ native=resources['native'];generator=torch.Generator().manual_seed(7305)
+ def reference(x,res,p,comb):
+  return (torch.einsum('...ij,...ih->...jh',comb,res)+p*x.float().unsqueeze(1)).half().float()
+ cases=0
+ for dtype in (torch.float16,torch.float32):
+  for rows in (1,2,8):
+   x=torch.randn(rows,4096,generator=generator,dtype=dtype).npu()
+   r=torch.randn(rows,4,4096,generator=generator).half().float().npu()
+   p=torch.randn(rows,4,1,generator=generator).sigmoid().half().float().npu()
+   comb=torch.randn(rows,4,4,generator=generator).softmax(-1).half().float().npu()
+   torch.testing.assert_close(native(x,r,p,comb).cpu(),reference(x,r,p,comb).cpu(),rtol=0,atol=0)
+   graph=torch.npu.NPUGraph()
+   with torch.npu.graph(graph):result=native(x,r,p,comb)
+   x.mul_(1.125);r.copy_((r*0.875).half().float());p.copy_((p*0.75).half().float());comb.copy_(comb.flip(-1).contiguous())
+   graph.replay();torch.npu.synchronize()
+   torch.testing.assert_close(result.cpu(),reference(x,r,p,comb).cpu(),rtol=0,atol=0)
+   cases+=1
+ x=torch.full((1,4096),1+2**-11+2**-22,dtype=torch.float32,device='npu')
+ r=torch.zeros((1,4,4096),dtype=torch.float32,device='npu');r[:,0,:]=-0.5
+ p=torch.ones((1,4,1),dtype=torch.float32,device='npu')
+ comb=torch.zeros((1,4,4),dtype=torch.float32,device='npu');comb[:,0,:]=1
+ expected=reference(x,r,p,comb).cpu()
+ assert torch.equal(native(x,r,p,comb).cpu(),expected)
+ assert not torch.equal(native(x.half(),r,p,comb).cpu(),expected)
+ return {'passed':True,'cases':cases,'changed_all_inputs_graph_replay':True,'fp32_tie_input_preserved':True,'state_rounding':'fp16_in_fp32_storage','model_quality':'not_evaluated'}
+'''
+def entry(name):return dict(path=str(build/name),sha256=hashlib.sha256((build/name).read_bytes()).hexdigest())
+manifest=NativeManifest(dict(name='mhc_finish_v1',libraries=[entry('glm_reconstruction_bridge_v77.so')],assets=[entry(n) for n in ('mhc_post_fp16.bin','mhc_post_fp32.bin','mhc_post_native.py','mhc-provenance.json')],operators=['glm_reconstruction_v77::launch'],validation_source=validation))
+c=ResidentClient('http://127.0.0.1:8001',timeout=900)
+loaded=c.load_native(manifest)
+(root/'mhc-finish-live-load.json').write_text(json.dumps({'manifest':manifest.value,'loaded':loaded},indent=2))
+print('native FP32-input mHC loaded and all-rank gate passed',flush=True)
+artifacts=Path('/srv/ai/artifacts/glm-native-prefill-20261006');out=artifacts/'graph-qualified-v56-finish-mhc-v1';out.mkdir(exist_ok=False)
+base=(artifacts/'graph-qualified-v56-v1/candidate.py').read_text().replace('def replacements(native_resources):','def finish_mhc_base_replacements(native_resources):')
+extension='''
+def replacements(native_resources):
+ from vllm_ascend.patch.worker import patch_mhc_norm
+ changes=finish_mhc_base_replacements(native_resources)
+ target='vllm_ascend.patch.worker.patch_mhc_norm:_mhc_post_torch'
+ operation=native_resources['mhc_finish_v1']
+ original=changes.get(target,patch_mhc_norm._mhc_post_torch)
+ changes[target]=operation['wrap_post'](original,operation['native'])
+ return changes
+'''
+source=base+extension;(out/'candidate.py').write_text(source)
+selected=c.switch(Control(uuid.uuid4().hex,candidate='native_v56_finish_mhc_prefill_graph',source=source));(out/'selected.json').write_text(json.dumps(selected,indent=2));c.resume()
+response=c.request('/v1/completions',{'model':'glm53-flash-selective-w3','prompt':[42]*1280,'max_tokens':8,'temperature':0,'ignore_eos':True})
+after=c._acknowledged_rpc('resident_status',matches=lambda rs:c._status_matches(rs) and all(r.get('candidate')=='native_v56_finish_mhc_prefill_graph' and r.get('prefill_graph',{}).get('replays',0)>=2 for r in rs))
+assert all(not r['graphs_dirty'] and not r['native_failed'] and r['reconstruction']['fallback_dispatches']==0 for r in after)
+(out/'qualification.json').write_text(json.dumps(dict(complete=True,response=response,after=after),indent=2))
+print('qualified live FP32-input mHC + native v56',flush=True)

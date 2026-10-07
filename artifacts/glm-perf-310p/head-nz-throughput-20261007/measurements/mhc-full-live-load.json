@@ -1,0 +1,91 @@
+{
+  "manifest": {
+    "assets": [
+      {
+        "path": "/home/matteius/experiments/glm-reconstruction-20261006/build-mhc-native-v1/mhc_post_fp16.bin",
+        "sha256": "107bd590354f57f3538e22140836acd0f1d35f857c4ca25b4126f240e2fa4313"
+      },
+      {
+        "path": "/home/matteius/experiments/glm-reconstruction-20261006/build-mhc-native-v1/mhc_post_fp32.bin",
+        "sha256": "1fc71529a80290691022d2348c9f11116cc600c59503dce66ea728a112f7041b"
+      },
+      {
+        "path": "/home/matteius/experiments/glm-reconstruction-20261006/build-mhc-native-v1/mhc_post_native.py",
+        "sha256": "38bc05601fcff30581a68101058663c3a8b0a4556a1aaa798dee7dd3a827327e"
+      },
+      {
+        "path": "/home/matteius/experiments/glm-reconstruction-20261006/build-mhc-native-v1/mhc-provenance.json",
+        "sha256": "ff154bd6b96e0dd711b4d311bbe4a7e1b8277f564f48332b6d96d45ca56a2cc2"
+      }
+    ],
+    "libraries": [
+      {
+        "path": "/home/matteius/experiments/glm-reconstruction-20261006/build-mhc-native-v1/glm_reconstruction_bridge_v76.so",
+        "sha256": "d1df036230b76583ba71e8e91dd507db51a186c4bd25323ba7ea1398a24875d5"
+      }
+    ],
+    "name": "mhc_post_v1",
+    "operators": [
+      "glm_reconstruction_v76::launch"
+    ],
+    "validation_source": "def prepare():\n import importlib.util\n from pathlib import Path\n build=Path('/home/matteius/experiments/glm-reconstruction-20261006/build-mhc-native-v1')\n spec=importlib.util.spec_from_file_location('qualified_mhc_post_v1',build/'mhc_post_native.py')\n module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)\n return {'native':module.NativeMhcPost(build,'glm_reconstruction_v76'),'wrap_post':module.wrap_post}\n\ndef validate(resources):\n import torch\n native=resources['native'];generator=torch.Generator().manual_seed(7305)\n def reference(x,res,p,comb):\n  return (torch.einsum('nij,nih->njh',comb,res)+p*x.float().unsqueeze(1)).half().float()\n cases=0\n for dtype in (torch.float16,torch.float32):\n  for rows in (1,2,8):\n   x=torch.randn(rows,4096,generator=generator,dtype=dtype).npu()\n   r=torch.randn(rows,4,4096,generator=generator).half().float().npu()\n   p=torch.randn(rows,4,1,generator=generator).sigmoid().half().float().npu()\n   comb=torch.randn(rows,4,4,generator=generator).softmax(-1).half().float().npu()\n   torch.testing.assert_close(native(x,r,p,comb).cpu(),reference(x,r,p,comb).cpu(),rtol=1e-3,atol=2e-6)\n   graph=torch.npu.NPUGraph()\n   with torch.npu.graph(graph):result=native(x,r,p,comb)\n   x.mul_(1.125);r.copy_((r*0.875).half().float());p.copy_((p*0.75).half().float());comb.copy_(comb.flip(-1).contiguous())\n   graph.replay();torch.npu.synchronize()\n   torch.testing.assert_close(result.cpu(),reference(x,r,p,comb).cpu(),rtol=1e-3,atol=2e-6)\n   cases+=1\n x=torch.full((1,4096),1+2**-11+2**-22,dtype=torch.float32,device='npu')\n r=torch.zeros((1,4,4096),dtype=torch.float32,device='npu');r[:,0,:]=-0.5\n p=torch.ones((1,4,1),dtype=torch.float32,device='npu')\n comb=torch.zeros((1,4,4),dtype=torch.float32,device='npu');comb[:,0,:]=1\n expected=reference(x,r,p,comb).cpu()\n assert torch.equal(native(x,r,p,comb).cpu(),expected)\n assert not torch.equal(native(x.half(),r,p,comb).cpu(),expected)\n return {'passed':True,'cases':cases,'changed_all_inputs_graph_replay':True,'fp32_tie_input_preserved':True,'state_rounding':'fp16_in_fp32_storage','model_quality':'not_evaluated'}\n"
+  },
+  "loaded": [
+    {
+      "rank": 0,
+      "pid": 327411,
+      "native_name": "mhc_post_v1",
+      "native_digest": "a33c51f18e6039cc63be17fd2ae208bc87401d24d921d0c028bfb2678a35b06a",
+      "validation": {
+        "passed": true,
+        "cases": 6,
+        "changed_all_inputs_graph_replay": true,
+        "fp32_tie_input_preserved": true,
+        "state_rounding": "fp16_in_fp32_storage",
+        "model_quality": "not_evaluated"
+      }
+    },
+    {
+      "rank": 1,
+      "pid": 327821,
+      "native_name": "mhc_post_v1",
+      "native_digest": "a33c51f18e6039cc63be17fd2ae208bc87401d24d921d0c028bfb2678a35b06a",
+      "validation": {
+        "passed": true,
+        "cases": 6,
+        "changed_all_inputs_graph_replay": true,
+        "fp32_tie_input_preserved": true,
+        "state_rounding": "fp16_in_fp32_storage",
+        "model_quality": "not_evaluated"
+      }
+    },
+    {
+      "rank": 2,
+      "pid": 328263,
+      "native_name": "mhc_post_v1",
+      "native_digest": "a33c51f18e6039cc63be17fd2ae208bc87401d24d921d0c028bfb2678a35b06a",
+      "validation": {
+        "passed": true,
+        "cases": 6,
+        "changed_all_inputs_graph_replay": true,
+        "fp32_tie_input_preserved": true,
+        "state_rounding": "fp16_in_fp32_storage",
+        "model_quality": "not_evaluated"
+      }
+    },
+    {
+      "rank": 3,
+      "pid": 328726,
+      "native_name": "mhc_post_v1",
+      "native_digest": "a33c51f18e6039cc63be17fd2ae208bc87401d24d921d0c028bfb2678a35b06a",
+      "validation": {
+        "passed": true,
+        "cases": 6,
+        "changed_all_inputs_graph_replay": true,
+        "fp32_tie_input_preserved": true,
+        "state_rounding": "fp16_in_fp32_storage",
+        "model_quality": "not_evaluated"
+      }
+    }
+  ]
+}

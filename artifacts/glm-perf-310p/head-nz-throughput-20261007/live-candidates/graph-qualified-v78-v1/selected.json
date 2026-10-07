@@ -1,0 +1,750 @@
+{
+  "loaded": [
+    {
+      "rank": 0,
+      "pid": 2827551,
+      "native_name": "reconstruction_v78",
+      "native_digest": "77dc0fc05e503eab1fdccfd7f50e6ea9acd610688c16b135f8cebf22469f80d6",
+      "validation": {
+        "passed": true,
+        "cases": 12,
+        "native_fused_stages": 2,
+        "input_quantization_passes_per_token": 1,
+        "fp16_intermediate_gm_bytes": 0,
+        "model_quality": "not_evaluated"
+      }
+    },
+    {
+      "rank": 1,
+      "pid": 2827949,
+      "native_name": "reconstruction_v78",
+      "native_digest": "77dc0fc05e503eab1fdccfd7f50e6ea9acd610688c16b135f8cebf22469f80d6",
+      "validation": {
+        "passed": true,
+        "cases": 12,
+        "native_fused_stages": 2,
+        "input_quantization_passes_per_token": 1,
+        "fp16_intermediate_gm_bytes": 0,
+        "model_quality": "not_evaluated"
+      }
+    },
+    {
+      "rank": 2,
+      "pid": 2828351,
+      "native_name": "reconstruction_v78",
+      "native_digest": "77dc0fc05e503eab1fdccfd7f50e6ea9acd610688c16b135f8cebf22469f80d6",
+      "validation": {
+        "passed": true,
+        "cases": 12,
+        "native_fused_stages": 2,
+        "input_quantization_passes_per_token": 1,
+        "fp16_intermediate_gm_bytes": 0,
+        "model_quality": "not_evaluated"
+      }
+    },
+    {
+      "rank": 3,
+      "pid": 2828744,
+      "native_name": "reconstruction_v78",
+      "native_digest": "77dc0fc05e503eab1fdccfd7f50e6ea9acd610688c16b135f8cebf22469f80d6",
+      "validation": {
+        "passed": true,
+        "cases": 12,
+        "native_fused_stages": 2,
+        "input_quantization_passes_per_token": 1,
+        "fp16_intermediate_gm_bytes": 0,
+        "model_quality": "not_evaluated"
+      }
+    }
+  ],
+  "selected": [
+    {
+      "pid": 2827551,
+      "rank": 0,
+      "generation": "bb7506a383ce482ea8b71fc810dc8a6f",
+      "mode": "graph",
+      "candidate": "native_v78_prefill_graph",
+      "digest": "69e9c69476a7ff0c3052db264c065e7b56ed2065fa493c1fb7519273369d6319",
+      "graphs_dirty": false,
+      "weight_storage_digest": "8e0c43d7dcba62ecc5e77993b19d68f979874e7fd72ff125f8aeb93446df3c34",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v56": {
+          "native_name": "reconstruction_v56",
+          "native_digest": "b5a5604a1841365a8c4c95e330989ce0ca367e6c40ffc96afb9212d419ac2ce9",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated",
+            "adopted_permanent_symbols": true
+          }
+        },
+        "bf16_cast_v6_permanent": {
+          "native_name": "bf16_cast_v6_permanent",
+          "native_digest": "a0196fcac9da55e62045f551ad058d66eee544ee458521d3e5942ff3c5c0a6f1",
+          "validation": {
+            "passed": true,
+            "cases": 1,
+            "adopted_permanent_symbols": true
+          }
+        },
+        "reconstruction_v78": {
+          "native_name": "reconstruction_v78",
+          "native_digest": "77dc0fc05e503eab1fdccfd7f50e6ea9acd610688c16b135f8cebf22469f80d6",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 0,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 512,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R5120:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R5120:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K4096": {
+            "native": 24,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K2048": {
+            "native": 24,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 256,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      },
+      "prefill_graph": {
+        "tokens": 640,
+        "scope": "single-request full prefill chunks; live attention/indexer eager boundaries",
+        "dispatches": 0,
+        "replays": 0,
+        "released_scratch_entries": 1,
+        "entries": [
+          {
+            "descriptor": "BatchDescriptor(num_tokens=640, num_reqs=None, uniform=False, has_lora=False, num_active_loras=0)",
+            "graphs": 46,
+            "eager_breaks": 45
+          }
+        ],
+        "free_memory_bytes": 2639814656
+      }
+    },
+    {
+      "pid": 2827949,
+      "rank": 1,
+      "generation": "bb7506a383ce482ea8b71fc810dc8a6f",
+      "mode": "graph",
+      "candidate": "native_v78_prefill_graph",
+      "digest": "69e9c69476a7ff0c3052db264c065e7b56ed2065fa493c1fb7519273369d6319",
+      "graphs_dirty": false,
+      "weight_storage_digest": "f2f095296b6282e51f3c599d80d7fb9ee42a4b269707d2d766e5bae60908504e",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v56": {
+          "native_name": "reconstruction_v56",
+          "native_digest": "b5a5604a1841365a8c4c95e330989ce0ca367e6c40ffc96afb9212d419ac2ce9",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated",
+            "adopted_permanent_symbols": true
+          }
+        },
+        "bf16_cast_v6_permanent": {
+          "native_name": "bf16_cast_v6_permanent",
+          "native_digest": "a0196fcac9da55e62045f551ad058d66eee544ee458521d3e5942ff3c5c0a6f1",
+          "validation": {
+            "passed": true,
+            "cases": 1,
+            "adopted_permanent_symbols": true
+          }
+        },
+        "reconstruction_v78": {
+          "native_name": "reconstruction_v78",
+          "native_digest": "77dc0fc05e503eab1fdccfd7f50e6ea9acd610688c16b135f8cebf22469f80d6",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 0,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 512,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R5120:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R5120:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K4096": {
+            "native": 24,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K2048": {
+            "native": 24,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 256,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      },
+      "prefill_graph": {
+        "tokens": 640,
+        "scope": "single-request full prefill chunks; live attention/indexer eager boundaries",
+        "dispatches": 0,
+        "replays": 0,
+        "released_scratch_entries": 1,
+        "entries": [
+          {
+            "descriptor": "BatchDescriptor(num_tokens=640, num_reqs=None, uniform=False, has_lora=False, num_active_loras=0)",
+            "graphs": 46,
+            "eager_breaks": 45
+          }
+        ],
+        "free_memory_bytes": 2770206720
+      }
+    },
+    {
+      "pid": 2828351,
+      "rank": 2,
+      "generation": "bb7506a383ce482ea8b71fc810dc8a6f",
+      "mode": "graph",
+      "candidate": "native_v78_prefill_graph",
+      "digest": "69e9c69476a7ff0c3052db264c065e7b56ed2065fa493c1fb7519273369d6319",
+      "graphs_dirty": false,
+      "weight_storage_digest": "dda03399761879cf452d0cfc7a4cb460a0095340a108ed760e4da3b5850ef0ee",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v56": {
+          "native_name": "reconstruction_v56",
+          "native_digest": "b5a5604a1841365a8c4c95e330989ce0ca367e6c40ffc96afb9212d419ac2ce9",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated",
+            "adopted_permanent_symbols": true
+          }
+        },
+        "bf16_cast_v6_permanent": {
+          "native_name": "bf16_cast_v6_permanent",
+          "native_digest": "a0196fcac9da55e62045f551ad058d66eee544ee458521d3e5942ff3c5c0a6f1",
+          "validation": {
+            "passed": true,
+            "cases": 1,
+            "adopted_permanent_symbols": true
+          }
+        },
+        "reconstruction_v78": {
+          "native_name": "reconstruction_v78",
+          "native_digest": "77dc0fc05e503eab1fdccfd7f50e6ea9acd610688c16b135f8cebf22469f80d6",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 0,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 512,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R5120:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R5120:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K4096": {
+            "native": 24,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K2048": {
+            "native": 24,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 256,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      },
+      "prefill_graph": {
+        "tokens": 640,
+        "scope": "single-request full prefill chunks; live attention/indexer eager boundaries",
+        "dispatches": 0,
+        "replays": 0,
+        "released_scratch_entries": 1,
+        "entries": [
+          {
+            "descriptor": "BatchDescriptor(num_tokens=640, num_reqs=None, uniform=False, has_lora=False, num_active_loras=0)",
+            "graphs": 46,
+            "eager_breaks": 45
+          }
+        ],
+        "free_memory_bytes": 3228938240
+      }
+    },
+    {
+      "pid": 2828744,
+      "rank": 3,
+      "generation": "bb7506a383ce482ea8b71fc810dc8a6f",
+      "mode": "graph",
+      "candidate": "native_v78_prefill_graph",
+      "digest": "69e9c69476a7ff0c3052db264c065e7b56ed2065fa493c1fb7519273369d6319",
+      "graphs_dirty": false,
+      "weight_storage_digest": "a426d698a2e3c8104ad75c2734e9039b7bffcfa0afcacdf8250f81f32336e1da",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v56": {
+          "native_name": "reconstruction_v56",
+          "native_digest": "b5a5604a1841365a8c4c95e330989ce0ca367e6c40ffc96afb9212d419ac2ce9",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated",
+            "adopted_permanent_symbols": true
+          }
+        },
+        "bf16_cast_v6_permanent": {
+          "native_name": "bf16_cast_v6_permanent",
+          "native_digest": "a0196fcac9da55e62045f551ad058d66eee544ee458521d3e5942ff3c5c0a6f1",
+          "validation": {
+            "passed": true,
+            "cases": 1,
+            "adopted_permanent_symbols": true
+          }
+        },
+        "reconstruction_v78": {
+          "native_name": "reconstruction_v78",
+          "native_digest": "77dc0fc05e503eab1fdccfd7f50e6ea9acd610688c16b135f8cebf22469f80d6",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 0,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 512,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R5120:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R5120:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K4096": {
+            "native": 24,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K2048": {
+            "native": 24,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 256,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      },
+      "prefill_graph": {
+        "tokens": 640,
+        "scope": "single-request full prefill chunks; live attention/indexer eager boundaries",
+        "dispatches": 0,
+        "replays": 0,
+        "released_scratch_entries": 1,
+        "entries": [
+          {
+            "descriptor": "BatchDescriptor(num_tokens=640, num_reqs=None, uniform=False, has_lora=False, num_active_loras=0)",
+            "graphs": 46,
+            "eager_breaks": 45
+          }
+        ],
+        "free_memory_bytes": 2903654400
+      }
+    }
+  ]
+}

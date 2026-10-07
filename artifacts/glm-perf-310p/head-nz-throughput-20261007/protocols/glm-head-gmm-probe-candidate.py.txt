@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: Apache-2.0
+import gc,json,statistics
+from pathlib import Path
+import torch,torch_npu
+
+
+def replacements(native_resources):
+ from vllm_ascend._310p.worker_310p import NPUWorker310
+ from tools.glm_perf import resident_worker as rw
+ worker=next(obj for obj in gc.get_objects() if isinstance(obj,NPUWorker310))
+ worker._resident_session().graphs_dirty=True
+ torch.npu.synchronize()
+ rw.clear_graph_state(worker._resident_wrappers(),[rw.get_graph_params(),rw.get_draft_graph_params(),rw.get_draft_graph_prefill_params()])
+ gc.collect();torch.npu.empty_cache()
+ state=native_resources['_single_nz_head_layout_20261007_v1']
+ weight=state['head'].weight
+ reference_weight=state['backup'].npu()
+ transposed_nd=state['backup'].T.contiguous().npu()
+ transposed=torch_npu.npu_format_cast(transposed_nd,29)
+ del transposed_nd
+ generator=torch.Generator().manual_seed(7303)
+ records=[]
+ start,end=torch.npu.Event(enable_timing=True),torch.npu.Event(enable_timing=True)
+ for rows in (1,2,8):
+  x=torch.randn(rows,4096,generator=generator,dtype=torch.float16).npu()
+  expected=torch.nn.functional.linear(x,reference_weight).cpu()
+  group=torch.tensor([rows],dtype=torch.int64).npu()
+  operations={
+   'nd_linear':lambda:torch.nn.functional.linear(x,reference_weight),
+   'nz_linear':lambda:torch.nn.functional.linear(x,weight),
+   'gmm_2d':lambda:torch_npu.npu_grouped_matmul(x=[x],weight=[transposed],split_item=0)[0],
+   'gmm_3d':lambda:torch_npu.npu_grouped_matmul(x=[x],weight=[transposed.unsqueeze(0)],group_list=group,split_item=2,group_type=0)[0],
+  }
+  for name,operation in operations.items():
+   record=dict(rows=rows,operation=name)
+   try:
+    actual=operation().cpu();record.update(bitwise_equal=torch.equal(actual,expected),max_abs_delta=float((actual-expected).abs().max()),dtype=str(actual.dtype))
+    durations=[]
+    for i in range(12):
+     start.record();result=operation();end.record();torch.npu.synchronize()
+     if i>=2:durations.append(start.elapsed_time(end))
+    record.update(median_ms=statistics.median(durations),samples_ms=durations)
+   except Exception as error:record['error']=str(error)
+   records.append(record)
+ Path('/home/matteius/experiments/glm-reconstruction-20261006/head-gmm-probe-rank'+str(torch.distributed.get_rank())+'.json').write_text(json.dumps(dict(complete=True,records=records),indent=2))
+ del reference_weight,transposed
+ gc.collect();torch.npu.empty_cache()
+ return {'vllm_ascend._310p.worker_310p:NPUWorker310.resident_status':NPUWorker310.resident_status}

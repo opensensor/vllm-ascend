@@ -1,0 +1,3427 @@
+{
+  "version": 80,
+  "indexer_version": 6,
+  "before": [
+    {
+      "pid": 2827551,
+      "rank": 0,
+      "generation": "4ef5787dc9aa4382aa7e845117865fb8",
+      "mode": "graph",
+      "candidate": "native_v80_prefill_graph",
+      "digest": "7ed56c9583a9dce613e2753f2a57f3a61497dfdd8a35f241a36fca77a3270a5b",
+      "graphs_dirty": false,
+      "weight_storage_digest": "8e0c43d7dcba62ecc5e77993b19d68f979874e7fd72ff125f8aeb93446df3c34",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v56": {
+          "native_name": "reconstruction_v56",
+          "native_digest": "b5a5604a1841365a8c4c95e330989ce0ca367e6c40ffc96afb9212d419ac2ce9",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated",
+            "adopted_permanent_symbols": true
+          }
+        },
+        "bf16_cast_v6_permanent": {
+          "native_name": "bf16_cast_v6_permanent",
+          "native_digest": "a0196fcac9da55e62045f551ad058d66eee544ee458521d3e5942ff3c5c0a6f1",
+          "validation": {
+            "passed": true,
+            "cases": 1,
+            "adopted_permanent_symbols": true
+          }
+        },
+        "reconstruction_v78": {
+          "native_name": "reconstruction_v78",
+          "native_digest": "77dc0fc05e503eab1fdccfd7f50e6ea9acd610688c16b135f8cebf22469f80d6",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v80": {
+          "native_name": "reconstruction_v80",
+          "native_digest": "bacfb4984053e4b609a1ae09a57d90ee90ca777b618058abdd089aa0d90a0b88",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 0,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 516,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R5120:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R5120:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 258,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      },
+      "prefill_graph": {
+        "tokens": 640,
+        "scope": "single-request full prefill chunks; live attention/indexer eager boundaries",
+        "dispatches": 2,
+        "replays": 2,
+        "released_scratch_entries": 1,
+        "entries": [
+          {
+            "descriptor": "BatchDescriptor(num_tokens=640, num_reqs=None, uniform=False, has_lora=False, num_active_loras=0)",
+            "graphs": 46,
+            "eager_breaks": 45
+          }
+        ],
+        "free_memory_bytes": 2531139584
+      }
+    },
+    {
+      "pid": 2827949,
+      "rank": 1,
+      "generation": "4ef5787dc9aa4382aa7e845117865fb8",
+      "mode": "graph",
+      "candidate": "native_v80_prefill_graph",
+      "digest": "7ed56c9583a9dce613e2753f2a57f3a61497dfdd8a35f241a36fca77a3270a5b",
+      "graphs_dirty": false,
+      "weight_storage_digest": "f2f095296b6282e51f3c599d80d7fb9ee42a4b269707d2d766e5bae60908504e",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v56": {
+          "native_name": "reconstruction_v56",
+          "native_digest": "b5a5604a1841365a8c4c95e330989ce0ca367e6c40ffc96afb9212d419ac2ce9",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated",
+            "adopted_permanent_symbols": true
+          }
+        },
+        "bf16_cast_v6_permanent": {
+          "native_name": "bf16_cast_v6_permanent",
+          "native_digest": "a0196fcac9da55e62045f551ad058d66eee544ee458521d3e5942ff3c5c0a6f1",
+          "validation": {
+            "passed": true,
+            "cases": 1,
+            "adopted_permanent_symbols": true
+          }
+        },
+        "reconstruction_v78": {
+          "native_name": "reconstruction_v78",
+          "native_digest": "77dc0fc05e503eab1fdccfd7f50e6ea9acd610688c16b135f8cebf22469f80d6",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v80": {
+          "native_name": "reconstruction_v80",
+          "native_digest": "bacfb4984053e4b609a1ae09a57d90ee90ca777b618058abdd089aa0d90a0b88",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 0,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 516,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R5120:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R5120:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 258,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      },
+      "prefill_graph": {
+        "tokens": 640,
+        "scope": "single-request full prefill chunks; live attention/indexer eager boundaries",
+        "dispatches": 2,
+        "replays": 2,
+        "released_scratch_entries": 1,
+        "entries": [
+          {
+            "descriptor": "BatchDescriptor(num_tokens=640, num_reqs=None, uniform=False, has_lora=False, num_active_loras=0)",
+            "graphs": 46,
+            "eager_breaks": 45
+          }
+        ],
+        "free_memory_bytes": 2015469568
+      }
+    },
+    {
+      "pid": 2828351,
+      "rank": 2,
+      "generation": "4ef5787dc9aa4382aa7e845117865fb8",
+      "mode": "graph",
+      "candidate": "native_v80_prefill_graph",
+      "digest": "7ed56c9583a9dce613e2753f2a57f3a61497dfdd8a35f241a36fca77a3270a5b",
+      "graphs_dirty": false,
+      "weight_storage_digest": "dda03399761879cf452d0cfc7a4cb460a0095340a108ed760e4da3b5850ef0ee",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v56": {
+          "native_name": "reconstruction_v56",
+          "native_digest": "b5a5604a1841365a8c4c95e330989ce0ca367e6c40ffc96afb9212d419ac2ce9",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated",
+            "adopted_permanent_symbols": true
+          }
+        },
+        "bf16_cast_v6_permanent": {
+          "native_name": "bf16_cast_v6_permanent",
+          "native_digest": "a0196fcac9da55e62045f551ad058d66eee544ee458521d3e5942ff3c5c0a6f1",
+          "validation": {
+            "passed": true,
+            "cases": 1,
+            "adopted_permanent_symbols": true
+          }
+        },
+        "reconstruction_v78": {
+          "native_name": "reconstruction_v78",
+          "native_digest": "77dc0fc05e503eab1fdccfd7f50e6ea9acd610688c16b135f8cebf22469f80d6",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v80": {
+          "native_name": "reconstruction_v80",
+          "native_digest": "bacfb4984053e4b609a1ae09a57d90ee90ca777b618058abdd089aa0d90a0b88",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 0,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 516,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R5120:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R5120:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 258,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      },
+      "prefill_graph": {
+        "tokens": 640,
+        "scope": "single-request full prefill chunks; live attention/indexer eager boundaries",
+        "dispatches": 2,
+        "replays": 2,
+        "released_scratch_entries": 1,
+        "entries": [
+          {
+            "descriptor": "BatchDescriptor(num_tokens=640, num_reqs=None, uniform=False, has_lora=False, num_active_loras=0)",
+            "graphs": 46,
+            "eager_breaks": 45
+          }
+        ],
+        "free_memory_bytes": 2472267776
+      }
+    },
+    {
+      "pid": 2828744,
+      "rank": 3,
+      "generation": "4ef5787dc9aa4382aa7e845117865fb8",
+      "mode": "graph",
+      "candidate": "native_v80_prefill_graph",
+      "digest": "7ed56c9583a9dce613e2753f2a57f3a61497dfdd8a35f241a36fca77a3270a5b",
+      "graphs_dirty": false,
+      "weight_storage_digest": "a426d698a2e3c8104ad75c2734e9039b7bffcfa0afcacdf8250f81f32336e1da",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v56": {
+          "native_name": "reconstruction_v56",
+          "native_digest": "b5a5604a1841365a8c4c95e330989ce0ca367e6c40ffc96afb9212d419ac2ce9",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated",
+            "adopted_permanent_symbols": true
+          }
+        },
+        "bf16_cast_v6_permanent": {
+          "native_name": "bf16_cast_v6_permanent",
+          "native_digest": "a0196fcac9da55e62045f551ad058d66eee544ee458521d3e5942ff3c5c0a6f1",
+          "validation": {
+            "passed": true,
+            "cases": 1,
+            "adopted_permanent_symbols": true
+          }
+        },
+        "reconstruction_v78": {
+          "native_name": "reconstruction_v78",
+          "native_digest": "77dc0fc05e503eab1fdccfd7f50e6ea9acd610688c16b135f8cebf22469f80d6",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v80": {
+          "native_name": "reconstruction_v80",
+          "native_digest": "bacfb4984053e4b609a1ae09a57d90ee90ca777b618058abdd089aa0d90a0b88",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 0,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 516,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R5120:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R5120:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 258,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      },
+      "prefill_graph": {
+        "tokens": 640,
+        "scope": "single-request full prefill chunks; live attention/indexer eager boundaries",
+        "dispatches": 2,
+        "replays": 2,
+        "released_scratch_entries": 1,
+        "entries": [
+          {
+            "descriptor": "BatchDescriptor(num_tokens=640, num_reqs=None, uniform=False, has_lora=False, num_active_loras=0)",
+            "graphs": 46,
+            "eager_breaks": 45
+          }
+        ],
+        "free_memory_bytes": 2146238464
+      }
+    }
+  ],
+  "complete": true,
+  "records": [
+    {
+      "case_id": "short_1_0",
+      "category": "short",
+      "group_id": "short_1",
+      "target_prompt_tokens": 25,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": null,
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 64,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Generate a long numbered list of distinct everyday objects, starting at one. Continue writing until the response token limit stops you.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382683.43776206,
+      "content": "1. Fork\n2. Spoon\n3. Knife\n4. Plate\n5. Bowl\n6. Mug\n7. Glass\n8. Kettle\n9. Toaster\n10. Blender\n11. Fridge\n12. Stove\n13. Oven\n14",
+      "reasoning": "Just generate a long list.",
+      "tool_calls": [],
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 36,
+        "total_tokens": 100,
+        "completion_tokens": 64,
+        "completion_tokens_details": {
+          "reasoning_tokens": 6
+        }
+      },
+      "end_s": 382692.383360649,
+      "first_token_s": 382685.663164414,
+      "last_token_s": 382692.383233106,
+      "ttft_s": 2.225402353971731,
+      "elapsed_s": 8.945598588965368,
+      "decode_s": 6.7200686919968575,
+      "decode_tokens_per_s": 9.523712172201398,
+      "stream_event_gap_p50_s": 0.20329372899141163,
+      "stream_event_gap_p95_s": 0.21464070118963718,
+      "stream_events": 34,
+      "prompt_token_target_error": 11,
+      "early_eos": false,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": false,
+      "speed_sample_complete": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "short_4_0",
+      "category": "short",
+      "group_id": "short_4",
+      "target_prompt_tokens": 25,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": null,
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 64,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Generate a long numbered list of distinct everyday objects, starting at one. Continue writing until the response token limit stops you.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382692.38728547,
+      "content": "1. Fork\n2. Spoon\n3. Knife\n4. Plate\n5. Bowl\n6. Cup\n7. Mug\n8. Glass\n9. Napkin\n10. Tablecloth\n11. Broom\n12. Mop\n13.",
+      "reasoning": "Generate numbered list of everyday objects until limit.",
+      "tool_calls": [],
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 36,
+        "total_tokens": 100,
+        "completion_tokens": 64,
+        "completion_tokens_details": {
+          "reasoning_tokens": 9
+        }
+      },
+      "end_s": 382711.683923991,
+      "first_token_s": 382694.610891238,
+      "last_token_s": 382711.683729291,
+      "ttft_s": 2.2236057679983787,
+      "elapsed_s": 19.296638521016575,
+      "decode_s": 17.072838053049054,
+      "decode_tokens_per_s": 3.74864447264936,
+      "stream_event_gap_p50_s": 0.3896526459720917,
+      "stream_event_gap_p95_s": 0.4178328600013628,
+      "stream_events": 34,
+      "prompt_token_target_error": 11,
+      "early_eos": false,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": false,
+      "speed_sample_complete": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "short_4_1",
+      "category": "short",
+      "group_id": "short_4",
+      "target_prompt_tokens": 25,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": null,
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 64,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Generate a long numbered list of distinct everyday objects, starting at one. Continue writing until the response token limit stops you.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382692.387663689,
+      "content": "1. Fork\n2. Spoon\n3. Knife\n4. Plate\n5. Bowl\n6. Mug\n7. Glass\n8. Kettle\n9. Toaster\n10. Blender\n11. Fridge\n12.",
+      "reasoning": "Generate a long numbered list of everyday objects. Just write many items.",
+      "tool_calls": [],
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 36,
+        "total_tokens": 100,
+        "completion_tokens": 64,
+        "completion_tokens_details": {
+          "reasoning_tokens": 14
+        }
+      },
+      "end_s": 382712.32703929,
+      "first_token_s": 382699.246517819,
+      "last_token_s": 382712.32689213,
+      "ttft_s": 6.858854130026884,
+      "elapsed_s": 19.939375601010397,
+      "decode_s": 13.080374311015476,
+      "decode_tokens_per_s": 4.89282634259963,
+      "stream_event_gap_p50_s": 0.38895096752094105,
+      "stream_event_gap_p95_s": 0.4171582775656134,
+      "stream_events": 35,
+      "prompt_token_target_error": 11,
+      "early_eos": false,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": false,
+      "speed_sample_complete": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "short_4_2",
+      "category": "short",
+      "group_id": "short_4",
+      "target_prompt_tokens": 25,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": null,
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 64,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Generate a long numbered list of distinct everyday objects, starting at one. Continue writing until the response token limit stops you.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382692.387908424,
+      "content": "1. Spoon\n2. Fork\n3. Knife\n4. Plate\n5. Bowl\n6. Mug\n7. Glass\n8. Napkin\n9. Table\n10. Chair\n11. Sofa\n12. Pillow\n13. Blanket\n",
+      "reasoning": "Generate a long numbered list of everyday objects.",
+      "tool_calls": [],
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 36,
+        "total_tokens": 100,
+        "completion_tokens": 64,
+        "completion_tokens_details": {
+          "reasoning_tokens": 9
+        }
+      },
+      "end_s": 382712.125077201,
+      "first_token_s": 382699.24627145,
+      "last_token_s": 382712.124824321,
+      "ttft_s": 6.858363025996368,
+      "elapsed_s": 19.73716877697734,
+      "decode_s": 12.878552870999556,
+      "decode_tokens_per_s": 4.969502446514606,
+      "stream_event_gap_p50_s": 0.3914686089847237,
+      "stream_event_gap_p95_s": 0.4320873243937967,
+      "stream_events": 33,
+      "prompt_token_target_error": 11,
+      "early_eos": false,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": false,
+      "speed_sample_complete": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "short_4_3",
+      "category": "short",
+      "group_id": "short_4",
+      "target_prompt_tokens": 25,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": null,
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 64,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Generate a long numbered list of distinct everyday objects, starting at one. Continue writing until the response token limit stops you.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382692.388178908,
+      "content": "1. Fork\n2. Spoon\n3. Knife\n4. Plate\n5. Bowl\n6. Mug\n7. Glass\n8. Kettle\n9. Toaster\n10. Blender\n11. Fridge\n12. Oven\n13. Microwave",
+      "reasoning": "Generate a long numbered list of everyday objects.",
+      "tool_calls": [],
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 36,
+        "total_tokens": 100,
+        "completion_tokens": 64,
+        "completion_tokens_details": {
+          "reasoning_tokens": 9
+        }
+      },
+      "end_s": 382712.12514988,
+      "first_token_s": 382699.246416426,
+      "last_token_s": 382712.125016656,
+      "ttft_s": 6.8582375179976225,
+      "elapsed_s": 19.736970972036943,
+      "decode_s": 12.878600230033044,
+      "decode_tokens_per_s": 4.969484171948382,
+      "stream_event_gap_p50_s": 0.39148242500959896,
+      "stream_event_gap_p95_s": 0.43212488360877616,
+      "stream_events": 33,
+      "prompt_token_target_error": 11,
+      "early_eos": false,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": false,
+      "speed_sample_complete": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "arith_add",
+      "category": "arithmetic",
+      "group_id": "quality_4_0",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "45",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Compute 17 + 28. Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382712.330030837,
+      "content": "45",
+      "reasoning": "45",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 25,
+        "total_tokens": 29,
+        "completion_tokens": 4,
+        "completion_tokens_details": {
+          "reasoning_tokens": 1
+        }
+      },
+      "end_s": 382717.713243359,
+      "first_token_s": 382717.095968674,
+      "last_token_s": 382717.504145225,
+      "ttft_s": 4.765937837015372,
+      "elapsed_s": 5.383212522021495,
+      "decode_s": 0.4081765509909019,
+      "decode_tokens_per_s": 9.799681021091185,
+      "stream_event_gap_p50_s": 0.4081765509909019,
+      "stream_event_gap_p95_s": 0.4081765509909019,
+      "stream_events": 2,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "arith_sub",
+      "category": "arithmetic",
+      "group_id": "quality_4_0",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "54",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Compute 91 - 37. Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382712.330564542,
+      "content": "54",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 25,
+        "total_tokens": 28,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 382717.504393567,
+      "first_token_s": 382717.504206692,
+      "last_token_s": 382717.504206692,
+      "ttft_s": 5.173642150009982,
+      "elapsed_s": 5.173829025006853,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "arith_mul",
+      "category": "arithmetic",
+      "group_id": "quality_4_0",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "91",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Compute 13 * 7. Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382712.330304117,
+      "content": "91",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 25,
+        "total_tokens": 28,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 382717.5046055,
+      "first_token_s": 382717.09617691,
+      "last_token_s": 382717.09617691,
+      "ttft_s": 4.765872792981099,
+      "elapsed_s": 5.174301383027341,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "arith_div",
+      "category": "arithmetic",
+      "group_id": "quality_4_0",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "12",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Compute 144 / 12. Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382712.33081631,
+      "content": "12",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 25,
+        "total_tokens": 28,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 382717.504563249,
+      "first_token_s": 382717.504321049,
+      "last_token_s": 382717.504321049,
+      "ttft_s": 5.173504739010241,
+      "elapsed_s": 5.173746938991826,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "arith_mod",
+      "category": "arithmetic",
+      "group_id": "quality_4_1",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "2",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Compute the remainder of 83 divided by 9. Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382717.716963732,
+      "content": "2",
+      "reasoning": "83 = 9*9=81, remainder 2.",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 29,
+        "total_tokens": 45,
+        "completion_tokens": 16,
+        "completion_tokens_details": {
+          "reasoning_tokens": 13
+        }
+      },
+      "end_s": 382725.564802282,
+      "first_token_s": 382722.98839301,
+      "last_token_s": 382725.362492663,
+      "ttft_s": 5.271429278014693,
+      "elapsed_s": 7.847838550049346,
+      "decode_s": 2.3740996529813856,
+      "decode_tokens_per_s": 6.739396966722631,
+      "stream_event_gap_p50_s": 0.21056052949279547,
+      "stream_event_gap_p95_s": 0.4542626937152818,
+      "stream_events": 9,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "instr_upper",
+      "category": "instruction",
+      "group_id": "quality_4_1",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "CEDAR",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Write the word cedar in uppercase. Answer with that word only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382717.717275825,
+      "content": "CEDAR",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 25,
+        "total_tokens": 29,
+        "completion_tokens": 4,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 382724.319657931,
+      "first_token_s": 382723.450646263,
+      "last_token_s": 382723.88003565,
+      "ttft_s": 5.733370438043494,
+      "elapsed_s": 6.602382106008008,
+      "decode_s": 0.42938938696170226,
+      "decode_tokens_per_s": 9.315553950467725,
+      "stream_event_gap_p50_s": 0.42938938696170226,
+      "stream_event_gap_p95_s": 0.42938938696170226,
+      "stream_events": 2,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "instr_reverse",
+      "category": "instruction",
+      "group_id": "quality_4_1",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "pmal",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Reverse the characters in 'lamp'. Answer with the result only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382717.716423835,
+      "content": "pial",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 25,
+        "total_tokens": 29,
+        "completion_tokens": 4,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 382723.450664778,
+      "first_token_s": 382722.988153555,
+      "last_token_s": 382722.988153555,
+      "ttft_s": 5.271729719999712,
+      "elapsed_s": 5.734240942983888,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": false,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": false,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "instr_first",
+      "category": "instruction",
+      "group_id": "quality_4_1",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "red",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "From red, blue, green, give the first color. Answer with one word only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382717.716698157,
+      "content": "Red",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 30,
+        "total_tokens": 33,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 382723.450729581,
+      "first_token_s": 382723.450479917,
+      "last_token_s": 382723.450479917,
+      "ttft_s": 5.733781759976409,
+      "elapsed_s": 5.734031423984561,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": false,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": false,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "instr_count",
+      "category": "instruction",
+      "group_id": "quality_4_2",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "4",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "How many words are in 'one two three four'? Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382725.569265377,
+      "content": "4",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 29,
+        "total_tokens": 32,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 382732.226959162,
+      "first_token_s": 382732.2267899,
+      "last_token_s": 382732.2267899,
+      "ttft_s": 6.6575245229760185,
+      "elapsed_s": 6.657693784974981,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "instr_sort",
+      "category": "instruction",
+      "group_id": "quality_4_2",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "a,b,c",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Sort the letters c, a, b alphabetically. Answer with comma-separated letters and no spaces.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382725.56897773,
+      "content": "a,b,c",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 37,
+        "completion_tokens": 5,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 382732.657880191,
+      "first_token_s": 382732.226921009,
+      "last_token_s": 382732.657738622,
+      "ttft_s": 6.657943279016763,
+      "elapsed_s": 7.088902460993268,
+      "decode_s": 0.4308176129707135,
+      "decode_tokens_per_s": 11.605839337724325,
+      "stream_event_gap_p50_s": 0.4308176129707135,
+      "stream_event_gap_p95_s": 0.4308176129707135,
+      "stream_events": 2,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "code_python",
+      "category": "code",
+      "group_id": "quality_4_2",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "10",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "In Python, what does sum([2, 3, 5]) return? Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382725.568503047,
+      "content": "10",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 35,
+        "total_tokens": 38,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 382731.750857393,
+      "first_token_s": 382731.750721093,
+      "last_token_s": 382731.750721093,
+      "ttft_s": 6.182218045985792,
+      "elapsed_s": 6.182354346034117,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "code_slice",
+      "category": "code",
+      "group_id": "quality_4_2",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "lan",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "In Python, what is 'planet'[1:4]? Answer with the substring only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382725.568742773,
+      "content": "`lan`",
+      "reasoning": "'l'lan' \u2014 \"lan\"",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 30,
+        "total_tokens": 43,
+        "completion_tokens": 13,
+        "completion_tokens_details": {
+          "reasoning_tokens": 8
+        }
+      },
+      "end_s": 382734.141060239,
+      "first_token_s": 382731.750974635,
+      "last_token_s": 382733.928186266,
+      "ttft_s": 6.182231862039771,
+      "elapsed_s": 8.572317466023378,
+      "decode_s": 2.1772116309730336,
+      "decode_tokens_per_s": 5.970939992723663,
+      "stream_event_gap_p50_s": 0.2136368375213351,
+      "stream_event_gap_p95_s": 0.4602669935818995,
+      "stream_events": 9,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": false,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": false,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "code_len",
+      "category": "code",
+      "group_id": "quality_4_3",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "2",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "In Python, what does len({'a': 1, 'b': 2}) return? Answer with the number only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382734.146266676,
+      "content": "2",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 38,
+        "total_tokens": 41,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 382741.131507161,
+      "first_token_s": 382741.131198324,
+      "last_token_s": 382741.131198324,
+      "ttft_s": 6.98493164795218,
+      "elapsed_s": 6.985240484995302,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "code_bool",
+      "category": "code",
+      "group_id": "quality_4_3",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "False",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "In Python, what is bool([])? Answer True or False only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382734.145748812,
+      "content": "False",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 382741.13136427,
+      "first_token_s": 382741.131047026,
+      "last_token_s": 382741.131047026,
+      "ttft_s": 6.98529821401462,
+      "elapsed_s": 6.985615457990207,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "code_range",
+      "category": "code",
+      "group_id": "quality_4_3",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "[0, 1, 2]",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "In Python, what is list(range(3))? Answer with the list literal only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382734.145982536,
+      "content": "[0, 1, 2]",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 29,
+        "total_tokens": 40,
+        "completion_tokens": 11,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 382742.849592514,
+      "first_token_s": 382741.131488275,
+      "last_token_s": 382742.84938534,
+      "ttft_s": 6.985505738994107,
+      "elapsed_s": 8.703609977965243,
+      "decode_s": 1.7178970649838448,
+      "decode_tokens_per_s": 6.4031775967342055,
+      "stream_event_gap_p50_s": 0.4281494454771746,
+      "stream_event_gap_p95_s": 0.4376301490003243,
+      "stream_events": 5,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "retrieval_short_1",
+      "category": "retrieval",
+      "group_id": "quality_4_3",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "BLUE-ORCHID-7319",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Fact: the access code is BLUE-ORCHID-7319. What is the access code? Answer with the code only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382734.145512873,
+      "content": "BLUE-ORCHID-7319",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 40,
+        "total_tokens": 51,
+        "completion_tokens": 11,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 382742.849670973,
+      "first_token_s": 382740.671396532,
+      "last_token_s": 382742.422686728,
+      "ttft_s": 6.525883658963721,
+      "elapsed_s": 8.704158100008499,
+      "decode_s": 1.7512901960290037,
+      "decode_tokens_per_s": 6.2810835262723215,
+      "stream_event_gap_p50_s": 0.43440385500434786,
+      "stream_event_gap_p95_s": 0.4568084709928371,
+      "stream_events": 5,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "retrieval_short_2",
+      "category": "retrieval",
+      "group_id": "quality_4_4",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "Sable Meridian",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Fact: the ship's name is Sable Meridian. What is the ship's name? Answer with the name only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382742.854033526,
+      "content": "Sable Meridian",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 37,
+        "total_tokens": 43,
+        "completion_tokens": 6,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 382750.896617094,
+      "first_token_s": 382750.043880226,
+      "last_token_s": 382750.477789395,
+      "ttft_s": 7.18984669999918,
+      "elapsed_s": 8.042583568021655,
+      "decode_s": 0.43390916904900223,
+      "decode_tokens_per_s": 13.827778779485547,
+      "stream_event_gap_p50_s": 0.43390916904900223,
+      "stream_event_gap_p95_s": 0.43390916904900223,
+      "stream_events": 2,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "retrieval_short_3",
+      "category": "retrieval",
+      "group_id": "quality_4_4",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "RQ-218",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Fact: the sample's label is RQ-218. What is the sample's label? Answer with the label only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382742.85347766,
+      "content": "RQ-218",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 37,
+        "total_tokens": 43,
+        "completion_tokens": 6,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 382750.477989406,
+      "first_token_s": 382749.580071195,
+      "last_token_s": 382750.044012327,
+      "ttft_s": 6.7265935350442305,
+      "elapsed_s": 7.624511745991185,
+      "decode_s": 0.4639411319512874,
+      "decode_tokens_per_s": 12.932675261545864,
+      "stream_event_gap_p50_s": 0.4639411319512874,
+      "stream_event_gap_p95_s": 0.4639411319512874,
+      "stream_events": 2,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "retrieval_short_4",
+      "category": "retrieval",
+      "group_id": "quality_4_4",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "Oslo",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Fact: the warehouse is in Oslo. In which city is the warehouse? Answer with the city only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382742.853755368,
+      "content": "Oslo",
+      "reasoning": "Oslo",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 33,
+        "total_tokens": 39,
+        "completion_tokens": 6,
+        "completion_tokens_details": {
+          "reasoning_tokens": 2
+        }
+      },
+      "end_s": 382750.896689562,
+      "first_token_s": 382749.579920899,
+      "last_token_s": 382750.896547592,
+      "ttft_s": 6.726165531028528,
+      "elapsed_s": 8.042934194032568,
+      "decode_s": 1.3166266930056736,
+      "decode_tokens_per_s": 4.55710037771059,
+      "stream_event_gap_p50_s": 0.4343646049965173,
+      "stream_event_gap_p95_s": 0.46106485009077003,
+      "stream_events": 4,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "retrieval_short_5",
+      "category": "retrieval",
+      "group_id": "quality_4_4",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": "Thursday",
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 128,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "prompt": "Fact: the appointment is on Thursday. On which day is the appointment? Answer with the day only.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382742.854300935,
+      "content": "Thursday",
+      "reasoning": "",
+      "tool_calls": [],
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 33,
+        "total_tokens": 36,
+        "completion_tokens": 3,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 382750.044171549,
+      "first_token_s": 382750.044072401,
+      "last_token_s": 382750.044072401,
+      "ttft_s": 7.189771466015372,
+      "elapsed_s": 7.189870613976382,
+      "decode_s": 0.0,
+      "decode_tokens_per_s": null,
+      "stream_event_gap_p50_s": null,
+      "stream_event_gap_p95_s": null,
+      "stream_events": 1,
+      "prompt_token_target_error": null,
+      "early_eos": true,
+      "passed": true,
+      "tool_call_success": null,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "exact_answer": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    },
+    {
+      "case_id": "tool_order_status",
+      "category": "tool",
+      "group_id": "tool",
+      "target_prompt_tokens": null,
+      "context_tier_tokens": null,
+      "raw_prompt_tokens": null,
+      "tokenizer": null,
+      "expected": null,
+      "request_settings": {
+        "model": "glm53-flash-selective-w3",
+        "max_tokens": 256,
+        "temperature": 0,
+        "seed": 42,
+        "chat_template_kwargs": {
+          "reasoning_effort": "low"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_order_status",
+              "description": "Look up the status of an order by its ID.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "order_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "order_id"
+                ]
+              }
+            }
+          }
+        ],
+        "tool_choice": "auto"
+      },
+      "prompt": "Check the status of order A-1042 using the order status tool.",
+      "model": "glm53-flash-selective-w3",
+      "base_url": "http://127.0.0.1:8001",
+      "valid": true,
+      "start_s": 382750.899703341,
+      "content": "",
+      "reasoning": "",
+      "tool_calls": [
+        {
+          "id": "chatcmpl-tool-a720e88c129d9414",
+          "name": "get_order_status",
+          "arguments": "{\"order_id\": \"A-1042\"}"
+        }
+      ],
+      "finish_reason": "tool_calls",
+      "usage": {
+        "prompt_tokens": 177,
+        "total_tokens": 194,
+        "completion_tokens": 17,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "end_s": 382757.747372768,
+      "first_token_s": 382756.710228463,
+      "last_token_s": 382757.747263671,
+      "ttft_s": 5.810525121982209,
+      "elapsed_s": 6.84766942699207,
+      "decode_s": 1.037035208020825,
+      "decode_tokens_per_s": 16.392886054895275,
+      "stream_event_gap_p50_s": 0.20664754099561833,
+      "stream_event_gap_p95_s": 0.388472670209012,
+      "stream_events": 5,
+      "prompt_token_target_error": null,
+      "early_eos": false,
+      "passed": true,
+      "tool_call_success": true,
+      "raw_thinking_marker": false,
+      "completed_final": true,
+      "prompt_target_met": null,
+      "context_fit": null
+    }
+  ],
+  "summary": {
+    "request_count": 26,
+    "valid": true,
+    "passed": false,
+    "early_eos_count": 20,
+    "groups": {
+      "short_1": {
+        "requests": 1,
+        "valid_requests": 1,
+        "aggregate_decode_tokens_per_s": 9.523712172201398,
+        "per_request_decode_p50": 9.523712172201398,
+        "per_request_decode_p95": 9.523712172201398,
+        "ttft_p50_s": 2.225402353971731,
+        "ttft_p95_s": 2.225402353971731,
+        "fairness_min_max_ratio": 1.0,
+        "early_eos_count": 0
+      },
+      "short_4": {
+        "requests": 4,
+        "valid_requests": 4,
+        "aggregate_decode_tokens_per_s": 14.450213767765057,
+        "per_request_decode_p50": 4.931155257274006,
+        "per_request_decode_p95": 4.969499705329673,
+        "ttft_p50_s": 6.858300271996995,
+        "ttft_p95_s": 6.858780464422307,
+        "fairness_min_max_ratio": 0.7543299380561724,
+        "early_eos_count": 0
+      },
+      "quality_4_0": {
+        "requests": 4,
+        "valid_requests": 4,
+        "aggregate_decode_tokens_per_s": 31.835250129323885,
+        "per_request_decode_p50": 9.799681021091185,
+        "per_request_decode_p95": 9.799681021091185,
+        "ttft_p50_s": 4.969721288012806,
+        "ttft_p95_s": 5.173621538360021,
+        "fairness_min_max_ratio": 1.0,
+        "early_eos_count": 4
+      },
+      "quality_4_1": {
+        "requests": 4,
+        "valid_requests": 4,
+        "aggregate_decode_tokens_per_s": 11.371585427549036,
+        "per_request_decode_p50": 8.027475458595179,
+        "per_request_decode_p95": 9.18674610128047,
+        "ttft_p50_s": 5.502550079021603,
+        "ttft_p95_s": 5.733720061686472,
+        "fairness_min_max_ratio": 0.7234563830081465,
+        "early_eos_count": 4
+      },
+      "quality_4_2": {
+        "requests": 4,
+        "valid_requests": 4,
+        "aggregate_decode_tokens_per_s": 11.021990292887944,
+        "per_request_decode_p50": 8.788389665223994,
+        "per_request_decode_p95": 11.324094370474292,
+        "ttft_p50_s": 6.419878192507895,
+        "ttft_p95_s": 6.657880465610651,
+        "fairness_min_max_ratio": 0.5144772229713156,
+        "early_eos_count": 4
+      },
+      "quality_4_3": {
+        "requests": 4,
+        "valid_requests": 4,
+        "aggregate_decode_tokens_per_s": 12.855897099606514,
+        "per_request_decode_p50": 6.3421305615032635,
+        "per_request_decode_p95": 6.397072893211111,
+        "ttft_p50_s": 6.9851149309834,
+        "ttft_p95_s": 6.985474610247183,
+        "fairness_min_max_ratio": 0.9809322686092362,
+        "early_eos_count": 4
+      },
+      "quality_4_4": {
+        "requests": 4,
+        "valid_requests": 4,
+        "aggregate_decode_tokens_per_s": 15.949851321987065,
+        "per_request_decode_p50": 12.932675261545864,
+        "per_request_decode_p95": 13.738268427691578,
+        "ttft_p50_s": 6.9581825005298015,
+        "ttft_p95_s": 7.189835414901609,
+        "fairness_min_max_ratio": 0.3295612730275494,
+        "early_eos_count": 4
+      },
+      "tool": {
+        "requests": 1,
+        "valid_requests": 1,
+        "aggregate_decode_tokens_per_s": 16.392886054895275,
+        "per_request_decode_p50": 16.392886054895275,
+        "per_request_decode_p95": 16.392886054895275,
+        "ttft_p50_s": 5.810525121982209,
+        "ttft_p95_s": 5.810525121982209,
+        "fairness_min_max_ratio": 1.0,
+        "early_eos_count": 0
+      }
+    }
+  },
+  "after_requests": [
+    {
+      "pid": 2827551,
+      "rank": 0,
+      "generation": "4ef5787dc9aa4382aa7e845117865fb8",
+      "mode": "graph",
+      "candidate": "native_v80_prefill_graph",
+      "digest": "7ed56c9583a9dce613e2753f2a57f3a61497dfdd8a35f241a36fca77a3270a5b",
+      "graphs_dirty": false,
+      "weight_storage_digest": "8e0c43d7dcba62ecc5e77993b19d68f979874e7fd72ff125f8aeb93446df3c34",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v56": {
+          "native_name": "reconstruction_v56",
+          "native_digest": "b5a5604a1841365a8c4c95e330989ce0ca367e6c40ffc96afb9212d419ac2ce9",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated",
+            "adopted_permanent_symbols": true
+          }
+        },
+        "bf16_cast_v6_permanent": {
+          "native_name": "bf16_cast_v6_permanent",
+          "native_digest": "a0196fcac9da55e62045f551ad058d66eee544ee458521d3e5942ff3c5c0a6f1",
+          "validation": {
+            "passed": true,
+            "cases": 1,
+            "adopted_permanent_symbols": true
+          }
+        },
+        "reconstruction_v78": {
+          "native_name": "reconstruction_v78",
+          "native_digest": "77dc0fc05e503eab1fdccfd7f50e6ea9acd610688c16b135f8cebf22469f80d6",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v80": {
+          "native_name": "reconstruction_v80",
+          "native_digest": "bacfb4984053e4b609a1ae09a57d90ee90ca777b618058abdd089aa0d90a0b88",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 0,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 1720,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R5120:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R5120:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R288:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R288:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R288:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R880:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R880:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R880:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R200:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R200:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R200:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R200:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R200:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R200:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R616:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R616:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R616:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R616:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R616:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R616:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R688:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R688:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R688:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R688:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R688:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R688:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R280:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R280:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R280:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R280:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R280:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R280:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R744:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R744:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R744:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R744:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R744:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R744:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R320:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R320:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R320:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R320:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R320:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R320:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R760:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R760:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R760:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R760:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R760:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R760:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R296:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R296:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R296:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R296:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R296:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R296:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R840:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R840:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R840:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R840:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R840:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R840:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K4096": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W4:R1416:E72:N4096:K2048": {
+            "native": 22,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K4096": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W3:R1416:E72:N4096:K2048": {
+            "native": 8,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K4096": {
+            "native": 13,
+            "fallback": 0
+          },
+          "W2:R1416:E72:N4096:K2048": {
+            "native": 13,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 860,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      },
+      "prefill_graph": {
+        "tokens": 640,
+        "scope": "single-request full prefill chunks; live attention/indexer eager boundaries",
+        "dispatches": 2,
+        "replays": 2,
+        "released_scratch_entries": 1,
+        "entries": [
+          {
+            "descriptor": "BatchDescriptor(num_tokens=640, num_reqs=None, uniform=False, has_lora=False, num_active_loras=0)",
+            "graphs": 46,
+            "eager_breaks": 45
+          }
+        ],
+        "free_memory_bytes": 2503315456
+      }
+    },
+    {
+      "pid": 2827949,
+      "rank": 1,
+      "generation": "4ef5787dc9aa4382aa7e845117865fb8",
+      "mode": "graph",
+      "candidate": "native_v80_prefill_graph",
+      "digest": "7ed56c9583a9dce613e2753f2a57f3a61497dfdd8a35f241a36fca77a3270a5b",
+      "graphs_dirty": false,
+      "weight_storage_digest": "f2f095296b6282e51f3c599d80d7fb9ee42a4b269707d2d766e5bae60908504e",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v56": {
+          "native_name": "reconstruction_v56",
+          "native_digest": "b5a5604a1841365a8c4c95e330989ce0ca367e6c40ffc96afb9212d419ac2ce9",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated",
+            "adopted_permanent_symbols": true
+          }
+        },
+        "bf16_cast_v6_permanent": {
+          "native_name": "bf16_cast_v6_permanent",
+          "native_digest": "a0196fcac9da55e62045f551ad058d66eee544ee458521d3e5942ff3c5c0a6f1",
+          "validation": {
+            "passed": true,
+            "cases": 1,
+            "adopted_permanent_symbols": true
+          }
+        },
+        "reconstruction_v78": {
+          "native_name": "reconstruction_v78",
+          "native_digest": "77dc0fc05e503eab1fdccfd7f50e6ea9acd610688c16b135f8cebf22469f80d6",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v80": {
+          "native_name": "reconstruction_v80",
+          "native_digest": "bacfb4984053e4b609a1ae09a57d90ee90ca777b618058abdd089aa0d90a0b88",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 0,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 516,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R5120:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R5120:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 258,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      },
+      "prefill_graph": {
+        "tokens": 640,
+        "scope": "single-request full prefill chunks; live attention/indexer eager boundaries",
+        "dispatches": 2,
+        "replays": 2,
+        "released_scratch_entries": 1,
+        "entries": [
+          {
+            "descriptor": "BatchDescriptor(num_tokens=640, num_reqs=None, uniform=False, has_lora=False, num_active_loras=0)",
+            "graphs": 46,
+            "eager_breaks": 45
+          }
+        ],
+        "free_memory_bytes": 2015469568
+      }
+    },
+    {
+      "pid": 2828351,
+      "rank": 2,
+      "generation": "4ef5787dc9aa4382aa7e845117865fb8",
+      "mode": "graph",
+      "candidate": "native_v80_prefill_graph",
+      "digest": "7ed56c9583a9dce613e2753f2a57f3a61497dfdd8a35f241a36fca77a3270a5b",
+      "graphs_dirty": false,
+      "weight_storage_digest": "dda03399761879cf452d0cfc7a4cb460a0095340a108ed760e4da3b5850ef0ee",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v56": {
+          "native_name": "reconstruction_v56",
+          "native_digest": "b5a5604a1841365a8c4c95e330989ce0ca367e6c40ffc96afb9212d419ac2ce9",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated",
+            "adopted_permanent_symbols": true
+          }
+        },
+        "bf16_cast_v6_permanent": {
+          "native_name": "bf16_cast_v6_permanent",
+          "native_digest": "a0196fcac9da55e62045f551ad058d66eee544ee458521d3e5942ff3c5c0a6f1",
+          "validation": {
+            "passed": true,
+            "cases": 1,
+            "adopted_permanent_symbols": true
+          }
+        },
+        "reconstruction_v78": {
+          "native_name": "reconstruction_v78",
+          "native_digest": "77dc0fc05e503eab1fdccfd7f50e6ea9acd610688c16b135f8cebf22469f80d6",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v80": {
+          "native_name": "reconstruction_v80",
+          "native_digest": "bacfb4984053e4b609a1ae09a57d90ee90ca777b618058abdd089aa0d90a0b88",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 0,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 516,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R5120:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R5120:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 258,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      },
+      "prefill_graph": {
+        "tokens": 640,
+        "scope": "single-request full prefill chunks; live attention/indexer eager boundaries",
+        "dispatches": 2,
+        "replays": 2,
+        "released_scratch_entries": 1,
+        "entries": [
+          {
+            "descriptor": "BatchDescriptor(num_tokens=640, num_reqs=None, uniform=False, has_lora=False, num_active_loras=0)",
+            "graphs": 46,
+            "eager_breaks": 45
+          }
+        ],
+        "free_memory_bytes": 2472267776
+      }
+    },
+    {
+      "pid": 2828744,
+      "rank": 3,
+      "generation": "4ef5787dc9aa4382aa7e845117865fb8",
+      "mode": "graph",
+      "candidate": "native_v80_prefill_graph",
+      "digest": "7ed56c9583a9dce613e2753f2a57f3a61497dfdd8a35f241a36fca77a3270a5b",
+      "graphs_dirty": false,
+      "weight_storage_digest": "a426d698a2e3c8104ad75c2734e9039b7bffcfa0afcacdf8250f81f32336e1da",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "reconstruction_v56": {
+          "native_name": "reconstruction_v56",
+          "native_digest": "b5a5604a1841365a8c4c95e330989ce0ca367e6c40ffc96afb9212d419ac2ce9",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated",
+            "adopted_permanent_symbols": true
+          }
+        },
+        "bf16_cast_v6_permanent": {
+          "native_name": "bf16_cast_v6_permanent",
+          "native_digest": "a0196fcac9da55e62045f551ad058d66eee544ee458521d3e5942ff3c5c0a6f1",
+          "validation": {
+            "passed": true,
+            "cases": 1,
+            "adopted_permanent_symbols": true
+          }
+        },
+        "reconstruction_v78": {
+          "native_name": "reconstruction_v78",
+          "native_digest": "77dc0fc05e503eab1fdccfd7f50e6ea9acd610688c16b135f8cebf22469f80d6",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        },
+        "reconstruction_v80": {
+          "native_name": "reconstruction_v80",
+          "native_digest": "bacfb4984053e4b609a1ae09a57d90ee90ca777b618058abdd089aa0d90a0b88",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 0,
+            "model_quality": "not_evaluated"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 0,
+        "max_compact_tokens": 0
+      },
+      "decode_selection": {
+        "swiglu": false,
+        "combine": true
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 516,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R5120:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R5120:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 258,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      },
+      "prefill_graph": {
+        "tokens": 640,
+        "scope": "single-request full prefill chunks; live attention/indexer eager boundaries",
+        "dispatches": 2,
+        "replays": 2,
+        "released_scratch_entries": 1,
+        "entries": [
+          {
+            "descriptor": "BatchDescriptor(num_tokens=640, num_reqs=None, uniform=False, has_lora=False, num_active_loras=0)",
+            "graphs": 46,
+            "eager_breaks": 45
+          }
+        ],
+        "free_memory_bytes": 2146238464
+      }
+    }
+  ]
+}

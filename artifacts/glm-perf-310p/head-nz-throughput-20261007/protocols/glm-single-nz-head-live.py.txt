@@ -1,0 +1,22 @@
+import sys,json,uuid,time,dataclasses
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+root=Path('/srv/ai/artifacts/glm-native-prefill-20261006')
+out=root/'graph-qualified-v56-single-nz-head-v1';out.mkdir(exist_ok=False)
+c=ResidentClient('http://127.0.0.1:8001',timeout=900)
+c.request('/pause?mode=wait&clear_cache=true')
+control=Control(uuid.uuid4().hex,candidate='single_nz_head_layout_prepare',source=Path('/tmp/glm-head-single-layout.py').read_text())
+prepared=c._acknowledged_rpc('resident_prepare',json.dumps(dataclasses.asdict(control)),matches=lambda rs:all(r.get('generation')==control.generation and r.get('digest')==control.digest for r in rs))
+(out/'layout-prepared.json').write_text(json.dumps(prepared,indent=2))
+source=(root/'graph-qualified-v56-v1/candidate.py').read_text()
+(out/'candidate.py').write_text(source)
+selected=c.switch(Control(uuid.uuid4().hex,candidate='native_v56_single_nz_head_prefill_graph',source=source))
+(out/'selected.json').write_text(json.dumps(selected,indent=2));c.resume()
+began=time.monotonic()
+response=c.request('/v1/completions',{'model':'glm53-flash-selective-w3','prompt':[42]*1280,'max_tokens':8,'temperature':0,'ignore_eos':True})
+after=c._acknowledged_rpc('resident_status',matches=lambda rs:c._status_matches(rs) and all(r.get('candidate')=='native_v56_single_nz_head_prefill_graph' and r.get('prefill_graph',{}).get('replays',0)>=2 for r in rs))
+assert all(not r['graphs_dirty'] and not r['native_failed'] and r['reconstruction']['fallback_dispatches']==0 for r in after)
+(out/'qualification.json').write_text(json.dumps(dict(complete=True,elapsed_s=time.monotonic()-began,response=response,after=after),indent=2))
+print('qualified single NZ head live',time.monotonic()-began,flush=True)

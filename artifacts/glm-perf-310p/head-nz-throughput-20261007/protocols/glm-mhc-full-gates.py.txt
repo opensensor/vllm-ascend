@@ -1,0 +1,53 @@
+import sys,json,importlib.util,hashlib,time,statistics
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+import torch,torch_npu
+from tools.glm_perf.resident_harness import ResidentClient
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006');build=root/'build-mhc-native-v1'
+spec=importlib.util.spec_from_file_location('mhc_helper',build/'mhc_post_native.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+output=root/'mhc-full-gates.json'
+assert not output.exists()
+c=ResidentClient('http://127.0.0.1:8001',timeout=900);c.request('/pause?mode=wait&clear_cache=false')
+try:
+ torch.set_num_threads(4);torch.npu.set_device(0);torch_npu.npu.set_compile_mode(jit_compile=False)
+ torch.ops.load_library(str(build/'glm_reconstruction_bridge_v76.so'))
+ native=module.NativeMhcPost(build,'glm_reconstruction_v76')
+ def reference(x,res,p,comb):
+  return (torch.einsum('nij,nih->njh',comb,res)+p*x.float().unsqueeze(1)).half().float()
+ records=[];generator=torch.Generator().manual_seed(7305)
+ start,end=torch.npu.Event(enable_timing=True),torch.npu.Event(enable_timing=True)
+ for dtype in (torch.float16,torch.float32):
+  for rows in (1,2,8,640):
+   x=torch.randn(rows,4096,generator=generator,dtype=dtype).npu()
+   r=torch.randn(rows,4,4096,generator=generator).half().float().npu()
+   p=torch.randn(rows,4,1,generator=generator).sigmoid().half().float().npu()
+   comb=torch.randn(rows,4,4,generator=generator).softmax(-1).half().float().npu()
+   expected=reference(x,r,p,comb).cpu();actual=native(x,r,p,comb).cpu()
+   torch.testing.assert_close(actual,expected,rtol=1e-3,atol=2e-6)
+   graph=torch.npu.NPUGraph()
+   with torch.npu.graph(graph):result=native(x,r,p,comb)
+   x.mul_(1.125);r.copy_((r*0.875).half().float());p.copy_((p*0.75).half().float());comb.copy_(comb.flip(-1).contiguous())
+   graph.replay();torch.npu.synchronize();updated=reference(x,r,p,comb).cpu()
+   torch.testing.assert_close(result.cpu(),updated,rtol=1e-3,atol=2e-6)
+   timings={}
+   for name,operation in (('reference',lambda:reference(x,r,p,comb)),('native',lambda:native(x,r,p,comb))):
+    samples=[]
+    for i in range(8):
+     start.record();value=operation();end.record();torch.npu.synchronize()
+     if i>=2:samples.append(start.elapsed_time(end))
+    timings[name]=dict(median_ms=statistics.median(samples),samples_ms=samples)
+   record=dict(input_dtype=str(dtype),rows=rows,passed=True,graph_changed_all_inputs=True,max_abs_delta=float((actual-expected).abs().max()),bitwise_equal=torch.equal(actual,expected),timings=timings)
+   records.append(record);print(record,flush=True)
+   (output).write_text(json.dumps(dict(complete=False,records=records),indent=2))
+ # A half-way FP32 input must survive until the final state round.
+ x=torch.full((1,4096),1+2**-11+2**-22,dtype=torch.float32,device='npu')
+ r=torch.zeros((1,4,4096),dtype=torch.float32,device='npu');r[:,0,:]=-0.5
+ p=torch.ones((1,4,1),dtype=torch.float32,device='npu')
+ comb=torch.zeros((1,4,4),dtype=torch.float32,device='npu');comb[:,0,:]=1
+ exact=reference(x,r,p,comb).cpu()
+ preserved=native(x,r,p,comb).cpu();unsafe=native(x.half(),r,p,comb).cpu()
+ assert torch.equal(preserved,exact) and not torch.equal(unsafe,exact)
+ print('FP32 half-way input preserved; early FP16 cast demonstrably changes state',flush=True)
+ names=('mhc_post_fp16.bin','mhc_post_fp32.bin','glm_reconstruction_bridge_v76.so','mhc_post_native.py')
+ (output).write_text(json.dumps(dict(complete=True,fp32_tie_input_preserved=True,records=records,assets={n:hashlib.sha256((build/n).read_bytes()).hexdigest() for n in names}),indent=2))
+finally:c.resume()

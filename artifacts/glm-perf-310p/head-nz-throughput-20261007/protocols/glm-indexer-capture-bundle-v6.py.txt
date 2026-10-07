@@ -1,0 +1,35 @@
+import sys,json,hashlib,shutil,os,importlib.util
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/src/glm-selective-w3-nz-test-20261004')
+import torch,torch_npu
+from tools.glm_perf.bf16_control import manifest
+from tools.glm_perf.native_checkpoint import write_json
+from vllm_ascend.models.glm5next.kpool_ops import compress_kpool
+root=Path('/home/matteius/experiments/glm-reconstruction-20261006');model=Path('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p')
+old=model/'indexer-kernels-v5';dest=model/'indexer-kernels-v6';stage=model/'indexer-kernels-v6.partial'
+gates=json.loads((root/'bf16-cold-capture-gates-v2.json').read_text());assert gates['complete'] and len(gates['records'])==18
+assert not stage.exists() and not dest.exists();shutil.copytree(old,stage,ignore=shutil.ignore_patterns('__pycache__','manifest.json','gates.json','compression-gates.json','fresh-process-gates.json'))
+shutil.copy2(root/'indexer-capture-helper-v2/bf16_cast.py',stage/'bf16_cast.py');assert hashlib.sha256((stage/'bf16_cast.py').read_bytes()).hexdigest()==gates['helper_sha256']
+options=json.loads((stage/'options.json').read_text());options['name']='bf16_cast_v6_permanent';write_json(stage/'options.json',options)
+def module(path,name):
+ spec=importlib.util.spec_from_file_location(name,path);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);return m
+helper=module(stage/'bf16_cast.py','capture_safe_bf16');candidate=module(stage/'candidate.py','capture_safe_candidate')
+torch.set_num_threads(4);torch.npu.set_device(0);torch_npu.npu.set_compile_mode(jit_compile=False);torch.ops.load_library(str(stage/options['bridge']))
+convert=helper.NativeBF16Cast(stage,options['namespace']);compress=candidate.replacements({'bf16_cast_v1':convert})['vllm_ascend.models.glm5next.sparse_attn_indexer_kpool:compress_kpool'];records=[]
+for rows in (1,2,8,640):
+ for dtype in (torch.float32,torch.bfloat16):
+  gen=torch.Generator().manual_seed(8600+rows)
+  keys=torch.randn(rows,4,128,generator=gen).to(dtype).npu();gates_value=torch.randn(rows,4,128,generator=gen).to(dtype).npu();ape=torch.randn(4,128,generator=gen).to(dtype).npu()
+  expected=compress_kpool(keys,gates_value,ape).cpu();actual=compress(keys,gates_value,ape).cpu();assert torch.equal(actual.view(torch.int16),expected.view(torch.int16)),(rows,dtype)
+  # A separate instance exercises descriptor creation on the first graph call.
+  cold=helper.NativeBF16Cast(stage,options['namespace']);cold_compress=candidate.replacements({'bf16_cast_v1':cold})['vllm_ascend.models.glm5next.sparse_attn_indexer_kpool:compress_kpool']
+  graph=torch.npu.NPUGraph()
+  with torch.npu.graph(graph):result=cold_compress(keys,gates_value,ape)
+  keys.zero_();graph.replay();torch.npu.synchronize();expected=compress_kpool(keys,gates_value,ape).cpu();assert torch.equal(result.cpu().view(torch.int16),expected.view(torch.int16))
+  records.append(dict(rows=rows,dtype=str(dtype),bitwise_equal=True,changed_input_replay=True,first_call_inside_capture=True));print(records[-1],flush=True)
+paths=('glm_bf16_cast.bin',options['bridge'],'bf16_cast.py','candidate.py');digests={p:hashlib.sha256((stage/p).read_bytes()).hexdigest() for p in paths}
+write_json(stage/'gates.json',dict(complete=True,records=gates['records'],binaries=digests));write_json(stage/'compression-gates.json',dict(complete=True,records=records,binaries=digests))
+os.rename(stage,dest);verified=manifest(dest);verified.verify_files();(dest/'manifest.json').write_text(verified.payload+'\n')
+before=json.loads((model/'native-layout.json').read_text());assert before['kernel_bundle']=='native-kernels-v56' and before['indexer_kernel_bundle']=='indexer-kernels-v5'
+after=dict(before,indexer_kernel_bundle='indexer-kernels-v6');write_json(model/'native-layout.json',after)
+(root/'indexer-capture-v6-publication.json').write_text(json.dumps(dict(complete=True,manifest=verified.value,weight_changes=0,binary_changes=0,before_indexer='indexer-kernels-v5',after_indexer='indexer-kernels-v6',helper_sha256=gates['helper_sha256']),indent=2));print('capture-safe indexer bundle published, exact kernels unchanged',flush=True)

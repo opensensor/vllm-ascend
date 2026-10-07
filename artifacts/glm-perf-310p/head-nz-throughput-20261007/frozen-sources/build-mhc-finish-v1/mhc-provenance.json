@@ -1,0 +1,38 @@
+{
+  "namespace": "glm_reconstruction_v77",
+  "version": 77,
+  "source_sha256": "6996b6f93f73d137232cba77e68daa15054b9d5c35e4b5b395ce65595b4ca4df",
+  "helper_sha256": "d8995b1a2887854a61105b237feaba30f61c2c090fd5fe02e01c10b97086dd53",
+  "binaries": {
+    "mhc_post_fp16.bin": {
+      "sha256": "27a711ae834490c88e530f4fab11c38a0f1234262076d4feb4e2b6d3c300f804",
+      "command": [
+        "/home/matteius/experiments/glm-reconstruction-20261006/build-mhc-finish-v1/compile-reconstruction",
+        "/home/matteius/experiments/glm-reconstruction-20261006/build-mhc-finish-v1/mhc_post_kernel.cpp",
+        "/home/matteius/experiments/glm-reconstruction-20261006/build-mhc-finish-v1/mhc_post_fp16.bin",
+        "--npu-arch=dav-2002",
+        "--sysroot=/usr/local/Ascend/cann-9.1.0/tools/hcc/sysroot",
+        "-isystem/usr/local/Ascend/cann-9.1.0/tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0",
+        "-isystem/usr/local/Ascend/cann-9.1.0/tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0/aarch64-target-linux-gnu",
+        "-DGLM_MHC_FINISH_ONLY"
+      ]
+    },
+    "mhc_post_fp32.bin": {
+      "sha256": "7f82da8868fcd85b5bbbb75c7a84bc4f1528f8a7414c21788f472ead95ab1775",
+      "command": [
+        "/home/matteius/experiments/glm-reconstruction-20261006/build-mhc-finish-v1/compile-reconstruction",
+        "/home/matteius/experiments/glm-reconstruction-20261006/build-mhc-finish-v1/mhc_post_kernel.cpp",
+        "/home/matteius/experiments/glm-reconstruction-20261006/build-mhc-finish-v1/mhc_post_fp32.bin",
+        "--npu-arch=dav-2002",
+        "--sysroot=/usr/local/Ascend/cann-9.1.0/tools/hcc/sysroot",
+        "-isystem/usr/local/Ascend/cann-9.1.0/tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0",
+        "-isystem/usr/local/Ascend/cann-9.1.0/tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0/aarch64-target-linux-gnu",
+        "-DGLM_MHC_FP32_INPUT",
+        "-DGLM_MHC_FINISH_ONLY"
+      ]
+    }
+  },
+  "state_rounding": "fp16_in_fp32_storage",
+  "fp32_input_preserved": true,
+  "finish_only": true
+}

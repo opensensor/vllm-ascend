@@ -1,0 +1,115 @@
+// SPDX-License-Identifier: Apache-2.0
+// Exact UB-only activation quantization; no activation-limb GM round-trip.
+#pragma once
+#include "kernel_operator.h"
+namespace GlmFusedQuant {
+using namespace AscendC;
+constexpr uint32_t GROUP = 32, BATCH = 8, LANES = 8, ELEMENTS = GROUP * BATCH;
+__aicore__ inline void Prepare(LocalTensor<uint32_t> offsets, LocalTensor<uint32_t> indices) {
+  // This geometry is invariant across rows, experts and output tiles.
+  for (uint32_t group = 0; group < BATCH; ++group)
+    for (uint32_t k = 0; k < 2 * GROUP; ++k)
+      offsets.SetValue(group * 2 * GROUP + k, (k >= (group % 2) * GROUP && k < (group % 2 + 1) * GROUP
+                                                   ? group * GROUP + k - (group % 2) * GROUP
+                                                   : ELEMENTS) *
+                                                  sizeof(half));
+  for (uint32_t i = 0; i < BATCH; ++i) indices.SetValue(i, i * 2 * sizeof(float));
+  PipeBarrier<PIPE_ALL>();
+}
+__aicore__ inline void Run(LocalTensor<uint8_t> storage, LocalTensor<half> padded, LocalTensor<uint32_t> offsets,
+                           LocalTensor<uint32_t> indices, int64_t activationBits) {
+  const float limit = activationBits == 4 ? 7.0f : 127.0f;
+  auto input = storage.ReinterpretCast<half>();
+  auto values = storage.ReinterpretCast<float>()[ELEMENTS];
+  auto temporary = storage.ReinterpretCast<float>()[2 * ELEMENTS];
+  auto quant = storage.ReinterpretCast<float>()[3 * ELEMENTS];
+  auto integers = storage.ReinterpretCast<int32_t>()[4 * ELEMENTS];
+  auto limb = storage.ReinterpretCast<half>()[10 * ELEMENTS];
+  auto packed = storage.ReinterpretCast<int8_t>()[24 * ELEMENTS];
+  auto high = packed[ELEMENTS];
+  auto pairs = storage.ReinterpretCast<float>()[7 * ELEMENTS];
+  auto maxima = pairs[2 * BATCH];
+  auto scales = maxima[LANES];
+  auto ones = scales[LANES];
+  auto broadcast = ones[LANES];
+  Duplicate(limb[ELEMENTS], static_cast<half>(0), GROUP);
+  PipeBarrier<PIPE_ALL>();
+  Cast(values, input, RoundMode::CAST_NONE, ELEMENTS);
+  PipeBarrier<PIPE_V>();
+  Abs(temporary, values, ELEMENTS);
+  PipeBarrier<PIPE_V>();
+  WholeReduceMax(pairs, temporary, GROUP, BATCH, 1, 1, GROUP / LANES, ReduceOrder::ORDER_VALUE_INDEX);
+  PipeBarrier<PIPE_V>();
+  Gather(maxima, pairs, indices, static_cast<uint32_t>(0), LANES);
+  Duplicate(ones, limit, LANES);
+  PipeBarrier<PIPE_V>();
+  Div(scales, maxima, ones, LANES);
+  PipeBarrier<PIPE_V>();
+  Muls(ones, maxima, 16777216.0f, LANES);
+  PipeBarrier<PIPE_V>();
+  Mins(ones, ones, 1.0f, LANES);
+  PipeBarrier<PIPE_V>();
+  Muls(ones, ones, -1.0f, LANES);
+  PipeBarrier<PIPE_V>();
+  Adds(ones, ones, 1.0f, LANES);
+  PipeBarrier<PIPE_V>();
+  Add(scales, scales, ones, LANES);
+  PipeBarrier<PIPE_V>();
+  Brcb(broadcast, scales, 1, {1, 8});
+  PipeBarrier<PIPE_V>();
+  Div(quant, values, broadcast, GROUP, BATCH, {1, 1, 0, GROUP / LANES, GROUP / LANES, 1});
+  PipeBarrier<PIPE_V>();
+  Cast(integers, quant, RoundMode::CAST_RINT, ELEMENTS);
+  PipeBarrier<PIPE_V>();
+  if (activationBits == 4) {
+    // The rounded codes are exactly representable in half. The 310P direct
+    // INT32->half instruction uses DEQSCALE; unity preserves their integers.
+    SetDeqScale(static_cast<half>(1));
+    Cast(limb, integers, RoundMode::CAST_NONE, ELEMENTS);
+    PipeBarrier<PIPE_V>();
+    Mins(limb, limb, static_cast<half>(7), ELEMENTS);
+    PipeBarrier<PIPE_V>();
+    Maxs(limb, limb, static_cast<half>(-7), ELEMENTS);
+    PipeBarrier<PIPE_V>();
+    Gather(padded, limb, offsets, static_cast<uint32_t>(0), 2 * ELEMENTS);
+    PipeBarrier<PIPE_V>();
+    Cast(packed.ReinterpretCast<int4b_t>(), padded, RoundMode::CAST_NONE, 2 * ELEMENTS);
+    PipeBarrier<PIPE_ALL>();
+    return;
+  }
+  Cast(quant, integers, RoundMode::CAST_NONE, ELEMENTS);
+  PipeBarrier<PIPE_V>();
+  Mins(quant, quant, limit, ELEMENTS);
+  PipeBarrier<PIPE_V>();
+  Maxs(quant, quant, -limit, ELEMENTS);
+  PipeBarrier<PIPE_V>();
+  Muls(temporary, quant, 1.0f / 16.0f, ELEMENTS);
+  PipeBarrier<PIPE_V>();
+  Cast(integers, temporary, RoundMode::CAST_FLOOR, ELEMENTS);
+  PipeBarrier<PIPE_V>();
+  Cast(temporary, integers, RoundMode::CAST_NONE, ELEMENTS);
+  PipeBarrier<PIPE_V>();
+  Cast(limb, temporary, RoundMode::CAST_NONE, ELEMENTS);
+  PipeBarrier<PIPE_V>();
+  Gather(padded, limb, offsets, static_cast<uint32_t>(0), 2 * ELEMENTS);
+  PipeBarrier<PIPE_V>();
+  Cast(packed.ReinterpretCast<int4b_t>(), padded, RoundMode::CAST_NONE, 2 * ELEMENTS);
+  PipeBarrier<PIPE_ALL>();
+  Adds(high.ReinterpretCast<int16_t>(), packed.ReinterpretCast<int16_t>(), static_cast<int16_t>(0), ELEMENTS / 2);
+  PipeBarrier<PIPE_ALL>();
+  Muls(temporary, temporary, -16.0f, ELEMENTS);
+  PipeBarrier<PIPE_V>();
+  Add(temporary, quant, temporary, ELEMENTS);
+  PipeBarrier<PIPE_V>();
+  Adds(temporary, temporary, -8.0f, ELEMENTS);
+  PipeBarrier<PIPE_V>();
+  Cast(limb, temporary, RoundMode::CAST_NONE, ELEMENTS);
+  PipeBarrier<PIPE_V>();
+  Gather(padded, limb, offsets, static_cast<uint32_t>(0), 2 * ELEMENTS);
+  PipeBarrier<PIPE_V>();
+  Cast(packed.ReinterpretCast<int4b_t>(), padded, RoundMode::CAST_NONE, 2 * ELEMENTS);
+  PipeBarrier<PIPE_ALL>();
+
+  PipeBarrier<PIPE_ALL>();
+}
+}  // namespace GlmFusedQuant
