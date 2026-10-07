@@ -36,11 +36,6 @@ constexpr uint32_t L1_WEIGHT_BYTES = CACHED_PROJECTION_BYTES;
 #endif
 constexpr uint32_t A_BYTES = M * K0 / 2, B_BYTES = N * K0 / 2;
 constexpr uint32_t ELEMENTS = M * N, LANES = 8;
-#ifdef GLM_RAW_HIDDEN_SCALES
-constexpr uint32_t DOWN_SCALE_ROW_LANES = N / GROUP;
-#else
-constexpr uint32_t DOWN_SCALE_ROW_LANES = LANES;
-#endif
 #ifdef GLM_NATIVE_WIDE_CUBE_K
 constexpr uint32_t WIDE_CUBE_K = GLM_NATIVE_WIDE_CUBE_K;
 static_assert(WIDE_CUBE_K == 128 || WIDE_CUBE_K == 256, "wide native Cube uses K128 or K256");
@@ -332,7 +327,7 @@ class Projection {
     for (uint32_t group = 0; group < MAX_K_GROUPS; ++group) {
 #if defined(GLM_COMPACT_DOWN_SCALES) && !defined(GLM_FUSED_GATE_UP)
       if (tokens_ > BULK_TOKENS && activationBits_ == 4)
-        indices.SetValue(group, (group / (N / GROUP) * M * DOWN_SCALE_ROW_LANES + group % (N / GROUP)) * sizeof(float));
+        indices.SetValue(group, (group / (N / GROUP) * M * LANES + group % (N / GROUP)) * sizeof(float));
       else
 #endif
         indices.SetValue(group, group * LANES * sizeof(float));
@@ -943,11 +938,11 @@ class Projection {
         // Product readback scratch is dead until the first Cube operation.
         // Copy one tile-major scale bank, then gather each active row.
         auto compact = Products<float>();
-        const uint32_t elements = groups / (N / GROUP) * M * DOWN_SCALE_ROW_LANES;
+        const uint32_t elements = groups / (N / GROUP) * M * LANES;
         DataCopy(compact, xs_[prepackedBatch_ * elements], elements);
         PipeBarrier<PIPE_ALL>();
         for (uint32_t m = 0; m < count; ++m) {
-          Gather(sx[m * MAX_K_GROUPS], compact[m * DOWN_SCALE_ROW_LANES], indices, static_cast<uint32_t>(0), groups);
+          Gather(sx[m * MAX_K_GROUPS], compact[m * LANES], indices, static_cast<uint32_t>(0), groups);
           PipeBarrier<PIPE_V>();
         }
         PipeBarrier<PIPE_ALL>();
@@ -1143,21 +1138,17 @@ class Projection {
                                            int64_t tile, uint32_t group, uint32_t m) {
 #ifdef GLM_COMPACT_DOWN_SCALES
     if (tokens_ > BULK_TOKENS && activationBits_ == 4) {
-  #ifdef GLM_RAW_HIDDEN_SCALES
-      return;  // Four-row quantization writes its scalar scales as one aligned copy.
-  #else
-        if (group) return;  // The tile's first group writes all four scales once.
-        auto compact = outputRow_.Get<float>();
-        Duplicate(compact, 0.0f, LANES);
-        PipeBarrier<PIPE_V>();
-        auto indices = activationScales_.Get<uint32_t>()[(M + LANES) * MAX_K_GROUPS];
-        Gather(compact, scales[sourceGroup * LANES], indices, static_cast<uint32_t>(0), N / GROUP);
-        PipeBarrier<PIPE_ALL>();
-        const int64_t destination = (prepackedBatch_ * (n_ / 2 / N) + tile) * M * LANES + m * LANES;
-        DataCopy(xs_[destination], compact, LANES);
-        PipeBarrier<PIPE_ALL>();
-        return;
-  #endif
+      if (group) return;  // The tile's first group writes all four scales once.
+      auto compact = outputRow_.Get<float>();
+      Duplicate(compact, 0.0f, LANES);
+      PipeBarrier<PIPE_V>();
+      auto indices = activationScales_.Get<uint32_t>()[(M + LANES) * MAX_K_GROUPS];
+      Gather(compact, scales[sourceGroup * LANES], indices, static_cast<uint32_t>(0), N / GROUP);
+      PipeBarrier<PIPE_ALL>();
+      const int64_t destination = (prepackedBatch_ * (n_ / 2 / N) + tile) * M * LANES + m * LANES;
+      DataCopy(xs_[destination], compact, LANES);
+      PipeBarrier<PIPE_ALL>();
+      return;
     }
 #endif
     DataCopy(xs_[offset * LANES], scales[sourceGroup * LANES], LANES);
@@ -1259,18 +1250,6 @@ class Projection {
   #endif
       }
       Quantize();
-  #ifdef GLM_RAW_HIDDEN_SCALES
-      if (tokens_ > BULK_TOKENS && activationBits_ == 4) {
-        static_assert(QUANT_ROWS_PER_BATCH == 4, "raw scale copy requires four-row quantization");
-        // The quantizer retains all sixteen scalar FP32 scales. Four rows
-        // form one aligned copy, including a defined partial-tail padding row.
-        const int64_t destination =
-            (prepackedBatch_ * (n_ / 2 / N) + tile) * M * DOWN_SCALE_ROW_LANES + m * DOWN_SCALE_ROW_LANES;
-        DataCopy(xs_[destination], ProductTemporary<float>()[GlmFusedQuant::SCALAR_SCALE_OFFSET],
-                 QUANT_ROWS_PER_BATCH * DOWN_SCALE_ROW_LANES);
-        PipeBarrier<PIPE_ALL>();
-      }
-  #endif
       auto packed = ProductTemporary<int8_t>()[24 * GlmFusedQuant::ELEMENTS];
       auto scales = ProductTemporary<float>()[GlmFusedQuant::BROADCAST_OFFSET];
       for (uint32_t part = 0; part < QUANT_ROWS_PER_BATCH && m + part < count; ++part)

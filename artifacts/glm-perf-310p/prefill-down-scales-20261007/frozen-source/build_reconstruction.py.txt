@@ -58,7 +58,6 @@ def build(
     route_packed_input=False,
     route_packed_down=False,
     route_compact_down_scales=False,
-    raw_hidden_scales=False,
 ):
     """Freeze helper sources and compile a unique, append-only native version."""
     if type(version) is not int or version < 1 or output_columns not in (16, 32, 64, 128):
@@ -78,7 +77,6 @@ def build(
             route_packed_input,
             route_packed_down,
             route_compact_down_scales,
-            raw_hidden_scales,
         )
     ):
         raise ValueError("prefill experiment flags must be boolean")
@@ -160,8 +158,6 @@ def build(
         raise ValueError("packed down input requires routed input packing")
     if route_compact_down_scales and not route_packed_down:
         raise ValueError("compact down scales require packed down input")
-    if raw_hidden_scales and not (route_compact_down_scales and quad_hidden_quant):
-        raise ValueError("raw hidden scales require compact down scales and four-row quantization")
     namespace = f"glm_reconstruction_v{version}"
     build_dir = build_dir.resolve()
     build_dir.mkdir(parents=True, exist_ok=False)
@@ -235,7 +231,6 @@ def build(
             "route_packed_input": route_packed_input,
             "route_packed_down": route_packed_down,
             "route_compact_down_scales": route_compact_down_scales,
-            "raw_hidden_scales": raw_hidden_scales,
             "weight_decode_lut": weight_decode_lut,
             "wide_cube_k": wide_cube_k,
             "pair_prefill_scale_groups": pair_prefill_scale_groups,
@@ -301,7 +296,6 @@ def build(
                     *(["-DGLM_ROUTE_PACKED_INPUT"] if stage == "gate_up" and route_packed_input else []),
                     *(["-DGLM_ROUTE_PACKED_DOWN"] if route_packed_down else []),
                     *(["-DGLM_COMPACT_DOWN_SCALES"] if route_compact_down_scales else []),
-                    *(["-DGLM_RAW_HIDDEN_SCALES"] if raw_hidden_scales else []),
                     *(["-DGLM_DIRECT_HIDDEN_GATHER"] if stage == "gate_up" and direct_hidden_gather else []),
                     *(["-DGLM_SHARE_GATE_UP_INPUT"] if stage == "gate_up" and share_gate_up_input else []),
                     *(["-DGLM_CACHE_GATE_UP_ACTIVATIONS"] if stage == "gate_up" and cache_gate_up_activations else []),
@@ -468,11 +462,6 @@ def main():
         action="store_true",
         help="write four FP32 hidden scales per tile row and bulk-load them in down",
     )
-    parser.add_argument(
-        "--raw-hidden-scales",
-        action="store_true",
-        help="copy scalar FP32 scales from four-row quantizer directly to the down bank",
-    )
     args = parser.parse_args()
     print(
         build(
@@ -508,7 +497,6 @@ def main():
             args.route_packed_input,
             args.route_packed_down,
             args.route_compact_down_scales,
-            args.raw_hidden_scales,
         )
     )
 

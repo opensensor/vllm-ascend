@@ -96,12 +96,10 @@ def route_down_shape(geometry):
     return packed[0], geometry.intermediate // 64, ROUTE_INPUT_PAIR_BYTES
 
 
-def route_down_scale_shape(geometry, row_lanes=8):
+def route_down_scale_shape(geometry):
     """Four independent FP32 scales plus DMA padding per N128 tile row."""
-    if row_lanes not in (4, 8):
-        raise ValueError("down scale row requires four scalar or eight padded lanes")
     packed, _ = route_input_shapes(geometry)
-    return packed[0], geometry.intermediate // 128, ROUTE_INPUT_ROWS, row_lanes
+    return packed[0], geometry.intermediate // 128, ROUTE_INPUT_ROWS, 8
 
 
 def weight_decode_table():
@@ -156,12 +154,6 @@ class NativeFusedMoE:
             raise ValueError("packed down input flag must be boolean")
         if type(options.get("route_compact_down_scales", False)) is not bool:
             raise ValueError("compact down scales flag must be boolean")
-        if type(options.get("raw_hidden_scales", False)) is not bool:
-            raise ValueError("raw hidden scales flag must be boolean")
-        if options.get("raw_hidden_scales") and not (
-            options.get("route_compact_down_scales") and options.get("quad_hidden_quant")
-        ):
-            raise ValueError("raw hidden scales require compact down scales and four-row quantization")
         if options.get("route_compact_down_scales") and not options.get("route_packed_down"):
             raise ValueError("compact down scales require packed down input")
         if options.get("route_packed_down") and not options.get("route_packed_input"):
@@ -181,7 +173,6 @@ class NativeFusedMoE:
         self.gate_kernel = factory(str(root / "glm_fused_gate_up.bin"), "glm_fused_gate_up_v1")
         self.down_kernel = factory(str(root / "glm_fused_down.bin"), "glm_fused_down_v1")
         self.pack_kernel = factory(str(root / "glm_fused_pack.bin"), "glm_fused_pack_v1")
-        self.raw_hidden_scales = options.get("raw_hidden_scales", False)
         self.route_compact_down_scales = options.get("route_compact_down_scales", False)
         self.route_packed_down = options.get("route_packed_down", False)
         self.route_packed_input = options.get("route_packed_input", False)
@@ -384,7 +375,7 @@ class NativeFusedMoE:
             and geometry.tokens > FUSED_REDUCTION_TOKENS
             and geometry.activation_bits == 4
         ):
-            return route_down_scale_shape(geometry, 4 if getattr(self, "raw_hidden_scales", False) else 8)
+            return route_down_scale_shape(geometry)
         return geometry.tokens * geometry.top_k, geometry.intermediate // 32, 8
 
     def allocate_scratch(self, geometry):

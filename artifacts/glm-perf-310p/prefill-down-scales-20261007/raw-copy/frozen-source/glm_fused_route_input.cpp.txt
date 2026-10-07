@@ -1,0 +1,82 @@
+// SPDX-License-Identifier: Apache-2.0
+// Gather each routed INT4 row and its scales once, before all output tiles.
+#include "kernel_operator.h"
+#include "glm_route_input_layout.h"
+namespace {
+using namespace AscendC;
+using namespace GlmRouteInput;
+class RouteInput {
+ public:
+  __aicore__ inline void Run(GM_ADDR low, GM_ADDR scales, GM_ADDR order, GM_ADDR ends, GM_ADDR packed,
+                             GM_ADDR compactScales, const __gm__ int64_t* config) {
+    const int64_t routes = config[0], experts = config[1], groups = config[3] / ROW_BYTES, topK = config[7];
+    if (config[5] != 4 || config[6] <= 16 || groups <= 0 || groups > MAX_GROUPS || groups % 8 || topK <= 0) return;
+    low_.SetGlobalBuffer(reinterpret_cast<__gm__ int8_t*>(low));
+    scales_.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(scales));
+    order_.SetGlobalBuffer(reinterpret_cast<__gm__ int64_t*>(order));
+    ends_.SetGlobalBuffer(reinterpret_cast<__gm__ int64_t*>(ends));
+    packed_.SetGlobalBuffer(reinterpret_cast<__gm__ int8_t*>(packed));
+    compact_.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(compactScales));
+    pipe_.InitBuffer(tile_, PAIR_BYTES);
+    pipe_.InitBuffer(scaleRows_, ROWS * MAX_GROUPS * sizeof(float));
+    pipe_.InitBuffer(scaleInput_, MAX_GROUPS * 8 * sizeof(float));
+    pipe_.InitBuffer(indices_, MAX_GROUPS * sizeof(uint32_t));
+    for (uint32_t group = 0; group < MAX_GROUPS; ++group)
+      indices_.Get<uint32_t>().SetValue(group, group * 8 * sizeof(float));
+    PipeBarrier<PIPE_ALL>();
+    int64_t first = 0;
+    for (int64_t expert = 0; expert < experts; ++expert) {
+      const int64_t end = ends_.GetValue(expert);
+      if (end < first || end > routes) return;
+      for (int64_t row = first; row < end; row += ACTIVE_ROWS) {
+        const uint32_t count = end - row < ACTIVE_ROWS ? end - row : ACTIVE_ROWS;
+        const int64_t slot = first / ACTIVE_ROWS + expert + (row - first) / ACTIVE_ROWS;
+        for (uint32_t m = 0; m < count; ++m) tokens_[m] = order_.GetValue(row + m) / topK;
+        if ((slot * (groups / 2)) % GetBlockNum() == GetBlockIdx()) {
+          auto sx = scaleRows_.Get<float>();
+          Duplicate(sx, 0.0f, ROWS * MAX_GROUPS);
+          PipeBarrier<PIPE_ALL>();
+          for (uint32_t m = 0; m < count; ++m) {
+            DataCopy(scaleInput_.Get<float>(), scales_[tokens_[m] * groups * 8], groups * 8);
+            PipeBarrier<PIPE_ALL>();
+            Gather(sx[m * MAX_GROUPS], scaleInput_.Get<float>(), indices_.Get<uint32_t>(), static_cast<uint32_t>(0),
+                   groups);
+            PipeBarrier<PIPE_ALL>();
+          }
+          DataCopy(compact_[slot * ROWS * MAX_GROUPS], sx, ROWS * MAX_GROUPS);
+          PipeBarrier<PIPE_ALL>();
+        }
+        for (int64_t pair = 0; pair < groups / 2; ++pair) {
+          const int64_t task = slot * (groups / 2) + pair;
+          if (task % GetBlockNum() != GetBlockIdx()) continue;
+          auto values = tile_.Get<int8_t>();
+          Duplicate(values.ReinterpretCast<int16_t>(), static_cast<int16_t>(0), PAIR_BYTES / sizeof(int16_t));
+          PipeBarrier<PIPE_ALL>();
+          for (uint32_t part = 0; part < 2; ++part)
+            for (uint32_t m = 0; m < count; ++m)
+              DataCopy(values[(part * count + m) * ROW_BYTES],
+                       low_[(tokens_[m] * groups + pair * 2 + part) * ROW_BYTES], ROW_BYTES);
+          PipeBarrier<PIPE_ALL>();
+          DataCopy(packed_[task * PAIR_BYTES], values, PAIR_BYTES);
+          PipeBarrier<PIPE_ALL>();
+        }
+      }
+      first = end;
+    }
+  }
+
+ private:
+  TPipe pipe_;
+  TBuf<TPosition::VECCALC> tile_, scaleRows_, scaleInput_, indices_;
+  GlobalTensor<int8_t> low_, packed_;
+  GlobalTensor<float> scales_, compact_;
+  GlobalTensor<int64_t> order_, ends_;
+  int64_t tokens_[ACTIVE_ROWS];
+};
+}  // namespace
+extern "C" __global__ __aicore__ void glm_fused_route_input_v1(GM_ADDR low, GM_ADDR scales, GM_ADDR order, GM_ADDR ends,
+                                                               GM_ADDR packed, GM_ADDR compactScales, GM_ADDR tiling) {
+  AscendC::InitSocState();
+  RouteInput operation;
+  operation.Run(low, scales, order, ends, packed, compactScales, reinterpret_cast<__gm__ int64_t*>(tiling));
+}

@@ -9,8 +9,7 @@ using namespace AscendC;
 #endif
 constexpr uint32_t GROUP = 32, BATCH = GLM_HIDDEN_QUANT_BATCH, LANES = 8, ELEMENTS = GROUP * BATCH;
 static_assert(BATCH == 8 || BATCH == 16, "quantize eight or sixteen independent block32 groups");
-constexpr uint32_t SCALAR_SCALE_OFFSET = 7 * ELEMENTS + 3 * BATCH;
-constexpr uint32_t BROADCAST_OFFSET = SCALAR_SCALE_OFFSET + 2 * BATCH;
+constexpr uint32_t BROADCAST_OFFSET = 7 * ELEMENTS + 5 * BATCH;
 static_assert((BROADCAST_OFFSET + BATCH * LANES) * sizeof(float) <= 16384,
               "quantizer exceeds the existing 16 KiB temporary allocation");
 __aicore__ inline void Prepare(LocalTensor<uint32_t> offsets, LocalTensor<uint32_t> indices) {

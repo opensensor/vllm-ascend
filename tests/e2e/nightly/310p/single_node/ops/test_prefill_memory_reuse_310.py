@@ -49,6 +49,8 @@ def bundles(pytestconfig):
         "direct_hidden_gather",
         "route_packed_input",
         "route_packed_down",
+        "route_compact_down_scales",
+        "raw_hidden_scales",
     )
     assert any(candidate[1].get(flag, False) != baseline[1].get(flag, False) for flag in flags)
     assert baseline[1]["namespace"] != candidate[1]["namespace"]
