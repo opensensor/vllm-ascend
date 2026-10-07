@@ -1,0 +1,119 @@
+import hashlib,json,re,signal,statistics,sys,time,urllib.request,uuid
+from dataclasses import replace
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+sys.path.insert(0,str(root/'source-v2'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.fused_moe_control import manifest
+from tools.glm_perf.suite import make_groups,run_groups,summarize
+client=ResidentClient('http://127.0.0.1:8001',timeout=900)
+version=int(sys.argv[1])
+out=root/f'v{version}-prefill-live.json'
+if out.exists(): raise FileExistsError(out)
+log=Path('/home/matteius/experiments/glm-reconstruction-20261006/serve-native-disk-head-nz-recovery-20261007-v2.log')
+log_start=log.stat().st_size
+baseline=(root/'v903-candidate.py').read_text()
+candidate=baseline.replace('reconstruction_v903',f'reconstruction_v{version}')
+compile(candidate,'input reuse candidate','exec')
+(root/f'v{version}-candidate.py').write_text(candidate)
+identity=None
+best='native_v903_prefill_graph'
+result={'complete':False,'candidate_version':version,'scope':'real model; synthetic token-id cold prompts; prefix cleared before every cold request','trials':[],'records':[]}
+
+def save(): out.write_text(json.dumps(result,indent=2)+'\n')
+def status():
+ rows=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+ if identity is not None:
+  assert sorted((r['rank'],r['pid'],r['weight_storage_digest']) for r in rows)==identity
+ assert all(not r['graphs_dirty'] and not r['native_failed'] and r['reconstruction']['fallback_dispatches']==0 for r in rows)
+ return rows
+
+def idle():
+ with urllib.request.urlopen(client.base_url+'/metrics',timeout=30) as response: metrics=response.read().decode()
+ values=[float(value) for value in re.findall(r'^vllm:num_requests_(?:running|waiting)(?:\{[^\n]*\})?\s+([0-9.eE+-]+)$',metrics,re.M)]
+ assert values and not any(values),'external request running; stop comparisons'
+ return metrics
+
+def select(name,source):
+ idle()
+ client.switch(Control(uuid.uuid4().hex,candidate=name,source=source))
+ client.resume()
+ print('selected',name,'same workers and weights',flush=True)
+
+def cold(name,tokens):
+ before_metrics=idle()
+ assert client.request('/pause?mode=wait&clear_cache=true')['status']=='paused'
+ client.resume()
+ workers_before=status()
+ payload={'model':'glm53-flash-selective-w3','prompt':[42]*tokens,'max_tokens':8,'temperature':0,'seed':42,'ignore_eos':True,'stream':True,'stream_options':{'include_usage':True}}
+ request=urllib.request.Request(client.base_url+'/v1/completions',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
+ started=time.monotonic();first=None;events=[];done=False
+ with urllib.request.urlopen(request,timeout=900) as response:
+  for raw in response:
+   if not raw.startswith(b'data:'): continue
+   data=raw[5:].strip()
+   if data==b'[DONE]': done=True;break
+   event=json.loads(data);assert 'error' not in event
+   events.append(event)
+   if any(choice.get('text') for choice in event.get('choices',[])) and first is None: first=time.monotonic()
+ ended=time.monotonic()
+ usage=next((e['usage'] for e in reversed(events) if e.get('usage')),None)
+ assert done and first is not None and usage['prompt_tokens']==tokens and usage['completion_tokens']==8
+ row={'candidate':name,'tokens':tokens,'ttft_s':first-started,'elapsed_s':ended-started,'usage':usage,'events':events,'workers_before':workers_before,'workers_after':status(),'metrics_before':before_metrics,'metrics_after':idle()}
+ result['trials'].append(row);save()
+ print(name,tokens,'TTFT',row['ttft_s'],'total',row['elapsed_s'],flush=True)
+
+def stop(signum,frame): raise KeyboardInterrupt('live controller interrupted')
+signal.signal(signal.SIGINT,stop);signal.signal(signal.SIGTERM,stop)
+try:
+ idle();before=status();result['before']=before
+ assert all(r['candidate']=='native_v903_prefill_graph' and r['digest']==hashlib.sha256(baseline.encode()).hexdigest() for r in before)
+ identity=sorted((r['rank'],r['pid'],r['weight_storage_digest']) for r in before)
+ result['loaded']=client.load_native(manifest(root/f'build-v{version}',root/f'v{version}-gates.json'));save()
+ # Keep the same graph path, model, context settings and token IDs. Every
+ # request is cold; API TTFT excludes the subsequent decode tail.
+ for name,source in (('native_v903_prefill_graph',baseline),(f'native_v{version}_prefill_graph',candidate)):
+  select(name,source)
+  for tokens in (1280,1280,2560): cold(name,tokens)
+ # Bracket the candidate with another cold comparison to expose time drift.
+ select('native_v903_prefill_graph',baseline);cold('native_v903_prefill_graph',1280)
+ select(f'native_v{version}_prefill_graph',candidate);cold(f'native_v{version}_prefill_graph',1280)
+ groups=[(n,[replace(case,max_tokens=64) for case in cases]) for n,cases in make_groups(['short'],[])]
+ quality=[case for _,cases in make_groups(['quality'],[]) for case in cases]
+ groups += [(f'quality_4_{i//4}',[replace(case,max_tokens=128) for case in quality[i:i+4]]) for i in range(0,len(quality),4)]
+ groups += make_groups(['tool'],[])
+ for name,cases in groups:
+  idle()
+  rows=run_groups([(name,cases)],client.base_url,'glm53-flash-selective-w3',42,timeout_s=900)
+  result['records'].extend(rows);result['summary']=summarize(result['records']);save()
+  print(name,json.dumps(summarize(rows)),flush=True)
+  assert all(r['valid'] for r in rows)
+ medians={name:statistics.median(r['ttft_s'] for r in result['trials'] if r['candidate']==name and r['tokens']==1280) for name in ('native_v903_prefill_graph',f'native_v{version}_prefill_graph')}
+ result['cold1280_median_ttft_s']=medians
+ prior_run=json.loads((root/'v903-live.json').read_text());prior=prior_run['summary']
+ result['reference_suite']=prior
+ # Resident experiment only: retain the faster candidate if the same quality
+ # gate is not worse. Its known baseline failures still prevent publication.
+ current=result['summary']
+ result['retention_checks']={'cold_prefill_faster':medians[f'native_v{version}_prefill_graph']<medians['native_v903_prefill_graph'],'all_requests_valid':all(r['valid'] for r in result['records'])}
+ print('SUMMARY',json.dumps(current),flush=True)
+ checks=result['retention_checks']
+ checks['quality_not_worse']=sum(r['passed'] for r in result['records'] if r['group_id'].startswith('quality_')) >= sum(r['passed'] for r in prior_run['records'] if r['group_id'].startswith('quality_'))
+ checks['tool_passed']=all(r['passed'] for r in result['records'] if r['group_id']=='tool')
+ checks['c1_not_slower']=current['groups']['short_1']['aggregate_decode_tokens_per_s'] >= prior['groups']['short_1']['aggregate_decode_tokens_per_s']
+ checks['c4_not_slower']=current['groups']['short_4']['aggregate_decode_tokens_per_s'] >= prior['groups']['short_4']['aggregate_decode_tokens_per_s']
+ result['after']=status();result['complete']=True;save()
+ if all(result['retention_checks'].values()): best=f'native_v{version}_prefill_graph'
+finally:
+ rows=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+ if not any(r.get('native_failed') for r in rows):
+  if any(r['candidate']!=best or r['graphs_dirty'] for r in rows):
+   client.switch(Control(uuid.uuid4().hex,candidate=best,source=candidate if best!= 'native_v903_prefill_graph' else baseline))
+  client.resume()
+ result['final']=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+ result['pause_state']=client.request('/is_paused',method='GET');save()
+ with log.open('rb') as stream:
+  stream.seek(log_start)
+  (root/f'v{version}-prefill-live-server.log').write_bytes(stream.read())
+ print('final',best,'paused',result['pause_state'],flush=True)

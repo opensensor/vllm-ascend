@@ -341,6 +341,8 @@ def test_fused_wrapper_counts_rejected_bank_as_fallback():
         {"prefill_weight_cache": True},
         {"fp16_route_workspace": True},
         {"prefill_weight_cache": True, "fp16_route_workspace": True},
+        {"share_gate_up_input": True},
+        {"share_gate_up_input": True, "cache_gate_up_activations": True},
     ],
 )
 def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_path, specialize_w3, prefill_options):

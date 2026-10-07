@@ -1,0 +1,3458 @@
+[
+  {
+    "pid": 2827551,
+    "rank": 0,
+    "generation": "ab0f875ff9564d22939ecf3133980aa3",
+    "mode": "graph",
+    "candidate": "native_v903_prefill_graph",
+    "digest": "10ca006641a78ee16ed38a62aaea522a114086986d32dc75d8786c7c7b2897b1",
+    "graphs_dirty": false,
+    "weight_storage_digest": "8e0c43d7dcba62ecc5e77993b19d68f979874e7fd72ff125f8aeb93446df3c34",
+    "native_failed": false,
+    "native_loaded": {
+      "sinkhorn_normalize_v1": {
+        "native_name": "sinkhorn_normalize_v1",
+        "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+        "validation": {
+          "passed": true,
+          "exact_fp32": true,
+          "cases": 20,
+          "order": 2
+        }
+      },
+      "reconstruction_v56": {
+        "native_name": "reconstruction_v56",
+        "native_digest": "b5a5604a1841365a8c4c95e330989ce0ca367e6c40ffc96afb9212d419ac2ce9",
+        "validation": {
+          "passed": true,
+          "cases": 12,
+          "native_fused_stages": 2,
+          "input_quantization_passes_per_token": 1,
+          "fp16_intermediate_gm_bytes": 0,
+          "model_quality": "not_evaluated",
+          "adopted_permanent_symbols": true
+        }
+      },
+      "bf16_cast_v6_permanent": {
+        "native_name": "bf16_cast_v6_permanent",
+        "native_digest": "a0196fcac9da55e62045f551ad058d66eee544ee458521d3e5942ff3c5c0a6f1",
+        "validation": {
+          "passed": true,
+          "cases": 1,
+          "adopted_permanent_symbols": true
+        }
+      },
+      "reconstruction_v78": {
+        "native_name": "reconstruction_v78",
+        "native_digest": "77dc0fc05e503eab1fdccfd7f50e6ea9acd610688c16b135f8cebf22469f80d6",
+        "validation": {
+          "passed": true,
+          "cases": 12,
+          "native_fused_stages": 2,
+          "input_quantization_passes_per_token": 1,
+          "fp16_intermediate_gm_bytes": 0,
+          "model_quality": "not_evaluated"
+        }
+      },
+      "reconstruction_v80": {
+        "native_name": "reconstruction_v80",
+        "native_digest": "bacfb4984053e4b609a1ae09a57d90ee90ca777b618058abdd089aa0d90a0b88",
+        "validation": {
+          "passed": true,
+          "cases": 12,
+          "native_fused_stages": 2,
+          "input_quantization_passes_per_token": 1,
+          "fp16_intermediate_gm_bytes": 0,
+          "model_quality": "not_evaluated"
+        }
+      },
+      "reconstruction_v903": {
+        "native_name": "reconstruction_v903",
+        "native_digest": "49440169ec165370721b20fdba5cdb813dcf4872fb8d310bb360b97cf8a15e51",
+        "validation": {
+          "passed": true,
+          "cases": 12,
+          "native_fused_stages": 2,
+          "input_quantization_passes_per_token": 1,
+          "fp16_intermediate_gm_bytes": 17408,
+          "model_quality": "not_evaluated"
+        }
+      }
+    },
+    "completed_pool_audit": {
+      "compact_calls": 0,
+      "compact_tokens": 0,
+      "fallback_calls": 0,
+      "max_compact_tokens": 0
+    },
+    "decode_selection": {
+      "swiglu": false,
+      "combine": true
+    },
+    "reconstruction": {
+      "profile": "fused_int4a4",
+      "native_dispatches": 3168,
+      "fallback_dispatches": 0,
+      "bank_coverage": {
+        "W4:R5120:E72:N4096:K4096": {
+          "native": 66,
+          "fallback": 0
+        },
+        "W4:R5120:E72:N4096:K2048": {
+          "native": 66,
+          "fallback": 0
+        },
+        "W3:R5120:E72:N4096:K4096": {
+          "native": 24,
+          "fallback": 0
+        },
+        "W3:R5120:E72:N4096:K2048": {
+          "native": 24,
+          "fallback": 0
+        },
+        "W2:R5120:E72:N4096:K4096": {
+          "native": 118,
+          "fallback": 0
+        },
+        "W2:R5120:E72:N4096:K2048": {
+          "native": 118,
+          "fallback": 0
+        },
+        "W4:R64:E72:N4096:K4096": {
+          "native": 44,
+          "fallback": 0
+        },
+        "W4:R64:E72:N4096:K2048": {
+          "native": 44,
+          "fallback": 0
+        },
+        "W3:R64:E72:N4096:K4096": {
+          "native": 16,
+          "fallback": 0
+        },
+        "W3:R64:E72:N4096:K2048": {
+          "native": 16,
+          "fallback": 0
+        },
+        "W2:R64:E72:N4096:K4096": {
+          "native": 26,
+          "fallback": 0
+        },
+        "W2:R64:E72:N4096:K2048": {
+          "native": 26,
+          "fallback": 0
+        },
+        "W4:R16:E72:N4096:K4096": {
+          "native": 44,
+          "fallback": 0
+        },
+        "W4:R16:E72:N4096:K2048": {
+          "native": 44,
+          "fallback": 0
+        },
+        "W3:R16:E72:N4096:K4096": {
+          "native": 16,
+          "fallback": 0
+        },
+        "W3:R16:E72:N4096:K2048": {
+          "native": 16,
+          "fallback": 0
+        },
+        "W2:R16:E72:N4096:K4096": {
+          "native": 26,
+          "fallback": 0
+        },
+        "W2:R16:E72:N4096:K2048": {
+          "native": 26,
+          "fallback": 0
+        },
+        "W4:R288:E72:N4096:K4096": {
+          "native": 44,
+          "fallback": 0
+        },
+        "W4:R288:E72:N4096:K2048": {
+          "native": 44,
+          "fallback": 0
+        },
+        "W3:R288:E72:N4096:K4096": {
+          "native": 16,
+          "fallback": 0
+        },
+        "W3:R288:E72:N4096:K2048": {
+          "native": 16,
+          "fallback": 0
+        },
+        "W2:R288:E72:N4096:K4096": {
+          "native": 26,
+          "fallback": 0
+        },
+        "W2:R288:E72:N4096:K2048": {
+          "native": 26,
+          "fallback": 0
+        },
+        "W4:R880:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R880:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R880:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R880:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R880:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R880:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R200:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R200:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R200:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R200:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R200:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R200:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R616:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R616:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R616:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R616:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R616:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R616:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R240:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R240:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R240:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R240:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R240:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R240:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R648:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R648:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R648:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R648:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R648:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R648:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R232:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R232:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R232:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R232:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R232:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R232:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R792:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R792:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R792:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R792:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R792:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R792:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R304:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R304:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R304:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R304:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R304:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R304:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R776:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R776:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R776:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R776:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R776:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R776:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R264:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R264:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R264:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R264:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R264:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R264:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R872:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R872:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R872:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R872:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R872:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R872:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R1416:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R1416:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R1416:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R1416:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R1416:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R1416:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R8:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R8:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R8:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R8:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R8:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R8:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R2504:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R2504:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R2504:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R2504:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R2504:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R2504:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R1560:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R1560:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R1560:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R1560:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R1560:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R1560:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R2616:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R2616:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R2616:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R2616:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R2616:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R2616:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R1048:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R1048:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R1048:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R1048:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R1048:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R1048:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R2480:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R2480:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R2480:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R2480:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R2480:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R2480:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R4216:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R4216:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R4216:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R4216:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R4216:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R4216:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R32:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R32:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R32:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R32:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R32:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R32:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R4000:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R4000:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R4000:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R4000:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R4000:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R4000:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R760:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R760:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R760:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R760:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R760:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R760:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R4440:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R4440:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R4440:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R4440:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R4440:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R4440:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R1336:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R1336:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R1336:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R1336:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R1336:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R1336:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R4552:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R4552:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R4552:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R4552:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R4552:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R4552:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R416:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R416:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R416:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R416:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R416:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R416:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        }
+      },
+      "kernel_fused_calls": 1584,
+      "activation_bits": 4
+    },
+    "prepared_weight_layout": {
+      "prepared": true,
+      "persistent": true,
+      "banks": 86,
+      "bytes": 31255953408,
+      "backup_bytes": 0,
+      "transformed_banks": 0,
+      "restored_exact": true
+    },
+    "prefill_graph": {
+      "tokens": 640,
+      "scope": "single-request full prefill chunks; live attention/indexer eager boundaries",
+      "dispatches": 81,
+      "replays": 81,
+      "released_scratch_entries": 1,
+      "entries": [
+        {
+          "descriptor": "BatchDescriptor(num_tokens=640, num_reqs=None, uniform=False, has_lora=False, num_active_loras=0)",
+          "graphs": 46,
+          "eager_breaks": 45
+        }
+      ],
+      "free_memory_bytes": 1665605632
+    },
+    "prefill_memory_reuse": {
+      "fp16_route_workspace": true,
+      "workspace_dtype": "torch.float16",
+      "scratch": [
+        {
+          "geometry": [
+            640,
+            8,
+            4096,
+            2048
+          ],
+          "shape": [
+            5120,
+            4096
+          ],
+          "dtype": "torch.float16",
+          "bytes": 41943040
+        }
+      ]
+    }
+  },
+  {
+    "pid": 2827949,
+    "rank": 1,
+    "generation": "ab0f875ff9564d22939ecf3133980aa3",
+    "mode": "graph",
+    "candidate": "native_v903_prefill_graph",
+    "digest": "10ca006641a78ee16ed38a62aaea522a114086986d32dc75d8786c7c7b2897b1",
+    "graphs_dirty": false,
+    "weight_storage_digest": "f2f095296b6282e51f3c599d80d7fb9ee42a4b269707d2d766e5bae60908504e",
+    "native_failed": false,
+    "native_loaded": {
+      "sinkhorn_normalize_v1": {
+        "native_name": "sinkhorn_normalize_v1",
+        "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+        "validation": {
+          "passed": true,
+          "exact_fp32": true,
+          "cases": 20,
+          "order": 2
+        }
+      },
+      "reconstruction_v56": {
+        "native_name": "reconstruction_v56",
+        "native_digest": "b5a5604a1841365a8c4c95e330989ce0ca367e6c40ffc96afb9212d419ac2ce9",
+        "validation": {
+          "passed": true,
+          "cases": 12,
+          "native_fused_stages": 2,
+          "input_quantization_passes_per_token": 1,
+          "fp16_intermediate_gm_bytes": 0,
+          "model_quality": "not_evaluated",
+          "adopted_permanent_symbols": true
+        }
+      },
+      "bf16_cast_v6_permanent": {
+        "native_name": "bf16_cast_v6_permanent",
+        "native_digest": "a0196fcac9da55e62045f551ad058d66eee544ee458521d3e5942ff3c5c0a6f1",
+        "validation": {
+          "passed": true,
+          "cases": 1,
+          "adopted_permanent_symbols": true
+        }
+      },
+      "reconstruction_v78": {
+        "native_name": "reconstruction_v78",
+        "native_digest": "77dc0fc05e503eab1fdccfd7f50e6ea9acd610688c16b135f8cebf22469f80d6",
+        "validation": {
+          "passed": true,
+          "cases": 12,
+          "native_fused_stages": 2,
+          "input_quantization_passes_per_token": 1,
+          "fp16_intermediate_gm_bytes": 0,
+          "model_quality": "not_evaluated"
+        }
+      },
+      "reconstruction_v80": {
+        "native_name": "reconstruction_v80",
+        "native_digest": "bacfb4984053e4b609a1ae09a57d90ee90ca777b618058abdd089aa0d90a0b88",
+        "validation": {
+          "passed": true,
+          "cases": 12,
+          "native_fused_stages": 2,
+          "input_quantization_passes_per_token": 1,
+          "fp16_intermediate_gm_bytes": 0,
+          "model_quality": "not_evaluated"
+        }
+      },
+      "reconstruction_v903": {
+        "native_name": "reconstruction_v903",
+        "native_digest": "49440169ec165370721b20fdba5cdb813dcf4872fb8d310bb360b97cf8a15e51",
+        "validation": {
+          "passed": true,
+          "cases": 12,
+          "native_fused_stages": 2,
+          "input_quantization_passes_per_token": 1,
+          "fp16_intermediate_gm_bytes": 17408,
+          "model_quality": "not_evaluated"
+        }
+      }
+    },
+    "completed_pool_audit": {
+      "compact_calls": 0,
+      "compact_tokens": 0,
+      "fallback_calls": 0,
+      "max_compact_tokens": 0
+    },
+    "decode_selection": {
+      "swiglu": false,
+      "combine": true
+    },
+    "reconstruction": {
+      "profile": "fused_int4a4",
+      "native_dispatches": 3168,
+      "fallback_dispatches": 0,
+      "bank_coverage": {
+        "W4:R5120:E72:N4096:K4096": {
+          "native": 66,
+          "fallback": 0
+        },
+        "W4:R5120:E72:N4096:K2048": {
+          "native": 66,
+          "fallback": 0
+        },
+        "W3:R5120:E72:N4096:K4096": {
+          "native": 24,
+          "fallback": 0
+        },
+        "W3:R5120:E72:N4096:K2048": {
+          "native": 24,
+          "fallback": 0
+        },
+        "W2:R5120:E72:N4096:K4096": {
+          "native": 118,
+          "fallback": 0
+        },
+        "W2:R5120:E72:N4096:K2048": {
+          "native": 118,
+          "fallback": 0
+        },
+        "W4:R64:E72:N4096:K4096": {
+          "native": 44,
+          "fallback": 0
+        },
+        "W4:R64:E72:N4096:K2048": {
+          "native": 44,
+          "fallback": 0
+        },
+        "W3:R64:E72:N4096:K4096": {
+          "native": 16,
+          "fallback": 0
+        },
+        "W3:R64:E72:N4096:K2048": {
+          "native": 16,
+          "fallback": 0
+        },
+        "W2:R64:E72:N4096:K4096": {
+          "native": 26,
+          "fallback": 0
+        },
+        "W2:R64:E72:N4096:K2048": {
+          "native": 26,
+          "fallback": 0
+        },
+        "W4:R16:E72:N4096:K4096": {
+          "native": 44,
+          "fallback": 0
+        },
+        "W4:R16:E72:N4096:K2048": {
+          "native": 44,
+          "fallback": 0
+        },
+        "W3:R16:E72:N4096:K4096": {
+          "native": 16,
+          "fallback": 0
+        },
+        "W3:R16:E72:N4096:K2048": {
+          "native": 16,
+          "fallback": 0
+        },
+        "W2:R16:E72:N4096:K4096": {
+          "native": 26,
+          "fallback": 0
+        },
+        "W2:R16:E72:N4096:K2048": {
+          "native": 26,
+          "fallback": 0
+        },
+        "W4:R288:E72:N4096:K4096": {
+          "native": 44,
+          "fallback": 0
+        },
+        "W4:R288:E72:N4096:K2048": {
+          "native": 44,
+          "fallback": 0
+        },
+        "W3:R288:E72:N4096:K4096": {
+          "native": 16,
+          "fallback": 0
+        },
+        "W3:R288:E72:N4096:K2048": {
+          "native": 16,
+          "fallback": 0
+        },
+        "W2:R288:E72:N4096:K4096": {
+          "native": 26,
+          "fallback": 0
+        },
+        "W2:R288:E72:N4096:K2048": {
+          "native": 26,
+          "fallback": 0
+        },
+        "W4:R880:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R880:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R880:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R880:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R880:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R880:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R200:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R200:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R200:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R200:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R200:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R200:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R616:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R616:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R616:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R616:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R616:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R616:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R240:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R240:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R240:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R240:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R240:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R240:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R648:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R648:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R648:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R648:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R648:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R648:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R232:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R232:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R232:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R232:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R232:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R232:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R792:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R792:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R792:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R792:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R792:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R792:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R304:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R304:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R304:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R304:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R304:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R304:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R776:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R776:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R776:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R776:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R776:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R776:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R264:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R264:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R264:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R264:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R264:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R264:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R872:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R872:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R872:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R872:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R872:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R872:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R1416:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R1416:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R1416:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R1416:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R1416:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R1416:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R8:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R8:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R8:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R8:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R8:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R8:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R2504:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R2504:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R2504:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R2504:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R2504:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R2504:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R1560:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R1560:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R1560:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R1560:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R1560:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R1560:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R2616:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R2616:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R2616:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R2616:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R2616:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R2616:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R1048:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R1048:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R1048:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R1048:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R1048:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R1048:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R2480:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R2480:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R2480:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R2480:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R2480:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R2480:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R4216:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R4216:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R4216:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R4216:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R4216:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R4216:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R32:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R32:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R32:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R32:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R32:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R32:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R4000:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R4000:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R4000:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R4000:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R4000:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R4000:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R760:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R760:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R760:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R760:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R760:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R760:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R4440:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R4440:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R4440:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R4440:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R4440:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R4440:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R1336:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R1336:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R1336:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R1336:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R1336:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R1336:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R4552:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R4552:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R4552:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R4552:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R4552:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R4552:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R416:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R416:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R416:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R416:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R416:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R416:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        }
+      },
+      "kernel_fused_calls": 1584,
+      "activation_bits": 4
+    },
+    "prepared_weight_layout": {
+      "prepared": true,
+      "persistent": true,
+      "banks": 86,
+      "bytes": 31255953408,
+      "backup_bytes": 0,
+      "transformed_banks": 0,
+      "restored_exact": true
+    },
+    "prefill_graph": {
+      "tokens": 640,
+      "scope": "single-request full prefill chunks; live attention/indexer eager boundaries",
+      "dispatches": 81,
+      "replays": 81,
+      "released_scratch_entries": 1,
+      "entries": [
+        {
+          "descriptor": "BatchDescriptor(num_tokens=640, num_reqs=None, uniform=False, has_lora=False, num_active_loras=0)",
+          "graphs": 46,
+          "eager_breaks": 45
+        }
+      ],
+      "free_memory_bytes": 1106763776
+    },
+    "prefill_memory_reuse": {
+      "fp16_route_workspace": true,
+      "workspace_dtype": "torch.float16",
+      "scratch": [
+        {
+          "geometry": [
+            640,
+            8,
+            4096,
+            2048
+          ],
+          "shape": [
+            5120,
+            4096
+          ],
+          "dtype": "torch.float16",
+          "bytes": 41943040
+        }
+      ]
+    }
+  },
+  {
+    "pid": 2828351,
+    "rank": 2,
+    "generation": "ab0f875ff9564d22939ecf3133980aa3",
+    "mode": "graph",
+    "candidate": "native_v903_prefill_graph",
+    "digest": "10ca006641a78ee16ed38a62aaea522a114086986d32dc75d8786c7c7b2897b1",
+    "graphs_dirty": false,
+    "weight_storage_digest": "dda03399761879cf452d0cfc7a4cb460a0095340a108ed760e4da3b5850ef0ee",
+    "native_failed": false,
+    "native_loaded": {
+      "sinkhorn_normalize_v1": {
+        "native_name": "sinkhorn_normalize_v1",
+        "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+        "validation": {
+          "passed": true,
+          "exact_fp32": true,
+          "cases": 20,
+          "order": 2
+        }
+      },
+      "reconstruction_v56": {
+        "native_name": "reconstruction_v56",
+        "native_digest": "b5a5604a1841365a8c4c95e330989ce0ca367e6c40ffc96afb9212d419ac2ce9",
+        "validation": {
+          "passed": true,
+          "cases": 12,
+          "native_fused_stages": 2,
+          "input_quantization_passes_per_token": 1,
+          "fp16_intermediate_gm_bytes": 0,
+          "model_quality": "not_evaluated",
+          "adopted_permanent_symbols": true
+        }
+      },
+      "bf16_cast_v6_permanent": {
+        "native_name": "bf16_cast_v6_permanent",
+        "native_digest": "a0196fcac9da55e62045f551ad058d66eee544ee458521d3e5942ff3c5c0a6f1",
+        "validation": {
+          "passed": true,
+          "cases": 1,
+          "adopted_permanent_symbols": true
+        }
+      },
+      "reconstruction_v78": {
+        "native_name": "reconstruction_v78",
+        "native_digest": "77dc0fc05e503eab1fdccfd7f50e6ea9acd610688c16b135f8cebf22469f80d6",
+        "validation": {
+          "passed": true,
+          "cases": 12,
+          "native_fused_stages": 2,
+          "input_quantization_passes_per_token": 1,
+          "fp16_intermediate_gm_bytes": 0,
+          "model_quality": "not_evaluated"
+        }
+      },
+      "reconstruction_v80": {
+        "native_name": "reconstruction_v80",
+        "native_digest": "bacfb4984053e4b609a1ae09a57d90ee90ca777b618058abdd089aa0d90a0b88",
+        "validation": {
+          "passed": true,
+          "cases": 12,
+          "native_fused_stages": 2,
+          "input_quantization_passes_per_token": 1,
+          "fp16_intermediate_gm_bytes": 0,
+          "model_quality": "not_evaluated"
+        }
+      },
+      "reconstruction_v903": {
+        "native_name": "reconstruction_v903",
+        "native_digest": "49440169ec165370721b20fdba5cdb813dcf4872fb8d310bb360b97cf8a15e51",
+        "validation": {
+          "passed": true,
+          "cases": 12,
+          "native_fused_stages": 2,
+          "input_quantization_passes_per_token": 1,
+          "fp16_intermediate_gm_bytes": 17408,
+          "model_quality": "not_evaluated"
+        }
+      }
+    },
+    "completed_pool_audit": {
+      "compact_calls": 0,
+      "compact_tokens": 0,
+      "fallback_calls": 0,
+      "max_compact_tokens": 0
+    },
+    "decode_selection": {
+      "swiglu": false,
+      "combine": true
+    },
+    "reconstruction": {
+      "profile": "fused_int4a4",
+      "native_dispatches": 3168,
+      "fallback_dispatches": 0,
+      "bank_coverage": {
+        "W4:R5120:E72:N4096:K4096": {
+          "native": 66,
+          "fallback": 0
+        },
+        "W4:R5120:E72:N4096:K2048": {
+          "native": 66,
+          "fallback": 0
+        },
+        "W3:R5120:E72:N4096:K4096": {
+          "native": 24,
+          "fallback": 0
+        },
+        "W3:R5120:E72:N4096:K2048": {
+          "native": 24,
+          "fallback": 0
+        },
+        "W2:R5120:E72:N4096:K4096": {
+          "native": 118,
+          "fallback": 0
+        },
+        "W2:R5120:E72:N4096:K2048": {
+          "native": 118,
+          "fallback": 0
+        },
+        "W4:R64:E72:N4096:K4096": {
+          "native": 44,
+          "fallback": 0
+        },
+        "W4:R64:E72:N4096:K2048": {
+          "native": 44,
+          "fallback": 0
+        },
+        "W3:R64:E72:N4096:K4096": {
+          "native": 16,
+          "fallback": 0
+        },
+        "W3:R64:E72:N4096:K2048": {
+          "native": 16,
+          "fallback": 0
+        },
+        "W2:R64:E72:N4096:K4096": {
+          "native": 26,
+          "fallback": 0
+        },
+        "W2:R64:E72:N4096:K2048": {
+          "native": 26,
+          "fallback": 0
+        },
+        "W4:R16:E72:N4096:K4096": {
+          "native": 44,
+          "fallback": 0
+        },
+        "W4:R16:E72:N4096:K2048": {
+          "native": 44,
+          "fallback": 0
+        },
+        "W3:R16:E72:N4096:K4096": {
+          "native": 16,
+          "fallback": 0
+        },
+        "W3:R16:E72:N4096:K2048": {
+          "native": 16,
+          "fallback": 0
+        },
+        "W2:R16:E72:N4096:K4096": {
+          "native": 26,
+          "fallback": 0
+        },
+        "W2:R16:E72:N4096:K2048": {
+          "native": 26,
+          "fallback": 0
+        },
+        "W4:R288:E72:N4096:K4096": {
+          "native": 44,
+          "fallback": 0
+        },
+        "W4:R288:E72:N4096:K2048": {
+          "native": 44,
+          "fallback": 0
+        },
+        "W3:R288:E72:N4096:K4096": {
+          "native": 16,
+          "fallback": 0
+        },
+        "W3:R288:E72:N4096:K2048": {
+          "native": 16,
+          "fallback": 0
+        },
+        "W2:R288:E72:N4096:K4096": {
+          "native": 26,
+          "fallback": 0
+        },
+        "W2:R288:E72:N4096:K2048": {
+          "native": 26,
+          "fallback": 0
+        },
+        "W4:R880:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R880:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R880:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R880:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R880:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R880:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R200:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R200:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R200:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R200:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R200:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R200:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R616:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R616:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R616:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R616:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R616:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R616:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R240:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R240:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R240:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R240:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R240:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R240:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R648:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R648:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R648:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R648:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R648:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R648:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R232:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R232:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R232:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R232:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R232:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R232:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R792:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R792:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R792:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R792:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R792:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R792:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R304:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R304:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R304:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R304:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R304:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R304:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R776:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R776:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R776:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R776:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R776:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R776:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R264:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R264:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R264:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R264:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R264:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R264:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R872:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R872:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R872:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R872:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R872:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R872:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R1416:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R1416:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R1416:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R1416:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R1416:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R1416:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R8:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R8:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R8:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R8:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R8:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R8:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R2504:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R2504:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R2504:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R2504:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R2504:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R2504:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R1560:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R1560:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R1560:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R1560:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R1560:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R1560:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R2616:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R2616:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R2616:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R2616:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R2616:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R2616:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R1048:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R1048:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R1048:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R1048:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R1048:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R1048:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R2480:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R2480:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R2480:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R2480:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R2480:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R2480:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R4216:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R4216:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R4216:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R4216:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R4216:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R4216:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R32:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R32:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R32:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R32:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R32:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R32:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R4000:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R4000:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R4000:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R4000:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R4000:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R4000:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R760:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R760:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R760:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R760:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R760:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R760:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R4440:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R4440:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R4440:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R4440:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R4440:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R4440:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R1336:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R1336:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R1336:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R1336:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R1336:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R1336:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R4552:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R4552:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R4552:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R4552:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R4552:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R4552:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R416:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R416:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R416:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R416:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R416:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R416:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        }
+      },
+      "kernel_fused_calls": 1584,
+      "activation_bits": 4
+    },
+    "prepared_weight_layout": {
+      "prepared": true,
+      "persistent": true,
+      "banks": 86,
+      "bytes": 31255953408,
+      "backup_bytes": 0,
+      "transformed_banks": 0,
+      "restored_exact": true
+    },
+    "prefill_graph": {
+      "tokens": 640,
+      "scope": "single-request full prefill chunks; live attention/indexer eager boundaries",
+      "dispatches": 81,
+      "replays": 81,
+      "released_scratch_entries": 1,
+      "entries": [
+        {
+          "descriptor": "BatchDescriptor(num_tokens=640, num_reqs=None, uniform=False, has_lora=False, num_active_loras=0)",
+          "graphs": 46,
+          "eager_breaks": 45
+        }
+      ],
+      "free_memory_bytes": 1564930048
+    },
+    "prefill_memory_reuse": {
+      "fp16_route_workspace": true,
+      "workspace_dtype": "torch.float16",
+      "scratch": [
+        {
+          "geometry": [
+            640,
+            8,
+            4096,
+            2048
+          ],
+          "shape": [
+            5120,
+            4096
+          ],
+          "dtype": "torch.float16",
+          "bytes": 41943040
+        }
+      ]
+    }
+  },
+  {
+    "pid": 2828744,
+    "rank": 3,
+    "generation": "ab0f875ff9564d22939ecf3133980aa3",
+    "mode": "graph",
+    "candidate": "native_v903_prefill_graph",
+    "digest": "10ca006641a78ee16ed38a62aaea522a114086986d32dc75d8786c7c7b2897b1",
+    "graphs_dirty": false,
+    "weight_storage_digest": "a426d698a2e3c8104ad75c2734e9039b7bffcfa0afcacdf8250f81f32336e1da",
+    "native_failed": false,
+    "native_loaded": {
+      "sinkhorn_normalize_v1": {
+        "native_name": "sinkhorn_normalize_v1",
+        "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+        "validation": {
+          "passed": true,
+          "exact_fp32": true,
+          "cases": 20,
+          "order": 2
+        }
+      },
+      "reconstruction_v56": {
+        "native_name": "reconstruction_v56",
+        "native_digest": "b5a5604a1841365a8c4c95e330989ce0ca367e6c40ffc96afb9212d419ac2ce9",
+        "validation": {
+          "passed": true,
+          "cases": 12,
+          "native_fused_stages": 2,
+          "input_quantization_passes_per_token": 1,
+          "fp16_intermediate_gm_bytes": 0,
+          "model_quality": "not_evaluated",
+          "adopted_permanent_symbols": true
+        }
+      },
+      "bf16_cast_v6_permanent": {
+        "native_name": "bf16_cast_v6_permanent",
+        "native_digest": "a0196fcac9da55e62045f551ad058d66eee544ee458521d3e5942ff3c5c0a6f1",
+        "validation": {
+          "passed": true,
+          "cases": 1,
+          "adopted_permanent_symbols": true
+        }
+      },
+      "reconstruction_v78": {
+        "native_name": "reconstruction_v78",
+        "native_digest": "77dc0fc05e503eab1fdccfd7f50e6ea9acd610688c16b135f8cebf22469f80d6",
+        "validation": {
+          "passed": true,
+          "cases": 12,
+          "native_fused_stages": 2,
+          "input_quantization_passes_per_token": 1,
+          "fp16_intermediate_gm_bytes": 0,
+          "model_quality": "not_evaluated"
+        }
+      },
+      "reconstruction_v80": {
+        "native_name": "reconstruction_v80",
+        "native_digest": "bacfb4984053e4b609a1ae09a57d90ee90ca777b618058abdd089aa0d90a0b88",
+        "validation": {
+          "passed": true,
+          "cases": 12,
+          "native_fused_stages": 2,
+          "input_quantization_passes_per_token": 1,
+          "fp16_intermediate_gm_bytes": 0,
+          "model_quality": "not_evaluated"
+        }
+      },
+      "reconstruction_v903": {
+        "native_name": "reconstruction_v903",
+        "native_digest": "49440169ec165370721b20fdba5cdb813dcf4872fb8d310bb360b97cf8a15e51",
+        "validation": {
+          "passed": true,
+          "cases": 12,
+          "native_fused_stages": 2,
+          "input_quantization_passes_per_token": 1,
+          "fp16_intermediate_gm_bytes": 17408,
+          "model_quality": "not_evaluated"
+        }
+      }
+    },
+    "completed_pool_audit": {
+      "compact_calls": 0,
+      "compact_tokens": 0,
+      "fallback_calls": 0,
+      "max_compact_tokens": 0
+    },
+    "decode_selection": {
+      "swiglu": false,
+      "combine": true
+    },
+    "reconstruction": {
+      "profile": "fused_int4a4",
+      "native_dispatches": 3168,
+      "fallback_dispatches": 0,
+      "bank_coverage": {
+        "W4:R5120:E72:N4096:K4096": {
+          "native": 66,
+          "fallback": 0
+        },
+        "W4:R5120:E72:N4096:K2048": {
+          "native": 66,
+          "fallback": 0
+        },
+        "W3:R5120:E72:N4096:K4096": {
+          "native": 24,
+          "fallback": 0
+        },
+        "W3:R5120:E72:N4096:K2048": {
+          "native": 24,
+          "fallback": 0
+        },
+        "W2:R5120:E72:N4096:K4096": {
+          "native": 118,
+          "fallback": 0
+        },
+        "W2:R5120:E72:N4096:K2048": {
+          "native": 118,
+          "fallback": 0
+        },
+        "W4:R64:E72:N4096:K4096": {
+          "native": 44,
+          "fallback": 0
+        },
+        "W4:R64:E72:N4096:K2048": {
+          "native": 44,
+          "fallback": 0
+        },
+        "W3:R64:E72:N4096:K4096": {
+          "native": 16,
+          "fallback": 0
+        },
+        "W3:R64:E72:N4096:K2048": {
+          "native": 16,
+          "fallback": 0
+        },
+        "W2:R64:E72:N4096:K4096": {
+          "native": 26,
+          "fallback": 0
+        },
+        "W2:R64:E72:N4096:K2048": {
+          "native": 26,
+          "fallback": 0
+        },
+        "W4:R16:E72:N4096:K4096": {
+          "native": 44,
+          "fallback": 0
+        },
+        "W4:R16:E72:N4096:K2048": {
+          "native": 44,
+          "fallback": 0
+        },
+        "W3:R16:E72:N4096:K4096": {
+          "native": 16,
+          "fallback": 0
+        },
+        "W3:R16:E72:N4096:K2048": {
+          "native": 16,
+          "fallback": 0
+        },
+        "W2:R16:E72:N4096:K4096": {
+          "native": 26,
+          "fallback": 0
+        },
+        "W2:R16:E72:N4096:K2048": {
+          "native": 26,
+          "fallback": 0
+        },
+        "W4:R288:E72:N4096:K4096": {
+          "native": 44,
+          "fallback": 0
+        },
+        "W4:R288:E72:N4096:K2048": {
+          "native": 44,
+          "fallback": 0
+        },
+        "W3:R288:E72:N4096:K4096": {
+          "native": 16,
+          "fallback": 0
+        },
+        "W3:R288:E72:N4096:K2048": {
+          "native": 16,
+          "fallback": 0
+        },
+        "W2:R288:E72:N4096:K4096": {
+          "native": 26,
+          "fallback": 0
+        },
+        "W2:R288:E72:N4096:K2048": {
+          "native": 26,
+          "fallback": 0
+        },
+        "W4:R880:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R880:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R880:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R880:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R880:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R880:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R200:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R200:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R200:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R200:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R200:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R200:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R616:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R616:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R616:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R616:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R616:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R616:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R240:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R240:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R240:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R240:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R240:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R240:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R648:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R648:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R648:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R648:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R648:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R648:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R232:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R232:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R232:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R232:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R232:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R232:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R792:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R792:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R792:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R792:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R792:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R792:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R304:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R304:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R304:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R304:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R304:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R304:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R776:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R776:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R776:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R776:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R776:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R776:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R264:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R264:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R264:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R264:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R264:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R264:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R872:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R872:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R872:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R872:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R872:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R872:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R1416:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R1416:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R1416:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R1416:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R1416:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R1416:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R8:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R8:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R8:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R8:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R8:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R8:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R2504:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R2504:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R2504:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R2504:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R2504:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R2504:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R1560:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R1560:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R1560:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R1560:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R1560:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R1560:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R2616:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R2616:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R2616:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R2616:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R2616:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R2616:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R1048:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R1048:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R1048:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R1048:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R1048:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R1048:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R2480:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R2480:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R2480:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R2480:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R2480:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R2480:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R4216:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R4216:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R4216:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R4216:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R4216:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R4216:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R32:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R32:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R32:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R32:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R32:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R32:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R4000:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R4000:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R4000:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R4000:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R4000:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R4000:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R760:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R760:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R760:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R760:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R760:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R760:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R4440:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R4440:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R4440:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R4440:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R4440:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R4440:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R1336:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R1336:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R1336:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R1336:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R1336:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R1336:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R4552:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R4552:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R4552:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R4552:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R4552:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R4552:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W4:R416:E72:N4096:K4096": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W4:R416:E72:N4096:K2048": {
+          "native": 22,
+          "fallback": 0
+        },
+        "W3:R416:E72:N4096:K4096": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W3:R416:E72:N4096:K2048": {
+          "native": 8,
+          "fallback": 0
+        },
+        "W2:R416:E72:N4096:K4096": {
+          "native": 13,
+          "fallback": 0
+        },
+        "W2:R416:E72:N4096:K2048": {
+          "native": 13,
+          "fallback": 0
+        }
+      },
+      "kernel_fused_calls": 1584,
+      "activation_bits": 4
+    },
+    "prepared_weight_layout": {
+      "prepared": true,
+      "persistent": true,
+      "banks": 86,
+      "bytes": 31255953408,
+      "backup_bytes": 0,
+      "transformed_banks": 0,
+      "restored_exact": true
+    },
+    "prefill_graph": {
+      "tokens": 640,
+      "scope": "single-request full prefill chunks; live attention/indexer eager boundaries",
+      "dispatches": 81,
+      "replays": 81,
+      "released_scratch_entries": 1,
+      "entries": [
+        {
+          "descriptor": "BatchDescriptor(num_tokens=640, num_reqs=None, uniform=False, has_lora=False, num_active_loras=0)",
+          "graphs": 46,
+          "eager_breaks": 45
+        }
+      ],
+      "free_memory_bytes": 1240444928
+    },
+    "prefill_memory_reuse": {
+      "fp16_route_workspace": true,
+      "workspace_dtype": "torch.float16",
+      "scratch": [
+        {
+          "geometry": [
+            640,
+            8,
+            4096,
+            2048
+          ],
+          "shape": [
+            5120,
+            4096
+          ],
+          "dtype": "torch.float16",
+          "bytes": 41943040
+        }
+      ]
+    }
+  }
+]

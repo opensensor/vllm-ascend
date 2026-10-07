@@ -96,6 +96,17 @@ def test_mismatched_route_dtype_rejected_before_any_kernel_load(tmp_path, half_r
         {"fp16_route_workspace": True},
         {"prefill_weight_cache": 1},
         {"fp16_route_workspace": "true"},
+        {"share_gate_up_input": True},
+        {"share_gate_up_input": 1},
+        {"cache_gate_up_activations": True},
+        {"cache_gate_up_activations": 1},
+        {
+            "fused_moe": True,
+            "all_bits": True,
+            "tile_pipeline": True,
+            "output_columns": 128,
+            "cache_gate_up_activations": True,
+        },
         {
             "fused_moe": True,
             "all_bits": True,
@@ -114,7 +125,10 @@ def test_bad_prefill_flags_fail_before_creating_build(tmp_path, options):
 
 
 @pytest.mark.parametrize("cache,half_routes", [(False, False), (True, False), (False, True), (True, True)])
-def test_builder_freezes_matching_projection_reducer_flags(tmp_path, monkeypatch, cache, half_routes):
+@pytest.mark.parametrize("share_input,cache_activations", [(False, False), (True, False), (True, True)])
+def test_builder_freezes_matching_projection_reducer_flags(
+    tmp_path, monkeypatch, cache, half_routes, share_input, cache_activations
+):
     commands = []
 
     def fake_run(command, **kwargs):
@@ -140,14 +154,22 @@ def test_builder_freezes_matching_projection_reducer_flags(tmp_path, monkeypatch
         prepared_weight_layout=True,
         prefill_weight_cache=cache,
         fp16_route_workspace=half_routes,
+        share_gate_up_input=share_input,
+        cache_gate_up_activations=cache_activations,
     )
     provenance = json.loads((output / "provenance.json").read_text())
     assert provenance["_build"]["prefill_weight_cache"] is cache
     assert provenance["_build"]["fp16_route_workspace"] is half_routes
+    assert provenance["_build"]["share_gate_up_input"] is share_input
+    assert provenance["_build"]["cache_gate_up_activations"] is cache_activations
     for command in commands:
         if len(command) > 1 and Path(command[1]).name == "glm_fused_moe.cpp":
             assert ("-DGLM_PREFILL_WEIGHT_CACHE" in command) is cache
             assert ("-DGLM_FP16_ROUTE_WORKSPACE" in command) is half_routes
+            assert ("-DGLM_SHARE_GATE_UP_INPUT" in command) is (share_input and "gate_up" in Path(command[2]).name)
+            assert ("-DGLM_CACHE_GATE_UP_ACTIVATIONS" in command) is (
+                cache_activations and "gate_up" in Path(command[2]).name
+            )
         if len(command) > 1 and Path(command[1]).name == "glm_fused_reduce.cpp":
             assert ("-DGLM_FP16_ROUTE_WORKSPACE" in command) is half_routes
     assert "glm_fused_reduce.bin" in provenance
@@ -164,9 +186,11 @@ def test_cli_passes_w3_and_prefill_flags_to_builder(tmp_path, monkeypatch):
             "--specialize-w3",
             "--prefill-weight-cache",
             "--fp16-route-workspace",
+            "--share-gate-up-input",
+            "--cache-gate-up-activations",
         ],
     )
     calls = []
     monkeypatch.setattr(builder, "build", lambda *args: calls.append(args))
     builder.main()
-    assert calls[0][-4:] == (True, True, True, True)
+    assert calls[0][-6:] == (True, True, True, True, True, True)
