@@ -1,0 +1,21 @@
+import json,re,subprocess,sys,time,urllib.request
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');source=root/'source-v21';sys.path.insert(0,str(source))
+from tools.glm_perf.resident_harness import ResidentClient
+client=ResidentClient('http://127.0.0.1:8001',timeout=900)
+while True:
+ with urllib.request.urlopen(client.base_url+'/metrics',timeout=30) as response:metrics=response.read().decode()
+ values=[float(v) for v in re.findall(r'^vllm:num_requests_(?:running|waiting)(?:\{[^\n]*\})?\s+([0-9.eE+-]+)$',metrics,re.M)]
+ assert values
+ if not any(values):break
+ time.sleep(1)
+try:
+ assert client.request('/pause?mode=wait&clear_cache=true')['status']=='paused'
+ before=client._acknowledged_rpc('resident_status',matches=lambda rows:client._status_matches(rows) and all(r['candidate']=='native_v919_prefill_v913_decode_state_rows_v925' for r in rows))
+ (root/'state-rows-before-nightly.json').write_text(json.dumps(before,indent=2))
+ with (root/'v925-state-nightly.log').open('w') as output:
+  result=subprocess.run(['/srv/ai/venvs/qwen38-w4-test-ce1862/bin/python',str(root/'state-rows-nightly.py'),'--state-rows-build-dir',str(root/'build-state-rows-v925'),'--junitxml='+str(root/'v925-state-nightly.xml')],cwd=source,env=dict(__import__('os').environ,PYTHONPATH=str(source)),stdout=output,stderr=subprocess.STDOUT)
+ print('v925 numerical gates exit',result.returncode,flush=True)
+ assert not result.returncode,'state-copy gates failed'
+finally:
+ client.resume();print('service resumed on v925 state rows',flush=True)

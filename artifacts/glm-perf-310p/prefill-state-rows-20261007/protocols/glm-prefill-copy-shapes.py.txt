@@ -1,0 +1,14 @@
+import csv,json
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/trace-v919-current')
+report={}
+for label in ('short128','long7680'):
+ p=next((root/label/'rank0').glob('PROF_*/mindstudio_profiler_output/op_summary*.csv'))
+ rows=[];counts={}
+ with p.open() as stream:
+  for row in csv.DictReader(stream):
+   name=row['Op Name']
+   if name in ('aclnnIndex_AsStridedAiCore_AsStrided','aclnnIndexPutImpl_AsStridedAiCore_AsStrided','aclnnIndexPutImpl_ViewCopyAiCore_ViewCopy'):
+    if counts.get(name,0)<2:rows.append({k:row[k] for k in ('Op Name','Task Duration(us)','Input Shapes','Input Data Types','Input Formats','Output Shapes','Output Data Types','Output Formats')});counts[name]=counts.get(name,0)+1
+ report[label]=rows
+(root/'copy-shapes.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2))
