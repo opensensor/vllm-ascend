@@ -3,12 +3,17 @@
 // Two fused native stages: gate/up+SwiGLU+activation quant, and down+FP32 weighted reduction.
 #include "kernel_operator.h"
 #include "glm_fused_quantize.h"
+#include "glm_fused_scratch.h"
 #include "glm_route_input_layout.h"
 #if defined(GLM_PREROUNDED_WEIGHT_SCALES) && !defined(GLM_PREPARED_WEIGHT_LAYOUT)
   #error "prerounded scales require the permanent prepared weight layout"
 #endif
 #if defined(GLM_NATIVE_ROUTE_COLUMNS) && (!defined(GLM_FP16_ROUTE_WORKSPACE) || defined(GLM_FUSED_GATE_UP))
   #error "native route columns require the down stage and paired FP16 workspace reducer"
+#endif
+#if defined(GLM_COMPACT_W4_SCRATCH) && \
+    (!defined(GLM_PREPARED_WEIGHT_LAYOUT) || GLM_STATIC_WEIGHT_BITS != 4 || defined(GLM_WEIGHT_DECODE_LUT))
+  #error "compact W4 scratch requires static prepared W4 without lookup tables"
 #endif
 #ifndef GLM_INT4_OUTPUT_COLUMNS
   #define GLM_INT4_OUTPUT_COLUMNS 128
@@ -53,6 +58,12 @@ static_assert(WIDE_CUBE_K == 128 || WIDE_CUBE_K == 256, "wide native Cube uses K
 #else
 constexpr uint32_t WIDE_CUBE_K = K0;
 #endif
+#ifdef GLM_COMPACT_W4_SCRATCH
+using Scratch = GlmFusedScratch::Layout<M, WIDE_CUBE_K, true>;
+#else
+using Scratch = GlmFusedScratch::Layout<M, WIDE_CUBE_K, false>;
+#endif
+static_assert(Scratch::N == N && Scratch::NZ_K == NZ_K, "scratch and weight tile geometries differ");
 constexpr uint32_t WIDE_K_SEGMENTS = WIDE_CUBE_K / K0;
 constexpr uint32_t WIDE_SCALE_GROUPS = WIDE_CUBE_K / GROUP;
 constexpr uint32_t WIDE_A_BYTES = M * WIDE_CUBE_K / 2;
@@ -90,7 +101,8 @@ constexpr uint32_t SCALE_INDEX_OFFSET = (N / GROUP) * MAX_K_GROUPS * (sizeof(flo
 static_assert(SCALE_INDEX_OFFSET + N * sizeof(uint32_t) <= SCALE_CACHE_BYTES, "scale indices overlap rounded weights");
 constexpr uint32_t MAX_CACHED_SCALE_ROWS = 4;
 constexpr uint32_t MAX_REPEAT_CAST_ROWS = 4;
-constexpr uint32_t SCALE_PRODUCTS_OFFSET = N * NZ_K * 3 / 4;
+constexpr uint32_t SCALE_PRODUCTS_OFFSET = Scratch::SCALE_PRODUCTS_OFFSET;
+constexpr uint32_t MASK_RETAINED_OFFSET = N * NZ_K * 3 / 4;
 #ifdef GLM_GATHER_PRODUCT_MATRIX
   #if !defined(GLM_PREPARED_WEIGHT_LAYOUT) || defined(GLM_WEIGHT_DECODE_LUT)
     #error "matrix product gather requires prepared weights without lookup tables"
@@ -98,7 +110,7 @@ constexpr uint32_t SCALE_PRODUCTS_OFFSET = N * NZ_K * 3 / 4;
 // Normal prepared reconstruction uses only the first 16 KiB of mask_.
 // The next eight KiB hold one row-layout table, selected for this batch.
 constexpr uint32_t PRODUCT_ROW_INDEX_OFFSET = N * NZ_K / 2;
-static_assert(PRODUCT_ROW_INDEX_OFFSET + ELEMENTS * sizeof(uint32_t) <= SCALE_PRODUCTS_OFFSET,
+static_assert(PRODUCT_ROW_INDEX_OFFSET + ELEMENTS * sizeof(uint32_t) <= MASK_RETAINED_OFFSET,
               "product row indices overlap scale row indices");
 #endif
 #ifdef GLM_VECTOR_SCALE_PRODUCTS
@@ -110,7 +122,8 @@ static_assert(PRODUCT_ROW_INDEX_OFFSET + ELEMENTS * sizeof(uint32_t) <= SCALE_PR
 constexpr uint32_t SCALE_ROW_INDEX_OFFSET = N * NZ_K * 3 / 4;
 static_assert(SCALE_ROW_INDEX_OFFSET + M * sizeof(uint32_t) <= N * NZ_K, "scale row indices exceed mask scratch");
 #endif
-static_assert(SCALE_PRODUCTS_OFFSET + MAX_CACHED_SCALE_ROWS * (N / GROUP) * MAX_K_GROUPS * sizeof(float) <= N * NZ_K,
+static_assert(SCALE_PRODUCTS_OFFSET + MAX_CACHED_SCALE_ROWS * (N / GROUP) * MAX_K_GROUPS * sizeof(float) <=
+                  Scratch::GATHERED_BYTES,
               "combined scales overlap prepared W2/W3 byte reconstruction");
 constexpr uint32_t PRODUCT_OFFSET_BYTES = 2 * N * sizeof(uint32_t);
 constexpr uint32_t QUANT_OFFSET_BYTES = (2 * GlmFusedQuant::ELEMENTS + GlmFusedQuant::BATCH) * sizeof(uint32_t);
@@ -136,15 +149,15 @@ static_assert(M == 32 && PAIR_PREFILL_SCALE_GROUPS, "NZ accumulator requires wid
 // must survive reconstruction of the next K tile, so it remains separate.
 constexpr uint32_t PRODUCT_SCRATCH_BYTES = ELEMENTS * sizeof(float);
 static_assert(4 * ELEMENTS * sizeof(float) <= N * NZ_K * sizeof(half), "wide products exceed dead decode scratch");
-static_assert(ELEMENTS * sizeof(float) + M * LANES * sizeof(float) <= SCALE_PRODUCTS_OFFSET,
+static_assert(ELEMENTS * sizeof(float) + M * LANES * sizeof(float) <= MASK_RETAINED_OFFSET,
               "wide scale broadcast overlaps retained row indices");
 #else
 constexpr uint32_t PRODUCT_SCRATCH_BYTES = 7 * ELEMENTS * sizeof(float);
 #endif
-constexpr uint32_t COMMON_UB_BYTES = RAW_BYTES + 64 + N * NZ_K * sizeof(half) + N * NZ_K / 2 + 2 * N * NZ_K +
-                                     SCALE_CACHE_BYTES + (M + LANES + 1) * MAX_K_GROUPS * sizeof(float) +
-                                     N * sizeof(uint32_t) + PRODUCT_OFFSET_BYTES + N * sizeof(half) + 2 * A_BYTES +
-                                     PRODUCT_SCRATCH_BYTES + ELEMENTS * sizeof(half);
+constexpr uint32_t COMMON_UB_BYTES =
+    Scratch::RAW_BYTES + Scratch::DECODED_BYTES + N * NZ_K / 2 + Scratch::GATHERED_BYTES + N * NZ_K +
+    SCALE_CACHE_BYTES + (M + LANES + 1) * MAX_K_GROUPS * sizeof(float) + N * sizeof(uint32_t) + PRODUCT_OFFSET_BYTES +
+    N * sizeof(half) + 2 * A_BYTES + PRODUCT_SCRATCH_BYTES + ELEMENTS * sizeof(half);
 #ifdef GLM_FUSED_GATE_UP
 static_assert(COMMON_UB_BYTES + QUANT_OFFSET_BYTES <= TOTAL_VEC_LOCAL_SIZE, "gate/up exceeds usable UB");
 #else
@@ -317,10 +330,10 @@ class Projection {
 #endif
     pipe_.InitBuffer(b2_, WIDE_K_SEGMENTS * B_BYTES);
     pipe_.InitBuffer(c_, 2 * ELEMENTS * sizeof(int32_t));
-    pipe_.InitBuffer(raw_, RAW_BYTES + 64);
-    pipe_.InitBuffer(decoded_, N * NZ_K * sizeof(half));
+    pipe_.InitBuffer(raw_, Scratch::RAW_BYTES);
+    pipe_.InitBuffer(decoded_, Scratch::DECODED_BYTES);
     pipe_.InitBuffer(packedB_, N * NZ_K / 2);
-    pipe_.InitBuffer(gathered_, N * NZ_K);
+    pipe_.InitBuffer(gathered_, Scratch::GATHERED_BYTES);
     pipe_.InitBuffer(mask_, N * NZ_K);
     pipe_.InitBuffer(scaleCache_, SCALE_CACHE_BYTES);
     pipe_.InitBuffer(activationScales_, (M + LANES + 1) * MAX_K_GROUPS * sizeof(float));
@@ -414,12 +427,17 @@ class Projection {
   }
 #endif
   __aicore__ inline void Decode(int64_t expert, int64_t tile, int64_t kTile) {
+#ifdef GLM_COMPACT_W4_SCRATCH
+    const int64_t offset = ((expert * (n_ / N) + tile) * (k_ / NZ_K) + kTile) * RAW_BYTES;
+    DataCopy(packedB_.Get<uint8_t>(), codes_[offset], RAW_BYTES);
+    PipeBarrier<PIPE_ALL>();
+#else
     const uint32_t fields = bits_ == 3 ? 8 : 8 / bits_;
     const uint32_t fieldElements = NZ_N * NZ_K / fields;
     const uint32_t planeElements = N * NZ_K / fields;
     const uint32_t planes = bits_ == 3 ? 3 : 1;
     const uint32_t packedBytes = NZ_N * NZ_K * bits_ / 8;
-#ifdef GLM_PREPARED_WEIGHT_LAYOUT
+  #ifdef GLM_PREPARED_WEIGHT_LAYOUT
     const int64_t offset = ((expert * (n_ / N) + tile) * (k_ / NZ_K) + kTile) * (N * NZ_K * bits_ / 8);
     if (bits_ == 4) {
       DataCopy(packedB_.Get<uint8_t>(), codes_[offset], RAW_BYTES);
@@ -427,7 +445,7 @@ class Projection {
       return;
     }
     DataCopy(raw_.Get<uint8_t>(), codes_[offset], N * NZ_K * bits_ / 8);
-#else
+  #else
     // Batch each byte plane across all output strips. Uniform fields then
     // need one vector conversion, rather than scalar setup for every strip.
     for (uint32_t plane = 0; plane < planes; ++plane)
@@ -436,9 +454,9 @@ class Projection {
         DataCopy(raw_.Get<uint8_t>()[plane * planeElements + strip * fieldElements],
                  codes_[offset + plane * fieldElements], fieldElements);
       }
-#endif
+  #endif
     PipeBarrier<PIPE_ALL>();
-#ifdef GLM_WEIGHT_DECODE_LUT
+  #ifdef GLM_WEIGHT_DECODE_LUT
     // Reconstruct two output nibbles per lookup; never materialize the
     // 32K individual FP16 codes. Tables occupy the otherwise dead decoded
     // workspace, leaving its tail for the subsequent weight-scale vectors.
@@ -460,15 +478,15 @@ class Projection {
     }
     PipeBarrier<PIPE_ALL>();
     return;
-#endif
+  #endif
     Cast(gathered_.Get<half>(), raw_.Get<uint8_t>(), RoundMode::CAST_NONE, N * NZ_K * bits_ / 8);
     PipeBarrier<PIPE_V>();
     Cast(gathered_.Get<int16_t>(), gathered_.Get<half>(), RoundMode::CAST_RINT, N * NZ_K * bits_ / 8);
     PipeBarrier<PIPE_V>();
     auto decoded = decoded_.Get<int16_t>();
-#ifdef GLM_STATIC_WEIGHT_BITS
-  #pragma unroll
-#endif
+  #ifdef GLM_STATIC_WEIGHT_BITS
+    #pragma unroll
+  #endif
     for (uint32_t field = 0; field < fields; ++field) {
       const uint32_t phase = field * bits_ % 8;
       const uint32_t plane = field * bits_ / 8;
@@ -496,7 +514,7 @@ class Projection {
         PipeBarrier<PIPE_V>();
         continue;
       }
-#ifdef GLM_W3_FLOAT_FRAGMENTS
+  #ifdef GLM_W3_FLOAT_FRAGMENTS
       // A crossing W3 field is unsigned low bits plus a signed high
       // fragment. Both fragments and their sum are exact in FP16. Decode
       // that sign before combining, avoiding the low fragment's integer
@@ -534,7 +552,7 @@ class Projection {
       Add(low, low, high.ReinterpretCast<half>(), planeElements);
       PipeBarrier<PIPE_V>();
       continue;
-#endif
+  #endif
       And(destination, source, mask_.Get<int16_t>(), planeElements);
       PipeBarrier<PIPE_V>();
       Cast(destination.ReinterpretCast<half>(), destination, RoundMode::CAST_NONE, planeElements);
@@ -568,12 +586,12 @@ class Projection {
       Cast(destination.ReinterpretCast<half>(), destination, RoundMode::CAST_NONE, planeElements);
       PipeBarrier<PIPE_V>();
     }
-#ifdef GLM_PREPARED_WEIGHT_LAYOUT
+  #ifdef GLM_PREPARED_WEIGHT_LAYOUT
     // Preparation placed codes in native K64/channel order. W2/W3 only
     // expand signed fields to INT4; no per-inference transpose is required.
     Cast(packedB_.Get<int8_t>().ReinterpretCast<int4b_t>(), decoded.ReinterpretCast<half>(), RoundMode::CAST_NONE,
          N * NZ_K);
-#else
+  #else
     if (bits_ == 3) {
       // Four fields cover K=128. Reorder those planes in UB so a single
       // four-repeat transpose can consume each full K=64 tile. Using two
@@ -612,8 +630,9 @@ class Projection {
            RoundMode::CAST_NONE, N * K0);
       PipeBarrier<PIPE_V>();
     }
-#endif
+  #endif
     PipeBarrier<PIPE_ALL>();
+#endif
   }
   __aicore__ inline void Weight(uint32_t group, uint32_t wideGroups = 0) {
 #ifdef GLM_PREFILL_WEIGHT_CACHE
@@ -1491,7 +1510,7 @@ class Projection {
   int64_t rows_, experts_, n_, k_, activationBits_, tokens_, topK_, firstToken_;
 #ifdef GLM_STATIC_WEIGHT_BITS
   static constexpr int64_t bits_ = GLM_STATIC_WEIGHT_BITS;
-  static_assert(bits_ == 3, "this specialized entry accepts only W3 banks");
+  static_assert(bits_ == 3 || bits_ == 4, "specialized entries accept W3 or W4 banks");
 #else
   int64_t bits_;
 #endif
@@ -1537,13 +1556,17 @@ class Projection {
 };
 }  // namespace
 #ifdef GLM_FUSED_GATE_UP
-  #ifdef GLM_STATIC_WEIGHT_BITS
+  #if defined(GLM_STATIC_WEIGHT_BITS) && GLM_STATIC_WEIGHT_BITS == 4
+    #define GLM_FUSED_ENTRY glm_fused_gate_up_w4_v1
+  #elif defined(GLM_STATIC_WEIGHT_BITS)
     #define GLM_FUSED_ENTRY glm_fused_gate_up_w3_v1
   #else
     #define GLM_FUSED_ENTRY glm_fused_gate_up_v1
   #endif
 #else
-  #ifdef GLM_STATIC_WEIGHT_BITS
+  #if defined(GLM_STATIC_WEIGHT_BITS) && GLM_STATIC_WEIGHT_BITS == 4
+    #define GLM_FUSED_ENTRY glm_fused_down_w4_v1
+  #elif defined(GLM_STATIC_WEIGHT_BITS)
     #define GLM_FUSED_ENTRY glm_fused_down_w3_v1
   #else
     #define GLM_FUSED_ENTRY glm_fused_down_v1

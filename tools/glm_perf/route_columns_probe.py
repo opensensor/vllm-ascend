@@ -12,9 +12,10 @@ from pathlib import Path
 
 import torch
 
+from .native_checkpoint import kernel_assets
 from .reconstruction_probe import time_pair
 
-FEATURES = ("native_route_columns", "prerounded_weight_scales")
+FEATURES = ("native_route_columns", "prerounded_weight_scales", "compact_w4_scratch")
 
 
 def verify_pair(baseline, candidate, feature="native_route_columns"):
@@ -28,6 +29,7 @@ def verify_pair(baseline, candidate, feature="native_route_columns"):
     if any(old.get(key, False) != new.get(key, False) for key in old.keys() | new.keys() if key not in ignored):
         raise ValueError("route-column pair differs in another kernel schedule")
     for root, report in zip((baseline, candidate), reports):
+        kernel_assets(root)
         if report["_build"].get("fp16_route_workspace") is not True:
             raise ValueError("paired producer/reducer require FP16 workspace")
         for name in ("glm_fused_gate_up.bin", "glm_fused_down.bin", "glm_fused_reduce.bin", "glm_fused_pack.bin"):

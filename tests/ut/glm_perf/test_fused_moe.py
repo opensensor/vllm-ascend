@@ -342,6 +342,7 @@ def test_fused_wrapper_counts_rejected_bank_as_fallback():
         {"fp16_route_workspace": True},
         {"fp16_route_workspace": True, "native_route_columns": True},
         {"prerounded_weight_scales": True},
+        {"compact_w4_scratch": True},
         {"prefill_weight_cache": True, "fp16_route_workspace": True},
         {"share_gate_up_input": True},
         {"share_gate_up_input": True, "cache_gate_up_activations": True},
@@ -369,9 +370,12 @@ def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_pat
     names = ("glm_reconstruction_bridge_v997.so", "glm_fused_gate_up.bin", "glm_fused_down.bin", "glm_fused_pack.bin")
     if specialize_w3:
         names += ("glm_fused_gate_up_w3.bin", "glm_fused_down_w3.bin")
+    if prefill_options.get("compact_w4_scratch"):
+        names += ("glm_fused_gate_up_w4.bin", "glm_fused_down_w4.bin")
     for name in names:
         (tmp_path / name).write_bytes(name.encode())
     row = {"passed": True, "graph_changed_inputs_routes_weights": True, "fp16_intermediate_gm_bytes": 0, "tokens": 128}
+    row["compact_w4_scratch"] = prefill_options.get("compact_w4_scratch", False)
     row["prerounded_weight_scales"] = prefill_options.get("prerounded_weight_scales", False)
     if prefill_options.get("fp16_route_workspace"):
         row.update(
@@ -410,6 +414,20 @@ def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_pat
             manifest(tmp_path, report)
         gates["records"] = records
         write()
+    if prefill_options.get("compact_w4_scratch"):
+        gates["records"] = [dict(record, compact_w4_scratch=False) for record in records]
+        write()
+        with pytest.raises(ValueError, match="specialized dispatch gates"):
+            manifest(tmp_path, report)
+        gates["records"] = records
+        write()
+        path = tmp_path / "glm_fused_down_w4.bin"
+        assert str(path) in {entry["path"] for entry in payload["assets"]}
+        original = path.read_bytes()
+        path.write_bytes(b"tampered W4 stage")
+        with pytest.raises(ValueError, match="exact binaries"):
+            manifest(tmp_path, report)
+        path.write_bytes(original)
     if specialize_w3:
         specialized = tmp_path / "glm_fused_down_w3.bin"
         assert str(specialized) in {entry["path"] for entry in payload["assets"]}

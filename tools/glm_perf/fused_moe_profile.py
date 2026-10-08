@@ -40,6 +40,12 @@ def frozen_helper(build):
         name = f"glm_fused_{stage}.bin"
         if hashlib.sha256((build / name).read_bytes()).hexdigest() != provenance[name]["binary_sha256"]:
             raise ValueError("kernel differs from provenance: " + name)
+    for bits, feature in ((3, "specialize_w3"), (4, "compact_w4_scratch")):
+        if options.get(feature):
+            for stage in ("gate_up", "down"):
+                name = f"glm_fused_{stage}_w{bits}.bin"
+                if hashlib.sha256((build / name).read_bytes()).hexdigest() != provenance[name]["binary_sha256"]:
+                    raise ValueError("specialized kernel differs from provenance: " + name)
     if "glm_fused_route_input.bin" in provenance:
         name = "glm_fused_route_input.bin"
         if hashlib.sha256((build / name).read_bytes()).hexdigest() != provenance[name]["binary_sha256"]:
@@ -62,7 +68,12 @@ def measure(native, pipeline, warmups, samples):
         id(native.gate_kernel): "gate_up_swiglu_quant",
         id(native.down_kernel): "down_weighted_reduce",
     }
-    for attribute, name in (("gate_w3_kernel", "gate_up_swiglu_quant"), ("down_w3_kernel", "down_weighted_reduce")):
+    for attribute, name in (
+        ("gate_w3_kernel", "gate_up_swiglu_quant"),
+        ("down_w3_kernel", "down_weighted_reduce"),
+        ("gate_w4_kernel", "gate_up_swiglu_quant"),
+        ("down_w4_kernel", "down_weighted_reduce"),
+    ):
         kernel = getattr(native, attribute, None)
         if kernel is not None:
             names[id(kernel)] = name

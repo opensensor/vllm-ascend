@@ -1,0 +1,101 @@
+{
+  "_build": {
+    "namespace": "glm_reconstruction_v959",
+    "version": 959,
+    "output_columns": 128,
+    "helper_package": "glm_reconstruction_v959_helpers",
+    "tile_pipeline": true,
+    "all_bits": true,
+    "prefill_native": true,
+    "fused_moe": true,
+    "prepared_weight_layout": true,
+    "pair_scale_groups": true,
+    "fp16_swiglu": false,
+    "pair_hidden_quant": false,
+    "strided_product_copy": false,
+    "repeat_product_cast": false,
+    "w3_float_fragments": false,
+    "specialize_w3": false,
+    "compact_w4_scratch": true,
+    "prefill_weight_cache": true,
+    "fp16_route_workspace": true,
+    "native_route_columns": true,
+    "prerounded_weight_scales": true,
+    "share_gate_up_input": true,
+    "cache_gate_up_activations": true,
+    "vector_scale_products": true,
+    "gather_product_matrix": false,
+    "prefill_rows_32": true,
+    "quad_hidden_quant": true,
+    "direct_hidden_gather": true,
+    "route_packed_input": true,
+    "route_packed_down": true,
+    "route_compact_down_scales": true,
+    "raw_hidden_scales": true,
+    "raw_input_scales": true,
+    "nz_prefill_accumulator": false,
+    "prefill_product_cast": false,
+    "weight_decode_lut": false,
+    "wide_cube_k": 0,
+    "pair_prefill_scale_groups": true
+  },
+  "_helpers": {
+    "reconstruction_native.py": "9bf814f721c063009c3e211841a55f7940c849c99d018d0822227f1cc3f5752c",
+    "reconstruction_probe.py": "53671a4e566771d23f945d55037e24cc7120df8a7d21672802b5a5e2724f3d83",
+    "glm_int4.py": "be71985a4fd66c3f99d950abb5da4f8383ad607c421c8b3bfbe1ec3564e0a843",
+    "glm_fused_moe.py": "6e48e20ca232d37dc4ad7eee873277e9d9f57b3bec08da3350e508aa6fbb4690",
+    "fused_moe_probe.py": "523c6b001b72de41b300e3a95e36e22b2ad60c5a7dd2c60b46f25d743cabfcb2",
+    "fused_weight_layout.py": "eefc656689301457aee0fc9c30aa09708062d926b49d58bf6796213940d82f07",
+    "expert_reconstruction.py": "2d3bfc73b1736f2abe605b43c0e0d81f483afa88c5c79c050df5faa630cea1a4",
+    "__init__.py": "6c6ec57de9f82ef42d82760f144a4571cb16b3cd6de33aaa7aa9fd65e8ab1fa1"
+  },
+  "glm_w4a8_pack.cpp": {
+    "source_sha256": "07dc06ec4bf8b93719c06a762c51062b6d53bb3da1d591d8ac532e481db0640e",
+    "binary_sha256": "aacdfeee1e1f4b374e2c9cf24c46ea3c87455d43336f41bbaf459fcc6a24cede"
+  },
+  "glm_lowbit_a8_pipeline.cpp": {
+    "source_sha256": "9b7702fca17a6f86555a3737af1dc1b80010a3f882747779f0077d75c08aef5c",
+    "binary_sha256": "947025ecd33e88f7341557b30d5169438bc8ddd506b1d1bba03619e67109db63"
+  },
+  "glm_fused_gate_up.bin": {
+    "source_sha256": "1f5bb76930923e49f75e13515be8ad6be518e0320150ea2496e2bb111e7fcf9f",
+    "binary_sha256": "cb8fc8ed8b191060ba3925a366bae866e1225c47395767afc0d9f86ec6d3f398"
+  },
+  "glm_fused_down.bin": {
+    "source_sha256": "1f5bb76930923e49f75e13515be8ad6be518e0320150ea2496e2bb111e7fcf9f",
+    "binary_sha256": "f653e60d69b9baf5e98c9248dda63d4a8d65b201eb0ad5ab9eb3552243759b19"
+  },
+  "glm_fused_gate_up_w4.bin": {
+    "source_sha256": "1f5bb76930923e49f75e13515be8ad6be518e0320150ea2496e2bb111e7fcf9f",
+    "binary_sha256": "fe8669604737d20d0e6786e590524fdcf0ca0a51fd61d2e75c97ef5aa8bf95d6"
+  },
+  "glm_fused_down_w4.bin": {
+    "source_sha256": "1f5bb76930923e49f75e13515be8ad6be518e0320150ea2496e2bb111e7fcf9f",
+    "binary_sha256": "fe6c9d0aac2faefcea532825c152d4fc43f3068eba836c4e0782589f1bf3698e"
+  },
+  "glm_fused_scratch.h": {
+    "source_sha256": "e5dae080fc2736005c1b91927fee04bd4ab796f1b4eafaba497a58ee0fbbeac9"
+  },
+  "glm_route_input_layout.h": {
+    "source_sha256": "6c97df7f5f78ba60ce5da617c975491e6c8926a488516d1ca4f6f0bc59bd331f"
+  },
+  "glm_fused_route_input.bin": {
+    "source_sha256": "7277990003d3df3222bdb81b8265144df4a1e24cb5e27b93219753c8ae3303a6",
+    "binary_sha256": "88c97073f7a99c651e06e9ac6c012b783ab1e3a78309ce514fec0950d9068061"
+  },
+  "glm_fused_pack.bin": {
+    "source_sha256": "83dd3aa8357acf57123c77f253c372c34c5ba243a9f425499110707a7d2743f0",
+    "binary_sha256": "649cf14bfeebed5e67d28698c2751bb45c884e25bc6651c04c38e6db27c70f9a"
+  },
+  "glm_fused_quantize.h": {
+    "source_sha256": "35980321f8df37ec1f05c431bfd51c38c34682cb3435a91a1e240eee4f654162"
+  },
+  "glm_fused_reduce.bin": {
+    "source_sha256": "3465e4443652bf67f1fc6c833013d1c22a834b1f1dd8e106b327ec19d41e022a",
+    "binary_sha256": "c1e7ade7ca84f1c1d251944dea2eacef08a6fc047e197ebe5d4b77e73b1e39a6"
+  },
+  "reconstruction_bridge.cpp": {
+    "source_sha256": "08906a208fab23cc9a87e5a18e624d7a64e6458f84f022f7039acf6d6a5b57e2",
+    "binary_sha256": "d6cdaa47abd5975db67d964d0085025e46327bdfe25e66c85641d5d9211c2d31"
+  }
+}

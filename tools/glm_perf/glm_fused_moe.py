@@ -176,6 +176,15 @@ class NativeFusedMoE:
             raise ValueError("packed down input requires routed input packing")
         if options.get("route_packed_input") and not (root / "glm_fused_route_input.bin").exists():
             raise ValueError("routed input packing requires its compiled producer")
+        compact = options.get("compact_w4_scratch", False)
+        if type(compact) is not bool:
+            raise ValueError("compact W4 scratch flag must be boolean")
+        if compact and (not prepared_weight_layout or weight_decode_lut or options.get("weight_decode_lut")):
+            raise ValueError("compact W4 scratch requires prepared weights without lookup tables")
+        gate_w4, down_w4 = root / "glm_fused_gate_up_w4.bin", root / "glm_fused_down_w4.bin"
+        if gate_w4.exists() != compact or down_w4.exists() != compact:
+            raise ValueError("compact W4 scratch requires declared paired W4 stage binaries")
+        self.compact_w4_scratch = compact
         self.activation_bits = activation_bits
         self.prepared_weight_layout = prepared_weight_layout
         self.prerounded_weight_scales = options.get("prerounded_weight_scales", False)
@@ -187,6 +196,8 @@ class NativeFusedMoE:
             raise ValueError("W3 specialization requires both fused stage binaries")
         self.gate_w3_kernel = factory(str(gate_w3), "glm_fused_gate_up_w3_v1") if gate_w3.exists() else None
         self.down_w3_kernel = factory(str(down_w3), "glm_fused_down_w3_v1") if down_w3.exists() else None
+        self.gate_w4_kernel = factory(str(gate_w4), "glm_fused_gate_up_w4_v1") if compact else None
+        self.down_w4_kernel = factory(str(down_w4), "glm_fused_down_w4_v1") if compact else None
         self.gate_kernel = factory(str(root / "glm_fused_gate_up.bin"), "glm_fused_gate_up_v1")
         self.down_kernel = factory(str(root / "glm_fused_down.bin"), "glm_fused_down_v1")
         self.pack_kernel = factory(str(root / "glm_fused_pack.bin"), "glm_fused_pack_v1")
@@ -208,7 +219,7 @@ class NativeFusedMoE:
         self.scratch = {}
 
     def stage_kernel(self, stage, bits):
-        specialized = getattr(self, stage + "_w3_kernel", None) if bits == 3 else None
+        specialized = getattr(self, f"{stage}_w{bits}_kernel", None) if bits in (3, 4) else None
         return specialized if specialized is not None else getattr(self, stage + "_kernel")
 
     @property

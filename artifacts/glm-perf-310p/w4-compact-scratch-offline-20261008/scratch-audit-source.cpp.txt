@@ -1,0 +1,9 @@
+#include "glm_fused_scratch.h"
+#include <iostream>
+template<unsigned Rows,unsigned K,bool Compact> void emit() {
+ using S=GlmFusedScratch::Layout<Rows,K,Compact>;
+ std::cout << Rows << " " << K << " " << Compact << " " << S::RAW_BYTES << " "
+           << S::DECODED_BYTES << " " << S::GATHERED_BYTES << " " << S::SCALE_PRODUCTS_OFFSET << "\n";
+}
+int main(){emit<16,64,false>();emit<16,64,true>();emit<16,128,false>();emit<16,128,true>();
+           emit<16,256,false>();emit<16,256,true>();emit<32,64,false>();emit<32,64,true>();}

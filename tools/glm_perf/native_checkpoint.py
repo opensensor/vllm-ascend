@@ -123,6 +123,8 @@ def kernel_assets(bundle):
     ]
     if options.get("specialize_w3"):
         names += ["glm_fused_gate_up_w3.bin", "glm_fused_down_w3.bin"]
+    if options.get("compact_w4_scratch"):
+        names += ["glm_fused_gate_up_w4.bin", "glm_fused_down_w4.bin"]
     if "glm_fused_reduce.bin" in provenance:
         names.append("glm_fused_reduce.bin")
     if options.get("native_route_columns") and "glm_fused_reduce.bin" not in names:

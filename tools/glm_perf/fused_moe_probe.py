@@ -111,6 +111,7 @@ def gate_case(native, bits, tokens=2, hidden=256, inter=256, real=None):
     return {
         "weight_bits": bits,
         "prerounded_weight_scales": prepared,
+        "compact_w4_scratch": getattr(native, "compact_w4_scratch", False),
         "activation_bits": native.activation_bits,
         "tokens": tokens,
         "hidden": hidden,
@@ -160,6 +161,8 @@ def run(build_dir, output, *, checkpoint=None, real_prefixes=()):
     names = (bridge, "glm_fused_gate_up.bin", "glm_fused_down.bin", "glm_fused_pack.bin")
     if options.get("specialize_w3"):
         names += ("glm_fused_gate_up_w3.bin", "glm_fused_down_w3.bin")
+    if options.get("compact_w4_scratch"):
+        names += ("glm_fused_gate_up_w4.bin", "glm_fused_down_w4.bin")
     if (build_dir / "glm_fused_reduce.bin").exists():
         names += ("glm_fused_reduce.bin",)
     if options.get("route_packed_input"):

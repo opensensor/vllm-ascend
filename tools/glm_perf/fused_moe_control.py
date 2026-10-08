@@ -42,6 +42,8 @@ def manifest(build_dir, gate_report):
             raise ValueError("fused MoE requires independent arithmetic, replay and real-weight gates")
         if options.get("prerounded_weight_scales") and any(r.get("prerounded_weight_scales") is not True for r in rows):
             raise ValueError("prerounded kernels require explicitly prepared scale gates")
+        if options.get("compact_w4_scratch") and any(r.get("compact_w4_scratch") is not True for r in rows):
+            raise ValueError("compact W4 kernels require explicit specialized dispatch gates")
         if {(r.get("weight_bits"), r.get("activation_bits")) for r in rows} != required:
             raise ValueError("fused MoE requires all weight and activation precisions")
     if {(r["weight_bits"], r["activation_bits"]) for r in gates["records"] if r["tokens"] > 64} != required:
@@ -49,6 +51,7 @@ def manifest(build_dir, gate_report):
     if any(
         options.get(flag)
         for flag in (
+            "compact_w4_scratch",
             "prefill_weight_cache",
             "prerounded_weight_scales",
             "fp16_route_workspace",
@@ -83,6 +86,8 @@ def manifest(build_dir, gate_report):
         binaries += (root / "glm_fused_route_input.bin",)
     if options.get("specialize_w3"):
         binaries += (root / "glm_fused_gate_up_w3.bin", root / "glm_fused_down_w3.bin")
+    if options.get("compact_w4_scratch"):
+        binaries += (root / "glm_fused_gate_up_w4.bin", root / "glm_fused_down_w4.bin")
     for path in binaries:
         if gates.get("binaries", {}).get(path.name) != hashlib.sha256(path.read_bytes()).hexdigest():
             raise ValueError("fused gates do not identify these exact binaries")

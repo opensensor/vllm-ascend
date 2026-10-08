@@ -64,6 +64,7 @@ def build(
     prefill_product_cast=False,
     native_route_columns=False,
     prerounded_weight_scales=False,
+    compact_w4_scratch=False,
 ):
     """Freeze helper sources and compile a unique, append-only native version."""
     if type(version) is not int or version < 1 or output_columns not in (16, 32, 64, 128):
@@ -89,6 +90,7 @@ def build(
             prefill_product_cast,
             native_route_columns,
             prerounded_weight_scales,
+            compact_w4_scratch,
         )
     ):
         raise ValueError("prefill experiment flags must be boolean")
@@ -118,6 +120,10 @@ def build(
         raise ValueError("repeated product cast requires fused MoE")
     if specialize_w3 and not fused_moe:
         raise ValueError("W3 specialization requires fused MoE")
+    if compact_w4_scratch and not (fused_moe and prepared_weight_layout):
+        raise ValueError("compact W4 scratch requires prepared fused MoE")
+    if compact_w4_scratch and weight_decode_lut:
+        raise ValueError("compact W4 scratch cannot retain weight decode lookup tables")
     if prefill_weight_cache and not (fused_moe and prepared_weight_layout):
         raise ValueError("prefill weight cache requires prepared fused MoE")
     if prefill_weight_cache and weight_decode_lut:
@@ -245,6 +251,7 @@ def build(
             "repeat_product_cast": repeat_product_cast,
             "w3_float_fragments": w3_float_fragments,
             "specialize_w3": specialize_w3,
+            "compact_w4_scratch": compact_w4_scratch,
             "prefill_weight_cache": prefill_weight_cache,
             "fp16_route_workspace": fp16_route_workspace,
             "native_route_columns": native_route_columns,
@@ -286,11 +293,13 @@ def build(
         provenance[name] = {"source_sha256": sha256(source), "binary_sha256": sha256(output)}
     if fused_moe:
         source = HERE / "glm_fused_moe.cpp"
-        stages = [(stage, False) for stage in ("gate_up", "down")]
+        stages = [(stage, None) for stage in ("gate_up", "down")]
         if specialize_w3:
-            stages.extend((stage, True) for stage in ("gate_up", "down"))
-        for stage, specialized in stages:
-            suffix = "_w3" if specialized else ""
+            stages.extend((stage, 3) for stage in ("gate_up", "down"))
+        if compact_w4_scratch:
+            stages.extend((stage, 4) for stage in ("gate_up", "down"))
+        for stage, precision in stages:
+            suffix = f"_w{precision}" if precision else ""
             output = build_dir / f"glm_fused_{stage}{suffix}.bin"
             subprocess.run(
                 [
@@ -314,10 +323,11 @@ def build(
                     *(["-DGLM_REPEAT_PRODUCT_CAST"] if repeat_product_cast else []),
                     *(
                         ["-DGLM_W3_FLOAT_FRAGMENTS"]
-                        if w3_float_fragments and (not specialize_w3 or specialized)
+                        if w3_float_fragments and precision != 4 and (not specialize_w3 or precision == 3)
                         else []
                     ),
-                    *(["-DGLM_STATIC_WEIGHT_BITS=3"] if specialized else []),
+                    *([f"-DGLM_STATIC_WEIGHT_BITS={precision}"] if precision else []),
+                    *(["-DGLM_COMPACT_W4_SCRATCH"] if precision == 4 else []),
                     *(["-DGLM_PREFILL_WEIGHT_CACHE"] if prefill_weight_cache else []),
                     *(["-DGLM_VECTOR_SCALE_PRODUCTS"] if vector_scale_products else []),
                     *(["-DGLM_PREFILL_ROWS_32"] if prefill_rows_32 else []),
@@ -340,6 +350,7 @@ def build(
                 check=True,
             )
             provenance[output.name] = {"source_sha256": sha256(source), "binary_sha256": sha256(output)}
+        provenance["glm_fused_scratch.h"] = {"source_sha256": sha256(HERE / "glm_fused_scratch.h")}
         provenance["glm_route_input_layout.h"] = {"source_sha256": sha256(HERE / "glm_route_input_layout.h")}
         if route_packed_input:
             source = HERE / "glm_fused_route_input.cpp"
@@ -546,6 +557,11 @@ def main():
         action="store_true",
         help="cast paired dense prefill Cube output contiguously before row copies",
     )
+    parser.add_argument(
+        "--compact-w4-scratch",
+        action="store_true",
+        help="add paired W4 entries with reconstruction-only scratch removed",
+    )
     args = parser.parse_args()
     print(
         build(
@@ -587,6 +603,7 @@ def main():
             args.prefill_product_cast,
             args.native_route_columns,
             args.prerounded_weight_scales,
+            args.compact_w4_scratch,
         )
     )
 

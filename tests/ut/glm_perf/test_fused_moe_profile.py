@@ -9,8 +9,8 @@ import pytest
 from tools.glm_perf import fused_moe_profile
 
 
-@pytest.mark.parametrize("specialize_w3", [False, True])
-def test_event_profile_uses_bounded_pairs_and_resolves_every_sample(monkeypatch, specialize_w3):
+@pytest.mark.parametrize("specialization", [None, 3, 4])
+def test_event_profile_uses_bounded_pairs_and_resolves_every_sample(monkeypatch, specialization):
     clock = [0]
     created = []
     syncs = []
@@ -46,18 +46,20 @@ def test_event_profile_uses_bounded_pairs_and_resolves_every_sample(monkeypatch,
     )
 
     selected = kernels
-    if specialize_w3:
-        native.gate_w3_kernel, native.down_w3_kernel = object(), object()
-        durations[id(native.gate_w3_kernel)] = 2
-        durations[id(native.down_w3_kernel)] = 3
-        selected = (native.pack_kernel, native.gate_w3_kernel, native.down_w3_kernel, native.reduce_kernel)
+    if specialization:
+        gate, down = object(), object()
+        setattr(native, f"gate_w{specialization}_kernel", gate)
+        setattr(native, f"down_w{specialization}_kernel", down)
+        durations[id(gate)] = 2
+        durations[id(down)] = 3
+        selected = (native.pack_kernel, gate, down, native.reduce_kernel)
 
     def pipeline():
         for kernel in selected:
             native.launch(kernel, [], 8)
 
     report = fused_moe_profile.measure(native, pipeline, warmups=2, samples=9)
-    assert len(created) == (12 if specialize_w3 else 8)
+    assert len(created) == (12 if specialization else 8)
     assert len(syncs) == 10
     assert sorted(value["median_ms"] for value in report.values()) == [1, 2, 3, 4]
     assert all(len(value["samples_ms"]) == 9 for value in report.values())
