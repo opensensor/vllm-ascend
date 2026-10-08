@@ -1,0 +1,14 @@
+import gzip,tarfile,hashlib,json
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/night-speed-20261008/trace-kda-score-row-batch')
+out=root/'delivery';out.mkdir(exist_ok=False)
+for label in ['decode_c1','prefill_1280']:
+ rank=root/label/'rank0';profile=next(rank.glob('PROF_*/mindstudio_profiler_output'))
+ for prefix in ['op_summary','step_trace']:
+  path=next(profile.glob(prefix+'*.csv'));(out/(label+'-'+prefix+'.csv.gz')).write_bytes(gzip.compress(path.read_bytes(),mtime=0))
+ (out/(label+'-host-steps.json')).write_bytes((rank/'host-steps.json').read_bytes())
+ for name in ['request','stopped']:(out/(label+'-'+name+'.json')).write_bytes((root/(label+'-'+name+'.json')).read_bytes())
+(out/'profile-candidate.py.txt').write_bytes((root/'candidate.py').read_bytes())
+(out/'SHA256.json').write_text(json.dumps({p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in out.iterdir()},indent=2))
+with tarfile.open(root/'delivery.tar','w') as tar:tar.add(out,arcname='profiles')
+print('Rank-zero raw profile CSV evidence frozen',flush=True)

@@ -1,0 +1,12 @@
+import hashlib,json,tarfile,subprocess
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');exp=root/'prefill-kda-score-row-batch-full-v2'
+dst=exp/'delivery';dst.mkdir(exist_ok=True)
+paths={'build.json':exp/'build.json','stage.json':exp/'stage.json','reference.json':exp/'reference.json','admission.json':exp/'admission.json','selected-package.json':exp/'selected-package.json','full-kda-cached.json':exp/'full-kda-cached.json','full-kda-free-device.log.txt':exp/'free-device-candidate.log','full-kda-context-failure.log.txt':exp/'gate-baseline.log','build-v2.log.txt':exp/'build/build.log','configure-v2.log.txt':exp/'build/configure.log','build-v1-rejected.log.txt':root/'prefill-kda-score-row-batch-full/build/build.log','parent-full-kda-cached.json':root/'night-kda-gated-key-reuse-full-v2/full-kda-cached.json'}
+for name,path in paths.items():(dst/name).write_bytes(path.read_bytes())
+with tarfile.open(dst/'qualified-kda-score-row-batch.tar.gz','w:gz') as tar:
+ tar.add(exp/'opp-score-row-batch',arcname='opp-score-row-batch')
+records={p.name:{'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'bytes':p.stat().st_size} for p in dst.iterdir() if p.is_file()}
+(dst/'SHA256.json').write_text(json.dumps(records,indent=2))
+with tarfile.open(exp/'delivery.tar','w') as tar:tar.add(dst,arcname='measurements')
+print(json.dumps(records),flush=True)

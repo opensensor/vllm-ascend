@@ -1,0 +1,24 @@
+import gzip,json,hashlib,tarfile
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');out=root/'prefill-kda-score-row-batch-full-v2/final-delivery';out.mkdir(exist_ok=False)
+files={
+ 'score-row-batch-final-status.json':root/'night-speed-20261008/score-row-batch-final-status.json',
+ 'score-row-batch-server-process.json':root/'score-row-batch-server-process-20261008.json',
+ 'score-row-batch-profile-restored.json':root/'night-speed-20261008/trace-kda-score-row-batch/restored.json',
+ 'score-row-batch-profile-before.json':root/'night-speed-20261008/trace-kda-score-row-batch/before.json',
+ 'score-row-batch-launch.py.txt':root/'night-speed-20261008/score-row-batch-launch.py',
+ 'score-row-batch-vector-candidate.py.txt':root/'night-speed-20261008/score-row-batch-vector-candidate.py',
+ 'score-row-batch-serving.log.txt.gz':root/'score-row-batch-server-20261008.log',
+ 'score-row-batch-profile.log.txt.gz':root/'glm-prefill-score-row-batch-profile.log',
+ 'score-row-batch-profile-export.log.txt.gz':root/'glm-prefill-score-row-batch-export.log',
+ 'score-row-batch-bench.log.txt.gz':root/'glm-prefill-score-row-batch-bench.log',
+ 'score-row-batch-real-prefix.log.txt.gz':root/'glm-prefill-score-row-batch-real-prefix.log',
+ 'kda-stage-attribution.jsonl.gz':root/'night-speed-20261008/trace-kda-score-row-batch/kda-stage-attribution.jsonl',
+ 'all-op-attribution.jsonl.gz':root/'night-speed-20261008/trace-kda-score-row-batch/all-op-attribution.jsonl',
+}
+for name,p in files.items():
+ b=p.read_bytes();(out/name).write_bytes(gzip.compress(b,mtime=0) if name.endswith('.gz') else b)
+records={p.name:{'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'bytes':p.stat().st_size} for p in out.iterdir()}
+(out/'FINAL-SHA256.json').write_text(json.dumps(records,indent=2))
+with tarfile.open(root/'prefill-kda-score-row-batch-full-v2/final-delivery.tar','w') as tar:tar.add(out,arcname='measurements')
+print('Final evidence archived',flush=True)

@@ -1,0 +1,21 @@
+import hashlib,json,sys,urllib.request
+from pathlib import Path
+import psutil
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+c=ResidentClient('http://127.0.0.1:8001');r=json.loads((root/'score-row-batch-server-process-20261008.json').read_text());p=psutil.Process(r['pid']);assert abs(p.create_time()-r['created'])<1
+rows=c._acknowledged_rpc('resident_status',matches=c._status_matches)
+source=root/'night-speed-20261008/score-row-batch-vector-candidate.py';digest=hashlib.sha256(source.read_bytes()).hexdigest()
+build=json.loads((root/'prefill-kda-score-row-batch-full-v2/build.json').read_text());vendor=str(Path(build['package'])/'vendors/custom_transformer')
+packages=[]
+for row in rows:
+ assert row['candidate']=='fp16_query967_state925_qsa941_tiled971_compact3_int927_bf16v975_kda_reuse_v2_score_row_batch_v2'
+ assert row['digest']==digest and not row['graphs_dirty'] and not row['native_failed'] and row['reconstruction']['fallback_dispatches']==0
+ env=dict(e.split(b'=',1) for e in Path(f"/proc/{row['pid']}/environ").read_bytes().split(b'\0') if b'=' in e)
+ assert vendor in env[b'ASCEND_CUSTOM_OPP_PATH'].decode().split(':')
+ packages.append(dict(rank=row['rank'],pid=row['pid'],kda_vendor=vendor))
+assert hashlib.sha256(Path(build['binary']).read_bytes()).hexdigest()==build['binary_sha256']
+with urllib.request.urlopen(c.base_url+'/health',timeout=10) as response:assert response.status==200
+models=c.request('/v1/models',method='GET');paused=c.request('/is_paused',method='GET');assert paused['is_paused'] is False
+(root/'night-speed-20261008/score-row-batch-final-status.json').write_text(json.dumps(dict(server=r,source=str(source),source_sha256=digest,packages=packages,rows=rows,models=models,paused=paused),indent=2))
+print(json.dumps({'healthy':True,'unpaused':True,'packages':packages,'source_sha256':digest}),flush=True)

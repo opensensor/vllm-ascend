@@ -1,0 +1,65 @@
+import hashlib,json,os,re,shutil,socket,subprocess,sys,time,urllib.request
+from pathlib import Path
+import psutil
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+exp=root/'prefill-kda-score-row-batch-full-v2'
+build=json.loads((exp/'build.json').read_text())
+assert hashlib.sha256(Path(build['binary']).read_bytes()).hexdigest()==build['binary_sha256']
+oldvendor=str(root/'night-kda-gated-key-reuse-full-v2/opp-gated-key-reuse/vendors/custom_transformer')
+launch=(root/'night-speed-20261008/gated-key-reuse-launch.py').read_text()
+launch=launch.replace("log=root/'gated-key-reuse-server-20261008.log'","log=root/'score-row-batch-server-20261008.log'").replace("root/'gated-key-reuse-server-process-20261008.json'","root/'score-row-batch-server-process-20261008.json'")
+assert not (root/'score-row-batch-server-20261008.log').exists()
+compile(launch,'<recovery-launch>','exec')
+reference=root/'night-kda-gated-key-reuse-full-v2/full-kda-baseline.pt'
+shutil.copyfile(reference,exp/'full-kda-baseline.pt')
+(exp/'reference.json').write_text(json.dumps({'reference':str(reference),'sha256':hashlib.sha256(reference.read_bytes()).hexdigest(),'qualification':'Frozen tail-W/U v2 reference; deployed gated-key reuse v2 is byte-exact on the same 17 safe cases. No fresh paired baseline timings.'},indent=2))
+client=ResidentClient('http://127.0.0.1:8001')
+with urllib.request.urlopen(client.base_url+'/metrics',timeout=30) as response:metrics=response.read().decode()
+counts=[float(x) for x in re.findall(r'^vllm:num_requests_(?:running|waiting)(?:\{[^\n]*\})?\s+([0-9.eE+-]+)$',metrics,re.M)]
+assert counts and not any(counts),'GLM busy, preserve user request'
+assert client.request('/pause?mode=wait&clear_cache=false')['status']=='paused'
+try:
+ rows=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+ assert all(not r['graphs_dirty'] and not r['native_failed'] for r in rows)
+ receipt=json.loads((root/'gated-key-reuse-server-process-20261008.json').read_text())
+ parent=psutil.Process(receipt['pid']);assert abs(parent.create_time()-receipt['created'])<1
+ children=parent.children(recursive=True);assert set(r['pid'] for r in rows)<=set(p.pid for p in children)
+except BaseException:
+ client.resume();raise
+owned=[parent,*children]
+for p in owned:
+ try:p.terminate()
+ except psutil.NoSuchProcess:pass
+_,remaining=psutil.wait_procs(owned,timeout=40)
+for p in remaining:
+ try:p.kill()
+ except psutil.NoSuchProcess:pass
+psutil.wait_procs(remaining,timeout=5)
+assert not any(p.is_running() and p.status()!=psutil.STATUS_ZOMBIE for p in owned)
+print('Idle GLM process tree stopped; running candidate against frozen qualified reference',flush=True)
+selected=False
+try:
+ vendor=str(Path(build['package'])/'vendors/custom_transformer')
+ vendors=[vendor,'/srv/ai/src/glm-l1-wide-build-20261004/opp-l1-overlap-20261004/vendors/custom_transformer','/srv/ai/src/kda-persistent-scores-opp/vendors/custom_transformer','/srv/ai/src/vllm-ascend/vllm_ascend/_cann_ops_custom/vendors/custom_transformer']
+ env=dict(os.environ);env['ASCEND_CUSTOM_OPP_PATH']=':'.join(vendors);env['LD_LIBRARY_PATH']=':'.join(str(Path(v)/'op_api/lib') for v in vendors)+':'+env.get('LD_LIBRARY_PATH','');env['PYTHONPATH']='/srv/ai/src/glm-selective-w3-nz-test-20261004:'+env.get('PYTHONPATH','');env['ASCEND_RT_VISIBLE_DEVICES']='0'
+ with (exp/'free-device-candidate.log').open('x') as out:
+  subprocess.run([sys.executable,str(exp/'validate-full-kda.py'),'cached'],env=env,stdout=out,stderr=subprocess.STDOUT,check=True,timeout=600)
+ safe=[r for r in json.loads((exp/'full-kda-cached.json').read_text()) if '_True_' in r['case']]
+ assert len(safe)==17 and all(r['finite'] and r['inputs_unchanged'] and len(r['bit_mismatches'])==12 and sum(r['bit_mismatches'])==0 and sum(r['repeat_bit_mismatches'])==0 for r in safe)
+ parentrows={r['case']:r for r in json.loads((root/'night-kda-gated-key-reuse-full-v2/full-kda-cached.json').read_text())}
+ timing=[dict(case=r['case'],candidate_ms=r['median_ms'],archived_parent_ms=parentrows[r['case']]['median_ms']) for r in safe if r['case'].startswith('640_')]
+ selected=all(r['candidate_ms']<r['archived_parent_ms'] for r in timing[:2])
+ (exp/'admission.json').write_text(json.dumps({'safe_cases':17,'all_12_outputs_bit_exact':True,'timing_scope':'candidate on free device; archived parent timings, not paired','timing':timing,'selected_for_e2e':selected},indent=2))
+ print(json.dumps({'qualified':True,'selected':selected,'timing':timing}),flush=True)
+ if selected:
+  assert launch.count(oldvendor)==1
+  launch=launch.replace(oldvendor,vendor)
+except BaseException as error:
+ (exp/'free-device-error.json').write_text(json.dumps({'type':type(error).__name__,'error':str(error)}))
+ print('Candidate failed, restoring qualified parent: '+str(error),flush=True)
+finally:
+ (root/'night-speed-20261008/score-row-batch-launch.py').write_text(launch)
+ (exp/'selected-package.json').write_text(json.dumps({'selected':selected,'vendor':str(Path(build['package'])/'vendors/custom_transformer') if selected else oldvendor},indent=2))
+ exec(compile(launch,'<score-row-batch-launch>','exec'),{'__name__':'__main__'})

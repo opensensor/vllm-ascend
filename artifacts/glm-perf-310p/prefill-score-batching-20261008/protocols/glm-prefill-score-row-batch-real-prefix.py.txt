@@ -1,0 +1,35 @@
+import json,time,urllib.request,sys
+import regex as re
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+c=ResidentClient('http://127.0.0.1:8001');records=[]
+def metrics():
+ with urllib.request.urlopen(c.base_url+'/metrics',timeout=30) as response:text=response.read().decode()
+ return {k:float(v) for k,v in re.findall(r'^(vllm:prefix_cache_(?:queries|hits)(?:_total)?)(?:\{[^\n]*\})?\s+([0-9.eE+-]+)$',text,re.M)}
+def stream(prompt,generated,label):
+ req=urllib.request.Request(c.base_url+'/v1/completions',data=json.dumps({'model':'glm53-flash-selective-w3','prompt':prompt,'max_tokens':generated,'temperature':0,'ignore_eos':True,'stream':True,'stream_options':{'include_usage':True}}).encode(),headers={'Content-Type':'application/json'})
+ began=time.perf_counter();first=None;last=None;usage=None;fragments=[];done=False
+ with urllib.request.urlopen(req,timeout=900) as response:
+  for raw in response:
+   if not raw.startswith(b'data:'):continue
+   data=raw[5:].strip()
+   if data==b'[DONE]':done=True;break
+   event=json.loads(data);assert 'error' not in event
+   if event.get('usage'):usage=event['usage']
+   for choice in event.get('choices',[]):
+    if choice.get('text'):
+     now=time.perf_counter();first=now if first is None else first;last=now;fragments.append(choice['text'])
+ assert usage and usage['completion_tokens']==generated and done
+ r=dict(label=label,usage=usage,total_s=time.perf_counter()-began,ttft_s=first-began,generation_tok_s=(generated-1)/(time.perf_counter()-first) if generated>1 else None,visible_generation_tok_s=(generated-1)/(last-first) if generated>1 else None,text=''.join(fragments))
+ records.append(r);print(json.dumps(r),flush=True)
+ (root/'night-speed-20261008/score-row-batch-real-prefix-serving.json').write_text(json.dumps(dict(complete=False,records=records),indent=2))
+for index,prompt in enumerate(('Write a Python function that adds two integers. Return only the function.\n',)):
+ c.request('/pause?mode=wait&clear_cache=true');c.resume();stream(prompt,128,'real_text_'+str(index))
+c.request('/pause?mode=wait&clear_cache=true');c.resume();before=metrics()
+prompt=[187]+[43]*1278+[287]
+stream(prompt,1,'cold_1280');middle=metrics();stream(prompt,1,'warm_identical_1280');after=metrics()
+status=c._acknowledged_rpc('resident_status',matches=c._status_matches)
+assert all(not row['graphs_dirty'] and not row['native_failed'] for row in status)
+(root/'night-speed-20261008/score-row-batch-real-prefix-serving.json').write_text(json.dumps(dict(complete=True,records=records,prefix_metrics=dict(before=before,middle=middle,after=after),status=status,quality_evaluated=False,paused=c.request('/is_paused',method='GET')),indent=2))
+print('Real text timing and warm-prefix replay complete',flush=True)
