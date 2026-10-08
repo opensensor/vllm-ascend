@@ -1,0 +1,653 @@
+{
+  "complete": true,
+  "receipts": [
+    {
+      "pid": 1313515,
+      "rank": 0,
+      "generation": "68bc0740e3704f6cbfc307682b073c56",
+      "mode": "graph",
+      "candidate": "fp16_scales_query_vector_v966",
+      "digest": "382ee913cf9482e0b429114ddfd3ac9626651e570353467c477cece27423688b",
+      "graphs_dirty": false,
+      "weight_storage_digest": "1e9760c8dcbd959177a9d68639f4fe8174529bc8d634e2d7b4e58648ca51c98e",
+      "native_failed": false,
+      "native_loaded": {
+        "reconstruction_v965": {
+          "native_name": "reconstruction_v965",
+          "native_digest": "3b493210e9e7c39c9519e3be0202da180b37a2a4ac1f1f135468f74291398904",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 17408,
+            "model_quality": "not_evaluated"
+          }
+        },
+        "query_vector_v966": {
+          "native_name": "query_vector_v966",
+          "native_digest": "d54a76011fd92325dddda1a9397eb0c062738035f2ae48dd1a346feea2edb9e4",
+          "validation": {
+            "passed": true,
+            "cases": 13,
+            "changed_replay": true
+          }
+        }
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 512,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R5120:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R5120:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K4096": {
+            "native": 24,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K2048": {
+            "native": 24,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 256,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      },
+      "prefill_graph": {
+        "tokens": 640,
+        "scope": "single-request full prefill chunks; live attention/indexer eager boundaries",
+        "dispatches": 0,
+        "replays": 0,
+        "released_scratch_entries": 2,
+        "entries": [
+          {
+            "descriptor": "BatchDescriptor(num_tokens=640, num_reqs=None, uniform=False, has_lora=False, num_active_loras=0)",
+            "graphs": 46,
+            "eager_breaks": 45
+          }
+        ],
+        "free_memory_bytes": 2596646912
+      },
+      "fp16_scale_storage": {
+        "banks": 43,
+        "layouts": [
+          "fp16_storage_fp32_compute_v1"
+        ],
+        "dtypes": [
+          "torch.float16"
+        ],
+        "bytes": 152174592,
+        "dispatches": {
+          "prefill": 84,
+          "decode": 172
+        },
+        "decode_version": 964,
+        "prefill_version": 965
+      },
+      "vector_query_cast": {
+        "indexers": 12,
+        "native_calls": 46,
+        "legacy_calls": 0,
+        "methods": 12,
+        "prepared_outside_capture": true
+      }
+    },
+    {
+      "pid": 1313870,
+      "rank": 1,
+      "generation": "68bc0740e3704f6cbfc307682b073c56",
+      "mode": "graph",
+      "candidate": "fp16_scales_query_vector_v966",
+      "digest": "382ee913cf9482e0b429114ddfd3ac9626651e570353467c477cece27423688b",
+      "graphs_dirty": false,
+      "weight_storage_digest": "444c12325a4bfb126122003e3ef6f142550fe65369675583f463c03004486634",
+      "native_failed": false,
+      "native_loaded": {
+        "reconstruction_v965": {
+          "native_name": "reconstruction_v965",
+          "native_digest": "3b493210e9e7c39c9519e3be0202da180b37a2a4ac1f1f135468f74291398904",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 17408,
+            "model_quality": "not_evaluated"
+          }
+        },
+        "query_vector_v966": {
+          "native_name": "query_vector_v966",
+          "native_digest": "d54a76011fd92325dddda1a9397eb0c062738035f2ae48dd1a346feea2edb9e4",
+          "validation": {
+            "passed": true,
+            "cases": 13,
+            "changed_replay": true
+          }
+        }
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 512,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R5120:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R5120:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K4096": {
+            "native": 24,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K2048": {
+            "native": 24,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 256,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      },
+      "prefill_graph": {
+        "tokens": 640,
+        "scope": "single-request full prefill chunks; live attention/indexer eager boundaries",
+        "dispatches": 0,
+        "replays": 0,
+        "released_scratch_entries": 2,
+        "entries": [
+          {
+            "descriptor": "BatchDescriptor(num_tokens=640, num_reqs=None, uniform=False, has_lora=False, num_active_loras=0)",
+            "graphs": 46,
+            "eager_breaks": 45
+          }
+        ],
+        "free_memory_bytes": 2055782400
+      },
+      "fp16_scale_storage": {
+        "banks": 43,
+        "layouts": [
+          "fp16_storage_fp32_compute_v1"
+        ],
+        "dtypes": [
+          "torch.float16"
+        ],
+        "bytes": 152174592,
+        "dispatches": {
+          "prefill": 84,
+          "decode": 172
+        },
+        "decode_version": 964,
+        "prefill_version": 965
+      },
+      "vector_query_cast": {
+        "indexers": 12,
+        "native_calls": 46,
+        "legacy_calls": 0,
+        "methods": 12,
+        "prepared_outside_capture": true
+      }
+    },
+    {
+      "pid": 1314384,
+      "rank": 2,
+      "generation": "68bc0740e3704f6cbfc307682b073c56",
+      "mode": "graph",
+      "candidate": "fp16_scales_query_vector_v966",
+      "digest": "382ee913cf9482e0b429114ddfd3ac9626651e570353467c477cece27423688b",
+      "graphs_dirty": false,
+      "weight_storage_digest": "8e72c2b4fa0c47ac51e1032e6fb75653a89ab0110c16b92f99321f10617f2261",
+      "native_failed": false,
+      "native_loaded": {
+        "reconstruction_v965": {
+          "native_name": "reconstruction_v965",
+          "native_digest": "3b493210e9e7c39c9519e3be0202da180b37a2a4ac1f1f135468f74291398904",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 17408,
+            "model_quality": "not_evaluated"
+          }
+        },
+        "query_vector_v966": {
+          "native_name": "query_vector_v966",
+          "native_digest": "d54a76011fd92325dddda1a9397eb0c062738035f2ae48dd1a346feea2edb9e4",
+          "validation": {
+            "passed": true,
+            "cases": 13,
+            "changed_replay": true
+          }
+        }
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 512,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R5120:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R5120:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K4096": {
+            "native": 24,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K2048": {
+            "native": 24,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 256,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      },
+      "prefill_graph": {
+        "tokens": 640,
+        "scope": "single-request full prefill chunks; live attention/indexer eager boundaries",
+        "dispatches": 0,
+        "replays": 0,
+        "released_scratch_entries": 2,
+        "entries": [
+          {
+            "descriptor": "BatchDescriptor(num_tokens=640, num_reqs=None, uniform=False, has_lora=False, num_active_loras=0)",
+            "graphs": 46,
+            "eager_breaks": 45
+          }
+        ],
+        "free_memory_bytes": 2492739584
+      },
+      "fp16_scale_storage": {
+        "banks": 43,
+        "layouts": [
+          "fp16_storage_fp32_compute_v1"
+        ],
+        "dtypes": [
+          "torch.float16"
+        ],
+        "bytes": 152174592,
+        "dispatches": {
+          "prefill": 84,
+          "decode": 172
+        },
+        "decode_version": 964,
+        "prefill_version": 965
+      },
+      "vector_query_cast": {
+        "indexers": 12,
+        "native_calls": 46,
+        "legacy_calls": 0,
+        "methods": 12,
+        "prepared_outside_capture": true
+      }
+    },
+    {
+      "pid": 1314796,
+      "rank": 3,
+      "generation": "68bc0740e3704f6cbfc307682b073c56",
+      "mode": "graph",
+      "candidate": "fp16_scales_query_vector_v966",
+      "digest": "382ee913cf9482e0b429114ddfd3ac9626651e570353467c477cece27423688b",
+      "graphs_dirty": false,
+      "weight_storage_digest": "2689e15c7d19890299f3f226574a7c72b6c32e451f1fb361dcef1083a83a35ed",
+      "native_failed": false,
+      "native_loaded": {
+        "reconstruction_v965": {
+          "native_name": "reconstruction_v965",
+          "native_digest": "3b493210e9e7c39c9519e3be0202da180b37a2a4ac1f1f135468f74291398904",
+          "validation": {
+            "passed": true,
+            "cases": 12,
+            "native_fused_stages": 2,
+            "input_quantization_passes_per_token": 1,
+            "fp16_intermediate_gm_bytes": 17408,
+            "model_quality": "not_evaluated"
+          }
+        },
+        "query_vector_v966": {
+          "native_name": "query_vector_v966",
+          "native_digest": "d54a76011fd92325dddda1a9397eb0c062738035f2ae48dd1a346feea2edb9e4",
+          "validation": {
+            "passed": true,
+            "cases": 13,
+            "changed_replay": true
+          }
+        }
+      },
+      "reconstruction": {
+        "profile": "fused_int4a4",
+        "native_dispatches": 512,
+        "fallback_dispatches": 0,
+        "bank_coverage": {
+          "W4:R5120:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R5120:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R5120:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K4096": {
+            "native": 24,
+            "fallback": 0
+          },
+          "W2:R5120:E72:N4096:K2048": {
+            "native": 24,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R64:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R64:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R64:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K4096": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W4:R16:E72:N4096:K2048": {
+            "native": 44,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K4096": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W3:R16:E72:N4096:K2048": {
+            "native": 16,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K4096": {
+            "native": 26,
+            "fallback": 0
+          },
+          "W2:R16:E72:N4096:K2048": {
+            "native": 26,
+            "fallback": 0
+          }
+        },
+        "kernel_fused_calls": 256,
+        "activation_bits": 4
+      },
+      "prepared_weight_layout": {
+        "prepared": true,
+        "persistent": true,
+        "banks": 86,
+        "bytes": 31255953408,
+        "backup_bytes": 0,
+        "transformed_banks": 0,
+        "restored_exact": true
+      },
+      "prefill_graph": {
+        "tokens": 640,
+        "scope": "single-request full prefill chunks; live attention/indexer eager boundaries",
+        "dispatches": 0,
+        "replays": 0,
+        "released_scratch_entries": 2,
+        "entries": [
+          {
+            "descriptor": "BatchDescriptor(num_tokens=640, num_reqs=None, uniform=False, has_lora=False, num_active_loras=0)",
+            "graphs": 46,
+            "eager_breaks": 45
+          }
+        ],
+        "free_memory_bytes": 2168233984
+      },
+      "fp16_scale_storage": {
+        "banks": 43,
+        "layouts": [
+          "fp16_storage_fp32_compute_v1"
+        ],
+        "dtypes": [
+          "torch.float16"
+        ],
+        "bytes": 152174592,
+        "dispatches": {
+          "prefill": 84,
+          "decode": 172
+        },
+        "decode_version": 964,
+        "prefill_version": 965
+      },
+      "vector_query_cast": {
+        "indexers": 12,
+        "native_calls": 46,
+        "legacy_calls": 0,
+        "methods": 12,
+        "prepared_outside_capture": true
+      }
+    }
+  ]
+}

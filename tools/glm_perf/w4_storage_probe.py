@@ -125,7 +125,14 @@ def gate_case(helper, build, options, codes_cpu, scales_cpu, tokens, activation,
     weights = torch.rand(tokens, TOP_K, generator=generator).npu()
     weights[:, 2] = 0
     scales = tuple(
-        (value.half().float() if options.get("prerounded_weight_scales") else value).npu() for value in scales_cpu
+        (
+            value.half()
+            if options.get("fp16_weight_scales")
+            else value.half().float()
+            if options.get("prerounded_weight_scales")
+            else value
+        ).npu()
+        for value in scales_cpu
     )
     device_codes = {name: tuple(value.npu() for value in pair) for name, pair in packed.items()}
     operations = {

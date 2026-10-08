@@ -16,13 +16,23 @@ class PrefillDecodeNative:
         for name in ("device", "input_dtype", "activation_bits", "prepared_weight_layout", "fp16_route_workspace"):
             if getattr(prefill, name) != getattr(decode, name):
                 raise ValueError("prefill/decode native resources disagree: " + name)
+        if getattr(prefill, "required_weight_scale_layout", None) != getattr(
+            decode, "required_weight_scale_layout", None
+        ):
+            raise ValueError("prefill/decode native resources disagree: weight scale storage")
         self.prefill = prefill
         self.decode = decode
         self.input_dtype = prefill.input_dtype
         self.activation_bits = prefill.activation_bits
         self.prepared_weight_layout = prefill.prepared_weight_layout
         self.fp16_route_workspace = prefill.fp16_route_workspace
+        self.fp16_weight_scales = getattr(prefill, "fp16_weight_scales", False)
+        self.prerounded_weight_scales = getattr(prefill, "prerounded_weight_scales", False)
         self.dispatches = {"prefill": 0, "decode": 0}
+
+    @property
+    def required_weight_scale_layout(self):
+        return getattr(self.prefill, "required_weight_scale_layout", None)
 
     @property
     def scratch(self):

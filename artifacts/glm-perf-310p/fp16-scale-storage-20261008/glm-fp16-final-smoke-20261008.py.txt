@@ -1,0 +1,15 @@
+from pathlib import Path
+import sys,json
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+c=ResidentClient('http://127.0.0.1:8001')
+reply=c.request('/v1/chat/completions',{'model':'glm53-flash-selective-w3','messages':[{'role':'user','content':'Explain in one sentence why plants need sunlight.'}],'max_tokens':512,'temperature':0,'chat_template_kwargs':{'enable_thinking':False}})
+(root/'fp16-scales-final-serving-response-20261008.json').write_text(json.dumps(reply,indent=2)+'\n')
+assert reply['choices'][0]['message']['content'],reply
+assert reply['choices'][0]['finish_reason']=='stop',reply
+status=c._acknowledged_rpc('resident_status',matches=c._status_matches)
+assert all(s['candidate']=='fp16_scales_query_vector_v967' and not s['graphs_dirty'] and not s['native_failed'] for s in status)
+assert c.request('/is_paused',method='GET')['is_paused'] is False
+(root/'fp16-scales-final-serving-smoke-20261008.json').write_text(json.dumps({'complete':True,'response':reply,'status':status,'paused':False,'language_quality_evaluated':False},indent=2)+'\n')
+print(reply['choices'][0],flush=True)

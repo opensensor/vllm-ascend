@@ -160,9 +160,13 @@ def run(builds, checkpoint, output, layers=(10, 11, 33), tokens=2, warmups=3, sa
             ends = torch.tensor([tokens], dtype=torch.int64).npu()
             for build, helper, options in loaded:
                 # Prepare fixture scales outside the measured pipeline. The
-                # production path reads these exact FP32 values from disk.
+                # production path reads the matching scale storage from disk.
                 prepared = options.get("prerounded_weight_scales", False)
-                ggs, gds = ((value.half().float() if prepared else value).npu() for value in (gs, ds))
+                half_storage = options.get("fp16_weight_scales", False)
+                ggs, gds = (
+                    (value.half() if half_storage else value.half().float() if prepared else value).npu()
+                    for value in (gs, ds)
+                )
                 for activation_bits in (8, 4):
                     layout_options = {"prepared_weight_layout": True} if options.get("prepared_weight_layout") else {}
                     if options.get("weight_decode_lut"):
@@ -185,6 +189,7 @@ def run(builds, checkpoint, output, layers=(10, 11, 33), tokens=2, warmups=3, sa
                         "weight_bits": bits,
                         "activation_bits": activation_bits,
                         "prerounded_weight_scales": prepared,
+                        "fp16_weight_scales": half_storage,
                         "stage_ms": measure(native, pipeline, warmups, samples),
                     }
                     payload["records"].append(record)

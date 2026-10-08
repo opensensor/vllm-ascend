@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 import torch
 
-from .fused_weight_layout import PREROUNDED_SCALE_LAYOUT, pack_cube
+from .fused_weight_layout import FP16_SCALE_LAYOUT, PREROUNDED_SCALE_LAYOUT, pack_cube
 from .glm_int4 import MAX_GROUPED_ROUTES, pack_nz_codes, packed_weight_bits
 
 FUSED_REDUCTION_TOKENS = 16
@@ -162,6 +162,12 @@ class NativeFusedMoE:
             raise ValueError("raw input scales flag must be boolean")
         if type(options.get("prerounded_weight_scales", False)) is not bool:
             raise ValueError("prerounded weight scales flag must be boolean")
+        if type(options.get("fp16_weight_scales", False)) is not bool:
+            raise ValueError("FP16 weight scale flag must be boolean")
+        if options.get("fp16_weight_scales") and (
+            not prepared_weight_layout or options.get("prerounded_weight_scales")
+        ):
+            raise ValueError("FP16 weight scales require prepared weights and exclude prerounded FP32 storage")
         if options.get("prerounded_weight_scales") and not prepared_weight_layout:
             raise ValueError("prerounded weight scales require the permanent prepared layout")
         if options.get("raw_input_scales") and not options.get("route_packed_input"):
@@ -188,6 +194,7 @@ class NativeFusedMoE:
         self.activation_bits = activation_bits
         self.prepared_weight_layout = prepared_weight_layout
         self.prerounded_weight_scales = options.get("prerounded_weight_scales", False)
+        self.fp16_weight_scales = options.get("fp16_weight_scales", False)
         self.fp16_route_workspace = fp16_route_workspace
         self.launch = launch or getattr(torch.ops, namespace).launch
         factory = kernel_factory or getattr(torch.classes, namespace).Kernel
@@ -226,7 +233,13 @@ class NativeFusedMoE:
     def required_weight_scale_layout(self):
         # Model dispatch checks this host marker before submitting any kernel.
         # Standalone arithmetic gates prepare their small scale fixtures on CPU.
+        if getattr(self, "fp16_weight_scales", False):
+            return FP16_SCALE_LAYOUT
         return PREROUNDED_SCALE_LAYOUT if getattr(self, "prerounded_weight_scales", False) else None
+
+    @property
+    def weight_scale_dtype(self):
+        return torch.float16 if getattr(self, "fp16_weight_scales", False) else torch.float32
 
     @property
     def route_workspace_dtype(self):
@@ -251,8 +264,8 @@ class NativeFusedMoE:
             raise ValueError("fused input, routes require FP16/FP32/integer")
         if gate_codes.dtype not in (torch.int8, torch.uint8) or down_codes.dtype not in (torch.int8, torch.uint8):
             raise ValueError("fused banks require byte storage")
-        if gate_scales.dtype != torch.float32 or down_scales.dtype != torch.float32:
-            raise ValueError("fused bank scales require FP32")
+        if gate_scales.dtype != self.weight_scale_dtype or down_scales.dtype != self.weight_scale_dtype:
+            raise ValueError("fused bank scale dtype differs from compiled storage")
         tokens, hidden = x.shape
         experts, twice_inter, packed_hidden = gate_codes.shape
         inter = twice_inter // 2
@@ -292,6 +305,8 @@ class NativeFusedMoE:
         )
 
     def grouped(self, x, gate_codes, gate_scales, down_codes, down_scales, weights, order, ends, geometry):
+        if gate_scales.dtype != self.weight_scale_dtype or down_scales.dtype != self.weight_scale_dtype:
+            raise ValueError("fused bank scale dtype differs from compiled storage")
         # Metadata depends only on CPU-visible shapes and precision. Preparing
         # a first prefill geometry never reads routes or expert counts on host.
         if geometry not in self.configs:

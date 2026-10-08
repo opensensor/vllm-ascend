@@ -15,7 +15,7 @@ import torch
 from .native_checkpoint import kernel_assets
 from .reconstruction_probe import time_pair
 
-FEATURES = ("native_route_columns", "prerounded_weight_scales", "compact_w4_scratch")
+FEATURES = ("native_route_columns", "prerounded_weight_scales", "compact_w4_scratch", "fp16_weight_scales")
 
 
 def verify_pair(baseline, candidate, feature="native_route_columns"):
@@ -77,6 +77,8 @@ def run(baseline, candidate, output, *, allow_device_gate=False, device=0, repea
     import torch_npu  # noqa: F401 -- explicit hardware gate only.
 
     torch.npu.set_device(device)
+    torch.npu.set_compile_mode(jit_compile=False)
+    torch.npu.config.allow_internal_format = False
     records = []
     for activation in (4, 8):
         natives = [load(root, report, activation) for root, report in zip((baseline, candidate), reports)]
@@ -105,7 +107,13 @@ def run(baseline, candidate, output, *, allow_device_gate=False, device=0, repea
                 scale_inputs[0].view(-1)[: corners.numel()] = corners
                 scales = [
                     tuple(
-                        (value.half().float() if getattr(native, "prerounded_weight_scales", False) else value).npu()
+                        (
+                            value.half()
+                            if getattr(native, "fp16_weight_scales", False)
+                            else value.half().float()
+                            if getattr(native, "prerounded_weight_scales", False)
+                            else value
+                        ).npu()
                         for value in scale_inputs
                     )
                     for native in natives

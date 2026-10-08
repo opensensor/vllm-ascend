@@ -1,0 +1,19 @@
+import sys,json,time,uuid,urllib.request
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_native import NativeManifest
+client=ResidentClient('http://127.0.0.1:8001')
+start=time.monotonic()
+client.load_native(NativeManifest(json.loads((root/'fp16-scales-v965-resident-manifest-20261008.json').read_text())))
+source=(root/'glm-fp16-mixed-candidate-20261008.py').read_text()
+receipts=client.switch(Control(uuid.uuid4().hex,candidate='fp16_scales_v964_decode_v965_prefill',source=source,recapture=True))
+for row in receipts:
+ assert row['fp16_scale_storage']['dtypes']==['torch.float16']
+ assert row['fp16_scale_storage']['layouts']==['fp16_storage_fp32_compute_v1']
+ assert row['fp16_scale_storage']['bytes']==152174592
+out={'complete':True,'elapsed_s':time.monotonic()-start,'receipts':receipts}
+(root/'fp16-scales-mixed-switch-20261008.json').write_text(json.dumps(out,indent=2)+'\n')
+print('Mixed FP16 candidate captured and selected',flush=True)

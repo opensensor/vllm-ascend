@@ -1,0 +1,33 @@
+from pathlib import Path
+from tools.glm_perf.resident_candidates.prefill_decode import PrefillDecodeNative
+from tools.glm_perf.resident_candidates.prefill_graphs import extend_replacements as with_prefill_graphs
+from tools.glm_perf.resident_candidates.expert_reconstruction import extend_replacements
+
+def replacements(native_resources):
+    from glm_reconstruction_v964_helpers.glm_fused_moe import NativeFusedMoE
+    from vllm_ascend._310p.worker_310p import NPUWorker310
+    root=Path('/srv/ai/models/GLM-5.3-Flash-native-int4-fp16-scales-20261008/native-kernels-v56')
+    decode=NativeFusedMoE(root,namespace='glm_reconstruction_v964',activation_bits=4,prepared_weight_layout=True,fp16_route_workspace=True)
+    prefill=native_resources['reconstruction_v965']['fused_int4a4']
+    mixed=PrefillDecodeNative(prefill,decode)
+    selected=dict(native_resources)
+    selected['fp16_decode']={'fused_int4a4':decode}
+    selected['reconstruction_v965']=dict(native_resources['reconstruction_v965'],fused_int4a4=mixed)
+    changes=extend_replacements({},selected,'fused_int4a4',resource_name='reconstruction_v965')
+    changes=with_prefill_graphs(changes,selected)
+    key='vllm_ascend._310p.worker_310p:NPUWorker310.resident_status'
+    original=changes.get(key,NPUWorker310.resident_status)
+    def status(self):
+        receipt=original(self)
+        banks=[]
+        for wrapper in self._resident_wrappers():
+            for owner in wrapper.runnable.modules():
+                bank=getattr(owner,'w2_experts',None)
+                if bank is not None:banks.append(bank)
+        receipt['fp16_scale_storage']={'banks':len(banks),'layouts':sorted({getattr(b,'native_weight_scale_layout',None) for b in banks}),
+            'dtypes':sorted({str(getattr(b,n).dtype) for b in banks for n in ('gate_up_scale_bank','down_scale_bank')}),
+            'bytes':sum(getattr(b,n).numel()*getattr(b,n).element_size() for b in banks for n in ('gate_up_scale_bank','down_scale_bank')),
+            'dispatches':dict(mixed.dispatches),'decode_version':964,'prefill_version':965}
+        return receipt
+    changes[key]=status
+    return changes

@@ -32,7 +32,17 @@ def test_half_workspace_dispatch_and_shared_scratch_keep_output_fp32(tokens, hal
     geometry = FusedGeometry(tokens, 8, 3, 4096, 256, 3, 4, 4)
     order, ends = torch.arange(tokens * 8), torch.tensor([0, 0, tokens * 8])
     weights = torch.ones(tokens, 8)
-    args = (torch.zeros(tokens, 4096, dtype=torch.float16), None, None, None, None, weights, order, ends, geometry)
+    args = (
+        torch.zeros(tokens, 4096, dtype=torch.float16),
+        None,
+        torch.ones(3, 16, 128),
+        None,
+        torch.ones(3, 128, 8),
+        weights,
+        order,
+        ends,
+        geometry,
+    )
     output = native.grouped(*args)
     assert output.dtype == torch.float32 and output.shape == (tokens, 4096)
     workspace = calls[2][1][8]
@@ -228,9 +238,10 @@ def test_cli_passes_w3_and_prefill_flags_to_builder(tmp_path, monkeypatch):
             "--raw-input-scales",
             "--prefill-product-cast",
             "--compact-w4-scratch",
+            "--fp16-weight-scales",
         ],
     )
     calls = []
     monkeypatch.setattr(builder, "build", lambda *args: calls.append(args))
     builder.main()
-    assert calls[0][-21:] == (True,) * 16 + (False, True, False, False, True)
+    assert calls[0][-22:] == (True,) * 16 + (False, True, False, False, True, True)

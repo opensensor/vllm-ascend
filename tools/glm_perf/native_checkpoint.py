@@ -13,7 +13,7 @@ import torch
 from safetensors import safe_open
 from safetensors.torch import save_file
 
-from .fused_weight_layout import PREROUNDED_SCALE_LAYOUT, pack_cube, tensor_digest
+from .fused_weight_layout import FP16_SCALE_LAYOUT, PREROUNDED_SCALE_LAYOUT, pack_cube, tensor_digest
 from .glm_int4 import unpack_canonical_codes
 
 LAYOUT = "cube_n128_k256_v1"
@@ -158,10 +158,16 @@ def copy_kernel_bundle(bundle, target):
 def validate_scale_contract(manifest, config_marker, options):
     """Host-only admission; never round resident tensors during load/capture."""
     marker = manifest.get("weight_scale_layout")
-    if marker not in (None, PREROUNDED_SCALE_LAYOUT) or config_marker != marker:
+    if any(type(options.get(flag, False)) is not bool for flag in ("fp16_weight_scales", "prerounded_weight_scales")):
+        raise ValueError("weight scale storage flags must be boolean")
+    if options.get("fp16_weight_scales") and options.get("prerounded_weight_scales"):
+        raise ValueError("weight scale storage options conflict")
+    if marker not in (None, PREROUNDED_SCALE_LAYOUT, FP16_SCALE_LAYOUT) or config_marker != marker:
         raise ValueError("native checkpoint weight scale markers disagree")
     if options.get("prerounded_weight_scales") and marker != PREROUNDED_SCALE_LAYOUT:
         raise ValueError("prerounded kernel requires permanent rounded scales")
+    if options.get("fp16_weight_scales", False) != (marker == FP16_SCALE_LAYOUT):
+        raise ValueError("FP16 weight scale storage requires matching checkpoint and kernel")
     if marker is not None:
         records = manifest.get("scale_shards", [])
         expected = 3 * manifest["num_experts"] * len(manifest["layers"])
@@ -199,6 +205,8 @@ def initialize(source, output, bundle, world_size=4, activation_bits=4):
         raise ValueError("kernel bundle does not consume the permanent native layout")
     if options.get("prerounded_weight_scales"):
         raise ValueError("prerounded kernels require the rounded-scale checkpoint exporter")
+    if options.get("fp16_weight_scales"):
+        raise ValueError("FP16 scales require the rounded-scale checkpoint exporter")
     output.mkdir()
     for shard in sorted(set(index["weight_map"].values())):
         os.link((source / shard).resolve(), output / shard)

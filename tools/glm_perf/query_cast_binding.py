@@ -55,9 +55,55 @@ def wrap_forward(original, converter, source):
     method = rewrite.visit(method)
     if rewrite.count != 1:
         raise ValueError("indexer source must contain exactly one query BF16 cast")
+    # The permanent indexer also replaces its RoPE casts. Rebuilding the
+    # authoritative query method must retain those bound conversions instead
+    # of silently returning them to torch's emulated BF16 path on 310P.
+    permanent = original.__globals__.get("_aicore_convert")
+    if permanent is not None:
+        if not callable(permanent):
+            raise ValueError("permanent indexer converter must be callable")
+
+        class PermanentCasts(ast.NodeTransformer):
+            def visit_Assign(self, node):
+                node = self.generic_visit(node)
+                if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name) or node.targets[0].id != "k_pe":
+                    return node
+                call = node.value
+                if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Attribute):
+                    return node
+                source_value = call.func.value
+                if (
+                    call.func.attr == "to"
+                    and isinstance(source_value, ast.Name)
+                    and source_value.id == "k_pe"
+                    and len(call.args) == 1
+                    and not call.keywords
+                    and ast.unparse(call.args[0]) == "torch.bfloat16"
+                ):
+                    dtype = call.args[0]
+                elif (
+                    call.func.attr == "float"
+                    and isinstance(source_value, ast.Call)
+                    and isinstance(source_value.func, ast.Attribute)
+                    and source_value.func.attr == "reshape"
+                    and isinstance(source_value.func.value, ast.Name)
+                    and source_value.func.value.id == "k_pe"
+                    and not call.args
+                    and not call.keywords
+                ):
+                    dtype = ast.Attribute(ast.Name("torch", ast.Load()), "float32", ast.Load())
+                else:
+                    return node
+                node.value = ast.copy_location(
+                    ast.Call(ast.Name("_aicore_permanent_convert", ast.Load()), [source_value, dtype], []), call
+                )
+                return node
+
+        method = PermanentCasts().visit(method)
+
     # Compile the function alone, avoiding class decorators or prior wrapper
     # metadata whose source locations may refer to another installed forward.
     module = ast.Module(body=[method], type_ignores=[])
-    namespace = dict(original.__globals__, _aicore_convert=converter)
+    namespace = dict(original.__globals__, _aicore_convert=converter, _aicore_permanent_convert=permanent)
     exec(compile(ast.fix_missing_locations(module), "<glm-bound-query-cast>", "exec"), namespace)
     return namespace["forward"]

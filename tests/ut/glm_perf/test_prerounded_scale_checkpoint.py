@@ -14,7 +14,7 @@ from safetensors.torch import save_file
 
 from tools.glm_perf import native_checkpoint as checkpoint
 from tools.glm_perf.build_reconstruction import build
-from tools.glm_perf.fused_weight_layout import PREROUNDED_SCALE_LAYOUT
+from tools.glm_perf.fused_weight_layout import FP16_SCALE_LAYOUT, PREROUNDED_SCALE_LAYOUT
 from tools.glm_perf.prerounded_scale_checkpoint import export, round_scales
 from tools.glm_perf.resident_candidates.expert_reconstruction import wrap_fused_moe
 
@@ -204,6 +204,8 @@ def loader_iterator():
         json=json,
         time=time,
         safe_open=safe_open,
+        torch=torch,
+        FP16_SCALE_LAYOUT=FP16_SCALE_LAYOUT,
         file_digest=checkpoint.file_digest,
         selected_weights=checkpoint.selected_weights,
         INDEX=checkpoint.INDEX,

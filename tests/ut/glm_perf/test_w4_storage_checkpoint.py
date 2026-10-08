@@ -192,6 +192,8 @@ def loader_iterator():
         json=json,
         time=time,
         safe_open=safe_open,
+        torch=torch,
+        FP16_SCALE_LAYOUT="fp16_storage_fp32_compute_v1",
         file_digest=checkpoint.file_digest,
         selected_weights=checkpoint.selected_weights,
         INDEX=checkpoint.INDEX,

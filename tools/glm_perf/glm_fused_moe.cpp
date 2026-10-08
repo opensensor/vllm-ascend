@@ -5,6 +5,9 @@
 #include "glm_fused_quantize.h"
 #include "glm_fused_scratch.h"
 #include "glm_route_input_layout.h"
+#if defined(GLM_FP16_WEIGHT_SCALES) && (!defined(GLM_PREPARED_WEIGHT_LAYOUT) || defined(GLM_PREROUNDED_WEIGHT_SCALES))
+  #error "FP16 scale storage requires prepared weights and excludes prerounded FP32 storage"
+#endif
 #if defined(GLM_PREROUNDED_WEIGHT_SCALES) && !defined(GLM_PREPARED_WEIGHT_LAYOUT)
   #error "prerounded scales require the permanent prepared weight layout"
 #endif
@@ -89,7 +92,13 @@ static_assert(QUANT_ROWS_PER_BATCH == 2 || QUANT_ROWS_PER_BATCH == 4,
 #else
 constexpr uint32_t QUANT_ROWS_PER_BATCH = 1;
 #endif
-#ifdef GLM_PREROUNDED_WEIGHT_SCALES
+#ifdef GLM_FP16_WEIGHT_SCALES
+// Promote four packed FP16 rows once. FP32 cached weights and gather indices
+// remain disjoint from the DMA staging region, including cached gate/up.
+constexpr uint32_t SCALE_HALF_OFFSET = (N / GROUP) * MAX_K_GROUPS * sizeof(float);
+constexpr uint32_t SCALE_INDEX_OFFSET = SCALE_HALF_OFFSET + (N / GROUP) * MAX_K_GROUPS * sizeof(half);
+constexpr uint32_t SCALE_CACHE_BYTES = SCALE_INDEX_OFFSET + N * sizeof(uint32_t);
+#elif defined(GLM_PREROUNDED_WEIGHT_SCALES)
 // The former FP16 rounding scratch is dead. Place gather indices immediately
 // after the four FP32 scale rows; no extra GM or UB scale copy is required.
 constexpr uint32_t SCALE_INDEX_OFFSET = (N / GROUP) * MAX_K_GROUPS * sizeof(float);
@@ -189,7 +198,11 @@ class Projection {
     high_.SetGlobalBuffer(reinterpret_cast<__gm__ int8_t*>(high));
     xs_.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(xs));
     codes_.SetGlobalBuffer(reinterpret_cast<__gm__ uint8_t*>(codes));
+#ifdef GLM_FP16_WEIGHT_SCALES
+    scales_.SetGlobalBuffer(reinterpret_cast<__gm__ half*>(scales));
+#else
     scales_.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(scales));
+#endif
     ends_.SetGlobalBuffer(reinterpret_cast<__gm__ int64_t*>(ends));
     order_.SetGlobalBuffer(reinterpret_cast<__gm__ int64_t*>(order));
 #ifdef GLM_FUSED_GATE_UP
@@ -1010,17 +1023,35 @@ class Projection {
 #endif
   __aicore__ inline void PrepareScales(int64_t expert, int64_t tile, LocalTensor<float> destination) {
     const uint32_t groups = k_ / GROUP;
+#ifdef GLM_FP16_WEIGHT_SCALES
+    auto staged = scaleCache_.Get<half>()[SCALE_HALF_OFFSET / sizeof(half)];
+    for (uint32_t block = 0; block < N / GROUP; ++block) {
+      const int64_t index = (expert * (n_ / GROUP) + tile * N / GROUP + block) * groups;
+      if (groups % (32 / sizeof(half)) == 0) {
+        DataCopy(staged[block * groups], scales_[index], groups);
+      } else {
+        // Tiny/ragged arithmetic fixtures have sub-DMA rows. Do not overread
+        // the final expert. Production K2048/K4096 uses aligned vector copies.
+        for (uint32_t element = 0; element < groups; ++element)
+          staged.SetValue(block * groups + element, scales_.GetValue(index + element));
+      }
+    }
+    PipeBarrier<PIPE_ALL>();
+    Cast(destination, staged, RoundMode::CAST_NONE, (N / GROUP) * groups);
+    PipeBarrier<PIPE_ALL>();
+#else
     for (uint32_t block = 0; block < N / GROUP; ++block) {
       const int64_t index = (expert * (n_ / GROUP) + tile * N / GROUP + block) * groups;
       DataCopy(destination[block * groups], scales_[index], groups);
     }
     PipeBarrier<PIPE_ALL>();
-#ifndef GLM_PREROUNDED_WEIGHT_SCALES
+  #ifndef GLM_PREROUNDED_WEIGHT_SCALES
     auto rounded = scaleCache_.Get<half>()[2 * (N / GROUP) * MAX_K_GROUPS];
     Cast(rounded, destination, RoundMode::CAST_NONE, (N / GROUP) * groups);
     PipeBarrier<PIPE_V>();
     Cast(destination, rounded, RoundMode::CAST_NONE, (N / GROUP) * groups);
     PipeBarrier<PIPE_ALL>();
+  #endif
 #endif
   }
 #ifdef GLM_PREFILL_WEIGHT_CACHE
@@ -1544,7 +1575,12 @@ class Projection {
   TBuf<TPosition::VECCALC> productFloat_, reduction_;
   GlobalTensor<int8_t> low_, high_;
   GlobalTensor<uint8_t> codes_;
-  GlobalTensor<float> xs_, scales_;
+  GlobalTensor<float> xs_;
+#ifdef GLM_FP16_WEIGHT_SCALES
+  GlobalTensor<half> scales_;
+#else
+  GlobalTensor<float> scales_;
+#endif
   GlobalTensor<int64_t> ends_;
   GlobalTensor<int8_t> inputLow_, inputHigh_;
   GlobalTensor<float> inputScales_;

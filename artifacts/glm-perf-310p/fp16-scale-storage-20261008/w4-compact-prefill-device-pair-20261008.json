@@ -1,0 +1,996 @@
+{
+  "complete": true,
+  "feature": "compact_w4_scratch",
+  "provenance": [
+    {
+      "_build": {
+        "namespace": "glm_reconstruction_v953",
+        "version": 953,
+        "output_columns": 128,
+        "helper_package": "glm_reconstruction_v953_helpers",
+        "tile_pipeline": true,
+        "all_bits": true,
+        "prefill_native": true,
+        "fused_moe": true,
+        "prepared_weight_layout": true,
+        "pair_scale_groups": true,
+        "fp16_swiglu": false,
+        "pair_hidden_quant": false,
+        "strided_product_copy": false,
+        "repeat_product_cast": false,
+        "w3_float_fragments": false,
+        "specialize_w3": false,
+        "prefill_weight_cache": true,
+        "fp16_route_workspace": true,
+        "native_route_columns": true,
+        "share_gate_up_input": true,
+        "cache_gate_up_activations": true,
+        "vector_scale_products": true,
+        "gather_product_matrix": false,
+        "prefill_rows_32": true,
+        "quad_hidden_quant": true,
+        "direct_hidden_gather": true,
+        "route_packed_input": true,
+        "route_packed_down": true,
+        "route_compact_down_scales": true,
+        "raw_hidden_scales": true,
+        "raw_input_scales": true,
+        "nz_prefill_accumulator": false,
+        "prefill_product_cast": false,
+        "weight_decode_lut": false,
+        "wide_cube_k": 0,
+        "pair_prefill_scale_groups": true
+      },
+      "_helpers": {
+        "reconstruction_native.py": "9bf814f721c063009c3e211841a55f7940c849c99d018d0822227f1cc3f5752c",
+        "reconstruction_probe.py": "53671a4e566771d23f945d55037e24cc7120df8a7d21672802b5a5e2724f3d83",
+        "glm_int4.py": "be71985a4fd66c3f99d950abb5da4f8383ad607c421c8b3bfbe1ec3564e0a843",
+        "glm_fused_moe.py": "5cab173fea8f6634524fe6cb4fa0489a38ea1e11f03500d30a58686654489174",
+        "fused_moe_probe.py": "d43b6d652d8359636b40a54de8ddefe700af98e27626e87873c65c83d6b38441",
+        "fused_weight_layout.py": "b83deadceebde22722c6eece537580a0fc1b5c2c414abb3272cd43a32fb6b8b3",
+        "expert_reconstruction.py": "6e7adc0dddebf03fb28f67a64ba0577fcedaac23feb2fb075a327672fb7f8d3a",
+        "__init__.py": "6c6ec57de9f82ef42d82760f144a4571cb16b3cd6de33aaa7aa9fd65e8ab1fa1"
+      },
+      "glm_w4a8_pack.cpp": {
+        "source_sha256": "07dc06ec4bf8b93719c06a762c51062b6d53bb3da1d591d8ac532e481db0640e",
+        "binary_sha256": "aacdfeee1e1f4b374e2c9cf24c46ea3c87455d43336f41bbaf459fcc6a24cede"
+      },
+      "glm_lowbit_a8_pipeline.cpp": {
+        "source_sha256": "9b7702fca17a6f86555a3737af1dc1b80010a3f882747779f0077d75c08aef5c",
+        "binary_sha256": "947025ecd33e88f7341557b30d5169438bc8ddd506b1d1bba03619e67109db63"
+      },
+      "glm_fused_gate_up.bin": {
+        "source_sha256": "25341f2f94d698f378e0781fee4dadec7980c2dd649774a88a1eff10fbd5b9e4",
+        "binary_sha256": "fb65a6842aa8180c8e07e0bfbb6a362ead696bb95f95bd83209c5d1bdfb33ac1"
+      },
+      "glm_fused_down.bin": {
+        "source_sha256": "25341f2f94d698f378e0781fee4dadec7980c2dd649774a88a1eff10fbd5b9e4",
+        "binary_sha256": "d3fefb31bf87a2ad30c5ed1f9382d71f6c5c409e30dc219e76a6a88b2fe72b1a"
+      },
+      "glm_route_input_layout.h": {
+        "source_sha256": "6c97df7f5f78ba60ce5da617c975491e6c8926a488516d1ca4f6f0bc59bd331f"
+      },
+      "glm_fused_route_input.bin": {
+        "source_sha256": "7277990003d3df3222bdb81b8265144df4a1e24cb5e27b93219753c8ae3303a6",
+        "binary_sha256": "88c97073f7a99c651e06e9ac6c012b783ab1e3a78309ce514fec0950d9068061"
+      },
+      "glm_fused_pack.bin": {
+        "source_sha256": "83dd3aa8357acf57123c77f253c372c34c5ba243a9f425499110707a7d2743f0",
+        "binary_sha256": "649cf14bfeebed5e67d28698c2751bb45c884e25bc6651c04c38e6db27c70f9a"
+      },
+      "glm_fused_quantize.h": {
+        "source_sha256": "35980321f8df37ec1f05c431bfd51c38c34682cb3435a91a1e240eee4f654162"
+      },
+      "glm_fused_reduce.bin": {
+        "source_sha256": "10ec909d909960e888c59b56231128e2016876456ef9ebb60212556640a72589",
+        "binary_sha256": "c1e7ade7ca84f1c1d251944dea2eacef08a6fc047e197ebe5d4b77e73b1e39a6"
+      },
+      "reconstruction_bridge.cpp": {
+        "source_sha256": "08906a208fab23cc9a87e5a18e624d7a64e6458f84f022f7039acf6d6a5b57e2",
+        "binary_sha256": "817bebc40753c2382a80b87a771668f12c75bd17bc9ce07dea20bd866ef9f7ad"
+      },
+      "_offline": {
+        "compile_only": true,
+        "hardware_gates": "not_run",
+        "baseline_version": 919,
+        "paired_route_columns": true
+      }
+    },
+    {
+      "_build": {
+        "namespace": "glm_reconstruction_v961",
+        "version": 961,
+        "output_columns": 128,
+        "helper_package": "glm_reconstruction_v961_helpers",
+        "tile_pipeline": true,
+        "all_bits": true,
+        "prefill_native": true,
+        "fused_moe": true,
+        "prepared_weight_layout": true,
+        "pair_scale_groups": true,
+        "fp16_swiglu": false,
+        "pair_hidden_quant": false,
+        "strided_product_copy": false,
+        "repeat_product_cast": false,
+        "w3_float_fragments": false,
+        "specialize_w3": false,
+        "compact_w4_scratch": true,
+        "prefill_weight_cache": true,
+        "fp16_route_workspace": true,
+        "native_route_columns": true,
+        "prerounded_weight_scales": false,
+        "share_gate_up_input": true,
+        "cache_gate_up_activations": true,
+        "vector_scale_products": true,
+        "gather_product_matrix": false,
+        "prefill_rows_32": true,
+        "quad_hidden_quant": true,
+        "direct_hidden_gather": true,
+        "route_packed_input": true,
+        "route_packed_down": true,
+        "route_compact_down_scales": true,
+        "raw_hidden_scales": true,
+        "raw_input_scales": true,
+        "nz_prefill_accumulator": false,
+        "prefill_product_cast": false,
+        "weight_decode_lut": false,
+        "wide_cube_k": 0,
+        "pair_prefill_scale_groups": true
+      },
+      "_helpers": {
+        "reconstruction_native.py": "9bf814f721c063009c3e211841a55f7940c849c99d018d0822227f1cc3f5752c",
+        "reconstruction_probe.py": "53671a4e566771d23f945d55037e24cc7120df8a7d21672802b5a5e2724f3d83",
+        "glm_int4.py": "be71985a4fd66c3f99d950abb5da4f8383ad607c421c8b3bfbe1ec3564e0a843",
+        "glm_fused_moe.py": "6e48e20ca232d37dc4ad7eee873277e9d9f57b3bec08da3350e508aa6fbb4690",
+        "fused_moe_probe.py": "523c6b001b72de41b300e3a95e36e22b2ad60c5a7dd2c60b46f25d743cabfcb2",
+        "fused_weight_layout.py": "eefc656689301457aee0fc9c30aa09708062d926b49d58bf6796213940d82f07",
+        "expert_reconstruction.py": "2d3bfc73b1736f2abe605b43c0e0d81f483afa88c5c79c050df5faa630cea1a4",
+        "__init__.py": "6c6ec57de9f82ef42d82760f144a4571cb16b3cd6de33aaa7aa9fd65e8ab1fa1"
+      },
+      "glm_w4a8_pack.cpp": {
+        "source_sha256": "07dc06ec4bf8b93719c06a762c51062b6d53bb3da1d591d8ac532e481db0640e",
+        "binary_sha256": "aacdfeee1e1f4b374e2c9cf24c46ea3c87455d43336f41bbaf459fcc6a24cede"
+      },
+      "glm_lowbit_a8_pipeline.cpp": {
+        "source_sha256": "9b7702fca17a6f86555a3737af1dc1b80010a3f882747779f0077d75c08aef5c",
+        "binary_sha256": "947025ecd33e88f7341557b30d5169438bc8ddd506b1d1bba03619e67109db63"
+      },
+      "glm_fused_gate_up.bin": {
+        "source_sha256": "1f5bb76930923e49f75e13515be8ad6be518e0320150ea2496e2bb111e7fcf9f",
+        "binary_sha256": "fb65a6842aa8180c8e07e0bfbb6a362ead696bb95f95bd83209c5d1bdfb33ac1"
+      },
+      "glm_fused_down.bin": {
+        "source_sha256": "1f5bb76930923e49f75e13515be8ad6be518e0320150ea2496e2bb111e7fcf9f",
+        "binary_sha256": "d3fefb31bf87a2ad30c5ed1f9382d71f6c5c409e30dc219e76a6a88b2fe72b1a"
+      },
+      "glm_fused_gate_up_w4.bin": {
+        "source_sha256": "1f5bb76930923e49f75e13515be8ad6be518e0320150ea2496e2bb111e7fcf9f",
+        "binary_sha256": "d87ee50a121d5f38ada2f384076a2577b3f81460f86d2c3ed37580bb1c891ce5"
+      },
+      "glm_fused_down_w4.bin": {
+        "source_sha256": "1f5bb76930923e49f75e13515be8ad6be518e0320150ea2496e2bb111e7fcf9f",
+        "binary_sha256": "74d22ab0d536ae85be754f9d7b1e4c87f820059398fd880a43500fb6f079d52f"
+      },
+      "glm_fused_scratch.h": {
+        "source_sha256": "e5dae080fc2736005c1b91927fee04bd4ab796f1b4eafaba497a58ee0fbbeac9"
+      },
+      "glm_route_input_layout.h": {
+        "source_sha256": "6c97df7f5f78ba60ce5da617c975491e6c8926a488516d1ca4f6f0bc59bd331f"
+      },
+      "glm_fused_route_input.bin": {
+        "source_sha256": "7277990003d3df3222bdb81b8265144df4a1e24cb5e27b93219753c8ae3303a6",
+        "binary_sha256": "88c97073f7a99c651e06e9ac6c012b783ab1e3a78309ce514fec0950d9068061"
+      },
+      "glm_fused_pack.bin": {
+        "source_sha256": "83dd3aa8357acf57123c77f253c372c34c5ba243a9f425499110707a7d2743f0",
+        "binary_sha256": "649cf14bfeebed5e67d28698c2751bb45c884e25bc6651c04c38e6db27c70f9a"
+      },
+      "glm_fused_quantize.h": {
+        "source_sha256": "35980321f8df37ec1f05c431bfd51c38c34682cb3435a91a1e240eee4f654162"
+      },
+      "glm_fused_reduce.bin": {
+        "source_sha256": "3465e4443652bf67f1fc6c833013d1c22a834b1f1dd8e106b327ec19d41e022a",
+        "binary_sha256": "c1e7ade7ca84f1c1d251944dea2eacef08a6fc047e197ebe5d4b77e73b1e39a6"
+      },
+      "reconstruction_bridge.cpp": {
+        "source_sha256": "08906a208fab23cc9a87e5a18e624d7a64e6458f84f022f7039acf6d6a5b57e2",
+        "binary_sha256": "910c224b23b50a7af8059db0542f64e2722026ed19c6b1e3ded82b42abe77436"
+      }
+    }
+  ],
+  "records": [
+    {
+      "tokens": 2,
+      "weight_bits": 2,
+      "activation_bits": 4,
+      "bitwise_equal": true,
+      "changed_replay": true,
+      "timing": {
+        "baseline": {
+          "median_ms": 0.28381001902744174,
+          "samples_ms": [
+            0.29779603937640786,
+            0.28482102788984776,
+            0.28067402308806777,
+            0.28381001902744174,
+            0.2695430302992463,
+            0.2854019985534251,
+            0.2773380256257951
+          ]
+        },
+        "candidate": {
+          "median_ms": 0.2866050344891846,
+          "samples_ms": [
+            0.3006920451298356,
+            0.30079198768362403,
+            0.2866050344891846,
+            0.3084760392084718,
+            0.2738210023380816,
+            0.27619494358077645,
+            0.27794798370450735
+          ]
+        }
+      }
+    },
+    {
+      "tokens": 8,
+      "weight_bits": 2,
+      "activation_bits": 4,
+      "bitwise_equal": true,
+      "changed_replay": true,
+      "timing": {
+        "baseline": {
+          "median_ms": 0.4402470076456666,
+          "samples_ms": [
+            0.4509870195761323,
+            0.45253103598952293,
+            0.456116977147758,
+            0.41844596853479743,
+            0.4296569968573749,
+            0.43670996092259884,
+            0.4402470076456666
+          ]
+        },
+        "candidate": {
+          "median_ms": 0.4342159954831004,
+          "samples_ms": [
+            0.45341200893744826,
+            0.44857198372483253,
+            0.4338049911893904,
+            0.4410690162330866,
+            0.43031800305470824,
+            0.42867602314800024,
+            0.4342159954831004
+          ]
+        }
+      }
+    },
+    {
+      "tokens": 17,
+      "weight_bits": 2,
+      "activation_bits": 4,
+      "bitwise_equal": true,
+      "changed_replay": true,
+      "timing": {
+        "baseline": {
+          "median_ms": 0.6850419449619949,
+          "samples_ms": [
+            0.680724042467773,
+            0.7254389929585159,
+            0.707475992385298,
+            0.6850419449619949,
+            0.6675589829683304,
+            0.6705650012008846,
+            0.6923770415596664
+          ]
+        },
+        "candidate": {
+          "median_ms": 0.6878679851070046,
+          "samples_ms": [
+            0.7852129638195038,
+            0.7207900052890182,
+            0.6810249760746956,
+            0.688859960064292,
+            0.6843209848739207,
+            0.6438950076699257,
+            0.6878679851070046
+          ]
+        }
+      }
+    },
+    {
+      "tokens": 640,
+      "weight_bits": 2,
+      "activation_bits": 4,
+      "bitwise_equal": true,
+      "changed_replay": true,
+      "timing": {
+        "baseline": {
+          "median_ms": 11.107742029707879,
+          "samples_ms": [
+            11.12165895756334,
+            11.090999993029982,
+            11.107742029707879,
+            11.069549014791846,
+            11.117620975710452,
+            11.104236007668078,
+            11.11055799992755
+          ]
+        },
+        "candidate": {
+          "median_ms": 11.06835703831166,
+          "samples_ms": [
+            11.095447989646345,
+            11.06835703831166,
+            11.056184011977166,
+            11.049030988942832,
+            11.146785982418805,
+            11.087884020525962,
+            11.057807016186416
+          ]
+        }
+      }
+    },
+    {
+      "tokens": 2,
+      "weight_bits": 3,
+      "activation_bits": 4,
+      "bitwise_equal": true,
+      "changed_replay": true,
+      "timing": {
+        "baseline": {
+          "median_ms": 0.2816159976646304,
+          "samples_ms": [
+            0.28197700157761574,
+            0.3354380023665726,
+            0.29877800261601806,
+            0.2768659614957869,
+            0.2816159976646304,
+            0.2800219808705151,
+            0.2738309558480978
+          ]
+        },
+        "candidate": {
+          "median_ms": 0.2812549937516451,
+          "samples_ms": [
+            0.2821669913828373,
+            0.269482028670609,
+            0.2850519958883524,
+            0.2812549937516451,
+            0.26489398442208767,
+            0.27926097391173244,
+            0.2836689818650484
+          ]
+        }
+      }
+    },
+    {
+      "tokens": 8,
+      "weight_bits": 3,
+      "activation_bits": 4,
+      "bitwise_equal": true,
+      "changed_replay": true,
+      "timing": {
+        "baseline": {
+          "median_ms": 0.44427503598853946,
+          "samples_ms": [
+            0.4589029704220593,
+            0.44328300282359123,
+            0.445507001131773,
+            0.44162000995129347,
+            0.4229839541949332,
+            0.44427503598853946,
+            0.44499599607661366
+          ]
+        },
+        "candidate": {
+          "median_ms": 0.4404379869811237,
+          "samples_ms": [
+            0.4445159574970603,
+            0.4404379869811237,
+            0.4486730322241783,
+            0.45360298827290535,
+            0.43515797005966306,
+            0.43348397593945265,
+            0.4354490083642304
+          ]
+        }
+      }
+    },
+    {
+      "tokens": 17,
+      "weight_bits": 3,
+      "activation_bits": 4,
+      "bitwise_equal": true,
+      "changed_replay": true,
+      "timing": {
+        "baseline": {
+          "median_ms": 0.68887002998963,
+          "samples_ms": [
+            0.6941000465303659,
+            0.68887002998963,
+            0.6827479810453951,
+            0.6973760318942368,
+            0.6999610341154039,
+            0.6501059979200363,
+            0.6765659782104194
+          ]
+        },
+        "candidate": {
+          "median_ms": 0.688759027980268,
+          "samples_ms": [
+            0.6923669716343284,
+            0.688759027980268,
+            0.6905629998072982,
+            0.6775289657525718,
+            0.6708959699608386,
+            0.650497036986053,
+            0.7061230135150254
+          ]
+        }
+      }
+    },
+    {
+      "tokens": 640,
+      "weight_bits": 3,
+      "activation_bits": 4,
+      "bitwise_equal": true,
+      "changed_replay": true,
+      "timing": {
+        "baseline": {
+          "median_ms": 11.095027963165194,
+          "samples_ms": [
+            11.186621966771781,
+            11.083204997703433,
+            11.138940986711532,
+            11.095027963165194,
+            11.121137998998165,
+            11.083635967224836,
+            11.032359034288675
+          ]
+        },
+        "candidate": {
+          "median_ms": 11.107881960924715,
+          "samples_ms": [
+            11.146716016810387,
+            11.09482697211206,
+            11.140693968627602,
+            11.107881960924715,
+            11.14078494720161,
+            11.066975013818592,
+            11.073075991589576
+          ]
+        }
+      }
+    },
+    {
+      "tokens": 2,
+      "weight_bits": 4,
+      "activation_bits": 4,
+      "bitwise_equal": true,
+      "changed_replay": true,
+      "timing": {
+        "baseline": {
+          "median_ms": 0.2647130168043077,
+          "samples_ms": [
+            0.2778989728540182,
+            0.2771469880826771,
+            0.2728779800236225,
+            0.2647130168043077,
+            0.26233901735395193,
+            0.2632910036481917,
+            0.26461301604285836
+          ]
+        },
+        "candidate": {
+          "median_ms": 0.26739900931715965,
+          "samples_ms": [
+            0.2753229928202927,
+            0.2633010153658688,
+            0.27115497505292296,
+            0.2520690322853625,
+            0.26781903579831123,
+            0.26739900931715965,
+            0.24986499920487404
+          ]
+        }
+      }
+    },
+    {
+      "tokens": 8,
+      "weight_bits": 4,
+      "activation_bits": 4,
+      "bitwise_equal": true,
+      "changed_replay": true,
+      "timing": {
+        "baseline": {
+          "median_ms": 0.4203190328553319,
+          "samples_ms": [
+            0.42820401722565293,
+            0.4105510306544602,
+            0.4269820055924356,
+            0.42987801134586334,
+            0.42014900827780366,
+            0.4203190328553319,
+            0.39945001481100917
+          ]
+        },
+        "candidate": {
+          "median_ms": 0.4176039947196841,
+          "samples_ms": [
+            0.40870701195672154,
+            0.4176039947196841,
+            0.4126839921809733,
+            0.42839505476877093,
+            0.42444694554433227,
+            0.4202689742669463,
+            0.4113930044695735
+          ]
+        }
+      }
+    },
+    {
+      "tokens": 17,
+      "weight_bits": 4,
+      "activation_bits": 4,
+      "bitwise_equal": true,
+      "changed_replay": true,
+      "timing": {
+        "baseline": {
+          "median_ms": 0.6554569699801505,
+          "samples_ms": [
+            0.6592540303245187,
+            0.6469190120697021,
+            0.683298974763602,
+            0.6516699795611203,
+            0.6713659968227148,
+            0.6554569699801505,
+            0.6508179940283298
+          ]
+        },
+        "candidate": {
+          "median_ms": 0.6673490279354155,
+          "samples_ms": [
+            0.6697240169160068,
+            0.6552760023623705,
+            0.6528309895657003,
+            0.6673490279354155,
+            0.6674290052615106,
+            0.6655760225839913,
+            0.6806139717809856
+          ]
+        }
+      }
+    },
+    {
+      "tokens": 640,
+      "weight_bits": 4,
+      "activation_bits": 4,
+      "bitwise_equal": true,
+      "changed_replay": true,
+      "timing": {
+        "baseline": {
+          "median_ms": 11.039011995308101,
+          "samples_ms": [
+            11.091260996181518,
+            11.19837403530255,
+            11.045453022234142,
+            11.039011995308101,
+            11.010135989636183,
+            11.028391018044204,
+            11.031177011318505
+          ]
+        },
+        "candidate": {
+          "median_ms": 11.082843993790448,
+          "samples_ms": [
+            11.096259986516088,
+            11.12314104102552,
+            11.057406023610383,
+            11.082843993790448,
+            11.065852013416588,
+            11.012130009476095,
+            11.086490994784981
+          ]
+        }
+      }
+    },
+    {
+      "tokens": 2,
+      "weight_bits": 2,
+      "activation_bits": 8,
+      "bitwise_equal": true,
+      "changed_replay": true,
+      "timing": {
+        "baseline": {
+          "median_ms": 0.3233749885112047,
+          "samples_ms": [
+            0.32767397351562977,
+            0.3233749885112047,
+            0.3232249873690307,
+            0.32824400113895535,
+            0.31532999128103256,
+            0.3377320244908333,
+            0.3096989821642637
+          ]
+        },
+        "candidate": {
+          "median_ms": 0.3215610049664974,
+          "samples_ms": [
+            0.31638203654438257,
+            0.33965602051466703,
+            0.31223398400470614,
+            0.3215610049664974,
+            0.32340502366423607,
+            0.32128102611750364,
+            0.32499805092811584
+          ]
+        }
+      }
+    },
+    {
+      "tokens": 8,
+      "weight_bits": 2,
+      "activation_bits": 8,
+      "bitwise_equal": true,
+      "changed_replay": true,
+      "timing": {
+        "baseline": {
+          "median_ms": 0.5910649779252708,
+          "samples_ms": [
+            0.6116529693827033,
+            0.5904319696128368,
+            0.5711459671147168,
+            0.5933380452916026,
+            0.5910649779252708,
+            0.5738009931519628,
+            0.5925570148974657
+          ]
+        },
+        "candidate": {
+          "median_ms": 0.588058028370142,
+          "samples_ms": [
+            0.5949120386503637,
+            0.5846120184287429,
+            0.5825080443173647,
+            0.588058028370142,
+            0.5869059823453426,
+            0.5889299791306257,
+            0.5880680400878191
+          ]
+        }
+      }
+    },
+    {
+      "tokens": 17,
+      "weight_bits": 2,
+      "activation_bits": 8,
+      "bitwise_equal": true,
+      "changed_replay": true,
+      "timing": {
+        "baseline": {
+          "median_ms": 1.1254909913986921,
+          "samples_ms": [
+            1.143794972449541,
+            1.123055990319699,
+            1.1379339848645031,
+            1.1254909913986921,
+            1.1404079850763083,
+            1.1023759725503623,
+            1.119137043133378
+          ]
+        },
+        "candidate": {
+          "median_ms": 1.1349980486556888,
+          "samples_ms": [
+            1.142373017501086,
+            1.0940810316242278,
+            1.1326840030960739,
+            1.1349980486556888,
+            1.1474009952507913,
+            1.1317729949951172,
+            1.1367519618943334
+          ]
+        }
+      }
+    },
+    {
+      "tokens": 640,
+      "weight_bits": 2,
+      "activation_bits": 8,
+      "bitwise_equal": true,
+      "changed_replay": true,
+      "timing": {
+        "baseline": {
+          "median_ms": 28.236754005774856,
+          "samples_ms": [
+            28.30915100639686,
+            28.236754005774856,
+            28.243587003089488,
+            28.11757696326822,
+            27.98628801247105,
+            28.249266964849085,
+            28.01587403519079
+          ]
+        },
+        "candidate": {
+          "median_ms": 28.162200993392617,
+          "samples_ms": [
+            28.12232600990683,
+            28.07938400655985,
+            28.197949985042214,
+            28.162200993392617,
+            28.182299982290715,
+            28.016164025757462,
+            28.175717976409942
+          ]
+        }
+      }
+    },
+    {
+      "tokens": 2,
+      "weight_bits": 3,
+      "activation_bits": 8,
+      "bitwise_equal": true,
+      "changed_replay": true,
+      "timing": {
+        "baseline": {
+          "median_ms": 0.32397598261013627,
+          "samples_ms": [
+            0.3286949940957129,
+            0.32397598261013627,
+            0.32210303470492363,
+            0.3367409808561206,
+            0.3248780267313123,
+            0.3236649790778756,
+            0.3171829739585519
+          ]
+        },
+        "candidate": {
+          "median_ms": 0.3255190094932914,
+          "samples_ms": [
+            0.32806396484375,
+            0.3359189722687006,
+            0.32443704549223185,
+            0.32228202326223254,
+            0.3184750094078481,
+            0.32635999377816916,
+            0.3255190094932914
+          ]
+        }
+      }
+    },
+    {
+      "tokens": 8,
+      "weight_bits": 3,
+      "activation_bits": 8,
+      "bitwise_equal": true,
+      "changed_replay": true,
+      "timing": {
+        "baseline": {
+          "median_ms": 0.6025949842296541,
+          "samples_ms": [
+            0.616792996879667,
+            0.6040679872967303,
+            0.6025949842296541,
+            0.5997410044074059,
+            0.5819959915243089,
+            0.629375979769975,
+            0.5942090065218508
+          ]
+        },
+        "candidate": {
+          "median_ms": 0.5982479779049754,
+          "samples_ms": [
+            0.602626008912921,
+            0.6011630175635219,
+            0.5951609928160906,
+            0.5962140276096761,
+            0.6102010374888778,
+            0.5982479779049754,
+            0.5940789706073701
+          ]
+        }
+      }
+    },
+    {
+      "tokens": 17,
+      "weight_bits": 3,
+      "activation_bits": 8,
+      "bitwise_equal": true,
+      "changed_replay": true,
+      "timing": {
+        "baseline": {
+          "median_ms": 1.1263220221735537,
+          "samples_ms": [
+            1.1263220221735537,
+            1.1640239972621202,
+            1.1265020002610981,
+            1.1144690215587616,
+            1.1034479830414057,
+            1.1155009851790965,
+            1.1585030006244779
+          ]
+        },
+        "candidate": {
+          "median_ms": 1.127042982261628,
+          "samples_ms": [
+            1.1320320190861821,
+            1.12375698518008,
+            1.1113030486740172,
+            1.1641940218396485,
+            1.127042982261628,
+            1.120631000958383,
+            1.167931011877954
+          ]
+        }
+      }
+    },
+    {
+      "tokens": 640,
+      "weight_bits": 3,
+      "activation_bits": 8,
+      "bitwise_equal": true,
+      "changed_replay": true,
+      "timing": {
+        "baseline": {
+          "median_ms": 28.214982012286782,
+          "samples_ms": [
+            28.214982012286782,
+            28.247454029042274,
+            28.230843017809093,
+            28.114189975894988,
+            28.03865703754127,
+            28.21641502669081,
+            28.13549101119861
+          ]
+        },
+        "candidate": {
+          "median_ms": 28.12524198088795,
+          "samples_ms": [
+            28.12524198088795,
+            28.259576996788383,
+            28.249067021533847,
+            28.082922042813152,
+            28.211396012920886,
+            28.084323974326253,
+            28.123869036789984
+          ]
+        }
+      }
+    },
+    {
+      "tokens": 2,
+      "weight_bits": 4,
+      "activation_bits": 8,
+      "bitwise_equal": true,
+      "changed_replay": true,
+      "timing": {
+        "baseline": {
+          "median_ms": 0.308677030261606,
+          "samples_ms": [
+            0.3253979957662523,
+            0.2972549991682172,
+            0.3172829747200012,
+            0.3153400029987097,
+            0.308677030261606,
+            0.30635297298431396,
+            0.30846596928313375
+          ]
+        },
+        "candidate": {
+          "median_ms": 0.3117320011369884,
+          "samples_ms": [
+            0.3117320011369884,
+            0.3156299935653806,
+            0.3193769953213632,
+            0.3089270321652293,
+            0.3121939953416586,
+            0.29699504375457764,
+            0.30668399995192885
+          ]
+        }
+      }
+    },
+    {
+      "tokens": 8,
+      "weight_bits": 4,
+      "activation_bits": 8,
+      "bitwise_equal": true,
+      "changed_replay": true,
+      "timing": {
+        "baseline": {
+          "median_ms": 0.5705649964511395,
+          "samples_ms": [
+            0.5713760037906468,
+            0.5638820002786815,
+            0.5665170028805733,
+            0.5641730385832489,
+            0.5740509950555861,
+            0.5718579632230103,
+            0.5705649964511395
+          ]
+        },
+        "candidate": {
+          "median_ms": 0.573479977902025,
+          "samples_ms": [
+            0.5812249728478491,
+            0.5612769746221602,
+            0.5803239764645696,
+            0.5712969577871263,
+            0.5572499940171838,
+            0.573479977902025,
+            0.5946210003457963
+          ]
+        }
+      }
+    },
+    {
+      "tokens": 17,
+      "weight_bits": 4,
+      "activation_bits": 8,
+      "bitwise_equal": true,
+      "changed_replay": true,
+      "timing": {
+        "baseline": {
+          "median_ms": 1.1116439709439874,
+          "samples_ms": [
+            1.1129669728688896,
+            1.11322698649019,
+            1.1026259744539857,
+            1.1016440112143755,
+            1.1082480195909739,
+            1.1116439709439874,
+            1.1194089893251657
+          ]
+        },
+        "candidate": {
+          "median_ms": 1.123045978602022,
+          "samples_ms": [
+            1.096795022021979,
+            1.1275039869360626,
+            1.11293705413118,
+            1.1330849956721067,
+            1.123045978602022,
+            1.1091090273112059,
+            1.1366010294295847
+          ]
+        }
+      }
+    },
+    {
+      "tokens": 640,
+      "weight_bits": 4,
+      "activation_bits": 8,
+      "bitwise_equal": true,
+      "changed_replay": true,
+      "timing": {
+        "baseline": {
+          "median_ms": 28.54719402967021,
+          "samples_ms": [
+            28.6506800330244,
+            28.65658199880272,
+            28.0605879961513,
+            28.54719402967021,
+            28.013879025820643,
+            28.616004972718656,
+            28.182781010400504
+          ]
+        },
+        "candidate": {
+          "median_ms": 28.79871299955994,
+          "samples_ms": [
+            28.881219041068107,
+            28.622918005567044,
+            28.79871299955994,
+            28.631584020331502,
+            28.81968201836571,
+            28.54254498379305,
+            28.962693992070854
+          ]
+        }
+      }
+    }
+  ],
+  "real_model_evaluated": false
+}

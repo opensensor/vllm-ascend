@@ -22,6 +22,7 @@ HOST_RESERVE_BYTES = 8 * 1024**3
 MAX_PREPARE_THREADS = 4
 PERMANENT_LAYOUT = "cube_n128_k256_v1"
 PREROUNDED_SCALE_LAYOUT = "fp16_rounded_fp32_v1"
+FP16_SCALE_LAYOUT = "fp16_storage_fp32_compute_v1"
 
 
 def _geometry(packed, k):

@@ -41,9 +41,9 @@ def test_input_scale_launch_bypass_and_token_descriptor(tokens, bits, scalar):
     arguments = (
         torch.zeros(tokens, 256).half(),
         None,
+        torch.ones(1),
         None,
-        None,
-        None,
+        torch.ones(1),
         torch.ones(tokens, 2),
         torch.arange(tokens * 2),
         torch.tensor([0, 0, tokens * 2]),

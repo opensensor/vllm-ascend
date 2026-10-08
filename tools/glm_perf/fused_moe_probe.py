@@ -80,7 +80,10 @@ def gate_case(native, bits, tokens=2, hidden=256, inter=256, real=None):
     # Qualification is explicit and performed on the small CPU fixture. Keep
     # the independent reference's original scales and half-rounding operation.
     prepared = getattr(native, "prerounded_weight_scales", False)
-    ggs, gds = ((value.half().float() if prepared else value).npu() for value in (gs, ds))
+    half_storage = getattr(native, "fp16_weight_scales", False)
+    ggs, gds = (
+        (value.half() if half_storage else value.half().float() if prepared else value).npu() for value in (gs, ds)
+    )
 
     def pipeline():
         return native(gx, gc, ggs, dc, gds, gw, gi, offset)
@@ -111,6 +114,7 @@ def gate_case(native, bits, tokens=2, hidden=256, inter=256, real=None):
     return {
         "weight_bits": bits,
         "prerounded_weight_scales": prepared,
+        "fp16_weight_scales": half_storage,
         "compact_w4_scratch": getattr(native, "compact_w4_scratch", False),
         "activation_bits": native.activation_bits,
         "tokens": tokens,

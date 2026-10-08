@@ -42,6 +42,8 @@ def manifest(build_dir, gate_report):
             raise ValueError("fused MoE requires independent arithmetic, replay and real-weight gates")
         if options.get("prerounded_weight_scales") and any(r.get("prerounded_weight_scales") is not True for r in rows):
             raise ValueError("prerounded kernels require explicitly prepared scale gates")
+        if options.get("fp16_weight_scales") and any(r.get("fp16_weight_scales") is not True for r in rows):
+            raise ValueError("FP16 storage kernels require explicitly matching scale gates")
         if options.get("compact_w4_scratch") and any(r.get("compact_w4_scratch") is not True for r in rows):
             raise ValueError("compact W4 kernels require explicit specialized dispatch gates")
         if {(r.get("weight_bits"), r.get("activation_bits")) for r in rows} != required:
@@ -54,6 +56,7 @@ def manifest(build_dir, gate_report):
             "compact_w4_scratch",
             "prefill_weight_cache",
             "prerounded_weight_scales",
+            "fp16_weight_scales",
             "fp16_route_workspace",
             "share_gate_up_input",
             "cache_gate_up_activations",

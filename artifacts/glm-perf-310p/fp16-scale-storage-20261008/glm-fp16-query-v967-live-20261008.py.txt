@@ -1,0 +1,14 @@
+import sys,json,uuid,time
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.query_vector_control import manifest
+c=ResidentClient('http://127.0.0.1:8001')
+c.load_native(manifest(root/'build-query-vector-v967',root/'query-vector-v967-device-gates-20261008.json'))
+source=(root/'glm-fp16-query-v967-candidate-20261008.py').read_text()
+receipts=c.switch(Control(uuid.uuid4().hex,candidate='fp16_scales_query_vector_v967',source=source,recapture=True))
+assert all(r['vector_query_cast']['indexers']==12 and r['fp16_scale_storage']['dtypes']==['torch.float16'] for r in receipts)
+c.resume()
+(root/'fp16-scales-query-vector-v967-switch-20261008.json').write_text(json.dumps({'complete':True,'receipts':receipts},indent=2)+'\n')
+print('Query vector v967 selected on FP16 scale server',flush=True)

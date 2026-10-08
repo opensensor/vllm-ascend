@@ -343,6 +343,7 @@ def test_fused_wrapper_counts_rejected_bank_as_fallback():
         {"fp16_route_workspace": True, "native_route_columns": True},
         {"prerounded_weight_scales": True},
         {"compact_w4_scratch": True},
+        {"fp16_weight_scales": True},
         {"prefill_weight_cache": True, "fp16_route_workspace": True},
         {"share_gate_up_input": True},
         {"share_gate_up_input": True, "cache_gate_up_activations": True},
@@ -376,6 +377,7 @@ def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_pat
         (tmp_path / name).write_bytes(name.encode())
     row = {"passed": True, "graph_changed_inputs_routes_weights": True, "fp16_intermediate_gm_bytes": 0, "tokens": 128}
     row["compact_w4_scratch"] = prefill_options.get("compact_w4_scratch", False)
+    row["fp16_weight_scales"] = prefill_options.get("fp16_weight_scales", False)
     row["prerounded_weight_scales"] = prefill_options.get("prerounded_weight_scales", False)
     if prefill_options.get("fp16_route_workspace"):
         row.update(
@@ -411,6 +413,13 @@ def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_pat
         gates["records"] = [dict(record, prerounded_weight_scales=False) for record in records]
         write()
         with pytest.raises(ValueError, match="explicitly prepared scale gates"):
+            manifest(tmp_path, report)
+        gates["records"] = records
+        write()
+    if prefill_options.get("fp16_weight_scales"):
+        gates["records"] = [dict(record, fp16_weight_scales=False) for record in records]
+        write()
+        with pytest.raises(ValueError, match="matching scale gates"):
             manifest(tmp_path, report)
         gates["records"] = records
         write()

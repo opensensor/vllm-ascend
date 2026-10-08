@@ -57,9 +57,9 @@ def test_launch_routes_only_bulk_a4_and_keeps_shared_buffers(tokens, bits, packe
     args = (
         torch.zeros(tokens, 256, dtype=torch.float16),
         None,
+        torch.ones(1),
         None,
-        None,
-        None,
+        torch.ones(1),
         torch.ones(tokens, 2),
         torch.arange(tokens * 2),
         torch.tensor([0, 0, tokens * 2]),
@@ -167,9 +167,9 @@ def test_shared_down_capacity_keys_include_expert_count():
         native.grouped(
             torch.zeros(640, 256).half(),
             None,
+            torch.ones(1),
             None,
-            None,
-            None,
+            torch.ones(1),
             torch.ones(640, 1),
             torch.arange(640),
             torch.full((experts,), 640),

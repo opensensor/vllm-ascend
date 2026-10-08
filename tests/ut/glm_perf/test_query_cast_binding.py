@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Authoritative source must select the query cast without trusting old wrappers."""
 
+from types import FunctionType
+
 import pytest
 import torch
 
@@ -58,3 +60,31 @@ def test_large_prefill_avoids_the_scalar_converter(count):
 def test_invalid_query_cast_bound_is_rejected(limit):
     with pytest.raises(ValueError, match="positive"):
         bounded_converter(None, limit)
+
+
+def test_query_rebinding_preserves_permanent_rope_conversions():
+    source = """class Indexer:
+    def forward(self, q, k_pe):
+        k_pe = k_pe.to(torch.bfloat16)
+        k_pe = k_pe.reshape(-1, 1, 2).float()
+        q = q.to(torch.bfloat16)
+        return q, k_pe
+"""
+    query_calls, legacy_calls = [], []
+
+    def legacy(value, dtype):
+        legacy_calls.append(dtype)
+        return value.to(dtype)
+
+    def query(value, dtype):
+        query_calls.append(dtype)
+        return value.to(dtype)
+
+    bound = FunctionType(original.__code__, dict(original.__globals__, _aicore_convert=legacy))
+    wrapped = wrap_forward(bound, query, source)
+    q, k = torch.randn(4).half(), torch.randn(4)
+    actual_q, actual_k = wrapped(None, q, k)
+    assert torch.equal(actual_q, q.bfloat16())
+    assert torch.equal(actual_k, k.bfloat16().reshape(-1, 1, 2).float())
+    assert query_calls == [torch.bfloat16]
+    assert legacy_calls == [torch.bfloat16, torch.float32]

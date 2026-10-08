@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 import regex as re
+import torch
 from safetensors import safe_open
 from vllm.config.load import LoadConfig
 from vllm.logger import logger
@@ -14,6 +15,7 @@ from vllm.model_executor.model_loader import register_model_loader
 from vllm.model_executor.model_loader.default_loader import DefaultModelLoader
 
 from tools.glm_perf.fused_moe_profile import frozen_helper
+from tools.glm_perf.fused_weight_layout import FP16_SCALE_LAYOUT
 from tools.glm_perf.indexer_bundle import install as install_indexer_bundle
 from tools.glm_perf.native_checkpoint import (
     INDEX,
@@ -157,6 +159,10 @@ class GlmNativeInt4Loader(DefaultModelLoader):
                         if shard not in scale_records or (handle.metadata() or {}).get("weight_scale_layout") != marker:
                             raise ValueError("unqualified weight scales in prerounded checkpoint index")
                     tensor = handle.get_tensor(name)
+                    if name.endswith("_proj_scale") and ".mlp.experts." in name:
+                        expected_dtype = torch.float16 if marker == FP16_SCALE_LAYOUT else torch.float32
+                        if tensor.dtype != expected_dtype:
+                            raise ValueError("expert scale tensor dtype differs from permanent storage marker")
                     if name.endswith("_proj_codes"):
                         # Ascend's long-term page pinning can repeatedly split
                         # huge file-backed pages when copying a safetensors view.
