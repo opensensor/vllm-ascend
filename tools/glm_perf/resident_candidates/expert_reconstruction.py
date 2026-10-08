@@ -93,6 +93,9 @@ def wrap_fused_moe(original, native, audit):
     original = getattr(original, "__decode_flags_original__", original)
 
     def fused(self, grouped_op, experts, x, topk_weights, topk_ids, shared_expert):
+        expected = getattr(native, "required_weight_scale_layout", None)
+        if expected is not None and getattr(experts, "native_weight_scale_layout", None) != expected:
+            raise ValueError("native fused kernel requires matching permanent weight scales")
         inputs, weights = x.to(dtype=native.input_dtype).contiguous(), topk_weights.float().contiguous()
         banks = (
             experts.gate_up_packed_bank,

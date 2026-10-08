@@ -341,6 +341,7 @@ def test_fused_wrapper_counts_rejected_bank_as_fallback():
         {"prefill_weight_cache": True},
         {"fp16_route_workspace": True},
         {"fp16_route_workspace": True, "native_route_columns": True},
+        {"prerounded_weight_scales": True},
         {"prefill_weight_cache": True, "fp16_route_workspace": True},
         {"share_gate_up_input": True},
         {"share_gate_up_input": True, "cache_gate_up_activations": True},
@@ -371,6 +372,7 @@ def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_pat
     for name in names:
         (tmp_path / name).write_bytes(name.encode())
     row = {"passed": True, "graph_changed_inputs_routes_weights": True, "fp16_intermediate_gm_bytes": 0, "tokens": 128}
+    row["prerounded_weight_scales"] = prefill_options.get("prerounded_weight_scales", False)
     if prefill_options.get("fp16_route_workspace"):
         row.update(
             top_k=2,
@@ -401,6 +403,13 @@ def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_pat
     assert ("fp16_route_workspace=True" in payload["validation_source"]) is bool(
         prefill_options.get("fp16_route_workspace")
     )
+    if prefill_options.get("prerounded_weight_scales"):
+        gates["records"] = [dict(record, prerounded_weight_scales=False) for record in records]
+        write()
+        with pytest.raises(ValueError, match="explicitly prepared scale gates"):
+            manifest(tmp_path, report)
+        gates["records"] = records
+        write()
     if specialize_w3:
         specialized = tmp_path / "glm_fused_down_w3.bin"
         assert str(specialized) in {entry["path"] for entry in payload["assets"]}

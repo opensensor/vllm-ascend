@@ -40,6 +40,8 @@ def manifest(build_dir, gate_report):
             for r in rows
         ):
             raise ValueError("fused MoE requires independent arithmetic, replay and real-weight gates")
+        if options.get("prerounded_weight_scales") and any(r.get("prerounded_weight_scales") is not True for r in rows):
+            raise ValueError("prerounded kernels require explicitly prepared scale gates")
         if {(r.get("weight_bits"), r.get("activation_bits")) for r in rows} != required:
             raise ValueError("fused MoE requires all weight and activation precisions")
     if {(r["weight_bits"], r["activation_bits"]) for r in gates["records"] if r["tokens"] > 64} != required:
@@ -48,6 +50,7 @@ def manifest(build_dir, gate_report):
         options.get(flag)
         for flag in (
             "prefill_weight_cache",
+            "prerounded_weight_scales",
             "fp16_route_workspace",
             "share_gate_up_input",
             "cache_gate_up_activations",

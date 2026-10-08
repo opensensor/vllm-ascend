@@ -4,6 +4,9 @@
 #include "kernel_operator.h"
 #include "glm_fused_quantize.h"
 #include "glm_route_input_layout.h"
+#if defined(GLM_PREROUNDED_WEIGHT_SCALES) && !defined(GLM_PREPARED_WEIGHT_LAYOUT)
+  #error "prerounded scales require the permanent prepared weight layout"
+#endif
 #if defined(GLM_NATIVE_ROUTE_COLUMNS) && (!defined(GLM_FP16_ROUTE_WORKSPACE) || defined(GLM_FUSED_GATE_UP))
   #error "native route columns require the down stage and paired FP16 workspace reducer"
 #endif
@@ -75,8 +78,15 @@ static_assert(QUANT_ROWS_PER_BATCH == 2 || QUANT_ROWS_PER_BATCH == 4,
 #else
 constexpr uint32_t QUANT_ROWS_PER_BATCH = 1;
 #endif
+#ifdef GLM_PREROUNDED_WEIGHT_SCALES
+// The former FP16 rounding scratch is dead. Place gather indices immediately
+// after the four FP32 scale rows; no extra GM or UB scale copy is required.
+constexpr uint32_t SCALE_INDEX_OFFSET = (N / GROUP) * MAX_K_GROUPS * sizeof(float);
+constexpr uint32_t SCALE_CACHE_BYTES = SCALE_INDEX_OFFSET + N * sizeof(uint32_t);
+#else
 constexpr uint32_t SCALE_CACHE_BYTES = 4096;
 constexpr uint32_t SCALE_INDEX_OFFSET = (N / GROUP) * MAX_K_GROUPS * (sizeof(float) + sizeof(half));
+#endif
 static_assert(SCALE_INDEX_OFFSET + N * sizeof(uint32_t) <= SCALE_CACHE_BYTES, "scale indices overlap rounded weights");
 constexpr uint32_t MAX_CACHED_SCALE_ROWS = 4;
 constexpr uint32_t MAX_REPEAT_CAST_ROWS = 4;
@@ -986,11 +996,13 @@ class Projection {
       DataCopy(destination[block * groups], scales_[index], groups);
     }
     PipeBarrier<PIPE_ALL>();
+#ifndef GLM_PREROUNDED_WEIGHT_SCALES
     auto rounded = scaleCache_.Get<half>()[2 * (N / GROUP) * MAX_K_GROUPS];
     Cast(rounded, destination, RoundMode::CAST_NONE, (N / GROUP) * groups);
     PipeBarrier<PIPE_V>();
     Cast(destination, rounded, RoundMode::CAST_NONE, (N / GROUP) * groups);
     PipeBarrier<PIPE_ALL>();
+#endif
   }
 #ifdef GLM_PREFILL_WEIGHT_CACHE
   __aicore__ inline void PrepareExpert(int64_t expert, int64_t tile) {

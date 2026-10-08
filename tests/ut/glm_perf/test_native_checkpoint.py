@@ -100,7 +100,6 @@ def test_initialization_persists_bulk_prefill_epilogue_with_native_kernel_bundle
         "version": 44,
         "specialize_w3": specialize_w3,
     }
-    checkpoint.write_json(bundle / "provenance.json", {"_build": options, "_helpers": {}, "glm_fused_reduce.bin": {}})
     for name in (
         "glm_reconstruction_bridge_v44.so",
         "glm_fused_gate_up.bin",
@@ -112,6 +111,11 @@ def test_initialization_persists_bulk_prefill_epilogue_with_native_kernel_bundle
     if specialize_w3:
         for name in ("glm_fused_gate_up_w3.bin", "glm_fused_down_w3.bin"):
             (bundle / name).write_bytes(name.encode())
+    provenance = {"_build": options, "_helpers": {}}
+    for path in bundle.iterdir():
+        key = "reconstruction_bridge.cpp" if path.suffix == ".so" else path.name
+        provenance[key] = {"binary_sha256": checkpoint.file_digest(path)}
+    checkpoint.write_json(bundle / "provenance.json", provenance)
     output = tmp_path / "initialized"
     manifest = checkpoint.initialize(source, output, bundle, world_size=1)
     assert not manifest["complete"]

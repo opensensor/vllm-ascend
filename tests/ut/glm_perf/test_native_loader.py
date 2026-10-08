@@ -79,6 +79,8 @@ def checkpoint(tmp_path):
         "native_shards": [{"file": "native.safetensors"}],
     }
     (tmp_path / MANIFEST).write_text(json.dumps(manifest))
+    (tmp_path / "bundle").mkdir()
+    (tmp_path / "bundle/provenance.json").write_text(json.dumps({"_build": {"namespace": "test_native"}}))
     bank = SimpleNamespace(
         local_expert_offset=1, num_local_experts=1, offload_to_cpu=False, layer_key="layers.0", nz_packed_codes=True
     )
@@ -137,6 +139,15 @@ def test_loader_rejects_incomplete_checkpoint_before_weight_read(tmp_path, loade
     with pytest.raises(ValueError, match="incomplete"):
         module.GlmNativeInt4Loader(config_type()).load_weights(model, config)
     assert model.bank.nz_packed_codes and not hasattr(model, "loaded")
+
+
+def test_loader_rejects_raw_scales_with_prerounded_kernel_before_reading_weights(tmp_path, loader_module):
+    module, config_type = loader_module
+    model, config, _ = checkpoint(tmp_path)
+    (tmp_path / "bundle/provenance.json").write_text(json.dumps({"_build": {"prerounded_weight_scales": True}}))
+    with pytest.raises(ValueError, match="permanent rounded scales"):
+        module.GlmNativeInt4Loader(config_type()).load_weights(model, config)
+    assert not hasattr(model, "loaded") and model.bank.nz_packed_codes
 
 
 def test_direct_loader_stages_native_code_bytes_without_changing_layout(tmp_path, loader_module, monkeypatch):

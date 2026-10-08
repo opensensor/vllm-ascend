@@ -77,7 +77,10 @@ def gate_case(native, bits, tokens=2, hidden=256, inter=256, real=None):
     ids += offset
     gx, gi, gw = x.npu(), ids.npu(), weights.npu()
     gc, dc = native.pack_weight_codes(gate, bits).npu(), native.pack_weight_codes(down, bits).npu()
-    ggs, gds = gs.npu(), ds.npu()
+    # Qualification is explicit and performed on the small CPU fixture. Keep
+    # the independent reference's original scales and half-rounding operation.
+    prepared = getattr(native, "prerounded_weight_scales", False)
+    ggs, gds = ((value.half().float() if prepared else value).npu() for value in (gs, ds))
 
     def pipeline():
         return native(gx, gc, ggs, dc, gds, gw, gi, offset)
@@ -107,6 +110,7 @@ def gate_case(native, bits, tokens=2, hidden=256, inter=256, real=None):
     assert torch.equal(actual.cpu(), torch.zeros(tokens, hidden))
     return {
         "weight_bits": bits,
+        "prerounded_weight_scales": prepared,
         "activation_bits": native.activation_bits,
         "tokens": tokens,
         "hidden": hidden,
@@ -226,7 +230,7 @@ def run(build_dir, output, *, checkpoint=None, real_prefixes=()):
                                 "raw_hidden_scales",
                                 "raw_input_scales",
                                 "nz_prefill_accumulator",
-        "prefill_product_cast",
+                                "prefill_product_cast",
                             )
                         )
                         else (2,)

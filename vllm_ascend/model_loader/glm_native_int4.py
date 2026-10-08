@@ -15,7 +15,15 @@ from vllm.model_executor.model_loader.default_loader import DefaultModelLoader
 
 from tools.glm_perf.fused_moe_profile import frozen_helper
 from tools.glm_perf.indexer_bundle import install as install_indexer_bundle
-from tools.glm_perf.native_checkpoint import INDEX, LAYOUT, MANIFEST, NativeInt4MoEMethod, selected_weights
+from tools.glm_perf.native_checkpoint import (
+    INDEX,
+    LAYOUT,
+    MANIFEST,
+    NativeInt4MoEMethod,
+    file_digest,
+    selected_weights,
+    validate_scale_contract,
+)
 
 LOAD_FORMAT = "glm_native_int4"
 LAYER_PATH = re.compile(r"(?:^|\.)layers\.(\d+)(?:\.|$)")
@@ -51,6 +59,10 @@ class GlmNativeInt4Loader(DefaultModelLoader):
             raise ValueError("native GLM checkpoint is incomplete or has an unsupported layout")
         if getattr(model_config.hf_config, "ascend_glm_expert_layout", None) != LAYOUT:
             raise ValueError("native GLM checkpoint config lacks the matching layout marker")
+        options = json.loads((self.folder / manifest["kernel_bundle"] / "provenance.json").read_text())["_build"]
+        scale_marker = validate_scale_contract(
+            manifest, getattr(model_config.hf_config, "ascend_glm_expert_scale_layout", None), options
+        )
         named_owners = [
             (name, module) for name, module in model.named_modules() if getattr(module, "w2_experts", None) is not None
         ]
@@ -74,6 +86,7 @@ class GlmNativeInt4Loader(DefaultModelLoader):
         # checkpoint already contains Cube bytes and must pass through unchanged.
         for bank in banks:
             bank.nz_packed_codes = False
+            bank.native_weight_scale_layout = scale_marker
         logger.info("GLM native INT4 reading layers %s, local experts %s", self.layer_keys, self.local_range)
         super().load_weights(model, model_config)
         expected = len(banks) * (self.local_range[1] - self.local_range[0]) * 3
@@ -101,6 +114,7 @@ class GlmNativeInt4Loader(DefaultModelLoader):
             "native_code_tensors": self.native_code_tensors,
             "transformed_code_tensors": 0,
             "layout_backup_bytes": 0,
+            "weight_scale_layout": scale_marker,
             "aicore_bf16_indexers": indexers,
         }
         logger.info("GLM native INT4 loaded directly: %s", model._native_int4_load_report)
@@ -123,7 +137,11 @@ class GlmNativeInt4Loader(DefaultModelLoader):
         for name in selected:
             by_shard.setdefault(index[name], []).append(name)
         native_files = {record["file"] for record in self.native_manifest["native_shards"]}
+        scale_records = {row["file"]: row for row in self.native_manifest.get("scale_shards", [])}
+        marker = self.native_manifest.get("weight_scale_layout")
         for shard, names in sorted(by_shard.items()):
+            if shard in scale_records and file_digest(self.folder / shard) != scale_records[shard]["sha256"]:
+                raise ValueError("permanent weight scale shard differs from its checksum")
             with safe_open(str(self.folder / shard), framework="pt", device="cpu") as handle:
                 if shard in native_files and (handle.metadata() or {}).get("layout") != LAYOUT:
                     raise ValueError("native expert shard lacks the matching layout metadata")
@@ -132,6 +150,9 @@ class GlmNativeInt4Loader(DefaultModelLoader):
                         if shard not in native_files:
                             raise ValueError("canonical expert bytes appear in a native checkpoint index")
                         self.native_code_tensors += 1
+                    if marker is not None and name.endswith("_proj_scale") and ".mlp.experts." in name:
+                        if shard not in scale_records or (handle.metadata() or {}).get("weight_scale_layout") != marker:
+                            raise ValueError("unqualified weight scales in prerounded checkpoint index")
                     tensor = handle.get_tensor(name)
                     if name.endswith("_proj_codes"):
                         # Ascend's long-term page pinning can repeatedly split

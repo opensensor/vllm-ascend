@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 import torch
 
-from .fused_weight_layout import pack_cube
+from .fused_weight_layout import PREROUNDED_SCALE_LAYOUT, pack_cube
 from .glm_int4 import MAX_GROUPED_ROUTES, pack_nz_codes, packed_weight_bits
 
 FUSED_REDUCTION_TOKENS = 16
@@ -160,6 +160,10 @@ class NativeFusedMoE:
             raise ValueError("raw hidden scales flag must be boolean")
         if type(options.get("raw_input_scales", False)) is not bool:
             raise ValueError("raw input scales flag must be boolean")
+        if type(options.get("prerounded_weight_scales", False)) is not bool:
+            raise ValueError("prerounded weight scales flag must be boolean")
+        if options.get("prerounded_weight_scales") and not prepared_weight_layout:
+            raise ValueError("prerounded weight scales require the permanent prepared layout")
         if options.get("raw_input_scales") and not options.get("route_packed_input"):
             raise ValueError("raw input scales require routed input packing")
         if options.get("raw_hidden_scales") and not (
@@ -174,6 +178,7 @@ class NativeFusedMoE:
             raise ValueError("routed input packing requires its compiled producer")
         self.activation_bits = activation_bits
         self.prepared_weight_layout = prepared_weight_layout
+        self.prerounded_weight_scales = options.get("prerounded_weight_scales", False)
         self.fp16_route_workspace = fp16_route_workspace
         self.launch = launch or getattr(torch.ops, namespace).launch
         factory = kernel_factory or getattr(torch.classes, namespace).Kernel
@@ -205,6 +210,12 @@ class NativeFusedMoE:
     def stage_kernel(self, stage, bits):
         specialized = getattr(self, stage + "_w3_kernel", None) if bits == 3 else None
         return specialized if specialized is not None else getattr(self, stage + "_kernel")
+
+    @property
+    def required_weight_scale_layout(self):
+        # Model dispatch checks this host marker before submitting any kernel.
+        # Standalone arithmetic gates prepare their small scale fixtures on CPU.
+        return PREROUNDED_SCALE_LAYOUT if getattr(self, "prerounded_weight_scales", False) else None
 
     @property
     def route_workspace_dtype(self):

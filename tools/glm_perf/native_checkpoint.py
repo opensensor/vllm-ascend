@@ -13,7 +13,7 @@ import torch
 from safetensors import safe_open
 from safetensors.torch import save_file
 
-from .fused_weight_layout import pack_cube, tensor_digest
+from .fused_weight_layout import PREROUNDED_SCALE_LAYOUT, pack_cube, tensor_digest
 from .glm_int4 import unpack_canonical_codes
 
 LAYOUT = "cube_n128_k256_v1"
@@ -55,6 +55,9 @@ class NativeInt4MoEMethod:
     def _apply_device_grouped(self, grouped_op, experts, x, topk_weights, topk_ids, shared_expert):
         if getattr(experts, "native_weight_layout", None) != LAYOUT:
             raise ValueError("native INT4 method requires the permanent Cube layout")
+        expected = getattr(self.native, "required_weight_scale_layout", None)
+        if expected is not None and getattr(experts, "native_weight_scale_layout", None) != expected:
+            raise ValueError("native INT4 kernel requires matching permanent weight scales")
         result = self.native(
             x.to(torch.float16).contiguous(),
             experts.gate_up_packed_bank,
@@ -106,6 +109,78 @@ def source_geometry(source):
     return config, index, layers, experts
 
 
+def kernel_assets(bundle):
+    """Validate every coupled native producer/reducer before disk publication."""
+    provenance = json.loads((bundle / "provenance.json").read_text())
+    options = provenance["_build"]
+    if not options.get("fused_moe") or not options.get("prepared_weight_layout"):
+        raise ValueError("kernel bundle does not consume the permanent native layout")
+    names = [
+        f"glm_reconstruction_bridge_v{options['version']}.so",
+        "glm_fused_gate_up.bin",
+        "glm_fused_down.bin",
+        "glm_fused_pack.bin",
+    ]
+    if options.get("specialize_w3"):
+        names += ["glm_fused_gate_up_w3.bin", "glm_fused_down_w3.bin"]
+    if "glm_fused_reduce.bin" in provenance:
+        names.append("glm_fused_reduce.bin")
+    if options.get("native_route_columns") and "glm_fused_reduce.bin" not in names:
+        raise ValueError("native route columns require the paired reducer")
+    if options.get("route_packed_input"):
+        names.append("glm_fused_route_input.bin")
+    files = []
+    for name in names:
+        key = "reconstruction_bridge.cpp" if name.endswith(".so") else name
+        if file_digest(bundle / name) != provenance[key]["binary_sha256"]:
+            raise ValueError("kernel binary differs from provenance: " + name)
+        files.append(name)
+    for name, expected in provenance["_helpers"].items():
+        relative = options["helper_package"] + "/" + name
+        if file_digest(bundle / relative) != expected:
+            raise ValueError("kernel helper differs from provenance")
+        files.append(relative)
+    return provenance, (*files, "provenance.json")
+
+
+def copy_kernel_bundle(bundle, target):
+    provenance, files = kernel_assets(bundle)
+    target.mkdir()
+    for name in files:
+        destination = target / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(bundle / name, destination)
+    return provenance
+
+
+def validate_scale_contract(manifest, config_marker, options):
+    """Host-only admission; never round resident tensors during load/capture."""
+    marker = manifest.get("weight_scale_layout")
+    if marker not in (None, PREROUNDED_SCALE_LAYOUT) or config_marker != marker:
+        raise ValueError("native checkpoint weight scale markers disagree")
+    if options.get("prerounded_weight_scales") and marker != PREROUNDED_SCALE_LAYOUT:
+        raise ValueError("prerounded kernel requires permanent rounded scales")
+    if marker is not None:
+        records = manifest.get("scale_shards", [])
+        expected = 3 * manifest["num_experts"] * len(manifest["layers"])
+        if not records or sum(row["tensor_count"] for row in records) != expected:
+            raise ValueError("permanent rounded-scale coverage is incomplete")
+        if manifest.get("scale_tensor_count") != expected:
+            raise ValueError("permanent rounded-scale tensor count differs")
+        world = manifest["world_size"]
+        if type(world) is not int or world <= 0 or manifest["num_experts"] % world:
+            raise ValueError("invalid rounded-scale expert partition")
+        partitions = {(layer, rank) for layer in manifest["layers"] for rank in range(world)}
+        if (
+            len(records) != len(partitions)
+            or {(row["layer"], row["rank"]) for row in records} != partitions
+            or len({row["file"] for row in records}) != len(records)
+            or any(row["tensor_count"] != 3 * manifest["num_experts"] // world for row in records)
+        ):
+            raise ValueError("permanent rounded-scale partitions are incomplete or duplicated")
+    return marker
+
+
 def initialize(source, output, bundle, world_size=4, activation_bits=4):
     """Share unchanged shards by hard link, keeping an independent index/config."""
     source, output, bundle = (Path(path).resolve() for path in (source, output, bundle))
@@ -116,10 +191,12 @@ def initialize(source, output, bundle, world_size=4, activation_bits=4):
         raise ValueError("native export requires even expert partition and A4/A8")
     if source.stat().st_dev != output.parent.stat().st_dev:
         raise ValueError("use the source filesystem for hard-linked unchanged shards")
-    provenance = json.loads((bundle / "provenance.json").read_text())
+    provenance, _ = kernel_assets(bundle)
     options = provenance["_build"]
     if not options.get("fused_moe") or not options.get("prepared_weight_layout"):
         raise ValueError("kernel bundle does not consume the permanent native layout")
+    if options.get("prerounded_weight_scales"):
+        raise ValueError("prerounded kernels require the rounded-scale checkpoint exporter")
     output.mkdir()
     for shard in sorted(set(index["weight_map"].values())):
         os.link((source / shard).resolve(), output / shard)
@@ -128,28 +205,7 @@ def initialize(source, output, bundle, world_size=4, activation_bits=4):
             if path.name not in (MANIFEST, "progress.json", "manifest.json"):
                 shutil.copy2(path, output / path.name)
     target_bundle = output / "native-kernels"
-    target_bundle.mkdir()
-    package = options["helper_package"]
-    (target_bundle / package).mkdir()
-    for name, expected in provenance["_helpers"].items():
-        path = bundle / package / name
-        if file_digest(path) != expected:
-            raise ValueError("kernel helper differs from provenance")
-        shutil.copy2(path, target_bundle / package / name)
-    for name in (
-        f"glm_reconstruction_bridge_v{options['version']}.so",
-        "glm_fused_gate_up.bin",
-        "glm_fused_down.bin",
-        "glm_fused_pack.bin",
-        "provenance.json",
-    ):
-        shutil.copy2(bundle / name, target_bundle / name)
-    if options.get("specialize_w3"):
-        for stage in ("gate_up", "down"):
-            name = f"glm_fused_{stage}_w3.bin"
-            shutil.copy2(bundle / name, target_bundle / name)
-    if "glm_fused_reduce.bin" in provenance:
-        shutil.copy2(bundle / "glm_fused_reduce.bin", target_bundle / "glm_fused_reduce.bin")
+    copy_kernel_bundle(bundle, target_bundle)
     config["ascend_glm_expert_layout"] = LAYOUT
     config["ascend_glm_native_activation_bits"] = activation_bits
     config["architectures"] = ["Glm5NextW2ForCausalLM"]

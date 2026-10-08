@@ -63,6 +63,7 @@ def build(
     nz_prefill_accumulator=False,
     prefill_product_cast=False,
     native_route_columns=False,
+    prerounded_weight_scales=False,
 ):
     """Freeze helper sources and compile a unique, append-only native version."""
     if type(version) is not int or version < 1 or output_columns not in (16, 32, 64, 128):
@@ -87,6 +88,7 @@ def build(
             nz_prefill_accumulator,
             prefill_product_cast,
             native_route_columns,
+            prerounded_weight_scales,
         )
     ):
         raise ValueError("prefill experiment flags must be boolean")
@@ -124,6 +126,8 @@ def build(
         raise ValueError("FP16 route workspace requires fused MoE")
     if native_route_columns and not (fused_moe and fp16_route_workspace):
         raise ValueError("native route columns require paired fused MoE and FP16 workspace reduction")
+    if prerounded_weight_scales and not (fused_moe and prepared_weight_layout):
+        raise ValueError("prerounded weight scales require the prepared fused MoE layout")
     if share_gate_up_input and not fused_moe:
         raise ValueError("shared gate/up input requires fused MoE")
     if cache_gate_up_activations and not (fused_moe and share_gate_up_input):
@@ -244,6 +248,7 @@ def build(
             "prefill_weight_cache": prefill_weight_cache,
             "fp16_route_workspace": fp16_route_workspace,
             "native_route_columns": native_route_columns,
+            "prerounded_weight_scales": prerounded_weight_scales,
             "share_gate_up_input": share_gate_up_input,
             "cache_gate_up_activations": cache_gate_up_activations,
             "vector_scale_products": vector_scale_products,
@@ -295,6 +300,7 @@ def build(
                     *options,
                     f"-I{HERE}",
                     *(["-DGLM_PREPARED_WEIGHT_LAYOUT"] if prepared_weight_layout else []),
+                    *(["-DGLM_PREROUNDED_WEIGHT_SCALES"] if prerounded_weight_scales else []),
                     *(["-DGLM_PAIR_SCALE_GROUPS"] if pair_scale_groups else []),
                     *(["-DGLM_FP16_SWIGLU"] if fp16_swiglu else []),
                     *(["-DGLM_PAIR_HIDDEN_QUANT"] if pair_hidden_quant else []),
@@ -471,6 +477,9 @@ def main():
     parser.add_argument("--prefill-weight-cache", action="store_true")
     parser.add_argument("--fp16-route-workspace", action="store_true")
     parser.add_argument(
+        "--prerounded-weight-scales", action="store_true", help="require permanent FP16-rounded FP32 scale banks"
+    )
+    parser.add_argument(
         "--native-route-columns", action="store_true", help="permute columns once after stable route reduction"
     )
     parser.add_argument(
@@ -577,6 +586,7 @@ def main():
             args.nz_prefill_accumulator,
             args.prefill_product_cast,
             args.native_route_columns,
+            args.prerounded_weight_scales,
         )
     )
 
