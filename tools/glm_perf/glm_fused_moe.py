@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 import torch
 
+from .fused_offset_tables import projection_descriptor
 from .fused_weight_layout import FP16_SCALE_LAYOUT, PREROUNDED_SCALE_LAYOUT, pack_cube
 from .glm_int4 import MAX_GROUPED_ROUTES, pack_nz_codes, packed_weight_bits
 
@@ -190,6 +191,11 @@ class NativeFusedMoE:
         gate_w4, down_w4 = root / "glm_fused_gate_up_w4.bin", root / "glm_fused_down_w4.bin"
         if gate_w4.exists() != compact or down_w4.exists() != compact:
             raise ValueError("compact W4 scratch requires declared paired W4 stage binaries")
+        offsets = options.get("prepared_offset_tables", False)
+        if type(offsets) is not bool or (offsets and not prepared_weight_layout):
+            raise ValueError("prepared offsets require matching prepared weights")
+        self.prepared_offset_tables = offsets
+        self.offset_options = dict(options)
         self.compact_w4_scratch = compact
         self.activation_bits = activation_bits
         self.prepared_weight_layout = prepared_weight_layout
@@ -314,6 +320,9 @@ class NativeFusedMoE:
             suffix = (geometry.activation_bits, geometry.tokens, geometry.top_k)
             gate = (*common, 2 * geometry.intermediate, geometry.hidden, geometry.gate_bits, *suffix)
             down = (*common, geometry.hidden, geometry.intermediate, geometry.down_bits, *suffix)
+            if getattr(self, "prepared_offset_tables", False):
+                gate = projection_descriptor(gate, gate_up=True, options=self.offset_options)
+                down = projection_descriptor(down, gate_up=False, options=self.offset_options)
             projection_configs = tuple(
                 torch.tensor(header, dtype=torch.int64, device=self.device) for header in (gate, down)
             )

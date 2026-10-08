@@ -231,6 +231,7 @@ def run(build_dir, output, *, checkpoint=None, real_prefixes=()):
                                 "prefill_rows_32",
                                 "active_cube_rows",
                                 "direct_w4_l1",
+                                "prepared_offset_tables",
                                 "quad_hidden_quant",
                                 "direct_hidden_gather",
                                 "route_packed_input",

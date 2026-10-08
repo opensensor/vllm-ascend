@@ -1,0 +1,67 @@
+import json,time,urllib.request,uuid,sys,re
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+client=ResidentClient('http://127.0.0.1:8001')
+results=[]
+def idle():
+ with urllib.request.urlopen(client.base_url+"/metrics",timeout=30) as reply:metrics=reply.read().decode()
+ counts=[float(v) for v in re.findall(r'^vllm:num_requests_(?:running|waiting)(?:\{[^\n]*\})?\s+([0-9.eE+-]+)$',metrics,re.M)]
+ assert counts and not any(counts),"GLM user request active; defer benchmark"
+def stream(tokens,output_tokens,nonce):
+ prompt=[101+nonce]+[43]*(tokens-2)+[201+nonce]
+ payload={'model':'glm53-flash-selective-w3','prompt':prompt,'max_tokens':output_tokens,'temperature':0,'ignore_eos':True,'stream':True,'stream_options':{'include_usage':True}}
+ request=urllib.request.Request(client.base_url+'/v1/completions',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
+ start=time.monotonic();first=None;last=None;usage=None;done=False;fragments=[]
+ with urllib.request.urlopen(request,timeout=900) as reply:
+  for raw in reply:
+   if not raw.startswith(b'data:'):continue
+   data=raw[5:].strip()
+   if data==b'[DONE]':done=True;break
+   event=json.loads(data);assert 'error' not in event,event
+   if event.get('usage'):usage=event['usage']
+   for choice in event.get('choices',[]):
+    if choice.get('text'):
+     now=time.monotonic();first=now if first is None else first;last=now;fragments.append(choice['text'])
+ assert done and usage and first is not None
+ assert usage['prompt_tokens']==tokens and usage['completion_tokens']==output_tokens
+ elapsed=time.monotonic()-start
+ return dict(prompt_tokens=tokens,completion_tokens=output_tokens,ttft_s=first-start,total_s=elapsed,
+             generation_tok_s=(output_tokens-1)/(elapsed-(first-start)) if output_tokens>1 else None,
+             visible_generation_tok_s=(output_tokens-1)/(last-first) if output_tokens>1 and last>first else None,
+             text=''.join(fragments),nonce=nonce)
+def save():
+ (root/'night-speed-20261008/qsa-989-serving.json').write_text(json.dumps({'complete':False,'scope':'synthetic token-id prompts; absolute timing, no matched server baseline','records':results},indent=2)+'\n')
+
+
+from tools.glm_perf.resident_control import Control
+source=(root/'night-speed-20261008/qsa-v989-candidate.py').read_text()
+assert source.count("resource['shared'],resource['tiling_header']")==1
+parent_source=source.replace("resource['shared'],resource['tiling_header']","resource['parent'],resource['tiling_header']")
+(root/'night-speed-20261008/qsa-v989-parent-candidate.py').write_text(parent_source)
+comparisons=[]
+while not (root/'night-speed-20261008/qsa-final-serving.json').exists():time.sleep(2)
+try:
+ for label,selected in (('parent',parent_source),('shared',source)):
+  idle()
+  rows=client.switch(Control(uuid.uuid4().hex,candidate='qsa989_paired_'+label,source=selected));client.resume()
+  assert len(rows)==4 and all(not row['graphs_dirty'] and not row['native_failed'] for row in rows)
+  for repeat in (0,1):
+   for tokens,nonce in ((640,4),(1280,5),(6400,6)):
+    idle();assert client.request('/pause?mode=wait&clear_cache=true')['status']=='paused';client.resume()
+    row=stream(tokens,1,nonce);row.update(variant=label,repeat=repeat);comparisons.append(row)
+    (root/'night-speed-20261008/qsa-paired-serving.json').write_text(json.dumps(dict(complete=False,records=comparisons),indent=2))
+    print(json.dumps(row),flush=True)
+  for nonce in (20,21,22):
+   idle();row=stream(128,64,nonce);row.update(variant=label,decode=True);comparisons.append(row)
+ status=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+ assert len(status)==4 and all(not row['graphs_dirty'] and not row['native_failed'] and row['shared_qsa_cache']['shared_calls']>0 for row in status)
+ idle();text=client.request('/v1/completions',{'model':'glm53-flash-selective-w3','prompt':'Explain why plants need sunlight in three short sentences.','max_tokens':80,'temperature':0})
+ assert text['choices'][0]['text']
+ paused=client.request('/is_paused',method='GET');assert not paused['is_paused']
+ (root/'night-speed-20261008/qsa-paired-serving.json').write_text(json.dumps(dict(complete=True,records=comparisons,status=status,text_smoke=text,paused=paused),indent=2))
+ print('Paired same-wrapper QSA serving checks complete; shared candidate selected',flush=True)
+except BaseException:
+ raise

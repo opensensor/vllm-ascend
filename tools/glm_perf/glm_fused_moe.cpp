@@ -25,6 +25,9 @@
 #if defined(GLM_DIRECT_W4_L1) && (!defined(GLM_PREPARED_WEIGHT_LAYOUT) || !defined(GLM_PREFILL_WEIGHT_CACHE))
   #error "direct W4 L1 requires prepared weights and the projection cache allocation"
 #endif
+#if defined(GLM_PREPARED_OFFSET_TABLES) && !defined(GLM_PREPARED_WEIGHT_LAYOUT)
+  #error "prepared offsets require prepared weight layout"
+#endif
 #ifndef GLM_INT4_OUTPUT_COLUMNS
   #define GLM_INT4_OUTPUT_COLUMNS 128
 #endif
@@ -190,6 +193,10 @@ class Projection {
   __aicore__ inline void Run(GM_ADDR x, GM_ADDR inputHigh, GM_ADDR inputScales, GM_ADDR low, GM_ADDR high, GM_ADDR xs,
                              GM_ADDR codes, GM_ADDR scales, GM_ADDR ends, GM_ADDR order, GM_ADDR weights, GM_ADDR y,
                              const int64_t* config
+#ifdef GLM_PREPARED_OFFSET_TABLES
+                             ,
+                             GM_ADDR offsetConfig
+#endif
 #ifdef GLM_WEIGHT_DECODE_LUT
                              ,
                              GM_ADDR lookup
@@ -232,6 +239,9 @@ class Projection {
     const int64_t tiles = n_ / N;
 #endif
     Allocate();
+#ifdef GLM_PREPARED_OFFSET_TABLES
+    offsetTables_.SetGlobalBuffer(reinterpret_cast<__gm__ uint32_t*>(offsetConfig) + 24);
+#endif
     PrepareOffsets();
 #ifdef GLM_WEIGHT_DECODE_LUT
     GlobalTensor<half> table;
@@ -387,26 +397,44 @@ class Projection {
     pipe_.InitBuffer(output_, ELEMENTS * sizeof(half));
   }
   __aicore__ inline void PrepareOffsets() {
+#ifdef GLM_PREPARED_OFFSET_TABLES
+    // Tables are immutable CPU geometry descriptors, prepared before capture.
+    // Each copy is 32-byte aligned and targets the existing UB allocation.
+    uint32_t offset = 0;
+    DataCopy(outputOffsets_.Get<uint32_t>(), offsetTables_[offset], N);
+    offset += N;
+    DataCopy(productOffsets_.Get<uint32_t>(), offsetTables_[offset], PRODUCT_LAYOUT_COUNT * N);
+    offset += PRODUCT_LAYOUT_COUNT * N;
+    DataCopy(scaleCache_.Get<uint32_t>()[SCALE_INDEX_OFFSET / sizeof(uint32_t)], offsetTables_[offset], N);
+    offset += N;
+    DataCopy(activationScales_.Get<uint32_t>()[(M + LANES) * MAX_K_GROUPS], offsetTables_[offset], MAX_K_GROUPS);
+    offset += MAX_K_GROUPS;
+  #ifdef GLM_FUSED_GATE_UP
+    DataCopy(quantOffsets_.Get<uint32_t>(), offsetTables_[offset], QUANT_OFFSET_BYTES / sizeof(uint32_t));
+  #endif
+    PipeBarrier<PIPE_ALL>();
+    return;
+#else
     auto outputOffsets = outputOffsets_.Get<uint32_t>();
     for (uint32_t channel = 0; channel < N; ++channel) {
       const uint32_t physical = channel / 2 + (channel % 2 ? N / 2 : 0);
-#if defined(GLM_NATIVE_ROUTE_COLUMNS) && !defined(GLM_FUSED_GATE_UP)
+  #if defined(GLM_NATIVE_ROUTE_COLUMNS) && !defined(GLM_FUSED_GATE_UP)
       outputOffsets.SetValue(channel, physical * sizeof(float));
-#else
+  #else
       outputOffsets.SetValue(channel, physical * sizeof(half));
-#endif
+  #endif
       auto productOffsets = productOffsets_.Get<uint32_t>();
-#ifdef GLM_ACTIVE_CUBE_ROWS
+  #ifdef GLM_ACTIVE_CUBE_ROWS
       for (uint32_t layout = 0; layout < PRODUCT_LAYOUT_COUNT; ++layout) {
         const uint32_t rows = (layout + 1) * CUBE_ROW_TILE;
         productOffsets.SetValue(layout * N + channel,
                                 (channel / NZ_N * rows * NZ_N + channel % NZ_N) * sizeof(int32_t));
       }
-#else
+  #else
       for (uint32_t limbs = 1; limbs <= 2; ++limbs)
         productOffsets.SetValue((limbs - 1) * N + channel,
                                 (channel / NZ_N * limbs * M * NZ_N + channel % NZ_N) * sizeof(int32_t));
-#endif
+  #endif
       // Physical even/odd channel halves repeat the same four block32 scales.
       // Keep indices after the FP32 and rounded-FP16 scale cache, without
       // increasing the already tight down-stage UB allocation.
@@ -415,23 +443,24 @@ class Projection {
     }
     auto indices = activationScales_.Get<uint32_t>()[(M + LANES) * MAX_K_GROUPS];
     for (uint32_t group = 0; group < MAX_K_GROUPS; ++group) {
-#if defined(GLM_COMPACT_DOWN_SCALES) && !defined(GLM_FUSED_GATE_UP)
+  #if defined(GLM_COMPACT_DOWN_SCALES) && !defined(GLM_FUSED_GATE_UP)
       if (tokens_ > BULK_TOKENS && activationBits_ == 4)
         indices.SetValue(group, (group / (N / GROUP) * M * DOWN_SCALE_ROW_LANES + group % (N / GROUP)) * sizeof(float));
       else
-#endif
+  #endif
         indices.SetValue(group, group * LANES * sizeof(float));
     }
-#ifdef GLM_NZ_PREFILL_ACCUMULATOR
+  #ifdef GLM_NZ_PREFILL_ACCUMULATOR
     // Only a single-row extraction uses productOffsets_; it always has one
     // Cube block. Reuse four entries of the unused two-block table for scales.
     for (uint32_t block = 0; block < NZ_SCALE_BLOCKS; ++block)
       productOffsets_.Get<uint32_t>()[N].SetValue(block, block * NZ_N * sizeof(float));
-#endif
-#ifdef GLM_FUSED_GATE_UP
+  #endif
+  #ifdef GLM_FUSED_GATE_UP
     GlmFusedQuant::Prepare(quantOffsets_.Get<uint32_t>(), quantOffsets_.Get<uint32_t>()[2 * GlmFusedQuant::ELEMENTS]);
-#endif
+  #endif
     PipeBarrier<PIPE_ALL>();
+#endif
   }
 #ifdef GLM_WEIGHT_DECODE_LUT
   __aicore__ inline void LookupPair(LocalTensor<half> value, uint32_t plane, uint32_t phase, uint32_t width,
@@ -1648,6 +1677,9 @@ class Projection {
   TBuf<TPosition::VECCALC> raw_, mask_, decoded_, outputOffsets_, productOffsets_, outputRow_, scaleCache_,
       activationScales_;
   TBuf<TPosition::VECCALC> quantOffsets_;
+#ifdef GLM_PREPARED_OFFSET_TABLES
+  GlobalTensor<uint32_t> offsetTables_;
+#endif
   TBuf<TPosition::VECCALC> gathered_, packedB_, packedA_, products_, results_, output_;
   TBuf<TPosition::VECCALC> productFloat_, reduction_;
   GlobalTensor<int8_t> low_, high_;
@@ -1712,9 +1744,22 @@ extern "C" __global__ __aicore__ void GLM_FUSED_ENTRY(GM_ADDR low, GM_ADDR high,
       config[3] > 4096 || config[3] % 256 || config[4] < 2 || config[4] > 4 || (config[5] != 4 && config[5] != 8) ||
       config[6] <= 0 || config[7] <= 0 || config[6] * config[7] != config[0])
     return;
+#ifdef GLM_PREPARED_OFFSET_TABLES
+  constexpr int64_t OFFSET_LAYOUT_TAG = 0x474C4D4F464631;
+  const int64_t expectedOffsetElements = 3 * N + PRODUCT_LAYOUT_COUNT * N
+  #ifdef GLM_FUSED_GATE_UP
+                                         + QUANT_OFFSET_BYTES / sizeof(uint32_t)
+  #endif
+      ;
+  if (source[8] != OFFSET_LAYOUT_TAG || source[9] != expectedOffsetElements || source[10] || source[11]) return;
+#endif
   Projection operation;
 #ifdef GLM_FUSED_GATE_UP
   operation.Run(x, inputHigh, inputScales, low, high, xs, codes, scales, ends, order, nullptr, nullptr, config
+  #ifdef GLM_PREPARED_OFFSET_TABLES
+                ,
+                tiling
+  #endif
   #ifdef GLM_WEIGHT_DECODE_LUT
                 ,
                 lookup
@@ -1722,6 +1767,10 @@ extern "C" __global__ __aicore__ void GLM_FUSED_ENTRY(GM_ADDR low, GM_ADDR high,
   );
 #else
   operation.Run(nullptr, nullptr, nullptr, low, high, xs, codes, scales, ends, order, weights, y, config
+  #ifdef GLM_PREPARED_OFFSET_TABLES
+                ,
+                tiling
+  #endif
   #ifdef GLM_WEIGHT_DECODE_LUT
                 ,
                 lookup

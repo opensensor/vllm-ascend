@@ -1,0 +1,7 @@
+import json,subprocess,sys,time
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+for name in ('glm-expert-cube-admit-base-only','glm-offset-v984-serving-admit','glm-offset-v985-serving-admit','glm-offset-live'):
+ with (root/(name+'-prepared-run.log')).open('x') as log:
+  subprocess.run([sys.executable,str(root/(name+'.py'))],stdout=log,stderr=subprocess.STDOUT,check=True,timeout=1200)
+print('Prepared offsets loaded into real serving',flush=True)

@@ -1,0 +1,33 @@
+import json,tarfile
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+files=[]
+for version in (984,985):
+ for name in (f'v{version}-free-gates-rank0.json',f'v{version}-serving-admission.json',f'v{version}-serving-manifest.json'):
+  files.append((root/name,'measurements/'+name))
+ for path in (root/f'build-v{version}-offsets').rglob('*'):
+  if path.is_file() and '__pycache__' not in str(path):files.append((path,'bundles/'+str(path.relative_to(root))))
+for directory in ('build-qsa-v989','build-qsa-v990','build-qsa-v991'):
+ for path in (root/directory).rglob('*'):
+  if path.is_file() and '__pycache__' not in str(path):files.append((path,'bundles/'+str(path.relative_to(root))))
+for name in ('qsa-v989-free-gates.json','qsa-v989-resident-admission.json','qsa-v989-resident-manifest.json',
+             'v984-admission-recovery.json','v984-audit-recovery.json','v984-serving-admission-errors.json',
+             'prepared-offset-server-process-20261008.json','qsa-v990-free-gates.json','qsa-v990-resident-admission.json','qsa-v990-resident-manifest.json','qsa-v991-free-gates.json','qsa-v991-resident-admission.json','qsa-v991-resident-manifest.json'):
+ files.append((root/name,'measurements/'+name))
+for name in ('offset-985-serving.json','offset-final-serving.json','qsa-989-serving.json','qsa-final-serving.json',
+             'offset-v984-v985-switch.json','qsa-v989-switch.json','qsa-paired-serving.json','qsa-990-serving.json','qsa-v990-final-serving.json','qsa-v990-switch.json','qsa-991-serving.json','qsa-v991-final-serving.json','qsa-v991-switch.json','qsa-v991-repeat-serving.json'):
+ if (root/'night-speed-20261008'/name).exists():files.append((root/'night-speed-20261008'/name,'measurements/'+name))
+for name in ('offset-v984-v985-candidate.py','qsa-v989-candidate.py','qsa-v989-parent-candidate.py',
+             'prepared-offset-launch.py','qsa-v990-candidate.py','qsa-v991-candidate.py'):
+ if (root/'night-speed-20261008'/name).exists():files.append((root/'night-speed-20261008'/name,'protocols/'+name))
+for pattern in ('glm-offset*.py','glm-qsa*.py','qsa-shared-binding*frozen.py'):
+ for path in root.glob(pattern):files.append((path,'protocols/'+path.name))
+for pattern in ('glm-offset*.log','build-qsa-v98*.log','build-qsa-v990.log','build-qsa-v991.log','qsa-v98*.log','qsa-v990*.log','qsa-v991*.log','glm-qsa*.log','qsa*serving.log','prepared-offset-server-20261008.log'):
+ for path in root.glob(pattern):files.append((path,'logs/'+path.name))
+for name in ('build_reconstruction.py','glm_fused_moe.cpp','glm_fused_quantize.h','glm_fused_moe.py',
+             'fused_offset_tables.py','fused_moe_control.py','fused_moe_probe.py','reconstruction_bridge.cpp'):
+ files.append((root/'source-offset-v984/tools/glm_perf'/name,'sources/offset-v984/'+name))
+with tarfile.open(root/'offset-qsa-evidence.tar.gz','w:gz') as archive:
+ for path,target in sorted(set(files)):
+  if path.is_file():archive.add(path,arcname=target,recursive=False)
+print('Exported',len(files),'allowlisted evidence files')

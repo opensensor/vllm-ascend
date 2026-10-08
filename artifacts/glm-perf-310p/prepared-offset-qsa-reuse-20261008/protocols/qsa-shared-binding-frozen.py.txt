@@ -1,0 +1,105 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Install a qualified QSA operation on loaded attention instances reversibly."""
+
+import torch
+
+from tools.glm_perf.instance_bindings import InstanceBindings
+from tools.glm_perf.resident_rpc_guard import WORKER_PREFIX, guard_replacements
+
+
+def bind_attention(bindings, runner, native, tiling_header):
+    roots = [runner.model]
+    draft = getattr(getattr(runner, "drafter", None), "model", None)
+    if draft is not None:
+        roots.append(draft)
+    # Physical QSA views retain the complete NZ page even when the logical
+    # channel view is smaller. Only immutable geometry is read on the host.
+    cache_shapes = {
+        (bank[0].shape[0], bank[0].stride(0) // (640 * 16), 640, 16)
+        for bank in runner.kv_caches
+        if isinstance(bank, (list, tuple))
+        and len(bank) == 2
+        and bank[0].ndim == 4
+        and bank[0].shape[-1] == 16
+        and bank[0].shape[2] == 640
+    }
+    block_widths = {
+        (table.block_table.gpu.shape[1] + 19) // 20
+        for table in runner.input_batch.block_table.block_tables
+        if not table.is_mamba_group and table.block_size == 32
+    }
+    seen = set()
+    for root in roots:
+        for module in root.modules():
+            owner = getattr(module, "impl", None)
+            if owner is None or id(owner) in seen or getattr(owner, "glm_indexer", None) is None:
+                continue
+            if not hasattr(owner, "_forward_decode_fused"):
+                continue
+            if not cache_shapes or not block_widths:
+                raise ValueError("no qualified QSA cache/table geometry found")
+            seen.add(id(owner))
+            width = owner.glm_indexer.topk_tokens // owner.glm_indexer.index_kpool
+            for cache_shape in cache_shapes:
+                for block_width in block_widths:
+                    for rows in range(1, 641):
+                        for requests in range(1, 5):
+                            header, _ = tiling_header(
+                                (rows, owner.num_heads, owner.kv_lora_rank),
+                                cache_shape,
+                                (rows, width),
+                                (requests, block_width),
+                                (requests + 1,),
+                                owner.scale,
+                                owner.num_kv_heads,
+                            )
+                            if header not in native.configs:
+                                native.configs[header] = torch.tensor(header, dtype=torch.int64, device=native.device)
+
+            def selected_op(self):
+                return native
+
+            bindings.bind(owner, "_get_paged_latent_op", selected_op)
+    if not seen:
+        raise ValueError("no loaded GLM QSA instance found")
+    return len(seen)
+
+
+def extend_replacements(changes, native, tiling_header):
+    bindings = InstanceBindings()
+    state = {"attention_instances": 0}
+    capture_base, apply_base, status_base = (
+        changes[WORKER_PREFIX + name] for name in ("resident_capture", "resident_apply", "resident_status")
+    )
+
+    def capture(self):
+        try:
+            state["attention_instances"] = bind_attention(bindings, self.model_runner, native, tiling_header)
+            result = capture_base(self)
+            if "error" in result:
+                bindings.restore()
+            return result
+        except Exception as error:
+            bindings.restore()
+            self._resident_session().graphs_dirty = True
+            return self._resident_error(error)
+
+    def apply(self, generation):
+        bindings.restore()
+        return apply_base(self, generation)
+
+    def status(self):
+        receipt = status_base(self)
+        receipt["shared_qsa_cache"] = dict(
+            state,
+            calls=native.calls,
+            shared_calls=native.shared_calls,
+            descriptors=len(native.configs),
+            bindings=len(bindings.originals),
+        )
+        return receipt
+
+    result = dict(changes)
+    for name, function in (("resident_capture", capture), ("resident_apply", apply), ("resident_status", status)):
+        result[WORKER_PREFIX + name] = function
+    return guard_replacements(result)

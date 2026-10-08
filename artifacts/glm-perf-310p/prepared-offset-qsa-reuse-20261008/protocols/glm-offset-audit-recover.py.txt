@@ -1,0 +1,24 @@
+import json,sys,psutil,subprocess,urllib.request,re
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+receipt=json.loads((root/'offset-tables-server-process-20261008.json').read_text())
+parent=psutil.Process(receipt['pid']);assert abs(parent.create_time()-receipt['created'])<1
+with urllib.request.urlopen('http://127.0.0.1:8001/is_paused',timeout=15) as r:paused=json.load(r)
+assert paused['is_paused'] is True
+with urllib.request.urlopen('http://127.0.0.1:8001/metrics',timeout=15) as r:metrics=r.read().decode()
+counts=[float(v) for v in re.findall(r'^vllm:num_requests_(?:running|waiting)(?:\{[^\n]*\})?\s+([0-9.eE+-]+)$',metrics,re.M)]
+assert counts and not any(counts)
+owned=[parent,*parent.children(recursive=True)]
+(root/'v984-audit-recovery.json').write_text(json.dumps(dict(receipt=receipt,paused=paused,pids=[p.pid for p in owned],reason='Arithmetic smoke completed; optional audit metadata assumed type module is a string; fix the audit predicate and restart the failed native session'),indent=2))
+for p in owned:
+ try:p.terminate()
+ except psutil.NoSuchProcess:pass
+_,pending=psutil.wait_procs(owned,timeout=30)
+for p in pending:
+ try:p.kill()
+ except psutil.NoSuchProcess:pass
+psutil.wait_procs(pending,timeout=5)
+launch=(root/'night-speed-20261008/offset-tables-launch.py').read_text().replace('offset-tables-server-20261008','prepared-offset-server-20261008').replace('offset-tables-server-process-20261008','prepared-offset-server-process-20261008')
+assert not (root/'prepared-offset-server-20261008.log').exists()
+(root/'night-speed-20261008/prepared-offset-launch.py').write_text(launch)
+exec(compile(launch,'<prepared-offset-audit-recovery>','exec'),{'__name__':'__main__'})

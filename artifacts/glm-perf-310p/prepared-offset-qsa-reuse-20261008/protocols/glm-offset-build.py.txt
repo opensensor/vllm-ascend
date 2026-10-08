@@ -1,0 +1,11 @@
+import inspect,json,sys
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(root/'source-offset-v984'))
+from tools.glm_perf.build_reconstruction import build
+for version,parent in ((984,'build-v964-fp16-scales'),(985,'build-v981-direct-w4')):
+ opts=json.loads((root/parent/'provenance.json').read_text())['_build']
+ opts={k:v for k,v in opts.items() if k in inspect.signature(build).parameters}
+ opts.update(version=version,prepared_offset_tables=True)
+ print('Compile prepared offset variant',version,'from',parent,flush=True)
+ build(root/f'build-v{version}-offsets',Path('/usr/local/Ascend/cann-9.1.0'),Path('/srv/ai/src/glm-selective-w3-nz-test-20261004'),**opts)
+ print('Compiled append-only variant',version,flush=True)

@@ -1,0 +1,9 @@
+import os,json,subprocess,sys
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+saved=json.loads(Path('/home/matteius/experiments/glm-decode-flags-20261006/candidate-config.json').read_text())
+environment=dict(os.environ)
+environment['ASCEND_CUSTOM_OPP_PATH']=':'.join(saved['opp_stack'])
+environment['LD_LIBRARY_PATH']=':'.join([str(Path(v)/'op_api/lib') for v in saved['host_stack']]+[environment.get('LD_LIBRARY_PATH','')])
+with (root/'qsa-v990-free-gates-full-env.log').open('x') as log:
+ subprocess.run([sys.executable,str(root/'glm-qsa-v990-free-gates.py')],env=environment,stdout=log,stderr=subprocess.STDOUT,check=True)

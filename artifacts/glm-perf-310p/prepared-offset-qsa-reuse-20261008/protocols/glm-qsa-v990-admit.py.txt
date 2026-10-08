@@ -1,0 +1,41 @@
+import hashlib,importlib,json,sys,urllib.request,re
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_native import NativeManifest
+build=root/'build-qsa-v990';provenance=json.loads((build/'provenance.json').read_text())
+full=root/'qsa-v990-free-gates.json';assert json.loads(full.read_text())['complete']
+def entry(path):return dict(path=str(path),sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+files=[p for p in build.rglob('*') if p.is_file() and p.suffix!='.so' and '__pycache__' not in str(p)]+[full]
+source=f'''
+def prepare():
+    import importlib,sys,torch
+    from pathlib import Path
+    build=Path({str(build)!r});sys.path.insert(0,str(build))
+    native=importlib.import_module({provenance['helper_package']!r}+'.qsa_shared_native')
+    kernel=torch.classes.glm_qsa_shared_v990.Kernel
+    launch=torch.ops.glm_qsa_shared_v990.launch
+    device=torch.device('npu:'+str(torch.npu.current_device()))
+    return dict(parent=native.NativeQsaShared(kernel(str(build/'parent.bin'),'qsa_sparse_attention_v310'),launch,device),
+                shared=native.NativeQsaShared(kernel(str(build/'shared.bin'),'qsa_sparse_attention_v310'),launch,device),
+                tiling_header=native.tiling_header)
+
+def validate(resources):
+    import importlib,torch,json
+    probe=importlib.import_module({provenance['helper_package']!r}+'.qsa_shared_probe')
+    result=probe.qualify(resources['parent'],resources['shared'],production=torch.ops._C_ascend.npu_qsa_sparse_attention_310,full=False)
+    for operation in (resources['parent'],resources['shared']):
+        operation.configs.clear();operation.calls=operation.shared_calls=0
+    return result
+'''
+value=dict(name='qsa_shared_v990',libraries=[entry(build/'glm_qsa_shared_v990.so')],assets=[entry(p) for p in files],operators=['glm_qsa_shared_v990::launch'],validation_source=source)
+(root/'qsa-v990-resident-manifest.json').write_text(json.dumps(value,indent=2))
+c=ResidentClient('http://127.0.0.1:8001',timeout=900)
+with urllib.request.urlopen(c.base_url+'/metrics',timeout=30) as response:metrics=response.read().decode()
+counts=[float(v) for v in re.findall(r'^vllm:num_requests_(?:running|waiting)(?:\{[^\n]*\})?\s+([0-9.eE+-]+)$',metrics,re.M)]
+assert counts and not any(counts)
+rows=c.load_native(NativeManifest(value))
+assert len(rows)==4 and all(r['validation']['passed'] and len(r['validation']['cases'])==18 for r in rows)
+(root/'qsa-v990-resident-admission.json').write_text(json.dumps(rows,indent=2));c.resume()
+print('QSA shared reuse qualified on all four serving workers',flush=True)

@@ -1,0 +1,35 @@
+import gc,hashlib,importlib,json,sys,urllib.request,re
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+c=ResidentClient('http://127.0.0.1:8001')
+with urllib.request.urlopen(c.base_url+'/metrics',timeout=30) as reply:metrics=reply.read().decode()
+counts=[float(v) for v in re.findall(r'^vllm:num_requests_(?:running|waiting)(?:\{[^\n]*\})?\s+([0-9.eE+-]+)$',metrics,re.M)]
+assert counts and not any(counts),'User request active; defer'
+assert c.request('/pause?mode=wait')['status']=='paused'
+build=root/'build-qsa-v989';sys.path.insert(0,str(build))
+provenance=json.loads((build/'provenance.json').read_text())
+payload=dict(complete=False,provenance=provenance,records=[])
+report=root/'qsa-v989-free-gates.json'
+def save():report.write_text(json.dumps(payload,indent=2)+'\n')
+try:
+ import torch,torch_npu
+ torch.npu.set_device(0);torch_npu.npu.set_compile_mode(jit_compile=False)
+ from vllm_ascend.utils import enable_custom_op
+ enable_custom_op()
+ native=importlib.import_module(provenance['helper_package']+'.qsa_shared_native')
+ probe=importlib.import_module(provenance['helper_package']+'.qsa_shared_probe')
+ torch.ops.load_library(str(build/'glm_qsa_shared_v989.so'))
+ ns=torch.classes.glm_qsa_shared_v989
+ launch=torch.ops.glm_qsa_shared_v989.launch
+ device=torch.device('npu:0')
+ parent=native.NativeQsaShared(ns.Kernel(str(build/'parent.bin'),'qsa_sparse_attention_v310'),launch,device)
+ candidate=native.NativeQsaShared(ns.Kernel(str(build/'shared.bin'),'qsa_sparse_attention_v310'),launch,device)
+ def record(row):
+  payload['records'].append(row);save();print(json.dumps(row),flush=True)
+ result=probe.qualify(parent,candidate,production=torch.ops._C_ascend.npu_qsa_sparse_attention_310,on_case=record)
+ payload.update(complete=True,summary={k:v for k,v in result.items() if k!='cases'})
+ save();print('Full QSA parent/shared/production and changed replay gate passed',flush=True)
+finally:
+ c.resume()

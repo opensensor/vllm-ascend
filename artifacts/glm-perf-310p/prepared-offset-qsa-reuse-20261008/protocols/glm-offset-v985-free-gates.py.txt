@@ -1,0 +1,114 @@
+import sys
+sys.path.insert(0,'/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/runtime-fp16-scales-20261008')
+import torch,torch_npu
+torch.npu.set_device(0)
+torch_npu.npu.set_compile_mode(jit_compile=False)
+def prepare():
+    from pathlib import Path
+    from tools.glm_perf.fused_moe_profile import frozen_helper
+    build = Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-v985-offsets')
+    helper, options = frozen_helper(build)
+    return {'fused_int4a'+str(bits): helper.NativeFusedMoE(build,namespace=options['namespace'],activation_bits=bits,prepared_weight_layout=True,fp16_route_workspace=True) for bits in (4,8)}
+
+
+def validate(resources):
+    import hashlib,json,torch,inspect
+    import gc as garbage_collector
+    from types import ModuleType
+    from pathlib import Path
+    from safetensors import safe_open
+    from tools.glm_perf.fused_moe_profile import frozen_helper,measure
+    from tools.glm_perf.glm_int4 import unpack_canonical_codes
+    root = Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+    build = root/'build-v985-offsets'
+    helper,options=frozen_helper(build)
+    probe=__import__(options['helper_package']+'.fused_moe_probe',fromlist=['gate_case'])
+    # Explicitly retire fixture graphs before the next fixture. Only lifecycle
+    # changes; the frozen independent arithmetic and every output check remain.
+    space=dict(probe.__dict__)
+    function=inspect.getsource(probe.gate_case)
+    assert function.count('    return {')==1
+    function=function.replace('    return {','    graph.reset()\n    torch.npu.synchronize()\n    return {')
+    exec(compile(function,'<fixture-graph-retirement>','exec'),space)
+    original_probe=probe
+    probe=ModuleType('offset_fixture_probe')
+    probe.gate_case=space['gate_case']
+    rank=0
+    report=root/f'v985-free-gates-rank{rank}.json'
+    assert not report.exists()
+    provenance=json.loads((build/'provenance.json').read_text())
+    names=['glm_reconstruction_bridge_v985.so','glm_fused_pack.bin','glm_fused_gate_up.bin','glm_fused_down.bin','glm_fused_gate_up_w4.bin','glm_fused_down_w4.bin','glm_fused_route_input.bin','glm_fused_reduce.bin']
+    payload=dict(complete=False,build_options=options,binaries={name:hashlib.sha256((build/name).read_bytes()).hexdigest() for name in names},records=[],real_weight_records=[],paired_boundaries=[],profiles=[])
+    def save():report.write_text(json.dumps(payload,indent=2))
+    def reclaim():
+        torch.npu.synchronize();garbage_collector.collect();torch.npu.empty_cache()
+    cache_audit=[]
+    for obj in garbage_collector.get_objects():
+        if isinstance(obj,torch.nn.Module):
+            data=vars(obj)
+            if 'kv_cache' in data:
+                value=data['kv_cache']
+                def tensors(item):
+                    if isinstance(item,torch.Tensor):return [item]
+                    if isinstance(item,(tuple,list)):return [t for child in item for t in tensors(child)]
+                    return []
+                entries=tensors(value)
+                if entries:cache_audit.append(dict(module=type(obj).__module__+'.'+type(obj).__name__,shapes=[list(t.shape) for t in entries],pointers=[t.data_ptr() for t in entries],storage_pointers=[t.untyped_storage().data_ptr() for t in entries]))
+    payload['cache_storage_audit']=cache_audit;save()
+    for activation in (4,8):
+        native=resources['fused_int4a'+str(activation)]
+        for bits in (2,3,4):
+            for tokens in (1,2,3,17,128):
+                payload['records'].append(probe.gate_case(native,bits,tokens));save();reclaim()
+    parent=root/'build-v981-direct-w4';base_helper,base_opts=frozen_helper(parent)
+    checkpoint=Path('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p')
+    index=json.loads((checkpoint/'model.safetensors.index.json').read_text())['weight_map']
+    for layer in (10,11,33):
+        prefix=f'model.language_model.layers.{layer}.mlp.experts.0.';values=[]
+        for proj in ('gate','up','down'):
+            parts=[]
+            for suffix in ('_codes','_scale'):
+                key=prefix+proj+'_proj'+suffix
+                with safe_open(str(checkpoint/index[key]),framework='pt',device='cpu') as handle:parts.append(handle.get_tensor(key))
+            code,scale=parts;k=scale.shape[1]*32;bits=code.shape[1]*8//k;values.append((unpack_canonical_codes(code,k),scale.float()))
+        gate=torch.cat((values[0][0],values[1][0]))[None];gs=torch.cat((values[0][1],values[1][1]))[None]
+        down,ds=values[2][0][None],values[2][1][None]
+        for activation in (4,8):
+            candidate=resources['fused_int4a'+str(activation)]
+            for tokens in (2,31):
+                row=probe.gate_case(candidate,bits,tokens,real=(gate,gs,down,ds));row['tensor_prefix']=prefix;payload['real_weight_records'].append(row);save();reclaim()
+            baseline=base_helper.NativeFusedMoE(parent,namespace=base_opts['namespace'],activation_bits=activation,prepared_weight_layout=True,fp16_route_workspace=True)
+            gc=candidate.pack_weight_codes(gate,bits).npu();dc=candidate.pack_weight_codes(down,bits).npu();ggs=gs.half().npu();gds=ds.half().npu()
+            for active in (1,8,9,16,17,24,25,31,32,640):
+                tokens=64 if active<=32 else 640;generator=torch.Generator().manual_seed(9810+layer+active+activation)
+                x=torch.randn(tokens,gate.shape[-1],generator=generator).half().npu();weights=torch.rand(tokens,1,generator=generator).npu();ids=torch.ones(tokens,1,dtype=torch.int64).npu();ids[:active]=0
+                graphs=[];outputs=[]
+                for native in (baseline,candidate):
+                    native(x,gc,ggs,dc,gds,weights,ids)
+                    graph=torch.npu.NPUGraph()
+                    with torch.npu.graph(graph):output=native(x,gc,ggs,dc,gds,weights,ids)
+                    graphs.append(graph);outputs.append(output)
+                for replay in range(3):
+                    for graph in graphs:graph.replay()
+                    torch.npu.synchronize();a,b=[out.cpu() for out in outputs]
+                    assert bool(torch.isfinite(b).all()) and torch.equal(a.view(torch.uint8),b.view(torch.uint8)),(rank,layer,activation,active,replay)
+                    if replay==0:x.mul_(1.125);weights.mul_(0.75);ids.zero_()
+                    elif replay==1:ids.fill_(1)
+                assert bool((outputs[1].cpu()==0).all())
+                payload['paired_boundaries'].append(dict(layer=layer,weight_bits=bits,activation_bits=activation,tokens=tokens,active_rows=active,changed_replays=3,bit_exact=True));save()
+                for graph in graphs:graph.reset()
+                del graph,graphs,outputs,a,b
+                reclaim()
+            ids.zero_()
+            profile=[measure(n,lambda native=n:native(x,gc,ggs,dc,gds,weights,ids),2,5) for n in (baseline,candidate)]
+            payload['profiles'].append(dict(layer=layer,activation_bits=activation,tokens=tokens,measurements=profile));save()
+            baseline.scratch.clear();baseline.configs.clear()
+            del baseline,gc,dc,ggs,gds
+            reclaim()
+    for native in resources.values():native.scratch.clear();native.configs.clear()
+    reclaim()
+    payload['complete']=True;save()
+    assert len(payload['records'])==30 and len(payload['real_weight_records'])==12 and len(payload['paired_boundaries'])==60
+    return dict(passed=True,rank=rank,device=torch.npu.current_device(),independent_cases=30,real_weight_cases=12,paired_boundaries=60,changed_replays=3,report=str(report),report_sha256=hashlib.sha256(report.read_bytes()).hexdigest(),model_quality='not_evaluated')
+
+print(validate(prepare()),flush=True)

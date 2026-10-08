@@ -1,0 +1,32 @@
+import json,sys,psutil,subprocess,urllib.request,re
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+receipt=json.loads((root/'expert-cube-final-server-process-20261008.json').read_text())
+parent=psutil.Process(receipt['pid']);assert abs(parent.create_time()-receipt['created'])<1
+with urllib.request.urlopen('http://127.0.0.1:8001/is_paused',timeout=15) as r:paused=json.load(r)
+assert paused['is_paused'] is True
+with urllib.request.urlopen('http://127.0.0.1:8001/metrics',timeout=15) as r:metrics=r.read().decode()
+counts=[float(v) for v in re.findall(r'^vllm:num_requests_(?:running|waiting)(?:\{[^\n]*\})?\s+([0-9.eE+-]+)$',metrics,re.M)]
+assert counts and not any(counts)
+owned=[parent,*parent.children(recursive=True)]
+(root/'v984-admission-recovery.json').write_text(json.dumps(dict(receipt=receipt,paused=paused,pids=[p.pid for p in owned],reason='Validation inventory incorrectly expected route-input binary in decode bundle; native session requires fresh worker process'),indent=2))
+for p in owned:
+ try:p.terminate()
+ except psutil.NoSuchProcess:pass
+_,pending=psutil.wait_procs(owned,timeout=30)
+for p in pending:
+ try:p.kill()
+ except psutil.NoSuchProcess:pass
+psutil.wait_procs(pending,timeout=5)
+try:
+ for version in (984,985):
+  with (root/f'v{version}-offset-free-gates.log').open('x') as out:
+   subprocess.run([sys.executable,str(root/f'glm-offset-v{version}-free-gates.py')],stdout=out,stderr=subprocess.STDOUT,check=True,timeout=1200)
+ print('Both prepared-offset bundles passed full free-device arithmetic/boundary gates',flush=True)
+except BaseException as error:
+ (root/'offset-free-gate-error.json').write_text(json.dumps(dict(type=type(error).__name__,error=str(error))));print('Gate failed; restore qualified prior candidate:',error,flush=True)
+finally:
+ launch=(root/'night-speed-20261008/expert-cube-final-launch.py').read_text().replace('expert-cube-final-server-20261008','offset-tables-server-20261008').replace('expert-cube-final-server-process-20261008','offset-tables-server-process-20261008')
+ assert not (root/'offset-tables-server-20261008.log').exists()
+ (root/'night-speed-20261008/offset-tables-launch.py').write_text(launch)
+ exec(compile(launch,'<offset-recovery>','exec'),{'__name__':'__main__'})

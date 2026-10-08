@@ -1,0 +1,11 @@
+import json,subprocess,time,sys
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+end=time.monotonic()+900
+while not (root/'night-speed-20261008/qsa-v991-switch.json').exists():
+ if time.monotonic()>end:raise TimeoutError('QSA vector candidate not captured')
+ time.sleep(2)
+for name in ('glm-qsa-v991-cold-bench','glm-qsa-v991-final-serving'):
+ with (root/(name+'.log')).open('x') as log:
+  subprocess.run([sys.executable,str(root/(name+'.py'))],stdout=log,stderr=subprocess.STDOUT,check=True)
+print('v991 cold and final HTTP serving completed',flush=True)

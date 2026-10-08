@@ -68,6 +68,7 @@ def build(
     fp16_weight_scales=False,
     active_cube_rows=False,
     direct_w4_l1=False,
+    prepared_offset_tables=False,
 ):
     """Freeze helper sources and compile a unique, append-only native version."""
     if type(version) is not int or version < 1 or output_columns not in (16, 32, 64, 128):
@@ -97,6 +98,7 @@ def build(
             fp16_weight_scales,
             active_cube_rows,
             direct_w4_l1,
+            prepared_offset_tables,
         )
     ):
         raise ValueError("prefill experiment flags must be boolean")
@@ -206,6 +208,8 @@ def build(
         raise ValueError("active Cube rows require the qualified strided readback")
     if direct_w4_l1 and not (prepared_weight_layout and prefill_weight_cache):
         raise ValueError("direct W4 L1 requires prepared projection cache allocation")
+    if prepared_offset_tables and not (fused_moe and prepared_weight_layout):
+        raise ValueError("prepared offsets require prepared fused MoE")
     namespace = f"glm_reconstruction_v{version}"
     build_dir = build_dir.resolve()
     build_dir.mkdir(parents=True, exist_ok=False)
@@ -215,7 +219,7 @@ def build(
     (helper_root / "__init__.py").write_text("# SPDX-License-Identifier: Apache-2.0\n")
     helpers = ("glm_int4.py", "reconstruction_native.py", "reconstruction_probe.py")
     if fused_moe:
-        helpers += ("glm_fused_moe.py", "fused_moe_probe.py", "fused_weight_layout.py")
+        helpers += ("glm_fused_moe.py", "fused_moe_probe.py", "fused_weight_layout.py", "fused_offset_tables.py")
     for name in helpers:
         shutil.copy2(HERE / name, helper_root / name)
     shutil.copy2(HERE / "resident_candidates/expert_reconstruction.py", helper_root / "expert_reconstruction.py")
@@ -275,6 +279,7 @@ def build(
             "fp16_weight_scales": fp16_weight_scales,
             "active_cube_rows": active_cube_rows,
             "direct_w4_l1": direct_w4_l1,
+            "prepared_offset_tables": prepared_offset_tables,
             "share_gate_up_input": share_gate_up_input,
             "cache_gate_up_activations": cache_gate_up_activations,
             "vector_scale_products": vector_scale_products,
@@ -353,6 +358,7 @@ def build(
                     *(["-DGLM_PREFILL_ROWS_32"] if prefill_rows_32 else []),
                     *(["-DGLM_ACTIVE_CUBE_ROWS"] if active_cube_rows else []),
                     *(["-DGLM_DIRECT_W4_L1"] if direct_w4_l1 else []),
+                    *(["-DGLM_PREPARED_OFFSET_TABLES"] if prepared_offset_tables else []),
                     *(["-DGLM_GATHER_PRODUCT_MATRIX"] if gather_product_matrix else []),
                     *(["-DGLM_FP16_ROUTE_WORKSPACE"] if fp16_route_workspace else []),
                     *(["-DGLM_NATIVE_ROUTE_COLUMNS"] if stage == "down" and native_route_columns else []),
@@ -593,6 +599,11 @@ def main():
     parser.add_argument(
         "--direct-w4-l1", action="store_true", help="load prepared W4 weights into L1 without UB staging"
     )
+    parser.add_argument(
+        "--prepared-offset-tables",
+        action="store_true",
+        help="DMA immutable gather tables prepared with each projection config",
+    )
     args = parser.parse_args()
     print(
         build(
@@ -638,6 +649,7 @@ def main():
             args.fp16_weight_scales,
             args.active_cube_rows,
             args.direct_w4_l1,
+            args.prepared_offset_tables,
         )
     )
 

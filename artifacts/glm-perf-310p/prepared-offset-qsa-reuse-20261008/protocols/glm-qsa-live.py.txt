@@ -1,0 +1,35 @@
+import hashlib,json,sys,urllib.request,re,uuid
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+c=ResidentClient('http://127.0.0.1:8001',timeout=900)
+rows=json.loads((root/'qsa-v989-resident-admission.json').read_text())
+assert len(rows)==4 and all(row['validation']['passed'] for row in rows)
+with urllib.request.urlopen(c.base_url+'/metrics',timeout=30) as response:metrics=response.read().decode()
+counts=[float(v) for v in re.findall(r'^vllm:num_requests_(?:running|waiting)(?:\{[^\n]*\})?\s+([0-9.eE+-]+)$',metrics,re.M)]
+assert counts and not any(counts),'User request active; defer'
+base=(root/'night-speed-20261008/offset-v984-v985-candidate.py').read_text()
+binding=(root/'qsa-shared-binding-frozen.py').read_text()
+source=base+f'''
+qsa_parent_replacements = replacements
+
+def replacements(native_resources):
+    from types import ModuleType
+    capsule=ModuleType('qsa_shared_binding_v989')
+    exec(compile({binding!r},'<frozen-qsa-shared-binding>','exec'),capsule.__dict__)
+    resource=native_resources['qsa_shared_v989']
+    return capsule.extend_replacements(qsa_parent_replacements(native_resources),resource['shared'],resource['tiling_header'])
+'''
+(root/'night-speed-20261008/qsa-v989-candidate.py').write_text(source)
+before=c._acknowledged_rpc('resident_status',matches=c._status_matches)
+try:
+ rows=c.switch(Control(uuid.uuid4().hex,candidate='fp16_prepared_offsets984_985_shared_qsa989',source=source));c.resume()
+ assert len(rows)==4 and all(not row['graphs_dirty'] and not row['native_failed'] and row['shared_qsa_cache']['attention_instances']==12 for row in rows)
+ assert sorted((r['pid'],r['weight_storage_digest']) for r in rows)==sorted((r['pid'],r['weight_storage_digest']) for r in before)
+ (root/'night-speed-20261008/qsa-v989-switch.json').write_text(json.dumps(dict(before=before,rows=rows,source_sha256=hashlib.sha256(source.encode()).hexdigest()),indent=2))
+ print('Shared QSA loaded/captured on all four ranks with workers and weights preserved',flush=True)
+except BaseException as error:
+ (root/'night-speed-20261008/qsa-v989-switch-error.json').write_text(json.dumps(dict(error=str(error))))
+ raise

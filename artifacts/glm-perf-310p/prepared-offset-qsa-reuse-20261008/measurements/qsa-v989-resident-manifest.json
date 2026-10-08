@@ -1,0 +1,83 @@
+{
+  "name": "qsa_shared_v989",
+  "libraries": [
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-qsa-v989/glm_qsa_shared_v989.so",
+      "sha256": "50a892fe9dbeba5357089a33f637b0eb7caa3bb9e15b903c392294c44865e759"
+    }
+  ],
+  "assets": [
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-qsa-v989/provenance.json",
+      "sha256": "54a7b32994a9479ee449c197f58a683a796838eb1f04d0e068a1683ff0b2a046"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-qsa-v989/shared.bin",
+      "sha256": "2a4d305bc27145e3810c9e9537ad3d71ae7b6b95a1dc2b76b96650a8163857b2"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-qsa-v989/reconstruction_bridge.cpp",
+      "sha256": "08906a208fab23cc9a87e5a18e624d7a64e6458f84f022f7039acf6d6a5b57e2"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-qsa-v989/parent.bin",
+      "sha256": "ae4c4fd03eabf79c106f13e7148bfc3ff5843b88bb660819c27c740cde319f06"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-qsa-v989/glm_qsa_shared_v989_helpers/qsa_shared_native.py",
+      "sha256": "6496ed18a293fca71ed773b0147356f8e2671be326962d95c92dcbb84f8c3678"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-qsa-v989/glm_qsa_shared_v989_helpers/qsa_shared_probe.py",
+      "sha256": "155ed43ac2e9ea15e0ea644f9a3477d4517c5f3dcfb4a9894da86bdc65db82b1"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-qsa-v989/glm_qsa_shared_v989_helpers/stage_qsa_shared_cache.py",
+      "sha256": "7ee860e23d6c6223d5a200542a2a2e9d443a909d80624d86959aeb76105906f0"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-qsa-v989/glm_qsa_shared_v989_helpers/__init__.py",
+      "sha256": "6c6ec57de9f82ef42d82760f144a4571cb16b3cd6de33aaa7aa9fd65e8ab1fa1"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-qsa-v989/shared/qsa_sparse_attention_v310_tiling_data.h",
+      "sha256": "db5b1746200d439580b0c3a0c8f41e6dcfdc348286d0820b78e1307941bec033"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-qsa-v989/shared/qsa_sparse_attention_v310.h",
+      "sha256": "8e5422ba01b37625e606c6fd29c7fe5db3b5e511d835bcd7888ea0d8fc0b0978"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-qsa-v989/shared/qsa_cube_sparse_attention_v310.h",
+      "sha256": "8f93f0154b6829af4f7c911eea888f00d62231d7eedf20b225a043abac2b0cc0"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-qsa-v989/shared/qsa_sparse_attention_v310.cpp",
+      "sha256": "189721629e132eca1e0c414500186bdecf58c9237a93c298e396cd4986067256"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-qsa-v989/parent/qsa_sparse_attention_v310_tiling_data.h",
+      "sha256": "db5b1746200d439580b0c3a0c8f41e6dcfdc348286d0820b78e1307941bec033"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-qsa-v989/parent/qsa_sparse_attention_v310.h",
+      "sha256": "8e5422ba01b37625e606c6fd29c7fe5db3b5e511d835bcd7888ea0d8fc0b0978"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-qsa-v989/parent/qsa_cube_sparse_attention_v310.h",
+      "sha256": "66baea1e2eb4c8601868a1f1fb347397ff75ac8e19f68d56dfa598b054d2ffb6"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-qsa-v989/parent/qsa_sparse_attention_v310.cpp",
+      "sha256": "189721629e132eca1e0c414500186bdecf58c9237a93c298e396cd4986067256"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/qsa-v989-free-gates.json",
+      "sha256": "f44ea03ee85ef6f54652f624108350fc2d60dcfff10e40008722faa8d36cdc82"
+    }
+  ],
+  "operators": [
+    "glm_qsa_shared_v989::launch"
+  ],
+  "validation_source": "\ndef prepare():\n    import importlib,sys,torch\n    from pathlib import Path\n    build=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-qsa-v989');sys.path.insert(0,str(build))\n    native=importlib.import_module('glm_qsa_shared_v989_helpers'+'.qsa_shared_native')\n    kernel=torch.classes.glm_qsa_shared_v989.Kernel\n    launch=torch.ops.glm_qsa_shared_v989.launch\n    device=torch.device('npu:'+str(torch.npu.current_device()))\n    return dict(parent=native.NativeQsaShared(kernel(str(build/'parent.bin'),'qsa_sparse_attention_v310'),launch,device),\n                shared=native.NativeQsaShared(kernel(str(build/'shared.bin'),'qsa_sparse_attention_v310'),launch,device),\n                tiling_header=native.tiling_header)\n\ndef validate(resources):\n    import importlib,torch,json\n    probe=importlib.import_module('glm_qsa_shared_v989_helpers'+'.qsa_shared_probe')\n    result=probe.qualify(resources['parent'],resources['shared'],production=torch.ops._C_ascend.npu_qsa_sparse_attention_310,full=False)\n    for operation in (resources['parent'],resources['shared']):\n        operation.configs.clear();operation.calls=operation.shared_calls=0\n    return result\n"
+}
