@@ -1,0 +1,44 @@
+{
+  "status": "awaiting_explicit_NPU_access_grant",
+  "auto_start": false,
+  "server_relaunch_now": false,
+  "candidate_deployed": false,
+  "model": "Qwen3.8-Flash-Next-W4A16-G128-300i",
+  "served_model_name": "qwen38-flashnext-latest-gate",
+  "max_model_len": 262144,
+  "max_num_seqs": 3,
+  "max_num_batched_tokens": 1024,
+  "kv_cache_fraction": 0.7,
+  "runtime_reserve_gib": 4.0,
+  "graph_capture_sizes": [
+    3,
+    9
+  ],
+  "mtp_tokens": 2,
+  "images_per_prompt": 1,
+  "video_per_prompt": 0,
+  "mm_processor_kwargs": {
+    "min_pixels": 65536,
+    "max_pixels": 1048576
+  },
+  "candidate_scheduler_cls": "vllm_ascend.core.prefix_mamba_scheduler.PrefixMambaBoundedScheduler",
+  "candidate_cached_checkpoints_per_group": 27,
+  "comparison": "same full runtime and OPP; default scheduler versus bounded scheduler, with matched prompts and device starting conditions",
+  "thermal_watchdog_cutoff_c": 96,
+  "qualification": "Host regressions only. NPU throughput, correctness and thermal behavior pending explicit access.",
+  "tensor_parallel_size": 4,
+  "enable_expert_parallel": true,
+  "backend": "cube_310_int4_a8",
+  "grouped_activation": "cann_builtin_fp16",
+  "grouped_finalize": "cann_v2",
+  "grouped_prefill_chunk_tokens": 2560,
+  "lm_head_execution": "w8a8_dynamic",
+  "ple_projection_execution": "w8a8_dynamic",
+  "native_residual_candidate_applied": false,
+  "worker_cpu_affinity": {
+    "0": "0-5",
+    "1": "8-13",
+    "2": "16-21",
+    "3": "24-29"
+  }
+}

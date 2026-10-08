@@ -15,12 +15,89 @@ from vllm_ascend._310p.prefix_mamba_state import (
     prefix_mamba_device_archive_slots,
     prefix_mamba_slot_count,
     prefix_mamba_state_bytes_per_slot,
+    retain_prefix_mamba_blocks,
 )
 
 
 def _tier(num_slots: int = 3, archive_slots: int = 0) -> tuple[PrefixMambaStateTier, torch.Tensor]:
     states = torch.zeros((num_slots, 2), dtype=torch.float16)
     return PrefixMambaStateTier([(states,)], num_slots, archive_slots), states
+
+
+def test_scheduler_retirement_reclaims_all_tiers_without_copy_or_reallocation(monkeypatch):
+    tier, states = _tier(archive_slots=2)
+    for block_id in range(101, 107):
+        tier.remap_table(np.array([[block_id]], dtype=np.int32), 1)
+        states[tier.slot_for(block_id)].fill_(block_id)
+    assert tier._resident and tier._device_archive_resident and tier._host
+    retained = {next(iter(tier._resident)), next(iter(tier._device_archive_resident)), next(iter(tier._host))}
+    pointers = [tensor.data_ptr() for tensor in (states, *tier._device_archive, *tier._swap_tensors)]
+    sync = Mock()
+    monkeypatch.setattr(tier, "_synchronize_device_state", sync)
+    monkeypatch.setattr(tier, "_snapshot", Mock(side_effect=AssertionError("retirement copied to host")))
+    tier.retain_blocks(sorted(retained))
+    sync.assert_called_once_with()
+    assert set(tier._resident) | set(tier._device_archive_resident) | set(tier._host) == retained
+    assert tier.cache_status()["retirement_count"] == 3
+    assert [tensor.data_ptr() for tensor in (states, *tier._device_archive, *tier._swap_tensors)] == pointers
+    tier.retain_blocks(sorted(retained))
+    sync.assert_called_once_with()
+    assert tier.cache_status()["retirement_count"] == 3
+    tier.retain_blocks([])
+    mapped = tier.remap_table(np.array([[101, 106]], dtype=np.int32), 2)
+    assert torch.count_nonzero(states[mapped]) == 0
+    assert torch.count_nonzero(states[0]) == 0
+    assert len(tier._unused_slots) == len(set(tier._unused_slots))
+    assert len(tier._unused_device_archive_slots) == len(set(tier._unused_device_archive_slots))
+
+
+def test_failed_retirement_synchronization_preserves_authoritative_states(monkeypatch):
+    tier, states = _tier(archive_slots=2)
+    tier.remap_table(np.array([[101, 102]], dtype=np.int32), 2)
+    states[1].fill_(7)
+    before = tier.cache_status()
+    monkeypatch.setattr(tier, "_synchronize_device_state", Mock(side_effect=RuntimeError("pending graph")))
+    with pytest.raises(RuntimeError, match="pending graph"):
+        tier.retain_blocks([102])
+    assert tier.cache_status() == before
+    assert states[tier.slot_for(101)].tolist() == [7, 7]
+
+
+@pytest.mark.parametrize("already_synchronized", [False, True])
+def test_multiple_groups_retire_after_at_most_one_worker_drain(monkeypatch, already_synchronized):
+    tiers = {group: _tier()[0] for group in (1, 2, 3)}
+    syncs = {group: Mock() for group in tiers}
+    for group, tier in tiers.items():
+        tier.remap_table(np.array([[101, 102]], dtype=np.int32), 2)
+        monkeypatch.setattr(tier, "_synchronize_device_state", syncs[group])
+    retain_prefix_mamba_blocks(tiers, {group: [102] for group in tiers}, already_synchronized=already_synchronized)
+    assert sum(sync.call_count for sync in syncs.values()) == (0 if already_synchronized else 1)
+    for tier in tiers.values():
+        assert set(tier._resident) == {102}
+        assert tier.cache_status()["retirement_count"] == 1
+
+
+def test_batch_retirement_drain_failure_does_not_partially_reclaim_groups(monkeypatch):
+    tiers = {group: _tier()[0] for group in (1, 2, 3)}
+    for tier in tiers.values():
+        tier.remap_table(np.array([[101]], dtype=np.int32), 1)
+    monkeypatch.setattr(tiers[1], "_synchronize_device_state", Mock(side_effect=RuntimeError("pending graph")))
+    with pytest.raises(RuntimeError, match="pending graph"):
+        retain_prefix_mamba_blocks(tiers, {group: [] for group in tiers})
+    assert all(set(tier._resident) == {101} for tier in tiers.values())
+
+
+def test_retirement_preserves_pending_cow_bytes_until_target_is_copied():
+    tier, states = _tier(archive_slots=2)
+    tier.remap_table(np.array([[101, 102]], dtype=np.int32), 2)
+    states[tier.slot_for(101)].fill_(7)
+    states[tier.slot_for(102)].fill_(9)
+    retain_prefix_mamba_blocks({1: tier}, {1: [101, 102, 103]})
+    tier.copy(101, 103)
+    retain_prefix_mamba_blocks({1: tier}, {1: [103]})
+    tier.remap_table(np.array([[103]], dtype=np.int32), 1)
+    assert states[tier.slot_for(103)].tolist() == [7, 7]
+    assert tier.cache_status()["spill_count"] == tier.cache_status()["restore_count"] == 0
 
 
 @pytest.mark.parametrize("archive_slots", [0, 2])

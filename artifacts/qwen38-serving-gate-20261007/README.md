@@ -1,8 +1,12 @@
 # Qwen Flash-Next 310P 实机复测：2026-10-07
 
+**用户报告恢复实例再次热关机，要求保持关闭；未重新启动。**
+启动receipt记录的是当时的状态，不能作为当前在线或热稳定性资格。
+下一次部署候选见[有界prefix策略](../../docs/source/developer_guide/performance_and_debug/qwen38_310p_bounded_prefix_runbook.md)。
+
 本轮验证完整真实 W4 权重及最新 GDN decode 候选。冷 23K 前缀约
 59.4 秒，随后确认真实 prefix-cache 命中；GDN 尚无一致的整模型吞吐收益。
-当前恢复服务使用 `[3,9]`、三个 active requests、1024-token scheduler
+此前恢复服务使用 `[3,9]`、三个 active requests、1024-token scheduler
 batch，并启用图片。cache fraction0.70 新 profiling 提供997,292 cache tokens
 （3.80 × 262144 的 planner 容量），rank0 archive194 slots、post-capture
 free9.30GiB、reserve4GiB。此前四请求图片实例触发96°C watchdog后已退出。

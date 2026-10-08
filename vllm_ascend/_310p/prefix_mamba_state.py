@@ -10,7 +10,7 @@ states to host tensors. Scheduler-owned block IDs are never modified.
 """
 
 from collections import OrderedDict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import numpy as np
@@ -171,6 +171,7 @@ class PrefixMambaStateTier:
         self._spill_count = 0
         self._restore_count = 0
         self._device_archive_hit_count = 0
+        self._retirement_count = 0
         self._bytes_per_slot = prefix_mamba_state_bytes_per_slot(self.layer_states)
         self._device_archive: tuple[torch.Tensor, ...] = ()
         self._swap_tensors: tuple[torch.Tensor, ...] = ()
@@ -245,7 +246,33 @@ class PrefixMambaStateTier:
             "spill_count": self._spill_count,
             "restore_count": self._restore_count,
             "device_archive_hit_count": self._device_archive_hit_count,
+            "retirement_count": self._retirement_count,
         }
+
+    def retain_blocks(self, block_ids: Sequence[int], *, synchronized: bool = False) -> None:
+        """Retire only states the scheduler proves uncached and unowned.
+
+        The bounded scheduler includes request-owned blocks and pending CoW
+        sources in its snapshot. Independently dropping a worker's LRU state
+        would leave a valid prefix hash pointing at missing recurrent bytes.
+        Storage and the null slot stay fixed for already captured graphs.
+        """
+        retained = set(block_ids)
+        resident = set(self._resident) - retained
+        archived = set(self._device_archive_resident) - retained
+        host = set(self._host) - retained
+        if (resident or archived) and not synchronized:
+            # A previous graph may still be writing on a different stream.
+            # Drain before reusing its slots, and leave metadata intact if
+            # synchronization fails. No device reads or host snapshot copies.
+            self._synchronize_device_state()
+        for block_id in resident:
+            self._unused_slots.append(self._resident.pop(block_id))
+        for block_id in archived:
+            self._release_device_archive(block_id)
+        for block_id in host:
+            del self._host[block_id]
+        self._retirement_count += len(resident) + len(archived) + len(host)
 
     @staticmethod
     def _copy_tensors(targets: Sequence[torch.Tensor], sources: Sequence[torch.Tensor]) -> None:
@@ -438,3 +465,28 @@ class PrefixMambaStateTier:
         if slot is None:
             raise RuntimeError(f"Mamba state block {block_id} was not staged")
         return slot
+
+
+def retain_prefix_mamba_blocks(
+    tiers: Mapping[int, PrefixMambaStateTier] | None,
+    retained_ids: Mapping[int, Sequence[int]],
+    *,
+    already_synchronized: bool = False,
+) -> None:
+    """Retire all groups after one worker-wide drain, preserving graph storage.
+
+    Every tier in a worker uses its one NPU. Retirement only updates host
+    metadata, so no work is enqueued between the drain and group reclamation.
+    Reuse the runner's layout-change drain when it has already completed.
+    """
+    if tiers is None or retained_ids.keys() != tiers.keys():
+        raise RuntimeError("Bounded Mamba checkpoint snapshot does not match worker cache groups")
+    retained = {group_id: set(block_ids) for group_id, block_ids in retained_ids.items()}
+    needs_drain = any(
+        tier._resident.keys() - retained[group_id] or tier._device_archive_resident.keys() - retained[group_id]
+        for group_id, tier in tiers.items()
+    )
+    if needs_drain and not already_synchronized:
+        next(iter(tiers.values()))._synchronize_device_state()
+    for group_id, tier in tiers.items():
+        tier.retain_blocks(retained_ids[group_id], synchronized=True)

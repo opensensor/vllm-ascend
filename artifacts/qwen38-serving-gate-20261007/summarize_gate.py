@@ -114,6 +114,8 @@ def summarize():
         result["active_profile"] = read("recovery-readiness")
     elif (ROOT / "vision-readiness.json").exists():
         result["active_profile"] = read("vision-readiness")
+    if (ROOT / "service-status-20261008.json").exists():
+        result["service_status"] = read("service-status-20261008")
     (ROOT / "summary.json").write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps({key: value for key, value in result.items() if key != "arms"}, indent=2))
 

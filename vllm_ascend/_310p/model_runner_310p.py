@@ -57,6 +57,7 @@ from vllm_ascend._310p.prefix_mamba_state import (
     prefix_mamba_device_archive_slots,
     prefix_mamba_slot_count,
     prefix_mamba_state_bytes_per_slot,
+    retain_prefix_mamba_blocks,
     supports_compact_live_mamba_state,
 )
 from vllm_ascend._310p.qwen4exp_mtp import (
@@ -367,6 +368,9 @@ class NPUModelRunner310(NPUModelRunner):
             # Non-prefix 310P paths also stage slot mappings on the CPU.
             torch.npu.current_stream().synchronize()
         fresh_mamba_ids = self._new_prefix_mamba_block_ids(scheduler_output) if prefix_tiers else {}
+        retained_mamba_ids = getattr(scheduler_output, "ascend_prefix_mamba_block_ids", None)
+        if retained_mamba_ids is not None:
+            retain_prefix_mamba_blocks(prefix_tiers, retained_mamba_ids, already_synchronized=layout_changed)
         copied_nested_caches = bool(block_copies) and any(
             not isinstance(cache, torch.Tensor) for cache in self.kv_caches
         )
