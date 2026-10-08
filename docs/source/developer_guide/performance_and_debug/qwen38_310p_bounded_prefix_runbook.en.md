@@ -6,6 +6,12 @@ The operator authorized a new isolated NPU qualification run on October 8.
 Its measured results and current service state belong in the
 [validation report](../../../../artifacts/qwen38-prefix-npu-20261008/REPORT.en.md).
 
+Sustained use subsequently reached the 96°C emergency cutoff. The service is
+stopped and restarting is deferred by the operator. A 94°C request hold with
+85°C resume is staged for the next authorized launch, with 24 offline tests
+passing and NPU validation pending. See the
+[thermal incident report](../../../../artifacts/qwen38-thermal-incident-20261008/REPORT.en.md).
+
 ## Purpose and scope
 
 Attention KV capacity and retained Mamba checkpoints have separate budgets.
@@ -45,8 +51,8 @@ Add this argument to the image-enabled launcher:
 
 The initial queued profile used three requests, MTP2, graph sizes `[3,9]`, a
 1,024-token scheduler batch, 262,144 maximum sequence length and one image per
-prompt. After hardware validation and the operator request, the live profile
-uses a 2,560-token scheduler batch and selected native HC residual; see the
+prompt. The last running profile used a 2,560-token scheduler batch and
+selected native HC residual; see the
 validation report for image, cold/repeat-prefix and transfer results.
 The planner's aggregate token capacity does not establish long-context quality
 or sustained throughput. Retention can reduce historical prefix reuse and

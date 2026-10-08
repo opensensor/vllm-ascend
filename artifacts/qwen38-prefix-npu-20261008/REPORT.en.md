@@ -1,5 +1,10 @@
 # Qwen bounded-prefix NPU qualification and image serving
 
+Current status: sustained use later reached the 96°C watchdog cutoff at
+23:37:55 UTC. Restart is deferred by the operator. The short tests below remain
+historical functional results, not sustained thermal qualification. See the
+[thermal incident and 94/85 hold report](../qwen38-thermal-incident-20261008/REPORT.en.md).
+
 ## Initial 1,024-token profile
 
 The operator re-granted NPU access on October 8. A complete qualified recovery

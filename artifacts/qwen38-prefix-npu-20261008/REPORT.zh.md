@@ -1,5 +1,9 @@
 # Qwen有界checkpoint实机验证与图片服务
 
+当前状态：持续使用后于23:37:55 UTC触发96°C watchdog，用户要求延后重启。
+以下短测试保留为历史functional结果，不能当作持续thermal资格。见
+[thermal incident与94/85 hold报告](../qwen38-thermal-incident-20261008/REPORT.zh.md)。
+
 [US English report](REPORT.en.md)提供相同结果与限制。
 
 ## 初始1024-token配置

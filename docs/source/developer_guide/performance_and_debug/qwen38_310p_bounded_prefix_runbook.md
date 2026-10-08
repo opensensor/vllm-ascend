@@ -1,9 +1,14 @@
 # Qwen 310P 有界 prefix Mamba 保留策略
 
-本配置最初仅完成离线验证。用户于10月8日重新授权NPU测试，现使用
+本配置最初仅完成离线验证。用户于10月8日重新授权NPU测试，使用
 8001独立测试服务；没有修改Kilo配置。实机结果和最终服务状态见
 [验证报告](../../../../artifacts/qwen38-prefix-npu-20261008/REPORT.zh.md)。
 [US English companion](qwen38_310p_bounded_prefix_runbook.en.md)提供一致说明。
+
+持续使用随后达到96°C emergency cutoff，服务已停止，用户延后重启。
+94°C hold / 85°C resume已stage供下次获准启动使用，24项离线测试通过，
+NPU验证待运行。见[热停机报告](../../../../artifacts/qwen38-thermal-incident-20261008/REPORT.zh.md)。
+
 图片能力已确认，但长会话 checkpoint 保留量和 attention KV token 容量是
 两个独立预算。旧服务在 KV usage约10%时仍耗尽 primary63与archive175–194，
 发生NPU→CPU spill；只读状态当时所有group的restore_count仍为0。
