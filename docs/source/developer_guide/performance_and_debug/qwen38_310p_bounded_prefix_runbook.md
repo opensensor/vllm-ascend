@@ -1,7 +1,9 @@
 # Qwen 310P 有界 prefix Mamba 保留策略
 
-本配置是下一次部署候选；没有改动当前 live server、Kilo 配置或当前请求。
-用户随后报告再次thermal shutdown，明确要求不重启；服务保持关闭。
+本配置最初仅完成离线验证。用户于10月8日重新授权NPU测试，现使用
+8001独立测试服务；没有修改Kilo配置。实机结果和最终服务状态见
+[验证报告](../../../../artifacts/qwen38-prefix-npu-20261008/REPORT.zh.md)。
+[US English companion](qwen38_310p_bounded_prefix_runbook.en.md)提供一致说明。
 图片能力已确认，但长会话 checkpoint 保留量和 attention KV token 容量是
 两个独立预算。旧服务在 KV usage约10%时仍耗尽 primary63与archive175–194，
 发生NPU→CPU spill；只读状态当时所有group的restore_count仍为0。
@@ -38,7 +40,9 @@ tensor addresses保持既有布局。回收复用前同步pending graph writers�
 ```
 
 仅支持310P Qwen4Exp、standalone、同步调度、align-mode prefix caching。
-继续使用三个slots、MTP2、`[3,9]`、1024-token scheduler batch、一张图片，
+初始测试使用三个slots、MTP2、`[3,9]`、1024-token scheduler batch、一张图片。
+实机验证后按用户要求切到2560-token batch与native HC residual，图片保持
+启用；最终cold/repeat、transfer及thermal结果见上述双语报告。
 其它profile见[恢复runbook](../../../../artifacts/qwen38-serving-gate-20261007/RUNBOOK.md)。
 预算从既有compact primary pool扣除每请求四个speculative工作窗口：
 three-slot/MTP2为每group最多27个cached checkpoints；four-slot/MTP2为15。
@@ -61,7 +65,9 @@ python -m pytest --noconftest -q \
   tests/ut/_310p/test_prefix_mamba_state.py
 ```
 
-新NPU实机gate尚未运行，当前服务器未部署此变更。下一次获准测试时，应
-保存首次/repeat prefix、跨会话CoW、changing-input graph replay与mixed
-image-prefill证据，同时比较spill/restore/retirement counters和TTFT。
+本轮新增diagnostic cleanup和真实CPU tier压力回归后，共78项host checks通过。
+实机测试采用实际模型checkpoint tensors比较原策略与有界策略，单独记录
+值一致性、storage addresses与spill/restore/retirement counters。该RPC不是
+语言模型准确率或token throughput benchmark；实模型图片与并发推理另测。
+实机通过范围以报告中的已完成结果为准，不能把启动成功当作推理通过。
 不要通过清空live prefix cache来代替验证有界保留策略。

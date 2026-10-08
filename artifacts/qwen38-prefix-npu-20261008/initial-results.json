@@ -1,0 +1,138 @@
+{
+  "phase": "initial_1024_image_profile",
+  "completed_batches": 2,
+  "repeat_16k_batch": "operator_requested_interactive_use; client terminated after cold batch completed",
+  "pressure_summary": "pressure-summary.json",
+  "host_tests": {
+    "passed": 78,
+    "log": "host-regression.log"
+  },
+  "text_tool_smoke": {
+    "passed": 6,
+    "total": 7,
+    "known_failure": "ASCEND reversal: expected DNECSA, actual DNESCA"
+  },
+  "fresh_images": {
+    "passed": 3,
+    "total": 3
+  },
+  "cold_sessions": [
+    {
+      "prompt_tokens": 256,
+      "concurrency": 1,
+      "wall_s": 10.198143679997884,
+      "requests": [
+        {
+          "cached_tokens": 0,
+          "completion_tokens": 256,
+          "time_to_first_token_s": 0.889706922986079,
+          "decode_tokens_per_s": 27.4124261800599,
+          "max_chunk_gap_s": 0.10377870401134714
+        }
+      ],
+      "cumulative_deltas": [
+        {
+          "rank": 0,
+          "spill_count": 0,
+          "restore_count": 0,
+          "retirement_count": 12,
+          "graphs_dirty": false,
+          "weights_unchanged": true
+        },
+        {
+          "rank": 1,
+          "spill_count": 0,
+          "restore_count": 0,
+          "retirement_count": 12,
+          "graphs_dirty": false,
+          "weights_unchanged": true
+        },
+        {
+          "rank": 2,
+          "spill_count": 0,
+          "restore_count": 0,
+          "retirement_count": 12,
+          "graphs_dirty": false,
+          "weights_unchanged": true
+        },
+        {
+          "rank": 3,
+          "spill_count": 0,
+          "restore_count": 0,
+          "retirement_count": 12,
+          "graphs_dirty": false,
+          "weights_unchanged": true
+        }
+      ]
+    },
+    {
+      "prompt_tokens": 16384,
+      "concurrency": 3,
+      "wall_s": 149.61910698201973,
+      "requests": [
+        {
+          "cached_tokens": 0,
+          "completion_tokens": 128,
+          "time_to_first_token_s": 43.73517348099267,
+          "decode_tokens_per_s": 1.2579189125728274,
+          "max_chunk_gap_s": 2.741876874002628
+        },
+        {
+          "cached_tokens": 0,
+          "completion_tokens": 128,
+          "time_to_first_token_s": 94.75602047203574,
+          "decode_tokens_per_s": 2.387707894832918,
+          "max_chunk_gap_s": 2.728736481978558
+        },
+        {
+          "cached_tokens": 0,
+          "completion_tokens": 128,
+          "time_to_first_token_s": 142.43894600501517,
+          "decode_tokens_per_s": 17.70714035554593,
+          "max_chunk_gap_s": 0.17749547405401245
+        }
+      ],
+      "cumulative_deltas": [
+        {
+          "rank": 0,
+          "spill_count": 0,
+          "restore_count": 0,
+          "retirement_count": 194,
+          "graphs_dirty": false,
+          "weights_unchanged": true
+        },
+        {
+          "rank": 1,
+          "spill_count": 0,
+          "restore_count": 0,
+          "retirement_count": 194,
+          "graphs_dirty": false,
+          "weights_unchanged": true
+        },
+        {
+          "rank": 2,
+          "spill_count": 0,
+          "restore_count": 0,
+          "retirement_count": 194,
+          "graphs_dirty": false,
+          "weights_unchanged": true
+        },
+        {
+          "rank": 3,
+          "spill_count": 0,
+          "restore_count": 0,
+          "retirement_count": 194,
+          "graphs_dirty": false,
+          "weights_unchanged": true
+        }
+      ]
+    }
+  ],
+  "thermal": {
+    "maximum_observed_c": 80,
+    "samples": 150,
+    "limit_c": 96,
+    "thermal_shutdown_observed": false,
+    "qualification": "short run only; no sustained thermal sign-off"
+  }
+}
