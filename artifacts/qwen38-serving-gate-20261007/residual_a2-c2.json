@@ -1,0 +1,54 @@
+{
+  "results": [
+    {
+      "request_id": "chatcmpl-bbb7ed7ae86fd7d1",
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 544,
+        "completion_tokens": 512,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "created_cache_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish_reason": "length",
+      "ttft_s": 0.29945742996642366,
+      "decode_s": 21.92621781199705,
+      "client_decode_tok_s": 23.30543299266158,
+      "e2e_s": 22.225785611954052,
+      "text_sha256": "1f16f9afe08d5e9200739c42cde81ce3d20d529fb5ae425d300996ca5d7cc638",
+      "text": "```python\n\"\"\"\nLRU (Least Recently Used) Cache Implementation\n\nThis module provides a thread-safe LRU cache implementation with O(1) time complexity\nfor both get and put operations.\n\nThread Safety:\n    The implementation uses a threading.Lock to ensure that all operations on the\n    internal data structures are atomic. This prevents race conditions when multiple\n    threads access the cache concurrently.\n\nComplexity:\n    - Time Complexity:\n        - get(): O(1) average case\n        - put(): O(1) average case\n        - delete(): O(1) average case\n    - Space Complexity: O(capacity) for storing up to 'capacity' items.\n\nData Structures Used:\n    - OrderedDict: Maintains insertion/access order. The most recently used item\n      is moved to the end. The least recently used item is at the front.\n    - threading.Lock: Ensures mutual exclusion for concurrent access.\n\"\"\"\n\nimport threading\nfrom collections import OrderedDict\nfrom typing import Any, Optional, Hashable\n\n\nclass LRUCache:\n    \"\"\"\n    A thread-safe LRU (Least Recently Used) cache with a fixed capacity.\n    \n    When the cache reaches its capacity, the least recently used item is evicted\n    to make room for new items. Accessing an item (via get) marks it as recently used.\n    \n    Attributes:\n        capacity (int): Maximum number of items the cache can hold.\n        _cache (OrderedDict): Internal storage mapping keys to values, ordered by\n                              usage (least recently used first, most recently used last).\n        _lock (threading.Lock): Lock for thread-safe access to _cache.\n    \"\"\"\n    \n    def __init__(self, capacity: int):\n        \"\"\"\n        Initialize the LRU cache with a given capacity.\n        \n        Args:\n            capacity: Maximum number of items the cache can hold. Must be positive.\n            \n        Raises:\n            ValueError: If capacity is not a positive integer.\n        \"\"\"\n        if not isinstance(capacity, int) or capacity <= 0:\n            raise ValueError(\"Capacity must be a positive integer\")\n        \n        self.capacity = capacity\n        self._cache: OrderedDict[Hashable, Any] = OrderedDict()\n        self._lock = threading.Lock()\n    \n    def get(self, key: Hashable) -> Optional[Any]:\n        \"\"\"\n        Retrieve a value from the"
+    },
+    {
+      "request_id": "chatcmpl-9c63e3d5eec6aabf",
+      "usage": {
+        "prompt_tokens": 43,
+        "total_tokens": 555,
+        "completion_tokens": 512,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "created_cache_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish_reason": "length",
+      "ttft_s": 0.6989686070010066,
+      "decode_s": 23.817733864998445,
+      "client_decode_tok_s": 21.45460197415945,
+      "e2e_s": 24.51681199995801,
+      "text_sha256": "b8e1eb94121fe72e780de635323f152b2c6a4be7ee9a7450833818f69f13a2a8",
+      "text": "# Producer-Consumer Queue Design Review\n\n## Design Analysis\n\n### 1. Bounded Capacity\nA bounded queue prevents unbounded memory growth by limiting the number of items that can be buffered. When the queue is full, producers block (or fail) until space becomes available. This provides **backpressure**, ensuring consumers keep up with producers.\n\n### 2. Cancellation\nCancellation allows in-flight operations (blocking `put` or `get`) to be aborted gracefully. This is critical for:\n- Timeout handling\n- User-initiated shutdown\n- Error propagation from downstream consumers\n\n### 3. Shutdown\nShutdown signals that no more items will be produced. Consumers should drain remaining items and then exit. A well-designed shutdown:\n- Prevents new items from being added\n- Allows existing items to be consumed\n- Wakes up all blocked consumers/producers\n- Is idempotent\n\n### 4. Deadlock Prevention\nDeadlocks occur when:\n- A producer waits for space while all consumers are blocked waiting for items\n- Lock ordering violations in multi-queue scenarios\n- Forgetting to release locks on exception paths\n\nPrevention strategies:\n- Use condition variables with proper predicate checks\n- Ensure all waiting threads are notified on state changes\n- Use timeouts as a safety net\n- Maintain a single lock for queue state to avoid lock-ordering issues\n\n---\n\n## Implementation\n\n```python\n\"\"\"\nA robust, thread-safe bounded producer-consumer queue with cancellation,\ngraceful shutdown, and deadlock prevention.\n\"\"\"\n\nimport threading\nimport time\nfrom collections import deque\nfrom typing import Any, Optional, Callable\nfrom enum import Enum, auto\n\n\nclass QueueState(Enum):\n    \"\"\"Lifecycle states of the queue.\"\"\"\n    RUNNING = auto()\n    SHUTTING_DOWN = auto()   # No new puts allowed; consumers can still get\n    CLOSED = auto()          # No puts or gets allowed\n\n\nclass QueueClosedError(Exception):\n    \"\"\"Raised when an operation is attempted on a closed queue.\"\"\"\n    pass\n\n\nclass QueueCancelledError(Exception):\n    \"\"\"Raised when an operation is cancelled.\"\"\"\n    pass\n\n\nclass BoundedQueue:\n    \"\"\"\n    A thread-safe bounded queue supporting:\n    - Bounded capacity with backpressure\n    - Cancellation of blocking operations\n    - Graceful shutdown (drain remaining items)\n    - Deadlock prevention via condition variables and proper notification\n    \n    Thread Safety: All public methods are safe to call from"
+    }
+  ],
+  "wall_s": 24.517647327971645,
+  "aggregate_tok_s": 41.765834474327434,
+  "drafted_delta": 812.0,
+  "accepted_delta": 618.0,
+  "acceptance": 0.7610837438423645,
+  "num_speculative_tokens": 2
+}

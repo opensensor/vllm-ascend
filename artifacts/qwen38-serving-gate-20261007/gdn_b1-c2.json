@@ -1,0 +1,54 @@
+{
+  "results": [
+    {
+      "request_id": "chatcmpl-a6a6bfb6e5d441a2",
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 544,
+        "completion_tokens": 512,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "created_cache_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish_reason": "length",
+      "ttft_s": 0.6742584980092943,
+      "decode_s": 21.973115402972326,
+      "client_decode_tok_s": 23.25569181377332,
+      "e2e_s": 22.647500341001432,
+      "text_sha256": "aa8c08fe8aa6d3be4a588bc0d979f2161d98598a449042d3276d81b3092b303f",
+      "text": "```python\n\"\"\"\nLRU (Least Recently Used) Cache Implementation\n\nAn LRU cache evicts the least recently used items when the cache reaches its capacity.\nThis implementation uses a doubly-linked list combined with a hash map for O(1) operations.\n\nThread Safety:\n    This implementation is thread-safe using a reentrant lock (threading.RLock).\n    All public methods acquire the lock before accessing internal state, ensuring\n    that concurrent reads and writes do not corrupt the cache structure.\n    RLock is used instead of Lock to allow reentrant calls if needed (e.g., if\n    a subclass overrides methods that call other public methods).\n\nTime Complexity:\n    - get(key): O(1) average case\n    - put(key, value): O(1) average case\n    - delete(key): O(1) average case\n    - clear(): O(n) where n is the number of items in the cache\n\nSpace Complexity:\n    - O(capacity) for storing up to 'capacity' key-value pairs\n\"\"\"\n\nimport threading\nfrom typing import Any, Optional, Tuple\n\n\nclass _Node:\n    \"\"\"\n    Internal node for the doubly-linked list.\n    \n    Attributes:\n        key: The cache key.\n        value: The cached value.\n        prev: Reference to the previous node (toward MRU end).\n        next: Reference to the next node (toward LRU end).\n    \"\"\"\n    __slots__ = ('key', 'value', 'prev', 'next')\n\n    def __init__(self, key: Any, value: Any):\n        self.key = key\n        self.value = value\n        self.prev: Optional['_Node'] = None\n        self.next: Optional['_Node'] = None\n\n\nclass LRUCache:\n    \"\"\"\n    A thread-safe LRU (Least Recently Used) cache.\n    \n    The cache maintains a doubly-linked list where the head represents the most\n    recently used item and the tail represents the least recently used item.\n    A dictionary maps keys to nodes for O(1) lookup.\n    \n    When a new item is added and the cache is at capacity, the least recently\n    used item (tail) is evicted.\n    \n    Args:\n        capacity: Maximum number of items the cache can hold. Must be >= 1.\n    \n    Raises:\n        ValueError: If capacity is less than 1"
+    },
+    {
+      "request_id": "chatcmpl-be825e8d38c0ecb0",
+      "usage": {
+        "prompt_tokens": 43,
+        "total_tokens": 555,
+        "completion_tokens": 512,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "created_cache_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish_reason": "length",
+      "ttft_s": 0.3355819759890437,
+      "decode_s": 24.795714772015344,
+      "client_decode_tok_s": 20.608399664958196,
+      "e2e_s": 25.13141542399535,
+      "text_sha256": "5d51a247bf9a1494d7dabcdcf672aceacff741a1629c429bc2637822bd1bcb3f",
+      "text": "# Producer-Consumer Queue Design Review\n\n## Design Analysis\n\n### 1. Bounded Capacity\nA bounded queue prevents unbounded memory growth by limiting the number of items that can be buffered. When the queue is full, producers block (or raise an exception) until space becomes available. This provides **backpressure** \u2014 a natural flow-control mechanism that prevents fast producers from overwhelming slow consumers.\n\n**Key considerations:**\n- `maxsize` parameter defines the upper bound\n- Producers block on `put()` when full; consumers block on `get()` when empty\n- Alternative: non-blocking `put_nowait()`/`get_nowait()` with `QueueFull`/`QueueEmpty` exceptions\n\n### 2. Cancellation\nCancellation allows in-flight operations to be aborted cleanly. In a producer-consumer context:\n- **Producer cancellation**: A producer may be cancelled while waiting to enqueue. The item should not be partially added.\n- **Consumer cancellation**: A consumer may be cancelled while waiting to dequeue. No item should be lost.\n- Cancellation must be **atomic** \u2014 either the operation completes fully or has no side effects.\n\n### 3. Shutdown\nGraceful shutdown ensures:\n- All enqueued items are processed before termination\n- No new items are accepted after shutdown is initiated\n- Blocked producers/consumers are unblocked and exit cleanly\n- A sentinel value or flag signals termination to consumers\n\n**Two-phase shutdown:**\n1. **Stop accepting**: Reject new `put()` calls\n2. **Drain**: Allow consumers to process remaining items, then exit\n\n### 4. Deadlock Prevention\nDeadlocks arise from circular wait conditions. Common pitfalls:\n- **Lock ordering**: If multiple locks are held, always acquire them in a consistent global order\n- **Nested locking**: Avoid holding a lock while waiting on another resource that might require the same lock\n- **Timeouts**: Use timeouts on blocking operations to break potential deadlocks\n- **Single lock design**: Use one mutex protecting all shared state to eliminate lock-ordering issues entirely\n\n**Our design uses a single `threading.Lock` + `threading.Condition`**, which inherently prevents deadlock because there is only one lock to acquire.\n\n---\n\n## Implementation\n\n```python\n\"\"\"\nThread-safe bounded producer-consumer queue with cancellation and graceful shutdown.\n\nDesign principles:\n- Single lock + condition variable to prevent deadlock\n- Bounded capacity with backpressure\n- Cancellation-safe put/get operations\n"
+    }
+  ],
+  "wall_s": 25.13211892201798,
+  "aggregate_tok_s": 40.74467430212916,
+  "drafted_delta": 828.0,
+  "accepted_delta": 608.0,
+  "acceptance": 0.7342995169082126,
+  "num_speculative_tokens": 2
+}

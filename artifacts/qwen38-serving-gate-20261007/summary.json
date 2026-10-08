@@ -1,0 +1,960 @@
+{
+  "arms": {
+    "residual_a1": {
+      "serial": [
+        {
+          "request_id": "chatcmpl-96e52948180a2dd9",
+          "usage": {
+            "prompt_tokens": 32,
+            "total_tokens": 544,
+            "completion_tokens": 512,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "created_cache_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "ttft_s": 0.3145366659737192,
+          "decode_s": 16.272378351015504,
+          "client_decode_tok_s": 31.40290798167867,
+          "e2e_s": 16.587037629971746,
+          "text_sha256": "0143881f357e6c794968f82f873ffa6b98429ab6443230b14aedd82555598559",
+          "text": "```python\n\"\"\"\nLRU (Least Recently Used) Cache Implementation\n\nThis module provides a thread-safe LRU cache implementation with O(1) time complexity\nfor both get and put operations.\n\nThread Safety:\n    The implementation uses a threading.Lock to ensure that all operations on the\n    internal data structures are atomic. This prevents race conditions when multiple\n    threads access the cache concurrently.\n\nComplexity:\n    - Time Complexity:\n        - get(): O(1) average case\n        - put(): O(1) average case\n        - delete(): O(1) average case\n    - Space Complexity: O(capacity) for storing up to 'capacity' items.\n\nData Structures Used:\n    - OrderedDict: Maintains insertion/access order. The most recently used item\n      is moved to the end. The least recently used item is at the beginning.\n    - threading.Lock: Ensures thread-safe access to the OrderedDict.\n\"\"\"\n\nimport threading\nfrom collections import OrderedDict\nfrom typing import Any, Optional, Hashable\n\n\nclass LRUCache:\n    \"\"\"\n    A thread-safe LRU (Least Recently Used) cache with a fixed capacity.\n    \n    When the cache reaches its capacity, the least recently used item is evicted\n    to make room for new items.\n    \n    Attributes:\n        capacity (int): Maximum number of items the cache can hold.\n        _cache (OrderedDict): Internal storage mapping keys to values, ordered by\n                              access time (least recently used first).\n        _lock (threading.Lock): Lock for thread-safe operations.\n    \"\"\"\n    \n    def __init__(self, capacity: int):\n        \"\"\"\n        Initialize the LRU cache with a given capacity.\n        \n        Args:\n            capacity: Maximum number of items the cache can hold. Must be >= 1.\n            \n        Raises:\n            ValueError: If capacity is less than 1.\n        \"\"\"\n        if capacity < 1:\n            raise ValueError(\"Capacity must be at least 1\")\n        \n        self.capacity = capacity\n        self._cache: OrderedDict[Hashable, Any] = OrderedDict()\n        self._lock = threading.Lock()\n    \n    def get(self, key: Hashable) -> Optional[Any]:\n        \"\"\"\n        Retrieve a value from the cache by key.\n        \n        If the key exists, it is marked as most recently used.\n        \n        Args:",
+          "drafted_delta": 386.0,
+          "accepted_delta": 318.0,
+          "acceptance": 0.8238341968911918,
+          "num_speculative_tokens": 2,
+          "prompt_index": 0,
+          "server_decode_tok_s": 31.40595422474617
+        },
+        {
+          "request_id": "chatcmpl-9459ec385e79208d",
+          "usage": {
+            "prompt_tokens": 43,
+            "total_tokens": 555,
+            "completion_tokens": 512,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "created_cache_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "ttft_s": 0.3818188720033504,
+          "decode_s": 18.959124266984873,
+          "client_decode_tok_s": 26.95272169769189,
+          "e2e_s": 19.341036226018332,
+          "text_sha256": "6c494bdc7d1849f57dca8d8e52281e922b6cf6ad2ae694583429a0b99395b62c",
+          "text": "# Producer-Consumer Queue Design Review\n\n## Design Analysis\n\n### 1. Bounded Capacity\nA bounded queue prevents unbounded memory growth by limiting the number of items that can be buffered. When the queue is full, producers block (or raise an exception) until space becomes available. This provides **backpressure** \u2014 a natural flow-control mechanism that prevents fast producers from overwhelming slow consumers.\n\n**Key considerations:**\n- `maxsize` parameter defines the upper bound\n- Producers block on `put()` when full; consumers block on `get()` when empty\n- Alternative: non-blocking `put_nowait()`/`get_nowait()` with `QueueFull`/`QueueEmpty` exceptions\n\n### 2. Cancellation\nCancellation allows in-flight operations to be aborted cleanly. In a producer-consumer context:\n- **Producer cancellation**: A producer may be cancelled while waiting to `put()` an item. The item should **not** be enqueued if the producer is cancelled.\n- **Consumer cancellation**: A consumer may be cancelled while waiting to `get()` an item. The item should remain in the queue for other consumers.\n- Cancellation must be **cooperative** \u2014 the operation checks for cancellation signals and cleans up state.\n\n### 3. Shutdown\nGraceful shutdown ensures:\n- All already-enqueued items are processed before termination\n- No new items are accepted after shutdown is initiated\n- Blocked producers/consumers are unblocked and exit cleanly\n- Two-phase shutdown:\n  1. **Stop accepting new items** (producers get `ShutdownError`)\n  2. **Drain remaining items** (consumers process until queue is empty)\n  3. **Terminate** all workers\n\n### 4. Deadlock Prevention\nDeadlocks in producer-consumer systems arise from:\n- **Circular waiting**: Producer waits for space while consumer waits for items, but both hold locks that the other needs.\n- **Lost wakeups**: A consumer checks `empty()` and then blocks, but a producer adds an item between the check and the block.\n\n**Prevention strategies:**\n- Use a single mutex + condition variables (standard `queue.Queue` approach)\n- Always acquire locks in a consistent order\n- Use `notify_all()` instead of `notify()` to avoid missed wakeups\n- Never hold a lock while performing I/O or long computations\n- Use timeouts on blocking operations as a safety net\n\n---\n\n## Implementation\n\n```",
+          "drafted_delta": 440.0,
+          "accepted_delta": 293.0,
+          "acceptance": 0.6659090909090909,
+          "num_speculative_tokens": 2,
+          "prompt_index": 1,
+          "server_decode_tok_s": 26.951618943137884
+        },
+        {
+          "request_id": "chatcmpl-81a0358fa2d025d2",
+          "usage": {
+            "prompt_tokens": 49,
+            "total_tokens": 561,
+            "completion_tokens": 512,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "created_cache_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "ttft_s": 0.4078689510351978,
+          "decode_s": 17.890970881970134,
+          "client_decode_tok_s": 28.56189322374713,
+          "e2e_s": 18.298942418012302,
+          "text_sha256": "a2e05be35b54035df8bbfc21102d983c99ee48294df3b8e1130d8d6b0bac0bd6",
+          "text": "# Practical Guide: Investigating a Slow Distributed Inference Service\n\nDistributed inference systems (e.g., LLM serving, large-scale vision models) are complex stacks involving networking, GPU/TPU hardware, CPU orchestration, and memory management. A \"slow\" service is rarely caused by a single factor; it is usually a symptom of a bottleneck in one of four layers: **Compute**, **Memory**, **Communication**, or **Orchestration**.\n\nThis guide provides a systematic approach to isolating these bottlenecks using concrete experiments and tools.\n\n---\n\n## Phase 1: Establish a Reliable Baseline & Avoid Misleading Benchmarks\n\nBefore optimizing, you must ensure your measurements are valid. Common pitfalls include:\n\n### 1. The \"Warm-Up\" Trap\n*   **Problem:** Initial requests are slow due to JIT compilation, cache misses, or lazy loading.\n*   **Fix:** Always discard the first 10\u201350 requests. Measure steady-state performance.\n\n### 2. The \"Throughput vs. Latency\" Confusion\n*   **Problem:** High throughput (requests/sec) can mask high latency (ms/request). A system might process 1000 req/s but with 5-second latency per request.\n*   **Fix:** Measure **both**:\n    *   **P50/P95/P99 Latency:** For user experience.\n    *   **Throughput (QPS):** For capacity planning.\n    *   **Goodput:** Throughput of requests that meet an SLO (e.g., <100ms).\n\n### 3. The \"Client-Side Bottleneck\"\n*   **Problem:** Your load generator (e.g., `locust`, `wrk`) may be CPU-bound, not the server.\n*   **Fix:** Run the load generator on a separate machine. Monitor the load generator\u2019s CPU usage. If it\u2019s >80%, your benchmark is invalid.\n\n### 4. The \"Cold Cache\" Illusion\n*   **Problem:** Testing with random inputs may miss real-world patterns (e.g., KV-cache reuse in LLMs).\n*   **Fix:** Use realistic input distributions. For LLMs, test with varying prompt lengths and batch sizes.\n\n---\n\n## Phase 2: Systematic Bottleneck Isolation\n\nUse a **divide-and-conquer** approach. Start from the client and move inward.\n\n### Step 1",
+          "drafted_delta": 416.0,
+          "accepted_delta": 304.0,
+          "acceptance": 0.7307692307692307,
+          "num_speculative_tokens": 2,
+          "prompt_index": 2,
+          "server_decode_tok_s": 28.56296428791021
+        }
+      ],
+      "serial_server_median_tok_s": 28.56296428791021,
+      "c2_aggregate_tok_s": 40.984856517101576,
+      "c4_eager_aggregate_tok_s": 36.55000317625445,
+      "cold8192": {
+        "start": 438117.693907266,
+        "first": 438138.095841138,
+        "end": 438139.064380361,
+        "prompt_tokens": 8192,
+        "cached_tokens": 0,
+        "completion_tokens": 32,
+        "time_to_first_token_s": 20.40193387196632,
+        "elapsed_s": 21.370473094983026,
+        "decode_tokens_per_s": 32.01022225579803,
+        "max_chunk_gap_s": 0.08992332202615216,
+        "median_chunk_gap_s": 0.08818491600686684,
+        "chunk_arrivals": [
+          438138.095841138,
+          438138.18576446,
+          438138.273949376,
+          438138.360583833,
+          438138.447716498,
+          438138.531620864,
+          438138.619506781,
+          438138.70776144,
+          438138.797342712,
+          438138.88660725,
+          438138.974442792,
+          438139.064281774
+        ],
+        "output_sha256": "127226e5f9203a52d49d14c50f4eb51a105018f0f6655aefea7d1491ec6365e6",
+        "drafted_delta": 22.0,
+        "accepted_delta": 20.0,
+        "acceptance": 0.9090909090909091,
+        "num_speculative_tokens": 2
+      },
+      "cold23410": {
+        "start": 438140.263064527,
+        "first": 438199.552500223,
+        "end": 438200.49816123,
+        "prompt_tokens": 23410,
+        "cached_tokens": 0,
+        "completion_tokens": 32,
+        "time_to_first_token_s": 59.289435695973225,
+        "elapsed_s": 60.23509670299245,
+        "decode_tokens_per_s": 32.78385869357951,
+        "max_chunk_gap_s": 0.09713210997870192,
+        "median_chunk_gap_s": 0.08530249499017373,
+        "chunk_arrivals": [
+          438199.552500223,
+          438199.62872766,
+          438199.713542747,
+          438199.795072257,
+          438199.881221342,
+          438199.978353452,
+          438200.062566204,
+          438200.148395862,
+          438200.233698357,
+          438200.318898106,
+          438200.406068052,
+          438200.49808751
+        ],
+        "output_sha256": "49245fe1d9853531f0071ba75bf695c52f6daa8cd17860926c94f87f79c66a4c",
+        "drafted_delta": 22.0,
+        "accepted_delta": 22.0,
+        "acceptance": 1.0,
+        "num_speculative_tokens": 2
+      }
+    },
+    "gdn_b1": {
+      "serial": [
+        {
+          "request_id": "chatcmpl-bf35ddf33099e23e",
+          "usage": {
+            "prompt_tokens": 32,
+            "total_tokens": 544,
+            "completion_tokens": 512,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "created_cache_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "ttft_s": 0.29565287596778944,
+          "decode_s": 15.66388410399668,
+          "client_decode_tok_s": 32.622815427344555,
+          "e2e_s": 15.959636760002468,
+          "text_sha256": "8bcd1917733a29f6adfe431ce8f8f209af09c6d78f5b26d55c87b22143672ed9",
+          "text": "```python\n\"\"\"\nLRU (Least Recently Used) Cache Implementation\n\nThis module provides a thread-safe LRU cache implementation with O(1) time complexity\nfor both get and put operations.\n\nThread Safety:\n    The implementation uses a threading.Lock to ensure that all operations on the\n    internal data structures are atomic. This prevents race conditions when multiple\n    threads access the cache concurrently.\n\nComplexity:\n    - Time Complexity:\n        - get(): O(1) average case\n        - put(): O(1) average case\n        - delete(): O(1) average case\n    - Space Complexity: O(capacity) for storing up to 'capacity' items.\n\nData Structures Used:\n    - OrderedDict: Maintains insertion/access order. The most recently used item\n      is moved to the end. The least recently used item is at the beginning.\n    - threading.Lock: Ensures thread-safe access to the OrderedDict.\n\"\"\"\n\nimport threading\nfrom collections import OrderedDict\nfrom typing import Any, Optional, Hashable\n\n\nclass LRUCache:\n    \"\"\"\n    A thread-safe LRU (Least Recently Used) cache with a fixed capacity.\n    \n    When the cache reaches its capacity, the least recently used item is evicted\n    to make room for new items.\n    \n    Attributes:\n        capacity (int): Maximum number of items the cache can hold.\n        _cache (OrderedDict): Internal storage mapping keys to values, ordered by\n                              access time (least recently used first).\n        _lock (threading.Lock): Lock for thread-safe operations.\n    \"\"\"\n\n    def __init__(self, capacity: int):\n        \"\"\"\n        Initialize the LRU cache with a given capacity.\n        \n        Args:\n            capacity: Maximum number of items the cache can hold. Must be positive.\n            \n        Raises:\n            ValueError: If capacity is not a positive integer.\n        \"\"\"\n        if not isinstance(capacity, int) or capacity <= 0:\n            raise ValueError(\"Capacity must be a positive integer\")\n        \n        self.capacity = capacity\n        self._cache: OrderedDict[Hashable, Any] = OrderedDict()\n        self._lock = threading.Lock()\n\n    def get(self, key: Hashable) -> Optional[Any]:\n        \"\"\"\n        Retrieve a value from the cache by key.\n        \n        If the key exists, it is marked as most recently used.\n        \n",
+          "drafted_delta": 384.0,
+          "accepted_delta": 319.0,
+          "acceptance": 0.8307291666666666,
+          "num_speculative_tokens": 2,
+          "prompt_index": 0,
+          "server_decode_tok_s": 32.62424025741866
+        },
+        {
+          "request_id": "chatcmpl-af6be83e54189586",
+          "usage": {
+            "prompt_tokens": 43,
+            "total_tokens": 555,
+            "completion_tokens": 512,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "created_cache_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "ttft_s": 0.335126660997048,
+          "decode_s": 17.922329385008197,
+          "client_decode_tok_s": 28.511918792623298,
+          "e2e_s": 18.257558080018498,
+          "text_sha256": "6c494bdc7d1849f57dca8d8e52281e922b6cf6ad2ae694583429a0b99395b62c",
+          "text": "# Producer-Consumer Queue Design Review\n\n## Design Analysis\n\n### 1. Bounded Capacity\nA bounded queue prevents unbounded memory growth by limiting the number of items that can be buffered. When the queue is full, producers block (or raise an exception) until space becomes available. This provides **backpressure** \u2014 a natural flow-control mechanism that prevents fast producers from overwhelming slow consumers.\n\n**Key considerations:**\n- `maxsize` parameter defines the upper bound\n- Producers block on `put()` when full; consumers block on `get()` when empty\n- Alternative: non-blocking `put_nowait()`/`get_nowait()` with `QueueFull`/`QueueEmpty` exceptions\n\n### 2. Cancellation\nCancellation allows in-flight operations to be aborted cleanly. In a producer-consumer context:\n- **Producer cancellation**: A producer may be cancelled while waiting to `put()` an item. The item should **not** be enqueued if the producer is cancelled.\n- **Consumer cancellation**: A consumer may be cancelled while waiting to `get()` an item. The item should remain in the queue for other consumers.\n- Cancellation must be **cooperative** \u2014 the operation checks for cancellation signals and cleans up state.\n\n### 3. Shutdown\nGraceful shutdown ensures:\n- All already-enqueued items are processed before termination\n- No new items are accepted after shutdown is initiated\n- Blocked producers/consumers are unblocked and exit cleanly\n- Two-phase shutdown:\n  1. **Stop accepting new items** (producers get `ShutdownError`)\n  2. **Drain remaining items** (consumers process until queue is empty)\n  3. **Terminate** all workers\n\n### 4. Deadlock Prevention\nDeadlocks in producer-consumer systems arise from:\n- **Circular waiting**: Producer waits for space while consumer waits for items, but both hold locks that the other needs.\n- **Lost wakeups**: A consumer checks `empty()` and then blocks, but a producer adds an item between the check and the block.\n\n**Prevention strategies:**\n- Use a single mutex + condition variables (standard `queue.Queue` approach)\n- Always acquire locks in a consistent order\n- Use `notify_all()` instead of `notify()` to avoid missed wakeups\n- Never hold a lock while performing I/O or long computations\n- Use timeouts on blocking operations as a safety net\n\n---\n\n## Implementation\n\n```",
+          "drafted_delta": 440.0,
+          "accepted_delta": 293.0,
+          "acceptance": 0.6659090909090909,
+          "num_speculative_tokens": 2,
+          "prompt_index": 1,
+          "server_decode_tok_s": 28.51260190046814
+        },
+        {
+          "request_id": "chatcmpl-8f636749ca677150",
+          "usage": {
+            "prompt_tokens": 49,
+            "total_tokens": 561,
+            "completion_tokens": 512,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "created_cache_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "ttft_s": 0.3563979510217905,
+          "decode_s": 17.93738628801657,
+          "client_decode_tok_s": 28.487985473189248,
+          "e2e_s": 18.29390108102234,
+          "text_sha256": "6f2270ebc9ef2cd0b6db7bf2b0a432b2b81a208358f7a390c08c4d1164187cb6",
+          "text": "# Practical Guide: Investigating a Slow Distributed Inference Service\n\nDistributed inference systems (e.g., LLM serving, large-scale vision models) are complex stacks involving networking, GPU/TPU hardware, CPU orchestration, and memory management. A \"slow\" service is rarely caused by a single factor; it is usually a symptom of a bottleneck in one of four layers: **Compute**, **Memory**, **Communication**, or **Orchestration**.\n\nThis guide provides a systematic approach to isolating these bottlenecks using concrete experiments and tools.\n\n---\n\n## Phase 1: Establish a Reliable Baseline & Avoid Misleading Benchmarks\n\nBefore optimizing, you must ensure your measurements are valid. Common pitfalls include:\n\n### 1. The \"Warm-Up\" Trap\n*   **Problem:** Initial requests are slow due to JIT compilation, cache misses, or lazy loading.\n*   **Fix:** Always discard the first 10\u201350 requests. Measure steady-state performance.\n\n### 2. The \"Throughput vs. Latency\" Confusion\n*   **Problem:** High throughput (requests/sec) can mask high latency (ms/request). A system might process 1000 req/s but with 5-second latency each.\n*   **Fix:** Measure **P50, P95, and P99 latency** separately from throughput. Use a load generator that controls concurrency (e.g., `wrk`, `locust`, or `k6`) rather than just firing requests as fast as possible.\n\n### 3. The \"Client-Side Bottleneck\"\n*   **Problem:** Your client machine may be too slow to generate requests or parse responses, making the server appear slow.\n*   **Fix:** Run the load generator on a separate, high-performance machine. Monitor the client\u2019s CPU usage. If the client is at 100% CPU, your benchmark is invalid.\n\n### 4. The \"Cold Cache\" Illusion\n*   **Problem:** If your model weights or KV cache are not in GPU memory, every request triggers a PCIe transfer.\n*   **Fix:** Ensure the model is fully loaded and warmed up. Use `nvidia-smi` or `rocm-smi` to confirm GPU memory usage is stable before testing.\n\n---\n\n## Phase 2: Systematic Bottleneck Isolation\n\nUse a **divide-and-conquer** approach. Start from the end-to-end request and peel back",
+          "drafted_delta": 432.0,
+          "accepted_delta": 297.0,
+          "acceptance": 0.6875,
+          "num_speculative_tokens": 2,
+          "prompt_index": 2,
+          "server_decode_tok_s": 28.48907547096177
+        }
+      ],
+      "serial_server_median_tok_s": 28.51260190046814,
+      "c2_aggregate_tok_s": 40.74467430212916,
+      "c4_eager_aggregate_tok_s": 38.286935422359235,
+      "cold8192": {
+        "start": 438322.925815651,
+        "first": 438342.967707311,
+        "end": 438344.163349773,
+        "prompt_tokens": 8192,
+        "cached_tokens": 0,
+        "completion_tokens": 32,
+        "time_to_first_token_s": 20.04189165995922,
+        "elapsed_s": 21.23753412195947,
+        "decode_tokens_per_s": 25.929918844240657,
+        "max_chunk_gap_s": 0.09170722402632236,
+        "median_chunk_gap_s": 0.0841038754733745,
+        "chunk_arrivals": [
+          438342.967707311,
+          438343.054866717,
+          438343.138305217,
+          438343.219655556,
+          438343.303239733,
+          438343.386243897,
+          438343.467715407,
+          438343.551044529,
+          438343.633785803,
+          438343.718409377,
+          438343.807816767,
+          438343.894280059,
+          438343.985987283,
+          438344.074538516,
+          438344.16323747
+        ],
+        "output_sha256": "5f14f700cac029838e1c12ff89ee44b1b4772761d33f1e92cce122150fb8fb64",
+        "drafted_delta": 28.0,
+        "accepted_delta": 18.0,
+        "acceptance": 0.6428571428571429,
+        "num_speculative_tokens": 2
+      },
+      "cold23410": {
+        "start": 438345.364859523,
+        "first": 438404.79011093,
+        "end": 438405.733922741,
+        "prompt_tokens": 23410,
+        "cached_tokens": 0,
+        "completion_tokens": 32,
+        "time_to_first_token_s": 59.42525140696671,
+        "elapsed_s": 60.369063218007796,
+        "decode_tokens_per_s": 32.84952823556991,
+        "max_chunk_gap_s": 0.09611665003467351,
+        "median_chunk_gap_s": 0.0849713739589788,
+        "chunk_arrivals": [
+          438404.79011093,
+          438404.869103485,
+          438404.95588359,
+          438405.037164207,
+          438405.122135581,
+          438405.218252231,
+          438405.302940558,
+          438405.388096714,
+          438405.472995421,
+          438405.55653846,
+          438405.642017219,
+          438405.733807892
+        ],
+        "output_sha256": "127226e5f9203a52d49d14c50f4eb51a105018f0f6655aefea7d1491ec6365e6",
+        "drafted_delta": 22.0,
+        "accepted_delta": 22.0,
+        "acceptance": 1.0,
+        "num_speculative_tokens": 2
+      }
+    },
+    "residual_a2": {
+      "serial": [
+        {
+          "request_id": "chatcmpl-ae1fae05d12f52dc",
+          "usage": {
+            "prompt_tokens": 32,
+            "total_tokens": 544,
+            "completion_tokens": 512,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "created_cache_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "ttft_s": 0.29925228003412485,
+          "decode_s": 15.72536790400045,
+          "client_decode_tok_s": 32.49526517405067,
+          "e2e_s": 16.024768226023298,
+          "text_sha256": "35da91ac33657397846aaed4f4318f936ba4cf73fe32bca7fcd4109186cb355a",
+          "text": "```python\n\"\"\"\nLRU (Least Recently Used) Cache Implementation\n\nThis module provides a thread-safe LRU cache implementation with O(1) time complexity\nfor both get and put operations.\n\nThread Safety:\n    The implementation uses a threading.Lock to ensure that all operations on the\n    internal data structures are atomic. This prevents race conditions when multiple\n    threads access the cache concurrently.\n\nComplexity:\n    - Time Complexity:\n        - get(): O(1) average case\n        - put(): O(1) average case\n        - delete(): O(1) average case\n    - Space Complexity: O(capacity) for storing up to 'capacity' items.\n\nData Structures Used:\n    - OrderedDict: Maintains insertion/access order. The most recently used item\n      is moved to the end. The least recently used item is at the beginning.\n    - threading.Lock: Ensures thread-safe access to the OrderedDict.\n\"\"\"\n\nimport threading\nfrom collections import OrderedDict\nfrom typing import Any, Optional, Hashable\n\n\nclass LRUCache:\n    \"\"\"\n    A thread-safe LRU (Least Recently Used) cache with a fixed capacity.\n    \n    When the cache reaches its capacity, the least recently used item is evicted\n    to make room for new items.\n    \n    Attributes:\n        capacity (int): Maximum number of items the cache can hold.\n        _cache (OrderedDict): Internal storage mapping keys to values, ordered by\n                              access time (least recently used first).\n        _lock (threading.Lock): Lock for thread-safe operations.\n    \"\"\"\n    \n    def __init__(self, capacity: int):\n        \"\"\"\n        Initialize the LRU cache with a given capacity.\n        \n        Args:\n            capacity: Maximum number of items the cache can hold. Must be positive.\n            \n        Raises:\n            ValueError: If capacity is not a positive integer.\n        \"\"\"\n        if not isinstance(capacity, int) or capacity <= 0:\n            raise ValueError(\"Capacity must be a positive integer\")\n        \n        self.capacity = capacity\n        self._cache: OrderedDict[Hashable, Any] = OrderedDict()\n        self._lock = threading.Lock()\n    \n    def get(self, key: Hashable) -> Optional[Any]:\n        \"\"\"\n        Retrieve a value from the cache by key.\n        \n        If the key exists, it is marked as most recently used.",
+          "drafted_delta": 384.0,
+          "accepted_delta": 319.0,
+          "acceptance": 0.8307291666666666,
+          "num_speculative_tokens": 2,
+          "prompt_index": 0,
+          "server_decode_tok_s": 32.49891882266147
+        },
+        {
+          "request_id": "chatcmpl-a3388947deb6db3f",
+          "usage": {
+            "prompt_tokens": 43,
+            "total_tokens": 555,
+            "completion_tokens": 512,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "created_cache_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "ttft_s": 0.3360716470051557,
+          "decode_s": 18.945391913002823,
+          "client_decode_tok_s": 26.97225807449697,
+          "e2e_s": 19.281621409987565,
+          "text_sha256": "b08824f27f501b3ef69c8e59c3cbbe30727d96d4c24338185547bf9abd9be97f",
+          "text": "# Producer-Consumer Queue Design Review\n\n## Design Analysis\n\n### 1. Bounded Capacity\nA bounded queue prevents unbounded memory growth by limiting the number of items that can be buffered. When the queue is full, producers block (or raise an exception) until space becomes available. This provides **backpressure** \u2014 a natural flow-control mechanism that prevents fast producers from overwhelming slow consumers.\n\n**Key considerations:**\n- `maxsize` parameter defines the upper bound\n- `put()` blocks when full; `get()` blocks when empty\n- Timeout support prevents indefinite blocking\n- Zero or negative maxsize means unbounded (avoid in production)\n\n### 2. Cancellation\nCancellation allows in-flight operations to be aborted cleanly. In a producer-consumer context:\n- **Producer cancellation**: Stop producing new items; drain remaining items or discard them\n- **Consumer cancellation**: Stop consuming; remaining items stay in the queue\n- **Task-level cancellation**: Cancel individual tasks without shutting down the entire pipeline\n- Use `asyncio.CancelledError` or threading `Event` flags for cooperative cancellation\n\n### 3. Shutdown\nGraceful shutdown ensures:\n- All pending items are processed before termination\n- No items are lost\n- No new items are accepted after shutdown signal\n- All workers exit cleanly\n\n**Two-phase shutdown:**\n1. **Stop accepting**: Reject new `put()` calls\n2. **Drain**: Wait for all queued items to be consumed\n3. **Terminate**: Signal workers to exit\n\n### 4. Deadlock Prevention\nCommon deadlock scenarios and mitigations:\n\n| Scenario | Cause | Prevention |\n|----------|-------|------------|\n| Producer waits for space, consumer waits for items | Circular dependency | Use timeouts on `put`/`get` |\n| Multiple queues with cross-dependencies | Lock ordering violation | Enforce global lock ordering |\n| Shutdown while blocked | No exit condition | Use sentinel values or cancellation tokens |\n| Nested locks | Inconsistent acquisition order | Minimize lock scope; use single lock per queue |\n\n**Best practices:**\n- Always use timeouts on blocking operations\n- Use sentinel values (e.g., `None`) to signal end-of-stream\n- Avoid holding locks across I/O operations\n- Prefer `asyncio` primitives over raw threads when possible\n\n---\n\n## Implementation\n\n```python\n\"\"\"\nBounded Producer-Consumer Queue with cancellation, graceful shutdown,\nand deadlock prevention.\n\nUses asyncio for cooperative multit",
+          "drafted_delta": 448.0,
+          "accepted_delta": 287.0,
+          "acceptance": 0.640625,
+          "num_speculative_tokens": 2,
+          "prompt_index": 1,
+          "server_decode_tok_s": 26.972388930235997
+        },
+        {
+          "request_id": "chatcmpl-bf2757b95e292187",
+          "usage": {
+            "prompt_tokens": 49,
+            "total_tokens": 561,
+            "completion_tokens": 512,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "created_cache_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "ttft_s": 0.35983932501403615,
+          "decode_s": 17.63758862199029,
+          "client_decode_tok_s": 28.97221445356156,
+          "e2e_s": 17.9975506500341,
+          "text_sha256": "055627e7c39939643bc76fb8b3094526982418604dcfd6de92625e4f6f63af63",
+          "text": "# Practical Guide: Investigating a Slow Distributed Inference Service\n\nDistributed inference systems (e.g., LLM serving, large-scale vision models) are complex stacks involving networking, GPU/TPU hardware, CPU orchestration, and memory management. A \"slow\" service is rarely caused by a single factor; it is usually a symptom of a bottleneck in one of four layers: **Compute**, **Memory**, **Communication**, or **Orchestration**.\n\nThis guide provides a systematic approach to isolating these bottlenecks using concrete experiments and tools.\n\n---\n\n## Phase 1: Establish a Reliable Baseline & Avoid Misleading Benchmarks\n\nBefore optimizing, you must ensure your measurements are valid. Common pitfalls include:\n\n### 1. The \"Warm-Up\" Trap\n*   **Problem:** Initial requests are slow due to JIT compilation, cache misses, or lazy loading.\n*   **Fix:** Always discard the first 10\u201350 requests. Measure steady-state performance.\n\n### 2. The \"Throughput vs. Latency\" Confusion\n*   **Problem:** High throughput (requests/sec) can mask high latency (ms/request). A system might handle 1000 req/s but with 5-second latency, which is unacceptable for real-time apps.\n*   **Fix:** Measure **P50, P95, and P99 latency** separately from throughput. Use tools like `wrk`, `locust`, or `k6` to generate load and report percentiles.\n\n### 3. The \"Cold Cache\" Illusion\n*   **Problem:** If your model weights or KV cache are not in GPU memory, every request triggers a PCIe transfer, making the system appear CPU-bound when it\u2019s actually I/O-bound.\n*   **Fix:** Ensure the model is fully loaded and warmed up before benchmarking.\n\n### 4. The \"Synchronized Load\" Artifact\n*   **Problem:** Sending all requests at once creates a thundering herd, causing queueing delays that don\u2019t reflect real-world traffic.\n*   **Fix:** Use **closed-loop** (fixed concurrency) or **open-loop** (Poisson arrival) load generation to simulate realistic traffic patterns.\n\n---\n\n## Phase 2: Systematic Bottleneck Isolation\n\nUse the following decision tree to isolate the bottleneck.\n\n### Step 1: Is it the Network? (Communication Bottleneck)\n\nDistributed inference often involves tensor parallelism (",
+          "drafted_delta": 424.0,
+          "accepted_delta": 299.0,
+          "acceptance": 0.7051886792452831,
+          "num_speculative_tokens": 2,
+          "prompt_index": 2,
+          "server_decode_tok_s": 28.97285283378314
+        }
+      ],
+      "serial_server_median_tok_s": 28.97285283378314,
+      "c2_aggregate_tok_s": 41.765834474327434,
+      "c4_eager_aggregate_tok_s": 37.529261366706805,
+      "cold8192": {
+        "start": 438529.04455531,
+        "first": 438549.051946072,
+        "end": 438549.980493776,
+        "prompt_tokens": 8192,
+        "cached_tokens": 0,
+        "completion_tokens": 32,
+        "time_to_first_token_s": 20.007390762038995,
+        "elapsed_s": 20.935938465991057,
+        "decode_tokens_per_s": 33.38920942259221,
+        "max_chunk_gap_s": 0.08844284695805982,
+        "median_chunk_gap_s": 0.08435813896358013,
+        "chunk_arrivals": [
+          438549.051946072,
+          438549.140388919,
+          438549.223524423,
+          438549.304792315,
+          438549.389467957,
+          438549.473826096,
+          438549.556064545,
+          438549.639626309,
+          438549.724178216,
+          438549.808320234,
+          438549.895802925,
+          438549.980389738
+        ],
+        "output_sha256": "49245fe1d9853531f0071ba75bf695c52f6daa8cd17860926c94f87f79c66a4c",
+        "drafted_delta": 22.0,
+        "accepted_delta": 22.0,
+        "acceptance": 1.0,
+        "num_speculative_tokens": 2
+      },
+      "cold23410": {
+        "start": 438551.181157968,
+        "first": 438610.692586153,
+        "end": 438611.64281703,
+        "prompt_tokens": 23410,
+        "cached_tokens": 0,
+        "completion_tokens": 32,
+        "time_to_first_token_s": 59.51142818498192,
+        "elapsed_s": 60.461659062013496,
+        "decode_tokens_per_s": 32.62806531679208,
+        "max_chunk_gap_s": 0.09668182401219383,
+        "median_chunk_gap_s": 0.08593063900480047,
+        "chunk_arrivals": [
+          438610.692586153,
+          438610.770347477,
+          438610.856131968,
+          438610.942062607,
+          438611.027590871,
+          438611.124272695,
+          438611.209240153,
+          438611.295523343,
+          438611.381198556,
+          438611.468846601,
+          438611.555515975,
+          438611.642688456
+        ],
+        "output_sha256": "127226e5f9203a52d49d14c50f4eb51a105018f0f6655aefea7d1491ec6365e6",
+        "drafted_delta": 22.0,
+        "accepted_delta": 22.0,
+        "acceptance": 1.0,
+        "num_speculative_tokens": 2
+      }
+    },
+    "gdn_b2": {
+      "serial": [
+        {
+          "request_id": "chatcmpl-a6e42fbb4966613f",
+          "usage": {
+            "prompt_tokens": 32,
+            "total_tokens": 544,
+            "completion_tokens": 512,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "created_cache_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "ttft_s": 0.29751574801048264,
+          "decode_s": 15.603127195965499,
+          "client_decode_tok_s": 32.74984518053082,
+          "e2e_s": 15.900765777972993,
+          "text_sha256": "35da91ac33657397846aaed4f4318f936ba4cf73fe32bca7fcd4109186cb355a",
+          "text": "```python\n\"\"\"\nLRU (Least Recently Used) Cache Implementation\n\nThis module provides a thread-safe LRU cache implementation with O(1) time complexity\nfor both get and put operations.\n\nThread Safety:\n    The implementation uses a threading.Lock to ensure that all operations on the\n    internal data structures are atomic. This prevents race conditions when multiple\n    threads access the cache concurrently.\n\nComplexity:\n    - Time Complexity:\n        - get(): O(1) average case\n        - put(): O(1) average case\n        - delete(): O(1) average case\n    - Space Complexity: O(capacity) for storing up to 'capacity' items.\n\nData Structures Used:\n    - OrderedDict: Maintains insertion/access order. The most recently used item\n      is moved to the end. The least recently used item is at the beginning.\n    - threading.Lock: Ensures thread-safe access to the OrderedDict.\n\"\"\"\n\nimport threading\nfrom collections import OrderedDict\nfrom typing import Any, Optional, Hashable\n\n\nclass LRUCache:\n    \"\"\"\n    A thread-safe LRU (Least Recently Used) cache with a fixed capacity.\n    \n    When the cache reaches its capacity, the least recently used item is evicted\n    to make room for new items.\n    \n    Attributes:\n        capacity (int): Maximum number of items the cache can hold.\n        _cache (OrderedDict): Internal storage mapping keys to values, ordered by\n                              access time (least recently used first).\n        _lock (threading.Lock): Lock for thread-safe operations.\n    \"\"\"\n    \n    def __init__(self, capacity: int):\n        \"\"\"\n        Initialize the LRU cache with a given capacity.\n        \n        Args:\n            capacity: Maximum number of items the cache can hold. Must be positive.\n            \n        Raises:\n            ValueError: If capacity is not a positive integer.\n        \"\"\"\n        if not isinstance(capacity, int) or capacity <= 0:\n            raise ValueError(\"Capacity must be a positive integer\")\n        \n        self.capacity = capacity\n        self._cache: OrderedDict[Hashable, Any] = OrderedDict()\n        self._lock = threading.Lock()\n    \n    def get(self, key: Hashable) -> Optional[Any]:\n        \"\"\"\n        Retrieve a value from the cache by key.\n        \n        If the key exists, it is marked as most recently used.",
+          "drafted_delta": 384.0,
+          "accepted_delta": 319.0,
+          "acceptance": 0.8307291666666666,
+          "num_speculative_tokens": 2,
+          "prompt_index": 0,
+          "server_decode_tok_s": 32.75200133315387
+        },
+        {
+          "request_id": "chatcmpl-ab97c260646f5f55",
+          "usage": {
+            "prompt_tokens": 43,
+            "total_tokens": 555,
+            "completion_tokens": 512,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "created_cache_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "ttft_s": 0.3354901319835335,
+          "decode_s": 17.842685602023266,
+          "client_decode_tok_s": 28.639186465408283,
+          "e2e_s": 18.178287746966816,
+          "text_sha256": "6c494bdc7d1849f57dca8d8e52281e922b6cf6ad2ae694583429a0b99395b62c",
+          "text": "# Producer-Consumer Queue Design Review\n\n## Design Analysis\n\n### 1. Bounded Capacity\nA bounded queue prevents unbounded memory growth by limiting the number of items that can be buffered. When the queue is full, producers block (or raise an exception) until space becomes available. This provides **backpressure** \u2014 a natural flow-control mechanism that prevents fast producers from overwhelming slow consumers.\n\n**Key considerations:**\n- `maxsize` parameter defines the upper bound\n- Producers block on `put()` when full; consumers block on `get()` when empty\n- Alternative: non-blocking `put_nowait()`/`get_nowait()` with `QueueFull`/`QueueEmpty` exceptions\n\n### 2. Cancellation\nCancellation allows in-flight operations to be aborted cleanly. In a producer-consumer context:\n- **Producer cancellation**: A producer may be cancelled while waiting to `put()` an item. The item should **not** be enqueued if the producer is cancelled.\n- **Consumer cancellation**: A consumer may be cancelled while waiting to `get()` an item. The item should remain in the queue for other consumers.\n- Cancellation must be **cooperative** \u2014 the operation checks for cancellation signals and cleans up state.\n\n### 3. Shutdown\nGraceful shutdown ensures:\n- All already-enqueued items are processed before termination\n- No new items are accepted after shutdown is initiated\n- Blocked producers/consumers are unblocked and exit cleanly\n- Two-phase shutdown:\n  1. **Stop accepting new items** (producers get `ShutdownError`)\n  2. **Drain remaining items** (consumers process until queue is empty)\n  3. **Terminate** all workers\n\n### 4. Deadlock Prevention\nDeadlocks in producer-consumer systems arise from:\n- **Circular waiting**: Producer waits for space while consumer waits for items, but both hold locks that the other needs.\n- **Lost wakeups**: A consumer checks `empty()` and then blocks, but a producer adds an item between the check and the block.\n\n**Prevention strategies:**\n- Use a single mutex + condition variables (standard `queue.Queue` approach)\n- Always acquire locks in a consistent order\n- Use `notify_all()` instead of `notify()` to avoid missed wakeups\n- Never hold a lock while performing I/O or long computations\n- Use timeouts on blocking operations as a safety net\n\n---\n\n## Implementation\n\n```",
+          "drafted_delta": 440.0,
+          "accepted_delta": 293.0,
+          "acceptance": 0.6659090909090909,
+          "num_speculative_tokens": 2,
+          "prompt_index": 1,
+          "server_decode_tok_s": 28.64012644251518
+        },
+        {
+          "request_id": "chatcmpl-af1b5ca410f99c1b",
+          "usage": {
+            "prompt_tokens": 49,
+            "total_tokens": 561,
+            "completion_tokens": 512,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "created_cache_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "ttft_s": 0.35983534797560424,
+          "decode_s": 18.356253964011557,
+          "client_decode_tok_s": 27.8379238488334,
+          "e2e_s": 18.716194220993202,
+          "text_sha256": "7711943a42cf33d90173e82dc04e8bb27708911a0f5252ec2dce59eb33a712b0",
+          "text": "# Practical Guide: Investigating a Slow Distributed Inference Service\n\nDistributed inference systems (e.g., LLM serving, large-scale vision models) are complex stacks involving networking, GPU/TPU hardware, CPU orchestration, and memory management. A \"slow\" service is rarely caused by a single factor; it is usually a symptom of a bottleneck in one of four layers: **Compute**, **Memory**, **Communication**, or **Orchestration**.\n\nThis guide provides a systematic approach to isolating these bottlenecks using concrete experiments and tools.\n\n---\n\n## Phase 1: Establish a Reliable Baseline & Avoid Misleading Benchmarks\n\nBefore optimizing, you must ensure your measurements are valid. Common pitfalls include:\n\n### 1. The \"Warm-Up\" Trap\n*   **Problem:** Initial requests are slow due to JIT compilation, cache misses, or lazy loading.\n*   **Fix:** Always discard the first 10\u201350 requests. Measure steady-state performance.\n\n### 2. The \"Batch Size\" Illusion\n*   **Problem:** Throughput (tokens/sec) increases with batch size, but latency (time-per-request) often degrades. Optimizing for throughput can ruin user experience.\n*   **Fix:** Define your SLO (Service Level Objective) clearly. Are you optimizing for **P99 Latency** or **Max Throughput**? Measure both.\n\n### 3. The \"Client-Side\" Bottleneck\n*   **Problem:** Your client (Python script, load generator) may be slower than the server, creating a false impression of server slowness.\n*   **Fix:** Use a high-performance load generator (e.g., `wrk`, `hey`, or custom C++/Go clients). Monitor the client\u2019s CPU usage. If the client is at 100% CPU, your server is not the bottleneck.\n\n### 4. Network Noise\n*   **Problem:** Shared cloud networks (AWS/GCP/Azure) have variable latency.\n*   **Fix:** Run benchmarks on the same availability zone or use dedicated network interfaces. Compare against a \"null\" service (a service that returns immediately) to measure pure network overhead.\n\n---\n\n## Phase 2: Systematic Bottleneck Isolation\n\nUse the **\"Divide and Conquer\"** approach. Start from the end-to-end request and peel back layers.\n\n### Step 1: Isolate Network vs. Compute\n**Experiment:** Compare",
+          "drafted_delta": 442.0,
+          "accepted_delta": 290.0,
+          "acceptance": 0.6561085972850679,
+          "num_speculative_tokens": 2,
+          "prompt_index": 2,
+          "server_decode_tok_s": 27.839067309525756
+        }
+      ],
+      "serial_server_median_tok_s": 28.64012644251518,
+      "c2_aggregate_tok_s": 40.653373255853175,
+      "c4_eager_aggregate_tok_s": 39.00136114702528,
+      "cold8192": {
+        "start": 438734.710926038,
+        "first": 438754.771903753,
+        "end": 438755.888563909,
+        "prompt_tokens": 8192,
+        "cached_tokens": 0,
+        "completion_tokens": 32,
+        "time_to_first_token_s": 20.060977715009358,
+        "elapsed_s": 21.177637871005572,
+        "decode_tokens_per_s": 27.764187258279588,
+        "max_chunk_gap_s": 0.09069071098929271,
+        "median_chunk_gap_s": 0.08459755399962887,
+        "chunk_arrivals": [
+          438754.771903753,
+          438754.862594464,
+          438754.948117748,
+          438755.031037442,
+          438755.114580491,
+          438755.19801854,
+          438755.28040548,
+          438755.362977743,
+          438755.446181076,
+          438755.53077863,
+          438755.620857588,
+          438755.708622325,
+          438755.798487115,
+          438755.888450033
+        ],
+        "output_sha256": "82ac00589ae18d1716fb1c42c8d1348e4e09e3af857bcfd45193afb7a5a739fc",
+        "drafted_delta": 26.0,
+        "accepted_delta": 20.0,
+        "acceptance": 0.7692307692307693,
+        "num_speculative_tokens": 2
+      },
+      "cold23410": {
+        "start": 438757.086275376,
+        "first": 438816.498382467,
+        "end": 438817.433515474,
+        "prompt_tokens": 23410,
+        "cached_tokens": 0,
+        "completion_tokens": 32,
+        "time_to_first_token_s": 59.4121070910478,
+        "elapsed_s": 60.34724009805359,
+        "decode_tokens_per_s": 33.154375569006895,
+        "max_chunk_gap_s": 0.09772219299338758,
+        "median_chunk_gap_s": 0.08476246800273657,
+        "chunk_arrivals": [
+          438816.498382467,
+          438816.573712057,
+          438816.658257292,
+          438816.739835414,
+          438816.825274318,
+          438816.922996511,
+          438817.007758979,
+          438817.093736016,
+          438817.178434823,
+          438817.262117156,
+          438817.348062263,
+          438817.433402339
+        ],
+        "output_sha256": "127226e5f9203a52d49d14c50f4eb51a105018f0f6655aefea7d1491ec6365e6",
+        "drafted_delta": 22.0,
+        "accepted_delta": 22.0,
+        "acceptance": 1.0,
+        "num_speculative_tokens": 2
+      }
+    }
+  },
+  "serial_pairs": [
+    {
+      "control": "residual_a1",
+      "candidate": "gdn_b1",
+      "prompt_index": 0,
+      "baseline_tok_s": 31.40595422474617,
+      "candidate_tok_s": 32.62424025741866,
+      "speed_ratio": 1.038791562388273,
+      "same_text": false,
+      "baseline_sampled_acceptance": 0.8238341968911918,
+      "candidate_sampled_acceptance": 0.8307291666666666
+    },
+    {
+      "control": "residual_a1",
+      "candidate": "gdn_b1",
+      "prompt_index": 1,
+      "baseline_tok_s": 26.951618943137884,
+      "candidate_tok_s": 28.51260190046814,
+      "speed_ratio": 1.0579179662870566,
+      "same_text": true,
+      "baseline_sampled_acceptance": 0.6659090909090909,
+      "candidate_sampled_acceptance": 0.6659090909090909
+    },
+    {
+      "control": "residual_a1",
+      "candidate": "gdn_b1",
+      "prompt_index": 2,
+      "baseline_tok_s": 28.56296428791021,
+      "candidate_tok_s": 28.48907547096177,
+      "speed_ratio": 0.9974131250452981,
+      "same_text": false,
+      "baseline_sampled_acceptance": 0.7307692307692307,
+      "candidate_sampled_acceptance": 0.6875
+    },
+    {
+      "control": "residual_a2",
+      "candidate": "gdn_b2",
+      "prompt_index": 0,
+      "baseline_tok_s": 32.49891882266147,
+      "candidate_tok_s": 32.75200133315387,
+      "speed_ratio": 1.0077874132328342,
+      "same_text": true,
+      "baseline_sampled_acceptance": 0.8307291666666666,
+      "candidate_sampled_acceptance": 0.8307291666666666
+    },
+    {
+      "control": "residual_a2",
+      "candidate": "gdn_b2",
+      "prompt_index": 1,
+      "baseline_tok_s": 26.972388930235997,
+      "candidate_tok_s": 28.64012644251518,
+      "speed_ratio": 1.0618312866758959,
+      "same_text": false,
+      "baseline_sampled_acceptance": 0.640625,
+      "candidate_sampled_acceptance": 0.6659090909090909
+    },
+    {
+      "control": "residual_a2",
+      "candidate": "gdn_b2",
+      "prompt_index": 2,
+      "baseline_tok_s": 28.97285283378314,
+      "candidate_tok_s": 27.839067309525756,
+      "speed_ratio": 0.9608673149737137,
+      "same_text": false,
+      "baseline_sampled_acceptance": 0.7051886792452831,
+      "candidate_sampled_acceptance": 0.6561085972850679
+    }
+  ],
+  "serial_pooled": {
+    "baseline_median_tok_s": 28.767908560846674,
+    "candidate_median_tok_s": 28.57636417149166,
+    "median_paired_speed_ratio": 1.0232894878105536,
+    "same_text_pairs": 2,
+    "total_pairs": 6,
+    "same_text_median_speed_ratio": 1.0328526897599453
+  },
+  "acceptance_limit": "The first four arms sampled periodic counters after one second; deltas may straddle request boundaries. They are not exact per-request acceptance or round timing.",
+  "cold8192": {
+    "baseline_median_ttft_s": 20.204662317002658,
+    "candidate_median_ttft_s": 20.05143468748429,
+    "cached_tokens": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "output_hashes": [
+      "127226e5f9203a52d49d14c50f4eb51a105018f0f6655aefea7d1491ec6365e6",
+      "49245fe1d9853531f0071ba75bf695c52f6daa8cd17860926c94f87f79c66a4c",
+      "5f14f700cac029838e1c12ff89ee44b1b4772761d33f1e92cce122150fb8fb64",
+      "82ac00589ae18d1716fb1c42c8d1348e4e09e3af857bcfd45193afb7a5a739fc"
+    ],
+    "samples_per_arm": 2
+  },
+  "cold23410": {
+    "baseline_median_ttft_s": 59.400431940477574,
+    "candidate_median_ttft_s": 59.418679249007255,
+    "cached_tokens": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "output_hashes": [
+      "49245fe1d9853531f0071ba75bf695c52f6daa8cd17860926c94f87f79c66a4c",
+      "127226e5f9203a52d49d14c50f4eb51a105018f0f6655aefea7d1491ec6365e6",
+      "127226e5f9203a52d49d14c50f4eb51a105018f0f6655aefea7d1491ec6365e6",
+      "127226e5f9203a52d49d14c50f4eb51a105018f0f6655aefea7d1491ec6365e6"
+    ],
+    "samples_per_arm": 2
+  },
+  "c4_graph": {
+    "original": {
+      "aggregate_tok_s": [
+        58.267372668367265,
+        59.59342756964433,
+        56.020315502179756
+      ],
+      "aggregate_median_tok_s": 58.267372668367265,
+      "hashes": [
+        [
+          "52103e6280c7b583696c20929c7513afa188fa979b26b9436fcacdaa63c7cc34",
+          "b8fd20870b051e660ad97428155867cce5534a429fd69a19aae4d9c2634b2665",
+          "3169366aa1d709f2efd1a88fc8002279cee2c28cd3dc4b86c1ae1ba42b824cb5",
+          "67af43400e683a1c061d128b0e4cb7aa8a800ca73f7c5621cd116c7b8b13adfc"
+        ],
+        [
+          "dbb22e93314b7a063ef3470d0cec775cf5bf329ae2eb4e53d34198c6896205f1",
+          "2931c4283a36aa2e4f638559b16219e39f4147a8faa1615b07e97202f745d989",
+          "c5d450d0cddddf957e7e1d8b1eb8bcf7a8535d74fec303cbfb5b6129d078fe6b",
+          "b4adb6489c15b124d058d84df00db582986874a9ae809a85247ed036deb91040"
+        ],
+        [
+          "e4b1ce3580a0f483fc4f6e395f12b525ba073f3f51bc021c4d1216eef71c960c",
+          "6576560529806b5d298ea46a96f7f57fda7c22fd86a96784ce7ed4f87b9ecba0",
+          "a03e96ab58db820e63d11bb305cd0ebae613a1f784abadf86d23c84f181eb3d2",
+          "b4adb6489c15b124d058d84df00db582986874a9ae809a85247ed036deb91040"
+        ]
+      ],
+      "server_tok_s": [
+        [
+          16.39333723344755,
+          15.297215906704979,
+          15.424724320858461,
+          16.204262674275256
+        ],
+        [
+          15.90370462766621,
+          15.639758105074641,
+          16.174353184444712,
+          16.180613721160434
+        ],
+        [
+          17.661970660349915,
+          14.67490763440489,
+          15.17848108046976,
+          16.52967562942412
+        ]
+      ]
+    },
+    "residual": {
+      "aggregate_tok_s": [
+        60.70340733640812,
+        55.39054683710143,
+        58.637269160250135
+      ],
+      "aggregate_median_tok_s": 58.637269160250135,
+      "hashes": [
+        [
+          "aa07ebee35c9f11c27debabbeb3670fe1c717ac8b19144c9f85382c02718c8b0",
+          "fe40c0daad95caf845305e894817e4a6143584b0513350c6426d0a3d299a0ab5",
+          "ca742ab42816cf3d9d3bfc5a8473eb260d848a598df322dfb6c0276f56421eb2",
+          "3d15a6dfeebc9eb3ad871058be8313b70cf45a6d8450290eb2b11fcbc996c96f"
+        ],
+        [
+          "9544975c56e7db6c4912f2d1b72057882a9d0ea746108ba087ddf2930824fad2",
+          "67e3591de6fde81e268341eb9652c6d0500c603b66b6b3ffb8aaf9237b2e219b",
+          "06f4b112141e46aa534ab1d1ec73a062a1b0cbacef094a41adbe3da3b2779cdd",
+          "636200381c54784ba8a0d12dd4a79a5c62c7b5ff774afd632f68212b9e9f2e72"
+        ],
+        [
+          "90b44b3807fe01ad37601d4e24cca71b34bd02589e4e16738e1706c9ef351b38",
+          "4e6575be3b0065323d590ed8b1e223b801dad85d5edeada727078cc381456a68",
+          "68c7e7abf92b223f8e9815f916ed25d8a757ffd987741df3a6ba808311f9dd36",
+          "942cc7f5b5bf8a020ca8affae7f3decfdb185386a0f17a532e9034ab26c73cf6"
+        ]
+      ],
+      "server_tok_s": [
+        [
+          16.948138695591492,
+          15.553617283423502,
+          15.938695402155162,
+          16.80007905919557
+        ],
+        [
+          16.12158838739861,
+          15.152685590687337,
+          14.475230326459018,
+          16.262755102040817
+        ],
+        [
+          17.147583535629987,
+          15.36820408975031,
+          15.986558752170724,
+          16.10600912042242
+        ]
+      ]
+    },
+    "median_speed_ratio": 1.006348261041186
+  },
+  "demo_final": {
+    "model": "qwen38-flashnext-latest-gate",
+    "completed": true,
+    "graph_profile": [
+      3,
+      12
+    ],
+    "cache_tokens": 1331971,
+    "planner_concurrency_256k": 5.08,
+    "post_capture_free_gib": 4.88,
+    "runtime_reserve_gib": 4.0,
+    "active_scheduler_limit": 4,
+    "paused": false,
+    "serial128_client_decode_tok_s": 29.81891087905929,
+    "c4_128_aggregate_tok_s": 53.70572782082844,
+    "cold4096": {
+      "start": 440650.664141013,
+      "first": 440660.953497995,
+      "end": 440661.985972163,
+      "prompt_tokens": 4096,
+      "cached_tokens": 0,
+      "completion_tokens": 32,
+      "time_to_first_token_s": 10.289356981986202,
+      "elapsed_s": 11.321831149980426,
+      "decode_tokens_per_s": 30.027750793991707,
+      "max_chunk_gap_s": 0.098500102001708,
+      "median_chunk_gap_s": 0.09423004201380536,
+      "chunk_arrivals": [
+        440660.953497995,
+        440661.051998097,
+        440661.142890532,
+        440661.232664179,
+        440661.329263978,
+        440661.421890039,
+        440661.517324131,
+        440661.607664286,
+        440661.70377288,
+        440661.801837835,
+        440661.891646309,
+        440661.985876351
+      ],
+      "output_sha256": "94f97de1d08f5ccbedd6507888f9216f5916fc17c1e86f0e913bc725df1772d6"
+    },
+    "capacity_limit": "Planner capacity only; five full 256K windows were not stress-tested."
+  },
+  "active_profile": {
+    "observed_at_utc": "2026-10-08T05:19:01.702172+00:00",
+    "models": {
+      "object": "list",
+      "data": [
+        {
+          "id": "qwen38-flashnext-latest-gate",
+          "object": "model",
+          "created": 1791436741,
+          "owned_by": "vllm",
+          "root": "/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i",
+          "parent": null,
+          "max_model_len": 262144,
+          "permission": [
+            {
+              "id": "modelperm-9a3bc5289b9067c4",
+              "object": "model_permission",
+              "created": 1791436741,
+              "allow_create_engine": false,
+              "allow_sampling": true,
+              "allow_logprobs": true,
+              "allow_search_indices": false,
+              "allow_view": true,
+              "allow_fine_tuning": false,
+              "organization": "*",
+              "group": null,
+              "is_blocking": false
+            }
+          ]
+        }
+      ]
+    },
+    "pause_state": {
+      "is_paused": false
+    },
+    "api_pid": 1161969,
+    "worker_pids": [
+      1163951,
+      1163952,
+      1163953,
+      1163954
+    ],
+    "runtime": "/srv/ai/src/qwen38-demo-recovery-runtime-20261008",
+    "runtime_origin": "Full copy of qwen38-decode-next-runtime-20261005 plus metadata and mixed-prefill fixes from 483b57819",
+    "max_num_seqs": 3,
+    "max_model_len": 262144,
+    "max_num_batched_tokens": 1024,
+    "mtp_tokens": 2,
+    "graphs": [
+      3,
+      9
+    ],
+    "kv_cache_fraction": 0.7,
+    "cache_tokens": 997292,
+    "planner_concurrency": 3.8,
+    "rank0_archive_slots": 194,
+    "rank0_archive_gib": 5.28,
+    "rank0_post_capture_free_gib": 9.3,
+    "reserve_gib": 4.0,
+    "images_per_prompt": 1,
+    "video_per_prompt": 0,
+    "min_pixels": 65536,
+    "max_pixels": 1048576,
+    "native_residual_candidate_applied": false,
+    "user_validation": "Operator confirmed fresh image input works. No agent image inference tests on this instance.",
+    "full_window_stress_test": false,
+    "patch_sha256": "e8bee3617a1633c716d02a708fa15dbc7f9a8aae10b349c595f941b66e435d3a",
+    "archive_slots_by_rank": {
+      "0": 194,
+      "1": 175,
+      "2": 191,
+      "3": 180
+    },
+    "sustained_spill_free": false,
+    "later_checkpoint_pressure_evidence": "recovery-mamba-status.json"
+  }
+}

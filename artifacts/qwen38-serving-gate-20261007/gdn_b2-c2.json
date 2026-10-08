@@ -1,0 +1,54 @@
+{
+  "results": [
+    {
+      "request_id": "chatcmpl-a00438b531b39991",
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 544,
+        "completion_tokens": 512,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "created_cache_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish_reason": "length",
+      "ttft_s": 0.6819890069891699,
+      "decode_s": 22.500265134032816,
+      "client_decode_tok_s": 22.710843492554496,
+      "e2e_s": 23.182349622016773,
+      "text_sha256": "86705383a9b38e8242a3988290aab6b327bebbcb0a4bb4dea76b25b8a008c862",
+      "text": "```python\n\"\"\"\nLRU (Least Recently Used) Cache Implementation\n\nAn LRU cache evicts the least recently used items when the cache reaches its capacity.\nThis implementation uses a doubly-linked list combined with a hash map for O(1) operations.\n\nThread Safety:\n    This implementation is thread-safe using a reentrant lock (threading.RLock).\n    All public methods acquire the lock before accessing internal state, ensuring\n    that concurrent reads and writes do not corrupt the data structure.\n    RLock is used instead of Lock to allow reentrant calls if needed (e.g., if\n    a subclass overrides methods that call other public methods).\n\nTime Complexity:\n    - get(key): O(1) average case\n    - put(key, value): O(1) average case\n    - delete(key): O(1) average case\n    - clear(): O(n) where n is the number of items in the cache\n\nSpace Complexity:\n    - O(capacity) for storing up to 'capacity' items\n\"\"\"\n\nimport threading\nfrom typing import Any, Optional, Hashable\n\n\nclass _Node:\n    \"\"\"\n    Internal node for the doubly-linked list.\n    \n    Attributes:\n        key: The cache key.\n        value: The cached value.\n        prev: Reference to the previous node (toward MRU end).\n        next: Reference to the next node (toward LRU end).\n    \"\"\"\n    __slots__ = ('key', 'value', 'prev', 'next')\n\n    def __init__(self, key: Hashable, value: Any):\n        self.key = key\n        self.value = value\n        self.prev: Optional['_Node'] = None\n        self.next: Optional['_Node'] = None\n\n\nclass LRUCache:\n    \"\"\"\n    A thread-safe LRU (Least Recently Used) cache.\n    \n    The cache maintains a doubly-linked list to track usage order and a hash map\n    for O(1) key lookups. The most recently used item is at the head of the list,\n    and the least recently used item is at the tail.\n    \n    Args:\n        capacity: Maximum number of items the cache can hold. Must be >= 1.\n    \n    Raises:\n        ValueError: If capacity is less than 1.\n    \n    Example:\n        >>> cache = LRUCache(capacity=2)\n       "
+    },
+    {
+      "request_id": "chatcmpl-a0496180038eb224",
+      "usage": {
+        "prompt_tokens": 43,
+        "total_tokens": 555,
+        "completion_tokens": 512,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "created_cache_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish_reason": "length",
+      "ttft_s": 0.34182371594943106,
+      "decode_s": 24.845682523038704,
+      "client_decode_tok_s": 20.56695361562976,
+      "e2e_s": 25.187586872954853,
+      "text_sha256": "f508573fd7cca3b7dccb5c62012468f5df08c75bab9233f59e372b5e54174028",
+      "text": "# Producer-Consumer Queue Design Review\n\n## Design Analysis\n\n### 1. Bounded Capacity\nA bounded queue prevents unbounded memory growth by limiting the number of items that can be buffered. When the queue is full, producers block (or fail) until space becomes available. This provides **backpressure** \u2014 a natural flow-control mechanism that prevents fast producers from overwhelming slow consumers.\n\n**Key considerations:**\n- Capacity must be \u2265 1 (zero capacity means no buffering; every put must wait for a get).\n- Blocking vs. non-blocking semantics: `put(block=True)` vs `put_nowait()`.\n- Fairness: FIFO ordering ensures no starvation.\n\n### 2. Cancellation\nCancellation allows in-flight operations (a blocked `put` or `get`) to be aborted without waiting for the other side. This is critical for:\n- Graceful shutdown of workers\n- Timeout-based operations\n- User-initiated aborts\n\n**Implementation strategy:**\n- Use `threading.Event` or `asyncio.Event` as cancellation signals.\n- Check cancellation state before and after blocking waits.\n- Raise a dedicated `CancelledError` (or custom exception) so callers can distinguish cancellation from other failures.\n\n### 3. Shutdown\nShutdown transitions the queue from \"active\" to \"closed\" state:\n- **Graceful shutdown**: Allow all already-enqueued items to be consumed, then close. Producers attempting to enqueue after shutdown are rejected.\n- **Immediate shutdown**: Discard pending items and wake all blocked consumers/producers.\n\n**State machine:**\n```\nOPEN \u2192 CLOSING (draining) \u2192 CLOSED\nOPEN \u2192 CLOSED (immediate)\n```\n\n### 4. Deadlock Prevention\nDeadlocks in producer-consumer systems arise from:\n- **Circular waiting**: Producer holds a lock while waiting for space; consumer holds a lock while waiting for items.\n- **Lock ordering violations**: Multiple locks acquired in inconsistent order.\n\n**Prevention strategies:**\n- Use a **single mutex** protecting the queue state, with **condition variables** for waiting. Never hold the mutex while waiting on a condition.\n- Use `notify_all()` instead of `notify()` to avoid missed wakeups.\n- Ensure all blocking operations have timeouts or cancellation paths.\n- Avoid nested locks; if multiple resources are needed, define a strict lock ordering.\n\n---\n\n## Python Implementation\n\n```python\n\"\"\"\nThread-safe bounded producer-consumer queue with cancellation"
+    }
+  ],
+  "wall_s": 25.188561686023604,
+  "aggregate_tok_s": 40.653373255853175,
+  "drafted_delta": 842.0,
+  "accepted_delta": 604.0,
+  "acceptance": 0.7173396674584323,
+  "num_speculative_tokens": 2
+}

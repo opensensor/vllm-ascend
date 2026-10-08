@@ -1,0 +1,29 @@
+[
+  {
+    "request_id": "chatcmpl-aa9f45527eb1daa8",
+    "usage": {
+      "prompt_tokens": 32,
+      "total_tokens": 544,
+      "completion_tokens": 512,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "created_cache_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0
+      }
+    },
+    "finish_reason": "length",
+    "ttft_s": 0.30455748800886795,
+    "decode_s": 25.254655933997128,
+    "client_decode_tok_s": 20.233892765575387,
+    "e2e_s": 25.55932128697168,
+    "text_sha256": "b3a222a5964ecfda287d60a9c0e94db8cae2258f54e54d7871705a35df4faf80",
+    "text": "```python\n\"\"\"\nLRU (Least Recently Used) Cache Implementation\n\nThis module provides a thread-safe LRU cache implementation with O(1) time complexity\nfor both get and put operations.\n\nThread Safety:\n    The implementation uses a threading.Lock to ensure that all operations on the\n    internal data structures are atomic. This prevents race conditions when multiple\n    threads access the cache concurrently.\n\nComplexity:\n    - Time Complexity:\n        - get(): O(1) average case\n        - put(): O(1) average case\n        - delete(): O(1) average case\n    - Space Complexity: O(capacity) for storing up to 'capacity' items.\n\nData Structures Used:\n    - OrderedDict: Maintains insertion/access order. The most recently used item\n      is at the end, and the least recently used item is at the beginning.\n    - Lock: Ensures thread safety for concurrent access.\n\"\"\"\n\nimport threading\nfrom collections import OrderedDict\nfrom typing import Any, Optional, Hashable\n\n\nclass LRUCache:\n    \"\"\"\n    A thread-safe LRU (Least Recently Used) cache with a fixed capacity.\n    \n    When the cache reaches its capacity, the least recently used item is evicted\n    to make room for new items.\n    \n    Attributes:\n        capacity (int): Maximum number of items the cache can hold.\n        _cache (OrderedDict): Internal storage mapping keys to values, ordered by\n                              access time (least recently used first).\n        _lock (threading.Lock): Lock for thread-safe access to the cache.\n    \"\"\"\n    \n    def __init__(self, capacity: int):\n        \"\"\"\n        Initialize the LRU cache with a given capacity.\n        \n        Args:\n            capacity: Maximum number of items the cache can hold. Must be positive.\n            \n        Raises:\n            ValueError: If capacity is not a positive integer.\n        \"\"\"\n        if not isinstance(capacity, int) or capacity <= 0:\n            raise ValueError(\"Capacity must be a positive integer\")\n        \n        self.capacity = capacity\n        self._cache: OrderedDict[Hashable, Any] = OrderedDict()\n        self._lock = threading.Lock()\n    \n    def get(self, key: Hashable) -> Optional[Any]:\n        \"\"\"\n        Retrieve a value from the cache by key.\n        \n        If the key exists, it is moved to the end of",
+    "drafted_delta": 378.0,
+    "accepted_delta": 322.0,
+    "acceptance": 0.8518518518518519,
+    "num_speculative_tokens": 2,
+    "prompt_index": 0
+  }
+]

@@ -1,0 +1,705 @@
+INFO 10-08 05:03:01 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-08 05:03:01 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-08 05:03:01 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 10-08 05:03:01 [__init__.py:272] Platform plugin ascend is activated
+INFO 10-08 05:03:01 [platform.py:71] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=1.
+INFO 10-08 05:03:06 [importing.py:98] Triton not installed or not compatible; certain GPU-related functions will not be available.
+2026-10-08 05:03:09,055 - 1161969 - ServiceProfiler - INFO - VLLM_USE_V1 not set, auto-detected via vLLM 0.1.dev1+g3ab5dda29.empty: default 0
+W1008 05:03:09.333000 1161969 torch/_library/triton.py:53] Triton not available, find_triton_kernels = []
+INFO 10-08 05:03:09 [patch_indexer_kv_dtype.py:102] Patched AttentionConfig.indexer_kv_dtype to accept 'int8' (DeepSeek V4 Ascend indexer K cache dtype).
+INFO 10-08 05:03:09 [patch_kv_cache_dtype.py:115] Patched CacheConfig.cache_dtype to accept 'int8' (DeepSeek V4 Ascend MLA KV cache dtype).
+INFO 10-08 05:03:09 [__init__.py:112] Registered model loader `<class 'vllm_ascend.model_loader.netloader.netloader.ModelNetLoaderElastic'>` with load format `netloader`
+INFO 10-08 05:03:09 [__init__.py:112] Registered model loader `<class 'vllm_ascend.model_loader.rfork.rfork_loader.RForkModelLoader'>` with load format `rfork`
+WARNING 10-08 05:03:09 [indexer_topk.py:29] Failed to import the DeepSelect extension (vllm._deepselect_C): No module named 'vllm._deepselect_C'
+(APIServer pid=1161969) INFO 10-08 05:03:09 [api_utils.py:347] 
+(APIServer pid=1161969) INFO 10-08 05:03:09 [api_utils.py:347]        █     █     █▄   ▄█
+(APIServer pid=1161969) INFO 10-08 05:03:09 [api_utils.py:347]  ▄▄ ▄█ █     █     █ ▀▄▀ █  version 0.1.dev1+g3ab5dda29
+(APIServer pid=1161969) INFO 10-08 05:03:09 [api_utils.py:347]   █▄█▀ █     █     █     █  model   /srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i
+(APIServer pid=1161969) INFO 10-08 05:03:09 [api_utils.py:347]    ▀▀  ▀▀▀▀▀ ▀▀▀▀▀ ▀     ▀
+(APIServer pid=1161969) INFO 10-08 05:03:09 [api_utils.py:347] 
+(APIServer pid=1161969) INFO 10-08 05:03:09 [api_utils.py:286] non-default args: {'model_tag': '/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i', 'enable_auto_tool_choice': True, 'tool_call_parser': 'qwen3_xml', 'enable_prompt_tokens_details': True, 'host': '0.0.0.0', 'middleware': ['tools.glm_perf.resident_middleware.ResidentControlMiddleware'], 'model': '/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i', 'dtype': 'float16', 'max_model_len': 262144, 'served_model_name': ['qwen38-flashnext-latest-gate'], 'hf_overrides': {'text_config': {'ascend_expert_quantization': {'backend': 'cube_310_int4_a8', 'activation_quantization': 'int8_per_group', 'grouped_activation': 'cann_builtin_fp16', 'grouped_finalize': 'cann_v2', 'grouped_prefill_chunk_tokens': 2560, 'bits': 4, 'format': 'qwen4exp_w4a16_group_v1', 'group_size': 128, 'lm_head_execution': 'w8a8_dynamic', 'ple_projection_execution': 'w8a8_dynamic', 'offset_dtype': 'int8', 'packing': 'signed_int4_low_nibble_first_in_axis', 'scale_dtype': 'float16', 'shared_expert_execution': 'tp_sharded', 'symmetric': False}}}, 'reasoning_parser': 'qwen3', 'tensor_parallel_size': 4, 'enable_expert_parallel': True, 'enable_ep_weight_filter': True, 'disable_custom_all_reduce': True, 'worker_extension_cls': 'tools.qwen4exp.resident_worker.QwenResidentExtension', 'gpu_memory_utilization': 0.965, 'enable_prefix_caching': True, 'mamba_cache_mode': 'align', 'limit_mm_per_prompt': {'image': 1, 'video': 0}, 'mm_processor_kwargs': {'min_pixels': 65536, 'max_pixels': 1048576}, 'max_num_batched_tokens': 1024, 'max_num_seqs': 3, 'enable_chunked_prefill': True, 'async_scheduling': False, 'speculative_config': {'method': 'mtp', 'num_speculative_tokens': 2}, 'compilation_config': {'mode': <CompilationMode.NONE: 0>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'vllm_ascend.compilation.compiler_interface.AscendCompiler', 'custom_ops': [], 'ir_enable_torch_wrap': None, 'splitting_ops': None, 'compile_mm_encoder': False, 'cudagraph_mm_encoder': False, 'encoder_cudagraph_token_budgets': [], 'encoder_cudagraph_max_vision_items_per_batch': 0, 'encoder_cudagraph_max_frames_per_batch': None, 'compile_sizes': None, 'compile_ranges_endpoints': None, 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.FULL_DECODE_ONLY: (2, 0)>, 'cudagraph_num_of_warmups': 0, 'cudagraph_capture_sizes': [3, 9], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': None, 'pass_config': {}, 'max_cudagraph_capture_size': None, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': None, 'static_all_moe_layers': []}}
+(APIServer pid=1161969) WARNING 10-08 05:03:09 [envs.py:2248] Unknown vLLM environment variable detected: VLLM_ASCEND_ENABLE_310P
+(APIServer pid=1161969) WARNING 10-08 05:03:09 [envs.py:2248] Unknown vLLM environment variable detected: VLLM_ASCEND_LOG_REQUEST_TIMINGS
+(APIServer pid=1161969) WARNING 10-08 05:03:09 [envs.py:2248] Unknown vLLM environment variable detected: VLLM_ASCEND_KV_CACHE_FRACTION
+(APIServer pid=1161969) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_interleaved', 'mrope_section'}
+(APIServer pid=1161969) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_interleaved', 'mrope_section'}
+(APIServer pid=1161969) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_interleaved', 'mrope_section'}
+(APIServer pid=1161969) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_interleaved', 'mrope_section'}
+(APIServer pid=1161969) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_interleaved', 'mrope_section'}
+(APIServer pid=1161969) INFO 10-08 05:03:10 [model.py:692] Resolved architecture: Qwen4ExpForConditionalGeneration
+(APIServer pid=1161969) INFO 10-08 05:03:10 [model.py:2030] Using max model len 262144
+(APIServer pid=1161969) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_interleaved', 'mrope_section'}
+(APIServer pid=1161969) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_interleaved', 'mrope_section'}
+(APIServer pid=1161969) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_interleaved', 'mrope_section'}
+(APIServer pid=1161969) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_interleaved', 'mrope_section'}
+(APIServer pid=1161969) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_interleaved', 'mrope_section'}
+(APIServer pid=1161969) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_interleaved', 'mrope_section'}
+(APIServer pid=1161969) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_interleaved', 'mrope_section'}
+(APIServer pid=1161969) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_interleaved', 'mrope_section'}
+(APIServer pid=1161969) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_interleaved', 'mrope_section'}
+(APIServer pid=1161969) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_interleaved', 'mrope_section'}
+(APIServer pid=1161969) INFO 10-08 05:03:10 [model.py:692] Resolved architecture: Qwen4ExpMTP
+(APIServer pid=1161969) INFO 10-08 05:03:10 [model.py:2030] Using max model len 262144
+(APIServer pid=1161969) WARNING 10-08 05:03:10 [speculative.py:1361] Enabling num_speculative_tokens > 1 will run multiple times of forward on same MTP layer,which may result in lower acceptance rate
+(APIServer pid=1161969) INFO 10-08 05:03:10 [scheduler.py:288] Chunked prefill is enabled with max_num_batched_tokens=1024.
+(APIServer pid=1161969) INFO 10-08 05:03:10 [patch_mamba_config_310.py:94] Setting attention block size to 896 tokens to ensure that attention page size is >= mamba page size.
+(APIServer pid=1161969) INFO 10-08 05:03:10 [patch_mamba_config_310.py:109] Padding mamba page size by 12.99% to ensure that mamba page size and attention page size are exactly equal.
+(APIServer pid=1161969) INFO 10-08 05:03:10 [kernel.py:416] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['native'])
+(APIServer pid=1161969) WARNING 10-08 05:03:10 [vllm.py:2128] max_num_scheduled_tokens is set to 1024 based on the speculative decoding settings. This may lead to suboptimal performance. Consider increasing max_num_batched_tokens to accommodate the additional draft token slots, or decrease num_speculative_tokens.
+(APIServer pid=1161969) WARNING 10-08 05:03:10 [patch_use_v2_model_runner.py:35] Qwen4Exp MTP on 310P uses model runner v1 for speculative decoding.
+(APIServer pid=1161969) INFO 10-08 05:03:10 [utils.py:224] No quantization signature detected from model files for "/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i". The model will be loaded as float. To force a quantization method, pass "--quantization <method>" explicitly.
+(APIServer pid=1161969) WARNING 10-08 05:03:10 [platform.py:717] GPU-specific parameter is not supported on Ascend. parameter=disable_cascade_attn, value=True, action: resetting to False.
+(APIServer pid=1161969) WARNING 10-08 05:03:10 [ascend_config.py:153] npugraph_ex is not supported by the current hardware profile. Disabling it.
+(APIServer pid=1161969) INFO 10-08 05:03:10 [ascend_config.py:334] Dynamic EPLB is False
+(APIServer pid=1161969) INFO 10-08 05:03:10 [ascend_config.py:335] The number of redundant experts is 0
+(APIServer pid=1161969) INFO 10-08 05:03:10 [ascend_config.py:739] FlashComm1 is disabled. Using flashinfer_all2allv as the all2all backend.
+(APIServer pid=1161969) INFO 10-08 05:03:10 [platform.py:1432] Set PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+(APIServer pid=1161969) INFO 10-08 05:03:11 [compilation.py:336] Enabled custom fusions: norm_quant, act_quant
+(APIServer pid=1161969) INFO 10-08 05:03:11 [__init__.py:52] Available plugins for group vllm.stat_logger_plugins:
+(APIServer pid=1161969) INFO 10-08 05:03:11 [__init__.py:54] - ascend_request_timing -> vllm_ascend.observability.request_timing:AscendRequestTimingLogger
+(APIServer pid=1161969) INFO 10-08 05:03:11 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+(APIServer pid=1161969) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_interleaved', 'mrope_section'}
+(APIServer pid=1161969) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_interleaved', 'mrope_section'}
+(APIServer pid=1161969) [transformers] The `use_fast` parameter is deprecated and will be removed in a future version. Use `backend="torchvision"` instead of `use_fast=True`, or `backend="pil"` instead of `use_fast=False`.
+(APIServer pid=1161969) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_interleaved', 'mrope_section'}
+(APIServer pid=1161969) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_interleaved', 'mrope_section'}
+INFO 10-08 05:03:29 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-08 05:03:29 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-08 05:03:29 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 10-08 05:03:29 [__init__.py:272] Platform plugin ascend is activated
+INFO 10-08 05:03:29 [platform.py:71] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=1.
+INFO 10-08 05:03:34 [importing.py:98] Triton not installed or not compatible; certain GPU-related functions will not be available.
+W1008 05:03:36.559000 1163332 torch/_library/triton.py:53] Triton not available, find_triton_kernels = []
+INFO 10-08 05:03:36 [patch_indexer_kv_dtype.py:102] Patched AttentionConfig.indexer_kv_dtype to accept 'int8' (DeepSeek V4 Ascend indexer K cache dtype).
+INFO 10-08 05:03:36 [patch_kv_cache_dtype.py:115] Patched CacheConfig.cache_dtype to accept 'int8' (DeepSeek V4 Ascend MLA KV cache dtype).
+INFO 10-08 05:03:36 [ascend_config.py:334] Dynamic EPLB is False
+INFO 10-08 05:03:36 [ascend_config.py:335] The number of redundant experts is 0
+INFO 10-08 05:03:36 [ascend_config.py:739] FlashComm1 is disabled. Using flashinfer_all2allv as the all2all backend.
+(EngineCore pid=1163332) 2026-10-08 05:03:36,871 - 1163332 - ServiceProfiler - INFO - VLLM_USE_V1 not set, auto-detected via vLLM 0.1.dev1+g3ab5dda29.empty: default 0
+(EngineCore pid=1163332) INFO 10-08 05:03:36 [__init__.py:112] Registered model loader `<class 'vllm_ascend.model_loader.netloader.netloader.ModelNetLoaderElastic'>` with load format `netloader`
+(EngineCore pid=1163332) INFO 10-08 05:03:36 [__init__.py:112] Registered model loader `<class 'vllm_ascend.model_loader.rfork.rfork_loader.RForkModelLoader'>` with load format `rfork`
+(EngineCore pid=1163332) INFO 10-08 05:03:36 [core.py:123] Initializing a V1 LLM engine (v0.1.dev1+g3ab5dda29) with config: model='/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i', speculative_config=SpeculativeConfig(method='mtp', model='/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i', num_spec_tokens=2), tokenizer='/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=False, dtype=torch.float16, max_seq_len=262144, download_dir=None, load_format=auto, tensor_parallel_size=4, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=True, quantization=None, quantization_config=None, enforce_eager=False, enable_return_routed_experts=False, kv_cache_dtype=auto, device_config=npu, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='qwen3', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, per_request_spec_decode_metrics='none', kv_cache_metrics=False, kv_cache_metrics_sample=0.01, cudagraph_metrics=False, enable_layerwise_nvtx_tracing=False, enable_mfu_metrics=False, enable_mm_processor_stats=False, enable_logging_iteration_details=False, jit_monitor_mode='warn', jit_monitor_verbose=False), seed=0, served_model_name=qwen38-flashnext-latest-gate, enable_prefix_caching=True, enable_chunked_prefill=True, pooler_config=None, compilation_config={'mode': <CompilationMode.NONE: 0>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'vllm_ascend.compilation.compiler_interface.AscendCompiler', 'custom_ops': ['all'], 'ir_enable_torch_wrap': False, 'splitting_ops': [], 'compile_mm_encoder': False, 'cudagraph_mm_encoder': False, 'encoder_cudagraph_token_budgets': [], 'encoder_cudagraph_max_vision_items_per_batch': 0, 'encoder_cudagraph_max_frames_per_batch': None, 'compile_sizes': [], 'compile_ranges_endpoints': [1024], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.FULL_DECODE_ONLY: (2, 0)>, 'cudagraph_num_of_warmups': 1, 'cudagraph_capture_sizes': [3, 9], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': True, 'fuse_act_quant': True, 'fuse_attn_quant': False, 'enable_sp': False, 'fuse_gemm_comms': False, 'fuse_allreduce_rms': False, 'enable_qk_norm_rope_fusion': False, 'fuse_rope_kvcache_cat_mla': False, 'fuse_act_padding': False, 'fuse_qk_norm_rope_kvcache': False}, 'max_cudagraph_capture_size': 9, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': False, 'static_all_moe_layers': []}, kernel_config=KernelConfig(ir_op_priority=IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['native']), enable_flashinfer_autotune=True, enable_cutedsl_warmup=True, enable_jit_warmup=True, moe_backend='auto', sparse_indexer_topk_backend='auto', linear_backend='auto', linear_backend_per_quant=None)
+(EngineCore pid=1163332) INFO 10-08 05:03:36 [multiproc_executor.py:153] DP group leader: node_rank=0, node_rank_within_dp=0, master_addr=127.0.0.1, mq_connect_ip=192.168.53.187 (local), world_size=4, local_world_size=4
+(APIServer pid=1161969) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_interleaved', 'mrope_section'}
+(APIServer pid=1161969) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_interleaved', 'mrope_section'}
+INFO 10-08 05:03:41 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-08 05:03:41 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-08 05:03:41 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 10-08 05:03:41 [__init__.py:272] Platform plugin ascend is activated
+INFO 10-08 05:03:41 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-08 05:03:41 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-08 05:03:41 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 10-08 05:03:41 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-08 05:03:41 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-08 05:03:41 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 10-08 05:03:41 [__init__.py:272] Platform plugin ascend is activated
+INFO 10-08 05:03:41 [__init__.py:272] Platform plugin ascend is activated
+INFO 10-08 05:03:41 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-08 05:03:41 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-08 05:03:41 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 10-08 05:03:41 [__init__.py:272] Platform plugin ascend is activated
+INFO 10-08 05:03:41 [platform.py:71] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=1.
+INFO 10-08 05:03:41 [platform.py:71] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=1.
+INFO 10-08 05:03:41 [platform.py:71] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=1.
+INFO 10-08 05:03:41 [platform.py:71] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=1.
+INFO 10-08 05:03:46 [importing.py:98] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 10-08 05:03:46 [importing.py:98] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 10-08 05:03:46 [importing.py:98] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 10-08 05:03:46 [importing.py:98] Triton not installed or not compatible; certain GPU-related functions will not be available.
+W1008 05:03:48.388000 1163953 torch/_library/triton.py:53] Triton not available, find_triton_kernels = []
+W1008 05:03:48.468000 1163952 torch/_library/triton.py:53] Triton not available, find_triton_kernels = []
+W1008 05:03:48.517000 1163951 torch/_library/triton.py:53] Triton not available, find_triton_kernels = []
+INFO 10-08 05:03:48 [patch_indexer_kv_dtype.py:102] Patched AttentionConfig.indexer_kv_dtype to accept 'int8' (DeepSeek V4 Ascend indexer K cache dtype).
+INFO 10-08 05:03:48 [patch_kv_cache_dtype.py:115] Patched CacheConfig.cache_dtype to accept 'int8' (DeepSeek V4 Ascend MLA KV cache dtype).
+W1008 05:03:48.563000 1163954 torch/_library/triton.py:53] Triton not available, find_triton_kernels = []
+2026-10-08 05:03:48,586 - 1163953 - ServiceProfiler - INFO - VLLM_USE_V1 not set, auto-detected via vLLM 0.1.dev1+g3ab5dda29.empty: default 0
+INFO 10-08 05:03:48 [__init__.py:112] Registered model loader `<class 'vllm_ascend.model_loader.netloader.netloader.ModelNetLoaderElastic'>` with load format `netloader`
+INFO 10-08 05:03:48 [patch_indexer_kv_dtype.py:102] Patched AttentionConfig.indexer_kv_dtype to accept 'int8' (DeepSeek V4 Ascend indexer K cache dtype).
+INFO 10-08 05:03:48 [__init__.py:112] Registered model loader `<class 'vllm_ascend.model_loader.rfork.rfork_loader.RForkModelLoader'>` with load format `rfork`
+INFO 10-08 05:03:48 [patch_kv_cache_dtype.py:115] Patched CacheConfig.cache_dtype to accept 'int8' (DeepSeek V4 Ascend MLA KV cache dtype).
+2026-10-08 05:03:48,664 - 1163952 - ServiceProfiler - INFO - VLLM_USE_V1 not set, auto-detected via vLLM 0.1.dev1+g3ab5dda29.empty: default 0
+INFO 10-08 05:03:48 [patch_indexer_kv_dtype.py:102] Patched AttentionConfig.indexer_kv_dtype to accept 'int8' (DeepSeek V4 Ascend indexer K cache dtype).
+INFO 10-08 05:03:48 [patch_kv_cache_dtype.py:115] Patched CacheConfig.cache_dtype to accept 'int8' (DeepSeek V4 Ascend MLA KV cache dtype).
+WARNING 10-08 05:03:48 [indexer_topk.py:29] Failed to import the DeepSelect extension (vllm._deepselect_C): No module named 'vllm._deepselect_C'
+INFO 10-08 05:03:48 [__init__.py:112] Registered model loader `<class 'vllm_ascend.model_loader.netloader.netloader.ModelNetLoaderElastic'>` with load format `netloader`
+2026-10-08 05:03:48,705 - 1163951 - ServiceProfiler - INFO - VLLM_USE_V1 not set, auto-detected via vLLM 0.1.dev1+g3ab5dda29.empty: default 0
+INFO 10-08 05:03:48 [__init__.py:112] Registered model loader `<class 'vllm_ascend.model_loader.rfork.rfork_loader.RForkModelLoader'>` with load format `rfork`
+INFO 10-08 05:03:48 [__init__.py:112] Registered model loader `<class 'vllm_ascend.model_loader.netloader.netloader.ModelNetLoaderElastic'>` with load format `netloader`
+INFO 10-08 05:03:48 [patch_indexer_kv_dtype.py:102] Patched AttentionConfig.indexer_kv_dtype to accept 'int8' (DeepSeek V4 Ascend indexer K cache dtype).
+INFO 10-08 05:03:48 [patch_kv_cache_dtype.py:115] Patched CacheConfig.cache_dtype to accept 'int8' (DeepSeek V4 Ascend MLA KV cache dtype).
+INFO 10-08 05:03:48 [__init__.py:112] Registered model loader `<class 'vllm_ascend.model_loader.rfork.rfork_loader.RForkModelLoader'>` with load format `rfork`
+WARNING 10-08 05:03:48 [indexer_topk.py:29] Failed to import the DeepSelect extension (vllm._deepselect_C): No module named 'vllm._deepselect_C'
+2026-10-08 05:03:48,765 - 1163954 - ServiceProfiler - INFO - VLLM_USE_V1 not set, auto-detected via vLLM 0.1.dev1+g3ab5dda29.empty: default 0
+INFO 10-08 05:03:48 [__init__.py:112] Registered model loader `<class 'vllm_ascend.model_loader.netloader.netloader.ModelNetLoaderElastic'>` with load format `netloader`
+WARNING 10-08 05:03:48 [indexer_topk.py:29] Failed to import the DeepSelect extension (vllm._deepselect_C): No module named 'vllm._deepselect_C'
+INFO 10-08 05:03:48 [__init__.py:112] Registered model loader `<class 'vllm_ascend.model_loader.rfork.rfork_loader.RForkModelLoader'>` with load format `rfork`
+WARNING 10-08 05:03:48 [indexer_topk.py:29] Failed to import the DeepSelect extension (vllm._deepselect_C): No module named 'vllm._deepselect_C'
+INFO 10-08 05:03:49 [worker_base.py:306] Injected <class 'tools.qwen4exp.resident_worker.QwenResidentExtension'> into <class 'vllm_ascend._310p.worker_310p.NPUWorker310'> for extended collective_rpc calls ['_resident_native_session', '_resident_operator_exists', '_resident_session', '_resident_set_mode', '_resident_wrappers', 'resident_apply', 'resident_capture', 'resident_native_load', 'resident_native_prepare', 'resident_prepare', 'resident_reset', 'resident_status']
+INFO 10-08 05:03:49 [worker_base.py:306] Injected <class 'tools.qwen4exp.resident_worker.QwenResidentExtension'> into <class 'vllm_ascend._310p.worker_310p.NPUWorker310'> for extended collective_rpc calls ['_resident_native_session', '_resident_operator_exists', '_resident_session', '_resident_set_mode', '_resident_wrappers', 'resident_apply', 'resident_capture', 'resident_native_load', 'resident_native_prepare', 'resident_prepare', 'resident_reset', 'resident_status']
+INFO 10-08 05:03:49 [worker_base.py:306] Injected <class 'tools.qwen4exp.resident_worker.QwenResidentExtension'> into <class 'vllm_ascend._310p.worker_310p.NPUWorker310'> for extended collective_rpc calls ['_resident_native_session', '_resident_operator_exists', '_resident_session', '_resident_set_mode', '_resident_wrappers', 'resident_apply', 'resident_capture', 'resident_native_load', 'resident_native_prepare', 'resident_prepare', 'resident_reset', 'resident_status']
+INFO 10-08 05:03:49 [worker_base.py:306] Injected <class 'tools.qwen4exp.resident_worker.QwenResidentExtension'> into <class 'vllm_ascend._310p.worker_310p.NPUWorker310'> for extended collective_rpc calls ['_resident_native_session', '_resident_operator_exists', '_resident_session', '_resident_set_mode', '_resident_wrappers', 'resident_apply', 'resident_capture', 'resident_native_load', 'resident_native_prepare', 'resident_prepare', 'resident_reset', 'resident_status']
+[transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+[transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+[transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+[transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+[transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+[transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+[transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+[transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+[transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+[transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+[transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+[transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+[transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+[transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+[transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+[transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+[transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+[transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+[transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+[transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+(APIServer pid=1161969) INFO 10-08 05:03:50 [base.py:261] Multi-modal warmup completed in 24.975s
+(APIServer pid=1161969) INFO 10-08 05:03:50 [base.py:261] Readonly multi-modal warmup completed in 0.027s
+INFO 10-08 05:03:50 [ascend_config.py:334] Dynamic EPLB is False
+INFO 10-08 05:03:50 [ascend_config.py:335] The number of redundant experts is 0
+INFO 10-08 05:03:50 [ascend_config.py:739] FlashComm1 is disabled. Using flashinfer_all2allv as the all2all backend.
+INFO 10-08 05:03:50 [ascend_config.py:334] Dynamic EPLB is False
+INFO 10-08 05:03:50 [ascend_config.py:335] The number of redundant experts is 0
+INFO 10-08 05:03:50 [ascend_config.py:739] FlashComm1 is disabled. Using flashinfer_all2allv as the all2all backend.
+INFO 10-08 05:03:51 [ascend_config.py:334] Dynamic EPLB is False
+INFO 10-08 05:03:51 [ascend_config.py:335] The number of redundant experts is 0
+INFO 10-08 05:03:51 [ascend_config.py:739] FlashComm1 is disabled. Using flashinfer_all2allv as the all2all backend.
+WARNING 10-08 05:03:51 [patch_use_v2_model_runner.py:35] Qwen4Exp MTP on 310P uses model runner v1 for speculative decoding.
+WARNING 10-08 05:03:51 [patch_use_v2_model_runner.py:35] Qwen4Exp MTP on 310P uses model runner v1 for speculative decoding.
+INFO 10-08 05:03:51 [ascend_config.py:334] Dynamic EPLB is False
+INFO 10-08 05:03:51 [ascend_config.py:335] The number of redundant experts is 0
+INFO 10-08 05:03:51 [ascend_config.py:739] FlashComm1 is disabled. Using flashinfer_all2allv as the all2all backend.
+WARNING 10-08 05:03:51 [patch_use_v2_model_runner.py:35] Qwen4Exp MTP on 310P uses model runner v1 for speculative decoding.
+WARNING 10-08 05:03:51 [patch_use_v2_model_runner.py:35] Qwen4Exp MTP on 310P uses model runner v1 for speculative decoding.
+(Worker pid=1163953) INFO 10-08 05:03:52 [parallel_state.py:1827] world_size=4 rank=2 local_rank=2 distributed_init_method=file:///tmp/vllm_dist_29a64675281f4424b2ebea04af7969d2 backend=hccl
+(Worker pid=1163951) INFO 10-08 05:03:52 [parallel_state.py:1827] world_size=4 rank=0 local_rank=0 distributed_init_method=file:///tmp/vllm_dist_29a64675281f4424b2ebea04af7969d2 backend=hccl
+(Worker pid=1163952) INFO 10-08 05:03:52 [parallel_state.py:1827] world_size=4 rank=1 local_rank=1 distributed_init_method=file:///tmp/vllm_dist_29a64675281f4424b2ebea04af7969d2 backend=hccl
+(Worker pid=1163954) INFO 10-08 05:03:53 [parallel_state.py:1827] world_size=4 rank=3 local_rank=3 distributed_init_method=file:///tmp/vllm_dist_29a64675281f4424b2ebea04af7969d2 backend=hccl
+(Worker pid=1163951) INFO 10-08 05:03:53 [parallel_state.py:2267] rank 0 in world size 4 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, ETP rank 0, EP rank 0, EPLB rank N/A
+INFO 10-08 05:03:58 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-08 05:03:58 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-08 05:03:58 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 10-08 05:03:58 [__init__.py:272] Platform plugin ascend is activated
+INFO 10-08 05:03:58 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-08 05:03:58 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-08 05:03:58 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 10-08 05:03:58 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-08 05:03:58 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-08 05:03:58 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 10-08 05:03:59 [__init__.py:272] Platform plugin ascend is activated
+INFO 10-08 05:03:59 [__init__.py:272] Platform plugin ascend is activated
+INFO 10-08 05:03:59 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-08 05:03:59 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-08 05:03:59 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 10-08 05:03:59 [__init__.py:272] Platform plugin ascend is activated
+INFO 10-08 05:03:59 [platform.py:71] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=1.
+INFO 10-08 05:03:59 [platform.py:71] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=1.
+INFO 10-08 05:03:59 [platform.py:71] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=1.
+INFO 10-08 05:03:59 [platform.py:71] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=1.
+[rank3]:[W1008 05:04:00.479680366 NPUCachingAllocator.cpp:177] Warning: The current CANN and Soc versions require processing for 32 padding size, with memory allocation. (function operator())
+[rank0]:[W1008 05:04:00.501981228 NPUCachingAllocator.cpp:177] Warning: The current CANN and Soc versions require processing for 32 padding size, with memory allocation. (function operator())
+[rank2]:[W1008 05:04:00.782982583 NPUCachingAllocator.cpp:177] Warning: The current CANN and Soc versions require processing for 32 padding size, with memory allocation. (function operator())
+(Worker pid=1163954) WARNING 10-08 05:04:00 [__init__.py:205] min_p and logit_bias parameters won't work with speculative decoding.
+(Worker pid=1163954) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+(Worker pid=1163954) (Worker pid=1163951) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+WARNING 10-08 05:04:00 [__init__.py:205] min_p and logit_bias parameters won't work with speculative decoding.
+(Worker pid=1163951) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+(Worker pid=1163951) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+[rank1]:[W1008 05:04:00.011588264 NPUCachingAllocator.cpp:177] Warning: The current CANN and Soc versions require processing for 32 padding size, with memory allocation. (function operator())
+(Worker pid=1163953) WARNING 10-08 05:04:00 [__init__.py:205] min_p and logit_bias parameters won't work with speculative decoding.
+(Worker pid=1163953) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+(Worker pid=1163953) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+(Worker pid=1163952) WARNING 10-08 05:04:01 [__init__.py:205] min_p and logit_bias parameters won't work with speculative decoding.
+(Worker pid=1163952) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+(Worker pid=1163952) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+(Worker pid=1163954) [transformers] The `use_fast` parameter is deprecated and will be removed in a future version. Use `backend="torchvision"` instead of `use_fast=True`, or `backend="pil"` instead of `use_fast=False`.
+(Worker pid=1163952) [transformers] The `use_fast` parameter is deprecated and will be removed in a future version. Use `backend="torchvision"` instead of `use_fast=True`, or `backend="pil"` instead of `use_fast=False`.
+(Worker pid=1163951) [transformers] The `use_fast` parameter is deprecated and will be removed in a future version. Use `backend="torchvision"` instead of `use_fast=True`, or `backend="pil"` instead of `use_fast=False`.
+(Worker pid=1163953) [transformers] The `use_fast` parameter is deprecated and will be removed in a future version. Use `backend="torchvision"` instead of `use_fast=True`, or `backend="pil"` instead of `use_fast=False`.
+(Worker pid=1163954) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+(Worker pid=1163954) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+(Worker pid=1163952) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+(Worker pid=1163952) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+(Worker pid=1163951) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+(Worker pid=1163951) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+(Worker pid=1163953) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+(Worker pid=1163953) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+(Worker pid=1163954) INFO 10-08 05:04:10 [platform.py:1455] FA3 will not be enabled when rl_config.enable_training_consistency is false. Note that Ascend NPU will use its registered plugin backend instead.
+(Worker pid=1163954) WARNING 10-08 05:04:10 [__init__.py:205] min_p and logit_bias parameters won't work with speculative decoding.
+(Worker_TP3_EP3 pid=1163954) INFO 10-08 05:04:10 [model_runner_v1.py:4512] Starting to load model /srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i...
+(Worker pid=1163952) INFO 10-08 05:04:10 [platform.py:1455] FA3 will not be enabled when rl_config.enable_training_consistency is false. Note that Ascend NPU will use its registered plugin backend instead.
+(Worker pid=1163952) WARNING 10-08 05:04:10 [__init__.py:205] min_p and logit_bias parameters won't work with speculative decoding.
+(Worker pid=1163951) INFO 10-08 05:04:10 [platform.py:1455] FA3 will not be enabled when rl_config.enable_training_consistency is false. Note that Ascend NPU will use its registered plugin backend instead.
+(Worker pid=1163951) WARNING 10-08 05:04:10 [__init__.py:205] min_p and logit_bias parameters won't work with speculative decoding.
+(Worker_TP1_EP1 pid=1163952) INFO 10-08 05:04:10 [model_runner_v1.py:4512] Starting to load model /srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i...
+(Worker pid=1163951) INFO 10-08 05:04:10 [model_runner_310p.py:326] Weight layout uses FRACTAL_NZ.
+(Worker pid=1163951) INFO 10-08 05:04:10 [worker_310p.py:70] Using NPUWorker310 and NPUModelRunner310.
+(Worker pid=1163951) INFO 10-08 05:04:10 [worker_310p.py:112] Qwen4Exp run-log:
+(Worker pid=1163951) INFO 10-08 05:04:10 [worker_310p.py:112] Qwen4Exp 310P run log (run_id=qwen4exp-rank0, world_size=4, schema v1)
+(Worker pid=1163951) INFO 10-08 05:04:10 [worker_310p.py:112]   rank 0/4 (chip None, card None)
+(Worker pid=1163951) INFO 10-08 05:04:10 [worker_310p.py:112]   token limits: {'max_model_len': 262144, 'max_num_batched_tokens': 1024, 'max_num_seqs': 3, 'prefill_chunk_size': None}
+(Worker pid=1163951) INFO 10-08 05:04:10 [worker_310p.py:112]   revisions: MISSING
+(Worker pid=1163951) INFO 10-08 05:04:10 [worker_310p.py:112]   topology: MISSING
+(Worker pid=1163951) INFO 10-08 05:04:10 [worker_310p.py:112]   per-rank memory: MISSING
+(Worker pid=1163951) INFO 10-08 05:04:10 [worker_310p.py:112]   PLE metrics: MISSING
+(Worker pid=1163951) INFO 10-08 05:04:10 [worker_310p.py:112]   QSA metrics: MISSING
+(Worker pid=1163951) INFO 10-08 05:04:10 [worker_310p.py:112]   lifecycle events: 0
+(Worker pid=1163951) INFO 10-08 05:04:10 [worker_310p.py:112]   chunk progress records: 0
+(Worker pid=1163951) INFO 10-08 05:04:10 [worker_310p.py:112]   heartbeats: 0
+(Worker pid=1163951) INFO 10-08 05:04:10 [worker_310p.py:112]   MISSING sections: ['revisions', 'topology', 'memory', 'ple_metrics', 'qsa_metrics', 'lifecycle_events']
+(Worker pid=1163951) INFO 10-08 05:04:10 [worker_310p.py:112]   no fatal error recorded
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:04:10 [model_runner_v1.py:4512] Starting to load model /srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i...
+(Worker pid=1163953) INFO 10-08 05:04:10 [platform.py:1455] FA3 will not be enabled when rl_config.enable_training_consistency is false. Note that Ascend NPU will use its registered plugin backend instead.
+(Worker pid=1163953) WARNING 10-08 05:04:10 [__init__.py:205] min_p and logit_bias parameters won't work with speculative decoding.
+(Worker_TP2_EP2 pid=1163953) INFO 10-08 05:04:10 [model_runner_v1.py:4512] Starting to load model /srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i...
+(Worker_TP3_EP3 pid=1163954) INFO 10-08 05:04:10 [w4_backend_policy.py:107] W4 backend=cube_310_int4_a8 activation_quantization=int8_per_group: explicit experimental native INT4 override
+(Worker_TP3_EP3 pid=1163954) INFO 10-08 05:04:11 [platform.py:1455] FA3 will not be enabled when rl_config.enable_training_consistency is false. Note that Ascend NPU will use its registered plugin backend instead.
+(Worker_TP1_EP1 pid=1163952) INFO 10-08 05:04:11 [w4_backend_policy.py:107] W4 backend=cube_310_int4_a8 activation_quantization=int8_per_group: explicit experimental native INT4 override
+(Worker_TP1_EP1 pid=1163952) INFO 10-08 05:04:11 [platform.py:1455] FA3 will not be enabled when rl_config.enable_training_consistency is false. Note that Ascend NPU will use its registered plugin backend instead.
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:04:11 [interface.py:414] Using default backend AttentionBackendEnum.TORCH_SDPA for vit attention
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:04:11 [mm_encoder_attention.py:372] Using AttentionBackendEnum.TORCH_SDPA for MMEncoderAttention.
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:04:11 [w4_backend_policy.py:107] W4 backend=cube_310_int4_a8 activation_quantization=int8_per_group: explicit experimental native INT4 override
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:04:11 [model.py:1391] QSA selection policies: prefill=fast_topk, decode=stable_argsort. The bounded prefill policy avoids full-width stable-sort workspace.
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:04:11 [platform.py:1455] FA3 will not be enabled when rl_config.enable_training_consistency is false. Note that Ascend NPU will use its registered plugin backend instead.
+(Worker_TP2_EP2 pid=1163953) INFO 10-08 05:04:11 [w4_backend_policy.py:107] W4 backend=cube_310_int4_a8 activation_quantization=int8_per_group: explicit experimental native INT4 override
+(Worker_TP2_EP2 pid=1163953) INFO 10-08 05:04:11 [platform.py:1455] FA3 will not be enabled when rl_config.enable_training_consistency is false. Note that Ascend NPU will use its registered plugin backend instead.
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:04:11 [default_loader.py:406] EP weight filter: ep_size=4, ep_rank=0, loading 128/512 experts
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:04:12 [weight_utils.py:895] Filesystem type for checkpoints: EXT4. Checkpoint size: 169.19 GiB. Available RAM: 194.99 GiB.
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:04:12 [weight_utils.py:918] Auto-prefetch is disabled because the filesystem (EXT4) is not a recognized network FS (NFS/Lustre). If you want to force prefetching, start vLLM with --safetensors-load-strategy=prefetch.
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   0% Completed | 0/1610 [00:00<?, ?it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   0% Completed | 1/1610 [00:01<42:27,  1.58s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   0% Completed | 2/1610 [00:03<42:55,  1.60s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   0% Completed | 3/1610 [00:04<39:18,  1.47s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   0% Completed | 4/1610 [00:08<1:04:07,  2.40s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   0% Completed | 5/1610 [00:09<55:50,  2.09s/it]
+(Worker_TP0_EP0 pid=1163951)   Loading safetensors checkpoint shards:   0% Completed | 6/1610 [00:11<50:32,  1.89s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   0% Completed | 7/1610 [00:12<46:33,  1.74s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   0% Completed | 8/1610 [00:14<43:39,  1.64s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 9/1610 [00:15<41:36,  1.56s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 10/1610 [00:17<40:59,  1.54s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 11/1610 [00:18<40:06,  1.50s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 12/1610 [00:20<43:00,  1.61s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 13/1610 [00:21<41:59,  1.58s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 14/1610 [00:23<40:45,  1.53s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 15/1610 [00:24<40:07,  1.51s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 16/1610 [00:26<39:42,  1.49s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 17/1610 [00:27<39:31,  1.49s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 18/1610 [00:29<39:12,  1.48s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 19/1610 [00:30<38:50,  1.46s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 20/1610 [00:32<38:41,  1.46s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 21/1610 [00:33<38:34,  1.46s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 22/1610 [00:34<38:28,  1.45s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 23/1610 [00:36<38:13,  1.45s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 24/1610 [00:37<38:34,  1.46s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 25/1610 [00:39<38:32,  1.46s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 26/1610 [00:40<38:23,  1.45s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 27/1610 [00:42<38:27,  1.46s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 28/1610 [00:43<38:22,  1.46s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 29/1610 [00:45<38:18,  1.45s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 30/1610 [00:46<38:04,  1.45s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 31/1610 [00:48<38:26,  1.46s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 32/1610 [00:49<37:47,  1.44s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 33/1610 [00:50<36:53,  1.40s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 34/1610 [00:52<36:20,  1.38s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 35/1610 [00:53<36:02,  1.37s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 36/1610 [00:54<35:46,  1.36s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 37/1610 [00:56<35:48,  1.37s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 38/1610 [00:57<36:05,  1.38s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 39/1610 [00:58<35:55,  1.37s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 40/1610 [01:00<36:03,  1.38s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   3% Completed | 41/1610 [01:01<36:00,  1.38s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   3% Completed | 42/1610 [01:03<36:54,  1.41s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   3% Completed | 43/1610 [01:04<37:23,  1.43s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   3% Completed | 44/1610 [01:06<38:08,  1.46s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   3% Completed | 45/1610 [01:07<38:11,  1.46s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   3% Completed | 46/1610 [01:09<38:16,  1.47s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   3% Completed | 47/1610 [01:11<42:28,  1.63s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   3% Completed | 48/1610 [01:12<41:07,  1.58s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   3% Completed | 49/1610 [01:13<31:57,  1.23s/it]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   3% Completed | 50/1610 [01:13<25:41,  1.01it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   4% Completed | 64/1610 [01:13<03:48,  6.78it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   6% Completed | 90/1610 [01:13<01:12, 20.94it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  12% Completed | 189/1610 [01:13<00:15, 92.65it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  16% Completed | 256/1610 [01:13<00:09, 147.80it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  19% Completed | 303/1610 [01:13<00:07, 175.97it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  21% Completed | 345/1610 [01:14<00:06, 194.01it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  24% Completed | 383/1610 [01:14<00:05, 213.41it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  26% Completed | 418/1610 [01:14<00:05, 230.71it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  28% Completed | 452/1610 [01:14<00:04, 244.26it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  30% Completed | 485/1610 [01:14<00:04, 259.51it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  32% Completed | 517/1610 [01:14<00:04, 261.11it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  34% Completed | 548/1610 [01:14<00:04, 259.97it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  36% Completed | 578/1610 [01:14<00:03, 268.49it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  38% Completed | 608/1610 [01:15<00:03, 275.30it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  40% Completed | 638/1610 [01:15<00:03, 275.29it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  42% Completed | 670/1610 [01:15<00:03, 287.12it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  43% Completed | 700/1610 [01:15<00:03, 275.15it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  45% Completed | 731/1610 [01:15<00:03, 282.46it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  48% Completed | 765/1610 [01:15<00:02, 295.85it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  49% Completed | 796/1610 [01:15<00:02, 281.96it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  51% Completed | 827/1610 [01:15<00:02, 288.03it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  53% Completed | 860/1610 [01:15<00:02, 290.37it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  55% Completed | 890/1610 [01:16<00:02, 285.20it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  57% Completed | 919/1610 [01:16<00:02, 276.72it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  59% Completed | 949/1610 [01:16<00:02, 279.81it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  61% Completed | 981/1610 [01:16<00:02, 288.11it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  63% Completed | 1010/1610 [01:16<00:02, 268.52it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  65% Completed | 1039/1610 [01:16<00:02, 267.76it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  67% Completed | 1071/1610 [01:16<00:01, 281.48it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  68% Completed | 1100/1610 [01:16<00:01, 281.25it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  70% Completed | 1129/1610 [01:16<00:01, 267.86it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  72% Completed | 1159/1610 [01:17<00:01, 276.24it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  74% Completed | 1187/1610 [01:17<00:01, 267.74it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  76% Completed | 1216/1610 [01:17<00:01, 269.80it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  77% Completed | 1246/1610 [01:17<00:01, 271.52it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  82% Completed | 1322/1610 [01:17<00:00, 409.81it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  87% Completed | 1397/1610 [01:17<00:00, 506.67it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  92% Completed | 1478/1610 [01:17<00:00, 589.67it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  97% Completed | 1554/1610 [01:17<00:00, 637.79it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards: 100% Completed | 1610/1610 [01:17<00:00, 20.69it/s]
+(Worker_TP0_EP0 pid=1163951)  
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:05:31 [default_loader.py:430] Loading weights took 79.04 seconds
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:05:31 [model_runner_v1.py:4544] Loading drafter model...
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:05:31 [kernel.py:416] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['native'])
+(Worker_TP0_EP0 pid=1163951) WARNING 10-08 05:05:31 [vllm.py:2128] max_num_scheduled_tokens is set to 1024 based on the speculative decoding settings. This may lead to suboptimal performance. Consider increasing max_num_batched_tokens to accommodate the additional draft token slots, or decrease num_speculative_tokens.
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:05:31 [utils.py:224] No quantization signature detected from model files for "/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i". The model will be loaded as float. To force a quantization method, pass "--quantization <method>" explicitly.
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:05:31 [ascend_config.py:334] Dynamic EPLB is False
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:05:31 [ascend_config.py:335] The number of redundant experts is 0
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:05:31 [platform.py:1432] Set PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:05:31 [compilation.py:336] Enabled custom fusions: norm_quant, act_quant
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:05:31 [llm_base_proposer.py:368] [spec_decode/base] Loading draft model: method=mtp, load_format=None, model=/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:05:31 [weight_utils.py:895] Filesystem type for checkpoints: EXT4. Checkpoint size: 169.19 GiB. Available RAM: 195.27 GiB.
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   0% Completed | 0/1610 [00:00<?, ?it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   0% Completed | 2/1610 [00:00<02:48,  9.55it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   0% Completed | 3/1610 [00:00<02:51,  9.35it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   0% Completed | 4/1610 [00:00<02:53,  9.25it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   0% Completed | 5/1610 [00:00<02:54,  9.18it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   0% Completed | 6/1610 [00:00<02:53,  9.26it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   0% Completed | 7/1610 [00:00<02:53,  9.26it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   0% Completed | 8/1610 [00:00<02:53,  9.23it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 9/1610 [00:00<02:53,  9.24it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 10/1610 [00:01<02:52,  9.26it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 11/1610 [00:01<02:52,  9.26it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 12/1610 [00:01<02:55,  9.12it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 13/1610 [00:01<02:56,  9.06it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 14/1610 [00:01<02:57,  8.97it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 15/1610 [00:01<02:56,  9.03it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 16/1610 [00:01<02:55,  9.08it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 17/1610 [00:01<02:56,  9.04it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 18/1610 [00:01<02:57,  8.99it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 19/1610 [00:02<02:56,  9.03it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 20/1610 [00:02<02:56,  9.01it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 21/1610 [00:02<02:57,  8.93it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 22/1610 [00:02<02:57,  8.93it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 23/1610 [00:02<02:56,  9.01it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   1% Completed | 24/1610 [00:02<02:54,  9.09it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 25/1610 [00:02<02:53,  9.13it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 26/1610 [00:02<02:51,  9.22it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 27/1610 [00:02<02:52,  9.16it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 28/1610 [00:03<02:54,  9.08it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 29/1610 [00:03<02:52,  9.17it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 30/1610 [00:03<02:52,  9.18it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 31/1610 [00:03<02:52,  9.14it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 32/1610 [00:03<02:52,  9.14it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 33/1610 [00:03<02:52,  9.13it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 34/1610 [00:03<02:53,  9.09it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 35/1610 [00:03<02:54,  9.02it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 36/1610 [00:03<02:56,  8.92it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 37/1610 [00:04<02:55,  8.98it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 38/1610 [00:04<02:54,  8.98it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 39/1610 [00:04<02:53,  9.06it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   2% Completed | 40/1610 [00:04<02:53,  9.06it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   3% Completed | 41/1610 [00:04<02:50,  9.21it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   3% Completed | 42/1610 [00:04<02:47,  9.34it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   3% Completed | 43/1610 [00:04<02:47,  9.36it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   3% Completed | 44/1610 [00:04<02:47,  9.36it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   3% Completed | 45/1610 [00:04<02:48,  9.26it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   3% Completed | 46/1610 [00:05<02:49,  9.23it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   3% Completed | 47/1610 [00:05<02:48,  9.28it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   3% Completed | 48/1610 [00:05<02:48,  9.25it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   3% Completed | 49/1610 [00:05<05:29,  4.73it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:   3% Completed | 50/1610 [00:06<07:32,  3.45it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  51% Completed | 819/1610 [00:06<00:00, 993.71it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards:  98% Completed | 1581/1610 [00:06<00:00, 1986.44it/s]
+(Worker_TP0_EP0 pid=1163951) Loading safetensors checkpoint shards: 100% Completed | 1610/1610 [00:09<00:00, 178.30it/s]
+(Worker_TP0_EP0 pid=1163951)  
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:05:40 [default_loader.py:430] Loading weights took 9.06 seconds
+(Worker_TP0_EP0 pid=1163951) WARNING 10-08 05:05:40 [llm_base_proposer.py:400] Draft model does not support multimodal inputs, falling back to text-only mode
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:05:40 [llm_base_proposer.py:563] [spec_decode/base] Detected MTP model. Sharing target model embedding weights with the draft model.
+.(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:05:41 [llm_base_proposer.py:583] [spec_decode/base] Sharing identical MTP and target LM head weights.
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:05:42 [model_runner_v1.py:4606] Loading model weights took 19.8001 GB
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:05:42 [breakable_cudagraph.py:293] Breakable CUDA graph enabled
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:05:42 [model_runner_v1.py:4692] Model runner load_model total time: 91.81 seconds
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:05:42 [interface.py:635] Setting kv cache block size to 64 for CUSTOM backend.
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:05:42 [interface.py:933] Setting attention block size to 832 tokens to ensure that attention page size is >= mamba page size.
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:05:42 [interface.py:957] Padding mamba page size by 4.92% to ensure that mamba page size and attention page size are exactly equal.
+(Worker_TP2_EP2 pid=1163953) INFO 10-08 05:05:42 [model_runner_v1.py:4544] Loading drafter model...
+(Worker_TP2_EP2 pid=1163953) INFO 10-08 05:05:42 [kernel.py:416] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['native'])
+(Worker_TP2_EP2 pid=1163953) INFO 10-08 05:05:42 [utils.py:224] No quantization signature detected from model files for "/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i". The model will be loaded as float. To force a quantization method, pass "--quantization <method>" explicitly.
+(Worker_TP2_EP2 pid=1163953) INFO 10-08 05:05:42 [ascend_config.py:334] Dynamic EPLB is False
+(Worker_TP2_EP2 pid=1163953) INFO 10-08 05:05:42 [ascend_config.py:335] The number of redundant experts is 0
+(Worker_TP2_EP2 pid=1163953) INFO 10-08 05:05:42 [platform.py:1432] Set PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+(Worker_TP2_EP2 pid=1163953) INFO 10-08 05:05:42 [llm_base_proposer.py:368] [spec_decode/base] Loading draft model: method=mtp, load_format=None, model=/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i
+(Worker_TP2_EP2 pid=1163953) WARNING 10-08 05:05:52 [llm_base_proposer.py:400] Draft model does not support multimodal inputs, falling back to text-only mode
+(Worker_TP2_EP2 pid=1163953) INFO 10-08 05:05:52 [llm_base_proposer.py:563] [spec_decode/base] Detected MTP model. Sharing target model embedding weights with the draft model.
+.(Worker_TP2_EP2 pid=1163953) INFO 10-08 05:05:52 [llm_base_proposer.py:583] [spec_decode/base] Sharing identical MTP and target LM head weights.
+(Worker_TP2_EP2 pid=1163953) INFO 10-08 05:05:53 [model_runner_v1.py:4606] Loading model weights took 19.8001 GB
+(Worker_TP2_EP2 pid=1163953) INFO 10-08 05:05:53 [model_runner_v1.py:4692] Model runner load_model total time: 102.85 seconds
+(Worker_TP2_EP2 pid=1163953) INFO 10-08 05:05:53 [interface.py:635] Setting kv cache block size to 64 for CUSTOM backend.
+(Worker_TP2_EP2 pid=1163953) INFO 10-08 05:05:53 [interface.py:933] Setting attention block size to 832 tokens to ensure that attention page size is >= mamba page size.
+(Worker_TP2_EP2 pid=1163953) INFO 10-08 05:05:53 [interface.py:957] Padding mamba page size by 4.92% to ensure that mamba page size and attention page size are exactly equal.
+(Worker_TP1_EP1 pid=1163952) INFO 10-08 05:06:01 [model_runner_v1.py:4544] Loading drafter model...
+(Worker_TP1_EP1 pid=1163952) INFO 10-08 05:06:01 [kernel.py:416] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['native'])
+(Worker_TP1_EP1 pid=1163952) INFO 10-08 05:06:01 [utils.py:224] No quantization signature detected from model files for "/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i". The model will be loaded as float. To force a quantization method, pass "--quantization <method>" explicitly.
+(Worker_TP1_EP1 pid=1163952) INFO 10-08 05:06:01 [ascend_config.py:334] Dynamic EPLB is False
+(Worker_TP1_EP1 pid=1163952) INFO 10-08 05:06:01 [ascend_config.py:335] The number of redundant experts is 0
+(Worker_TP1_EP1 pid=1163952) INFO 10-08 05:06:01 [platform.py:1432] Set PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+(Worker_TP1_EP1 pid=1163952) INFO 10-08 05:06:01 [llm_base_proposer.py:368] [spec_decode/base] Loading draft model: method=mtp, load_format=None, model=/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i
+(Worker_TP3_EP3 pid=1163954) INFO 10-08 05:06:01 [model_runner_v1.py:4544] Loading drafter model...
+(Worker_TP3_EP3 pid=1163954) INFO 10-08 05:06:01 [kernel.py:416] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['native'])
+(Worker_TP3_EP3 pid=1163954) INFO 10-08 05:06:01 [utils.py:224] No quantization signature detected from model files for "/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i". The model will be loaded as float. To force a quantization method, pass "--quantization <method>" explicitly.
+(Worker_TP3_EP3 pid=1163954) INFO 10-08 05:06:01 [ascend_config.py:334] Dynamic EPLB is False
+(Worker_TP3_EP3 pid=1163954) INFO 10-08 05:06:01 [ascend_config.py:335] The number of redundant experts is 0
+(Worker_TP3_EP3 pid=1163954) INFO 10-08 05:06:01 [platform.py:1432] Set PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+(Worker_TP3_EP3 pid=1163954) INFO 10-08 05:06:01 [llm_base_proposer.py:368] [spec_decode/base] Loading draft model: method=mtp, load_format=None, model=/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i
+(Worker_TP1_EP1 pid=1163952) WARNING 10-08 05:06:11 [llm_base_proposer.py:400] Draft model does not support multimodal inputs, falling back to text-only mode
+(Worker_TP1_EP1 pid=1163952) INFO 10-08 05:06:11 [llm_base_proposer.py:563] [spec_decode/base] Detected MTP model. Sharing target model embedding weights with the draft model.
+.(Worker_TP3_EP3 pid=1163954) WARNING 10-08 05:06:11 [llm_base_proposer.py:400] Draft model does not support multimodal inputs, falling back to text-only mode
+(Worker_TP3_EP3 pid=1163954) INFO 10-08 05:06:11 [llm_base_proposer.py:563] [spec_decode/base] Detected MTP model. Sharing target model embedding weights with the draft model.
+.(Worker_TP1_EP1 pid=1163952) INFO 10-08 05:06:11 [llm_base_proposer.py:583] [spec_decode/base] Sharing identical MTP and target LM head weights.
+(Worker_TP3_EP3 pid=1163954) INFO 10-08 05:06:11 [llm_base_proposer.py:583] [spec_decode/base] Sharing identical MTP and target LM head weights.
+(Worker_TP1_EP1 pid=1163952) INFO 10-08 05:06:12 [model_runner_v1.py:4606] Loading model weights took 19.8001 GB
+(Worker_TP1_EP1 pid=1163952) INFO 10-08 05:06:12 [model_runner_v1.py:4692] Model runner load_model total time: 121.88 seconds
+(Worker_TP1_EP1 pid=1163952) INFO 10-08 05:06:12 [interface.py:635] Setting kv cache block size to 64 for CUSTOM backend.
+(Worker_TP1_EP1 pid=1163952) INFO 10-08 05:06:12 [interface.py:933] Setting attention block size to 832 tokens to ensure that attention page size is >= mamba page size.
+(Worker_TP1_EP1 pid=1163952) INFO 10-08 05:06:12 [interface.py:957] Padding mamba page size by 4.92% to ensure that mamba page size and attention page size are exactly equal.
+(Worker_TP3_EP3 pid=1163954) INFO 10-08 05:06:12 [model_runner_v1.py:4606] Loading model weights took 19.8001 GB
+(Worker_TP3_EP3 pid=1163954) INFO 10-08 05:06:12 [model_runner_v1.py:4692] Model runner load_model total time: 122.33 seconds
+(Worker_TP3_EP3 pid=1163954) INFO 10-08 05:06:12 [interface.py:635] Setting kv cache block size to 64 for CUSTOM backend.
+(Worker_TP3_EP3 pid=1163954) INFO 10-08 05:06:12 [interface.py:933] Setting attention block size to 832 tokens to ensure that attention page size is >= mamba page size.
+(Worker_TP3_EP3 pid=1163954) INFO 10-08 05:06:12 [interface.py:957] Padding mamba page size by 4.92% to ensure that mamba page size and attention page size are exactly equal.
+(EngineCore pid=1163332) INFO 10-08 05:06:12 [utils.py:320] Using LBNHC KV cache layout.
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:06:13 [gpu_model_runner.py:6496] Encoder cache will be initialized with a budget of 1024 tokens, and profiled with 1 image items of the maximum feature size.
+..(Worker_TP1_EP1 pid=1163952) /srv/ai/venvs/qwen38-w4-test-ce1862/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+(Worker_TP1_EP1 pid=1163952)   return func(*args, **kwargs)
+(Worker_TP2_EP2 pid=1163953) /srv/ai/venvs/qwen38-w4-test-ce1862/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+(Worker_TP2_EP2 pid=1163953)   return func(*args, **kwargs)
+(Worker_TP0_EP0 pid=1163951) /srv/ai/venvs/qwen38-w4-test-ce1862/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+(Worker_TP0_EP0 pid=1163951)   return func(*args, **kwargs)
+(Worker_TP3_EP3 pid=1163954) /srv/ai/venvs/qwen38-w4-test-ce1862/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+(Worker_TP3_EP3 pid=1163954)   return func(*args, **kwargs)
+(Worker_TP2_EP2 pid=1163953) WARNING 10-08 05:06:31 [kv_cache_utils.py:1556] Add 3 padding layers, may waste at most 8.33% KV cache memory
+(Worker_TP2_EP2 pid=1163953) WARNING 10-08 05:06:31 [kv_cache_utils.py:2206] Speculative decoding (method=mtp) is enabled but no KV cache group could be identified as the draft model's.
+(Worker_TP2_EP2 pid=1163953) INFO 10-08 05:06:31 [worker.py:774] Reserved 1870921728 bytes for the compact Mamba state pool.
+(Worker_TP2_EP2 pid=1163953) INFO 10-08 05:06:31 [worker.py:783] Compact prefix KV budget: 1830400 physical attention bytes/block, 10556416 planner bytes/block, 8004 blocks within 14652207906 physical bytes.
+(Worker_TP3_EP3 pid=1163954) WARNING 10-08 05:06:31 [kv_cache_utils.py:1556] Add 3 padding layers, may waste at most 8.33% KV cache memory
+(Worker_TP3_EP3 pid=1163954) WARNING 10-08 05:06:31 [kv_cache_utils.py:2206] Speculative decoding (method=mtp) is enabled but no KV cache group could be identified as the draft model's.
+(Worker_TP3_EP3 pid=1163954) INFO 10-08 05:06:31 [worker.py:774] Reserved 1870921728 bytes for the compact Mamba state pool.
+(Worker_TP3_EP3 pid=1163954) INFO 10-08 05:06:31 [worker.py:783] Compact prefix KV budget: 1830400 physical attention bytes/block, 10556416 planner bytes/block, 7887 blocks within 14437810991 physical bytes.
+(Worker_TP0_EP0 pid=1163951) WARNING 10-08 05:06:31 [kv_cache_utils.py:1556] Add 3 padding layers, may waste at most 8.33% KV cache memory
+(Worker_TP0_EP0 pid=1163951) WARNING 10-08 05:06:31 [kv_cache_utils.py:2206] Speculative decoding (method=mtp) is enabled but no KV cache group could be identified as the draft model's.
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:06:31 [worker.py:774] Reserved 1870921728 bytes for the compact Mamba state pool.
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:06:31 [worker.py:783] Compact prefix KV budget: 1830400 physical attention bytes/block, 10556416 planner bytes/block, 8044 blocks within 14724576034 physical bytes.
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:06:31 [worker_310p.py:226] Available KV cache memory: 79.08 GiB (70% of profiled headroom, rest reserved for workspace)
+(Worker_TP1_EP1 pid=1163952) WARNING 10-08 05:06:31 [kv_cache_utils.py:1556] Add 3 padding layers, may waste at most 8.33% KV cache memory
+(Worker_TP1_EP1 pid=1163952) WARNING 10-08 05:06:31 [kv_cache_utils.py:2206] Speculative decoding (method=mtp) is enabled but no KV cache group could be identified as the draft model's.
+(Worker_TP1_EP1 pid=1163952) INFO 10-08 05:06:31 [worker.py:774] Reserved 1870921728 bytes for the compact Mamba state pool.
+(Worker_TP1_EP1 pid=1163952) INFO 10-08 05:06:31 [worker.py:783] Compact prefix KV budget: 1830400 physical attention bytes/block, 10556416 planner bytes/block, 7837 blocks within 14346026184 physical bytes.
+(EngineCore pid=1163332) WARNING 10-08 05:06:31 [kv_cache_utils.py:1556] Add 3 padding layers, may waste at most 8.33% KV cache memory
+(EngineCore pid=1163332) WARNING 10-08 05:06:31 [kv_cache_utils.py:2206] Speculative decoding (method=mtp) is enabled but no KV cache group could be identified as the draft model's.
+(EngineCore pid=1163332) INFO 10-08 05:06:31 [kv_cache_utils.py:2395] NPU KV cache size: 997,292 tokens, Maximum concurrency for 262,144 tokens per request: 3.80x
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:06:31 [gpu_model_runner.py:6883] Rank 0: Torch profiler disabled for CUDA graph capture
+(Worker_TP0_EP0 pid=1163951) Capturing CUDA graphs (decode, FULL):   0%|          | 0/2 [00:00<?, ?it/s]....Capturing CUDA graphs (decode, FULL):  50%|█████     | 1/2 [00:00<00:00,  1.38it/s]Capturing CUDA graphs (decode, FULL): 100%|██████████| 2/2 [00:01<00:00,  1.83it/s]Capturing CUDA graphs (decode, FULL): 100%|██████████| 2/2 [00:01<00:00,  1.74it/s]
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:06:34 [gpu_model_runner.py:6929] Graph capturing finished in 2 secs, took 0.16 GiB
+(Worker_TP2_EP2 pid=1163953) INFO 10-08 05:06:34 [worker.py:993] Free memory on device (45.04/46.15 GiB) on startup. Desired GPU memory utilization is (0.965, 44.53 GiB). Actual usage: 19.8 GiB for weights, 0.8 GiB for peak activation, 0.73 GiB for non-torch memory, 0.16 GiB for NPU graph memory. Replace gpu_memory_utilization with `--kv-cache-memory=24590444154` (22.9 GiB) to fit into requested memory, or `--kv-cache-memory=25134327296` (23.41 GiB) to fully utilize NPU free memory. Current KV cache memory: 78.69 GiB. After warmup: torch reserved memory 40.28 GiB, torch allocated memory 40.18 GiB.
+(Worker_TP2_EP2 pid=1163953) INFO 10-08 05:06:34 [cpu_binding.py:799] CPU binding skipped: non-ARM CPU detected.
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:06:34 [model_runner_310p.py:1301] Prefix Mamba device archive: primary_slots=63, archive_slots=194, checkpoint_bytes=29233152, archive_bytes=5.28 GiB, post_capture_free=9.30 GiB, reserve=4.00 GiB. Host spill starts only after both device tiers fill.
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:06:34 [worker.py:993] Free memory on device (45.14/46.15 GiB) on startup. Desired GPU memory utilization is (0.965, 44.53 GiB). Actual usage: 19.8 GiB for weights, 0.8 GiB for peak activation, 0.73 GiB for non-torch memory, 0.16 GiB for NPU graph memory. Replace gpu_memory_utilization with `--kv-cache-memory=24589657722` (22.9 GiB) to fit into requested memory, or `--kv-cache-memory=25239557632` (23.51 GiB) to fully utilize NPU free memory. Current KV cache memory: 79.08 GiB. After warmup: torch reserved memory 40.36 GiB, torch allocated memory 40.26 GiB.
+(Worker_TP0_EP0 pid=1163951) INFO 10-08 05:06:34 [cpu_binding.py:799] CPU binding skipped: non-ARM CPU detected.
+(Worker_TP1_EP1 pid=1163952) INFO 10-08 05:06:34 [worker.py:993] Free memory on device (44.62/45.67 GiB) on startup. Desired GPU memory utilization is (0.965, 44.07 GiB). Actual usage: 19.8 GiB for weights, 0.8 GiB for peak activation, 0.73 GiB for non-torch memory, 0.16 GiB for NPU graph memory. Replace gpu_memory_utilization with `--kv-cache-memory=24095288094` (22.44 GiB) to fit into requested memory, or `--kv-cache-memory=24680117760` (22.99 GiB) to fully utilize NPU free memory. Current KV cache memory: 77.05 GiB. After warmup: torch reserved memory 39.85 GiB, torch allocated memory 39.75 GiB.
+(Worker_TP1_EP1 pid=1163952) INFO 10-08 05:06:34 [cpu_binding.py:799] CPU binding skipped: non-ARM CPU detected.
+(Worker_TP3_EP3 pid=1163954) INFO 10-08 05:06:34 [worker.py:993] Free memory on device (44.74/45.67 GiB) on startup. Desired GPU memory utilization is (0.965, 44.07 GiB). Actual usage: 19.8 GiB for weights, 0.8 GiB for peak activation, 0.73 GiB for non-torch memory, 0.16 GiB for NPU graph memory. Replace gpu_memory_utilization with `--kv-cache-memory=24094186270` (22.44 GiB) to fit into requested memory, or `--kv-cache-memory=24810178048` (23.11 GiB) to fully utilize NPU free memory. Current KV cache memory: 77.54 GiB. After warmup: torch reserved memory 39.99 GiB, torch allocated memory 39.88 GiB.
+(Worker_TP3_EP3 pid=1163954) INFO 10-08 05:06:34 [cpu_binding.py:799] CPU binding skipped: non-ARM CPU detected.
+(EngineCore pid=1163332) INFO 10-08 05:06:34 [core.py:379] init engine (profile, create kv cache, warmup model) took 21.48 s
+(EngineCore pid=1163332) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+(EngineCore pid=1163332) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+(EngineCore pid=1163332) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+(EngineCore pid=1163332) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+(EngineCore pid=1163332) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+(EngineCore pid=1163332) INFO 10-08 05:06:35 [kv_cache_utils.py:748] kv cache group sizes [128, 128, 128, 128]
+(EngineCore pid=1163332) INFO 10-08 05:06:35 [kv_cache_utils.py:749] kv lcm block sizes 128
+(EngineCore pid=1163332) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+(EngineCore pid=1163332) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+(EngineCore pid=1163332) [transformers] The `use_fast` parameter is deprecated and will be removed in a future version. Use `backend="torchvision"` instead of `use_fast=True`, or `backend="pil"` instead of `use_fast=False`.
+(EngineCore pid=1163332) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+(EngineCore pid=1163332) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_section', 'mrope_interleaved'}
+(EngineCore pid=1163332) WARNING 10-08 05:06:43 [patch_use_v2_model_runner.py:35] Qwen4Exp MTP on 310P uses model runner v1 for speculative decoding.
+(EngineCore pid=1163332) INFO 10-08 05:06:44 [kernel.py:416] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['native'])
+(EngineCore pid=1163332) WARNING 10-08 05:06:44 [vllm.py:2128] max_num_scheduled_tokens is set to 1024 based on the speculative decoding settings. This may lead to suboptimal performance. Consider increasing max_num_batched_tokens to accommodate the additional draft token slots, or decrease num_speculative_tokens.
+(EngineCore pid=1163332) WARNING 10-08 05:06:44 [indexer_topk.py:29] Failed to import the DeepSelect extension (vllm._deepselect_C): No module named 'vllm._deepselect_C'
+(EngineCore pid=1163332) INFO 10-08 05:06:44 [utils.py:224] No quantization signature detected from model files for "/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i". The model will be loaded as float. To force a quantization method, pass "--quantization <method>" explicitly.
+(EngineCore pid=1163332) INFO 10-08 05:06:44 [platform.py:1432] Set PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+(EngineCore pid=1163332) INFO 10-08 05:06:44 [compilation.py:336] Enabled custom fusions: norm_quant, act_quant
+(APIServer pid=1161969) INFO 10-08 05:06:44 [entry.py:135] Supported tasks: ['generate']
+(APIServer pid=1161969) WARNING 10-08 05:06:44 [__init__.py:44] SECURITY WARNING: Development endpoints are enabled! This should NOT be used in production!
+(APIServer pid=1161969) INFO 10-08 05:06:44 [factories.py:76] Scale-out endpoints are disabled. Set --enable-scale-out to enable them.
+(APIServer pid=1161969) INFO 10-08 05:06:44 [parser_manager.py:36] "auto" tool choice has been enabled.
+(APIServer pid=1161969) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_interleaved', 'mrope_section'}
+(APIServer pid=1161969) [transformers] Unrecognized keys in `rope_parameters` for 'rope_type'='default': {'mrope_interleaved', 'mrope_section'}
+(APIServer pid=1161969) INFO 10-08 05:06:45 [hf.py:642] Detected the chat template content format to be 'openai'. You can set `--chat-template-content-format` to override this.
+(APIServer pid=1161969) WARNING 10-08 05:06:45 [model.py:1772] Default vLLM sampling parameters have been overridden by the model's `generation_config.json`: `{'temperature': 1.0, 'top_k': 20, 'top_p': 0.95}`. If this is not intended, please relaunch vLLM instance with `--generation-config vllm`.
+(APIServer pid=1161969) INFO 10-08 05:06:45 [entry.py:139] Starting vLLM server on http://0.0.0.0:8000
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:61] Available routes are:
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /openapi.json, Methods: GET, HEAD
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /docs, Methods: GET, HEAD
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /docs/oauth2-redirect, Methods: GET, HEAD
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /redoc, Methods: GET, HEAD
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /load, Methods: GET
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /version, Methods: GET
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /health, Methods: GET
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /metrics, Methods: GET
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /tokenize, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /detokenize, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /v1/models, Methods: GET
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /ping, Methods: GET
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /ping, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /invocations, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /reset_prefix_cache, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /reset_mm_cache, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /reset_encoder_cache, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /pause, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /resume, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /abort_requests, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /is_paused, Methods: GET
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /init_weight_transfer_engine, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /start_weight_update, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /start_draft_weight_update, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /update_weights, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /finish_weight_update, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /update_weight_version, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /weight_info, Methods: GET
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /get_world_size, Methods: GET
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /collective_rpc, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /server_info, Methods: GET
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /sleep, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /wake_up, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /is_sleeping, Methods: GET
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /v1/chat/completions, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /v1/chat/completions/batch, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /v1/responses, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /v1/responses/{response_id}, Methods: GET
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /v1/responses/{response_id}/cancel, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /v1/completions, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /v1/messages, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /v1/messages/count_tokens, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /generative_scoring, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /scale_elastic_ep, Methods: POST
+(APIServer pid=1161969) INFO 10-08 05:06:45 [launcher.py:70] Route: /is_scaling_elastic_ep, Methods: POST
+(APIServer pid=1161969) INFO:     Started server process [1161969]
+(APIServer pid=1161969) INFO:     Waiting for application startup.
+(APIServer pid=1161969) INFO:     Application startup complete.
+(APIServer pid=1161969) INFO:     192.168.50.211:45712 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+....(APIServer pid=1161969) INFO 10-08 05:08:26 [loggers.py:315] Engine 000: Avg prompt throughput: 2699.6 tokens/s, Avg generation throughput: 5.1 tokens/s, Running: 1 reqs, Waiting: 0 reqs, NPU KV cache usage: 2.8%, Prefix cache hit rate: 0.0%, MM cache hit rate: 0.0%
+(APIServer pid=1161969) INFO 10-08 05:08:26 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.17, Accepted throughput: 0.26 tokens/s, Drafted throughput: 0.45 tokens/s, Accepted: 27 tokens, Drafted: 46 tokens, Per-position acceptance rate: 0.739, 0.435, Avg Draft acceptance rate: 58.7%
+(APIServer pid=1161969) INFO 10-08 05:08:36 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 21.5 tokens/s, Running: 1 reqs, Waiting: 0 reqs, NPU KV cache usage: 2.8%, Prefix cache hit rate: 0.0%, MM cache hit rate: 0.0%
+(APIServer pid=1161969) INFO 10-08 05:08:36 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.22, Accepted throughput: 11.80 tokens/s, Drafted throughput: 19.40 tokens/s, Accepted: 118 tokens, Drafted: 194 tokens, Per-position acceptance rate: 0.732, 0.485, Avg Draft acceptance rate: 60.8%
+(APIServer pid=1161969) INFO 10-08 05:08:36 [request_timing.py:50] Engine 000 request chatcmpl-833f3146f88efc6a (stop): prompt 26997 computed + 0 cached in 77632.5 ms (2.9 ms/tok, 347.8 effective tok/s); decode 286 tokens, 285 gaps in 13135.7 ms (46.1 ms/tok, 21.7 tok/s); queue 0.0 ms; total 90886.4 ms
+(APIServer pid=1161969) INFO:     192.168.50.211:45712 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=1161969) INFO 10-08 05:08:46 [loggers.py:315] Engine 000: Avg prompt throughput: 65.5 tokens/s, Avg generation throughput: 15.4 tokens/s, Running: 1 reqs, Waiting: 0 reqs, NPU KV cache usage: 2.9%, Prefix cache hit rate: 49.3%, MM cache hit rate: 50.0%
+(APIServer pid=1161969) INFO 10-08 05:08:46 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.31, Accepted throughput: 8.80 tokens/s, Drafted throughput: 13.40 tokens/s, Accepted: 88 tokens, Drafted: 134 tokens, Per-position acceptance rate: 0.806, 0.507, Avg Draft acceptance rate: 65.7%
+(APIServer pid=1161969) INFO 10-08 05:08:56 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 20.8 tokens/s, Running: 1 reqs, Waiting: 0 reqs, NPU KV cache usage: 2.9%, Prefix cache hit rate: 49.3%, MM cache hit rate: 50.0%
+(APIServer pid=1161969) INFO 10-08 05:08:56 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.17, Accepted throughput: 11.20 tokens/s, Drafted throughput: 19.20 tokens/s, Accepted: 112 tokens, Drafted: 192 tokens, Per-position acceptance rate: 0.688, 0.479, Avg Draft acceptance rate: 58.3%
+(APIServer pid=1161969) INFO 10-08 05:09:06 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 20.0 tokens/s, Running: 1 reqs, Waiting: 0 reqs, NPU KV cache usage: 2.9%, Prefix cache hit rate: 49.3%, MM cache hit rate: 50.0%
+(APIServer pid=1161969) INFO 10-08 05:09:06 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.04, Accepted throughput: 10.20 tokens/s, Drafted throughput: 19.60 tokens/s, Accepted: 102 tokens, Drafted: 196 tokens, Per-position acceptance rate: 0.653, 0.388, Avg Draft acceptance rate: 52.0%
+(APIServer pid=1161969) INFO 10-08 05:09:16 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 20.6 tokens/s, Running: 1 reqs, Waiting: 0 reqs, NPU KV cache usage: 2.9%, Prefix cache hit rate: 49.3%, MM cache hit rate: 50.0%
+(APIServer pid=1161969) INFO 10-08 05:09:16 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.15, Accepted throughput: 11.00 tokens/s, Drafted throughput: 19.20 tokens/s, Accepted: 110 tokens, Drafted: 192 tokens, Per-position acceptance rate: 0.698, 0.448, Avg Draft acceptance rate: 57.3%
+(APIServer pid=1161969) INFO 10-08 05:09:20 [request_timing.py:50] Engine 000 request chatcmpl-a90be170c170e599 (stop): prompt 655 computed + 26880 cached in 2882.3 ms (4.4 ms/tok, 227.2 effective tok/s); decode 849 tokens, 848 gaps in 40185.5 ms (47.4 ms/tok, 21.1 tok/s); queue 0.0 ms; total 43124.2 ms
+(APIServer pid=1161969) INFO:     192.168.50.211:45712 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=1161969) INFO:     192.168.50.211:55800 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=1161969) INFO 10-08 05:09:26 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 10.1 tokens/s, Running: 1 reqs, Waiting: 0 reqs, NPU KV cache usage: 0.2%, Prefix cache hit rate: 48.5%, MM cache hit rate: 66.7%
+(APIServer pid=1161969) INFO 10-08 05:09:26 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.71, Accepted throughput: 6.50 tokens/s, Drafted throughput: 7.60 tokens/s, Accepted: 65 tokens, Drafted: 76 tokens, Per-position acceptance rate: 0.947, 0.763, Avg Draft acceptance rate: 85.5%
+(APIServer pid=1161969) INFO 10-08 05:09:36 [loggers.py:315] Engine 000: Avg prompt throughput: 94.5 tokens/s, Avg generation throughput: 0.1 tokens/s, Running: 2 reqs, Waiting: 0 reqs, NPU KV cache usage: 3.2%, Prefix cache hit rate: 64.7%, MM cache hit rate: 66.7%
+(APIServer pid=1161969) INFO 10-08 05:09:39 [request_timing.py:50] Engine 000 request chatcmpl-8e230d40bf8375b1 (stop): prompt 945 computed + 0 cached in 15852.9 ms (16.8 ms/tok, 59.6 effective tok/s); decode 8 tokens, 7 gaps in 3299.1 ms (471.3 ms/tok, 2.1 tok/s); queue 0.0 ms; total 19159.5 ms
+(APIServer pid=1161969) INFO 10-08 05:09:44 [request_timing.py:50] Engine 000 request chatcmpl-a419fd0a6dc4e35b (stop): prompt 1111 computed + 27520 cached in 16699.9 ms (15.0 ms/tok, 66.5 effective tok/s); decode 143 tokens, 142 gaps in 5947.7 ms (41.9 ms/tok, 23.9 tok/s); queue 0.0 ms; total 24721.2 ms
+(APIServer pid=1161969) INFO:     192.168.50.211:55800 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=1161969) INFO 10-08 05:09:46 [loggers.py:315] Engine 000: Avg prompt throughput: 111.1 tokens/s, Avg generation throughput: 15.0 tokens/s, Running: 1 reqs, Waiting: 0 reqs, NPU KV cache usage: 3.0%, Prefix cache hit rate: 69.6%, MM cache hit rate: 75.0%
+(APIServer pid=1161969) INFO 10-08 05:09:46 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.59, Accepted throughput: 4.70 tokens/s, Drafted throughput: 5.90 tokens/s, Accepted: 94 tokens, Drafted: 118 tokens, Per-position acceptance rate: 0.831, 0.763, Avg Draft acceptance rate: 79.7%
+(APIServer pid=1161969) INFO:     127.0.0.1:53820 - "GET /v1/models HTTP/1.1" 200 OK
+(APIServer pid=1161969) INFO 10-08 05:09:56 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0 tokens/s, Running: 1 reqs, Waiting: 0 reqs, NPU KV cache usage: 3.3%, Prefix cache hit rate: 69.6%, MM cache hit rate: 75.0%
+(APIServer pid=1161969) INFO 10-08 05:10:16 [loggers.py:315] Engine 000: Avg prompt throughput: 652.3 tokens/s, Avg generation throughput: 22.9 tokens/s, Running: 1 reqs, Waiting: 0 reqs, NPU KV cache usage: 3.6%, Prefix cache hit rate: 69.6%, MM cache hit rate: 75.0%
+(APIServer pid=1161969) INFO 10-08 05:10:16 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.56, Accepted throughput: 4.63 tokens/s, Drafted throughput: 5.93 tokens/s, Accepted: 139 tokens, Drafted: 178 tokens, Per-position acceptance rate: 0.843, 0.719, Avg Draft acceptance rate: 78.1%
+(APIServer pid=1161969) INFO:     127.0.0.1:51058 - "GET /is_paused HTTP/1.1" 200 OK
+(APIServer pid=1161969) INFO 10-08 05:10:26 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 20.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, NPU KV cache usage: 3.7%, Prefix cache hit rate: 69.6%, MM cache hit rate: 75.0%
+(APIServer pid=1161969) INFO 10-08 05:10:26 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.09, Accepted throughput: 10.60 tokens/s, Drafted throughput: 19.40 tokens/s, Accepted: 106 tokens, Drafted: 194 tokens, Per-position acceptance rate: 0.670, 0.423, Avg Draft acceptance rate: 54.6%
+(APIServer pid=1161969) INFO 10-08 05:10:36 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 19.2 tokens/s, Running: 1 reqs, Waiting: 0 reqs, NPU KV cache usage: 3.7%, Prefix cache hit rate: 69.6%, MM cache hit rate: 75.0%
+(APIServer pid=1161969) INFO 10-08 05:10:36 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.00, Accepted throughput: 9.60 tokens/s, Drafted throughput: 19.20 tokens/s, Accepted: 96 tokens, Drafted: 192 tokens, Per-position acceptance rate: 0.604, 0.396, Avg Draft acceptance rate: 50.0%
+(APIServer pid=1161969) INFO 10-08 05:10:43 [request_timing.py:50] Engine 000 request chatcmpl-9efd351d86b1681a (stop): prompt 6524 computed + 28544 cached in 21931.9 ms (3.4 ms/tok, 297.5 effective tok/s); decode 801 tokens, 800 gaps in 36811.5 ms (46.0 ms/tok, 21.7 tok/s); queue 0.0 ms; total 58818.2 ms
+(APIServer pid=1161969) INFO:     192.168.50.211:55800 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=1161969) INFO 10-08 05:10:46 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 17.7 tokens/s, Running: 0 reqs, Waiting: 0 reqs, NPU KV cache usage: 0.0%, Prefix cache hit rate: 69.6%, MM cache hit rate: 75.0%
+(APIServer pid=1161969) INFO 10-08 05:10:46 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.42, Accepted throughput: 10.40 tokens/s, Drafted throughput: 14.60 tokens/s, Accepted: 104 tokens, Drafted: 146 tokens, Per-position acceptance rate: 0.781, 0.644, Avg Draft acceptance rate: 71.2%
+(APIServer pid=1161969) INFO 10-08 05:10:56 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0 tokens/s, Running: 1 reqs, Waiting: 0 reqs, NPU KV cache usage: 4.0%, Prefix cache hit rate: 74.9%, MM cache hit rate: 80.0%
+(APIServer pid=1161969) INFO 10-08 05:11:06 [loggers.py:315] Engine 000: Avg prompt throughput: 331.7 tokens/s, Avg generation throughput: 17.7 tokens/s, Running: 1 reqs, Waiting: 0 reqs, NPU KV cache usage: 4.0%, Prefix cache hit rate: 74.9%, MM cache hit rate: 80.0%
+(APIServer pid=1161969) INFO 10-08 05:11:06 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 1.96, Accepted throughput: 4.30 tokens/s, Drafted throughput: 9.00 tokens/s, Accepted: 86 tokens, Drafted: 180 tokens, Per-position acceptance rate: 0.600, 0.356, Avg Draft acceptance rate: 47.8%
+(APIServer pid=1161969) INFO 10-08 05:11:16 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 21.1 tokens/s, Running: 1 reqs, Waiting: 0 reqs, NPU KV cache usage: 4.0%, Prefix cache hit rate: 74.9%, MM cache hit rate: 80.0%
+(APIServer pid=1161969) INFO 10-08 05:11:16 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.20, Accepted throughput: 11.50 tokens/s, Drafted throughput: 19.20 tokens/s, Accepted: 115 tokens, Drafted: 192 tokens, Per-position acceptance rate: 0.740, 0.458, Avg Draft acceptance rate: 59.9%
+(APIServer pid=1161969) INFO 10-08 05:11:26 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 21.2 tokens/s, Running: 1 reqs, Waiting: 0 reqs, NPU KV cache usage: 4.0%, Prefix cache hit rate: 74.9%, MM cache hit rate: 80.0%
+(APIServer pid=1161969) INFO 10-08 05:11:26 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.23, Accepted throughput: 11.70 tokens/s, Drafted throughput: 19.00 tokens/s, Accepted: 117 tokens, Drafted: 190 tokens, Per-position acceptance rate: 0.726, 0.505, Avg Draft acceptance rate: 61.6%
+(APIServer pid=1161969) INFO 10-08 05:11:31 [request_timing.py:50] Engine 000 request chatcmpl-b8691b7a512bdfd1 (stop): prompt 3318 computed + 34944 cached in 12501.7 ms (3.8 ms/tok, 265.4 effective tok/s); decode 749 tokens, 748 gaps in 35180.7 ms (47.0 ms/tok, 21.3 tok/s); queue 0.0 ms; total 47756.9 ms
+(APIServer pid=1161969) INFO:     192.168.50.211:55800 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=1161969) INFO 10-08 05:11:36 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 14.9 tokens/s, Running: 1 reqs, Waiting: 0 reqs, NPU KV cache usage: 4.1%, Prefix cache hit rate: 79.4%, MM cache hit rate: 83.3%
+(APIServer pid=1161969) INFO 10-08 05:11:36 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.76, Accepted throughput: 9.50 tokens/s, Drafted throughput: 10.80 tokens/s, Accepted: 95 tokens, Drafted: 108 tokens, Per-position acceptance rate: 0.907, 0.852, Avg Draft acceptance rate: 88.0%
+(APIServer pid=1161969) INFO 10-08 05:11:46 [loggers.py:315] Engine 000: Avg prompt throughput: 101.4 tokens/s, Avg generation throughput: 19.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, NPU KV cache usage: 4.0%, Prefix cache hit rate: 79.4%, MM cache hit rate: 83.3%
+(APIServer pid=1161969) INFO 10-08 05:11:46 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.37, Accepted throughput: 11.10 tokens/s, Drafted throughput: 16.20 tokens/s, Accepted: 111 tokens, Drafted: 162 tokens, Per-position acceptance rate: 0.728, 0.642, Avg Draft acceptance rate: 68.5%
+(APIServer pid=1161969) INFO 10-08 05:11:56 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, NPU KV cache usage: 4.1%, Prefix cache hit rate: 79.4%, MM cache hit rate: 83.3%
+(APIServer pid=1161969) INFO 10-08 05:11:56 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.53, Accepted throughput: 14.70 tokens/s, Drafted throughput: 19.20 tokens/s, Accepted: 147 tokens, Drafted: 192 tokens, Per-position acceptance rate: 0.812, 0.719, Avg Draft acceptance rate: 76.6%
+(APIServer pid=1161969) INFO 10-08 05:12:06 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 21.1 tokens/s, Running: 1 reqs, Waiting: 0 reqs, NPU KV cache usage: 4.1%, Prefix cache hit rate: 79.4%, MM cache hit rate: 83.3%
+(APIServer pid=1161969) INFO 10-08 05:12:06 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.18, Accepted throughput: 11.40 tokens/s, Drafted throughput: 19.40 tokens/s, Accepted: 114 tokens, Drafted: 194 tokens, Per-position acceptance rate: 0.691, 0.485, Avg Draft acceptance rate: 58.8%
+(APIServer pid=1161969) INFO 10-08 05:12:16 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 20.7 tokens/s, Running: 1 reqs, Waiting: 0 reqs, NPU KV cache usage: 4.1%, Prefix cache hit rate: 79.4%, MM cache hit rate: 83.3%
+(APIServer pid=1161969) INFO 10-08 05:12:16 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.11, Accepted throughput: 10.90 tokens/s, Drafted throughput: 19.60 tokens/s, Accepted: 109 tokens, Drafted: 196 tokens, Per-position acceptance rate: 0.694, 0.418, Avg Draft acceptance rate: 55.6%
+(APIServer pid=1161969) INFO:     192.168.50.211:42484 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=1161969) INFO 10-08 05:12:26 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 13.3 tokens/s, Running: 2 reqs, Waiting: 0 reqs, NPU KV cache usage: 4.3%, Prefix cache hit rate: 73.3%, MM cache hit rate: 83.3%
+(APIServer pid=1161969) INFO 10-08 05:12:26 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.29, Accepted throughput: 7.50 tokens/s, Drafted throughput: 11.60 tokens/s, Accepted: 75 tokens, Drafted: 116 tokens, Per-position acceptance rate: 0.741, 0.552, Avg Draft acceptance rate: 64.7%
+(APIServer pid=1161969) INFO 10-08 05:12:36 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.9 tokens/s, Running: 2 reqs, Waiting: 0 reqs, NPU KV cache usage: 4.6%, Prefix cache hit rate: 73.3%, MM cache hit rate: 83.3%
+(APIServer pid=1161969) INFO 10-08 05:12:36 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 3.00, Accepted throughput: 0.60 tokens/s, Drafted throughput: 0.60 tokens/s, Accepted: 6 tokens, Drafted: 6 tokens, Per-position acceptance rate: 1.000, 1.000, Avg Draft acceptance rate: 100.0%
+(APIServer pid=1161969) INFO 10-08 05:12:46 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 1.2 tokens/s, Running: 2 reqs, Waiting: 0 reqs, NPU KV cache usage: 5.0%, Prefix cache hit rate: 73.3%, MM cache hit rate: 83.3%
+(APIServer pid=1161969) INFO 10-08 05:12:46 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 3.00, Accepted throughput: 0.80 tokens/s, Drafted throughput: 0.80 tokens/s, Accepted: 8 tokens, Drafted: 8 tokens, Per-position acceptance rate: 1.000, 1.000, Avg Draft acceptance rate: 100.0%
+(APIServer pid=1161969) INFO 10-08 05:12:56 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.9 tokens/s, Running: 2 reqs, Waiting: 0 reqs, NPU KV cache usage: 5.3%, Prefix cache hit rate: 73.3%, MM cache hit rate: 83.3%
+(APIServer pid=1161969) INFO 10-08 05:12:56 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 3.00, Accepted throughput: 0.60 tokens/s, Drafted throughput: 0.60 tokens/s, Accepted: 6 tokens, Drafted: 6 tokens, Per-position acceptance rate: 1.000, 1.000, Avg Draft acceptance rate: 100.0%
+(APIServer pid=1161969) INFO 10-08 05:13:06 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 1.2 tokens/s, Running: 2 reqs, Waiting: 0 reqs, NPU KV cache usage: 5.6%, Prefix cache hit rate: 73.3%, MM cache hit rate: 83.3%
+(APIServer pid=1161969) INFO 10-08 05:13:06 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 3.00, Accepted throughput: 0.80 tokens/s, Drafted throughput: 0.80 tokens/s, Accepted: 8 tokens, Drafted: 8 tokens, Per-position acceptance rate: 1.000, 1.000, Avg Draft acceptance rate: 100.0%
+(APIServer pid=1161969) INFO 10-08 05:13:16 [loggers.py:315] Engine 000: Avg prompt throughput: 1618.3 tokens/s, Avg generation throughput: 4.1 tokens/s, Running: 2 reqs, Waiting: 0 reqs, NPU KV cache usage: 5.9%, Prefix cache hit rate: 73.3%, MM cache hit rate: 83.3%
+(APIServer pid=1161969) INFO 10-08 05:13:16 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.50, Accepted throughput: 2.40 tokens/s, Drafted throughput: 3.20 tokens/s, Accepted: 24 tokens, Drafted: 32 tokens, Per-position acceptance rate: 0.812, 0.688, Avg Draft acceptance rate: 75.0%
+(APIServer pid=1161969) INFO 10-08 05:13:26 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 29.6 tokens/s, Running: 2 reqs, Waiting: 0 reqs, NPU KV cache usage: 5.9%, Prefix cache hit rate: 73.3%, MM cache hit rate: 83.3%
+(APIServer pid=1161969) INFO 10-08 05:13:26 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.51, Accepted throughput: 17.80 tokens/s, Drafted throughput: 23.60 tokens/s, Accepted: 178 tokens, Drafted: 236 tokens, Per-position acceptance rate: 0.873, 0.636, Avg Draft acceptance rate: 75.4%
+(APIServer pid=1161969) INFO 10-08 05:13:35 [request_timing.py:50] Engine 000 request chatcmpl-96475ee1fd62327d (stop): prompt 16185 computed + 0 cached in 53014.0 ms (3.3 ms/tok, 305.3 effective tok/s); decode 291 tokens, 290 gaps in 20023.5 ms (69.0 ms/tok, 14.5 tok/s); queue 0.0 ms; total 73162.8 ms
+(APIServer pid=1161969) INFO:     192.168.50.211:42484 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=1161969) INFO 10-08 05:13:36 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 28.0 tokens/s, Running: 1 reqs, Waiting: 0 reqs, NPU KV cache usage: 4.2%, Prefix cache hit rate: 73.3%, MM cache hit rate: 83.3%
+(APIServer pid=1161969) INFO 10-08 05:13:36 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.59, Accepted throughput: 17.30 tokens/s, Drafted throughput: 21.80 tokens/s, Accepted: 173 tokens, Drafted: 218 tokens, Per-position acceptance rate: 0.908, 0.679, Avg Draft acceptance rate: 79.4%
+(APIServer pid=1161969) INFO 10-08 05:13:46 [loggers.py:315] Engine 000: Avg prompt throughput: 181.1 tokens/s, Avg generation throughput: 11.4 tokens/s, Running: 2 reqs, Waiting: 0 reqs, NPU KV cache usage: 6.1%, Prefix cache hit rate: 74.6%, MM cache hit rate: 83.3%
+(APIServer pid=1161969) INFO 10-08 05:13:46 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.26, Accepted throughput: 6.30 tokens/s, Drafted throughput: 10.00 tokens/s, Accepted: 63 tokens, Drafted: 100 tokens, Per-position acceptance rate: 0.760, 0.500, Avg Draft acceptance rate: 63.0%
+(APIServer pid=1161969) INFO 10-08 05:13:56 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 30.0 tokens/s, Running: 2 reqs, Waiting: 0 reqs, NPU KV cache usage: 6.1%, Prefix cache hit rate: 74.6%, MM cache hit rate: 83.3%
+(APIServer pid=1161969) INFO 10-08 05:13:56 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.54, Accepted throughput: 18.20 tokens/s, Drafted throughput: 23.60 tokens/s, Accepted: 182 tokens, Drafted: 236 tokens, Per-position acceptance rate: 0.856, 0.686, Avg Draft acceptance rate: 77.1%
+(APIServer pid=1161969) INFO 10-08 05:13:58 [request_timing.py:50] Engine 000 request chatcmpl-8dcfde73b4d373c3 (stop): prompt 1811 computed + 16128 cached in 7025.2 ms (3.9 ms/tok, 257.8 effective tok/s); decode 270 tokens, 269 gaps in 16625.6 ms (61.8 ms/tok, 16.2 tok/s); queue 0.0 ms; total 23703.8 ms
+(APIServer pid=1161969) INFO:     192.168.50.211:42484 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=1161969) INFO 10-08 05:14:06 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 10.5 tokens/s, Running: 2 reqs, Waiting: 0 reqs, NPU KV cache usage: 6.3%, Prefix cache hit rate: 75.3%, MM cache hit rate: 83.3%
+(APIServer pid=1161969) INFO 10-08 05:14:06 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.74, Accepted throughput: 6.80 tokens/s, Drafted throughput: 7.80 tokens/s, Accepted: 68 tokens, Drafted: 78 tokens, Per-position acceptance rate: 0.949, 0.795, Avg Draft acceptance rate: 87.2%
+(APIServer pid=1161969) INFO 10-08 05:14:16 [loggers.py:315] Engine 000: Avg prompt throughput: 392.0 tokens/s, Avg generation throughput: 6.8 tokens/s, Running: 2 reqs, Waiting: 0 reqs, NPU KV cache usage: 6.5%, Prefix cache hit rate: 75.3%, MM cache hit rate: 83.3%
+(APIServer pid=1161969) INFO 10-08 05:14:16 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.03, Accepted throughput: 3.40 tokens/s, Drafted throughput: 6.60 tokens/s, Accepted: 34 tokens, Drafted: 66 tokens, Per-position acceptance rate: 0.667, 0.364, Avg Draft acceptance rate: 51.5%
+(APIServer pid=1161969) INFO 10-08 05:14:26 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 27.0 tokens/s, Running: 2 reqs, Waiting: 0 reqs, NPU KV cache usage: 6.5%, Prefix cache hit rate: 75.3%, MM cache hit rate: 83.3%
+(APIServer pid=1161969) INFO 10-08 05:14:26 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.33, Accepted throughput: 15.40 tokens/s, Drafted throughput: 23.20 tokens/s, Accepted: 154 tokens, Drafted: 232 tokens, Per-position acceptance rate: 0.802, 0.526, Avg Draft acceptance rate: 66.4%
+(APIServer pid=1161969) INFO 10-08 05:14:36 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 28.2 tokens/s, Running: 2 reqs, Waiting: 0 reqs, NPU KV cache usage: 6.5%, Prefix cache hit rate: 75.3%, MM cache hit rate: 83.3%
+(APIServer pid=1161969) INFO 10-08 05:14:36 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.39, Accepted throughput: 16.40 tokens/s, Drafted throughput: 23.60 tokens/s, Accepted: 164 tokens, Drafted: 236 tokens, Per-position acceptance rate: 0.856, 0.534, Avg Draft acceptance rate: 69.5%
+(APIServer pid=1161969) INFO:     192.168.50.211:36274 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=1161969) INFO:     127.0.0.1:44410 - "GET /v1/models HTTP/1.1" 200 OK
+(APIServer pid=1161969) INFO:     127.0.0.1:44422 - "GET /is_paused HTTP/1.1" 200 OK
+(APIServer pid=1161969) INFO 10-08 05:14:46 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 11.9 tokens/s, Running: 3 reqs, Waiting: 0 reqs, NPU KV cache usage: 6.9%, Prefix cache hit rate: 70.7%, MM cache hit rate: 83.3%
+(APIServer pid=1161969) INFO 10-08 05:14:46 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.48, Accepted throughput: 7.10 tokens/s, Drafted throughput: 9.60 tokens/s, Accepted: 71 tokens, Drafted: 96 tokens, Per-position acceptance rate: 0.854, 0.625, Avg Draft acceptance rate: 74.0%
+(APIServer pid=1161969) INFO 10-08 05:14:56 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 1.7 tokens/s, Running: 3 reqs, Waiting: 0 reqs, NPU KV cache usage: 7.2%, Prefix cache hit rate: 70.7%, MM cache hit rate: 83.3%
+(APIServer pid=1161969) INFO 10-08 05:14:56 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.83, Accepted throughput: 1.10 tokens/s, Drafted throughput: 1.20 tokens/s, Accepted: 11 tokens, Drafted: 12 tokens, Per-position acceptance rate: 1.000, 0.833, Avg Draft acceptance rate: 91.7%
+(APIServer pid=1161969) INFO 10-08 05:15:06 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 2.2 tokens/s, Running: 3 reqs, Waiting: 0 reqs, NPU KV cache usage: 7.5%, Prefix cache hit rate: 70.7%, MM cache hit rate: 83.3%
+(APIServer pid=1161969) INFO 10-08 05:15:06 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.75, Accepted throughput: 1.40 tokens/s, Drafted throughput: 1.60 tokens/s, Accepted: 14 tokens, Drafted: 16 tokens, Per-position acceptance rate: 0.875, 0.875, Avg Draft acceptance rate: 87.5%

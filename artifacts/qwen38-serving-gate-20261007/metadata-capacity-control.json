@@ -1,0 +1,7 @@
+{
+  "generation": "7ed4196484db472ab0d6171c7e56999d",
+  "mode": "graph",
+  "candidate": "query_lens_capacity",
+  "source": "# SPDX-License-Identifier: Apache-2.0\n\"\"\"Backport the pinned qLens capacity fix into an older resident 310P runtime.\n\nThe controller drains requests and recaptures target/draft graphs before\nresuming. No model weights, cache geometry, or numerical kernels change.\n\"\"\"\n\nimport torch\n\n\ndef fill_query_lens_cpu(self, num_reqs, query_start_loc_cpu, is_drafting=False):\n    if self._query_lens_cpu_buffer is None:\n        return (query_start_loc_cpu[1 : num_reqs + 1] - query_start_loc_cpu[:num_reqs]).contiguous()\n    if num_reqs > self._query_lens_cpu_buffer.numel():\n        # Never let out= resize a slice of the pinned allocation. Expanded MTP\n        # metadata can have more rows than scheduler.max_num_seqs.\n        self._query_lens_cpu_buffer = torch.empty(\n            num_reqs,\n            dtype=torch.int32,\n            device=\"cpu\",\n            pin_memory=self._query_lens_cpu_buffer.is_pinned(),\n        )\n    buffer = self._query_lens_cpu_buffer[:num_reqs]\n    if is_drafting:\n        buffer = buffer.clone()\n    torch.sub(query_start_loc_cpu[1 : num_reqs + 1], query_start_loc_cpu[:num_reqs], out=buffer)\n    return buffer\n\n\ndef replacements():\n    return {\n        \"vllm_ascend._310p.attention.metadata_builder:AscendAttentionMetadataBuilder310._fill_query_lens_cpu\": (\n            fill_query_lens_cpu\n        )\n    }\n",
+  "recapture": true
+}

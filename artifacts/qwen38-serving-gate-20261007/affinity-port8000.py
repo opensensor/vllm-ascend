@@ -1,0 +1,83 @@
+"""Bind only an explicitly identified experimental W4 worker tree."""
+
+import argparse
+import json
+import os
+from contextlib import suppress
+from pathlib import Path
+
+GROUPS = (set(range(0, 6)), set(range(8, 14)), set(range(16, 22)), set(range(24, 30)))
+
+
+def identity(pid):
+    fields = Path(f"/proc/{pid}/stat").read_text().rpartition(")")[2].split()
+    return int(fields[1]), int(fields[19])
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--api-pid", type=int, required=True)
+    parser.add_argument("--engine-pid", type=int, required=True)
+    parser.add_argument("--workers", type=int, nargs=4, required=True)
+    args = parser.parse_args()
+    processes = [args.api_pid, args.engine_pid, *args.workers]
+    assert len(set(processes)) == 6
+    identities = {pid: identity(pid) for pid in processes}
+
+    def verify_tree():
+        assert identities == {pid: identity(pid) for pid in processes}
+        command = Path(f"/proc/{args.api_pid}/cmdline").read_bytes().split(b"\0")
+        assert command[0] == b"/srv/ai/venvs/qwen38-w4-test-ce1862/bin/python"
+        assert b"/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i" in command
+        assert command[command.index(b"--port") + 1] == b"8000"
+        assert identities[args.engine_pid][0] == args.api_pid
+        for rank, pid in enumerate(args.workers):
+            assert identities[pid][0] == args.engine_pid
+            assert Path(f"/proc/{pid}/cmdline").read_bytes().startswith(f"VLLM::Worker_TP{rank}_EP{rank}".encode())
+
+    def tasks(pid):
+        return [int(path.name) for path in Path(f"/proc/{pid}/task").iterdir()]
+
+    verify_tree()
+    previous = {}
+    try:
+        for _ in range(3):
+            verify_tree()
+            for pid, group in zip(args.workers, GROUPS):
+                for tid in tasks(pid):
+                    try:
+                        if tid not in previous:
+                            mask = os.sched_getaffinity(tid)
+                            assert group <= mask, (pid, tid, mask, group)
+                            previous[tid] = mask
+                        os.sched_setaffinity(tid, group)
+                    except ProcessLookupError:
+                        previous.pop(tid, None)
+        verified = {}
+        for pid, group in zip(args.workers, GROUPS):
+            verified[pid] = {}
+            for tid in tasks(pid):
+                with suppress(ProcessLookupError):
+                    mask = os.sched_getaffinity(tid)
+                    assert mask == group, (pid, tid, mask, group)
+                    verified[pid][tid] = sorted(mask)
+        print(
+            json.dumps(
+                {
+                    "api_pid": args.api_pid,
+                    "engine_pid": args.engine_pid,
+                    "identities": identities,
+                    "previous": {tid: sorted(mask) for tid, mask in previous.items()},
+                    "verified": verified,
+                }
+            )
+        )
+    except BaseException:
+        for tid, mask in previous.items():
+            with suppress(ProcessLookupError):
+                os.sched_setaffinity(tid, mask)
+        raise
+
+
+if __name__ == "__main__":
+    main()

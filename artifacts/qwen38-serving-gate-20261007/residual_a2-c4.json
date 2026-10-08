@@ -1,0 +1,98 @@
+{
+  "results": [
+    {
+      "request_id": "chatcmpl-a110cdb5e8ed89b0",
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 288,
+        "completion_tokens": 256,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "created_cache_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish_reason": "length",
+      "ttft_s": 0.8631403130129911,
+      "decode_s": 25.299141699972097,
+      "client_decode_tok_s": 10.079393325832918,
+      "e2e_s": 26.162428290990647,
+      "text_sha256": "eac85fed6606096b1da91ccda7d6ac8af055281a186f1fd948ebf095f88ab771",
+      "text": "```python\n\"\"\"\nLRU (Least Recently Used) Cache Implementation with Thread Safety.\n\nThis module provides a thread-safe LRU cache implementation using OrderedDict\nand threading.Lock. The cache evicts the least recently used items when it\nreaches its maximum capacity.\n\nComplexity:\n    - get(): O(1) average case\n    - put(): O(1) average case\n    - Memory: O(capacity)\n\nThread Safety:\n    All public methods are protected by a threading.Lock to ensure that\n    concurrent access from multiple threads does not corrupt the internal\n    state of the cache. The lock is held for the duration of each operation\n    to maintain consistency.\n\"\"\"\n\nimport threading\nfrom collections import OrderedDict\nfrom typing import Any, Optional, Hashable\n\n\nclass LRUCache:\n    \"\"\"\n    A thread-safe LRU (Least Recently Used) cache.\n    \n    The cache stores key-value pairs and evicts the least recently used\n    item when the cache exceeds its maximum capacity. Accessing an item\n    (via get or put) marks it as most recently used.\n    \n    Attributes:\n        capacity (int): Maximum number of items the cache can hold.\n        _cache ("
+    },
+    {
+      "request_id": "chatcmpl-b8a895f9470bd740",
+      "usage": {
+        "prompt_tokens": 43,
+        "total_tokens": 299,
+        "completion_tokens": 256,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "created_cache_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish_reason": "length",
+      "ttft_s": 0.863686241034884,
+      "decode_s": 25.657580610946752,
+      "client_decode_tok_s": 9.938583215098808,
+      "e2e_s": 26.521376571035944,
+      "text_sha256": "d59fd02ed9f2897b52bb9082bba82ece514ca02e36e514e645896eac18266143",
+      "text": "# Producer-Consumer Queue Design Review\n\n## Design Analysis\n\n### 1. Bounded Capacity\nA bounded queue prevents unbounded memory growth by limiting the number of items that can be buffered. When the queue is full, producers block (or fail) until space is available. This provides **backpressure**, ensuring consumers keep up with producers. Without bounds, a fast producer can exhaust memory.\n\n### 2. Cancellation\nCancellation allows in-flight operations to be aborted gracefully. In a producer-consumer context:\n- **Producers** waiting to enqueue should be cancellable if the consumer is slow or the task is no longer needed.\n- **Consumers** waiting to dequeue should be cancellable if the work is no longer relevant.\n- Cancellation must be **thread-safe** and must not leave the queue in an inconsistent state.\n\n### 3. Shutdown\nGraceful shutdown ensures:\n- All already-enqueued items are processed before termination.\n- No new items are accepted after shutdown is initiated.\n- Blocked producers/consumers are unblocked and exit cleanly.\n- A distinction between **graceful shutdown** (drain remaining items) and **forced shutdown** (discard remaining items).\n\n### 4. Deadlock"
+    },
+    {
+      "request_id": "chatcmpl-a696704790ac39ac",
+      "usage": {
+        "prompt_tokens": 49,
+        "total_tokens": 305,
+        "completion_tokens": 256,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "created_cache_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish_reason": "length",
+      "ttft_s": 0.8632734359707683,
+      "decode_s": 26.420252769021317,
+      "client_decode_tok_s": 9.651686614406525,
+      "e2e_s": 27.283678263949696,
+      "text_sha256": "b3efc9ee0b8184285a4a831e1345850f0e6cc4f3d6af132a4c5f05466432a5ed",
+      "text": "# Practical Guide: Investigating a Slow Distributed Inference Service\n\nDistributed inference latency is rarely caused by a single \"smoking gun.\" It is usually the result of compounding inefficiencies across the network, CPU, GPU/TPU, and memory subsystems. This guide provides a systematic approach to isolating bottlenecks, running concrete experiments, and avoiding common benchmarking pitfalls.\n\n---\n\n## Phase 1: Establish a Baseline & Define \"Slow\"\n\nBefore optimizing, you must define what \"slow\" means for your specific use case.\n\n1.  **Define Metrics:**\n    *   **Latency:** P50, P95, P99 (tail latency is critical for user experience).\n    *   **Throughput:** Requests per second (RPS) at a fixed latency SLA.\n    *   **Cost per Inference:** Compute time \u00d7 instance cost.\n2.  **Establish a Baseline:**\n    *   Run a controlled load test with a fixed batch size and input distribution.\n    *   Record metrics for **end-to-end latency**, **queue time**, and **compute time**.\n    *   *Tip:* Use a tool like `wrk`, `locust`,"
+    },
+    {
+      "request_id": "chatcmpl-be24f1eb7f0da63c",
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 288,
+        "completion_tokens": 256,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "created_cache_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish_reason": "length",
+      "ttft_s": 0.30246359697775915,
+      "decode_s": 24.868651162018068,
+      "client_decode_tok_s": 10.253873374100076,
+      "e2e_s": 25.171367909992114,
+      "text_sha256": "c501d6bcc6113a2082be3ff7b7504d0d882a58ef7d7877e4a6860de2663a1813",
+      "text": "```python\n\"\"\"\nLRU (Least Recently Used) Cache Implementation\n\nThis module provides a thread-safe LRU cache implementation with O(1) time complexity\nfor both get and put operations.\n\nThread Safety:\n    The implementation uses a threading.Lock to ensure that all operations on the\n    internal data structures are atomic. This prevents race conditions when multiple\n    threads access the cache concurrently.\n\nComplexity:\n    - Time Complexity:\n        - get(): O(1) average case\n        - put(): O(1) average case\n        - delete(): O(1) average case\n    - Space Complexity: O(capacity) for storing up to 'capacity' items.\n\nData Structures Used:\n    - OrderedDict: Maintains insertion/access order. The most recently used item\n      is moved to the end. The least recently used item is at the beginning.\n    - Lock: Ensures thread safety for concurrent access.\n\"\"\"\n\nimport threading\nfrom collections import OrderedDict\nfrom typing import Any, Optional, Hashable\n\n\nclass LRUCache:\n    \"\"\"\n    A thread-safe LRU (Least Recently Used) cache with a fixed capacity.\n    \n    When the cache reaches its capacity, the least recently used"
+    }
+  ],
+  "wall_s": 27.285375803010538,
+  "aggregate_tok_s": 37.529261366706805,
+  "drafted_delta": 824.0,
+  "accepted_delta": 615.0,
+  "acceptance": 0.7463592233009708,
+  "num_speculative_tokens": 2
+}

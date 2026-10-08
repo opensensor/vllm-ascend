@@ -12,7 +12,22 @@ from vllm_ascend.compilation.breakable_aclgraph import BreakableACLGraphWrapper
 
 
 class QwenResidentExtension(ResidentWorkerExtension):
-    pass
+    def resident_reset(self):
+        # The controller drains requests and resets scheduler caches first.
+        # The base reset verifies pending execution and clears request tensors;
+        # tier metadata also owns checkpoints outside runner.kv_caches.
+        super().resident_reset()
+        for tier in getattr(self.model_runner, "_prefix_mamba_tiers", {}).values():
+            tier.reset()
+        return self.resident_status()
+
+    def resident_status(self):
+        result = super().resident_status()
+        result["prefix_mamba"] = {
+            str(group_id): tier.cache_status()
+            for group_id, tier in getattr(self.model_runner, "_prefix_mamba_tiers", {}).items()
+        }
+        return result
 
 
 def install_direct_dispatch():

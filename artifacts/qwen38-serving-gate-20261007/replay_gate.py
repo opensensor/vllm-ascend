@@ -1,0 +1,257 @@
+"""Real-weight resident A/B validation on the qualified four-device host."""
+
+import concurrent.futures
+import dataclasses
+import json
+import subprocess
+import sys
+import threading
+import time
+import traceback
+import urllib.error
+import uuid
+from pathlib import Path
+
+from tokenizers import Tokenizer
+
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_native import NativeManifest
+from tools.qwen4exp.resident_reset import reset_caches
+from tools.qwen38_decode_study.benchmark import PROMPTS, metrics, stream_completion
+from tools.qwen38_decode_study.mixed_prefill_probe import prompt, stream
+
+ROOT = Path("/home/matteius/experiments/qwen38-serving-gate-20261007")
+RUNTIME = Path("/srv/ai/src/qwen38-decode-next-runtime-20261005")
+BASE = "http://127.0.0.1:8000"
+MODEL_DIR = Path("/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i")
+
+
+def save(name, value):
+    (ROOT / (name + ".json")).write_text(json.dumps(value, indent=2) + "\n")
+
+
+def emit(event, **fields):
+    value = {"time": time.time(), "event": event, **fields}
+    with (ROOT / "events.jsonl").open("a") as output:
+        output.write(json.dumps(value) + "\n")
+    print(json.dumps(value), flush=True)
+
+
+def reset(client, label):
+    save(label + "-reset", reset_caches(client))
+
+
+def chat(model, text, length, thinking=False):
+    return {
+        "model": model,
+        "messages": [{"role": "user", "content": text}],
+        "max_tokens": length,
+        "temperature": 0,
+        "seed": 42,
+        "ignore_eos": not thinking,
+        "chat_template_kwargs": {"enable_thinking": thinking},
+        "stream": True,
+        "stream_options": {"include_usage": True},
+    }
+
+
+def smoke(client, label, model):
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "tools.qwen38_decode_study.smoke",
+            "--base-url",
+            BASE,
+            "--output",
+            str(ROOT / (label + "-smoke.json")),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    save(label + "-smoke-exit", {"returncode": result.returncode, "stdout": result.stdout, "stderr": result.stderr})
+    cases = json.loads((ROOT / (label + "-smoke.json")).read_text())
+    if len(cases) != 7:
+        raise RuntimeError("Incomplete smoke requests")
+    emit("smoke", arm=label, passed=sum(c["pass"] for c in cases), total=len(cases))
+    # Retain the established ASCEND reversal failure instead of calling it a pass.
+    if not all(c["pass"] for i, c in enumerate(cases) if i != 2):
+        raise RuntimeError("Smoke failed outside the known baseline reversal case")
+    body = chat(model, "Calculate 17 * 23. Think through the calculation and give the final integer.", 512, True)
+    body["stream"] = False
+    body.pop("stream_options")
+    response = client.request("/v1/chat/completions", body)
+    save(label + "-thinking", response)
+    message = response["choices"][0]["message"]
+    if "391" not in (message.get("content") or ""):
+        raise RuntimeError("Thinking generation did not produce the correct final answer")
+
+
+def counters(before):
+    # Counters are published on the engine statistics interval, outside timing.
+    time.sleep(11)
+    after = metrics(BASE)
+    drafted = after.get("vllm:spec_decode_num_draft_tokens_total", 0) - before.get(
+        "vllm:spec_decode_num_draft_tokens_total", 0
+    )
+    accepted = after.get("vllm:spec_decode_num_accepted_tokens_total", 0) - before.get(
+        "vllm:spec_decode_num_accepted_tokens_total", 0
+    )
+    return {
+        "drafted_delta": drafted,
+        "accepted_delta": accepted,
+        "acceptance": accepted / drafted if drafted else None,
+        "num_speculative_tokens": 2,
+    }
+
+
+def serial(client, label, model, count=3, length=512):
+    results = []
+    for index in range(count):
+        reset(client, f"{label}-serial-{index}")
+        before = metrics(BASE)
+        result = stream_completion(BASE, chat(model, PROMPTS[index % 3], length))
+        result.update(counters(before))
+        result["prompt_index"] = index % 3
+        if result["usage"]["completion_tokens"] != length:
+            raise RuntimeError("Serial output length differs")
+        results.append(result)
+        save(label + "-serial", results)
+        emit(
+            "serial",
+            arm=label,
+            index=index,
+            length=length,
+            tps=result["client_decode_tok_s"],
+            ttft=result["ttft_s"],
+            acceptance=result["acceptance"],
+            hash=result["text_sha256"],
+        )
+    return results
+
+
+def concurrent_run(client, label, model, concurrency):
+    reset(client, label + f"-c{concurrency}")
+    barrier = threading.Barrier(concurrency)
+    before = metrics(BASE)
+
+    def call(index):
+        barrier.wait(timeout=30)
+        return stream_completion(BASE, chat(model, PROMPTS[index % 3], 512 if concurrency == 2 else 256))
+
+    started = time.perf_counter()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
+        results = list(pool.map(call, range(concurrency)))
+    elapsed = time.perf_counter() - started
+    result = {
+        "results": results,
+        "wall_s": elapsed,
+        "aggregate_tok_s": sum(r["usage"]["completion_tokens"] for r in results) / elapsed,
+        **counters(before),
+    }
+    save(label + f"-c{concurrency}", result)
+    emit(
+        "concurrent", arm=label, concurrency=concurrency, tps=result["aggregate_tok_s"], acceptance=result["acceptance"]
+    )
+    return result
+
+
+def cold(client, label, model, tokenizer, tokens, warm=False):
+    reset(client, label + f"-cold{tokens}")
+    ids = prompt(tokenizer, tokens, f"qwen-latest-matched-{tokens}-v1")
+    before = metrics(BASE)
+    result = stream(BASE, model, ids, 32, 180)
+    result.update(counters(before))
+    save(label + f"-cold{tokens}", result)
+    emit(
+        "cold",
+        arm=label,
+        tokens=tokens,
+        ttft=result["time_to_first_token_s"],
+        cached=result["cached_tokens"],
+        hash=result["output_sha256"],
+    )
+    if result["cached_tokens"] != 0:
+        raise RuntimeError("Cold sample reused cached tokens")
+    if warm:
+        result = stream(BASE, model, ids, 32, 180)
+        save(label + f"-repeat{tokens}", result)
+        emit(
+            "repeat_prefix",
+            arm=label,
+            tokens=tokens,
+            ttft=result["time_to_first_token_s"],
+            cached=result["cached_tokens"],
+        )
+
+
+def switch(client, label, source):
+    control = Control.from_dict(
+        {"generation": uuid.uuid4().hex, "mode": "graph", "candidate": label, "source": source, "recapture": True}
+    )
+    save(label + "-control-" + control.generation, dataclasses.asdict(control))
+    result = client.switch(control)
+    save(label + "-switch-" + control.generation, result)
+    emit("switched", arm=label, workers=[r["pid"] for r in result], graphs_dirty=[r["graphs_dirty"] for r in result])
+
+
+def main():
+    client = ResidentClient(BASE, 4, 300)
+    deadline = time.monotonic() + 1800
+    while True:
+        try:
+            models = client.request("/v1/models", method="GET")
+            break
+        except (OSError, urllib.error.URLError):
+            if time.monotonic() > deadline:
+                raise TimeoutError("Qwen readiness timed out")
+            time.sleep(5)
+    save("models", models)
+    model = models["data"][0]["id"]
+    emit("ready", model=model)
+    save("startup-status", client.rpc("resident_status"))
+    smoke(client, "original", model)
+    serial(client, "original", model, count=1)
+    manifest = NativeManifest(
+        json.loads(
+            Path("/home/matteius/experiments/qwen38-decode-next-20261005/native-hc-residual/native-v1.json").read_text()
+        )
+    )
+    save("native-load", client.load_native(manifest))
+    residual = (RUNTIME / "tools/qwen4exp/resident_candidates/native_hc_residual.py").read_text()
+    combined = """from tools.qwen4exp.resident_candidates import native_hc_residual, gdn_output_rms
+def replacements(native_resources):
+    result = native_hc_residual.replacements(native_resources)
+    result.update(gdn_output_rms.replacements())
+    return result
+"""
+    tokenizer = Tokenizer.from_file(str(MODEL_DIR / "tokenizer.json"))
+    for label, source in (
+        ("residual_a1", residual),
+        ("gdn_b1", combined),
+        ("residual_a2", residual),
+        ("gdn_b2", combined),
+    ):
+        switch(client, label, source)
+        smoke(client, label, model)
+        serial(client, label, model)
+        concurrent_run(client, label, model, 2)
+        concurrent_run(client, label, model, 4)
+        cold(client, label, model, tokenizer, 8192)
+        cold(client, label, model, tokenizer, 23410, warm=label == "gdn_b2")
+        save(label + "-status", client.rpc("resident_status"))
+    serial(client, "gdn-sustained2048", model, count=1, length=2048)
+    save("final-status", client.rpc("resident_status"))
+    save("final-paused", client.request("/is_paused", method="GET"))
+    emit("complete")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception:
+        save("failure", {"traceback": traceback.format_exc()})
+        emit("failed", traceback=traceback.format_exc())
+        raise
