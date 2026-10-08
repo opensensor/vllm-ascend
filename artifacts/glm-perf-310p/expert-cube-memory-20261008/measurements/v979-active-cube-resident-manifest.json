@@ -1,0 +1,75 @@
+{
+  "assets": [
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-v979-active-cube/glm_fused_gate_up.bin",
+      "sha256": "720618785549d68a7dd904f838306d037640916000c6cc5fe168575fefafcab1"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-v979-active-cube/glm_fused_down.bin",
+      "sha256": "d377a3204ff94fbf116a140f1ef2f5fefaddd36011e641361aaea20d45d93c48"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-v979-active-cube/glm_fused_pack.bin",
+      "sha256": "649cf14bfeebed5e67d28698c2751bb45c884e25bc6651c04c38e6db27c70f9a"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-v979-active-cube/glm_fused_reduce.bin",
+      "sha256": "c1e7ade7ca84f1c1d251944dea2eacef08a6fc047e197ebe5d4b77e73b1e39a6"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-v979-active-cube/glm_fused_route_input.bin",
+      "sha256": "88c97073f7a99c651e06e9ac6c012b783ab1e3a78309ce514fec0950d9068061"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-v979-active-cube/glm_fused_gate_up_w4.bin",
+      "sha256": "de5c2593142bbd1b184b18c241486d08c048ed2a0ccb05dd9aa56d68757a4c63"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-v979-active-cube/glm_fused_down_w4.bin",
+      "sha256": "9a825cd38f8a0bbb8b91c5760f3e5b6e78878f37e475ee52bbe7e94e992dda9a"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-v979-active-cube/glm_reconstruction_v979_helpers/reconstruction_native.py",
+      "sha256": "9bf814f721c063009c3e211841a55f7940c849c99d018d0822227f1cc3f5752c"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-v979-active-cube/glm_reconstruction_v979_helpers/reconstruction_probe.py",
+      "sha256": "53671a4e566771d23f945d55037e24cc7120df8a7d21672802b5a5e2724f3d83"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-v979-active-cube/glm_reconstruction_v979_helpers/glm_int4.py",
+      "sha256": "be71985a4fd66c3f99d950abb5da4f8383ad607c421c8b3bfbe1ec3564e0a843"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-v979-active-cube/glm_reconstruction_v979_helpers/glm_fused_moe.py",
+      "sha256": "bfe02bdbccd0637811884446e3d4a6bf7e9ad7667d52334b522dc6a7ebc16730"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-v979-active-cube/glm_reconstruction_v979_helpers/fused_moe_probe.py",
+      "sha256": "59f2e7b252260ea867a9e8465dcddc8691497b645666aed4164493fac0849354"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-v979-active-cube/glm_reconstruction_v979_helpers/fused_weight_layout.py",
+      "sha256": "dde6829b0be8238d91ee7bdd89246874bb13ab4379e29cfc057faaebd98ca6f0"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-v979-active-cube/glm_reconstruction_v979_helpers/expert_reconstruction.py",
+      "sha256": "2d3bfc73b1736f2abe605b43c0e0d81f483afa88c5c79c050df5faa630cea1a4"
+    },
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-v979-active-cube/glm_reconstruction_v979_helpers/__init__.py",
+      "sha256": "6c6ec57de9f82ef42d82760f144a4571cb16b3cd6de33aaa7aa9fd65e8ab1fa1"
+    }
+  ],
+  "libraries": [
+    {
+      "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-v979-active-cube/glm_reconstruction_bridge_v979.so",
+      "sha256": "9a688ba1e79062fd8c3cae89a09159da5c3f46d49e82e70a5fbe17613197f58b"
+    }
+  ],
+  "name": "reconstruction_v979",
+  "operators": [
+    "glm_reconstruction_v979::launch"
+  ],
+  "validation_source": "def prepare():\n    import hashlib, importlib, importlib.util, sys\n    from pathlib import Path\n    package='glm_reconstruction_v979_helpers'\n    root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-v979-active-cube/glm_reconstruction_v979_helpers')\n    if package not in sys.modules:\n        spec=importlib.util.spec_from_file_location(package,root/'__init__.py',submodule_search_locations=[str(root)])\n        module=importlib.util.module_from_spec(spec)\n        sys.modules[package]=module\n        spec.loader.exec_module(module)\n    if Path(sys.modules[package].__file__).resolve() != (root/'__init__.py').resolve():\n        raise ValueError('fused helper package belongs to another build')\n    for name, expected in {'reconstruction_native.py': '9bf814f721c063009c3e211841a55f7940c849c99d018d0822227f1cc3f5752c', 'reconstruction_probe.py': '53671a4e566771d23f945d55037e24cc7120df8a7d21672802b5a5e2724f3d83', 'glm_int4.py': 'be71985a4fd66c3f99d950abb5da4f8383ad607c421c8b3bfbe1ec3564e0a843', 'glm_fused_moe.py': 'bfe02bdbccd0637811884446e3d4a6bf7e9ad7667d52334b522dc6a7ebc16730', 'fused_moe_probe.py': '59f2e7b252260ea867a9e8465dcddc8691497b645666aed4164493fac0849354', 'fused_weight_layout.py': 'dde6829b0be8238d91ee7bdd89246874bb13ab4379e29cfc057faaebd98ca6f0', 'expert_reconstruction.py': '2d3bfc73b1736f2abe605b43c0e0d81f483afa88c5c79c050df5faa630cea1a4', '__init__.py': '6c6ec57de9f82ef42d82760f144a4571cb16b3cd6de33aaa7aa9fd65e8ab1fa1'}.items():\n        if hashlib.sha256((root/name).read_bytes()).hexdigest()!=expected:\n            raise ValueError('fused helper changed: '+name)\n    from glm_reconstruction_v979_helpers.glm_fused_moe import NativeFusedMoE\n    build=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-v979-active-cube')\n    resources={'fused_int4a'+str(bits): NativeFusedMoE(build,namespace='glm_reconstruction_v979',activation_bits=bits,\n                                                     prepared_weight_layout=True,fp16_route_workspace=True)\n               for bits in (8,4)}\n    if True:\n        import torch\n        from glm_reconstruction_v979_helpers.fused_weight_layout import PreparedWeightLayout\n        report=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-v979-active-cube')/('weight-layout-rank'+str(torch.distributed.get_rank())+'.json')\n        resources['_weight_layout']=PreparedWeightLayout(torch.npu.synchronize,torch.distributed.get_world_size(),\n                                                         report_path=report)\n    return resources\n\ndef validate(resources):\n    from glm_reconstruction_v979_helpers.fused_moe_probe import gate_case\n    records=[gate_case(resources['fused_int4a'+str(activation)],bits,tokens=tokens)\n             for activation in (8,4) for bits in (2,3,4) for tokens in (2, 17)]\n    return {'passed':True,'cases':len(records),'native_fused_stages':2,\n             'input_quantization_passes_per_token':1,\n             'fp16_intermediate_gm_bytes':max(r['fp16_intermediate_gm_bytes'] for r in records),\n             'model_quality':'not_evaluated'}\n"
+}

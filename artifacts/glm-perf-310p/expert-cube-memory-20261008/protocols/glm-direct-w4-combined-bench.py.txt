@@ -1,0 +1,44 @@
+import json,time,urllib.request,uuid,sys,re
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+client=ResidentClient('http://127.0.0.1:8001')
+results=[]
+def idle():
+ with urllib.request.urlopen(client.base_url+"/metrics",timeout=30) as reply:metrics=reply.read().decode()
+ counts=[float(v) for v in re.findall(r'^vllm:num_requests_(?:running|waiting)(?:\{[^\n]*\})?\s+([0-9.eE+-]+)$',metrics,re.M)]
+ assert counts and not any(counts),"GLM user request active; defer benchmark"
+def stream(tokens,output_tokens,nonce):
+ prompt=[101+nonce]+[43]*(tokens-2)+[201+nonce]
+ payload={'model':'glm53-flash-selective-w3','prompt':prompt,'max_tokens':output_tokens,'temperature':0,'ignore_eos':True,'stream':True,'stream_options':{'include_usage':True}}
+ request=urllib.request.Request(client.base_url+'/v1/completions',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
+ start=time.monotonic();first=None;last=None;usage=None;done=False;fragments=[]
+ with urllib.request.urlopen(request,timeout=900) as reply:
+  for raw in reply:
+   if not raw.startswith(b'data:'):continue
+   data=raw[5:].strip()
+   if data==b'[DONE]':done=True;break
+   event=json.loads(data);assert 'error' not in event,event
+   if event.get('usage'):usage=event['usage']
+   for choice in event.get('choices',[]):
+    if choice.get('text'):
+     now=time.monotonic();first=now if first is None else first;last=now;fragments.append(choice['text'])
+ assert done and usage and first is not None
+ assert usage['prompt_tokens']==tokens and usage['completion_tokens']==output_tokens
+ elapsed=time.monotonic()-start
+ return dict(prompt_tokens=tokens,completion_tokens=output_tokens,ttft_s=first-start,total_s=elapsed,
+             generation_tok_s=(output_tokens-1)/(elapsed-(first-start)) if output_tokens>1 else None,
+             visible_generation_tok_s=(output_tokens-1)/(last-first) if output_tokens>1 and last>first else None,
+             text=''.join(fragments),nonce=nonce)
+def save():
+ (root/'night-speed-20261008/active-cube980-serving.json').write_text(json.dumps({'complete':False,'scope':'synthetic token-id prompts; absolute timing, no matched server baseline','records':results},indent=2)+'\n')
+
+for tokens,generated,nonce in ((640,1,4),(1280,1,5),(6400,1,6),(640,1,4),(1280,1,5)):
+ idle();assert client.request('/pause?mode=wait&clear_cache=true')['status']=='paused';client.resume()
+ row=stream(tokens,generated,nonce);results.append(row);save();print(json.dumps(row),flush=True)
+status=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+assert all(r['fp16_scale_storage']['prefill_version']==980 and not r['graphs_dirty'] and not r['native_failed'] for r in status)
+(root/'night-speed-20261008/active-cube980-serving.json').write_text(json.dumps(dict(complete=True,records=results,status=status,paused=client.request('/is_paused',method='GET')),indent=2))
+print('Full cold requests finished on v980',flush=True)

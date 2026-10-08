@@ -63,6 +63,8 @@ def manifest(build_dir, gate_report):
             "vector_scale_products",
             "gather_product_matrix",
             "prefill_rows_32",
+            "active_cube_rows",
+            "direct_w4_l1",
             "quad_hidden_quant",
             "direct_hidden_gather",
             "route_packed_input",

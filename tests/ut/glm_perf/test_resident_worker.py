@@ -76,7 +76,7 @@ def worker(monkeypatch):
     monkeypatch.setattr(
         torch,
         "npu",
-        types.SimpleNamespace(synchronize=Mock(), graph_pool_handle=Mock(side_effect=object)),
+        types.SimpleNamespace(synchronize=Mock(), empty_cache=Mock(), graph_pool_handle=Mock(side_effect=object)),
         raising=False,
     )
     monkeypatch.setattr(torch.distributed, "get_rank", lambda: 0)
@@ -154,6 +154,7 @@ def test_mode_switch_preserves_captures_and_selects_target_and_draft_explicitly(
         assert (target._resident_direct, draft._resident_direct) == expected
         assert (target.entries["test"], draft.entries["test"]) == captures
     worker.runner.capture_model.assert_not_called()
+    worker.extension.torch.npu.empty_cache.assert_not_called()
 
 
 def test_recapture_clears_attention_handles_and_retains_weight_and_cache_allocations(worker):
@@ -173,6 +174,27 @@ def test_recapture_clears_attention_handles_and_retains_weight_and_cache_allocat
     assert not torch.count_nonzero(worker.cache)
     assert not worker.runner.requests
     worker.runner.input_batch.remove_request.assert_called_once_with("finished")
+
+
+def test_recapture_returns_retired_cached_blocks_before_capture_without_relocating_live_tensors(worker):
+    actions = []
+    worker.extension.torch.npu.empty_cache.side_effect = lambda: actions.append("release_cached")
+    capture = worker.runner.capture_model.side_effect
+
+    def check_capture():
+        assert actions == ["release_cached"]
+        actions.append("capture")
+        capture()
+
+    worker.runner.capture_model.side_effect = check_capture
+    weight_pointer, cache_pointer = worker.weights.data_ptr(), worker.cache.data_ptr()
+    receipt = apply(worker, Control(uuid.uuid4().hex, "graph", recapture=True))
+    assert not receipt["graphs_dirty"]
+    assert actions == ["release_cached", "capture"]
+    assert worker.weights.data_ptr() == weight_pointer
+    assert worker.cache.data_ptr() == cache_pointer
+    torch.testing.assert_close(worker.weights, torch.tensor([10.0]))
+    torch.testing.assert_close(worker.cache, torch.ones(4))
 
 
 def test_recapture_renews_retired_allocator_pool_and_shares_it_between_models(worker):

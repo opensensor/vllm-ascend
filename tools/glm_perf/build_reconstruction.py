@@ -66,6 +66,8 @@ def build(
     prerounded_weight_scales=False,
     compact_w4_scratch=False,
     fp16_weight_scales=False,
+    active_cube_rows=False,
+    direct_w4_l1=False,
 ):
     """Freeze helper sources and compile a unique, append-only native version."""
     if type(version) is not int or version < 1 or output_columns not in (16, 32, 64, 128):
@@ -93,6 +95,8 @@ def build(
             prerounded_weight_scales,
             compact_w4_scratch,
             fp16_weight_scales,
+            active_cube_rows,
+            direct_w4_l1,
         )
     ):
         raise ValueError("prefill experiment flags must be boolean")
@@ -196,6 +200,12 @@ def build(
         raise ValueError("contiguous prefill cast requires wide paired prefill rows")
     if prefill_product_cast and nz_prefill_accumulator:
         raise ValueError("contiguous prefill cast and NZ accumulation are alternative readback schedules")
+    if active_cube_rows and not (prefill_rows_32 and pair_prefill_scale_groups):
+        raise ValueError("active Cube rows require paired M32 prefill")
+    if active_cube_rows and (nz_prefill_accumulator or prefill_product_cast):
+        raise ValueError("active Cube rows require the qualified strided readback")
+    if direct_w4_l1 and not (prepared_weight_layout and prefill_weight_cache):
+        raise ValueError("direct W4 L1 requires prepared projection cache allocation")
     namespace = f"glm_reconstruction_v{version}"
     build_dir = build_dir.resolve()
     build_dir.mkdir(parents=True, exist_ok=False)
@@ -263,6 +273,8 @@ def build(
             "native_route_columns": native_route_columns,
             "prerounded_weight_scales": prerounded_weight_scales,
             "fp16_weight_scales": fp16_weight_scales,
+            "active_cube_rows": active_cube_rows,
+            "direct_w4_l1": direct_w4_l1,
             "share_gate_up_input": share_gate_up_input,
             "cache_gate_up_activations": cache_gate_up_activations,
             "vector_scale_products": vector_scale_products,
@@ -339,6 +351,8 @@ def build(
                     *(["-DGLM_PREFILL_WEIGHT_CACHE"] if prefill_weight_cache else []),
                     *(["-DGLM_VECTOR_SCALE_PRODUCTS"] if vector_scale_products else []),
                     *(["-DGLM_PREFILL_ROWS_32"] if prefill_rows_32 else []),
+                    *(["-DGLM_ACTIVE_CUBE_ROWS"] if active_cube_rows else []),
+                    *(["-DGLM_DIRECT_W4_L1"] if direct_w4_l1 else []),
                     *(["-DGLM_GATHER_PRODUCT_MATRIX"] if gather_product_matrix else []),
                     *(["-DGLM_FP16_ROUTE_WORKSPACE"] if fp16_route_workspace else []),
                     *(["-DGLM_NATIVE_ROUTE_COLUMNS"] if stage == "down" and native_route_columns else []),
@@ -573,6 +587,12 @@ def main():
         action="store_true",
         help="add paired W4 entries with reconstruction-only scratch removed",
     )
+    parser.add_argument(
+        "--active-cube-rows", action="store_true", help="compute only populated M16 row blocks in paired A4 prefill"
+    )
+    parser.add_argument(
+        "--direct-w4-l1", action="store_true", help="load prepared W4 weights into L1 without UB staging"
+    )
     args = parser.parse_args()
     print(
         build(
@@ -616,6 +636,8 @@ def main():
             args.prerounded_weight_scales,
             args.compact_w4_scratch,
             args.fp16_weight_scales,
+            args.active_cube_rows,
+            args.direct_w4_l1,
         )
     )
 

@@ -1,0 +1,7 @@
+import json,subprocess,sys,time
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+for name in ('glm-expert-cube-admit-base-only','glm-direct-w4-only-serving-admit','glm-direct-w4-only-live','glm-direct-w4-only-bench'):
+ with (root/(name+'-final-capture.log')).open('x') as log:
+  subprocess.run([sys.executable,str(root/(name+'.py'))],stdout=log,stderr=subprocess.STDOUT,check=True,timeout=900)
+print('Direct-only full serving comparison complete',flush=True)

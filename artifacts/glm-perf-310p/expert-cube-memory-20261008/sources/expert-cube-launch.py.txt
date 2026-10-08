@@ -1,0 +1,28 @@
+import os,json,subprocess,socket,shutil,hashlib
+from pathlib import Path
+import psutil
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+old=json.loads(Path('/home/matteius/experiments/glm-reconstruction-20261006/native-disk-head-nz-recovery-20261007-v2.json').read_text())
+saved=json.loads(Path('/home/matteius/experiments/glm-decode-flags-20261006/candidate-config.json').read_text())
+source=root/'runtime-fp16-scales-20261008'
+checkpoint=Path('/srv/ai/models/GLM-5.3-Flash-native-int4-fp16-scales-20261008')
+manifest=json.loads((checkpoint/'native-layout.json').read_text())
+assert manifest['complete'] and manifest['weight_scale_layout']=='fp16_storage_fp32_compute_v1'
+assert (root/'fp16-scales-v964-resident-manifest-20261008.json').exists(), 'real-weight kernel gates missing'
+assert not any(p.info['name'] in ('VLLM::Worker','VLLMWorker') for p in psutil.process_iter(['name']))
+with socket.socket() as sock:assert sock.connect_ex(('127.0.0.1',8001))!=0
+command=list(old['command']);command[command.index('serve')+1]=str(checkpoint)
+environment=dict(os.environ)
+environment.update(ASCEND_CUSTOM_OPP_PATH=':'.join('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/prefill-kda-score-row-batch-full-v2/opp-score-row-batch/vendors/custom_transformer' if v == '/home/matteius/experiments/glm-prompt-profile-20261005/opp-score-cache/vendors/custom_transformer' else v for v in saved['opp_stack']),
+ PYTHONPATH=':'.join(['/home/matteius/experiments/glm-decode-flags-20261006','/home/matteius/experiments/glm-kpool-live-score-20261005',str(source),'/srv/ai/src/vllm-opensensor',environment.get('PYTHONPATH','')]),
+ ASCEND_RT_VISIBLE_DEVICES='0,1,2,3',SOC_VERSION='ascend310p1',TASK_QUEUE_ENABLE='1',OMP_NUM_THREADS='1',
+ VLLM_SERVER_DEV_MODE='1',VLLM_USE_BREAKABLE_CUDAGRAPH='1',VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS='3000',
+ VLLM_ASCEND_310P_ENABLE_MLA='1',VLLM_ASCEND_310P_GLM_HOST_KV='0',VLLM_ASCEND_KV_CACHE_FRACTION='0.75',VLLM_ASCEND_LOG_REQUEST_TIMINGS='1')
+environment['LD_LIBRARY_PATH']=':'.join([str(Path(v)/'op_api/lib') for v in saved['host_stack']]+[environment.get('LD_LIBRARY_PATH','')])
+environment.pop('ASCEND_LAUNCH_BLOCKING',None)
+log=root/'expert-cube-server-20261008.log'
+with log.open('xb') as output:
+ process=subprocess.Popen(command,cwd=source,env=environment,stdin=subprocess.DEVNULL,stdout=output,stderr=subprocess.STDOUT,start_new_session=True)
+record=dict(pid=process.pid,created=psutil.Process(process.pid).create_time(),log=str(log),command=command,cwd=str(source),scope='Original FP16 scale disk checkpoint; all qualified fusions, tail vector math, gated-key reuse')
+(root/'expert-cube-server-process-20261008.json').write_text(json.dumps(record,indent=2)+'\n')
+print(json.dumps(record),flush=True)

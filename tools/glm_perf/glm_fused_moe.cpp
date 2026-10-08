@@ -18,6 +18,13 @@
     (!defined(GLM_PREPARED_WEIGHT_LAYOUT) || GLM_STATIC_WEIGHT_BITS != 4 || defined(GLM_WEIGHT_DECODE_LUT))
   #error "compact W4 scratch requires static prepared W4 without lookup tables"
 #endif
+#if defined(GLM_ACTIVE_CUBE_ROWS) && (!defined(GLM_PREFILL_ROWS_32) || !defined(GLM_PAIR_PREFILL_SCALE_GROUPS) || \
+                                      defined(GLM_NZ_PREFILL_ACCUMULATOR) || defined(GLM_PREFILL_PRODUCT_CAST))
+  #error "active Cube rows require paired M32 with qualified strided readback"
+#endif
+#if defined(GLM_DIRECT_W4_L1) && (!defined(GLM_PREPARED_WEIGHT_LAYOUT) || !defined(GLM_PREFILL_WEIGHT_CACHE))
+  #error "direct W4 L1 requires prepared weights and the projection cache allocation"
+#endif
 #ifndef GLM_INT4_OUTPUT_COLUMNS
   #define GLM_INT4_OUTPUT_COLUMNS 128
 #endif
@@ -134,7 +141,13 @@ static_assert(SCALE_ROW_INDEX_OFFSET + M * sizeof(uint32_t) <= N * NZ_K, "scale 
 static_assert(SCALE_PRODUCTS_OFFSET + MAX_CACHED_SCALE_ROWS * (N / GROUP) * MAX_K_GROUPS * sizeof(float) <=
                   Scratch::GATHERED_BYTES,
               "combined scales overlap prepared W2/W3 byte reconstruction");
-constexpr uint32_t PRODUCT_OFFSET_BYTES = 2 * N * sizeof(uint32_t);
+#ifdef GLM_ACTIVE_CUBE_ROWS
+constexpr uint32_t CUBE_ROW_TILE = 16;
+constexpr uint32_t PRODUCT_LAYOUT_COUNT = 2 * M / CUBE_ROW_TILE;
+#else
+constexpr uint32_t PRODUCT_LAYOUT_COUNT = 2;
+#endif
+constexpr uint32_t PRODUCT_OFFSET_BYTES = PRODUCT_LAYOUT_COUNT * N * sizeof(uint32_t);
 constexpr uint32_t QUANT_OFFSET_BYTES = (2 * GlmFusedQuant::ELEMENTS + GlmFusedQuant::BATCH) * sizeof(uint32_t);
 #ifdef GLM_NZ_PREFILL_ACCUMULATOR
 constexpr uint32_t NZ_SCALE_BLOCKS = N / GROUP;
@@ -383,9 +396,17 @@ class Projection {
       outputOffsets.SetValue(channel, physical * sizeof(half));
 #endif
       auto productOffsets = productOffsets_.Get<uint32_t>();
+#ifdef GLM_ACTIVE_CUBE_ROWS
+      for (uint32_t layout = 0; layout < PRODUCT_LAYOUT_COUNT; ++layout) {
+        const uint32_t rows = (layout + 1) * CUBE_ROW_TILE;
+        productOffsets.SetValue(layout * N + channel,
+                                (channel / NZ_N * rows * NZ_N + channel % NZ_N) * sizeof(int32_t));
+      }
+#else
       for (uint32_t limbs = 1; limbs <= 2; ++limbs)
         productOffsets.SetValue((limbs - 1) * N + channel,
                                 (channel / NZ_N * limbs * M * NZ_N + channel % NZ_N) * sizeof(int32_t));
+#endif
       // Physical even/odd channel halves repeat the same four block32 scales.
       // Keep indices after the FP32 and rounded-FP16 scale cache, without
       // increasing the already tight down-stage UB allocation.
@@ -442,7 +463,11 @@ class Projection {
   __aicore__ inline void Decode(int64_t expert, int64_t tile, int64_t kTile) {
 #ifdef GLM_COMPACT_W4_SCRATCH
     const int64_t offset = ((expert * (n_ / N) + tile) * (k_ / NZ_K) + kTile) * RAW_BYTES;
+  #ifdef GLM_DIRECT_W4_L1
+    DataCopy(b1_.Get<uint8_t>(), codes_[offset], RAW_BYTES);
+  #else
     DataCopy(packedB_.Get<uint8_t>(), codes_[offset], RAW_BYTES);
+  #endif
     PipeBarrier<PIPE_ALL>();
 #else
     const uint32_t fields = bits_ == 3 ? 8 : 8 / bits_;
@@ -453,7 +478,11 @@ class Projection {
   #ifdef GLM_PREPARED_WEIGHT_LAYOUT
     const int64_t offset = ((expert * (n_ / N) + tile) * (k_ / NZ_K) + kTile) * (N * NZ_K * bits_ / 8);
     if (bits_ == 4) {
+    #ifdef GLM_DIRECT_W4_L1
+      DataCopy(b1_.Get<uint8_t>(), codes_[offset], RAW_BYTES);
+    #else
       DataCopy(packedB_.Get<uint8_t>(), codes_[offset], RAW_BYTES);
+    #endif
       PipeBarrier<PIPE_ALL>();
       return;
     }
@@ -662,6 +691,18 @@ class Projection {
       return;
     }
 #endif
+#ifdef GLM_DIRECT_W4_L1
+    if (bits_ == 4) {
+      LoadData2DParams load;
+      load.repeatTimes = (wideGroups ? wideGroups / 2 : 1) * N / NZ_N;
+      load.srcStride = 1;
+      load.ifTranspose = false;
+      LoadData(b2_.Get<int8_t>().ReinterpretCast<int4b_t>(),
+               b1_.Get<int8_t>()[group / 2 * B_BYTES].ReinterpretCast<int4b_t>(), load);
+      PipeBarrier<PIPE_ALL>();
+      return;
+    }
+#endif
     if (wideGroups) {
       const uint32_t segments = wideGroups / 2;
       DataCopy(b1_.Get<int8_t>(), packedB_.Get<int8_t>()[group / 2 * B_BYTES], segments * B_BYTES);
@@ -817,20 +858,37 @@ class Projection {
 #endif
     PipeBarrier<PIPE_ALL>();
   }
+#ifdef GLM_ACTIVE_CUBE_ROWS
+  __aicore__ inline uint32_t ActiveCubeRows(uint32_t count, bool paired) const {
+    const bool sparse = activationBits_ == 8 && count <= (M - 1) / 2;
+    const uint32_t limbs = PAIR_PREFILL_SCALE_GROUPS && activationBits_ == 4 && paired && count > M / 2
+                               ? 2
+                               : (activationBits_ == 4 || sparse ? 1 : 2);
+    // The packed activation rows are unchanged. Compute/read back only the
+    // complete M16 blocks containing both independent block32 products.
+    if (tokens_ > BULK_TOKENS && activationBits_ == 4 && paired)
+      return ((2 * count + CUBE_ROW_TILE - 1) / CUBE_ROW_TILE) * CUBE_ROW_TILE;
+    return limbs * M;
+  }
+#endif
   __aicore__ inline void Product(uint32_t count, bool paired, uint32_t wideGroups = 0) {
     MmadParams mm;
     const bool sparse = activationBits_ == 8 && count <= (M - 1) / 2;
     const uint32_t limbs = PAIR_PREFILL_SCALE_GROUPS && activationBits_ == 4 && paired && count > M / 2
                                ? 2
                                : (activationBits_ == 4 || sparse ? 1 : 2);
+#ifdef GLM_ACTIVE_CUBE_ROWS
+    mm.m = ActiveCubeRows(count, paired);
+#else
     mm.m = limbs * M;
+#endif
     mm.n = N;
     mm.k = wideGroups ? wideGroups * GROUP : K0;
     mm.cmatrixInitVal = true;
     Mmad(c_.Get<int32_t>(), a2_.Get<int8_t>().ReinterpretCast<int4b_t>(), b2_.Get<int8_t>().ReinterpretCast<int4b_t>(),
          mm);
     PipeBarrier<PIPE_ALL>();
-    const DataCopyParams copy{N / NZ_N, static_cast<uint16_t>(limbs * M / NZ_N), 0, 0};
+    const DataCopyParams copy{N / NZ_N, static_cast<uint16_t>(mm.m / NZ_N), 0, 0};
     DataCopyEnhancedParams enhanced;
     enhanced.blockMode = BlockMode::BLOCK_MODE_MATRIX;
     DataCopy(Products<int32_t>(), c_.Get<int32_t>(), copy, enhanced);
@@ -842,6 +900,11 @@ class Projection {
                                ? 2
                                : (activationBits_ == 4 || sparse ? 1 : 2);
     const uint32_t base = paired ? part * (activationBits_ == 8 ? 2 * count + 1 : count) : 0;
+#ifdef GLM_ACTIVE_CUBE_ROWS
+    const uint32_t productRows = ActiveCubeRows(count, paired);
+#else
+    const uint32_t productRows = limbs * M;
+#endif
     auto raw = Products<int32_t>();
     auto low = LowProducts();
     auto high = HighProducts();
@@ -858,7 +921,7 @@ class Projection {
       const DataCopyParams copy{static_cast<uint16_t>(count), NZ_N * sizeof(float) / 32, 0,
                                 (N - NZ_N) * sizeof(float) / 32};
       for (uint32_t strip = 0; strip < N / NZ_N; ++strip)
-        DataCopy(low[strip * NZ_N], converted[(strip * limbs * M + base) * NZ_N], copy);
+        DataCopy(low[strip * NZ_N], converted[(strip * productRows + base) * NZ_N], copy);
       PipeBarrier<PIPE_ALL>();
       return;
     }
@@ -868,7 +931,7 @@ class Projection {
       // Dense A4 uses two M32 Cube blocks. Cast four complete rows at a time,
       // across all N16 strips; keep padded rows local and unread by the epilogue.
       constexpr uint32_t VECTOR_ELEMENTS = 64;
-      const UnaryRepeatParams repeat{1, 1, M * NZ_N / LANES, static_cast<uint8_t>(limbs * M * NZ_N / LANES)};
+      const UnaryRepeatParams repeat{1, 1, M * NZ_N / LANES, static_cast<uint8_t>(productRows * NZ_N / LANES)};
       for (uint32_t offset = 0; offset < M * NZ_N; offset += VECTOR_ELEMENTS)
         Cast(low[offset], raw[base * NZ_N + offset], RoundMode::CAST_NONE, static_cast<uint64_t>(VECTOR_ELEMENTS),
              N / NZ_N, repeat);
@@ -902,7 +965,7 @@ class Projection {
       // Each Cube row contributes one aligned 64-byte strip. DMA the eight
       // strips into a contiguous INT32 row before the single FP32 cast.
       const DataCopyParams copy{N / NZ_N, NZ_N * sizeof(int32_t) / 32,
-                                static_cast<uint16_t>((limbs * M - 1) * NZ_N * sizeof(int32_t) / 32), 0};
+                                static_cast<uint16_t>((productRows - 1) * NZ_N * sizeof(int32_t) / 32), 0};
       auto temporary = ProductTemporary<int32_t>();
       for (uint32_t m = 0; m < count; ++m) DataCopy(temporary[m * N], raw[(base + m) * NZ_N], copy);
       PipeBarrier<PIPE_ALL>();
@@ -926,7 +989,7 @@ class Projection {
     if (count <= MAX_REPEAT_CAST_ROWS) {
       // Repeat across the eight N16 strips of one Cube row. This preserves
       // every INT32 dot while avoiding a gather or eight per-strip casts.
-      const UnaryRepeatParams repeat{1, 1, NZ_N / LANES, static_cast<uint8_t>(limbs * M * NZ_N / LANES)};
+      const UnaryRepeatParams repeat{1, 1, NZ_N / LANES, static_cast<uint8_t>(productRows * NZ_N / LANES)};
       for (uint32_t m = 0; m < count; ++m) {
         Cast(low[m * N], raw[(base + m) * NZ_N], RoundMode::CAST_NONE, static_cast<uint64_t>(NZ_N), N / NZ_N, repeat);
         if (activationBits_ == 8)
@@ -944,13 +1007,13 @@ class Projection {
     // strided casts avoid the growing gather cost measured on real experts.
     if (count > 1) {
       for (uint32_t strip = 0; strip < N / NZ_N; ++strip) {
-        Cast(low[strip * NZ_N], raw[strip * limbs * M * NZ_N + base * NZ_N], RoundMode::CAST_NONE, NZ_N, count,
+        Cast(low[strip * NZ_N], raw[strip * productRows * NZ_N + base * NZ_N], RoundMode::CAST_NONE, NZ_N, count,
              {1, 1, N / LANES, NZ_N / LANES});
         if (activationBits_ == 8) {
-          Cast(high[strip * NZ_N], raw[strip * limbs * M * NZ_N + (sparse ? base + count : M) * NZ_N],
+          Cast(high[strip * NZ_N], raw[strip * productRows * NZ_N + (sparse ? base + count : M) * NZ_N],
                RoundMode::CAST_NONE, NZ_N, count, {1, 1, N / LANES, NZ_N / LANES});
           Cast(low[MAX_ROWS * N + strip * NZ_N],
-               raw[strip * limbs * M * NZ_N + (sparse ? base + 2 * count : MAX_ROWS) * NZ_N], RoundMode::CAST_NONE,
+               raw[strip * productRows * NZ_N + (sparse ? base + 2 * count : MAX_ROWS) * NZ_N], RoundMode::CAST_NONE,
                NZ_N);
         }
       }
@@ -960,7 +1023,11 @@ class Projection {
     // Gather moves the INT32 bit patterns without floating arithmetic. A single
     // contiguous cast replaces eight per-strip casts and their scalar setup.
     auto temporary = ProductTemporary<int32_t>();
+#ifdef GLM_ACTIVE_CUBE_ROWS
+    auto offsets = productOffsets_.Get<uint32_t>()[(productRows / CUBE_ROW_TILE - 1) * N];
+#else
     auto offsets = productOffsets_.Get<uint32_t>()[(limbs - 1) * N];
+#endif
     Gather(temporary, raw[base * NZ_N], offsets, static_cast<uint32_t>(0), count * N);
     PipeBarrier<PIPE_V>();
     Cast(low, temporary, RoundMode::CAST_NONE, count * N);
@@ -1066,9 +1133,19 @@ class Projection {
     for (uint32_t projection = 0; projection < projections; ++projection) {
       const int64_t weightTile = tile + projection * (n_ / N / 2);
       for (int64_t kt = 0; kt < k_ / NZ_K; ++kt) {
-        Decode(expert, weightTile, kt);
-        DataCopy(b1_.Get<int8_t>()[projection * CACHED_PROJECTION_BYTES + kt * RAW_BYTES], packedB_.Get<int8_t>(),
-                 RAW_BYTES);
+  #ifdef GLM_DIRECT_W4_L1
+        if (bits_ == 4) {
+          const int64_t offset = ((expert * (n_ / N) + weightTile) * (k_ / NZ_K) + kt) * RAW_BYTES;
+          DataCopy(b1_.Get<uint8_t>()[projection * CACHED_PROJECTION_BYTES + kt * RAW_BYTES], codes_[offset],
+                   RAW_BYTES);
+        } else {
+  #endif
+          Decode(expert, weightTile, kt);
+          DataCopy(b1_.Get<int8_t>()[projection * CACHED_PROJECTION_BYTES + kt * RAW_BYTES], packedB_.Get<int8_t>(),
+                   RAW_BYTES);
+  #ifdef GLM_DIRECT_W4_L1
+        }
+  #endif
         PipeBarrier<PIPE_ALL>();
       }
     }

@@ -45,6 +45,8 @@ def bundles(pytestconfig):
         "vector_scale_products",
         "gather_product_matrix",
         "prefill_rows_32",
+        "active_cube_rows",
+        "direct_w4_l1",
         "quad_hidden_quant",
         "direct_hidden_gather",
         "route_packed_input",
@@ -100,7 +102,9 @@ def test_real_multibatch_exact_replay(bundles, real_weights, activation_bits, to
     ids[::3, 1] = 1
     weights = torch.rand(tokens, 2, generator=generator).npu()
     weights[::4, 0] = 0
-    gc, dc, ggs, gds = None, None, gs.npu(), ds.npu()
+    scale_dtype = torch.float16 if builds[0][1][1].get("fp16_weight_scales") else torch.float32
+    assert all(bool(options.get("fp16_weight_scales")) == (scale_dtype == torch.float16) for _, (_, options) in builds)
+    gc, dc, ggs, gds = None, None, gs.to(scale_dtype).npu(), ds.to(scale_dtype).npu()
     graphs, outputs, natives = [], [], []
     for directory, (helper, options) in builds:
         native = helper.NativeFusedMoE(

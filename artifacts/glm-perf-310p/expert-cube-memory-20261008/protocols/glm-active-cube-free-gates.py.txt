@@ -1,0 +1,40 @@
+import json,sys,os,subprocess,psutil,urllib.request
+import regex as re
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+build=root/'build-v979-active-cube';assert (build/'provenance.json').exists()
+launch=(root/'night-speed-20261008/score-row-batch-launch.py').read_text().replace("log=root/'score-row-batch-server-20261008.log'","log=root/'active-cube-server-20261008.log'").replace("root/'score-row-batch-server-process-20261008.json'","root/'active-cube-server-process-20261008.json'")
+assert not (root/'active-cube-server-20261008.log').exists();compile(launch,'<best-parent-launch>','exec')
+c=ResidentClient('http://127.0.0.1:8001')
+with urllib.request.urlopen(c.base_url+'/metrics',timeout=30) as response:metrics=response.read().decode()
+counts=[float(v) for v in re.findall(r'^vllm:num_requests_(?:running|waiting)(?:\{[^\n]*\})?\s+([0-9.eE+-]+)$',metrics,re.M)]
+assert counts and not any(counts),'User request active; defer qualification'
+assert c.request('/pause?mode=wait&clear_cache=false')['status']=='paused'
+try:
+ rows=c._acknowledged_rpc('resident_status',matches=c._status_matches)
+ assert all(not r['graphs_dirty'] and not r['native_failed'] for r in rows)
+ receipt=json.loads((root/'score-row-batch-server-process-20261008.json').read_text());parent=psutil.Process(receipt['pid']);assert abs(parent.create_time()-receipt['created'])<1
+ children=parent.children(recursive=True);assert set(r['pid'] for r in rows)<=set(p.pid for p in children)
+except BaseException:c.resume();raise
+owned=[parent,*children]
+for p in owned:
+ try:p.terminate()
+ except psutil.NoSuchProcess:pass
+_,remaining=psutil.wait_procs(owned,timeout=40)
+for p in remaining:
+ try:p.kill()
+ except psutil.NoSuchProcess:pass
+psutil.wait_procs(remaining,timeout=5)
+assert not any(p.is_running() and p.status()!=psutil.STATUS_ZOMBIE for p in owned)
+print('Idle GLM tree stopped; qualify native candidate on free NPU before restoring real weights',flush=True)
+try:
+ env=dict(os.environ);env['ASCEND_RT_VISIBLE_DEVICES']='0'
+ with (root/'v979-active-cube-full-gates.log').open('x') as out:
+  subprocess.run([sys.executable,str(root/'glm-active-cube-real-gates.py')],env=env,stdout=out,stderr=subprocess.STDOUT,check=True,timeout=1200)
+ print('v979 complete arithmetic/boundary qualification passed',flush=True)
+except BaseException as error:
+ (root/'v979-active-cube-error.json').write_text(json.dumps({'type':type(error).__name__,'error':str(error)}));print('Candidate gate failed; qualified parent will be restored: '+str(error),flush=True)
+finally:
+ (root/'night-speed-20261008/active-cube-launch.py').write_text(launch)
+ exec(compile(launch,'<best-parent-launch>','exec'),{'__name__':'__main__'})

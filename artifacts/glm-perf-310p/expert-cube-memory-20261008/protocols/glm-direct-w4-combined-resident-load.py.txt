@@ -1,0 +1,21 @@
+import hashlib,json,sys,urllib.request
+import regex as re
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_native import NativeManifest
+build=root/'build-v980-direct-w4';provenance=json.loads((build/'provenance.json').read_text())
+options=provenance['_build'];assert options['direct_w4_l1'] and options['active_cube_rows']
+files=[p for p in build.iterdir() if p.suffix=='.bin']+[build/'provenance.json']+list((build/options['helper_package']).glob('*.py'))
+def entry(p):return {'path':str(p),'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}
+value=dict(name='reconstruction_v980',libraries=[entry(build/'glm_reconstruction_bridge_v980.so')],assets=[entry(p) for p in files],operators=['glm_reconstruction_v980::launch'],validation_source=(root/'glm-direct-w4-combined-resident-validation.py').read_text())
+manifest=NativeManifest(value);(root/'v980-resident-manifest.json').write_text(json.dumps(value,indent=2))
+c=ResidentClient('http://127.0.0.1:8001',timeout=900)
+with urllib.request.urlopen(c.base_url+'/metrics',timeout=30) as response:metrics=response.read().decode()
+counts=[float(v) for v in re.findall(r'^vllm:num_requests_(?:running|waiting)(?:\{[^\n]*\})?\s+([0-9.eE+-]+)$',metrics,re.M)]
+assert counts and not any(counts),'GLM request active; postpone resource qualification'
+print('Qualifying direct W4 L1 in the existing four worker contexts; preserve worker devices, models and weights',flush=True)
+rows=c.load_native(manifest)
+assert all(r.get('validation',{}).get('paired_boundaries')==60 for r in rows)
+(root/'v980-resident-admission.json').write_text(json.dumps(rows,indent=2));c.resume()
+print('v980 full arithmetic and 60 exact real-weight boundaries qualified on every rank; server resumed',flush=True)

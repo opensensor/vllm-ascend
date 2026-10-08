@@ -1,0 +1,32 @@
+import json,os,psutil,subprocess,sys,urllib.request
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+receipt=json.loads((root/'active-cube-server-process-20261008.json').read_text())
+parent=psutil.Process(receipt['pid']);assert abs(parent.create_time()-receipt['created'])<1
+log=(root/'active-cube-server-20261008.log').read_text()
+last=log[log.rindex('setting pause state to PAUSED_NEW'):]
+assert 'POST /resume' not in last and 'POST /v1/completions' not in last
+paused={'is_paused':True,'source':'last server pause log; API status blocked by recapture RPC'}
+for process in psutil.process_iter(['pid','cmdline']):
+ args=process.info['cmdline'] or []
+ if args and str(root/'glm-direct-w4-combined-live.py') in args:
+  process.terminate()
+owned=[parent,*parent.children(recursive=True)]
+(root/'v980-serving-capture-stall.json').write_text(json.dumps({'receipt':receipt,'paused':paused,'owned_pids':[p.pid for p in owned],'qualification':'full operator gates passed on all four ranks; subsequent serving recapture stalled','memory':'all chips near capacity in npu-smi; no proven kernel failure'},indent=2))
+for p in owned:
+ try:p.terminate()
+ except psutil.NoSuchProcess:pass
+_,pending=psutil.wait_procs(owned,timeout=30)
+for p in pending:
+ try:p.kill()
+ except psutil.NoSuchProcess:pass
+psutil.wait_procs(pending,timeout=5)
+launch=(root/'night-speed-20261008/active-cube-launch.py').read_text().replace('active-cube-server-20261008','direct-w4-server-20261008').replace('active-cube-server-process-20261008','direct-w4-server-process-20261008')
+assert not (root/'direct-w4-server-20261008.log').exists()
+try:
+ with (root/'v981-free-gates.log').open('x') as out:
+  subprocess.run([sys.executable,str(root/'glm-direct-w4-free-gates.py')],stdout=out,stderr=subprocess.STDOUT,check=True,timeout=1200)
+ print('v981 full real-weight gate passed on free device',flush=True)
+finally:
+ (root/'night-speed-20261008/direct-w4-launch.py').write_text(launch)
+ exec(compile(launch,'<recover-direct-w4>','exec'),{'__name__':'__main__'})

@@ -1,0 +1,26 @@
+import json,sys,hashlib,urllib.request,uuid,time
+import regex as re
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_native import NativeManifest
+c=ResidentClient('http://127.0.0.1:8001')
+with urllib.request.urlopen(c.base_url+'/metrics',timeout=30) as response:metrics=response.read().decode()
+counts=[float(v) for v in re.findall(r'^vllm:num_requests_(?:running|waiting)(?:\{[^\n]*\})?\s+([0-9.eE+-]+)$',metrics,re.M)]
+assert counts and not any(counts),'GLM user request active; defer'
+admission=json.loads((root/'v980-resident-admission.json').read_text());assert len(admission)==4 and all(r.get('validation',{}).get('paired_boundaries')==60 for r in admission)
+before=c._acknowledged_rpc('resident_status',matches=c._status_matches)
+loaded=c.load_native(NativeManifest(json.loads((root/'v980-serving-manifest.json').read_text())))
+base=(root/'night-speed-20261008/active-cube-base-candidate.py').read_text()
+source=base.replace("prefill=native_resources['reconstruction_v965']['fused_int4a4']","prefill=native_resources['reconstruction_v980']['fused_int4a4']").replace("'prefill_version':965","'prefill_version':980")
+assert source!=base and source.count("prefill_version':980")==1
+(root/'night-speed-20261008/active-cube-v980-candidate.py').write_text(source)
+try:
+ rows=c.switch(Control(uuid.uuid4().hex,candidate='fp16_all_fusions_score_rows_v2_active_cube980',source=source));c.resume()
+ assert all(r['fp16_scale_storage']['prefill_version']==980 and r['fp16_scale_storage']['decode_version']==964 and not r['graphs_dirty'] and not r['native_failed'] for r in rows)
+ assert sorted((r['pid'],r['weight_storage_digest']) for r in rows)==sorted((r['pid'],r['weight_storage_digest']) for r in before)
+ (root/'night-speed-20261008/active-cube-v980-switch.json').write_text(json.dumps({'loaded':loaded,'before':before,'rows':rows,'source_sha256':hashlib.sha256(source.encode()).hexdigest()},indent=2))
+ print('v980 prefill native kernel selected on all ranks; decode unchanged, workers/weights retained',flush=True)
+except BaseException:
+ c.switch(Control(uuid.uuid4().hex,candidate='fp16_query967_state925_qsa941_tiled971_compact3_int927_bf16v975_kda_reuse_v2_score_row_batch_v2',source=base));c.resume();raise

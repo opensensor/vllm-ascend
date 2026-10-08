@@ -1,0 +1,57 @@
+import sys,json,hashlib,time,torch,torch_npu
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(root/'source-active-cube-v979'))
+from tools.glm_perf.fused_moe_probe import run
+from tools.glm_perf.fused_moe_control import manifest
+from tools.glm_perf.fused_moe_profile import frozen_helper,measure
+from tools.glm_perf.glm_int4 import unpack_canonical_codes
+from safetensors import safe_open
+torch.set_num_threads(4);torch.npu.set_device(0);torch.npu.set_compile_mode(jit_compile=False);torch.npu.config.allow_internal_format=False
+print('NPU context initialized; starting independent arithmetic and real-weight gates',flush=True)
+build=root/'build-v979-active-cube';out=root/'v979-active-cube-independent-gates.json'
+checkpoint=Path('/srv/ai/models/GLM-5.3-Flash-selective-W3-310p')
+run(build,out,checkpoint=checkpoint,real_prefixes=tuple(f'model.language_model.layers.{l}.mlp.experts.0.' for l in (10,11,33)))
+admitted=manifest(build,out);(root/'v979-active-cube-resident-manifest.json').write_text(json.dumps(admitted.value,indent=2))
+parents=[root/'build-v965-fp16-scales',build];helpers=[frozen_helper(p) for p in parents]
+index=json.loads((checkpoint/'model.safetensors.index.json').read_text())['weight_map'];records=[]
+for layer in (10,11,33):
+ prefix=f'model.language_model.layers.{layer}.mlp.experts.0.';values=[];bits=None
+ for proj in ('gate','up','down'):
+  keys=[prefix+proj+'_proj'+suffix for suffix in ('_codes','_scale')];parts=[]
+  for key in keys:
+   with safe_open(str(checkpoint/index[key]),framework='pt',device='cpu') as h:parts.append(h.get_tensor(key))
+  codes,scales=parts;k=scales.shape[1]*32;bits=codes.shape[1]*8//k;values.append((unpack_canonical_codes(codes,k),scales.half()))
+ gate=torch.cat((values[0][0],values[1][0]))[None];gs=torch.cat((values[0][1],values[1][1]))[None].npu();down=values[2][0][None];ds=values[2][1][None].npu()
+ for activation in (4,8):
+  natives=[helper.NativeFusedMoE(p,namespace=opt['namespace'],activation_bits=activation,prepared_weight_layout=True,fp16_route_workspace=True) for p,(helper,opt) in zip(parents,helpers)]
+  gc=natives[0].pack_weight_codes(gate,bits).npu();dc=natives[0].pack_weight_codes(down,bits).npu()
+  for active in (1,2,3,4,7,8,9,15,16,17,23,24,25,30,31,32,63,640):
+   tokens=64 if active<=63 else 640;gen=torch.Generator().manual_seed(9790+layer+active+activation)
+   x=torch.randn(tokens,gate.shape[-1],generator=gen).half().npu();weights=torch.rand(tokens,1,generator=gen).npu();ids=torch.ones(tokens,1,dtype=torch.int64).npu();ids[:active]=0
+   graphs=[];outputs=[]
+   for native in natives:
+    native(x,gc,gs,dc,ds,weights,ids)
+    graph=torch.npu.NPUGraph()
+    with torch.npu.graph(graph):y=native(x,gc,gs,dc,ds,weights,ids)
+    graphs.append(graph);outputs.append(y)
+   for replay in range(3):
+    for graph in graphs:graph.replay()
+    torch.npu.synchronize();a,b=[v.cpu() for v in outputs];mismatch=int((a.view(torch.uint8)!=b.view(torch.uint8)).sum())
+    assert mismatch==0 and bool(torch.isfinite(b).all()),(layer,activation,active,replay,mismatch)
+    if replay==0:x.mul_(1.125);weights.mul_(0.75);ids.zero_()
+    elif replay==1:ids.fill_(1)
+   assert bool((outputs[1].cpu()==0).all())
+   records.append(dict(layer=layer,weight_bits=bits,activation_bits=activation,tokens=tokens,active_rows=active,changed_replays=3,bit_exact=True))
+   (root/'v979-active-cube-boundary-gates.json').write_text(json.dumps(dict(complete=False,records=records),indent=2))
+   print('BOUNDARY',layer,activation,active,'passed',flush=True)
+   del graphs,outputs
+  # Profile entire 640-token hot-expert pipeline, including producers/reducer.
+  ids.zero_();times=[]
+  for native in natives:
+   times.append(measure(native,lambda n=native:n(x,gc,gs,dc,ds,weights,ids),2,5))
+  (root/f'v979-active-cube-profile-L{layer}-A{activation}.json').write_text(json.dumps(times,indent=2))
+  print('PROFILE',layer,activation,json.dumps(times),flush=True)
+  del natives,gc,dc
+ del gs,ds
+(root/'v979-active-cube-boundary-gates.json').write_text(json.dumps(dict(complete=True,records=records),indent=2))
+print('Candidate exact on every sparse/dense/boundary replay',flush=True)

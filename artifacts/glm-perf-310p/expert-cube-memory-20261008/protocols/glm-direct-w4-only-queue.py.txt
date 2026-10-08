@@ -1,0 +1,13 @@
+import json,subprocess,sys,time
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+bench=root/'night-speed-20261008/active-cube980-serving.json'
+end=time.monotonic()+900
+while True:
+ if bench.exists() and json.loads(bench.read_text()).get('complete'):break
+ if time.monotonic()>end:raise TimeoutError('combined serving run did not complete; postpone direct-only load')
+ time.sleep(2)
+for name in ('glm-direct-w4-only-serving-admit','glm-direct-w4-only-live','glm-direct-w4-only-bench'):
+ with (root/(name+'.log')).open('x') as log:
+  subprocess.run([sys.executable,str(root/(name+'.py'))],stdout=log,stderr=subprocess.STDOUT,check=True,timeout=900)
+print('Direct-only full serving comparison complete',flush=True)

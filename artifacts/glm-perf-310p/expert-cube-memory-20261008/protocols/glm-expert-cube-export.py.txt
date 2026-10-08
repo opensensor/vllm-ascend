@@ -1,0 +1,21 @@
+from pathlib import Path
+import shutil,gzip,tarfile,json
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');out=root/'expert-cube-export-20261008';out.mkdir(exist_ok=True)
+for d in ('measurements','logs','sources'):(out/d).mkdir(exist_ok=True)
+names=['v979-active-cube-independent-gates.json','v979-active-cube-boundary-gates.json','v979-active-cube-resident-manifest.json','v980-resident-manifest.json','v980-resident-admission.json','v980-serving-manifest.json','v980-serving-admission.json','v981-free-gates-rank0.json','v981-serving-manifest.json','v981-serving-admission.json','v980-serving-capture-stall.json','active-cube-server-process-20261008.json','direct-w4-server-process-20261008.json','expert-cube-server-process-20261008.json','expert-cube-final-server-process-20261008.json','v981-serving-capture-stall.json','v981-serving-capture-oom.json']
+names += [f'v980-resident-gates-rank{rank}.json' for rank in range(4)]
+names += [f'v979-active-cube-profile-L{layer}-A{activation}.json' for layer in (10,11,33) for activation in (4,8)]
+names += ['night-speed-20261008/active-cube-base-candidate.py','night-speed-20261008/active-cube-v979-candidate.py','night-speed-20261008/active-cube-v980-candidate.py','night-speed-20261008/active-cube-v981-candidate.py','night-speed-20261008/active-cube-launch.py','night-speed-20261008/direct-w4-launch.py','night-speed-20261008/active-cube-v979-switch.json','night-speed-20261008/active-cube-v980-switch.json','night-speed-20261008/active-cube-v981-switch.json','night-speed-20261008/active-cube979-serving.json','night-speed-20261008/active-cube980-serving.json','night-speed-20261008/active-cube981-serving.json','night-speed-20261008/expert-cube-final-serving.json','night-speed-20261008/expert-cube-launch.py','night-speed-20261008/expert-cube-final-launch.py','resident_worker-cache-release.py']
+for name in names:
+ path=root/name
+ if path.exists():shutil.copyfile(path,out/('sources' if path.suffix=='.py' else 'measurements')/(path.name+('.txt' if path.suffix=='.py' else '')))
+for name in ('glm-active-cube-build.log','glm-direct-w4-build.log','glm-direct-w4-only-build.log','glm-direct-w4-only-build-v2.log','v979-active-cube-full-gates.log','glm-direct-w4-combined-resident-load.log','glm-direct-w4-combined-live.log','glm-direct-w4-free-recover.log','glm-direct-w4-free-recover-v2.log','v981-free-gates.log','direct-w4-parent-restore.log','glm-direct-w4-serving-admit.log','glm-direct-w4-only-serving-admit.log','glm-direct-w4-combined-live-v2.log','glm-direct-w4-only-live.log','glm-direct-w4-combined-bench.log','glm-direct-w4-only-bench.log','active-cube-server-20261008.log','direct-w4-server-20261008.log','expert-cube-server-20261008.log','expert-cube-final-server-20261008.log','glm-expert-cube-cache-recover.log','glm-expert-cube-cache-restore-test.log','glm-expert-cube-final-recover.log','glm-expert-cube-single-capture-test.log','glm-expert-cube-admit-base-only-final-capture.log','glm-direct-w4-only-serving-admit-final-capture.log','glm-direct-w4-only-live-final-capture.log','glm-direct-w4-only-bench-final-capture.log','glm-expert-cube-final-serving.log'):
+ path=root/name
+ if path.exists():
+  with gzip.GzipFile(filename=str(out/'logs'/(name+'.gz')),mode='wb',mtime=0) as f:f.write(path.read_bytes())
+for version,name in [(979,'source-active-cube-v979'),(980,'source-direct-w4-v980')]:
+ with tarfile.open(out/'sources'/f'compiled-source-v{version}.tar.gz','w:gz') as t:
+  t.add(root/name/'tools/glm_perf',arcname='tools/glm_perf',filter=lambda member:None if '__pycache__' in member.name else member)
+with tarfile.open(root/'expert-cube-receipts-20261008.tar.gz','w:gz') as t:
+ for name in ('measurements','logs','sources'):t.add(out/name,arcname=name)
+print('Frozen exact-source archives and current receipts exported',flush=True)

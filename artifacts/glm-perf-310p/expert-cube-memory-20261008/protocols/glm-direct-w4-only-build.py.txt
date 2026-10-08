@@ -1,0 +1,11 @@
+import inspect,json,sys
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+source=root/'source-direct-w4-v980';sys.path.insert(0,str(source))
+from tools.glm_perf.build_reconstruction import build
+parent=json.loads((root/'build-v965-fp16-scales/provenance.json').read_text())['_build']
+options={k:v for k,v in parent.items() if k in inspect.signature(build).parameters}
+options.update(version=981,active_cube_rows=False,direct_w4_l1=True)
+print('Building active M16/M32/M48/M64 Cube row experiment on the exact v965 prefill settings',flush=True)
+build(root/'build-v981-direct-w4',Path('/usr/local/Ascend/cann-9.1.0'),Path('/srv/ai/src/glm-selective-w3-nz-test-20261004'),**options)
+print('Append-only v981 native bundle compiled',flush=True)
