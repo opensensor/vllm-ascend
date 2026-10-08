@@ -48,6 +48,8 @@ def bundles(pytestconfig):
         "active_cube_rows",
         "direct_w4_l1",
         "prepared_offset_tables",
+        "product_pipe_events",
+        "bulk_route_store",
         "quad_hidden_quant",
         "direct_hidden_gather",
         "route_packed_input",

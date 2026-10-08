@@ -28,6 +28,9 @@
 #if defined(GLM_PREPARED_OFFSET_TABLES) && !defined(GLM_PREPARED_WEIGHT_LAYOUT)
   #error "prepared offsets require prepared weight layout"
 #endif
+#if defined(GLM_BULK_ROUTE_STORE) && (!defined(GLM_FP16_ROUTE_WORKSPACE) || !defined(GLM_NATIVE_ROUTE_COLUMNS))
+  #error "bulk route stores require FP16 workspace and native column order"
+#endif
 #ifndef GLM_INT4_OUTPUT_COLUMNS
   #define GLM_INT4_OUTPUT_COLUMNS 128
 #endif
@@ -916,12 +919,27 @@ class Projection {
     mm.cmatrixInitVal = true;
     Mmad(c_.Get<int32_t>(), a2_.Get<int8_t>().ReinterpretCast<int4b_t>(), b2_.Get<int8_t>().ReinterpretCast<int4b_t>(),
          mm);
+#ifdef GLM_PRODUCT_PIPE_EVENTS
+    // CO1 -> UB is a vector consumer on the unified 310P core, as in QSA.
+    // Event 0 is private to this kernel; no asynchronous event is outstanding.
+    SetFlag<HardEvent::M_V>(EVENT_ID0);
+    WaitFlag<HardEvent::M_V>(EVENT_ID0);
+#else
     PipeBarrier<PIPE_ALL>();
+#endif
     const DataCopyParams copy{N / NZ_N, static_cast<uint16_t>(mm.m / NZ_N), 0, 0};
     DataCopyEnhancedParams enhanced;
     enhanced.blockMode = BlockMode::BLOCK_MODE_MATRIX;
     DataCopy(Products<int32_t>(), c_.Get<int32_t>(), copy, enhanced);
+#ifdef GLM_PRODUCT_PIPE_EVENTS
+    // Finish the read before any subsequent Mmad can overwrite CO1. Other
+    // pipes need not drain here; weight/activation lifetime fences stay intact.
+    PipeBarrier<PIPE_V>();  // Order the following vector consumers as well.
+    SetFlag<HardEvent::V_M>(EVENT_ID0);
+    WaitFlag<HardEvent::V_M>(EVENT_ID0);
+#else
     PipeBarrier<PIPE_ALL>();
+#endif
   }
   __aicore__ inline void ExtractProducts(uint32_t count, uint32_t part, bool paired) {
     const bool sparse = activationBits_ == 8 && count <= (M - 1) / 2;
@@ -1611,6 +1629,17 @@ class Projection {
     auto accum = Accumulator();
     Cast(output_.Get<half>(), accum, RoundMode::CAST_NONE, count * N);
     PipeBarrier<PIPE_ALL>();
+#ifdef GLM_BULK_ROUTE_STORE
+    if (tokens_ > BULK_TOKENS) {
+      // Native column order already matches the route workspace. Store each
+      // valid row's N columns with one strided DMA and one lifetime fence.
+      const DataCopyParams copy{static_cast<uint16_t>(count), N * sizeof(half) / 32, 0,
+                                static_cast<uint16_t>((n_ - N) * sizeof(half) / 32)};
+      DataCopy(routedHalf_[row * n_ + tile * N], output_.Get<half>(), copy);
+      PipeBarrier<PIPE_ALL>();
+      return;
+    }
+#endif
     for (uint32_t m = 0; m < count; ++m) {
 #ifdef GLM_NATIVE_ROUTE_COLUMNS
       auto routeValue = output_.Get<half>()[m * N];

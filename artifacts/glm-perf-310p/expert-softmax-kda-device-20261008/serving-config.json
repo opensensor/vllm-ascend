@@ -1,0 +1,132 @@
+{
+  "process": {
+    "pid": 3196727,
+    "created": 1791485653.5,
+    "log": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/next-three-prefill-server-20261008.log",
+    "command": [
+      "/srv/ai/venvs/qwen38-w4-test-ce1862/bin/python",
+      "-m",
+      "vllm.entrypoints.cli.main",
+      "serve",
+      "/srv/ai/models/GLM-5.3-Flash-native-int4-fp16-scales-20261008",
+      "--worker-extension-cls",
+      "decode_flags_extension.DecodeFlagsExtension",
+      "--served-model-name",
+      "glm53-flash-selective-w3",
+      "--host",
+      "0.0.0.0",
+      "--port",
+      "8001",
+      "--dtype",
+      "float16",
+      "--tensor-parallel-size",
+      "4",
+      "--max-model-len",
+      "311040",
+      "--max-num-seqs",
+      "4",
+      "--max-num-batched-tokens",
+      "640",
+      "--enable-chunked-prefill",
+      "--enable-prefix-caching",
+      "--gpu-memory-utilization",
+      "0.965",
+      "--load-format",
+      "glm_native_int4",
+      "--no-async-scheduling",
+      "--mamba-cache-mode",
+      "align",
+      "--speculative-config",
+      "{\"method\": \"mtp\", \"num_speculative_tokens\": 1, \"draft_load_config\": {\"load_format\": \"glm_native_int4\"}}",
+      "--compilation-config",
+      "{\"cudagraph_mode\":\"FULL_DECODE_ONLY\",\"cudagraph_capture_sizes\":[2,8]}",
+      "--trust-remote-code",
+      "--enable-auto-tool-choice",
+      "--tool-call-parser",
+      "poolside_v1",
+      "--reasoning-parser",
+      "glm47",
+      "--hf-overrides",
+      "{\"architectures\":[\"Glm5NextW2ForCausalLM\"],\"ascend_glm_nz_packed_codes\":true,\"ascend_glm_mhc_batched_round\":true,\"ascend_glm_mhc_fp16_state\":true,\"ascend_glm_mhc_ai_core_round\":true,\"ascend_glm_kda_nz_grouped\":true,\"ascend_glm_prefill_route_histogram\":true,\"ascend_glm_mtp_full_graph\":true,\"ascend_glm_native_mhc_post\":true,\"ascend_glm_live_kpool_score\":true,\"ascend_glm_decode_swiglu\":true,\"ascend_glm_decode_combine\":true}",
+      "--limit-mm-per-prompt",
+      "{\"image\":0,\"video\":0}",
+      "--enable-logging-iteration-details",
+      "--disable-custom-all-reduce",
+      "--middleware",
+      "tools.glm_perf.resident_middleware.ResidentControlMiddleware"
+    ],
+    "cwd": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/runtime-fp16-scales-20261008",
+    "scope": "Original FP16 scale disk checkpoint; all qualified fusions, tail vector math, gated-key reuse"
+  },
+  "serving_config": {
+    "worker_extension_cls": "decode_flags_extension.DecodeFlagsExtension",
+    "served_model_name": "glm53-flash-selective-w3",
+    "host": "0.0.0.0",
+    "port": 8001,
+    "dtype": "float16",
+    "tensor_parallel_size": 4,
+    "max_model_len": 311040,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 640,
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": true,
+    "gpu_memory_utilization": 0.965,
+    "load_format": "glm_native_int4",
+    "no_async_scheduling": true,
+    "mamba_cache_mode": "align",
+    "speculative_config": {
+      "method": "mtp",
+      "num_speculative_tokens": 1,
+      "draft_load_config": {
+        "load_format": "glm_native_int4"
+      }
+    },
+    "compilation_config": {
+      "cudagraph_mode": "FULL_DECODE_ONLY",
+      "cudagraph_capture_sizes": [
+        2,
+        8
+      ]
+    },
+    "trust_remote_code": true,
+    "enable_auto_tool_choice": true,
+    "tool_call_parser": "poolside_v1",
+    "reasoning_parser": "glm47",
+    "hf_overrides": {
+      "architectures": [
+        "Glm5NextW2ForCausalLM"
+      ],
+      "ascend_glm_nz_packed_codes": true,
+      "ascend_glm_mhc_batched_round": true,
+      "ascend_glm_mhc_fp16_state": true,
+      "ascend_glm_mhc_ai_core_round": true,
+      "ascend_glm_kda_nz_grouped": true,
+      "ascend_glm_prefill_route_histogram": true,
+      "ascend_glm_mtp_full_graph": true,
+      "ascend_glm_native_mhc_post": true,
+      "ascend_glm_live_kpool_score": true,
+      "ascend_glm_decode_swiglu": true,
+      "ascend_glm_decode_combine": true
+    },
+    "limit_mm_per_prompt": {
+      "image": 0,
+      "video": 0
+    },
+    "enable_logging_iteration_details": true,
+    "disable_custom_all_reduce": true,
+    "middleware": "tools.glm_perf.resident_middleware.ResidentControlMiddleware",
+    "model": "/srv/ai/models/GLM-5.3-Flash-native-int4-fp16-scales-20261008"
+  },
+  "kda_package": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/prefill-kda-score-matrix-full-v1/opp-score-matrix",
+  "scope": "Configured capacity, not a maximum-context validation; final selected kernel versions appear in the health receipt.",
+  "environment": {
+    "ASCEND_RT_VISIBLE_DEVICES": "0,1,2,3",
+    "ASCEND_CUSTOM_OPP_PATH": "/home/matteius/experiments/glm-decode-flags-20261006/opp/vendors/custom_transformer:/srv/ai/src/glm-l1-wide-build-20261004/opp-kpool-live-score-20261005/packages/vendors/custom_transformer:/srv/ai/src/glm-l1-wide-build-20261004/opp-native-mhc-post-20261005/packages/vendors/custom_transformer:/srv/ai/src/glm-l1-wide-build-20261004/opp-mtp-pages-20261005/packages/vendors/custom_transformer:/srv/ai/src/glm-l1-wide-build-20261004/opp-l1-overlap-20261004/vendors/custom_transformer:/srv/ai/src/glm-bf16-round-nan-20261003/opp-nan/vendors/custom_transformer:/srv/ai/src/build-only-glm-w3-nz-csrc-20261004/opp-qsa-cube512-candidate/vendors/custom_transformer:/srv/ai/src/glm-sinkhorn-20260930/opp-sinkhorn/vendors/custom_transformer:/srv/ai/src/glm-sinkhorn-20260930/opp-mla-write/vendors/custom_transformer:/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/prefill-kda-score-matrix-full-v1/opp-score-matrix/vendors/custom_transformer:/srv/ai/src/glm-w2-ktile256-20261003/opp-ktile256/vendors/custom_transformer:/srv/ai/src/glm-mla-opp/vendors/custom_transformer:/srv/ai/src/vllm-ascend/vllm_ascend/_cann_ops_custom/vendors/custom_transformer",
+    "ASCEND_OPP_PATH": "/usr/local/Ascend/cann-9.1.0/opp",
+    "ASCEND_HOME_PATH": "/usr/local/Ascend/cann-9.1.0",
+    "SOC_VERSION": "ascend310p1",
+    "TASK_QUEUE_ENABLE": "1",
+    "OMP_NUM_THREADS": "1",
+    "PYTHONPATH": "/home/matteius/experiments/glm-decode-flags-20261006:/home/matteius/experiments/glm-kpool-live-score-20261005:/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/runtime-fp16-scales-20261008:/srv/ai/src/vllm-opensensor:/srv/ai/src/vllm-ascend:/usr/local/Ascend/cann-9.1.0/python/site-packages:/usr/local/Ascend/cann-9.1.0/opp/built-in/op_impl/ai_core/tbe:"
+  }
+}

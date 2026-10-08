@@ -191,6 +191,13 @@ class NativeFusedMoE:
         gate_w4, down_w4 = root / "glm_fused_gate_up_w4.bin", root / "glm_fused_down_w4.bin"
         if gate_w4.exists() != compact or down_w4.exists() != compact:
             raise ValueError("compact W4 scratch requires declared paired W4 stage binaries")
+        for flag in ("product_pipe_events", "bulk_route_store"):
+            if type(options.get(flag, False)) is not bool:
+                raise ValueError("expert scheduling flags must be boolean")
+        if options.get("bulk_route_store") and not (
+            options.get("fp16_route_workspace") and options.get("native_route_columns")
+        ):
+            raise ValueError("bulk route stores require native-column FP16 workspace")
         offsets = options.get("prepared_offset_tables", False)
         if type(offsets) is not bool or (offsets and not prepared_weight_layout):
             raise ValueError("prepared offsets require matching prepared weights")

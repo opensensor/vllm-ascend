@@ -16,13 +16,23 @@ from torch.utils.cpp_extension import include_paths, library_paths
 from tools.glm_perf.stage_qsa_accumulate_rows import transform as accumulate_rows
 from tools.glm_perf.stage_qsa_output_rows import transform as output_rows
 from tools.glm_perf.stage_qsa_shared_cache import stage
+from tools.glm_perf.stage_qsa_softmax_heads import transform as softmax_heads
 
 HERE = Path(__file__).resolve().parent
 QUALIFIED_PARENT_SHA256 = "66baea1e2eb4c8601868a1f1fb347397ff75ac8e19f68d56dfa598b054d2ffb6"
 
 
-def build(build_dir, source_root, cann_root, compiler, version, vector_output=False, vector_accumulate=False):
-    if type(vector_output) is not bool or type(vector_accumulate) is not bool:
+def build(
+    build_dir,
+    source_root,
+    cann_root,
+    compiler,
+    version,
+    vector_output=False,
+    vector_accumulate=False,
+    softmax_head_batch=False,
+):
+    if any(type(flag) is not bool for flag in (vector_output, vector_accumulate, softmax_head_batch)):
         raise ValueError("vector_output must be boolean")
     if type(version) is not int or version <= 0:
         raise ValueError("version must be a positive integer")
@@ -43,6 +53,7 @@ def build(build_dir, source_root, cann_root, compiler, version, vector_output=Fa
         "stage_qsa_shared_cache.py",
         "stage_qsa_output_rows.py",
         "stage_qsa_accumulate_rows.py",
+        "stage_qsa_softmax_heads.py",
     ):
         shutil.copy2(HERE / name, helper / name)
     target = cann_root / "tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0"
@@ -63,6 +74,8 @@ def build(build_dir, source_root, cann_root, compiler, version, vector_output=Fa
                 header.write_text(output_rows(header.read_text()))
             if vector_accumulate:
                 header.write_text(accumulate_rows(header.read_text()))
+            if softmax_head_batch:
+                header.write_text(softmax_heads(header.read_text()))
         entry = snapshot / "qsa_sparse_attention_v310.cpp"
         entry_source = entry.read_text()
         original = (
@@ -113,6 +126,7 @@ def build(build_dir, source_root, cann_root, compiler, version, vector_output=Fa
                 *(["-DGLM_QSA_SHARED_CACHE"] if variant == "shared" else []),
                 *(["-DGLM_QSA_OUTPUT_ROWS"] if variant == "shared" and vector_output else []),
                 *(["-DGLM_QSA_ACCUMULATE_ROWS"] if variant == "shared" and vector_accumulate else []),
+                *(["-DGLM_QSA_SOFTMAX_HEAD_BATCH"] if variant == "shared" and softmax_head_batch else []),
             ],
             check=True,
         )
@@ -160,9 +174,10 @@ def build(build_dir, source_root, cann_root, compiler, version, vector_output=Fa
         version=version,
         files=hashes,
         parent_sha256=QUALIFIED_PARENT_SHA256,
-        extra_ub_bytes=0,
+        extra_ub_bytes=256 if softmax_head_batch else 0,
         vector_output=vector_output,
         vector_accumulate=vector_accumulate,
+        softmax_head_batch=softmax_head_batch,
         full_operator_evaluated=False,
         serving_evaluated=False,
     )
@@ -177,6 +192,7 @@ def main():
     parser.add_argument("--version", type=int, required=True)
     parser.add_argument("--vector-output", action="store_true")
     parser.add_argument("--vector-accumulate", action="store_true")
+    parser.add_argument("--softmax-head-batch", action="store_true")
     args = parser.parse_args()
     build(
         args.build_dir,
@@ -186,6 +202,7 @@ def main():
         args.version,
         args.vector_output,
         args.vector_accumulate,
+        args.softmax_head_batch,
     )
 
 

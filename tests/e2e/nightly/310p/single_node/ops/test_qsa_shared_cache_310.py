@@ -47,7 +47,7 @@ def test_qsa_parent_shared_production_and_changed_graph_replay(pytestconfig):
         for name in ("parent", "shared")
     ]
     result = probe.qualify(*operations, production=torch.ops._C_ascend.npu_qsa_sparse_attention_310)
-    assert result["passed"] and len(result["cases"]) == 30
+    assert result["passed"] and len(result["cases"]) == 36
 
 
 if __name__ == "__main__":

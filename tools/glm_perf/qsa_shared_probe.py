@@ -8,11 +8,15 @@ import time
 import torch
 
 
-def fixture(device, dim, tokens, shared, sparse=False, requests=1, logical_heads=1, physical_heads=1):
+def fixture(
+    device, dim, tokens, shared, sparse=False, requests=1, logical_heads=1, physical_heads=1, query_heads_per_kv=16
+):
+    if type(query_heads_per_kv) is not int or not 1 <= query_heads_per_kv <= 16:
+        raise ValueError("query heads per KV must be an integer from 1 to 16")
     generator = torch.Generator().manual_seed(98700 + dim + tokens)
     cache_cpu = torch.randn(14, physical_heads * dim // 16, 640, 16, generator=generator).half() * 0.1
     value_cpu = cache_cpu if shared else torch.randn(cache_cpu.shape, generator=generator).half() * 0.1
-    query_cpu = torch.randn(tokens, 16 * logical_heads, dim, generator=generator).half() * 0.1
+    query_cpu = torch.randn(tokens, query_heads_per_kv * logical_heads, dim, generator=generator).half() * 0.1
     key = cache_cpu.to(device)
     value = key if shared else value_cpu.to(device)
     query = query_cpu.to(device)
@@ -39,8 +43,11 @@ def gate_case(
     physical_heads=1,
     production=None,
     profile=False,
+    query_heads_per_kv=16,
 ):
-    data = fixture(candidate.device, dim, tokens, shared, sparse, requests, logical_heads, physical_heads)
+    data = fixture(
+        candidate.device, dim, tokens, shared, sparse, requests, logical_heads, physical_heads, query_heads_per_kv
+    )
     query, key, value, metadata, query_cpu, cache_cpu, value_cpu = data
     scale = 256**-0.5
 
@@ -56,9 +63,9 @@ def gate_case(
     if reference:
         keys = cache_cpu[0, : dim // 16, :35].permute(1, 0, 2).reshape(35, dim).float()
         values = value_cpu[0, : dim // 16, :35].permute(1, 0, 2).reshape(35, dim).float()
-        scores = query_cpu[0, :16].float() @ keys.T * scale
+        scores = query_cpu[0, :query_heads_per_kv].float() @ keys.T * scale
         result = (scores.softmax(-1) @ values).half()
-        torch.testing.assert_close(actual.cpu()[0, :16], result, rtol=5e-3, atol=3e-3)
+        torch.testing.assert_close(actual.cpu()[0, :query_heads_per_kv], result, rtol=5e-3, atol=3e-3)
     graph = torch.npu.NPUGraph()
     with torch.npu.graph(graph):
         captured = call(candidate)
@@ -103,6 +110,7 @@ def gate_case(
         independent_dense_reference=reference,
         changed_replays=3,
         profiles=timings,
+        query_heads_per_kv=query_heads_per_kv,
     )
     del captured, expected, actual, data, query, key, value, metadata
     gc.collect()
@@ -133,6 +141,22 @@ def qualify(parent, candidate, production=None, full=True, on_case=None):
                 cases.append(row)
                 if on_case is not None:
                     on_case(row)
+    # Partial head repeats exercise softmax destination strides and delta lanes.
+    for heads in (1, 3, 12):
+        for sparse in (False, True):
+            row = gate_case(
+                parent,
+                candidate,
+                512,
+                2,
+                True,
+                sparse,
+                production=production,
+                query_heads_per_kv=heads,
+            )
+            cases.append(row)
+            if on_case is not None:
+                on_case(row)
     for shared in (False, True):
         row = gate_case(
             parent, candidate, 512, 17, shared, requests=2, logical_heads=1, physical_heads=2, production=production

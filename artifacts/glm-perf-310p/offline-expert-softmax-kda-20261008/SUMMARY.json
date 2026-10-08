@@ -1,0 +1,42 @@
+{
+  "base_commit": "7a85bece1ebe76dac6436200984b42ce2ae8f266",
+  "offline_only": true,
+  "npu_compiled": false,
+  "npu_evaluated": false,
+  "serving_evaluated": false,
+  "performance_measured": false,
+  "expert": {
+    "build_flags": [
+      "--product-pipe-events",
+      "--bulk-route-store"
+    ],
+    "bulk_route_store_down_only": true,
+    "extra_ub_bytes": 0
+  },
+  "qsa": {
+    "build_flags": [
+      "--vector-output",
+      "--vector-accumulate",
+      "--softmax-head-batch"
+    ],
+    "compiler_define": "GLM_QSA_SOFTMAX_HEAD_BATCH",
+    "extra_ub_bytes": 256
+  },
+  "kda": {
+    "source_sha256": "131bfc255e0e66bf528f51b759cea529af3c2823c442e3dcf1f6f767d1c75a2c",
+    "candidate_sha256": "b93e092cc5839e0c8712e53824ceb456c6f4f2eef6db4798e44492a4c1acb6cf",
+    "compiler_define": "GLM_KDA_SCORE_MATRIX_BATCH",
+    "extra_ub_bytes": 0,
+    "full_kda_evaluated": false,
+    "serving_evaluated": false
+  },
+  "sources": {
+    "expert-scheduling-candidate.cpp.txt": "c93683e10abe19fdf4ee59d958c7d5ff8af75c51ede751e92f20515f0bace97e",
+    "kda-deployed-parent.h.txt": "131bfc255e0e66bf528f51b759cea529af3c2823c442e3dcf1f6f767d1c75a2c",
+    "kda-score-matrix-candidate.h.txt": "b93e092cc5839e0c8712e53824ceb456c6f4f2eef6db4798e44492a4c1acb6cf",
+    "qsa-softmax-heads-candidate.h.txt": "9202e909016639b2aaec29fe86b17c11eb7ab14e52d10b99331e49c39d56694d",
+    "qsa-v991-parent.h.txt": "43b4c6bd39f722748207e87393c5805b327f5a18bd4c31451a389d8a89f6194a"
+  },
+  "source_archive": "frozen-sources.tar.gz",
+  "source_archive_sha256": "a8e8f6b99612ffab2574329b95359a9cb00bd93e112cf333a35bab15caf70e91"
+}

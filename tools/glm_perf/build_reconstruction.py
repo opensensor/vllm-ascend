@@ -69,6 +69,8 @@ def build(
     active_cube_rows=False,
     direct_w4_l1=False,
     prepared_offset_tables=False,
+    product_pipe_events=False,
+    bulk_route_store=False,
 ):
     """Freeze helper sources and compile a unique, append-only native version."""
     if type(version) is not int or version < 1 or output_columns not in (16, 32, 64, 128):
@@ -99,6 +101,8 @@ def build(
             active_cube_rows,
             direct_w4_l1,
             prepared_offset_tables,
+            product_pipe_events,
+            bulk_route_store,
         )
     ):
         raise ValueError("prefill experiment flags must be boolean")
@@ -212,6 +216,10 @@ def build(
         raise ValueError("prepared offsets require prepared fused MoE")
     namespace = f"glm_reconstruction_v{version}"
     build_dir = build_dir.resolve()
+    if product_pipe_events and not fused_moe:
+        raise ValueError("product pipe events require fused MoE")
+    if bulk_route_store and not (fused_moe and fp16_route_workspace and native_route_columns):
+        raise ValueError("bulk route store requires fused native-column FP16 workspace")
     build_dir.mkdir(parents=True, exist_ok=False)
     helper_package = namespace + "_helpers"
     helper_root = build_dir / helper_package
@@ -280,6 +288,8 @@ def build(
             "active_cube_rows": active_cube_rows,
             "direct_w4_l1": direct_w4_l1,
             "prepared_offset_tables": prepared_offset_tables,
+            "product_pipe_events": product_pipe_events,
+            "bulk_route_store": bulk_route_store,
             "share_gate_up_input": share_gate_up_input,
             "cache_gate_up_activations": cache_gate_up_activations,
             "vector_scale_products": vector_scale_products,
@@ -359,6 +369,8 @@ def build(
                     *(["-DGLM_ACTIVE_CUBE_ROWS"] if active_cube_rows else []),
                     *(["-DGLM_DIRECT_W4_L1"] if direct_w4_l1 else []),
                     *(["-DGLM_PREPARED_OFFSET_TABLES"] if prepared_offset_tables else []),
+                    *(["-DGLM_PRODUCT_PIPE_EVENTS"] if product_pipe_events else []),
+                    *(["-DGLM_BULK_ROUTE_STORE"] if stage == "down" and bulk_route_store else []),
                     *(["-DGLM_GATHER_PRODUCT_MATRIX"] if gather_product_matrix else []),
                     *(["-DGLM_FP16_ROUTE_WORKSPACE"] if fp16_route_workspace else []),
                     *(["-DGLM_NATIVE_ROUTE_COLUMNS"] if stage == "down" and native_route_columns else []),
@@ -604,6 +616,8 @@ def main():
         action="store_true",
         help="DMA immutable gather tables prepared with each projection config",
     )
+    parser.add_argument("--product-pipe-events", action="store_true", help="use explicit M/V readback dependencies")
+    parser.add_argument("--bulk-route-store", action="store_true", help="store FP16 route rows with one strided DMA")
     args = parser.parse_args()
     print(
         build(
@@ -650,6 +664,8 @@ def main():
             args.active_cube_rows,
             args.direct_w4_l1,
             args.prepared_offset_tables,
+            args.product_pipe_events,
+            args.bulk_route_store,
         )
     )
 
