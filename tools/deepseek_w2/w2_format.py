@@ -74,6 +74,11 @@ W2_CODE_MIN = -2
 W2_CODE_MAX = 1
 W2_CODES_PER_BYTE = 4  # 8 // W2_BITS
 
+# W3 uses a dense 24-bit little-endian group: eight signed codes in three bytes.
+W3_BITS = 3
+W3_CODES_PER_GROUP = 8
+W3_BYTES_PER_GROUP = 3
+
 # W4 Engram: 4-bit codes {-8, ..., 7}.
 W4_BITS = 4
 W4_CODE_MIN = -8
@@ -88,8 +93,8 @@ W4_CODES_PER_BYTE = 2  # 8 // W4_BITS
 # its own unpack/dequant, not the ``unpack_codes`` int path.
 NVFP4_BITS = 4
 NVFP4_CODES_PER_BYTE = 2  # 8 // NVFP4_BITS (2 nibbles/byte)
-NVFP4_BLOCK_ROWS = 1      # per-output-row scale (no out-axis blocking)
-NVFP4_BLOCK_COLS = 16     # one fp8 scale per 16 input columns
+NVFP4_BLOCK_ROWS = 1  # per-output-row scale (no out-axis blocking)
+NVFP4_BLOCK_COLS = 16  # one fp8 scale per 16 input columns
 
 # E2M1 magnitude table (index = low 3 bits of the nibble).
 _NVFP4_E2M1_TABLE = (0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0)
@@ -231,11 +236,25 @@ def pack_codes(codes: torch.Tensor, n_bits: int = W2_BITS) -> torch.Tensor:
     """Pack signed int codes (last dim) into ``uint8``, little-endian by field.
 
     Args:
-        codes: ``[..., in]`` int8 codes; ``in`` a multiple of ``8 // n_bits``.
+        codes: ``[..., in]`` int8 codes. W3 needs a multiple of eight inputs.
 
     Returns:
-        ``[..., in // codes_per_byte]`` uint8.
+        ``[..., in * n_bits // 8]`` uint8.
     """
+    if n_bits == W3_BITS:
+        if codes.shape[-1] % W3_CODES_PER_GROUP:
+            raise ValueError("W3 input width must be a multiple of eight")
+        if torch.any((codes < -4) | (codes > 3)):
+            raise ValueError("W3 signed codes must be in [-4, 3]")
+        groups = (codes.to(torch.int32) & 7).reshape(*codes.shape[:-1], -1, W3_CODES_PER_GROUP)
+        words = torch.zeros(groups.shape[:-1], dtype=torch.int32, device=codes.device)
+        for field in range(W3_CODES_PER_GROUP):
+            words = words | (groups[..., field] << (W3_BITS * field))
+        return (
+            torch.stack(tuple((words >> (8 * byte)) & 255 for byte in range(W3_BYTES_PER_GROUP)), dim=-1)
+            .reshape(*codes.shape[:-1], -1)
+            .to(torch.uint8)
+        )
     codes_per_byte = 8 // n_bits
     field_mask = (1 << n_bits) - 1
     if codes.shape[-1] % codes_per_byte:
@@ -258,6 +277,14 @@ def unpack_codes(packed: torch.Tensor, in_features: int, n_bits: int = W2_BITS) 
     Returns:
         ``[..., in]`` int8 codes in ``[code_min, code_max]``.
     """
+    if n_bits == W3_BITS:
+        if in_features % W3_CODES_PER_GROUP or packed.shape[-1] != in_features * W3_BITS // 8:
+            raise ValueError("in_features does not match W3 packed width")
+        groups = packed.to(torch.int32).reshape(*packed.shape[:-1], -1, W3_BYTES_PER_GROUP)
+        words = groups[..., 0] | (groups[..., 1] << 8) | (groups[..., 2] << 16)
+        fields = [((words >> (W3_BITS * field)) & 7) for field in range(W3_CODES_PER_GROUP)]
+        codes = torch.stack(fields, dim=-1).reshape(*packed.shape[:-1], in_features)
+        return torch.where(codes >= 4, codes - 8, codes).to(torch.int8)
     codes_per_byte = 8 // n_bits
     field_mask = (1 << n_bits) - 1
     sign_wrap = 1 << n_bits

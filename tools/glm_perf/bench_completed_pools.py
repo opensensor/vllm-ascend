@@ -1,0 +1,183 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Explicitly invoked, model-free NPU parity/timing for completed-pool prefill.
+
+Adjacent staged files: kpool_completed_prefill.py, kpool_ops.py and
+sparse_attn_indexer_kpool.py. The baseline functions are extracted unchanged
+to avoid initializing the serving runtime. No server is contacted or launched.
+"""
+
+import argparse
+import ast
+import hashlib
+import importlib.util
+import json
+import statistics
+import sys
+import time
+from functools import partial
+from pathlib import Path
+from types import SimpleNamespace
+
+import torch
+import torch_npu
+
+
+def load_file(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--device", type=int, default=0)
+    parser.add_argument("--repeats", type=int, default=9)
+    parser.add_argument("--layout", choices=("row-gapped", "page-strided"), default="page-strided")
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    root = Path(__file__).resolve().parent
+    candidate = load_file("completed_pool_candidate", root / "kpool_completed_prefill.py")
+    ops = load_file("completed_pool_ops", root / "kpool_ops.py")
+    baseline_path = root / "sparse_attn_indexer_kpool.py"
+    tree = ast.parse(baseline_path.read_text())
+    functions = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name in ("_cache_tensor", "_masked_storage_write")
+    ]
+    cls = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "SparseAttnIndexerKpool")
+    functions += [node for node in cls.body if isinstance(node, ast.FunctionDef) and node.name == "_write_pools"]
+    scope = {"torch": torch, "torch_npu": torch_npu, "compress_kpool": ops.compress_kpool}
+    exec(compile(ast.Module(body=functions, type_ignores=[]), str(baseline_path), "exec"), scope)
+    torch.set_num_threads(4)
+    torch.npu.set_device(args.device)
+    torch_npu.npu.set_compile_mode(jit_compile=False)
+    device = torch.device(f"npu:{args.device}")
+    generator = torch.Generator().manual_seed(310)
+    records = []
+    report = {
+        "device": args.device,
+        "model_loaded": False,
+        "layout": args.layout,
+        "cases": records,
+        "source_sha256": {
+            p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in (Path(__file__), root / "kpool_completed_prefill.py", root / "kpool_ops.py", baseline_path)
+        },
+    }
+    shapes = [
+        ([640], [0]),
+        ([640], [3]),
+        ([1280], [1]),
+        ([2560], [2]),
+        ([157, 161, 159, 163], [0, 1, 2, 3]),
+        ([0, 319, 0, 321], [0, 3, 0, 1]),
+    ]
+    for lengths, starts in shapes:
+        for speculative in (0, 1):
+            count, requests = sum(lengths), len(lengths)
+            boundaries, positions, state_slots, key_slots, raw_lengths = [0], [], [], [], []
+            for request, (length, start) in enumerate(zip(lengths, starts)):
+                row = torch.arange(start, start + length)
+                positions.extend(row.tolist())
+                state_slots.extend((request * 8 + row % 8).tolist())
+                key_slots.extend(torch.where((row + 1) % 4 == 0, request * 1024 + row // 4, -1).tolist())
+                raw_lengths.append(start + length)
+                boundaries.append(boundaries[-1] + length)
+            cpu_boundaries = torch.tensor(boundaries, dtype=torch.int32)
+            positions = torch.tensor(positions, dtype=torch.int32, device=device)
+            metadata = SimpleNamespace(
+                slot_mapping=torch.tensor(key_slots, dtype=torch.int32, device=device),
+                raw_seq_lens=torch.tensor(raw_lengths, dtype=torch.int32, device=device),
+                cum_query_lens=torch.tensor(boundaries[1:], dtype=torch.int32, device=device),
+            )
+            state_meta = SimpleNamespace(slot_mapping=torch.tensor(state_slots, dtype=torch.int32, device=device))
+            keys = torch.randn(count, 128, generator=generator).bfloat16().to(device)
+            gates = torch.randn(count, 128, generator=generator).to(device)
+            ape = torch.randn(4, 128, generator=generator).to(device)
+            state_seed = torch.randn(requests * 2 + 2, 8, 256, generator=generator)
+            key_seed = torch.randn(requests + 2, 2048, 1, 128, generator=generator).bfloat16()
+
+            def make_indexer(state_seed=state_seed, key_seed=key_seed, speculative=speculative):
+                # Padded page and row strides, with guards before/after the views.
+                if args.layout == "row-gapped":
+                    state_backing, key_backing = state_seed.to(device), key_seed.to(device)
+                    state_view, key_view = state_backing[1:-1, ::2], key_backing[1:-1, ::2]
+                else:
+                    # Qualified worker: attention page 640 => 160 pooled keys.
+                    # State pages share the padded 40960-byte small-page size.
+                    pool_block = 160
+                    page_floats = pool_block * 128 * 2 // 4
+                    pages = (key_seed.shape[0] - 2) * 1024 // pool_block + 1
+                    state_backing = torch.zeros(state_seed.shape[0], page_floats, device=device)
+                    state_view = state_backing.as_strided(
+                        (state_seed.shape[0] - 2, 4, 256), (page_floats, 256, 1), storage_offset=page_floats
+                    )
+                    state_view.copy_(state_seed[1:-1, ::2].to(device))
+                    key_backing = torch.zeros(pages + 2, pool_block, 1, 128, dtype=torch.bfloat16, device=device)
+                    key_view = key_backing[1:-1]
+                indexer = SimpleNamespace(
+                    head_dim=128,
+                    tail_cache=SimpleNamespace(kv_cache=state_view, num_speculative_tokens=speculative),
+                    k_cache=SimpleNamespace(kv_cache=key_view),
+                )
+                return indexer, (state_backing, key_backing)
+
+            baseline, baseline_backing = make_indexer()
+            compact, compact_backing = make_indexer()
+            metadata._glm_completed_pool_plan = candidate.make_plan(cpu_boundaries, count, device)
+            writer = candidate.wrap_writer(
+                scope["_write_pools"], scope["_cache_tensor"], scope["_masked_storage_write"], ops.compress_kpool
+            )
+
+            run_baseline = partial(
+                scope["_write_pools"], baseline, keys, gates, ape, positions, 4, metadata, state_meta
+            )
+            run_compact = partial(writer, compact, keys, gates, ape, positions, 4, metadata, state_meta)
+
+            run_baseline()
+            run_compact()
+            torch.npu.synchronize()
+            exact = all(
+                torch.equal(a.cpu().view(torch.uint8), b.cpu().view(torch.uint8))
+                for a, b in zip(baseline_backing, compact_backing)
+            )
+            if not exact:
+                raise AssertionError(f"cache parity failed: {lengths}, {starts}, MTP{speculative}")
+            for _ in range(3):
+                run_baseline()
+                run_compact()
+            torch.npu.synchronize()
+            times = {"baseline": [], "compact": [], "plan_copy": []}
+            for repeat in range(args.repeats):
+                order = [("baseline", run_baseline), ("compact", run_compact)]
+                if repeat % 2:
+                    order.reverse()
+                for name, fn in order:
+                    start_time = time.perf_counter()
+                    fn()
+                    torch.npu.synchronize()
+                    times[name].append((time.perf_counter() - start_time) * 1000)
+                start_time = time.perf_counter()
+                candidate.make_plan(cpu_boundaries, count, device)
+                torch.npu.synchronize()
+                times["plan_copy"].append((time.perf_counter() - start_time) * 1000)
+            record = {
+                "lengths": lengths,
+                "start_positions": starts,
+                "mtp": speculative,
+                "exact_backing": exact,
+                "median_ms": {name: statistics.median(samples) for name, samples in times.items()},
+                "samples_ms": times,
+            }
+            records.append(record)
+            args.output.write_text(json.dumps(report, indent=2))
+            print(json.dumps(record), flush=True)
+    report["passed"] = True
+    args.output.write_text(json.dumps(report, indent=2))
+
+
+if __name__ == "__main__":
+    main()

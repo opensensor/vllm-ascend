@@ -9,6 +9,11 @@ from transformers import DeepseekV2Config, PretrainedConfig
 from vllm.config.model import ModelConfig
 from vllm.config.speculative import SpeculativeConfig
 
+from vllm_ascend.models.glm5next_w2.mtp_config import (
+    PACKED_GLM_MTP_ARCHITECTURE,
+    PACKED_GLM_TARGET_ARCHITECTURES,
+    normalize_glm_mtp_hf_config,
+)
 from vllm_ascend.utils import is_deepseek_v41
 
 _orig_post_init = SpeculativeConfig.__post_init__
@@ -83,6 +88,11 @@ def _normalize_kimi_dflash_rope(hf_config: PretrainedConfig) -> None:
 
 
 def _normalize_legacy_qwen3_dspark_config(hf_config: PretrainedConfig) -> PretrainedConfig:
+    if hf_config.model_type in ("glm5_next", "glm5_next_text", "glm5_next_mtp"):
+        packed = bool(
+            set(hf_config.architectures or ()) & {*PACKED_GLM_TARGET_ARCHITECTURES, PACKED_GLM_MTP_ARCHITECTURE}
+        )
+        return normalize_glm_mtp_hf_config(hf_config, packed=packed)
     hf_config = _orig_hf_config_override(hf_config)
     _normalize_kimi_dflash_rope(hf_config)
     architectures = hf_config.architectures or ()
@@ -195,6 +205,7 @@ def _dspark_post_init(self):
     # TODO: This block can be deleted after the upstream supports the overlay of mla dcp and dspark
     with _temporarily_disable_dspark_dcp(self):
         _orig_post_init(self)
+    _normalize_packed_glm_draft(self)
     if self.use_dspark():
         draft_model_config = getattr(self, "draft_model_config", None)
         draft_hf_config = getattr(draft_model_config, "hf_config", None)
@@ -205,6 +216,33 @@ def _dspark_post_init(self):
         # gqa backend dspark
         if getattr(draft_hf_config, "ptd_token_id", None) is None:  # type: ignore
             draft_hf_config.ptd_token_id = getattr(draft_hf_config, "mask_token_id", None)  # type: ignore
+
+
+def _normalize_packed_glm_draft(spec):
+    """Target dict overrides do not automatically reach the draft ModelConfig."""
+    target = getattr(spec, "target_model_config", None)
+    if getattr(spec, "method", None) != "mtp" or not (
+        set(getattr(target, "architectures", ()) or ()) & set(PACKED_GLM_TARGET_ARCHITECTURES)
+    ):
+        return
+    draft = spec.draft_model_config
+    normalized = normalize_glm_mtp_hf_config(draft.hf_config, packed=True)
+    for config in (target.hf_text_config, target.hf_config):
+        for name, value in vars(config).items():
+            if name.startswith("ascend_glm_"):
+                setattr(normalized, name, value)
+    draft.hf_config = normalized
+    draft.hf_text_config = normalized
+    draft.model_arch_config = replace(
+        draft.model_arch_config,
+        architectures=[PACKED_GLM_MTP_ARCHITECTURE],
+        model_type="glm5_next_mtp",
+        text_model_type="glm5_next_mtp",
+        is_mm_prefix_lm=False,
+    )
+    draft._model_info, draft._architecture = draft.registry.inspect_model_cls(
+        draft.model_arch_config.architectures, draft
+    )
 
 
 SpeculativeConfig.hf_config_override = staticmethod(_normalize_legacy_qwen3_dspark_config)

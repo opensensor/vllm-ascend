@@ -5,10 +5,13 @@
 namespace vllm_ascend {
 at::Tensor npu_w2_grouped_blocked_dequant_matmul_310(
     const at::Tensor& x, const at::Tensor& codes,
-    const at::Tensor& block_scale, const at::Tensor& group_ends) {
-  // Peer-owned routes sort after the last local group. Start from zeros so
-  // those rows remain exact zero without another device-side scatter kernel.
-  at::Tensor out = at::zeros({x.size(0), codes.size(1)}, x.options());
+    const at::Tensor& block_scale, const at::Tensor& group_ends,
+    bool initialize_output) {
+  // Peer-owned routes sort after the last local group. The fused route
+  // combine ignores their zero-weight rows, so it can skip initializing them.
+  at::Tensor out = initialize_output
+                       ? at::zeros({x.size(0), codes.size(1)}, x.options())
+                       : at::empty({x.size(0), codes.size(1)}, x.options());
   EXEC_NPU_CMD(aclnnW2GroupedBlockedDequantMatmulV310, x, codes, block_scale,
                group_ends, out);
   return out;

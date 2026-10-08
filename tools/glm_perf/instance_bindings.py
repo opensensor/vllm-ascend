@@ -51,6 +51,30 @@ def bind_indexers(bindings, runner, writer_factory, selector_factory):
     return count
 
 
+def bind_indexer_forwards(bindings, runner, forward_factory):
+    """Preserve each permanent converter while replacing the query cast."""
+    roots = [runner.model]
+    draft = getattr(getattr(runner, "drafter", None), "model", None)
+    if draft is not None:
+        roots.append(draft)
+    count = 0
+    try:
+        for root in roots:
+            for module in root.modules():
+                converter = getattr(module, "_native_bf16_cast", None)
+                if converter is None or not hasattr(module, "indexer_op"):
+                    continue
+                function = forward_factory(module.forward.__func__, converter)
+                bindings.bind(module, "forward", function)
+                count += 1
+        if not count:
+            raise ValueError("no permanently bound indexer forward found")
+    except Exception:
+        bindings.restore()
+        raise
+    return count
+
+
 def extend_bindings(changes, writer_factory, selector_factory, *, capture_hook=None, apply_hook=None):
     """Install before capture and restore through the next transition's hook."""
     bindings = InstanceBindings()

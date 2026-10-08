@@ -111,6 +111,12 @@ static inline bool CheckDtypeVaild(const RecurrentGatedDeltaRuleV310Params &para
 static aclnnStatus CheckParams(RecurrentGatedDeltaRuleV310Params &params)
 {
     CHECK_RET(CheckDtypeVaild(params), ACLNN_ERR_PARAM_INVALID);
+    const auto &shape = params.state->GetViewShape();
+    const auto &strides = params.state->GetViewStrides();
+    CHECK_RET(shape.GetDimNum() == STATE_DIM_NUM && strides.size() == STATE_DIM_NUM, ACLNN_ERR_PARAM_INVALID);
+    CHECK_RET(strides[3] == 1 && strides[2] == shape[3] &&
+              strides[1] == shape[2] * shape[3] &&
+              strides[0] >= shape[1] * shape[2] * shape[3], ACLNN_ERR_PARAM_INVALID);
     OP_LOGD("RecurrentGatedDeltaRuleV310 check params success.");
     return ACLNN_SUCCESS;
 }

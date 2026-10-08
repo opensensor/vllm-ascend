@@ -199,7 +199,7 @@ def test_model_import_path_does_not_pull_shipped_triton_kda():
 # ---------------------------------------------------------------------------
 
 
-def test_model_module_exposes_lazy_classes_and_mtp_stub():
+def test_model_module_exposes_lazy_classes_and_mtp_adapter():
     import vllm_ascend.models.glm5next_w2.model as m
 
     # The heavy subclasses are lazy (PEP 562) but discoverable via dir().
@@ -207,8 +207,8 @@ def test_model_module_exposes_lazy_classes_and_mtp_stub():
     assert "AscendGlm5NextW2ForCausalLM" in exported
     assert "AscendGlm5NextW2ForConditionalGeneration" in exported
 
-    # MTP-1 stub is a registration target that fails fast if constructed.
-    with pytest.raises(NotImplementedError):
+    # Construction requires an explicit speculative VllmConfig.
+    with pytest.raises(TypeError, match="vllm_config"):
         m.Glm5NextW2MTP()
     assert m.Glm5NextW2MTP.num_nextn_predict_layers == 1
 

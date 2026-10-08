@@ -24,6 +24,7 @@ import importlib.util
 import os
 import sys
 import types
+import weakref
 from unittest.mock import MagicMock
 
 # ---------------------------------------------------------------------------
@@ -120,6 +121,8 @@ from tools.deepseek_w2.w2_format import (  # noqa: E402
     W2_BLOCK_COLS,
     W2_BLOCK_ROWS,
     W2_CODES_PER_BYTE,
+    pack_codes,
+    unpack_codes,
 )
 from vllm_ascend._310p.quantization.methods.registry import get_scheme_class  # noqa: E402
 from vllm_ascend._310p.quantization.methods.w2_dynamic import (  # noqa: E402
@@ -127,13 +130,16 @@ from vllm_ascend._310p.quantization.methods.w2_dynamic import (  # noqa: E402
     W2_CUBE_MAX_TOKENS,
     W2_CUBE_MIN_INPUT_DIM,
     W2_GROUPED_MAX_ROUTES,
+    W3_CUBE_MAX_INPUT_DIM,
     AscendW2DynamicFusedMoEMethod310,
     _can_use_w2_cube,
     _can_use_w2_grouped_cube,
     _device_kernel_available,
+    _infer_bits,
     _is_nvfp4,
     _nvfp4_dequant_fp32,
     _stage_packed_expert,
+    _w2_dequant_fp32,
 )
 from vllm_ascend.models.deepseek_v41.w2_unpack import route_topk_w2  # noqa: E402
 
@@ -142,6 +148,36 @@ _HIDDEN = 64
 _INTER = 96
 _NUM_EXPERTS = 12
 _TOP_K = 6
+
+
+def test_w3_exact_eager_moe_and_cube_exclusion():
+    hidden = inter = 64
+    torch.manual_seed(103)
+    expert = types.SimpleNamespace(hidden=hidden, inter=inter)
+    for projection in ("gate", "up", "down"):
+        codes = torch.randint(-4, 4, (inter, hidden), dtype=torch.int8)
+        packed = pack_codes(codes, 3)
+        scale = torch.rand(inter // 32, hidden // 32) * 0.05 + 0.01
+        setattr(expert, f"{projection}_packed", packed)
+        setattr(expert, f"{projection}_scale", scale)
+        assert _infer_bits(packed, hidden) == 3
+        torch.testing.assert_close(unpack_codes(packed, hidden, 3), codes)
+    with pytest.raises(ValueError, match="invalid"):
+        _infer_bits(torch.empty(64, 31, dtype=torch.uint8), hidden)
+
+    x = torch.randn(2, hidden) * 0.1
+    ids = torch.zeros((2, 1), dtype=torch.int64)
+    weights = torch.tensor([[0.7], [0.3]])
+    method = AscendW2DynamicFusedMoEMethod310()
+    actual = method._apply_device([expert], x, weights, ids, None)
+    layer = types.SimpleNamespace(w2_experts=[expert], w2_shared_expert=None)
+    via_apply = method.apply(layer, x, weights, ids, None, None)
+    torch.testing.assert_close(via_apply, actual, atol=0, rtol=0)
+    gate_weight = _w2_dequant_fp32(expert.gate_packed, expert.gate_scale, inter, hidden)
+    up_weight = _w2_dequant_fp32(expert.up_packed, expert.up_scale, inter, hidden)
+    down_weight = _w2_dequant_fp32(expert.down_packed, expert.down_scale, hidden, inter)
+    expected = (torch.nn.functional.silu(x @ gate_weight.T) * (x @ up_weight.T)) @ down_weight.T * weights
+    torch.testing.assert_close(actual, expected, atol=1e-6, rtol=1e-5)
 
 
 def _rand(shape, seed, scale=1.0):
@@ -240,12 +276,35 @@ def test_cube_kernel_accepts_validated_l0c_rows_and_rejects_larger_groups():
 
 def test_cube_kernel_accepts_w4_but_rejects_nvfp4():
     packed_w4 = torch.zeros(128, W2_CUBE_MIN_INPUT_DIM // 2, dtype=torch.uint8)
+    packed_w3 = torch.zeros(128, W2_CUBE_MIN_INPUT_DIM * 3 // 8, dtype=torch.uint8)
     packed_w2 = torch.zeros(128, W2_CUBE_MIN_INPUT_DIM // W2_CODES_PER_BYTE, dtype=torch.uint8)
     partial_tile_w4 = torch.zeros(64, W2_CUBE_MIN_INPUT_DIM // 2, dtype=torch.uint8)
 
     assert _can_use_w2_cube(object(), packed_w4, W2_CUBE_MIN_INPUT_DIM, 1, False)
+    assert _can_use_w2_cube(object(), packed_w3, W2_CUBE_MIN_INPUT_DIM, 1, False)
+    oversized_w3 = torch.zeros(128, (W3_CUBE_MAX_INPUT_DIM + W2_CUBE_INPUT_TILE) * 3 // 8, dtype=torch.uint8)
+    assert not _can_use_w2_cube(object(), oversized_w3, W3_CUBE_MAX_INPUT_DIM + W2_CUBE_INPUT_TILE, 1, False)
     assert not _can_use_w2_cube(object(), packed_w2, W2_CUBE_MIN_INPUT_DIM, 1, True)
     assert not _can_use_w2_cube(object(), partial_tile_w4, W2_CUBE_MIN_INPUT_DIM, 1, False)
+
+
+def test_grouped_cube_accepts_canonical_w3_bank():
+    hidden = inter = W2_CUBE_MIN_INPUT_DIM
+
+    class _Bank:
+        grouped_ready = True
+        local_expert_offset = 0
+        gate_packed_bank = torch.zeros(2, inter, hidden * 3 // 8, dtype=torch.uint8)
+        up_packed_bank = torch.zeros(2, inter, hidden * 3 // 8, dtype=torch.uint8)
+        down_packed_bank = torch.zeros(2, hidden, inter * 3 // 8, dtype=torch.uint8)
+        gate_scale_bank = torch.ones(2, inter // 32, hidden // 32)
+        up_scale_bank = torch.ones(2, inter // 32, hidden // 32)
+        down_scale_bank = torch.ones(2, hidden // 32, inter // 32)
+
+        def __getitem__(self, index):
+            return types.SimpleNamespace(hidden=hidden, inter=inter)
+
+    assert _can_use_w2_grouped_cube(object(), _Bank(), 8)
 
 
 def test_grouped_cube_routes_without_host_tensor_lists(monkeypatch):
@@ -292,7 +351,261 @@ def test_grouped_cube_routes_without_host_tensor_lists(monkeypatch):
     torch.testing.assert_close(output, expected)
     assert all(torch.equal(group_ends, torch.tensor([1, 2])) for group_ends in observed_group_ends)
 
+
+@pytest.mark.parametrize("empty_peer_rows", [False, True])
+def test_grouped_prefill_fuses_route_combine_and_skips_peer_rows(monkeypatch, empty_peer_rows):
+    from vllm_ascend._310p.quantization.methods import w2_dynamic
+
+    hidden = inter = W2_CUBE_MIN_INPUT_DIM
+    num_tokens = 9
+    top_k = 2
+    bank = types.SimpleNamespace(
+        local_expert_offset=0,
+        num_local_experts=1,
+        fused_route_combine=True,
+        empty_peer_rows=empty_peer_rows,
+        gate_packed_bank=torch.zeros(1, inter, hidden // 2, dtype=torch.uint8),
+        up_packed_bank=torch.zeros(1, inter, hidden // 2, dtype=torch.uint8),
+        down_packed_bank=torch.zeros(1, hidden, inter // 2, dtype=torch.uint8),
+        gate_scale_bank=torch.ones(1, inter // 32, hidden // 32),
+        up_scale_bank=torch.ones(1, inter // 32, hidden // 32),
+        down_scale_bank=torch.ones(1, hidden // 32, inter // 32),
+    )
+    topk_ids = torch.tensor([[0, 1]] * num_tokens)
+    topk_weights = torch.tensor([[1.0, 0.0]] * num_tokens)
+    x = torch.ones(num_tokens, hidden)
+    calls = []
+    initialize_calls = []
+
+    def fake_grouped_op(inputs, codes, scales, group_ends, initialize_output=True):
+        del inputs, scales
+        initialize_calls.append(initialize_output)
+        output = torch.full(
+            (num_tokens * top_k, codes.shape[1]),
+            0 if initialize_output else torch.nan,
+            dtype=torch.float16,
+        )
+        output[: int(group_ends[-1])] = 1
+        return output
+
+    def fake_unpermute(rows, inverse, *, probs):
+        calls.append((inverse.dtype, probs.dtype))
+        unsorted = rows.index_select(0, inverse.long()).reshape(num_tokens, top_k, hidden).float()
+        active = probs.unsqueeze(-1) != 0
+        return (torch.where(active, unsorted, 0) * probs.unsqueeze(-1)).sum(1).half()
+
+    monkeypatch.setattr(w2_dynamic, "torch_npu", types.SimpleNamespace(npu_moe_token_unpermute=fake_unpermute))
+    output = _method()._apply_device_grouped(fake_grouped_op, bank, x, topk_weights, topk_ids, None)
+    torch.testing.assert_close(output, torch.ones_like(output))
+    assert calls == [(torch.int32, torch.float32)]
+    assert initialize_calls == [not empty_peer_rows] * 3
+
+
 # --- param creation from a synthetic W2 index -------------------------------
+
+
+@pytest.mark.parametrize("num_tokens", [1, 4, 9])
+def test_fp32_combine_dispatch_preserves_precision_and_ignores_poisoned_peers(monkeypatch, num_tokens):
+    hidden = inter = W2_CUBE_MIN_INPUT_DIM
+    bank = types.SimpleNamespace(
+        local_expert_offset=0,
+        num_local_experts=1,
+        fp32_route_combine=True,
+        gate_packed_bank=torch.zeros(1, inter, hidden // 2, dtype=torch.uint8),
+        up_packed_bank=torch.zeros(1, inter, hidden // 2, dtype=torch.uint8),
+        down_packed_bank=torch.zeros(1, hidden, inter // 2, dtype=torch.uint8),
+        gate_scale_bank=torch.ones(1, inter // 32, hidden // 32),
+        up_scale_bank=torch.ones(1, inter // 32, hidden // 32),
+        down_scale_bank=torch.ones(1, hidden // 32, inter // 32),
+    )
+    # A nonzero peer weight must also be excluded by the local boundary.
+    ids = torch.tensor([[0, 1]] * num_tokens)
+    weights = torch.tensor([[0.1234567, 0.8765433]] * num_tokens)
+    calls = []
+
+    def projection(x, codes, scales, ends, initialize_output=True):
+        assert not initialize_output
+        output = torch.full((num_tokens * 2, codes.shape[1]), torch.nan, dtype=torch.float16)
+        output[:num_tokens] = 1
+        return output
+
+    def combine(rows, inverse, route_weights, ends):
+        calls.append((rows.dtype, inverse.dtype, route_weights.dtype, ends.dtype))
+        selected = rows[inverse].reshape(num_tokens, 2, hidden).float()
+        live = (inverse < ends[-1]).reshape(num_tokens, 2, 1)
+        return (torch.where(live, selected, 0) * route_weights.unsqueeze(-1)).sum(1)
+
+    monkeypatch.setattr(torch.ops._C_ascend, "npu_w2_route_combine_310", combine, raising=False)
+    shared = types.SimpleNamespace(forward=lambda x: torch.full_like(x, 0.25))
+    output = _method()._apply_device_grouped(projection, bank, torch.ones(num_tokens, hidden), weights, ids, shared)
+    assert output.dtype == torch.float32
+    expected = (weights[:, :1] + 0.25).expand_as(output)
+    torch.testing.assert_close(output, expected, rtol=0, atol=0)
+    assert calls == [(torch.float16, torch.int64, torch.float32, torch.int64)]
+
+
+@pytest.mark.parametrize("fused_gate_up", [False, True])
+@pytest.mark.parametrize("prefill_swiglu", [False, True])
+@pytest.mark.parametrize("num_tokens", [1, 4, 9])
+@pytest.mark.parametrize("combine_mode", ["torch", "cann", "fp32"])
+def test_grouped_intermediates_released_before_later_stages(
+    monkeypatch, fused_gate_up, combine_mode, prefill_swiglu, num_tokens
+):
+    from vllm_ascend._310p.quantization.methods import w2_dynamic
+
+    hidden, inter, top_k = 32, 64, 2
+    bank = types.SimpleNamespace(
+        local_expert_offset=0,
+        num_local_experts=2,
+        fused_route_combine=combine_mode == "cann",
+        fp32_route_combine=combine_mode == "fp32",
+        prefill_swiglu=prefill_swiglu,
+        gate_packed_bank=torch.zeros(2, inter, hidden // 2, dtype=torch.uint8),
+        up_packed_bank=torch.zeros(2, inter, hidden // 2, dtype=torch.uint8),
+        down_packed_bank=torch.zeros(2, hidden, inter // 2, dtype=torch.uint8),
+        gate_scale_bank=torch.ones(2, inter // 32, hidden // 32),
+        up_scale_bank=torch.ones(2, inter // 32, hidden // 32),
+        down_scale_bank=torch.ones(2, hidden // 32, inter // 32),
+    )
+    if fused_gate_up:
+        bank.gate_up_packed_bank = torch.cat((bank.gate_packed_bank, bank.up_packed_bank), dim=1)
+        bank.gate_up_scale_bank = torch.cat((bank.gate_scale_bank, bank.up_scale_bank), dim=1)
+    refs = {}
+    projection_outputs = []
+    shared_calls = []
+
+    def projection(inputs, codes, scales, ends, *args):
+        if codes is bank.down_packed_bank:
+            assert refs["gather"]() is None
+            # Includes the base tensor retained by chunk views of fused gate/up.
+            assert all(ref() is None for ref in projection_outputs)
+            refs["activation"] = weakref.ref(inputs)
+            result = inputs[:, :hidden].clone()
+            refs["routed"] = weakref.ref(result)
+        else:
+            refs["gather"] = weakref.ref(inputs)
+            result = inputs[:, :1].expand(-1, codes.shape[1]).clone()
+            projection_outputs.append(weakref.ref(result))
+        return result
+
+    swiglu_calls = []
+
+    def swiglu(gate_up):
+        assert refs["gather"]() is None
+        assert gate_up.is_contiguous()
+        swiglu_calls.append(True)
+        gate, up = gate_up.chunk(2, dim=-1)
+        return (torch.nn.functional.silu(gate.float()) * up.float()).half()
+
+    monkeypatch.setattr(torch.ops._C_ascend, "npu_w2_swiglu_310", swiglu, raising=False)
+
+    def combine(rows, inverse, weights, ends=None):
+        assert refs["activation"]() is None
+        return (rows[inverse.long()].reshape(num_tokens, top_k, hidden).float() * weights.unsqueeze(-1)).sum(1)
+
+    def shared_forward(inputs):
+        assert all(ref() is None for ref in refs.values())
+        shared_calls.append(True)
+        return torch.full_like(inputs, 0.25)
+
+    monkeypatch.setattr(torch.ops._C_ascend, "npu_w2_route_combine_310", combine, raising=False)
+    monkeypatch.setattr(
+        w2_dynamic,
+        "torch_npu",
+        types.SimpleNamespace(npu_moe_token_unpermute=lambda rows, inverse, *, probs: combine(rows, inverse, probs)),
+    )
+    x = torch.arange(1, num_tokens + 1, dtype=torch.float16).unsqueeze(1).expand(-1, hidden)
+    weights = torch.tensor([[0.25, 0.5]] * num_tokens)
+    ids = torch.tensor([[1, 0]] * num_tokens)
+    with torch.inference_mode():
+        output = _method()._apply_device_grouped(
+            projection, bank, x, weights, ids, types.SimpleNamespace(forward=shared_forward)
+        )
+    activation = (torch.nn.functional.silu(x.float()) * x.float()).half().float()
+    torch.testing.assert_close(output, activation * 0.75 + 0.25, rtol=0, atol=0)
+    assert shared_calls == [True]
+    assert swiglu_calls == ([True] if fused_gate_up and prefill_swiglu and num_tokens >= 9 else [])
+
+
+@pytest.mark.parametrize("num_tokens", [1, 4, 8, 9, 640])
+@pytest.mark.parametrize("has_extension", [False, True])
+def test_prefill_fp32_combine_preserves_decode_and_checks_extension_at_boundary(monkeypatch, num_tokens, has_extension):
+    hidden = inter = 32
+    bank = types.SimpleNamespace(
+        local_expert_offset=0,
+        num_local_experts=1,
+        prefill_fp32_route_combine=False,
+        gate_packed_bank=torch.zeros(1, inter, hidden // 2, dtype=torch.uint8),
+        up_packed_bank=torch.zeros(1, inter, hidden // 2, dtype=torch.uint8),
+        down_packed_bank=torch.zeros(1, hidden, inter // 2, dtype=torch.uint8),
+        gate_scale_bank=torch.ones(1, 1, 1),
+        up_scale_bank=torch.ones(1, 1, 1),
+        down_scale_bank=torch.ones(1, 1, 1),
+    )
+    ids = torch.tensor([[0, 1]] * num_tokens)
+    weights = torch.tensor([[0.1234567, 0.8765433]] * num_tokens)
+    initialize_calls = []
+    combine_calls = []
+
+    def projection(inputs, codes, scales, ends, initialize_output=True):
+        initialize_calls.append(initialize_output)
+        result = torch.full(
+            (2 * num_tokens, codes.shape[1]), 0 if initialize_output else torch.nan, dtype=torch.float16
+        )
+        result[:num_tokens] = 1
+        return result
+
+    def combine(rows, inverse, route_weights, ends):
+        combine_calls.append(True)
+        selected = rows[inverse].reshape(num_tokens, 2, hidden).float()
+        live = (inverse < ends[-1]).reshape(num_tokens, 2, 1)
+        return (torch.where(live, selected, 0) * route_weights.unsqueeze(-1)).sum(1)
+
+    monkeypatch.setattr(
+        torch.ops._C_ascend, "npu_w2_route_combine_310", combine if has_extension else None, raising=False
+    )
+    x = torch.ones(num_tokens, hidden)
+    shared = types.SimpleNamespace(forward=lambda inputs: torch.full_like(inputs, 0.25))
+    baseline = _method()._apply_device_grouped(projection, bank, x, weights, ids, shared)
+    assert initialize_calls == [True] * 3
+    initialize_calls.clear()
+    bank.prefill_fp32_route_combine = True
+    if num_tokens >= 9 and not has_extension:
+        with pytest.raises(RuntimeError, match="requires.*extension and OPP"):
+            _method()._apply_device_grouped(projection, bank, x, weights, ids, shared)
+        assert initialize_calls == []
+        return
+    actual = _method()._apply_device_grouped(projection, bank, x, weights, ids, shared)
+    assert actual.dtype == baseline.dtype == torch.float32
+    assert torch.equal(actual, baseline)
+    assert initialize_calls == [num_tokens < 9] * 3
+    assert combine_calls == ([True] if num_tokens >= 9 else [])
+
+
+def test_prefill_swiglu_missing_extension_fails_before_projection(monkeypatch):
+    bank = types.SimpleNamespace(
+        local_expert_offset=0,
+        num_local_experts=1,
+        prefill_swiglu=True,
+        gate_packed_bank=torch.zeros(1, 32, 16, dtype=torch.uint8),
+        gate_scale_bank=torch.ones(1, 1, 1),
+        gate_up_packed_bank=torch.zeros(1, 64, 16, dtype=torch.uint8),
+        gate_up_scale_bank=torch.ones(1, 2, 1),
+    )
+    monkeypatch.setattr(torch.ops._C_ascend, "npu_w2_swiglu_310", None, raising=False)
+    with pytest.raises(RuntimeError, match="prefill SwiGLU requires.*extension and OPP"):
+        _method()._apply_device_grouped(
+            None, bank, torch.ones(9, 32), torch.ones(9, 1), torch.zeros(9, 1, dtype=torch.int64), None
+        )
+
+
+def test_fp32_combine_missing_extension_fails_before_projection(monkeypatch):
+    bank = types.SimpleNamespace(local_expert_offset=0, num_local_experts=1, fp32_route_combine=True)
+    monkeypatch.setattr(torch.ops._C_ascend, "npu_w2_route_combine_310", None, raising=False)
+    with pytest.raises(RuntimeError, match="requires.*extension and OPP"):
+        _method()._apply_device_grouped(
+            None, bank, torch.ones(1, 256), torch.ones(1, 1), torch.zeros(1, 1, dtype=torch.int64), None
+        )
 
 
 def test_get_weight_shapes_and_dtypes():

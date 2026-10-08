@@ -65,6 +65,7 @@ GLM5NEXT_NUM_HIDDEN_LAYERS = 45
 GLM5NEXT_HIDDEN_SIZE = 4096
 N_ROUTED_EXPERTS = 288
 NUM_EXPERTS_PER_TOK = 8  # top-8
+GLM_GROUPED_ROUTE_EXPERIMENT_LIMIT = 32768
 FIRST_K_DENSE_REPLACE = 3  # first 3 layers are dense MLP, the rest MoE
 N_SHARED_EXPERTS = 1
 MOE_INTERMEDIATE_SIZE = 2048
@@ -265,6 +266,45 @@ def _pack_codes_nz(codes: torch.Tensor, in_features: int) -> torch.Tensor:
     return packed.reshape(n, packed_k).contiguous()
 
 
+def _pack_codes_nz_w3(codes: torch.Tensor, in_features: int) -> torch.Tensor:
+    """Repack canonical W3 into plane-major 16×256 Cube NZ tiles.
+
+    Each tile holds 512 little-endian groups of eight 3-bit codes. Its three
+    byte planes are contiguous, so the device decodes each field with vector
+    reads and writes the resulting signed values directly in NZ order.
+    """
+    if codes.dtype != torch.uint8 or codes.ndim != 2 or not codes.is_contiguous():
+        raise ValueError("NZ W3 packing requires a contiguous uint8 [N, packedK] matrix")
+    n, packed_k = codes.shape
+    if n % GLM_NZ_OUTPUT_TILE or in_features % GLM_NZ_INPUT_TILE or packed_k * 8 != in_features * 3:
+        raise ValueError("NZ W3 packing requires W3 codes and 16×256 tiles")
+
+    n_tiles = n // GLM_NZ_OUTPUT_TILE
+    k_tiles = in_features // GLM_NZ_INPUT_TILE
+    groups = codes.view(n, in_features // 8, 3)
+    byte0, byte1, byte2 = groups.unbind(dim=-1)
+    unsigned = torch.stack(
+        (
+            byte0 & 7,
+            (byte0 >> 3) & 7,
+            ((byte0 >> 6) | (byte1 << 2)) & 7,
+            (byte1 >> 1) & 7,
+            (byte1 >> 4) & 7,
+            ((byte1 >> 7) | (byte2 << 1)) & 7,
+            (byte2 >> 2) & 7,
+            byte2 >> 5,
+        ),
+        dim=-1,
+    ).reshape(n, in_features)
+    nz = unsigned.view(n_tiles, GLM_NZ_OUTPUT_TILE, k_tiles, GLM_NZ_INPUT_TILE)
+    nz = nz.permute(0, 2, 3, 1).reshape(n_tiles, k_tiles, 8, 512)
+    word = nz[:, :, 0, :].to(torch.int32)
+    for field in range(1, 8):
+        word |= nz[:, :, field, :].to(torch.int32) << (3 * field)
+    planes = torch.stack([(word >> (8 * byte)) & 255 for byte in range(3)], dim=2)
+    return planes.reshape(n, packed_k).to(torch.uint8).contiguous()
+
+
 class _PackedW2ExpertBank(list[_PackedW2Expert]):
     """Per-expert views plus contiguous local projection banks.
 
@@ -288,7 +328,20 @@ class _PackedW2ExpertBank(list[_PackedW2Expert]):
         offload_to_cpu: bool,
         layer_key: str | None = None,
         nz_packed_codes: bool = False,
+        prefill_route_histogram: bool = False,
+        fused_route_combine: bool = False,
+        empty_peer_rows: bool = False,
+        grouped_max_routes: int | None = None,
+        fp32_route_combine: bool = False,
+        prefill_swiglu: bool = False,
+        prefill_fp32_route_combine: bool = False,
+        decode_swiglu: bool = False,
+        decode_combine: bool = False,
     ) -> None:
+        if grouped_max_routes is not None and (
+            type(grouped_max_routes) is not int or not 0 < grouped_max_routes <= GLM_GROUPED_ROUTE_EXPERIMENT_LIMIT
+        ):
+            raise ValueError("ascend_glm_grouped_max_routes must be an integer in 1..32768 or None")
         super().__init__(_PackedW2Expert(hidden, inter, offload_to_cpu=offload_to_cpu) for _ in range(num_experts))
         self.hidden = int(hidden)
         self.inter = int(inter)
@@ -298,6 +351,19 @@ class _PackedW2ExpertBank(list[_PackedW2Expert]):
         self.layer_key = layer_key
         self.grouped_ready = False
         self.nz_packed_codes = bool(nz_packed_codes and not offload_to_cpu)
+        self.prefill_route_histogram = bool(prefill_route_histogram and not offload_to_cpu)
+        self.fused_route_combine = bool(fused_route_combine and not offload_to_cpu)
+        self.empty_peer_rows = bool(empty_peer_rows and self.fused_route_combine)
+        # Explicit opt-in must match the installed OPP's admission limit.
+        # None inherits the quantization method's existing default.
+        self.grouped_max_routes = grouped_max_routes
+        if sum(map(bool, (fp32_route_combine, prefill_fp32_route_combine, fused_route_combine))) > 1:
+            raise ValueError("choose only one of all-token FP32, prefill FP32, or CANN route combine")
+        self.fp32_route_combine = bool(fp32_route_combine and not offload_to_cpu)
+        self.prefill_fp32_route_combine = bool(prefill_fp32_route_combine and not offload_to_cpu)
+        self.prefill_swiglu = bool(prefill_swiglu and not offload_to_cpu)
+        self.decode_swiglu = bool(decode_swiglu and not offload_to_cpu)
+        self.decode_combine = bool(decode_combine and not offload_to_cpu)
 
     def place_resident_tensor(
         self,
@@ -319,9 +385,11 @@ class _PackedW2ExpertBank(list[_PackedW2Expert]):
         if not 0 <= local < self.num_local_experts:
             raise IndexError(f"expert {expert_id} is outside the resident expert range")
 
-        if self.nz_packed_codes and name.endswith("_packed"):
+        if name.endswith("_packed"):
             in_features = self.inter if name == "down_packed" else self.hidden
-            tensor = _pack_codes_nz(tensor.cpu(), in_features).view(torch.int8)
+            if self.nz_packed_codes:
+                repack = _pack_codes_nz_w3 if tensor.shape[-1] * 8 == in_features * 3 else _pack_codes_nz
+                tensor = repack(tensor.cpu(), in_features).view(torch.int8)
 
         # Gate and up consume the same activations. Store their rows in one
         # allocation so the grouped Cube operator can project both in one call.
@@ -462,6 +530,15 @@ def _new_packed_expert_bank(
         offload_to_cpu=offload_to_cpu,
         layer_key=layer_key,
         nz_packed_codes=bool(geometry.get("nz_packed_codes", 0)),
+        prefill_route_histogram=bool(geometry.get("prefill_route_histogram", 0)),
+        fused_route_combine=bool(geometry.get("fused_route_combine", 0)),
+        empty_peer_rows=bool(geometry.get("empty_peer_rows", 0)),
+        grouped_max_routes=geometry.get("grouped_max_routes"),
+        fp32_route_combine=bool(geometry.get("fp32_route_combine", False)),
+        prefill_swiglu=bool(geometry.get("prefill_swiglu", False)),
+        prefill_fp32_route_combine=bool(geometry.get("prefill_fp32_route_combine", False)),
+        decode_swiglu=bool(geometry.get("decode_swiglu", False)),
+        decode_combine=bool(geometry.get("decode_combine", False)),
     )
 
 
@@ -609,6 +686,17 @@ def _install_w2_moe(
 
     geometry = _expert_geometry_from_config(config)
     geometry["nz_packed_codes"] = int(nz_packed_codes)
+    geometry["prefill_route_histogram"] = int(getattr(config, "ascend_glm_prefill_route_histogram", False))
+    geometry["fused_route_combine"] = int(getattr(config, "ascend_glm_fused_route_combine", False))
+    geometry["empty_peer_rows"] = int(getattr(config, "ascend_glm_empty_peer_rows", False))
+    grouped_max_routes = getattr(config, "ascend_glm_grouped_max_routes", None)
+    geometry["fp32_route_combine"] = int(getattr(config, "ascend_glm_fp32_route_combine", False))
+    geometry["prefill_swiglu"] = int(getattr(config, "ascend_glm_prefill_swiglu", False))
+    geometry["prefill_fp32_route_combine"] = int(getattr(config, "ascend_glm_prefill_fp32_route_combine", False))
+    geometry["decode_swiglu"] = int(getattr(config, "ascend_glm_decode_swiglu", False))
+    geometry["decode_combine"] = int(getattr(config, "ascend_glm_decode_combine", False))
+    if grouped_max_routes is not None:
+        geometry["grouped_max_routes"] = grouped_max_routes
     count = 0
     for layer in layers:
         if not _layer_is_moe(layer):
@@ -714,6 +802,66 @@ def _rms_norm_gated_310(
     return normalized * activated_gate.to(normalized.dtype)
 
 
+def _project_kda_qkv_310(self_attn: Any, hidden_states: torch.Tensor) -> torch.Tensor:
+    """Use a graph-safe one-group NZ projection when its weight is prepared."""
+    packed_weight = getattr(self_attn, "_glm_kda_qkv_weight_nz", None)
+    if packed_weight is None:
+        return self_attn.in_proj_qkvbfg_a(hidden_states)[0]
+
+    # Lazy import keeps CPU-only model assembly tests independent of torch_npu.
+    import torch_npu
+
+    num_tokens = hidden_states.shape[0]
+    group_lists = self_attn._glm_kda_qkv_group_lists
+    group_list = group_lists.get(num_tokens)
+    if group_list is None:
+        # Prefill row counts vary; decode graph sizes are populated at load.
+        group_list = torch.tensor([num_tokens], dtype=torch.int64, device=hidden_states.device)
+        group_lists[num_tokens] = group_list
+    return torch_npu.npu_grouped_matmul(
+        x=[hidden_states.contiguous()],
+        weight=[packed_weight],
+        group_list=group_list,
+        split_item=2,
+        group_type=0,
+    )[0]
+
+
+def _prepare_kda_qkv_nz_weights_310(layers: Iterable[Any], max_decode_seqs: int) -> int:
+    """Replace each KDA input weight with a lossless transposed NZ view.
+
+    Keeping the public parameter's logical [N,K] shape while retaining its
+    transposed [K,N] NZ storage avoids a second ~1.7 GiB model copy at TP4.
+    The grouped projection uses only the round-trip transposed view. Packing
+    [N,K] directly as NZ and then transposing is *not* equivalent on 310P.
+    """
+    import torch_npu
+
+    prepared = 0
+    for layer in layers:
+        if not _is_kda_layer(layer):
+            continue
+        self_attn = getattr(layer, "self_attn", None)
+        projection = getattr(self_attn, "in_proj_qkvbfg_a", None)
+        if projection is None:
+            continue
+        weight = projection.weight
+        if weight.device.type != "npu" or weight.dtype != torch.float16:
+            raise RuntimeError("GLM KDA grouped NZ projection requires a resident FP16 NPU weight")
+        from vllm_ascend.utils import ACL_FORMAT_FRACTAL_NZ
+
+        with torch.no_grad():
+            transposed_nz = torch_npu.npu_format_cast(weight.data.T.contiguous(), ACL_FORMAT_FRACTAL_NZ)
+            weight.data = transposed_nz.T
+        self_attn._glm_kda_qkv_weight_nz = weight.data.T.unsqueeze(0)
+        self_attn._glm_kda_qkv_group_lists = {
+            count: torch.tensor([count], dtype=torch.int64, device=weight.device)
+            for count in range(1, max_decode_seqs + 1)
+        }
+        prepared += 1
+    return prepared
+
+
 def _bind_eager_kda_forward(self_attn: Any, kda_core: Any, io_dtype: torch.dtype) -> None:
     """Override shipped KDA with the stateful 310P AscendC implementation.
 
@@ -734,7 +882,7 @@ def _bind_eager_kda_forward(self_attn: Any, kda_core: Any, io_dtype: torch.dtype
 
     def forward(hidden_states: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
         # Projection stage: identical split to the shipped forward.
-        projected = self_attn.in_proj_qkvbfg_a(hidden_states)[0]
+        projected = _project_kda_qkv_310(self_attn, hidden_states)
         qkv, beta_raw, f_a, g_a = projected.split(
             [
                 3 * self_attn.local_projection_size,
@@ -984,7 +1132,7 @@ def _install_310p_kda(layers: Iterable[Any], config: Any, dtype_policy: Glm5Next
 
 def _install_dsa_indexer(layers: Iterable[Any], config: Any, dtype_policy: Glm5NextW2DtypePolicy) -> int:
     """Verify every DSA layer retained native paged MLA and kpool indexing."""
-    del config, dtype_policy
+    del dtype_policy
     count = 0
     for layer in layers:
         if not _is_dsa_layer(layer):
@@ -994,8 +1142,25 @@ def _install_dsa_indexer(layers: Iterable[Any], config: Any, dtype_policy: Glm5N
             raise RuntimeError("GLM W2 DSA layer requires the native Ascend MLA wrapper")
         if self_attn is not None and getattr(self_attn, "indexer", None) is None:
             raise RuntimeError("GLM W2 DSA layer requires its checkpoint-declared kpool indexer")
+        if getattr(config, "ascend_glm_mtp_full_graph", False):
+            self_attn.indexer.indexer_op.capture_safe_selection = True
+            self_attn.indexer.indexer_op.live_kpool_score = bool(getattr(config, "ascend_glm_live_kpool_score", False))
         count += 1
     return count
+
+
+def _prepare_dsa_indexer_weights(layers: Iterable[Any]) -> None:
+    """Materialize indexer FP32 projections after loading, before graph capture.
+
+    The draft's first indexer call can occur inside capture. In particular,
+    converting an NZ weight there may dispatch to the uncapturable ACL Cast.
+    Refresh both copies on each load so a reload never leaves stale weights.
+    """
+    for layer in layers:
+        indexer = getattr(getattr(layer, "self_attn", None), "indexer", None)
+        if indexer is not None:
+            indexer._wk_weight_f32 = indexer.wk_weights_proj.weight.detach().float()
+            indexer._gate_weight_f32 = indexer.index_kpool_compress_gate.detach().float()
 
 
 def _prepare_kda_gate_weights(layers: Iterable[Any]) -> None:
@@ -1142,15 +1307,56 @@ def _build_causal_lm_cls() -> type:
             # shipped constructor sees 45L / 288-expert / KDA+DSA / MTP-1.
             self._glm_text_config = _resolve_glm_text_config(vllm_config)
             hf_config = getattr(getattr(vllm_config, "model_config", None), "hf_config", None)
+            self._glm_text_config.ascend_glm_mtp_full_graph = bool(
+                getattr(hf_config, "ascend_glm_mtp_full_graph", False)
+            )
             self._nz_packed_codes = bool(getattr(hf_config, "ascend_glm_nz_packed_codes", False))
+            self._kda_nz_grouped = bool(getattr(hf_config, "ascend_glm_kda_nz_grouped", False))
+            self._kda_nz_max_decode_seqs = vllm_config.scheduler_config.max_num_seqs
             self._glm_text_config.ascend_glm_fused_sinkhorn = bool(
                 getattr(hf_config, "ascend_glm_fused_sinkhorn", False)
             )
             self._glm_text_config.ascend_glm_mhc_fp16_state = bool(
                 getattr(hf_config, "ascend_glm_mhc_fp16_state", False)
             )
+            self._glm_text_config.ascend_glm_live_kpool_score = bool(
+                getattr(hf_config, "ascend_glm_live_kpool_score", False)
+            )
+            self._glm_text_config.ascend_glm_native_mhc_post = bool(
+                getattr(hf_config, "ascend_glm_native_mhc_post", False)
+            )
+            self._glm_text_config.ascend_glm_prefill_mhc_post = bool(
+                getattr(hf_config, "ascend_glm_prefill_mhc_post", False)
+            )
             self._glm_text_config.ascend_glm_mhc_batched_round = bool(
                 getattr(hf_config, "ascend_glm_mhc_batched_round", False)
+            )
+            self._glm_text_config.ascend_glm_prefill_route_histogram = bool(
+                getattr(hf_config, "ascend_glm_prefill_route_histogram", False)
+            )
+            self._glm_text_config.ascend_glm_fused_route_combine = bool(
+                getattr(hf_config, "ascend_glm_fused_route_combine", False)
+            )
+            self._glm_text_config.ascend_glm_empty_peer_rows = bool(
+                getattr(hf_config, "ascend_glm_empty_peer_rows", False)
+            )
+            self._glm_text_config.ascend_glm_grouped_max_routes = getattr(
+                hf_config,
+                "ascend_glm_grouped_max_routes",
+                getattr(self._glm_text_config, "ascend_glm_grouped_max_routes", None),
+            )
+            self._glm_text_config.ascend_glm_prefill_swiglu = bool(
+                getattr(hf_config, "ascend_glm_prefill_swiglu", False)
+            )
+            self._glm_text_config.ascend_glm_fp32_route_combine = bool(
+                getattr(hf_config, "ascend_glm_fp32_route_combine", False)
+            )
+            self._glm_text_config.ascend_glm_prefill_fp32_route_combine = bool(
+                getattr(hf_config, "ascend_glm_prefill_fp32_route_combine", False)
+            )
+            self._glm_text_config.ascend_glm_decode_swiglu = bool(getattr(hf_config, "ascend_glm_decode_swiglu", False))
+            self._glm_text_config.ascend_glm_decode_combine = bool(
+                getattr(hf_config, "ascend_glm_decode_combine", False)
             )
             # FP16-in-checkpoint fix: the dense-MLP and shared-expert projections
             # ship as fp16 (no weight_scale_inv) but are absent from the
@@ -1328,7 +1534,12 @@ def _build_causal_lm_cls() -> type:
                 bank.finalize_grouped_storage()
             loaded |= super().load_weights(passthrough)
             _prepare_kda_gate_weights(_iter_model_layers(self))
+            _prepare_dsa_indexer_weights(_iter_model_layers(self))
             _release_grouped_compaction_cache(banks)
+            if self._kda_nz_grouped:
+                prepared = _prepare_kda_qkv_nz_weights_310(_iter_model_layers(self), self._kda_nz_max_decode_seqs)
+                if prepared != self._kda_swapped:
+                    raise RuntimeError(f"prepared {prepared} of {self._kda_swapped} GLM KDA NZ projections")
             return loaded
 
     AscendGlm5NextW2ForCausalLM.__module__ = __name__
@@ -1376,26 +1587,147 @@ def _build_cond_gen_cls() -> type:
 
 
 # ===========================================================================
-# MTP-1 stub (registration target for Glm5NextW2MTPModel; wired at G7)
+# Packed MTP adapter: reuse the shipped predictor and packed expert implementation.
 # ===========================================================================
 
 
-class Glm5NextW2MTP:
-    """Stub MTP-1 draft model for GLM-5.3-Flash (``num_nextn_predict_layers=1``).
+class Glm5NextW2MTP(nn.Module):
+    """Experimental packed draft layer with explicit checkpoint ownership.
 
-    Registration target so the ``Glm5NextW2MTPModel`` arch resolves at G3. The
-    concrete drafter reuses the shipped ``glm5next`` MTP path (which inherits
-    the G4/G6 stateful KDA / W2 fixes automatically); wiring is G7. Constructing it
-    now fails fast rather than silently running a stub.
+    Heavy predictor imports remain constructor-local for CPU tooling. The
+    target's KDA layers verify drafts; the draft itself uses the shipped MLA
+    layer. Existing proposer code shares target embeddings and an absent head.
     """
 
     num_nextn_predict_layers = NUM_NEXTN_PREDICT_LAYERS
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        raise NotImplementedError(
-            "Glm5NextW2MTP (MTP-1) is not wired yet; registration-only stub. "
-            "TODO(G7): reuse the shipped glm5next MTP for num_nextn_predict_layers=1."
-        )
+    def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
+        super().__init__()
+        from vllm_ascend import envs
+        from vllm_ascend.models.glm5next import model as shipped
+        from vllm_ascend.models.glm5next.mtp import Glm5NextMultiTokenPredictor
+
+        from .mtp_config import validate_packed_glm_mtp
+
+        validate_packed_glm_mtp(vllm_config)
+        if envs.VLLM_ASCEND_310P_GLM_HOST_KV:
+            raise ValueError("Packed GLM MTP requires resident MLA caches")
+        self.config = _resolve_glm_text_config(vllm_config)
+        if self.config.num_nextn_predict_layers != 1:
+            raise ValueError("Packed GLM MTP initially supports exactly one prediction layer")
+        self.quant_config = vllm_config.quant_config
+        self.dtype_policy = Glm5NextW2DtypePolicy.from_vllm_config(vllm_config)
+        self._nz_packed_codes = bool(getattr(self.config, "ascend_glm_nz_packed_codes", False))
+        self.has_own_lm_head = False
+        _mark_dense_mlp_fp16(vllm_config, self.config)
+        with _suppress_fp8_expert_allocation(shipped):
+            self.model = Glm5NextMultiTokenPredictor(
+                vllm_config=vllm_config, prefix=f"{prefix}.model" if prefix else "model"
+            )
+        for layer in self.model.layers.values():
+            layer.use_310p_eh_norm = True
+        layers = [layer.mtp_block for layer in self.model.layers.values()]
+        _install_dsa_indexer(layers, self.config, self.dtype_policy)
+        installed = _install_w2_moe(layers, self.config, self.dtype_policy, None, self._nz_packed_codes)
+        if installed != self.model.num_mtp_layers:
+            raise ValueError("Every packed GLM MTP layer must have a routed expert bank")
+
+    def embed_input_ids(self, input_ids):
+        return self.model.embed_input_ids(input_ids)
+
+    def forward(
+        self, input_ids, positions, hidden_states, intermediate_tensors=None, inputs_embeds=None, spec_step_idx=0
+    ):
+        return self.model(input_ids, positions, hidden_states, inputs_embeds, spec_step_idx)
+
+    def compute_logits(self, hidden_states, spec_step_idx=0):
+        return self.model.compute_logits(hidden_states, spec_step_idx)
+
+    def get_top_tokens(self, hidden_states, spec_step_idx=0):
+        return self.model.get_top_tokens(hidden_states, spec_step_idx)
+
+    def share_target_lm_head_if_identical(self, target_model):
+        """Bind an absent head through the existing proposer sharing hook."""
+        if self.has_own_lm_head:
+            return False
+        head = getattr(target_model, "lm_head", None)
+        if head is None:
+            raise ValueError("Packed GLM MTP checkpoint has no head and the target exposes no lm_head")
+        for layer in self.model.layers.values():
+            layer.shared_head.head = head
+        return True
+
+    def _rewrite_spec_layer_name(self, spec_layer, name):
+        from vllm_ascend.models.glm5next.mtp import Glm5NextMTP
+
+        return Glm5NextMTP._rewrite_spec_layer_name(self, spec_layer, name)
+
+    def _maybe_set_own_lm_head(self, loaded_weights):
+        from vllm_ascend.models.glm5next.mtp import Glm5NextMTP
+
+        Glm5NextMTP._maybe_set_own_lm_head(self, loaded_weights)
+
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        from vllm_ascend.models.glm5next.mtp import Glm5NextMTP
+
+        from .weight_mapping import WeightClass, classify_tensor
+
+        geometry = _expert_geometry_from_config(self.config)
+        banks = {f"layers.{index}": layer.mtp_block.mlp_w2.w2_experts for index, layer in self.model.layers.items()}
+        prefixes = tuple(f"model.language_model.{name}." for name in banks)
+        packed_loaded: set[str] = set()
+        dense_seen: set[str] = set()
+
+        def draft_weights():
+            for name, value in weights:
+                # Source-style expert mapping is authoritative for W2/W3/W4.
+                canonical = (
+                    name.replace("model.layers.", "model.language_model.layers.", 1)
+                    if name.startswith("model.layers.")
+                    else name
+                )
+                if not canonical.startswith(prefixes):
+                    continue
+                if classify_tensor(canonical) is WeightClass.W2_EXPERT:
+                    if canonical in packed_loaded:
+                        raise ValueError(f"duplicate packed MTP tensor: {canonical}")
+                    _place_streamed_expert(banks, canonical, value, geometry)
+                    packed_loaded.add(canonical)
+                else:
+                    if canonical in dense_seen:
+                        raise ValueError(f"duplicate MTP tensor: {canonical}")
+                    dense_seen.add(canonical)
+                    yield canonical, value
+
+        loaded = Glm5NextMTP.load_weights(self, draft_weights())
+        # Generic GLM checks layer presence; the packed adapter also requires
+        # every allocated non-shared parameter and both halves of fused MLPs.
+        missing = {
+            name
+            for name, _ in self.named_parameters()
+            if name not in loaded
+            and name != "model.embed_tokens.weight"
+            and not name.endswith(".shared_head.head.weight")
+        }
+        for prefix in prefixes:
+            for projection in ("gate_proj", "up_proj", "down_proj"):
+                name = f"{prefix}mlp.shared_experts.{projection}.weight"
+                if name not in dense_seen:
+                    missing.add(name)
+        if missing:
+            raise ValueError(f"Incomplete packed GLM MTP weights: {sorted(missing)}")
+        for bank in banks.values():
+            bank.finalize_grouped_storage()
+        # Drop uninitialized shared allocations before the generic loader's
+        # coverage check. The proposer binds the actual target modules before
+        # drafting; an absent checkpoint head must never be used for logits.
+        self.model.embed_tokens = None
+        if not self.has_own_lm_head:
+            for layer in self.model.layers.values():
+                layer.shared_head.head = None
+        _release_grouped_compaction_cache(banks.values())
+        _prepare_dsa_indexer_weights(layer.mtp_block for layer in self.model.layers.values())
+        return loaded | packed_loaded
 
 
 # ===========================================================================

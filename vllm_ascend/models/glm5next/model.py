@@ -87,6 +87,7 @@ from .multimodal import (
     Glm5NextProcessingInfo,
     Glm5NextVisionTransformer,
 )
+from .ops.mhc_native import native_mhc_post_enabled
 from .ops.mhc_ops import hc_contract, hc_expand
 
 
@@ -383,6 +384,10 @@ class Glm5NextDecoderLayer(nn.Module):
             use_310p_fp16_mhc_state = bool(getattr(config, "ascend_glm_mhc_fp16_state", False))
             self.mhc_pre_op.use_310p_fp16_mhc_state = use_310p_fp16_mhc_state
             self.mhc_fused_post_pre_op.use_310p_fp16_mhc_state = use_310p_fp16_mhc_state
+            self.mhc_fused_post_pre_op.use_310p_native_mhc_post = native_mhc_post_enabled(config)
+            self.mhc_fused_post_pre_op.use_310p_prefill_mhc_post = bool(
+                getattr(config, "ascend_glm_prefill_mhc_post", False)
+            )
             use_310p_batched_bf16_round = bool(getattr(config, "ascend_glm_mhc_batched_round", False))
             self.mhc_pre_op.use_310p_batched_bf16_round = use_310p_batched_bf16_round
             self.mhc_fused_post_pre_op.use_310p_batched_bf16_round = use_310p_batched_bf16_round

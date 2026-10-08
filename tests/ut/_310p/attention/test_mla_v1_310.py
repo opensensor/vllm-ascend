@@ -410,8 +410,9 @@ def test_glm_kpool_decode_passes_selected_pools_and_tail_to_qsa() -> None:
     assert args[6].tolist() == [2, -1]
 
 
-def test_fused_decode_rejects_multi_token_request_until_mtp_mapping_is_native() -> None:
+def test_fused_decode_rejects_non_glm_multi_token_request() -> None:
     impl = AscendMLAImpl310.__new__(AscendMLAImpl310)
+    impl.glm_indexer = None
     query = torch.randn(2, 2, 4, dtype=torch.float16)
     cache = torch.empty(4, 1, 4, 16, dtype=torch.float16)
     metadata = SimpleNamespace(
@@ -481,3 +482,35 @@ def test_value_up_projection_uses_head_batched_matmul() -> None:
     expected = torch.bmm(latent, impl.W_UV).transpose(0, 1).reshape(4, 4)
 
     torch.testing.assert_close(actual, expected)
+
+
+def test_glm_mtp_decode_passes_causal_rows_and_device_request_boundaries():
+    impl = AscendMLAImpl310.__new__(AscendMLAImpl310)
+    impl.host_kv_layer = None
+    impl.scale = 0.25
+    impl._decode_constant_buffers = {}
+    impl._v_up_proj = lambda value: value
+    impl.glm_indexer = SimpleNamespace(
+        index_kpool=4, topk_tokens=8, topk_indices_buffer=torch.zeros(4, 12, dtype=torch.int32)
+    )
+    query = torch.randn(4, 2, 16, dtype=torch.float16)
+    cache = torch.empty(4, 1, 32, 16, dtype=torch.float16)
+    boundaries = torch.tensor([0, 2, 4], dtype=torch.int32)
+    table = torch.tensor([[0, 1], [2, 3]], dtype=torch.int32)
+    metadata = SimpleNamespace(
+        num_decodes=2,
+        query_start_loc=boundaries,
+        decode=SimpleNamespace(
+            seq_lens=torch.tensor([7, 6], dtype=torch.int32),
+            input_positions=torch.tensor([5, 6, 4, 5]),
+            block_table=table,
+        ),
+    )
+    captured = []
+    impl._get_paged_latent_op = lambda: lambda *args: captured.append(args) or query.clone()
+    impl._forward_decode_fused(query, cache, cache, metadata)
+    args = captured[0]
+    assert args[4].tolist() == [6, 7, 5, 6]
+    assert args[7].shape[0] == 2
+    assert args[8].data_ptr() == boundaries.data_ptr()
+    assert args[8].tolist() == [0, 2, 4]

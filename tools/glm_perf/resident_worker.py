@@ -140,20 +140,30 @@ class ResidentWorkerExtension:
         return wrappers
 
     def resident_prepare(self, payload: str) -> dict[str, Any]:
-        self._resident_wrappers()
-        return self._resident_session().prepare(json.loads(payload))
+        try:
+            self._resident_wrappers()
+            return self._resident_session().prepare(json.loads(payload))
+        except Exception as exc:
+            return self._resident_error(exc)
+
+    def _resident_error(self, error: Exception) -> dict[str, Any]:
+        # Never let an RPC exception abandon the remaining ranks' responses.
+        return {"rank": torch.distributed.get_rank(), "pid": os.getpid(), "error": f"{type(error).__name__}: {error}"}
 
     def resident_apply(self, generation: str) -> dict[str, Any]:
-        wrappers = self._resident_wrappers()
-        torch.npu.synchronize()
-        session = self._resident_session()
-        if session.apply(generation):
-            clear_graph_state(
-                wrappers, [get_graph_params(), get_draft_graph_params(), get_draft_graph_prefill_params()]
-            )
-            gc.collect()
-        self._resident_set_mode()
-        return self.resident_status()
+        try:
+            wrappers = self._resident_wrappers()
+            torch.npu.synchronize()
+            session = self._resident_session()
+            if session.apply(generation):
+                clear_graph_state(
+                    wrappers, [get_graph_params(), get_draft_graph_params(), get_draft_graph_prefill_params()]
+                )
+                gc.collect()
+            self._resident_set_mode()
+            return self.resident_status()
+        except Exception as exc:
+            return self._resident_error(exc)
 
     def _resident_set_mode(self) -> None:
         session = self._resident_session()

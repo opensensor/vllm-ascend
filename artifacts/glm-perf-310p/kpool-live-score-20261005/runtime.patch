@@ -1,0 +1,69 @@
+--- a/vllm_ascend/models/glm5next/sparse_attn_indexer_kpool.py
++++ b/vllm_ascend/models/glm5next/sparse_attn_indexer_kpool.py
+@@ -16,6 +16,8 @@
+     score_kpool,
+     select_kpool_groups,
+ )
++
++from vllm_ascend.models.glm5next.ops.kpool_native import score_kpool_paged, supports_live_kpool_score
+ 
+ MAX_MTP_GRAPH_TOKENS = 8
+ 
+@@ -282,6 +284,21 @@
+         block_size = cache.shape[1]
+         table = indexer_metadata.block_table
+         num_pools = min((self.max_model_len + pool_size - 1) // pool_size, table.shape[1] * block_size)
++        if getattr(self, "live_kpool_score", False) and supports_live_kpool_score(
++            queries, cache, pool_size, num_pools
++        ):
++            logits = score_kpool_paged(
++                queries, weights, cache, table, indexer_metadata.cum_query_lens, positions, num_pools
++            )
++            self.topk_indices_buffer[: queries.shape[0]].fill_(-1)
++            # Preserve the existing per-row topk shapes and tie behavior.
++            for row in range(queries.shape[0]):
++                selected, _, tail_starts, tail_counts = select_kpool_groups(
++                    logits[row : row + 1], positions[row : row + 1], self.topk_tokens, pool_size
++                )
++                expanded = expand_kpool_groups(selected, tail_starts, tail_counts, pool_size)
++                self.topk_indices_buffer[row : row + 1, : expanded.shape[1]].copy_(expanded)
++            return self.topk_indices_buffer
+         pool_ids = torch.arange(num_pools, device=cache.device, dtype=torch.long)
+         row_ids = torch.arange(queries.shape[0], device=cache.device, dtype=indexer_metadata.cum_query_lens.dtype)
+         requests = torch.searchsorted(indexer_metadata.cum_query_lens, row_ids, right=True)
+--- a/vllm_ascend/models/glm5next_w2/model.py
++++ b/vllm_ascend/models/glm5next_w2/model.py
+@@ -1136,6 +1136,7 @@
+             raise RuntimeError("GLM W2 DSA layer requires its checkpoint-declared kpool indexer")
+         if getattr(config, "ascend_glm_mtp_full_graph", False):
+             self_attn.indexer.indexer_op.capture_safe_selection = True
++            self_attn.indexer.indexer_op.live_kpool_score = bool(getattr(config, "ascend_glm_live_kpool_score", False))
+         count += 1
+     return count
+ 
+@@ -1309,6 +1310,9 @@
+             )
+             self._glm_text_config.ascend_glm_mhc_fp16_state = bool(
+                 getattr(hf_config, "ascend_glm_mhc_fp16_state", False)
++            )
++            self._glm_text_config.ascend_glm_live_kpool_score = bool(
++                getattr(hf_config, "ascend_glm_live_kpool_score", False)
+             )
+             self._glm_text_config.ascend_glm_native_mhc_post = bool(
+                 getattr(hf_config, "ascend_glm_native_mhc_post", False)
+--- a/vllm_ascend/models/glm5next/kpool_ops.py
++++ b/vllm_ascend/models/glm5next/kpool_ops.py
+@@ -78,7 +78,12 @@
+             selected[:, :count] = torch.where(valid, candidate_rows, -1)
+         else:
+             topk = torch.topk(masked, count, dim=1).indices.to(torch.int32)
+-            selected[:, :count] = torch.where(topk < completed[:, None], topk, -1)
++            # Some 310P top-k implementations leave arbitrary indices in
++            # entries whose score is -inf. An invalid index may even alias a
++            # valid pool. Only the first completed ranks can contain pools.
++            ranks = torch.arange(count, device=logits.device, dtype=torch.int32)
++            valid_selection = (ranks[None, :] < completed[:, None]) & (topk >= 0) & (topk < completed[:, None])
++            selected[:, :count] = torch.where(valid_selection, topk, -1)
+     group_counts = completed.clamp(max=pool_budget)
+     tail_starts = completed * pool_size
+     tail_counts = sequence_lengths - tail_starts

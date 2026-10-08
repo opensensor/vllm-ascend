@@ -62,6 +62,7 @@ def build(
     raw_input_scales=False,
     nz_prefill_accumulator=False,
     prefill_product_cast=False,
+    native_route_columns=False,
 ):
     """Freeze helper sources and compile a unique, append-only native version."""
     if type(version) is not int or version < 1 or output_columns not in (16, 32, 64, 128):
@@ -85,6 +86,7 @@ def build(
             raw_input_scales,
             nz_prefill_accumulator,
             prefill_product_cast,
+            native_route_columns,
         )
     ):
         raise ValueError("prefill experiment flags must be boolean")
@@ -120,6 +122,8 @@ def build(
         raise ValueError("prefill weight cache does not support decode lookup tables")
     if fp16_route_workspace and not fused_moe:
         raise ValueError("FP16 route workspace requires fused MoE")
+    if native_route_columns and not (fused_moe and fp16_route_workspace):
+        raise ValueError("native route columns require paired fused MoE and FP16 workspace reduction")
     if share_gate_up_input and not fused_moe:
         raise ValueError("shared gate/up input requires fused MoE")
     if cache_gate_up_activations and not (fused_moe and share_gate_up_input):
@@ -239,6 +243,7 @@ def build(
             "specialize_w3": specialize_w3,
             "prefill_weight_cache": prefill_weight_cache,
             "fp16_route_workspace": fp16_route_workspace,
+            "native_route_columns": native_route_columns,
             "share_gate_up_input": share_gate_up_input,
             "cache_gate_up_activations": cache_gate_up_activations,
             "vector_scale_products": vector_scale_products,
@@ -312,6 +317,7 @@ def build(
                     *(["-DGLM_PREFILL_ROWS_32"] if prefill_rows_32 else []),
                     *(["-DGLM_GATHER_PRODUCT_MATRIX"] if gather_product_matrix else []),
                     *(["-DGLM_FP16_ROUTE_WORKSPACE"] if fp16_route_workspace else []),
+                    *(["-DGLM_NATIVE_ROUTE_COLUMNS"] if stage == "down" and native_route_columns else []),
                     *(["-DGLM_WEIGHT_DECODE_LUT"] if weight_decode_lut else []),
                     *(["-DGLM_PAIR_PREFILL_SCALE_GROUPS"] if pair_prefill_scale_groups else []),
                     *(["-DGLM_FUSED_GATE_UP"] if stage == "gate_up" else []),
@@ -368,6 +374,7 @@ def build(
                 str(output),
                 *options,
                 *(["-DGLM_FP16_ROUTE_WORKSPACE"] if fp16_route_workspace else []),
+                *(["-DGLM_NATIVE_ROUTE_COLUMNS"] if native_route_columns else []),
             ],
             check=True,
         )
@@ -463,6 +470,9 @@ def main():
     parser.add_argument("--specialize-w3", action="store_true")
     parser.add_argument("--prefill-weight-cache", action="store_true")
     parser.add_argument("--fp16-route-workspace", action="store_true")
+    parser.add_argument(
+        "--native-route-columns", action="store_true", help="permute columns once after stable route reduction"
+    )
     parser.add_argument(
         "--share-gate-up-input", action="store_true", help="reuse activation scales and routes from gate in up"
     )
@@ -566,6 +576,7 @@ def main():
             args.raw_input_scales,
             args.nz_prefill_accumulator,
             args.prefill_product_cast,
+            args.native_route_columns,
         )
     )
 

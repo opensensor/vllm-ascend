@@ -7,11 +7,22 @@
 #include "w2_grouped_blocked_dequant_matmul_v310_tiling.h"
 
 namespace optiling {
-constexpr int64_t MAX_ROUTES = 5120;
+// One 768-token GLM top-8 prefill fits in one grouped call. The kernel tiles
+// M in blocks of 128 and its per-core workspace depends on K, not row count.
+#ifdef GLM_W2_GROUPED_MAX_ROUTES
+// Projection-only batching experiment. The Python serving route cap remains
+// unchanged; a larger scheduler batch needs its own activation/KDA memory gate.
+constexpr int64_t MAX_ROUTES = GLM_W2_GROUPED_MAX_ROUTES;
+static_assert(MAX_ROUTES >= 6144 && MAX_ROUTES <= 32768,
+              "experimental grouped route cap must be in [6144, 32768]");
+#else
+constexpr int64_t MAX_ROUTES = 6144;
+#endif
 constexpr int64_t OUTPUT_TILE = 128;
 constexpr int64_t INPUT_TILE = 128;
 constexpr int64_t BLOCK_SCALE = 32;
 constexpr int64_t MIN_INPUT_DIM = 256;
+constexpr int64_t W3_MAX_INPUT_DIM = 4096;
 
 static ge::graphStatus TileW2Grouped(gert::TilingContext* context) {
   auto platform = context->GetPlatformInfo();
@@ -34,14 +45,18 @@ static ge::graphStatus TileW2Grouped(gert::TilingContext* context) {
               return ge::GRAPH_FAILED);
   const int64_t rows = x.GetDim(0), k = x.GetDim(1), experts = codes.GetDim(0), n = codes.GetDim(1);
   const int64_t packedK = codes.GetDim(2);
-  OP_CHECK_IF(packedK <= 0 || k % packedK != 0,
-              OP_LOGE(context, "packed K must divide activation K"), return ge::GRAPH_FAILED);
-  const int64_t codesPerByte = k / packedK;
+  OP_CHECK_IF(packedK <= 0,
+              OP_LOGE(context, "packed K must be positive"), return ge::GRAPH_FAILED);
+  // Mode 3 denotes eight signed W3 codes in three bytes.
+  const int64_t codesPerByte = packedK * 8 == k * 3 ? 3 : k / packedK;
   OP_CHECK_IF(rows <= 0 || rows > MAX_ROUTES || experts <= 0 || n <= 0 || n % OUTPUT_TILE != 0 ||
-                  k < MIN_INPUT_DIM || k % INPUT_TILE != 0 || (codesPerByte != 2 && codesPerByte != 4) ||
+                  k < MIN_INPUT_DIM || k % INPUT_TILE != 0 ||
+                  (codesPerByte != 2 && codesPerByte != 3 && codesPerByte != 4) ||
+                  (codesPerByte != 3 && packedK * codesPerByte != k) ||
+                  (codesPerByte == 3 && k > W3_MAX_INPUT_DIM) ||
                   ends.GetDim(0) != experts || scales.GetDim(0) != experts ||
                   scales.GetDim(1) != n / BLOCK_SCALE || scales.GetDim(2) != k / BLOCK_SCALE,
-              OP_LOGE(context, "invalid grouped packed W2/W4 dimensions"), return ge::GRAPH_FAILED);
+              OP_LOGE(context, "invalid grouped packed W2/W3/W4 dimensions"), return ge::GRAPH_FAILED);
   const uint32_t cores = device.GetCoreNumAic();
   OP_CHECK_IF(cores == 0, OP_LOGE(context, "no AI cores"), return ge::GRAPH_FAILED);
   const uint32_t nBlocks = static_cast<uint32_t>(n / OUTPUT_TILE);

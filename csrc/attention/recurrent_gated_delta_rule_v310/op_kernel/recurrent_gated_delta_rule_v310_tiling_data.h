@@ -34,6 +34,8 @@ struct alignas(8) RecurrentGatedDeltaRuleV310TilingData { // alignas(8)确保8�
     uint32_t hasGama;
     uint32_t hasGamaK;
     uint32_t hasAcceptedTokens;
+    uint64_t stateStride; // Physical state-page pitch in elements.
+    uint32_t stateIndexStride; // Zero: packed token slots; otherwise per-request slot width.
 };
 #pragma pack(pop)
 } // RecurrentGatedDeltaRuleV310

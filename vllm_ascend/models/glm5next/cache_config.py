@@ -183,9 +183,9 @@ def _create_glm5_next_attention_groups(
                 f"compression ratio: block_size={main_spec.block_size}, "
                 f"compress_ratio={compress_ratio}."
             )
-        if state_spec.block_size != compress_ratio or state_spec.sliding_window != compress_ratio:
+        if state_spec.block_size != compress_ratio or state_spec.sliding_window < compress_ratio:
             raise ValueError(
-                f"GLM-Next indexer state block/window size must equal the paired compression ratio {compress_ratio}."
+                f"GLM-Next indexer state block size must equal {compress_ratio} and window must cover a full pool."
             )
 
     # Main and indexer caches deliberately share scheduler block IDs. Keep a

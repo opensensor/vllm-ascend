@@ -1,0 +1,128 @@
+--- a/vllm_ascend/models/glm5next_w2/model.py
++++ b/vllm_ascend/models/glm5next_w2/model.py
+@@ -332,6 +332,8 @@
+         fused_route_combine: bool = False,
+         empty_peer_rows: bool = False,
+         grouped_max_routes: int | None = None,
++        fp32_route_combine: bool = False,
++        prefill_swiglu: bool = False,
+     ) -> None:
+         if grouped_max_routes is not None and (
+             type(grouped_max_routes) is not int or not 0 < grouped_max_routes <= GLM_GROUPED_ROUTE_EXPERIMENT_LIMIT
+@@ -352,6 +354,10 @@
+         # Explicit opt-in must match the installed OPP's admission limit.
+         # None inherits the quantization method's existing default.
+         self.grouped_max_routes = grouped_max_routes
++        if fp32_route_combine and fused_route_combine:
++            raise ValueError("choose only one of FP32 or CANN route combine")
++        self.fp32_route_combine = bool(fp32_route_combine and not offload_to_cpu)
++        self.prefill_swiglu = bool(prefill_swiglu and not offload_to_cpu)
+ 
+     def place_resident_tensor(
+         self,
+@@ -522,6 +528,8 @@
+         fused_route_combine=bool(geometry.get("fused_route_combine", 0)),
+         empty_peer_rows=bool(geometry.get("empty_peer_rows", 0)),
+         grouped_max_routes=geometry.get("grouped_max_routes"),
++        fp32_route_combine=bool(geometry.get("fp32_route_combine", False)),
++        prefill_swiglu=bool(geometry.get("prefill_swiglu", False)),
+     )
+ 
+ 
+@@ -673,6 +681,8 @@
+     geometry["fused_route_combine"] = int(getattr(config, "ascend_glm_fused_route_combine", False))
+     geometry["empty_peer_rows"] = int(getattr(config, "ascend_glm_empty_peer_rows", False))
+     grouped_max_routes = getattr(config, "ascend_glm_grouped_max_routes", None)
++    geometry["fp32_route_combine"] = int(getattr(config, "ascend_glm_fp32_route_combine", False))
++    geometry["prefill_swiglu"] = int(getattr(config, "ascend_glm_prefill_swiglu", False))
+     if grouped_max_routes is not None:
+         geometry["grouped_max_routes"] = grouped_max_routes
+     count = 0
+@@ -1284,6 +1294,12 @@
+                 hf_config,
+                 "ascend_glm_grouped_max_routes",
+                 getattr(self._glm_text_config, "ascend_glm_grouped_max_routes", None),
++            )
++            self._glm_text_config.ascend_glm_prefill_swiglu = bool(
++                getattr(hf_config, "ascend_glm_prefill_swiglu", False)
++            )
++            self._glm_text_config.ascend_glm_fp32_route_combine = bool(
++                getattr(hf_config, "ascend_glm_fp32_route_combine", False)
+             )
+             # FP16-in-checkpoint fix: the dense-MLP and shared-expert projections
+             # ship as fp16 (no weight_scale_inv) but are absent from the
+--- a/vllm_ascend/_310p/quantization/methods/w2_dynamic.py
++++ b/vllm_ascend/_310p/quantization/methods/w2_dynamic.py
+@@ -731,22 +731,58 @@
+             and num_tokens >= W2_PREFILL_HISTOGRAM_MIN_TOKENS
+             and torch_npu is not None
+         )
+-        grouped_args = (False,) if fused_combine and getattr(experts, "empty_peer_rows", False) else ()
++        fp32_combine = getattr(experts, "fp32_route_combine", False)
++        fp32_combine_op = getattr(torch.ops._C_ascend, "npu_w2_route_combine_310", None) if fp32_combine else None
++        if fp32_combine and fp32_combine_op is None:
++            raise RuntimeError("FP32 route combine requires the npu_w2_route_combine_310 extension and OPP")
++        # The native FP32 kernel checks the final local-group boundary before
++        # loading a route. It never reads peer-owned output rows.
++        grouped_args = (
++            (False,) if fp32_combine or (fused_combine and getattr(experts, "empty_peer_rows", False)) else ()
++        )
+         fused_codes = getattr(experts, "gate_up_packed_bank", None)
+         fused_scales = getattr(experts, "gate_up_scale_bank", None)
+-        if (
++        has_fused_gate_up = (
+             fused_codes is not None
+             and fused_scales is not None
+             and fused_codes.shape[1] == 2 * experts.gate_packed_bank.shape[1]
+             and fused_scales.shape[1] == 2 * experts.gate_scale_bank.shape[1]
+-        ):
+-            gate, up = grouped_op(sorted_x, fused_codes, fused_scales, group_ends, *grouped_args).chunk(2, dim=-1)
++        )
++        use_swiglu = (
++            has_fused_gate_up
++            and getattr(experts, "prefill_swiglu", False)
++            and num_tokens >= W2_PREFILL_HISTOGRAM_MIN_TOKENS
++        )
++        swiglu_op = getattr(torch.ops._C_ascend, "npu_w2_swiglu_310", None) if use_swiglu else None
++        if use_swiglu and swiglu_op is None:
++            raise RuntimeError("prefill SwiGLU requires the npu_w2_swiglu_310 extension and OPP")
++        if has_fused_gate_up:
++            gate_up = grouped_op(sorted_x, fused_codes, fused_scales, group_ends, *grouped_args)
++            # The native operator consumes the fused allocation directly: no
++            # contiguous copies of its strided gate/up views are needed.
++            del sorted_x
++            if use_swiglu:
++                hidden_act = swiglu_op(gate_up)
++            else:
++                gate, up = gate_up.chunk(2, dim=-1)
++                hidden_act = (torch.nn.functional.silu(gate.to(torch.float32)) * up.to(torch.float32)).to(torch.float16)
++                del gate, up
++            del gate_up
+         else:
+             gate = grouped_op(sorted_x, experts.gate_packed_bank, experts.gate_scale_bank, group_ends, *grouped_args)
+             up = grouped_op(sorted_x, experts.up_packed_bank, experts.up_scale_bank, group_ends, *grouped_args)
+-        hidden_act = (torch.nn.functional.silu(gate.to(torch.float32)) * up.to(torch.float32)).to(torch.float16)
++            # Release route-sized intermediates after their last consumer so
++            # the stream-aware allocator can reuse storage in later stages.
++            del sorted_x
++            hidden_act = (torch.nn.functional.silu(gate.to(torch.float32)) * up.to(torch.float32)).to(torch.float16)
++            del gate, up
+         routed = grouped_op(hidden_act, experts.down_packed_bank, experts.down_scale_bank, group_ends, *grouped_args)
+-        if fused_combine:
++        del hidden_act
++        if fp32_combine:
++            output = fp32_combine_op(
++                routed, dispatch.inverse_order.contiguous(), topk_weights.to(torch.float32).contiguous(), group_ends
++            )
++        elif fused_combine:
+             # The 310P CANN signature accepts FP16 rows, INT32 indices and
+             # FP32 route weights. Peer-owned routes have zero weights and are
+             # ignored by the fused kernel. Keep the decode path unchanged.
+@@ -759,6 +795,7 @@
+             routed = routed.to(torch.float32)
+             routed *= dispatch.route_weights.index_select(0, dispatch.order)
+             output = routed.index_select(0, dispatch.inverse_order).reshape(num_tokens, top_k, hidden).sum(1)
++        del routed
+         if shared_expert is not None:
+             output += shared_expert.forward(x).to(torch.float32)
+         return output

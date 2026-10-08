@@ -1,0 +1,142 @@
+--- a/csrc/attention/chunk_kda_fwd/op_kernel/chunk_kda_fwd_prepare.h
++++ b/csrc/attention/chunk_kda_fwd/op_kernel/chunk_kda_fwd_prepare.h
+@@ -290,6 +290,17 @@
+             }
+ #endif
+             pipe_->InitBuffer(gateWritebackBuf_, static_cast<uint32_t>(writebackBytes));
++
++#if defined(GLM_KDA_SCORE_BATCH_ROWS) && defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
++            if constexpr (SAFE_GATE && IsSameType<T, half>::value) {
++                constexpr uint32_t scoreFinalizeStage = 7;  // KdaForward host stage contract.
++                if (tiling.stage == scoreFinalizeStage && BT_ == 64 && K_ == 128) {
++                    // Original 128 KiB solve arena + 16 KiB writeback + 1.5 KiB
++                    // exp scratch + this 104 KiB bank fit within the 256 KiB UB.
++                    pipe_->InitBuffer(scoreBatchBuf_, 104 * 1024);
++                }
++            }
++#endif
+             AllocVectorEvents();
+         }
+     }
+@@ -1423,6 +1434,96 @@
+     }
+ 
+ #if defined(__CCE_AICORE__) && (__CCE_AICORE__ == 200)
++#ifdef GLM_KDA_SCORE_BATCH_ROWS
++    __aicore__ inline void ComputeRawAqkAkkBatched310P(uint64_t b, uint64_t h, uint64_t hv, uint64_t start) {
++        constexpr unsigned K = 128;
++        constexpr unsigned ROWS = 64;
++        constexpr unsigned BANK = K * ROWS;
++        auto halfArena = scoreBatchBuf_.Get<T>();
++        auto keys = halfArena;
++        auto gates = halfArena[BANK];
++        auto gate = halfArena[2 * BANK];
++        auto product = halfArena[3 * BANK];
++        auto floats = scoreBatchBuf_.Get<float>();
++        auto productFp32 = floats[64 * 1024 / sizeof(float)];
++        auto low = floats[96 * 1024 / sizeof(float)];
++        auto high = floats[98 * 1024 / sizeof(float)];
++        auto rowVector = halfArena[100 * 1024 / sizeof(T)];
++        auto gateRow = rowVector[K];
++        auto score = floats[(100 * 1024 + 2 * K * sizeof(T)) / sizeof(float)];
++        if (inputSequenceMajor_) {
++            for (uint64_t col = 0; col < ROWS; ++col) {
++                auto column = keys[col * K];
++                CopyVectorIn(column, k_, QOffset(b, h, start + col, 0), K);
++            }
++        } else {
++            CopyVectorIn(keys, k_, QOffset(b, h, start, 0), BANK);
++        }
++        CopyVectorIn(gates, gk_, KVOffset(b, hv, start, 0, K), BANK);
++        SetFlag<HardEvent::MTE2_V>(mte2ToVEvent_);
++        WaitFlag<HardEvent::MTE2_V>(mte2ToVEvent_);
++        // Keep K*K and Q*K separate as in the qualified implementation.
++        for (unsigned pass = 0; pass < 2; ++pass) {
++            for (unsigned row = 0; row < ROWS; ++row) {
++                const unsigned columns = row + 1;
++                const unsigned count = columns * K;
++                Duplicate(score, 0.0f, ROWS);
++                Duplicate(low, 12345.0f, ROWS * 8);
++                Duplicate(high, 12345.0f, ROWS * 8);
++                PipeBarrier<PIPE_V>();
++                if (pass == 0) {
++                    CopyVectorIn(rowVector, k_, QOffset(b, h, start + row, 0), K);
++                } else {
++                    CopyVectorIn(rowVector, q_, QOffset(b, h, start + row, 0), K);
++                }
++                CopyVectorIn(gateRow, gk_, KVOffset(b, hv, start + row, 0, K), K);
++                SetFlag<HardEvent::MTE2_V>(mte2ToVEvent_);
++                WaitFlag<HardEvent::MTE2_V>(mte2ToVEvent_);
++                Sub(gate, gateRow, gates, K, static_cast<uint8_t>(columns), {1, 1, 1, 8, 0, 8});
++                PipeBarrier<PIPE_V>();
++                Muls(gate, gate, static_cast<T>(0.69314718055994530942f), count);
++                PipeBarrier<PIPE_V>();
++                Mins(gate, gate, static_cast<T>(11.089866f), count);
++                PipeBarrier<PIPE_V>();
++                Maxs(gate, gate, static_cast<T>(-17.0f), count);
++                PipeBarrier<PIPE_V>();
++                Exp(gate, gate, count);
++                PipeBarrier<PIPE_V>();
++                Mul(product, keys, gate, count);
++                PipeBarrier<PIPE_V>();
++                Mul(product, rowVector, product, K, static_cast<uint8_t>(columns), {1, 1, 1, 8, 0, 8});
++                PipeBarrier<PIPE_V>();
++                Cast(productFp32, product, RoundMode::CAST_NONE, count);
++                PipeBarrier<PIPE_V>();
++                WholeReduceSum(low, productFp32, 64, static_cast<uint8_t>(columns), 8, 1, 16);
++                WholeReduceSum(high, productFp32[64], 64, static_cast<uint8_t>(columns), 8, 1, 16);
++                PipeBarrier<PIPE_V>();
++                SetFlag<HardEvent::V_S>(EXP2_EVENT_ID);
++                WaitFlag<HardEvent::V_S>(EXP2_EVENT_ID);
++                for (unsigned col = 0; col < columns; ++col) {
++                    float sum = 0.0f;
++                    sum += low.GetValue(col * 8);
++                    sum += high.GetValue(col * 8);
++                    score.SetValue(col, sum);
++                }
++                SetFlag<HardEvent::S_V>(EXP2_EVENT_ID);
++                WaitFlag<HardEvent::S_V>(EXP2_EVENT_ID);
++                SetFlag<HardEvent::V_MTE3>(vToMte3Event_);
++                WaitFlag<HardEvent::V_MTE3>(vToMte3Event_);
++                if (pass == 0) {
++                    DataCopy(akk_[AOffset(b, hv, start + row, 0)], score, ROWS);
++                } else {
++                    DataCopy(aqk_[AOffset(b, hv, start + row, 0)], score, ROWS);
++                }
++                SetFlag<HardEvent::MTE3_MTE2>(mte3ToMte2Events_[0]);
++                WaitFlag<HardEvent::MTE3_MTE2>(mte3ToMte2Events_[0]);
++                SetFlag<HardEvent::MTE3_V>(mte3ToVEvent_);
++                WaitFlag<HardEvent::MTE3_V>(mte3ToVEvent_);
++            }
++        }
++    }
++#endif
++
+     __aicore__ inline void ReduceDotProduct310P(
+         LocalTensor<float> &dst, uint64_t dstOffset,
+         LocalTensor<float> &product, LocalTensor<float> &partials)
+@@ -1456,6 +1557,14 @@
+         uint64_t b, uint64_t h, uint64_t hv, uint64_t start,
+         uint64_t curT)
+     {
++#ifdef GLM_KDA_SCORE_BATCH_ROWS
++        if constexpr (SAFE_GATE && IsSameType<T, half>::value) {
++            if (BT_ == 64 && K_ == 128 && curT == 64) {
++                ComputeRawAqkAkkBatched310P(b, h, hv, start);
++                return;
++            }
++        }
++#endif
+         // dav-m200 Cube does not commit partial M/N score tiles. Safe-gate
+         // chunks also use this path because their long cumulative decay range
+         // cannot be factorized through FP16 Cube operands without overflow.
+@@ -3462,6 +3571,9 @@
+     TBuf<TPosition::VECCALC> exp2Buf_;
+     TBuf<TPosition::VECCALC> vecBuf_;
+     TBuf<TPosition::VECCALC> gateWritebackBuf_;
++#ifdef GLM_KDA_SCORE_BATCH_ROWS
++    TBuf<TPosition::VECCALC> scoreBatchBuf_;
++#endif
+     TEventID mte2ToVEvent_ = 0;
+     TEventID vToMte2Event_ = 0;
+     TEventID vToMte3Event_ = 0;

@@ -1,0 +1,644 @@
+{
+  "capture_token": "20261003042243715",
+  "trace_root": "/home/matteius/experiments/glm-gate-a-20261002/profile-nz-graph-allrank-20261003",
+  "metric_warning": "Summed task/collective times can overlap and are attribution only. The cross-rank task envelope and tail rank locate elapsed-time bounds, not a complete dependency-chain critical path. TopK and integer bit-op labels identify kernel names, not their calling model component. Use explicit per-step windows and host/operator annotations.",
+  "windows": [
+    {
+      "label": "capture",
+      "window_start_us": "1791001372349919.186",
+      "window_end_us": "1791001400069759.253",
+      "cross_rank_task_envelope_ms": 27719.840067,
+      "tail_rank": 1,
+      "collective_arrival_spread_median_ms": 0.65615,
+      "collective_arrival_spread_max_ms": 34.1917,
+      "collectives_matched_all_ranks": 214,
+      "collectives_missing_ranks": 0,
+      "ranks": {
+        "0": {
+          "task_count": 723940,
+          "summed_task_ms": 22310.236774,
+          "task_union_ms": 22303.703817,
+          "categories": {
+            "ai_cpu_cast": {
+              "count": 24450,
+              "summed_task_ms": 3068.630156,
+              "task_union_ms": 3068.630156,
+              "median_task_us": 117.292
+            },
+            "collective": {
+              "count": 214,
+              "summed_task_ms": 668.716426,
+              "task_union_ms": 668.716426,
+              "median_task_us": 539.7265
+            },
+            "grouped_w2_w4": {
+              "count": 2688,
+              "summed_task_ms": 11336.529957,
+              "task_union_ms": 11336.529957,
+              "median_task_us": 2479.8695
+            },
+            "integer_bit_ops": {
+              "count": 4160,
+              "summed_task_ms": 5.24736,
+              "task_union_ms": 5.24736,
+              "median_task_us": 1.25
+            },
+            "kda_or_convolution": {
+              "count": 3638,
+              "summed_task_ms": 2839.624887,
+              "task_union_ms": 2839.624887,
+              "median_task_us": 9.557
+            },
+            "other": {
+              "count": 539784,
+              "summed_task_ms": 1626.241631,
+              "task_union_ms": 1620.688487,
+              "median_task_us": 1.276
+            },
+            "other_matmul": {
+              "count": 39211,
+              "summed_task_ms": 1071.612814,
+              "task_union_ms": 1071.612814,
+              "median_task_us": 4.844
+            },
+            "sparse_attention": {
+              "count": 341,
+              "summed_task_ms": 42.705909,
+              "task_union_ms": 42.705909,
+              "median_task_us": 129.375
+            },
+            "topk_all": {
+              "count": 2856,
+              "summed_task_ms": 15.516969,
+              "task_union_ms": 14.537156,
+              "median_task_us": 5.755
+            },
+            "transfer_or_layout": {
+              "count": 106598,
+              "summed_task_ms": 1635.410665,
+              "task_union_ms": 1635.410665,
+              "median_task_us": 1.953
+            }
+          },
+          "top_kernel_shapes": [
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"32,4096;72,4096,2048;72,128,128;72\"",
+              "count": 870,
+              "summed_task_ms": 3247.086164,
+              "task_union_ms": 3247.086164
+            },
+            {
+              "name": "Cast",
+              "input_shapes": "N/A",
+              "count": 24450,
+              "summed_task_ms": 3068.630156,
+              "task_union_ms": 3068.630156
+            },
+            {
+              "name": "aclnnChunkKdaFwd_KdaChunkForward_ChunkKdaFwd",
+              "input_shapes": "\"1,108,16,128;1,108,16,128;1,108,16,128;1,108,16,128;1,16,108;16;2048;3,16,128,128;4;6;1;1,16,108,128;1,16,108\"",
+              "count": 238,
+              "summed_task_ms": 2043.815651,
+              "task_union_ms": 2043.815651
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"32,2048;72,4096,1024;72,128,64;72\"",
+              "count": 870,
+              "summed_task_ms": 1632.221194,
+              "task_union_ms": 1632.221194
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"32,4096;72,4096,1024;72,128,128;72\"",
+              "count": 348,
+              "summed_task_ms": 1562.783632,
+              "task_union_ms": 1562.783632
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"872,4096;72,4096,2048;72,128,128;72\"",
+              "count": 30,
+              "summed_task_ms": 898.523574,
+              "task_union_ms": 898.523574
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"288,4096;72,4096,2048;72,128,128;72\"",
+              "count": 30,
+              "summed_task_ms": 853.070245,
+              "task_union_ms": 853.070245
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"32,2048;72,4096,512;72,128,64;72\"",
+              "count": 348,
+              "summed_task_ms": 784.402145,
+              "task_union_ms": 784.402145
+            },
+            {
+              "name": "aclnnChunkKdaFwd_KdaChunkForward_ChunkKdaFwd",
+              "input_shapes": "\"1,36,16,128;1,36,16,128;1,36,16,128;1,36,16,128;1,16,36;16;2048;1,16,128,128;2;2;1;1,16,36,128;1,16,36\"",
+              "count": 238,
+              "summed_task_ms": 684.147141,
+              "task_union_ms": 684.147141
+            },
+            {
+              "name": "aclnnMatmul_TransData_TransData",
+              "input_shapes": "\"6416,4096\"",
+              "count": 1088,
+              "summed_task_ms": 669.176228,
+              "task_union_ms": 669.176228
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"872,4096;72,4096,1024;72,128,128;72\"",
+              "count": 12,
+              "summed_task_ms": 482.472395,
+              "task_union_ms": 482.472395
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"872,2048;72,4096,1024;72,128,64;72\"",
+              "count": 30,
+              "summed_task_ms": 452.240158,
+              "task_union_ms": 452.240158
+            }
+          ],
+          "collective_count": 214,
+          "collective_summed_wait_ms": 617.27515,
+          "collective_summed_transit_ms": 44.365673
+        },
+        "1": {
+          "task_count": 723940,
+          "summed_task_ms": 22946.852669,
+          "task_union_ms": 22940.527157,
+          "categories": {
+            "ai_cpu_cast": {
+              "count": 24450,
+              "summed_task_ms": 3318.766729,
+              "task_union_ms": 3318.766729,
+              "median_task_us": 119.167
+            },
+            "collective": {
+              "count": 214,
+              "summed_task_ms": 704.808922,
+              "task_union_ms": 704.808922,
+              "median_task_us": 430.156
+            },
+            "grouped_w2_w4": {
+              "count": 2688,
+              "summed_task_ms": 11612.680689,
+              "task_union_ms": 11612.680689,
+              "median_task_us": 2956.849
+            },
+            "integer_bit_ops": {
+              "count": 4160,
+              "summed_task_ms": 5.282721,
+              "task_union_ms": 5.282721,
+              "median_task_us": 1.276
+            },
+            "kda_or_convolution": {
+              "count": 3638,
+              "summed_task_ms": 2842.472196,
+              "task_union_ms": 2842.472196,
+              "median_task_us": 9.505
+            },
+            "other": {
+              "count": 539784,
+              "summed_task_ms": 1672.824508,
+              "task_union_ms": 1667.279489,
+              "median_task_us": 1.276
+            },
+            "other_matmul": {
+              "count": 39211,
+              "summed_task_ms": 1071.485342,
+              "task_union_ms": 1071.485342,
+              "median_task_us": 4.844
+            },
+            "sparse_attention": {
+              "count": 341,
+              "summed_task_ms": 42.974208,
+              "task_union_ms": 42.974208,
+              "median_task_us": 129.557
+            },
+            "topk_all": {
+              "count": 2856,
+              "summed_task_ms": 13.049328,
+              "task_union_ms": 12.268835,
+              "median_task_us": 5.547
+            },
+            "transfer_or_layout": {
+              "count": 106598,
+              "summed_task_ms": 1662.508026,
+              "task_union_ms": 1662.508026,
+              "median_task_us": 1.953
+            }
+          },
+          "top_kernel_shapes": [
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"32,4096;72,4096,2048;72,128,128;72\"",
+              "count": 870,
+              "summed_task_ms": 3401.172826,
+              "task_union_ms": 3401.172826
+            },
+            {
+              "name": "Cast",
+              "input_shapes": "N/A",
+              "count": 24450,
+              "summed_task_ms": 3318.766729,
+              "task_union_ms": 3318.766729
+            },
+            {
+              "name": "aclnnChunkKdaFwd_KdaChunkForward_ChunkKdaFwd",
+              "input_shapes": "\"1,108,16,128;1,108,16,128;1,108,16,128;1,108,16,128;1,16,108;16;2048;3,16,128,128;4;6;1;1,16,108,128;1,16,108\"",
+              "count": 238,
+              "summed_task_ms": 2045.568671,
+              "task_union_ms": 2045.568671
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"32,2048;72,4096,1024;72,128,64;72\"",
+              "count": 870,
+              "summed_task_ms": 1707.888379,
+              "task_union_ms": 1707.888379
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"32,4096;72,4096,1024;72,128,128;72\"",
+              "count": 348,
+              "summed_task_ms": 1638.995741,
+              "task_union_ms": 1638.995741
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"872,4096;72,4096,2048;72,128,128;72\"",
+              "count": 30,
+              "summed_task_ms": 893.596881,
+              "task_union_ms": 893.596881
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"288,4096;72,4096,2048;72,128,128;72\"",
+              "count": 30,
+              "summed_task_ms": 860.970086,
+              "task_union_ms": 860.970086
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"32,2048;72,4096,512;72,128,64;72\"",
+              "count": 348,
+              "summed_task_ms": 821.807309,
+              "task_union_ms": 821.807309
+            },
+            {
+              "name": "aclnnChunkKdaFwd_KdaChunkForward_ChunkKdaFwd",
+              "input_shapes": "\"1,36,16,128;1,36,16,128;1,36,16,128;1,36,16,128;1,16,36;16;2048;1,16,128,128;2;2;1;1,16,36,128;1,16,36\"",
+              "count": 238,
+              "summed_task_ms": 684.316262,
+              "task_union_ms": 684.316262
+            },
+            {
+              "name": "aclnnMatmul_TransData_TransData",
+              "input_shapes": "\"6416,4096\"",
+              "count": 1088,
+              "summed_task_ms": 670.502553,
+              "task_union_ms": 670.502553
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"872,4096;72,4096,1024;72,128,128;72\"",
+              "count": 12,
+              "summed_task_ms": 459.020445,
+              "task_union_ms": 459.020445
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"872,2048;72,4096,1024;72,128,64;72\"",
+              "count": 30,
+              "summed_task_ms": 449.90292,
+              "task_union_ms": 449.90292
+            }
+          ],
+          "collective_count": 214,
+          "collective_summed_wait_ms": 681.268288,
+          "collective_summed_transit_ms": 15.841061
+        },
+        "2": {
+          "task_count": 723940,
+          "summed_task_ms": 22403.565547,
+          "task_union_ms": 22397.229392,
+          "categories": {
+            "ai_cpu_cast": {
+              "count": 24450,
+              "summed_task_ms": 3296.56989,
+              "task_union_ms": 3296.56989,
+              "median_task_us": 121.12
+            },
+            "collective": {
+              "count": 214,
+              "summed_task_ms": 734.264704,
+              "task_union_ms": 734.264704,
+              "median_task_us": 430.20799999999997
+            },
+            "grouped_w2_w4": {
+              "count": 2688,
+              "summed_task_ms": 11078.02052,
+              "task_union_ms": 11078.02052,
+              "median_task_us": 2473.5025
+            },
+            "integer_bit_ops": {
+              "count": 4160,
+              "summed_task_ms": 5.196393,
+              "task_union_ms": 5.196393,
+              "median_task_us": 1.25
+            },
+            "kda_or_convolution": {
+              "count": 3638,
+              "summed_task_ms": 2841.455267,
+              "task_union_ms": 2841.455267,
+              "median_task_us": 9.661
+            },
+            "other": {
+              "count": 539784,
+              "summed_task_ms": 1653.015423,
+              "task_union_ms": 1647.489962,
+              "median_task_us": 1.276
+            },
+            "other_matmul": {
+              "count": 39211,
+              "summed_task_ms": 1071.576346,
+              "task_union_ms": 1071.576346,
+              "median_task_us": 4.844
+            },
+            "sparse_attention": {
+              "count": 341,
+              "summed_task_ms": 42.858929,
+              "task_union_ms": 42.858929,
+              "median_task_us": 129.271
+            },
+            "topk_all": {
+              "count": 2856,
+              "summed_task_ms": 12.501848,
+              "task_union_ms": 11.691154,
+              "median_task_us": 5.547
+            },
+            "transfer_or_layout": {
+              "count": 106598,
+              "summed_task_ms": 1668.106227,
+              "task_union_ms": 1668.106227,
+              "median_task_us": 2.083
+            }
+          },
+          "top_kernel_shapes": [
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"32,4096;72,4096,2048;72,128,128;72\"",
+              "count": 870,
+              "summed_task_ms": 3318.064981,
+              "task_union_ms": 3318.064981
+            },
+            {
+              "name": "Cast",
+              "input_shapes": "N/A",
+              "count": 24450,
+              "summed_task_ms": 3296.56989,
+              "task_union_ms": 3296.56989
+            },
+            {
+              "name": "aclnnChunkKdaFwd_KdaChunkForward_ChunkKdaFwd",
+              "input_shapes": "\"1,108,16,128;1,108,16,128;1,108,16,128;1,108,16,128;1,16,108;16;2048;3,16,128,128;4;6;1;1,16,108,128;1,16,108\"",
+              "count": 238,
+              "summed_task_ms": 2044.769348,
+              "task_union_ms": 2044.769348
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"32,2048;72,4096,1024;72,128,64;72\"",
+              "count": 870,
+              "summed_task_ms": 1666.910438,
+              "task_union_ms": 1666.910438
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"32,4096;72,4096,1024;72,128,128;72\"",
+              "count": 348,
+              "summed_task_ms": 1385.25242,
+              "task_union_ms": 1385.25242
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"872,4096;72,4096,2048;72,128,128;72\"",
+              "count": 30,
+              "summed_task_ms": 872.230942,
+              "task_union_ms": 872.230942
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"288,4096;72,4096,2048;72,128,128;72\"",
+              "count": 30,
+              "summed_task_ms": 833.486026,
+              "task_union_ms": 833.486026
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"32,2048;72,4096,512;72,128,64;72\"",
+              "count": 348,
+              "summed_task_ms": 694.83416,
+              "task_union_ms": 694.83416
+            },
+            {
+              "name": "aclnnChunkKdaFwd_KdaChunkForward_ChunkKdaFwd",
+              "input_shapes": "\"1,36,16,128;1,36,16,128;1,36,16,128;1,36,16,128;1,16,36;16;2048;1,16,128,128;2;2;1;1,16,36,128;1,16,36\"",
+              "count": 238,
+              "summed_task_ms": 684.294778,
+              "task_union_ms": 684.294778
+            },
+            {
+              "name": "aclnnMatmul_TransData_TransData",
+              "input_shapes": "\"6416,4096\"",
+              "count": 1088,
+              "summed_task_ms": 671.737135,
+              "task_union_ms": 671.737135
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"872,4096;72,4096,1024;72,128,128;72\"",
+              "count": 12,
+              "summed_task_ms": 465.892998,
+              "task_union_ms": 465.892998
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"872,2048;72,4096,1024;72,128,64;72\"",
+              "count": 30,
+              "summed_task_ms": 439.168753,
+              "task_union_ms": 439.168753
+            }
+          ],
+          "collective_count": 214,
+          "collective_summed_wait_ms": 684.048687,
+          "collective_summed_transit_ms": 43.05861
+        },
+        "3": {
+          "task_count": 723940,
+          "summed_task_ms": 22890.769626,
+          "task_union_ms": 22884.481436,
+          "categories": {
+            "ai_cpu_cast": {
+              "count": 24450,
+              "summed_task_ms": 3215.352892,
+              "task_union_ms": 3215.352892,
+              "median_task_us": 122.318
+            },
+            "collective": {
+              "count": 214,
+              "summed_task_ms": 705.42475,
+              "task_union_ms": 705.42475,
+              "median_task_us": 462.52549999999997
+            },
+            "grouped_w2_w4": {
+              "count": 2688,
+              "summed_task_ms": 11693.014458,
+              "task_union_ms": 11693.014458,
+              "median_task_us": 2957.5519999999997
+            },
+            "integer_bit_ops": {
+              "count": 4160,
+              "summed_task_ms": 5.200549,
+              "task_union_ms": 5.200549,
+              "median_task_us": 1.25
+            },
+            "kda_or_convolution": {
+              "count": 3638,
+              "summed_task_ms": 2843.689096,
+              "task_union_ms": 2843.689096,
+              "median_task_us": 9.505
+            },
+            "other": {
+              "count": 539784,
+              "summed_task_ms": 1641.575694,
+              "task_union_ms": 1636.065155,
+              "median_task_us": 1.276
+            },
+            "other_matmul": {
+              "count": 39211,
+              "summed_task_ms": 1072.52924,
+              "task_union_ms": 1072.52924,
+              "median_task_us": 4.844
+            },
+            "sparse_attention": {
+              "count": 341,
+              "summed_task_ms": 42.976925,
+              "task_union_ms": 42.976925,
+              "median_task_us": 129.714
+            },
+            "topk_all": {
+              "count": 2856,
+              "summed_task_ms": 15.925388,
+              "task_union_ms": 15.147737,
+              "median_task_us": 5.807
+            },
+            "transfer_or_layout": {
+              "count": 106598,
+              "summed_task_ms": 1655.080634,
+              "task_union_ms": 1655.080634,
+              "median_task_us": 1.927
+            }
+          },
+          "top_kernel_shapes": [
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"32,4096;72,4096,2048;72,128,128;72\"",
+              "count": 870,
+              "summed_task_ms": 3387.132121,
+              "task_union_ms": 3387.132121
+            },
+            {
+              "name": "Cast",
+              "input_shapes": "N/A",
+              "count": 24450,
+              "summed_task_ms": 3215.352892,
+              "task_union_ms": 3215.352892
+            },
+            {
+              "name": "aclnnChunkKdaFwd_KdaChunkForward_ChunkKdaFwd",
+              "input_shapes": "\"1,108,16,128;1,108,16,128;1,108,16,128;1,108,16,128;1,16,108;16;2048;3,16,128,128;4;6;1;1,16,108,128;1,16,108\"",
+              "count": 238,
+              "summed_task_ms": 2045.749108,
+              "task_union_ms": 2045.749108
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"32,2048;72,4096,1024;72,128,64;72\"",
+              "count": 870,
+              "summed_task_ms": 1701.206134,
+              "task_union_ms": 1701.206134
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"32,4096;72,4096,1024;72,128,128;72\"",
+              "count": 348,
+              "summed_task_ms": 1678.315944,
+              "task_union_ms": 1678.315944
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"872,4096;72,4096,2048;72,128,128;72\"",
+              "count": 30,
+              "summed_task_ms": 875.897115,
+              "task_union_ms": 875.897115
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"288,4096;72,4096,2048;72,128,128;72\"",
+              "count": 30,
+              "summed_task_ms": 845.156309,
+              "task_union_ms": 845.156309
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"32,2048;72,4096,512;72,128,64;72\"",
+              "count": 348,
+              "summed_task_ms": 841.760973,
+              "task_union_ms": 841.760973
+            },
+            {
+              "name": "aclnnChunkKdaFwd_KdaChunkForward_ChunkKdaFwd",
+              "input_shapes": "\"1,36,16,128;1,36,16,128;1,36,16,128;1,36,16,128;1,16,36;16;2048;1,16,128,128;2;2;1;1,16,36,128;1,16,36\"",
+              "count": 238,
+              "summed_task_ms": 684.215197,
+              "task_union_ms": 684.215197
+            },
+            {
+              "name": "aclnnMatmul_TransData_TransData",
+              "input_shapes": "\"6416,4096\"",
+              "count": 1088,
+              "summed_task_ms": 674.955573,
+              "task_union_ms": 674.955573
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"872,4096;72,4096,1024;72,128,128;72\"",
+              "count": 12,
+              "summed_task_ms": 471.766773,
+              "task_union_ms": 471.766773
+            },
+            {
+              "name": "W2GroupedBlockedDequantMatmulV310",
+              "input_shapes": "\"872,2048;72,4096,1024;72,128,64;72\"",
+              "count": 30,
+              "summed_task_ms": 440.919559,
+              "task_union_ms": 440.919559
+            }
+          ],
+          "collective_count": 214,
+          "collective_summed_wait_ms": 682.363432,
+          "collective_summed_transit_ms": 15.804319
+        }
+      }
+    }
+  ]
+}

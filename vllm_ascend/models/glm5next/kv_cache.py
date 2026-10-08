@@ -135,10 +135,14 @@ class Glm5NextStateCache(nn.Module, AttentionLayerBase):
         self.prefix = prefix
         self.compress_ratio = compress_ratio
         self.block_size = compress_ratio
-        self.sliding_window = compress_ratio
         self.cache_config = cache_config
         self.cache_role = "indexer_state"
         current_config = get_current_vllm_config()
+        spec_config = getattr(current_config, "speculative_config", None)
+        self.num_speculative_tokens = spec_config.num_speculative_tokens if spec_config else 0
+        # Preserve the pool containing the earliest possible rejected token.
+        # Physical pages remain one pool wide; the scheduler retains more pages.
+        self.sliding_window = compress_ratio + self.num_speculative_tokens
         self.kv_cache = [torch.tensor([]) for _ in range(current_config.parallel_config.pipeline_parallel_size)]
         static_context = current_config.compilation_config.static_forward_context
         if prefix in static_context:

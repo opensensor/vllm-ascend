@@ -1,0 +1,105 @@
+--- a/vllm_ascend/models/glm5next_w2/model.py
++++ b/vllm_ascend/models/glm5next_w2/model.py
+@@ -65,6 +65,7 @@
+ GLM5NEXT_HIDDEN_SIZE = 4096
+ N_ROUTED_EXPERTS = 288
+ NUM_EXPERTS_PER_TOK = 8  # top-8
++GLM_GROUPED_ROUTE_EXPERIMENT_LIMIT = 32768
+ FIRST_K_DENSE_REPLACE = 3  # first 3 layers are dense MLP, the rest MoE
+ N_SHARED_EXPERTS = 1
+ MOE_INTERMEDIATE_SIZE = 2048
+@@ -330,7 +331,12 @@
+         prefill_route_histogram: bool = False,
+         fused_route_combine: bool = False,
+         empty_peer_rows: bool = False,
++        grouped_max_routes: int | None = None,
+     ) -> None:
++        if grouped_max_routes is not None and (
++            type(grouped_max_routes) is not int or not 0 < grouped_max_routes <= GLM_GROUPED_ROUTE_EXPERIMENT_LIMIT
++        ):
++            raise ValueError("ascend_glm_grouped_max_routes must be an integer in 1..32768 or None")
+         super().__init__(_PackedW2Expert(hidden, inter, offload_to_cpu=offload_to_cpu) for _ in range(num_experts))
+         self.hidden = int(hidden)
+         self.inter = int(inter)
+@@ -343,6 +349,9 @@
+         self.prefill_route_histogram = bool(prefill_route_histogram and not offload_to_cpu)
+         self.fused_route_combine = bool(fused_route_combine and not offload_to_cpu)
+         self.empty_peer_rows = bool(empty_peer_rows and self.fused_route_combine)
++        # Explicit opt-in must match the installed OPP's admission limit.
++        # None inherits the quantization method's existing default.
++        self.grouped_max_routes = grouped_max_routes
+ 
+     def place_resident_tensor(
+         self,
+@@ -512,6 +521,7 @@
+         prefill_route_histogram=bool(geometry.get("prefill_route_histogram", 0)),
+         fused_route_combine=bool(geometry.get("fused_route_combine", 0)),
+         empty_peer_rows=bool(geometry.get("empty_peer_rows", 0)),
++        grouped_max_routes=geometry.get("grouped_max_routes"),
+     )
+ 
+ 
+@@ -662,6 +672,9 @@
+     geometry["prefill_route_histogram"] = int(getattr(config, "ascend_glm_prefill_route_histogram", False))
+     geometry["fused_route_combine"] = int(getattr(config, "ascend_glm_fused_route_combine", False))
+     geometry["empty_peer_rows"] = int(getattr(config, "ascend_glm_empty_peer_rows", False))
++    grouped_max_routes = getattr(config, "ascend_glm_grouped_max_routes", None)
++    if grouped_max_routes is not None:
++        geometry["grouped_max_routes"] = grouped_max_routes
+     count = 0
+     for layer in layers:
+         if not _layer_is_moe(layer):
+@@ -1266,6 +1279,11 @@
+             )
+             self._glm_text_config.ascend_glm_empty_peer_rows = bool(
+                 getattr(hf_config, "ascend_glm_empty_peer_rows", False)
++            )
++            self._glm_text_config.ascend_glm_grouped_max_routes = getattr(
++                hf_config,
++                "ascend_glm_grouped_max_routes",
++                getattr(self._glm_text_config, "ascend_glm_grouped_max_routes", None),
+             )
+             # FP16-in-checkpoint fix: the dense-MLP and shared-expert projections
+             # ship as fp16 (no weight_scale_inv) but are absent from the
+--- a/vllm_ascend/_310p/quantization/methods/w2_dynamic.py
++++ b/vllm_ascend/_310p/quantization/methods/w2_dynamic.py
+@@ -266,11 +266,16 @@
+     )
+ 
+ 
++def _grouped_route_limit(experts: Any) -> int:
++    configured = getattr(experts, "grouped_max_routes", None)
++    return W2_GROUPED_MAX_ROUTES if configured is None else configured
++
++
+ def _can_use_w2_grouped_cube(grouped_op: Any, experts: Any, num_routes: int) -> bool:
+     """Whether a resident expert bank can stay entirely device-grouped."""
+     if grouped_op is None or not bool(getattr(experts, "grouped_ready", False)):
+         return False
+-    if num_routes <= 0 or num_routes > W2_GROUPED_MAX_ROUTES:
++    if num_routes <= 0 or num_routes > _grouped_route_limit(experts):
+         return False
+     names = (
+         "gate_packed_bank",
+@@ -546,17 +551,18 @@
+         hidden = x.shape[1]
+         top_k = topk_ids.shape[1]
+         grouped_op = _w2_grouped_mm_op()
++        max_routes = _grouped_route_limit(experts)
+         if _can_use_w2_grouped_cube(grouped_op, experts, num_tokens * top_k):
+             return self._apply_device_grouped(grouped_op, experts, x, topk_weights, topk_ids, shared_expert)
+         if (
+-            num_tokens * top_k > W2_GROUPED_MAX_ROUTES
+-            and 0 < top_k <= W2_GROUPED_MAX_ROUTES
++            num_tokens * top_k > max_routes
++            and 0 < top_k <= max_routes
+             and _can_use_w2_grouped_cube(grouped_op, experts, top_k)
+         ):
+             # The grouped operator's route limit is per call, not per prefill
+             # step. Keep every token's top-k routes together so a larger chunk
+             # can still use the resident packed bank without changing routing.
+-            max_chunk_tokens = W2_GROUPED_MAX_ROUTES // top_k
++            max_chunk_tokens = max_routes // top_k
+             routed_chunks = [
+                 self._apply_device_grouped(
+                     grouped_op,

@@ -1,0 +1,34 @@
+diff --git a/vllm_ascend/_310p/quantization/methods/w2_dynamic.py b/vllm_ascend/_310p/quantization/methods/w2_dynamic.py
+--- a/vllm_ascend/_310p/quantization/methods/w2_dynamic.py
++++ b/vllm_ascend/_310p/quantization/methods/w2_dynamic.py
+@@ -529,6 +529,30 @@ class AscendW2DynamicFusedMoEMethod310(AscendMoEScheme):
+         grouped_op = _w2_grouped_mm_op()
+         if _can_use_w2_grouped_cube(grouped_op, experts, num_tokens * top_k):
+             return self._apply_device_grouped(grouped_op, experts, x, topk_weights, topk_ids, shared_expert)
++        if (
++            num_tokens * top_k > W2_GROUPED_MAX_ROUTES
++            and 0 < top_k <= W2_GROUPED_MAX_ROUTES
++            and _can_use_w2_grouped_cube(grouped_op, experts, top_k)
++        ):
++            # The grouped operator's route limit is per call, not per prefill
++            # step. Keep every token's top-k routes together so a larger chunk
++            # can still use the resident packed bank without changing routing.
++            max_chunk_tokens = W2_GROUPED_MAX_ROUTES // top_k
++            routed_chunks = [
++                self._apply_device_grouped(
++                    grouped_op,
++                    experts,
++                    x[start : start + max_chunk_tokens],
++                    topk_weights[start : start + max_chunk_tokens],
++                    topk_ids[start : start + max_chunk_tokens],
++                    None,
++                )
++                for start in range(0, num_tokens, max_chunk_tokens)
++            ]
++            output = torch.cat(routed_chunks, dim=0)
++            if shared_expert is not None:
++                output += shared_expert.forward(x).to(torch.float32)
++            return output
+         if getattr(experts, "nz_packed_codes", False):
+             raise RuntimeError("NZ-packed GLM experts require the grouped 310P Cube operator")
+         pair_expert = topk_ids.reshape(-1)

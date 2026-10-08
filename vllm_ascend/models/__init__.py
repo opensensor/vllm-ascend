@@ -90,7 +90,7 @@ def register_model():
     # G3). An ADAPT of the shipped glm5next: the CausalLM subclasses the shipped
     # Glm5NextForCausalLM; the ConditionalGeneration alias rejects multimodal at
     # the first gate (text-only; GLM's model.visual.* tower is excluded);
-    # Glm5NextW2MTPModel points at a registration-only MTP-1 stub wired in G7.
+    # Glm5NextW2MTPModel reuses the shipped predictor with packed expert banks.
     # All rows are additive -- the shipped Glm5Next* registrations above are
     # untouched.
     ModelRegistry.register_model(

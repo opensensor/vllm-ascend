@@ -1,0 +1,115 @@
+{
+  "scope": "projection-only; 2560 identical tokens; routing/gathers excluded; 7 alternating-order repeats",
+  "batching": [
+    {
+      "case": "uniform",
+      "bits": 3,
+      "projection": "gate_up",
+      "routing": "uniform",
+      "median_ms_by_chunk_tokens": {
+        "640": 292.25751201738603,
+        "1280": 158.64212001906708,
+        "2560": 91.6623660014011
+      },
+      "speedup_2560_vs_640": 3.1884133561741006,
+      "bitwise_equal": true
+    },
+    {
+      "case": "hot",
+      "bits": 3,
+      "projection": "gate_up",
+      "routing": "hot",
+      "median_ms_by_chunk_tokens": {
+        "640": 132.17714900383726,
+        "1280": 120.43383999844082,
+        "2560": 112.99933900590986
+      },
+      "speedup_2560_vs_640": 1.1697161254803836,
+      "bitwise_equal": true
+    },
+    {
+      "case": "w4-gate",
+      "bits": 4,
+      "projection": "gate_up",
+      "routing": "uniform",
+      "median_ms_by_chunk_tokens": {
+        "640": 153.88475699000992,
+        "1280": 89.09682001103647,
+        "2560": 56.489285023417324
+      },
+      "speedup_2560_vs_640": 2.72414063881704,
+      "bitwise_equal": true
+    },
+    {
+      "case": "w2-down",
+      "bits": 2,
+      "projection": "down",
+      "routing": "uniform",
+      "median_ms_by_chunk_tokens": {
+        "640": 97.87910198792815,
+        "1280": 55.4957969870884,
+        "2560": 33.95631900639273
+      },
+      "speedup_2560_vs_640": 2.8825003667064473,
+      "bitwise_equal": true
+    }
+  ],
+  "teams": [
+    {
+      "label": "all-resident",
+      "all_parity_passed": true,
+      "results": [
+        {
+          "case": "w2_down_5120_uniform_all_experts_quarter",
+          "median_ms": 24.54523099004291
+        },
+        {
+          "case": "w4_gate_up_5120_uniform_all_experts_quarter",
+          "median_ms": 38.510284008225426
+        }
+      ]
+    },
+    {
+      "label": "teams-control",
+      "all_parity_passed": true,
+      "results": [
+        {
+          "case": "w2_down_5120_uniform_all_experts_quarter",
+          "median_ms": 24.72654599114321
+        },
+        {
+          "case": "w4_gate_up_5120_uniform_all_experts_quarter",
+          "median_ms": 38.39853100362234
+        }
+      ]
+    },
+    {
+      "label": "teams2",
+      "all_parity_passed": true,
+      "results": [
+        {
+          "case": "w2_down_5120_uniform_all_experts_quarter",
+          "median_ms": 24.322167999343947
+        },
+        {
+          "case": "w4_gate_up_5120_uniform_all_experts_quarter",
+          "median_ms": 38.18670898908749
+        }
+      ]
+    },
+    {
+      "label": "teams4",
+      "all_parity_passed": true,
+      "results": [
+        {
+          "case": "w2_down_5120_uniform_all_experts_quarter",
+          "median_ms": 24.53791699372232
+        },
+        {
+          "case": "w4_gate_up_5120_uniform_all_experts_quarter",
+          "median_ms": 38.36325398879126
+        }
+      ]
+    }
+  ]
+}

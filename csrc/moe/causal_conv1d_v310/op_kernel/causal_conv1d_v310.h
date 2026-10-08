@@ -308,7 +308,6 @@ __aicore__ inline void CausalConv1dV310<T>::InitRing(int32_t cacheIdx, bool hasI
                                                  int32_t start, int32_t len, int32_t c0, int32_t dimTileSize,
                                                  int32_t dim)
 {
-    const int32_t stateLen = tilingData_->stateLen;
     const int32_t width = static_cast<int32_t>(tilingData_->width);
     const int32_t ringStart = MAX_WIDTH - width;
     LocalTensor<T> ring = inBuf.Get<T>();
@@ -324,7 +323,7 @@ __aicore__ inline void CausalConv1dV310<T>::InitRing(int32_t cacheIdx, bool hasI
         for (int32_t i = 0; i < (width - 1); ++i) {
             const int32_t pos = stateTokenOffset + i;
             const int64_t stateOffset =
-                static_cast<int64_t>(cacheIdx) * stateLen * dim + static_cast<int64_t>(pos) * dim + c0;
+                static_cast<int64_t>(cacheIdx) * tilingData_->stateStride + static_cast<int64_t>(pos) * dim + c0;
             DataCopy(ring[(ringStart + i) * MAX_BLOCK_DIM], convStatesGm[stateOffset], dimTileSize);
         }
         SetFlag<HardEvent::MTE2_V>(stateMte2ToVEvent_);
@@ -429,7 +428,6 @@ template <typename T>
 __aicore__ inline void CausalConv1dV310<T>::WriteBackState(int32_t cacheIdx, int32_t len, int32_t c0, int32_t dimTileSize,
                                                        int32_t dim)
 {
-    const int32_t stateLen = tilingData_->stateLen;
     const int32_t width = static_cast<int32_t>(tilingData_->width);
     if (len <= 0) {
         return;
@@ -443,7 +441,7 @@ __aicore__ inline void CausalConv1dV310<T>::WriteBackState(int32_t cacheIdx, int
     const int32_t lastT = len - 1;
     LocalTensor<T> ring = inBuf.Get<T>();
     const int32_t lastSlot = SlotCurr(lastT);
-    const int64_t stateBaseOffset = static_cast<int64_t>(cacheIdx) * stateLen * dim + c0;
+    const int64_t stateBaseOffset = static_cast<int64_t>(cacheIdx) * tilingData_->stateStride + c0;
 
     for (int32_t pos = 0; pos < (width - 1); ++pos) {
         const int32_t tap = (width - 2) - pos;
@@ -484,15 +482,15 @@ __aicore__ inline void CausalConv1dV310<T>::WriteBackStateSpec(int32_t cacheIdx,
         const int32_t srcPos0 = stateTokenOffset + 1;
         const int32_t srcPos1 = stateTokenOffset + 2;
         const int64_t srcOffset0 =
-            static_cast<int64_t>(cacheIdx) * stateLen * dim + static_cast<int64_t>(srcPos0) * dim + c0;
+            static_cast<int64_t>(cacheIdx) * tilingData_->stateStride + static_cast<int64_t>(srcPos0) * dim + c0;
         const int64_t srcOffset1 =
-            static_cast<int64_t>(cacheIdx) * stateLen * dim + static_cast<int64_t>(srcPos1) * dim + c0;
+            static_cast<int64_t>(cacheIdx) * tilingData_->stateStride + static_cast<int64_t>(srcPos1) * dim + c0;
         DataCopy(buf0, convStatesGm[srcOffset0], dimTileSize);
         DataCopy(buf1, convStatesGm[srcOffset1], dimTileSize);
         SetFlag<HardEvent::MTE2_MTE3>(stateShiftMte2ToMte3Event_);
         WaitFlag<HardEvent::MTE2_MTE3>(stateShiftMte2ToMte3Event_);
-        const int64_t dstOffset0 = static_cast<int64_t>(cacheIdx) * stateLen * dim + static_cast<int64_t>(0) * dim + c0;
-        const int64_t dstOffset1 = static_cast<int64_t>(cacheIdx) * stateLen * dim + static_cast<int64_t>(1) * dim + c0;
+        const int64_t dstOffset0 = static_cast<int64_t>(cacheIdx) * tilingData_->stateStride + static_cast<int64_t>(0) * dim + c0;
+        const int64_t dstOffset1 = static_cast<int64_t>(cacheIdx) * tilingData_->stateStride + static_cast<int64_t>(1) * dim + c0;
         DataCopy(convStatesGm[dstOffset0], buf0, dimTileSize);
         DataCopy(convStatesGm[dstOffset1], buf1, dimTileSize);
         SetFlag<HardEvent::MTE3_MTE2>(stateShiftMte3ToMte2Event_);
@@ -501,8 +499,8 @@ __aicore__ inline void CausalConv1dV310<T>::WriteBackStateSpec(int32_t cacheIdx,
         Duplicate(buf0, static_cast<T>(0), dimTileSize);
         SetFlag<HardEvent::V_MTE3>(stateShiftVToMte3Event_);
         WaitFlag<HardEvent::V_MTE3>(stateShiftVToMte3Event_);
-        const int64_t dstOffset0 = static_cast<int64_t>(cacheIdx) * stateLen * dim + static_cast<int64_t>(0) * dim + c0;
-        const int64_t dstOffset1 = static_cast<int64_t>(cacheIdx) * stateLen * dim + static_cast<int64_t>(1) * dim + c0;
+        const int64_t dstOffset0 = static_cast<int64_t>(cacheIdx) * tilingData_->stateStride + static_cast<int64_t>(0) * dim + c0;
+        const int64_t dstOffset1 = static_cast<int64_t>(cacheIdx) * tilingData_->stateStride + static_cast<int64_t>(1) * dim + c0;
         DataCopy(convStatesGm[dstOffset0], buf0, dimTileSize);
         DataCopy(convStatesGm[dstOffset1], buf0, dimTileSize);
         SetFlag<HardEvent::MTE3_MTE2>(stateShiftMte3ToMte2Event_);
@@ -531,7 +529,7 @@ __aicore__ inline void CausalConv1dV310<T>::WriteBackStateSpec(int32_t cacheIdx,
         }
 
         const int64_t dstOffset =
-            static_cast<int64_t>(cacheIdx) * stateLen * dim + static_cast<int64_t>(keep + t) * dim + c0;
+            static_cast<int64_t>(cacheIdx) * tilingData_->stateStride + static_cast<int64_t>(keep + t) * dim + c0;
         DataCopy(convStatesGm[dstOffset], currBuf, dimTileSize);
         SetFlag<HardEvent::MTE3_MTE2>(specWritebackMte3ToMte2Event_[curr]);
     }

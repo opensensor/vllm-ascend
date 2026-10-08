@@ -1,0 +1,228 @@
+{
+  "status": "qualified full-chunk KDA column cache deployed; server unpaused on 8001",
+  "new_serving_measurement": true,
+  "cpu_tests": {
+    "passed": 2,
+    "simulation_cases": 38,
+    "heads_per_case": 3
+  },
+  "native_score_cases": 32,
+  "native_score_devices": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "safe_gate_full_kda_cases_passed": 17,
+  "known_baseline_nonsafe_diagnostic_failures": 2,
+  "isolated_640_token_kda": [
+    {
+      "case": "640_BSND_True_-7.0",
+      "baseline_ms": 50.63062399858609,
+      "cached_ms": 39.78572500636801,
+      "reduction_pct": 21.41964316402842
+    },
+    {
+      "case": "640_BNSD_True_-7.0",
+      "baseline_ms": 50.55941897444427,
+      "cached_ms": 39.760826010024175,
+      "reduction_pct": 21.358222035499153
+    },
+    {
+      "case": "640_BSND_True_-3.0",
+      "baseline_ms": 50.48830300802365,
+      "cached_ms": 39.948724006535485,
+      "reduction_pct": 20.8752886778809
+    },
+    {
+      "case": "640_BSND_True_0.0",
+      "baseline_ms": 50.82291000871919,
+      "cached_ms": 40.134537004632875,
+      "reduction_pct": 21.030619856778397
+    },
+    {
+      "case": "640_BSND_True_5.0",
+      "baseline_ms": 50.349630997516215,
+      "cached_ms": 39.923717005876824,
+      "reduction_pct": 20.70703158113256
+    }
+  ],
+  "cold_comparisons": [
+    {
+      "input_tokens": 8192,
+      "baseline_ttft_s": 96.81623867398594,
+      "candidate_ttft_s": 92.31787753899698,
+      "ttft_reduction_pct": 4.646287850674002,
+      "baseline_input_tokens_per_ttft_s": 84.61390477671131,
+      "candidate_input_tokens_per_ttft_s": 88.73687543931597,
+      "input_throughput_gain_pct": 4.872686910602719,
+      "candidate_token_ids_sha256": "84ab8f7e034ca06899e8decf0a39f0b310f5d99524a4b435bf4a7d43de079aea",
+      "baseline_metrics_delta": {
+        "vllm:prefix_cache_queries_total": 8192.0,
+        "vllm:prefix_cache_hits_total": 0.0,
+        "vllm:num_preemptions_total": 0.0,
+        "vllm:time_to_first_token_seconds_count": 1.0,
+        "vllm:time_to_first_token_seconds_sum": 96.80861926078796,
+        "vllm:request_queue_time_seconds_count": 1.0,
+        "vllm:request_queue_time_seconds_sum": 3.8833997678011656e-05,
+        "vllm:request_prefill_time_seconds_count": 1.0,
+        "vllm:request_prefill_time_seconds_sum": 96.80567067101947
+      },
+      "candidate_metrics_delta": {
+        "vllm:prefix_cache_queries_total": 8192.0,
+        "vllm:prefix_cache_hits_total": 0.0,
+        "vllm:num_preemptions_total": 0.0,
+        "vllm:time_to_first_token_seconds_count": 1.0,
+        "vllm:time_to_first_token_seconds_sum": 92.30973196029663,
+        "vllm:request_queue_time_seconds_count": 1.0,
+        "vllm:request_queue_time_seconds_sum": 5.0967006245628e-05,
+        "vllm:request_prefill_time_seconds_count": 1.0,
+        "vllm:request_prefill_time_seconds_sum": 92.30674865198671
+      }
+    },
+    {
+      "input_tokens": 20643,
+      "baseline_ttft_s": 244.51974627398886,
+      "candidate_ttft_s": 233.021873212012,
+      "ttft_reduction_pct": 4.7022268087475005,
+      "baseline_input_tokens_per_ttft_s": 84.42262972442782,
+      "candidate_input_tokens_per_ttft_s": 88.58825017348576,
+      "input_throughput_gain_pct": 4.934246259155106,
+      "candidate_token_ids_sha256": "e3c3f2b652f70c8f61e65aaa073b505c094dc246de56c179119c4fabc5780814",
+      "baseline_metrics_delta": {
+        "vllm:prefix_cache_queries_total": 20643.0,
+        "vllm:prefix_cache_hits_total": 0.0,
+        "vllm:num_preemptions_total": 0.0,
+        "vllm:time_to_first_token_seconds_count": 1.0,
+        "vllm:time_to_first_token_seconds_sum": 244.50668120384216,
+        "vllm:request_queue_time_seconds_count": 1.0,
+        "vllm:request_queue_time_seconds_sum": 1.5911005903035402e-05,
+        "vllm:request_prefill_time_seconds_count": 1.0,
+        "vllm:request_prefill_time_seconds_sum": 244.31559698400088
+      },
+      "candidate_metrics_delta": {
+        "vllm:prefix_cache_queries_total": 20643.0,
+        "vllm:prefix_cache_hits_total": 0.0,
+        "vllm:num_preemptions_total": 0.0,
+        "vllm:time_to_first_token_seconds_count": 1.0,
+        "vllm:time_to_first_token_seconds_sum": 233.00792574882507,
+        "vllm:request_queue_time_seconds_count": 1.0,
+        "vllm:request_queue_time_seconds_sum": 1.77839829120785e-05,
+        "vllm:request_prefill_time_seconds_count": 1.0,
+        "vllm:request_prefill_time_seconds_sum": 232.81548525800463
+      }
+    }
+  ],
+  "prefix_reuse": {
+    "elapsed_s": 3.689512785989791,
+    "input_tokens": 20643,
+    "cached_tokens": 20480.0,
+    "computed_tokens": 163.0,
+    "completion": {
+      "id": "cmpl-bcf2898f4bd7d9a3",
+      "object": "text_completion",
+      "created": 1791253512,
+      "model": "glm53-flash-selective-w3",
+      "choices": [
+        {
+          "index": 0,
+          "text": "   ",
+          "logprobs": null,
+          "finish_reason": "length",
+          "stop_reason": null,
+          "token_ids": null,
+          "prompt_logprobs": null,
+          "prompt_token_ids": null,
+          "routed_experts": null
+        }
+      ],
+      "service_tier": null,
+      "system_fingerprint": "vllm-0.1.dev1+g3ab5dda29-tp4-365ac5b7",
+      "usage": {
+        "prompt_tokens": 20643,
+        "total_tokens": 20644,
+        "completion_tokens": 1,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "kv_transfer_params": null,
+      "ec_transfer_params": null,
+      "metrics": null
+    }
+  },
+  "serving": {
+    "request_count": 6,
+    "valid": true,
+    "passed": true,
+    "early_eos_count": 0,
+    "groups": {
+      "short_1": {
+        "requests": 1,
+        "valid_requests": 1,
+        "aggregate_decode_tokens_per_s": 5.095471409743761,
+        "per_request_decode_p50": 5.095471409743761,
+        "per_request_decode_p95": 5.095471409743761,
+        "ttft_p50_s": 2.963949777011294,
+        "ttft_p95_s": 2.963949777011294,
+        "fairness_min_max_ratio": 1.0,
+        "early_eos_count": 0
+      },
+      "short_4": {
+        "requests": 4,
+        "valid_requests": 4,
+        "aggregate_decode_tokens_per_s": 12.111471410409328,
+        "per_request_decode_p50": 3.0835116613735263,
+        "per_request_decode_p95": 3.098284154946051,
+        "ttft_p50_s": 5.185573330003535,
+        "ttft_p95_s": 5.1860903570719525,
+        "fairness_min_max_ratio": 0.9772722759140197,
+        "early_eos_count": 0
+      },
+      "tool": {
+        "requests": 1,
+        "valid_requests": 1,
+        "aggregate_decode_tokens_per_s": 9.119784092739119,
+        "per_request_decode_p50": 9.119784092739119,
+        "per_request_decode_p95": 9.119784092739119,
+        "ttft_p50_s": 6.474206753016915,
+        "ttft_p95_s": 6.474206753016915,
+        "fairness_min_max_ratio": 1.0,
+        "early_eos_count": 0
+      }
+    }
+  },
+  "api_pid": 2511127,
+  "worker_pids": [
+    2512274,
+    2512653,
+    2513147,
+    2513520
+  ],
+  "context": 311040,
+  "generation": "02a63bf4ee334fc9a1ae8baf64b4a43d",
+  "candidate_source_digest": "348947ff4f965d2b6af532269f4b0e90eee1ba201d3e16dd60a063b8de423282",
+  "cann_package": {
+    "package": "/home/matteius/experiments/glm-prompt-profile-20261005/opp-score-cache",
+    "source": "/home/matteius/experiments/glm-prompt-profile-20261005/full-kda-source",
+    "compile_flag": "GLM_KDA_SCORE_CACHE_COLUMNS",
+    "deployed_source_hashes": {
+      "chunk_kda_fwd.cpp": "6500471a5d4a75f8bb64ae5cec5a6cd0a7edd0c53c1b70c20a52e3b0388c6951",
+      "chunk_kda_fwd_varlen.h": "ae55fee99f6accab01845af0be52f162ee33e13acc0555ca10ec5aa565edc6ef",
+      "chunk_kda_fwd_common.h": "066f2a98d2d4e9720cf22cb8067fecce8c2e527d481df8a32b460b6af16f30b3",
+      "chunk_kda_fwd_finalize.h": "a87a4c40c96b09c650175f4ea6743a5060b974a06b4c8236c8eecc15e995e91d",
+      "chunk_kda_fwd_post_wu.h": "2c51c904d2c009d83ba7e5c777a7df5fbcd9a4e5b688cf91b0220fa548b12bb2",
+      "chunk_kda_fwd_prepare.h": "36707989c3126c62dff360c80b3d189b85d490a5fc61a21c7a84b4e531e97fb0"
+    },
+    "candidate_header_sha256": "ac922b4b01240a51757f0cf0ee6fa0d1b6937373e346e12318deb07945f36740",
+    "binary": "/home/matteius/experiments/glm-prompt-profile-20261005/opp-score-cache/vendors/custom_transformer/op_impl/ai_core/tbe/kernel/ascend310p/chunk_kda_fwd/ChunkKdaFwd_e1d66e370a730c22c122bc2150035553.o",
+    "binary_sha256": "59ed3878f6e8b96eea0fb7d8be22e8561f1492ca8cde01841f2b1743030268ed"
+  },
+  "limitations": [
+    "Single cold comparison per length across one CANN package restart; no confidence interval",
+    "Baseline CPU kernel compilation overlapped part of the baseline prompt timing",
+    "Saved task attribution is from October 4, not a fresh successful profiler capture",
+    "Full operator qualification covers the GLM FP16 safe-gate 16-head/128-channel geometry",
+    "Complete chunks optimized; partial chunks retain the original path",
+    "Decode is essentially flat; 20K cold input still waits almost four minutes"
+  ]
+}

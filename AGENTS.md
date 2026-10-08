@@ -32,6 +32,7 @@ This document provides instructions for contributors to the vLLM Ascend project.
     - [Commit and PR](#commit-and-pr)
 - [Quick Start for Contributors](#quick-start-for-contributors)
 - [References](#references)
+- [Delivery Summary Languages](#delivery-summary-languages)
 
 ---
 
@@ -422,3 +423,15 @@ or ACL graph settings.
 - [vLLM Hardware Plugin RFC](https://github.com/vllm-project/vllm/issues/11162)
 - [Documentation](https://docs.vllm.ai/projects/ascend/en/latest/)
 - [Contributors Guide](https://docs.vllm.ai/projects/ascend/en/latest/community/contributors.html)
+
+## Delivery Summary Languages
+
+Every delivery must include a concise US English summary alongside the Chinese
+summary or report required by the applicable workflow or skill. Keep the Chinese
+deliverable; add the US English summary rather than replacing it.
+
+Both summaries must agree on the changes, validation results, measured
+performance, and known limitations. Clearly distinguish hardware-validated work
+from offline or untested candidates. For saved reports, provide an English
+companion file or a US English summary section and link both versions in the
+handoff.

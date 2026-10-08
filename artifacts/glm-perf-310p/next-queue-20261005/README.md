@@ -1,11 +1,32 @@
 # GLM next five experiments — 2026-10-05
 
+Hardware follow-up: [qualification and comparison record](hardware/README.md)
+tracks the subsequently authorized NPU run. The preparation notes below describe
+the earlier CPU-only staging phase.
+
+Latest: [completed-pool prefill](completed-pools/README.md) removes redundant
+compression and state-write preparation. It passes 82 CPU tests, 24 isolated
+NPU parity cases and seven serving checks; the candidate is running on 8001.
+Cold 8K TTFT is 88.2 seconds, a modest change from earlier roughly 90-second
+runs, rather than the large factor seen in isolated writer timing.
+The machine-readable queue records the first ten candidates' measured outcomes
+so flat or rejected experiments are not mistaken for untested work.
+
 Follow-up: a [sixth candidate](extra-memory-traffic.md) now stages FP16 expert
 output reordering before FP32 weighting. The machine-readable queue includes it;
 the original five below retain their independent gates.
 
 A [seventh candidate](indexer-projection.md) stages shared-input indexer
 projection fusion with target/MTP preparation before resident graph capture.
+
+An [eighth candidate](direct-route-tokens.md) removes expanded route token IDs
+and their gather in a private GLM dispatch path, preserving the shared Qwen code.
+
+A [ninth candidate](kda-prepare-head.md) hoists repeated scalar exponentials,
+bias loads and constant-vector setup out of KDA prefill's token loop.
+
+A [tenth candidate](kda-skip-safe-cube.md) removes a no-op Cube-score launch
+in the 310P safe-gate path while retaining the dependency chain.
 
 Qwen owns the NPUs during preparation. This batch made no server requests,
 device calls, restarts, worker patches, or native library loads. All candidates

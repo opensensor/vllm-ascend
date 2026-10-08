@@ -36,9 +36,10 @@ import pytest
 import torch
 from safetensors.torch import load_file
 
-from tools.deepseek_w2.w2_format import broadcast_block_scales, dequantize_w2
-from tools.glm_w2 import convert_full
+from tools.deepseek_w2.w2_format import broadcast_block_scales, dequantize_w2, pack_codes, unpack_codes
+from tools.glm_w2 import convert_full, convert_w3_overlay
 from tools.glm_w2.convert_full import dequant_fp8_e4m3_f32block
+from tools.glm_w2.convert_w3_overlay import convert_overlay
 
 # --- tolerances --------------------------------------------------------------
 # W2 reconstruction is bounded by half a grid step per element (E1.1 proof);
@@ -241,6 +242,81 @@ def test_route_tensor(name, dtype, target, source_format):
     route = convert_full.route_tensor(name, dtype)
     assert route.target == target
     assert route.source_format == source_format
+
+
+def test_w3_pack_round_trip_and_rejects_invalid_width_or_code():
+    codes = torch.tensor([[-4, -3, -2, -1, 0, 1, 2, 3, 3, 2, 1, 0, -1, -2, -3, -4]], dtype=torch.int8)
+    packed = pack_codes(codes, 3)
+    assert packed.dtype == torch.uint8 and packed.shape == (1, 6)
+    assert torch.equal(unpack_codes(packed, 16, 3), codes)
+    with pytest.raises(ValueError, match="multiple of eight"):
+        pack_codes(codes[:, :-1], 3)
+    with pytest.raises(ValueError, match="signed codes"):
+        pack_codes(torch.tensor([[4] * 8], dtype=torch.int8), 3)
+    with pytest.raises(ValueError, match="packed width"):
+        unpack_codes(packed, 8, 3)
+
+
+def test_w3_selected_layer_converts_and_preserves_no_clip_bound(synthetic_source, tmp_path):
+    out_dir = tmp_path / "w3"
+    convert_full.run(synthetic_source, out_dir, shard_target_bytes=1 << 20, chunk_rows=256, w3_layers=frozenset({3}))
+    index = json.loads((out_dir / convert_full.INDEX_FILE).read_text())["weight_map"]
+    from safetensors import safe_open
+
+    code_name = f"{_LP}.3.mlp.experts.0.gate_proj_codes"
+    scale_name = f"{_LP}.3.mlp.experts.0.gate_proj_scale"
+    with safe_open(str(out_dir / index[code_name]), framework="pt") as reader:
+        codes = reader.get_tensor(code_name)
+        block_scale = reader.get_tensor(scale_name)
+    assert codes.shape == (64, 24)
+    assert block_scale.shape == (2, 2)
+    source = convert_full.SafetensorsShardReader(synthetic_source / "model-00001-of-00002.safetensors")
+    weight_name = f"{_LP}.3.mlp.experts.0.gate_proj.weight"
+    raw = torch.from_numpy(source.read_rows(weight_name, 0, 64).copy())
+    raw_scale = torch.from_numpy(source.read_rows(f"{weight_name}_scale_inv", 0, 2).copy())
+    exact = dequant_fp8_e4m3_f32block(raw, raw_scale, (32, 32))
+    full_scale = broadcast_block_scales(block_scale, 64, 64)
+    restored = unpack_codes(codes, 64, 3).double() * full_scale
+    assert torch.all((exact - restored).abs() <= 0.5 * full_scale + 1e-7)
+
+
+def test_w3_overlay_replaces_only_selected_experts_and_can_relink(synthetic_source, tmp_path, monkeypatch):
+    base = tmp_path / "base"
+    out_dir = tmp_path / "overlay"
+    convert_full.run(synthetic_source, base, shard_target_bytes=1 << 20, chunk_rows=256, w4_layers=frozenset({3}))
+    base_index = json.loads((base / convert_full.INDEX_FILE).read_text())["weight_map"]
+    manifest = convert_overlay(synthetic_source, base, out_dir, frozenset({3}), chunk_rows=256)
+    out_index = json.loads((out_dir / convert_full.INDEX_FILE).read_text())["weight_map"]
+    overlay_file = "w3-overlay-layer-03.safetensors"
+    replaced = {name for name, shard in out_index.items() if shard == overlay_file}
+    assert len(replaced) == 14
+    assert all(".layers.3.mlp.experts." in name for name in replaced)
+    assert all(out_index[name] == base_index[name] for name in base_index.keys() - replaced)
+    base_size = json.loads((base / convert_full.INDEX_FILE).read_text())["metadata"]["total_size"]
+    assert manifest["selected_bytes"] < base_size
+    assert (out_dir / "config.json").is_file() and not (out_dir / "config.json").is_symlink()
+    original_mtime = (out_dir / overlay_file).stat().st_mtime_ns
+    convert_overlay(synthetic_source, base, out_dir, frozenset({3}), chunk_rows=256)
+    assert (out_dir / overlay_file).stat().st_mtime_ns == original_mtime
+    relocated = tmp_path / "relocated"
+    relocated.mkdir()
+    (relocated / convert_full.INDEX_FILE).write_bytes((base / convert_full.INDEX_FILE).read_bytes())
+    for shard in set(base_index.values()):
+        (relocated / shard).symlink_to(base / shard)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["convert_w3_overlay", "--relink-base", "--base-dir", str(relocated), "--out-dir", str(out_dir)],
+    )
+    assert convert_w3_overlay._cli() == 0
+    assert all((out_dir / shard).resolve() == (base / shard).resolve() for shard in set(base_index.values()))
+    index = json.loads((relocated / convert_full.INDEX_FILE).read_text())
+    first = next(iter(index["weight_map"]))
+    index["weight_map"][first] = "other.safetensors"
+    (relocated / convert_full.INDEX_FILE).write_text(json.dumps(index))
+    with pytest.raises(ValueError, match="different safetensors weight map"):
+        convert_w3_overlay._cli()
+    with pytest.raises(ValueError, match="no source expert weights"):
+        convert_overlay(synthetic_source, base, tmp_path / "bad", frozenset({99}))
 
 
 # ===========================================================================

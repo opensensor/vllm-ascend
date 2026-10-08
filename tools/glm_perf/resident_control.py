@@ -104,11 +104,17 @@ class PatchSession:
 
     def prepare(self, value: Any) -> dict[str, Any]:
         control = Control.from_dict(value)
+        if self.current is not None and control.generation == self.current.generation and control != self.current:
+            raise ValueError("an applied generation cannot be changed")
         replacements = prepare_replacements(control, self.native_resources)
         self.pending = (control, replacements)
         return {"generation": control.generation, "digest": control.digest, "targets": [r.target for r in replacements]}
 
     def apply(self, generation: str) -> bool:
+        # A retried request must not apply the same generation twice or leave
+        # an executor error behind after the first request already succeeded.
+        if self.current is not None and self.current.generation == generation:
+            return self.graphs_dirty
         if self.pending is None or self.pending[0].generation != generation:
             raise ValueError("generation has not been prepared")
         control, replacements = self.pending

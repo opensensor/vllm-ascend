@@ -699,12 +699,40 @@ at::Tensor npu_w2_grouped_blocked_dequant_matmul_310_meta(
     const at::Tensor& x,
     const at::Tensor& codes,
     const at::Tensor& block_scale,
-    const at::Tensor& group_ends)
+    const at::Tensor& group_ends,
+    bool initialize_output)
 {
     (void)block_scale;
     (void)group_ends;
+    (void)initialize_output;
     at::Tensor output = at::empty_symint(c10::SymDimVector{x.sym_size(0), codes.sym_size(1)}, x.options());
     return output;
+}
+
+at::Tensor npu_glm_kpool_score_310_meta(const at::Tensor& query, const at::Tensor& weights,
+    const at::Tensor& cache, const at::Tensor& table, const at::Tensor& boundaries, const at::Tensor& positions,
+    int64_t pools, int64_t blocks, int64_t block_rows, int64_t block_stride, int64_t row_stride, int64_t cache_offset)
+{
+    return at::empty_symint(c10::SymDimVector{query.sym_size(0), c10::SymInt(pools)}, weights.options());
+}
+
+at::Tensor npu_glm_mhc_post_310_meta(
+    const at::Tensor& x, const at::Tensor& residual, const at::Tensor& post_mix, const at::Tensor& comb_mix)
+{
+    return at::empty_symint(residual.sym_sizes(), residual.options());
+}
+
+at::Tensor npu_w2_swiglu_310_meta(const at::Tensor& gate_up)
+{
+    return at::empty_symint(c10::SymDimVector{gate_up.sym_size(0), gate_up.sym_size(1) / 2}, gate_up.options());
+}
+
+at::Tensor npu_w2_route_combine_310_meta(
+    const at::Tensor& routed, const at::Tensor& inverse_order,
+    const at::Tensor& route_weights, const at::Tensor& group_ends)
+{
+    return at::empty_symint(c10::SymDimVector{route_weights.sym_size(0), routed.sym_size(1)},
+                            routed.options().dtype(at::kFloat));
 }
 
 at::Tensor npu_qwen_w4_group_matmul_310_meta(
@@ -2326,6 +2354,10 @@ TORCH_LIBRARY_IMPL_EXPAND(CONCAT(_C, _ascend), Meta, ops) {
     ops.impl("npu_w2_blocked_dequant_matmul_310", &vllm_ascend::meta::npu_w2_blocked_dequant_matmul_310_meta);
     ops.impl("npu_w2_grouped_blocked_dequant_matmul_310",
              &vllm_ascend::meta::npu_w2_grouped_blocked_dequant_matmul_310_meta);
+    ops.impl("npu_glm_kpool_score_310", &vllm_ascend::meta::npu_glm_kpool_score_310_meta);
+    ops.impl("npu_glm_mhc_post_310", &vllm_ascend::meta::npu_glm_mhc_post_310_meta);
+    ops.impl("npu_w2_swiglu_310", &vllm_ascend::meta::npu_w2_swiglu_310_meta);
+    ops.impl("npu_w2_route_combine_310", &vllm_ascend::meta::npu_w2_route_combine_310_meta);
     ops.impl("npu_qwen_w4_group_matmul_310", &vllm_ascend::meta::npu_qwen_w4_group_matmul_310_meta);
     ops.impl("npu_qwen_w4_routed_matmul_310", &vllm_ascend::meta::npu_qwen_w4_routed_matmul_310_meta);
     ops.impl("npu_qwen_w4_grouped_matmul_310", &vllm_ascend::meta::npu_qwen_w4_routed_matmul_310_meta);

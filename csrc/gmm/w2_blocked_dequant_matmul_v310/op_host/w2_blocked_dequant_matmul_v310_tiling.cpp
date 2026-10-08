@@ -26,6 +26,7 @@ constexpr uint32_t CODES_INDEX = 1;
 constexpr int64_t OUTPUT_TILE = 128;
 constexpr int64_t INPUT_TILE = 128;
 constexpr int64_t MIN_INPUT_DIM = 256;
+constexpr int64_t W3_MAX_INPUT_DIM = 4096;
 
 static ge::graphStatus W2BlockedDequantMatmulTilingFunc(gert::TilingContext *context)
 {
@@ -49,17 +50,21 @@ static ge::graphStatus W2BlockedDequantMatmulTilingFunc(gert::TilingContext *con
     const int64_t K = xShape.GetDim(1);
     const int64_t N = codesShape.GetDim(0);
     const int64_t packedK = codesShape.GetDim(1);
-    OP_CHECK_IF(packedK <= 0 || K % packedK != 0,
-                OP_LOGE(context, "codes.shape[1] must divide x.shape[1] (K)"),
+    OP_CHECK_IF(packedK <= 0,
+                OP_LOGE(context, "packed K must be positive"),
                 return ge::GRAPH_FAILED);
-    const int64_t codesPerByte = K / packedK;
-    OP_CHECK_IF(codesPerByte != 2 && codesPerByte != 4,
-                OP_LOGE(context, "packed codes must contain either 2 (W4) or 4 (W2) values per byte"),
+    // Mode 3 is the dense W3 format: eight logical codes in three bytes.
+    const int64_t codesPerByte = packedK * 8 == K * 3 ? 3 : K / packedK;
+    OP_CHECK_IF((codesPerByte != 2 && codesPerByte != 3 && codesPerByte != 4) ||
+                    (codesPerByte != 3 && packedK * codesPerByte != K),
+                OP_LOGE(context, "expected packed W2, dense W3, or packed W4 codes"),
                 return ge::GRAPH_FAILED);
     OP_CHECK_IF(T <= 0 || N <= 0 || K <= 0, OP_LOGE(context, "T/N/K must be positive"), return ge::GRAPH_FAILED);
     OP_CHECK_IF(N % OUTPUT_TILE != 0 || K % INPUT_TILE != 0 || K < MIN_INPUT_DIM,
                 OP_LOGE(context, "N and K must be multiples of 128 and K must be at least 256"),
                 return ge::GRAPH_FAILED);
+    OP_CHECK_IF(codesPerByte == 3 && K > W3_MAX_INPUT_DIM,
+                OP_LOGE(context, "dense W3 K exceeds the 310P UB bound"), return ge::GRAPH_FAILED);
 
     // Canonical CANN tiling-data pattern (local optiling object + SaveToBuffer),
     // required once workspace > 0 so the RunForWorkspace probe path works.

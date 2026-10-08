@@ -1,0 +1,73 @@
+// SPDX-License-Identifier: Apache-2.0
+// Versioned, append-only direct kernel bridge: no OPP lookup or model storage.
+#include <torch/extension.h>
+#include <torch/custom_class.h>
+#include <acl/acl.h>
+#include <fstream>
+#include <iterator>
+#include <torch_npu/csrc/core/npu/NPUStream.h>
+#include <torch_npu/csrc/core/npu/NPUGuard.h>
+#include <torch_npu/csrc/framework/OpCommand.h>
+
+namespace {
+void Check(aclError status, const char* operation) {
+    TORCH_CHECK(status == ACL_SUCCESS, operation, " failed: ", status, " ", aclGetRecentErrMsg());
+}
+
+class NativeKernel : public torch::CustomClassHolder {
+public:
+    NativeKernel(std::string path, std::string name) {
+        Check(aclrtGetDevice(&device_), "aclrtGetDevice");
+        aclrtBinaryLoadOption option{};
+        option.type = ACL_RT_BINARY_LOAD_OPT_MAGIC;
+        option.value.magic = ACL_RT_BINARY_MAGIC_ELF_AICORE;
+        aclrtBinaryLoadOptions options{&option, 1};
+        std::ifstream file(path, std::ios::binary);
+        TORCH_CHECK(file.good(), "cannot read native binary: ", path);
+        bytes_.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+        TORCH_CHECK(!bytes_.empty(), "empty native binary: ", path);
+        Check(aclrtBinaryLoadFromData(bytes_.data(), bytes_.size(), &options, &binary_), "aclrtBinaryLoadFromData");
+        Check(aclrtBinaryGetFunction(binary_, name.c_str(), &function_), "aclrtBinaryGetFunction");
+    }
+    // Deliberately retain device code until process exit. Captured graphs may
+    // reference it after a Python candidate is rolled back. Never dlclose it.
+    aclrtBinHandle binary_ = nullptr;
+    aclrtFuncHandle function_ = nullptr;
+    int32_t device_ = -1;
+    std::vector<char> bytes_;
+};
+
+void Launch(c10::intrusive_ptr<NativeKernel> kernel, std::vector<at::Tensor> arguments, int64_t blocks) {
+    TORCH_CHECK(!arguments.empty() && blocks > 0 && blocks <= 8, "invalid native launch geometry");
+    const auto device = arguments[0].device();
+    TORCH_CHECK(device.type() == c10::DeviceType::PrivateUse1 && device.index() == kernel->device_,
+                "kernel and arguments must belong to the same NPU");
+    for (const auto& tensor : arguments) {
+        TORCH_CHECK(tensor.device() == device && tensor.is_contiguous(), "arguments must be contiguous on one NPU");
+    }
+    const c10_npu::OptionalNPUGuard guard(device);
+    const auto stream = c10_npu::getCurrentNPUStream().stream(false);
+    auto handler = [kernel, arguments=std::move(arguments), blocks, stream]() mutable -> int {
+        std::vector<void*> addresses;
+        for (const auto& tensor : arguments) addresses.push_back(tensor.data_ptr());
+        std::vector<void*> pointers;
+        for (auto& address : addresses) pointers.push_back(&address);
+        const auto status = aclrtLaunchKernelWithArgsArray(kernel->function_, blocks, stream, nullptr, pointers.data());
+        // Queue slots retain handlers after launch. Drop tensor ownership once
+        // submission finishes so completed slots do not pin prefill scratch.
+        arguments.clear();
+        Check(status, "aclrtLaunchKernelWithArgsArray");
+        return status;
+    };
+    at_npu::native::OpCommand command;
+    command.Name("GlmResidentDirectV1");
+    command.SetCustomHandler(handler);
+    command.Run();
+}
+}
+
+TORCH_LIBRARY(glm_sinkhorn_v1, m) {
+    m.class_<NativeKernel>("Kernel").def(torch::init<std::string, std::string>());
+    m.def("launch(__torch__.torch.classes.glm_sinkhorn_v1.Kernel kernel, Tensor[] arguments, int blocks) -> ()");
+    m.impl("launch", torch::kPrivateUse1, &Launch);
+}

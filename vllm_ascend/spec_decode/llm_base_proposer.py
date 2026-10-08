@@ -67,7 +67,14 @@ from vllm_ascend.spec_decode.utils import (
     compact_mtp_topk_indices,
     patch_tensor_parallel_group,
 )
-from vllm_ascend.utils import _is_glm_model, check_gdn_layer, enable_sp, lmhead_tp_enable, use_updatable_graph
+from vllm_ascend.utils import (
+    _is_glm_model,
+    check_gdn_layer,
+    enable_sp,
+    lmhead_tp_enable,
+    use_updatable_graph,
+    vllm_version_is,
+)
 from vllm_ascend.worker.device_metadata import DeviceMetadataTask, DeviceMetadataTaskProvider
 
 
@@ -223,7 +230,10 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
         spec_config = self.vllm_config.speculative_config
         draft_model_config = getattr(spec_config, "draft_model_config", None)
         draft_hf_config = draft_model_config.hf_config if draft_model_config is not None else None
-        self._share_mtp_indices = getattr(draft_hf_config, "index_share_for_mtp_iteration", False)
+        # Reuse/compaction serves subsequent draft steps; MTP1 has none.
+        self._share_mtp_indices = self.num_speculative_tokens > 1 and getattr(
+            draft_hf_config, "index_share_for_mtp_iteration", False
+        )
         self._lim_topk_compactors: list[nn.Module] = []
 
         # NOTE:
@@ -1957,6 +1967,8 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
             draft_model_config = getattr(self, "draft_model_config", None)
             hf_config = getattr(draft_model_config, "hf_config", None)
             architectures = getattr(hf_config, "architectures", []) or []
+            if {"Glm5NextMTPModel", "Glm5NextW2MTPModel"}.intersection(architectures):
+                return True
             if vllm_version_is("0.28.0"):
                 return bool({"DeepSeekMTPModel", "KimiK3MTPModel", "Qwen4ExpMTP"}.intersection(architectures))
             else:

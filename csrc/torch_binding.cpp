@@ -51,6 +51,8 @@
 #include "moe/gdn_gating_v310/gdn_gating_310_torch_adpt.h"
 #include "gmm/w2_blocked_dequant_matmul_v310/w2_blocked_dequant_matmul_310_torch_adpt.h"
 #include "gmm/w2_grouped_blocked_dequant_matmul_v310/w2_grouped_blocked_dequant_matmul_310_torch_adpt.h"
+#include "gmm/w2_route_combine_v310/w2_route_combine_310_torch_adpt.h"
+#include "gmm/w2_swiglu_v310/w2_swiglu_310_torch_adpt.h"
 #include "gmm/qwen_w4_group_matmul_v310/qwen_w4_group_matmul_310_torch_adpt.h"
 #include "gmm/qwen_w4_routed_matmul_v310/qwen_w4_routed_matmul_310_torch_adpt.h"
 #include "gmm/qwen_w4_grouped_matmul_v310/qwen_w4_grouped_matmul_310_torch_adpt.h"
@@ -70,6 +72,8 @@
 #include "attention/qsa_position_metadata_aicpu_v310/qsa_position_metadata_aicpu_v310_torch_adpt.h"
 #include "attention/qsa_index_cache_update_v310/qsa_index_cache_update_310_torch_adpt.h"
 #include "attention/mla_cache_write_v310/mla_cache_write_310_torch_adpt.h"
+#include "attention/glm_kpool_score_v310/glm_kpool_score_310_torch_adpt.h"
+#include "gmm/glm_mhc_post_v310/glm_mhc_post_310_torch_adpt.h"
 #include "attention/mhc_sinkhorn_v310/mhc_sinkhorn_310_torch_adpt.h"
 #include "attention/mhc_bf16_round_v310/mhc_bf16_round_310_torch_adpt.h"
 #include "attention/qwen4_exp_ple_decode_v310/qwen4exp_ple_decode_310_torch_adpt.h"
@@ -2829,9 +2833,17 @@ TORCH_LIBRARY_EXPAND(CONCAT(_C, _ascend), ops)
         "npu_w2_blocked_dequant_matmul_310(Tensor x, Tensor codes, Tensor block_scale) -> Tensor");
     ops.impl("npu_w2_blocked_dequant_matmul_310", torch::kPrivateUse1, &vllm_ascend::npu_w2_blocked_dequant_matmul_310);
     ops.def(
-        "npu_w2_grouped_blocked_dequant_matmul_310(Tensor x, Tensor codes, Tensor block_scale, Tensor group_ends) -> Tensor");
+        "npu_w2_grouped_blocked_dequant_matmul_310(Tensor x, Tensor codes, Tensor block_scale, Tensor group_ends, bool initialize_output=True) -> Tensor");
     ops.impl("npu_w2_grouped_blocked_dequant_matmul_310", torch::kPrivateUse1,
              &vllm_ascend::npu_w2_grouped_blocked_dequant_matmul_310);
+    ops.def("npu_glm_kpool_score_310(Tensor query, Tensor weights, Tensor cache, Tensor table, Tensor boundaries, Tensor positions, int pools, int blocks, int block_rows, int block_stride, int row_stride, int cache_offset) -> Tensor");
+    ops.impl("npu_glm_kpool_score_310", torch::kPrivateUse1, &vllm_ascend::npu_glm_kpool_score_310);
+    ops.def("npu_glm_mhc_post_310(Tensor x, Tensor residual, Tensor post_mix, Tensor comb_mix) -> Tensor");
+    ops.impl("npu_glm_mhc_post_310", torch::kPrivateUse1, &vllm_ascend::npu_glm_mhc_post_310);
+    ops.def("npu_w2_swiglu_310(Tensor gate_up) -> Tensor");
+    ops.impl("npu_w2_swiglu_310", torch::kPrivateUse1, &vllm_ascend::npu_w2_swiglu_310);
+    ops.def("npu_w2_route_combine_310(Tensor routed, Tensor inverse_order, Tensor route_weights, Tensor group_ends) -> Tensor");
+    ops.impl("npu_w2_route_combine_310", torch::kPrivateUse1, &vllm_ascend::npu_w2_route_combine_310);
 
     ops.def("npu_qwen_w4_group_matmul_310(Tensor x, Tensor codes, Tensor scale, Tensor offset, bool tiled=False) -> Tensor");
     ops.impl("npu_qwen_w4_group_matmul_310", torch::kPrivateUse1, &vllm_ascend::npu_qwen_w4_group_matmul_310);

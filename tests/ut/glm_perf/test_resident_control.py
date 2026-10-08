@@ -91,6 +91,27 @@ def test_generation_must_be_prepared_and_recapture_can_be_requested():
     assert session.apply(mode.generation)
 
 
+def test_repeated_apply_is_idempotent_after_capture(target):
+    session = PatchSession()
+    candidate = control(source=source(2))
+    session.prepare(dataclasses.asdict(candidate))
+    assert session.apply(candidate.generation)
+    selected = target.projection
+    session.graphs_dirty = False
+    assert not session.apply(candidate.generation)
+    assert target.projection is selected
+    assert len(session.originals) == 1
+
+
+def test_applied_generation_cannot_be_reused_for_different_control():
+    session = PatchSession()
+    mode = control()
+    session.prepare(dataclasses.asdict(mode))
+    session.apply(mode.generation)
+    with pytest.raises(ValueError, match="cannot be changed"):
+        session.prepare(dataclasses.asdict(dataclasses.replace(mode, mode="direct-both")))
+
+
 @pytest.mark.parametrize(
     "fields",
     [

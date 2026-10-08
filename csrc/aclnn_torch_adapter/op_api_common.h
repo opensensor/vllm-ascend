@@ -24,6 +24,7 @@
 #include <dlfcn.h>
 #include <functional>
 #include <type_traits>
+#include <tuple>
 #include <vector>
 
 #include <torch_npu/csrc/framework/utils/CalcuOpUtil.h>
@@ -702,6 +703,30 @@ typedef int (*InitHugeMemThreadLocal)(void *, bool);
 typedef void (*UnInitHugeMemThreadLocal)(void *, bool);
 typedef void (*ReleaseHugeMem)(void *, bool);
 
+// Keep the ownership experiment opt-in until full-model graph/memory validation
+// passes. Default builds retain the established command adapter behavior.
+#ifdef GLM_EXPERIMENTAL_OP_API_TENSOR_OWNERS
+#define VLLM_ACLNN_PREPARE_PARAMS(...)                                      \
+  auto tensor_owners = std::make_tuple(__VA_ARGS__);                       \
+  auto converted_params = std::apply(                                    \
+      [&](auto &... args) {                                               \
+        return ConvertTypes(args..., workspace_size_addr, executor_addr); \
+      }, tensor_owners);
+#define VLLM_ACLNN_DECLARE_WORKSPACE at::Tensor workspace_tensor;
+#define VLLM_ACLNN_ASSIGN_WORKSPACE workspace_tensor =
+#define VLLM_ACLNN_CAPTURE_OWNERS tensor_owners, workspace_tensor,
+#define VLLM_ACLNN_RELEASE_OWNERS()            \
+  tensor_owners = decltype(tensor_owners){};   \
+  workspace_tensor = at::Tensor();
+#else
+#define VLLM_ACLNN_PREPARE_PARAMS(...) \
+  auto converted_params = ConvertTypes(__VA_ARGS__, workspace_size_addr, executor_addr);
+#define VLLM_ACLNN_DECLARE_WORKSPACE
+#define VLLM_ACLNN_ASSIGN_WORKSPACE at::Tensor workspace_tensor =
+#define VLLM_ACLNN_CAPTURE_OWNERS
+#define VLLM_ACLNN_RELEASE_OWNERS()
+#endif
+
 #define EXEC_NPU_CMD(aclnn_api, ...)                                          \
   do {                                                                        \
     static const auto getWorkspaceSizeFuncAddr =                              \
@@ -728,23 +753,23 @@ typedef void (*ReleaseHugeMem)(void *, bool);
     if (initMemFunc) {                                                        \
       initMemFunc(nullptr, false);                                            \
     }                                                                         \
-    auto converted_params =                                                   \
-        ConvertTypes(__VA_ARGS__, workspace_size_addr, executor_addr);        \
+    VLLM_ACLNN_PREPARE_PARAMS(__VA_ARGS__)                               \
     static auto getWorkspaceSizeFunc =                                        \
         ConvertToOpApiFunc(converted_params, getWorkspaceSizeFuncAddr);       \
     auto workspace_status = call(getWorkspaceSizeFunc, converted_params);     \
     TORCH_CHECK(workspace_status == 0,                                        \
                 "call " #aclnn_api " failed, detail:", aclGetRecentErrMsg()); \
     void *workspace_addr = nullptr;                                           \
+    VLLM_ACLNN_DECLARE_WORKSPACE                                              \
     if (workspace_size != 0) {                                                \
       at::TensorOptions options =                                             \
           at::TensorOptions(torch_npu::utils::get_npu_device_type());         \
-      auto workspace_tensor =                                                 \
-          at::empty({workspace_size}, options.dtype(kByte));                  \
+      VLLM_ACLNN_ASSIGN_WORKSPACE at::empty({workspace_size}, options.dtype(kByte)); \
       workspace_addr = const_cast<void *>(workspace_tensor.storage().data()); \
     }                                                                         \
-    auto acl_call = [converted_params, workspace_addr, workspace_size,        \
-                     acl_stream, executor]() -> int {                         \
+    auto acl_call = [converted_params, VLLM_ACLNN_CAPTURE_OWNERS               \
+                     workspace_addr, workspace_size,                        \
+                     acl_stream, executor]() mutable -> int {                 \
       typedef int (*OpApiFunc)(void *, uint64_t, aclOpExecutor *,             \
                                const aclrtStream);                            \
       OpApiFunc opApiFunc = reinterpret_cast<OpApiFunc>(opApiFuncAddr);       \
@@ -758,6 +783,9 @@ typedef void (*ReleaseHugeMem)(void *, bool);
       if (releaseMemFunc) {                                                   \
         releaseMemFunc(nullptr, false);                                       \
       }                                                                       \
+      /* Queue slots may retain this handler after launch. Drop owners now */ \
+      /* so completed slots do not pin activations and workspace in memory. */ \
+      VLLM_ACLNN_RELEASE_OWNERS()                                             \
       return api_ret;                                                         \
     };                                                                        \
     at_npu::native::OpCommand cmd;                                            \

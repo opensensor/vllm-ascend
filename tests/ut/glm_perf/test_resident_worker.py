@@ -227,3 +227,16 @@ def test_reset_rejects_pending_execution_before_erasing_state(worker):
     with pytest.raises(RuntimeError, match="pending"):
         worker.instance.resident_reset()
     torch.testing.assert_close(worker.cache, torch.ones(4))
+
+
+def test_unprepared_apply_returns_error_receipt_without_poisoning_rpc_queue(worker):
+    result = worker.instance.resident_apply(uuid.uuid4().hex)
+    assert result["rank"] == 0
+    assert "not been prepared" in result["error"]
+    assert worker.instance.resident_status()["mode"] == "graph"
+
+
+def test_invalid_prepare_returns_error_receipt_without_mutating_session(worker):
+    result = worker.instance.resident_prepare('{"generation":"invalid"}')
+    assert result["rank"] == 0 and "error" in result
+    assert worker.instance._resident_session().current is None

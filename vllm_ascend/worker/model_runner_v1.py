@@ -5982,9 +5982,17 @@ class NPUModelRunner(GPUModelRunner):
                             kv_cache_raw_tensors.items()
                         )
                     )
+                    glm_shared_pages = uses_same_raw_tensor and (
+                        any(
+                            getattr(spec, "model_version", None) == "glm5_next"
+                            for spec in layer_kv_cache_spec.values()
+                        )
+                        or getattr(getattr(self.model_config, "hf_text_config", None), "model_type", None)
+                        == "glm5_next_text"
+                    )
                     if (
                         self.hybrid_with_attn_and_mamba
-                        and not uses_same_raw_tensor
+                        and (not uses_same_raw_tensor or glm_shared_pages)
                         and not is_compact_glm_mamba
                     ):
                         shapes_with_blocks = tuple(
@@ -6013,12 +6021,10 @@ class NPUModelRunner(GPUModelRunner):
                         )
                         continue
 
-                    # GLM's compact live KDA descriptors are private, but its
-                    # custom kernel consumes the legacy packed layout: all
-                    # blocks of the convolution state followed by all blocks
-                    # of the temporal state. Sending these descriptors through
-                    # the generic page-strided hybrid layout corrupts the state
-                    # at the first decode step.
+                    # Private compact KDA descriptors can retain dense states.
+                    # Shared GLM pages must take the strided branch above:
+                    # packing each component across every block would overlap
+                    # MLA or another KDA group's independently allocated IDs.
                     state_tensors = []
                     target_idx = 0
                     start_idx = 0

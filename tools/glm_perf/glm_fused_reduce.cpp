@@ -4,6 +4,9 @@
 namespace {
 using namespace AscendC;
 constexpr uint32_t N = 128;
+#if defined(GLM_NATIVE_ROUTE_COLUMNS) && !defined(GLM_FP16_ROUTE_WORKSPACE)
+  #error "native route columns require the paired FP16 workspace producer"
+#endif
 class Reduce {
  public:
   __aicore__ inline void Run(GM_ADDR workspace, GM_ADDR ranks, GM_ADDR ends, GM_ADDR output, const int64_t* config,
@@ -22,6 +25,13 @@ class Reduce {
     output_.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(output));
     pipe_.InitBuffer(storage_, 2 * N * sizeof(float));
     auto accum = storage_.Get<float>(), value = accum[N];
+#ifdef GLM_NATIVE_ROUTE_COLUMNS
+    pipe_.InitBuffer(offsetStorage_, N * sizeof(uint32_t));
+    auto offsets = offsetStorage_.Get<uint32_t>();
+    for (uint32_t channel = 0; channel < N; ++channel)
+      offsets.SetValue(channel, (channel / 2 + (channel % 2 ? N / 2 : 0)) * sizeof(float));
+    PipeBarrier<PIPE_ALL>();
+#endif
     const int64_t localRows = ends_.GetValue(experts - 1), tiles = width / N;
     if (localRows < 0 || localRows > rows) return;
     for (int64_t task = GetBlockIdx(); task < tokens * tiles; task += GetBlockNum()) {
@@ -46,7 +56,13 @@ class Reduce {
         Add(accum, accum, value, N);
         PipeBarrier<PIPE_ALL>();
       }
+#ifdef GLM_NATIVE_ROUTE_COLUMNS
+      Gather(value, accum, offsets, static_cast<uint32_t>(0), N);
+      PipeBarrier<PIPE_ALL>();
+      DataCopy(output_[token * width + column], value, N);
+#else
       DataCopy(output_[token * width + column], accum, N);
+#endif
       PipeBarrier<PIPE_ALL>();
     }
   }
@@ -54,6 +70,9 @@ class Reduce {
  private:
   TPipe pipe_;
   TBuf<TPosition::VECCALC> storage_;
+#ifdef GLM_NATIVE_ROUTE_COLUMNS
+  TBuf<TPosition::VECCALC> offsetStorage_;
+#endif
   GlobalTensor<float> input_, output_;
   GlobalTensor<int32_t> ranks_;
   GlobalTensor<int64_t> ends_;

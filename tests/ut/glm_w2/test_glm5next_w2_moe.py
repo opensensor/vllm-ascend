@@ -366,6 +366,10 @@ def test_validate_expert_tensor_shape_and_dtype():
     L = "model.language_model.layers"
     good = WM.TensorMeta(f"{L}.3.mlp.experts.0.gate_proj_codes", "U8", (2048, 1024))
     WM.validate_expert_tensor(good, g)  # no raise
+    w3_gate = WM.TensorMeta(f"{L}.3.mlp.experts.0.gate_proj_codes", "U8", (2048, 1536))
+    w3_down = WM.TensorMeta(f"{L}.3.mlp.experts.0.down_proj_codes", "U8", (4096, 768))
+    WM.validate_expert_tensor(w3_gate, g)
+    WM.validate_expert_tensor(w3_down, g)
     bad_shape = WM.TensorMeta(f"{L}.3.mlp.experts.0.gate_proj_codes", "U8", (2048, 999))
     with pytest.raises(WM.ShapeMismatchError):
         WM.validate_expert_tensor(bad_shape, g)

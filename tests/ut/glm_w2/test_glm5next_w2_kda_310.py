@@ -4,6 +4,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 import torch
 
 from vllm_ascend.models.glm5next_w2.kda_310 import (
@@ -12,6 +13,8 @@ from vllm_ascend.models.glm5next_w2.kda_310 import (
     _safe_gate,
 )
 from vllm_ascend.models.glm5next_w2.model import (
+    _prepare_kda_qkv_nz_weights_310,
+    _project_kda_qkv_310,
     _rms_norm_gated_310,
     _with_fp16_recurrent_state_dtype,
 )
@@ -63,6 +66,49 @@ def test_recurrent_cache_dtype_preserves_all_three_conv_state_dtypes():
         torch.bfloat16,
         torch.float16,
     )
+
+
+def test_kda_qkv_projection_preserves_default_and_grouped_paths(monkeypatch):
+    weight = torch.nn.Parameter(torch.arange(20, dtype=torch.float16).reshape(5, 4))
+
+    class CallableProjection:
+        def __init__(self, parameter):
+            self.weight = parameter
+
+        def __call__(self, x):
+            return torch.nn.functional.linear(x, self.weight), None
+
+    attn = SimpleNamespace(in_proj_qkvbfg_a=CallableProjection(weight))
+    x = torch.arange(12, dtype=torch.float16).reshape(3, 4)
+    expected = torch.nn.functional.linear(x, weight)
+    torch.testing.assert_close(_project_kda_qkv_310(attn, x), expected)
+
+    calls = []
+
+    def grouped_matmul(*, x, weight, group_list, split_item, group_type):
+        calls.append((group_list, split_item, group_type))
+        return [x[0] @ weight[0][0]]
+
+    monkeypatch.setitem(__import__("sys").modules, "torch_npu", SimpleNamespace(npu_grouped_matmul=grouped_matmul))
+    attn._glm_kda_qkv_weight_nz = weight.T.unsqueeze(0)
+    attn._glm_kda_qkv_group_lists = {}
+    torch.testing.assert_close(_project_kda_qkv_310(attn, x), expected)
+    assert calls[0][0].tolist() == [3]
+    assert (calls[0][1], calls[0][2]) == (2, 0)
+    assert attn._glm_kda_qkv_group_lists[3] is calls[0][0]
+    torch.testing.assert_close(_project_kda_qkv_310(attn, x), expected)
+    assert calls[1][0] is calls[0][0]
+
+
+def test_kda_nz_weight_preparation_rejects_non_npu_weights(monkeypatch):
+    from vllm_ascend.models.glm5next_w2 import model as glm_model
+
+    monkeypatch.setattr(glm_model, "_is_kda_layer", lambda _: True)
+    monkeypatch.setitem(__import__("sys").modules, "torch_npu", SimpleNamespace())
+    weight = torch.nn.Parameter(torch.ones(5, 4, dtype=torch.float16))
+    layer = SimpleNamespace(self_attn=SimpleNamespace(in_proj_qkvbfg_a=SimpleNamespace(weight=weight)))
+    with pytest.raises(RuntimeError, match="resident FP16 NPU weight"):
+        _prepare_kda_qkv_nz_weights_310([layer], max_decode_seqs=4)
 
 
 def test_310p_output_norm_uses_native_rms_norm_and_sigmoid_gate(monkeypatch):

@@ -58,6 +58,18 @@ class Server(ResidentClient):
         }
 
 
+@pytest.mark.parametrize(
+    "candidate,source",
+    [("baseline-restored", ""), ("restored", ""), ("baseline", "def replacements(): return {}")],
+)
+def test_invalid_control_never_contacts_workers(candidate, source):
+    server = Server()
+    with pytest.raises(ValueError):
+        server.switch(Control(uuid.uuid4().hex, candidate=candidate, source=source))
+    assert server.calls == []
+    assert not server.paused
+
+
 def test_switch_drains_applies_captures_and_resets_before_resuming():
     server = Server()
     results = server.switch(Control(uuid.uuid4().hex, "direct-draft"))
@@ -100,6 +112,43 @@ def test_existing_pause_is_preserved():
     assert server.paused
     assert "/resume" not in server.calls
     assert "/pause?mode=wait&clear_cache=true" in server.calls
+
+
+def test_stale_prepare_acknowledgments_are_retried_before_mutation():
+    server = Server()
+    original = server.request
+    stale = True
+
+    def response(path, payload=None, method="POST"):
+        nonlocal stale
+        result = original(path, payload, method)
+        if payload and payload["method"] == "resident_prepare" and stale:
+            stale = False
+            result["results"][1] = None
+        return result
+
+    server.request = response
+    server.switch(Control(uuid.uuid4().hex))
+    assert server.calls.count("resident_prepare") == 2
+    assert server.calls.count("resident_apply") == 1
+    assert not server.paused
+
+
+def test_stale_apply_receipt_is_confirmed_by_status_without_repeating_apply():
+    server = Server()
+    original = server.request
+
+    def response(path, payload=None, method="POST"):
+        result = original(path, payload, method)
+        if payload and payload["method"] == "resident_apply":
+            result["results"][1]["generation"] = "an_old_generation"
+        return result
+
+    server.request = response
+    server.switch(Control(uuid.uuid4().hex))
+    assert server.calls.count("resident_apply") == 1
+    assert server.calls.count("resident_status") == 2
+    assert not server.paused
 
 
 def test_missing_worker_acknowledgment_prevents_apply():
@@ -213,3 +262,56 @@ def test_native_failure_prevents_resume_and_dispatch_switch():
     with pytest.raises(RuntimeError, match="restart"):
         server.switch(Control(uuid.uuid4().hex))
     assert server.paused
+
+
+def test_native_prepare_retries_pure_calls_when_one_rank_returns_stale_status():
+    server = Server()
+    original = server.request
+    attempts = 0
+
+    def response(path, payload=None, method="POST"):
+        nonlocal attempts
+        result = original(path, payload, method)
+        if payload and payload["method"] == "resident_native_prepare":
+            attempts += 1
+            result["results"] = [{"rank": rank, "native_digest": "qualified"} for rank in range(2)]
+            if attempts == 1:
+                result["results"][1] = {"rank": 1, "native_loaded": {}}
+        return result
+
+    server.request = response
+    server.paused = True
+    results = server._acknowledged_rpc(
+        "resident_native_prepare",
+        "manifest",
+        matches=lambda rows: all(row.get("native_digest") == "qualified" for row in rows),
+    )
+    assert all(row["native_digest"] == "qualified" for row in results)
+    assert server.calls == ["resident_native_prepare", "resident_native_prepare"]
+
+
+def test_native_load_is_sent_once_then_confirmed_from_registry():
+    server = Server(paused=True)
+    original = server.request
+
+    def response(path, payload=None, method="POST"):
+        result = original(path, payload, method)
+        if payload and payload["method"] == "resident_native_load":
+            result["results"][1] = None
+        elif payload and payload["method"] == "resident_status":
+            for row in result["results"]:
+                row["native_loaded"] = {"native_v1": {"native_digest": "qualified", "validation": {"passed": True}}}
+                row["native_failed"] = False
+        return result
+
+    server.request = response
+    rows = server._acknowledged_rpc(
+        "resident_native_load",
+        "qualified",
+        matches=lambda receipts: all(
+            row.get("native_loaded", {}).get("native_v1", {}).get("native_digest") == "qualified" for row in receipts
+        ),
+    )
+    assert all(row["native_loaded"]["native_v1"]["validation"]["passed"] for row in rows)
+    assert server.calls.count("resident_native_load") == 1
+    assert server.calls.count("resident_status") == 1

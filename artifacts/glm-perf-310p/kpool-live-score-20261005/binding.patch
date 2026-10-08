@@ -1,0 +1,43 @@
+--- a/csrc/torch_binding.cpp
++++ b/csrc/torch_binding.cpp
+@@ -72,6 +72,7 @@
+ #include "attention/qsa_position_metadata_aicpu_v310/qsa_position_metadata_aicpu_v310_torch_adpt.h"
+ #include "attention/qsa_index_cache_update_v310/qsa_index_cache_update_310_torch_adpt.h"
+ #include "attention/mla_cache_write_v310/mla_cache_write_310_torch_adpt.h"
++#include "attention/glm_kpool_score_v310/glm_kpool_score_310_torch_adpt.h"
+ #include "gmm/glm_mhc_post_v310/glm_mhc_post_310_torch_adpt.h"
+ #include "attention/mhc_sinkhorn_v310/mhc_sinkhorn_310_torch_adpt.h"
+ #include "attention/mhc_bf16_round_v310/mhc_bf16_round_310_torch_adpt.h"
+@@ -2835,6 +2836,8 @@
+         "npu_w2_grouped_blocked_dequant_matmul_310(Tensor x, Tensor codes, Tensor block_scale, Tensor group_ends, bool initialize_output=True) -> Tensor");
+     ops.impl("npu_w2_grouped_blocked_dequant_matmul_310", torch::kPrivateUse1,
+              &vllm_ascend::npu_w2_grouped_blocked_dequant_matmul_310);
++    ops.def("npu_glm_kpool_score_310(Tensor query, Tensor weights, Tensor cache, Tensor table, Tensor boundaries, Tensor positions, int pools, int blocks, int block_rows, int block_stride, int row_stride, int cache_offset) -> Tensor");
++    ops.impl("npu_glm_kpool_score_310", torch::kPrivateUse1, &vllm_ascend::npu_glm_kpool_score_310);
+     ops.def("npu_glm_mhc_post_310(Tensor x, Tensor residual, Tensor post_mix, Tensor comb_mix) -> Tensor");
+     ops.impl("npu_glm_mhc_post_310", torch::kPrivateUse1, &vllm_ascend::npu_glm_mhc_post_310);
+     ops.def("npu_w2_swiglu_310(Tensor gate_up) -> Tensor");
+--- a/csrc/torch_binding_meta.cpp
++++ b/csrc/torch_binding_meta.cpp
+@@ -709,6 +709,13 @@
+     return output;
+ }
+ 
++at::Tensor npu_glm_kpool_score_310_meta(const at::Tensor& query, const at::Tensor& weights,
++    const at::Tensor& cache, const at::Tensor& table, const at::Tensor& boundaries, const at::Tensor& positions,
++    int64_t pools, int64_t blocks, int64_t block_rows, int64_t block_stride, int64_t row_stride, int64_t cache_offset)
++{
++    return at::empty_symint({query.sym_size(0), c10::SymInt(pools)}, weights.options());
++}
++
+ at::Tensor npu_glm_mhc_post_310_meta(
+     const at::Tensor& x, const at::Tensor& residual, const at::Tensor& post_mix, const at::Tensor& comb_mix)
+ {
+@@ -2347,6 +2354,7 @@
+     ops.impl("npu_w2_blocked_dequant_matmul_310", &vllm_ascend::meta::npu_w2_blocked_dequant_matmul_310_meta);
+     ops.impl("npu_w2_grouped_blocked_dequant_matmul_310",
+              &vllm_ascend::meta::npu_w2_grouped_blocked_dequant_matmul_310_meta);
++    ops.impl("npu_glm_kpool_score_310", &vllm_ascend::meta::npu_glm_kpool_score_310_meta);
+     ops.impl("npu_glm_mhc_post_310", &vllm_ascend::meta::npu_glm_mhc_post_310_meta);
+     ops.impl("npu_w2_swiglu_310", &vllm_ascend::meta::npu_w2_swiglu_310_meta);
+     ops.impl("npu_w2_route_combine_310", &vllm_ascend::meta::npu_w2_route_combine_310_meta);

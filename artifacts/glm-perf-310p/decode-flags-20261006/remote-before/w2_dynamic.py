@@ -1,0 +1,806 @@
+#
+# Copyright (c) 2026 Huawei Technologies Co., Ltd. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# This file is a part of the vllm-ascend project.
+#
+"""310P fused-MoE method for DeepSeek V4.1 2-bit (W2) routed experts (E1.3).
+
+This is the device-facing wrapper around the validated E1.2 active-expert
+unpack path (``vllm_ascend/models/deepseek_v41/w2_unpack.py``). It mirrors the
+surface of the 310P W8A8 dynamic fused-MoE method
+(:class:`~vllm_ascend._310p.quantization.methods.w8a8_dynamic.AscendW8A8DynamicFusedMoEMethod310`)
+so the DeepSeek W2 weight loader (E3.4) can reuse the same param-creation and
+weight-loading hooks:
+
+  * :meth:`get_weight` creates the packed W2 code params (``w13_codes`` /
+    ``w2_codes``; ``uint8[out, in // 4]`` per the E1.1 pack contract).
+  * :meth:`get_dynamic_quant_param` creates the per-``[32, 32]`` block scales
+    (``w13_scale`` / ``w2_scale``; ``float32[out // 32, in // 32]``).
+  * :meth:`get_shared_expert_weight` / :meth:`get_shared_expert_dynamic_quant_param`
+    create the always-on shared-expert params in the same layout.
+
+``apply`` selects a hardware or host implementation:
+
+  * **Device path** (``_apply_device``, import-guarded): W2/W3/W4 active-expert
+    projections use the packed 310P Cube operator when their shapes satisfy its
+    tiling contract, and otherwise use exact fp32 dequantization and matmul.
+    NVFP4 retains the exact eager path because its E2M1 codebook differs from
+    signed W2/W3/W4. ``torch_npu`` is absent host-side, so this branch is guarded
+    and never runs in the CPU UT.
+  * **Host path** (``_apply_host``): re-expresses the identical math through the
+    E1.2 grouped primitives (:func:`unpack_active_experts`,
+    :func:`w2_group_qdq_linear`, :func:`swiglu_gate_up`), driven by the router's
+    pre-selected ``topk_ids`` / ``topk_weights``. :meth:`moe_forward` is the
+    router-logits entrypoint, a thin wrapper over E1.2
+    :func:`w2_active_moe_forward`.
+
+The custom operator decodes only the selected expert projection being executed,
+applies its per-``[32, 32]`` scale while producing NZ tiles, and feeds those
+tiles directly to Cube. It never widens the full expert bank.
+"""
+
+from types import SimpleNamespace
+from typing import Any
+
+import torch
+
+from tools.deepseek_w2.w2_format import (
+    NVFP4_BLOCK_COLS,
+    W2_BLOCK_COLS,
+    W2_BLOCK_ROWS,
+    W2_CODES_PER_BYTE,
+    W3_BITS,
+    unpack_codes,
+    unpack_nvfp4_codes,
+)
+from vllm_ascend.models.deepseek_v41.w2_unpack import (
+    swiglu_gate_up,
+    unpack_active_experts,
+    w2_active_moe_forward,
+    w2_group_qdq_linear,
+)
+from vllm_ascend.quantization.methods.base import AscendMoEScheme, QuantType
+
+from .registry import register_scheme
+
+
+def _infer_bits(packed: torch.Tensor, in_features: int) -> int:
+    """Infer the exact packed width for a W2, W3, or W4 projection."""
+    packed_width = int(packed.shape[-1])
+    for bits in (2, W3_BITS, 4):
+        if packed_width * 8 == in_features * bits:
+            return bits
+    raise ValueError(f"packed width {packed_width} is invalid for input width {in_features}")
+
+
+# The device INT8 grouped-matmul kernel lives in torch_npu, which is absent
+# host-side. Import it guarded so this module is importable on CPU and the host
+# path is taken whenever the fused kernel is unavailable.
+try:  # pragma: no cover - trivially exercised by the host UT via absence
+    import torch_npu  # type: ignore
+except ImportError:  # pragma: no cover
+    torch_npu = None  # type: ignore[assignment]
+
+# Device-wave decision record for D1.5 (see module docstring).
+W2_UNPACK_IS_FUSED = False
+W2_ACTIVE_UNPACK_ONLY = True
+
+# Name of the fused INT8 grouped-matmul + dequant kernel on the device wave.
+_W2_DEVICE_KERNEL = "npu_quant_grouped_matmul_dequant"
+
+# The packed W2/W3/W4 Cube kernel owns one 128-row L0C tile. W2/W4 hardware
+# validation covers M=128; W3 device parity is pending. Larger expert groups
+# use exact eager math.
+W2_CUBE_MAX_TOKENS = 128
+W2_CUBE_OUTPUT_TILE = 128
+W2_CUBE_INPUT_TILE = 128
+W2_CUBE_MIN_INPUT_DIM = 256
+W3_CUBE_MAX_INPUT_DIM = 4096
+W2_GROUPED_MAX_ROUTES = 6144
+# The recurrent 310P path accepts up to eight speculative decode tokens per
+# request. Keep the experimental histogram off decode and short prefills.
+W2_PREFILL_HISTOGRAM_MIN_TOKENS = 9
+
+
+def _device_kernel_available() -> bool:
+    """True only on a real NPU wave that exposes the INT8 grouped-matmul kernel.
+
+    A host-side ``torch_npu`` stub without the fused symbol resolves to False,
+    so the CPU UT deterministically takes the host math path.
+    """
+    return torch_npu is not None and hasattr(torch_npu, _W2_DEVICE_KERNEL)
+
+
+def _stage_packed_expert(expert: Any, device: torch.device) -> Any:
+    """Copy a host-resident packed expert to ``device`` for one forward.
+
+    Resident experts are returned unchanged. Host banks use pinned tensors, so
+    all six compact code/scale operands can be queued without widening the
+    weights or retaining a device copy between tokens.
+    """
+    gate_packed = expert.gate_packed
+    if gate_packed is None:
+        raise ValueError("packed expert weights were not loaded")
+    if gate_packed.device == device:
+        return expert
+
+    staged = SimpleNamespace(hidden=expert.hidden, inter=expert.inter)
+    for name in (
+        "gate_packed",
+        "gate_scale",
+        "up_packed",
+        "up_scale",
+        "down_packed",
+        "down_scale",
+    ):
+        tensor = getattr(expert, name)
+        if tensor is None:
+            raise ValueError(f"packed expert operand {name!r} was not loaded")
+        setattr(staged, name, tensor.to(device=device, non_blocking=True))
+    return staged
+
+
+def _w2_dequant_fp32(
+    packed: torch.Tensor,
+    block_scale: torch.Tensor,
+    out_f: int,
+    in_f: int,
+) -> torch.Tensor:
+    """Dequantize one packed W2 projection to a dense fp32 weight ``[out_f, in_f]``.
+
+    Widens the 2-bit codes (``{-2,-1,0,1}``) and multiplies by the COMPACT
+    ``[out_f//32, in_f//32]`` per-block scale via a tiled view-multiply, i.e.
+    each ``[32, 32]`` code tile is scaled by its single block scale. This is
+    bit-identical to ``codes * broadcast_block_scales(block_scale, ...)`` but
+    never materializes the full-size scale and never touches float64 -- 310P has
+    no native fp64, so the old broadcast path emitted an emulated cast per op and
+    dominated the MoE step time.
+    """
+    bits = _infer_bits(packed, in_f)
+    codes = unpack_codes(packed, in_f, bits).to(torch.float32)  # [out_f, in_f]
+    bs = block_scale.to(torch.float32)  # [out_f // 32, in_f // 32]
+    tiled = codes.view(out_f // W2_BLOCK_ROWS, W2_BLOCK_ROWS, in_f // W2_BLOCK_COLS, W2_BLOCK_COLS)
+    scaled = tiled * bs.view(out_f // W2_BLOCK_ROWS, 1, in_f // W2_BLOCK_COLS, 1)
+    return scaled.reshape(out_f, in_f)
+
+
+def _is_nvfp4(block_scale: torch.Tensor, out_f: int, in_f: int) -> bool:
+    """True when a packed operand is NVFP4 (E2M1 + block-16) rather than W2/W4.
+
+    W2/W4 scales tile ``[out_f // 32, in_f // 32]``; NVFP4's folded scale is
+    ``[out_f, in_f // 16]`` (per-output-row x per-16-input-col). The codes width
+    alone cannot distinguish NVFP4 from W4 (both pack 2 codes/byte), so the scale
+    grid is the discriminator.
+    """
+    if block_scale.ndim != 2:
+        return False
+    return block_scale.shape[0] == out_f and block_scale.shape[1] == in_f // NVFP4_BLOCK_COLS
+
+
+def _nvfp4_dequant_fp32(
+    packed: torch.Tensor,
+    block_scale: torch.Tensor,
+    out_f: int,
+    in_f: int,
+) -> torch.Tensor:
+    """Dequantize one packed NVFP4 operand to fp32 ``[out_f, in_f]`` (no fp64).
+
+    Decodes the E2M1 nibbles and multiplies by the folded per-``[1, 16]`` block
+    scale via a tiled view-multiply (never materializing the full-size scale and
+    never touching float64, mirroring :func:`_w2_dequant_fp32` for 310P).
+    """
+    val = unpack_nvfp4_codes(packed, in_f).to(torch.float32)  # [out_f, in_f]
+    bs = block_scale.to(torch.float32)  # [out_f, in_f // 16]
+    tiled = val.view(out_f, in_f // NVFP4_BLOCK_COLS, NVFP4_BLOCK_COLS)
+    scaled = tiled * bs.unsqueeze(-1)
+    return scaled.reshape(out_f, in_f)
+
+
+_W2_BLOCKED_MM_OP: Any = None
+
+
+def _w2_blocked_mm_op():
+    """The fused 310P Cube kernel ``npu_w2_blocked_dequant_matmul_310`` if built.
+
+    Computes ``out[T,N] = x[T,K] @ (codes ⊙ block_scale)^T`` on the Cube with the
+    per-[32,32] block dequant fused into the weight load (arch20 catlass MMAD).
+    The kernel expands each output tile into its own already-NZ workspace,
+    rather than also materializing an activation reorder or asking the
+    matmul path to perform an ND-to-NZ conversion. Its synchronized unified-core
+    epilogue casts the FP32 accumulator directly into the final FP16 output,
+    avoiding an intermediate output workspace. Resolved lazily (the custom-op
+    vendor lib is loaded during worker init); returns ``None`` when the op is
+    unavailable so the eager fp32 path stays a correct fallback.
+    """
+    global _W2_BLOCKED_MM_OP
+    if _W2_BLOCKED_MM_OP is None:
+        try:
+            _W2_BLOCKED_MM_OP = torch.ops._C_ascend.npu_w2_blocked_dequant_matmul_310
+        except (AttributeError, RuntimeError):
+            _W2_BLOCKED_MM_OP = None
+    return _W2_BLOCKED_MM_OP
+
+
+_W2_GROUPED_MM_OP: Any = None
+
+
+def _w2_grouped_mm_op():
+    """Device-grouped packed W2/W3/W4 Cube projection, resolved lazily."""
+    global _W2_GROUPED_MM_OP
+    if _W2_GROUPED_MM_OP is None:
+        try:
+            _W2_GROUPED_MM_OP = torch.ops._C_ascend.npu_w2_grouped_blocked_dequant_matmul_310
+        except (AttributeError, RuntimeError):
+            _W2_GROUPED_MM_OP = None
+    return _W2_GROUPED_MM_OP
+
+
+def _can_use_w2_cube(
+    w2_op: Any,
+    packed: torch.Tensor,
+    in_features: int,
+    num_tokens: int,
+    is_nvfp4: bool,
+) -> bool:
+    """Whether the packed integer Cube kernel is safe for this expert group."""
+    return (
+        w2_op is not None
+        and num_tokens <= W2_CUBE_MAX_TOKENS
+        and packed.shape[-2] % W2_CUBE_OUTPUT_TILE == 0
+        and in_features % W2_CUBE_INPUT_TILE == 0
+        and in_features >= W2_CUBE_MIN_INPUT_DIM
+        and (_infer_bits(packed, in_features) != W3_BITS or in_features <= W3_CUBE_MAX_INPUT_DIM)
+        and _infer_bits(packed, in_features) in (2, W3_BITS, 4)
+        and not is_nvfp4
+    )
+
+
+def _grouped_route_limit(experts: Any) -> int:
+    configured = getattr(experts, "grouped_max_routes", None)
+    return W2_GROUPED_MAX_ROUTES if configured is None else configured
+
+
+def _can_use_w2_grouped_cube(grouped_op: Any, experts: Any, num_routes: int) -> bool:
+    """Whether a resident expert bank can stay entirely device-grouped."""
+    if grouped_op is None or not bool(getattr(experts, "grouped_ready", False)):
+        return False
+    if num_routes <= 0 or num_routes > _grouped_route_limit(experts):
+        return False
+    names = (
+        "gate_packed_bank",
+        "gate_scale_bank",
+        "up_packed_bank",
+        "up_scale_bank",
+        "down_packed_bank",
+        "down_scale_bank",
+    )
+    banks = [getattr(experts, name, None) for name in names]
+    if any(bank is None or bank.ndim != 3 for bank in banks):
+        return False
+    gate_codes, gate_scale, up_codes, up_scale, down_codes, down_scale = banks
+    hidden = int(experts[experts.local_expert_offset].hidden)
+    inter = int(experts[experts.local_expert_offset].inter)
+    # Gate/up views of a fused allocation have a larger expert stride than a
+    # standalone bank. The native operator requires a contiguous input bank;
+    # only hand it the full fused allocation in that case.
+    if any(not bank.is_contiguous() for bank in (gate_codes, gate_scale, up_codes, up_scale)):
+        fused_codes = getattr(experts, "gate_up_packed_bank", None)
+        fused_scales = getattr(experts, "gate_up_scale_bank", None)
+        if (
+            fused_codes is None
+            or fused_scales is None
+            or not fused_codes.is_contiguous()
+            or not fused_scales.is_contiguous()
+            or fused_codes.shape[1] != 2 * inter
+            or fused_scales.shape[1] != 2 * gate_scale.shape[1]
+        ):
+            return False
+    return (
+        gate_codes.shape[:2] == up_codes.shape[:2]
+        and gate_scale.shape == up_scale.shape
+        and down_codes.shape[1] == hidden
+        and gate_codes.shape[1] == inter
+        and gate_codes.shape[1] % W2_CUBE_OUTPUT_TILE == 0
+        and down_codes.shape[1] % W2_CUBE_OUTPUT_TILE == 0
+        and hidden % W2_CUBE_INPUT_TILE == 0
+        and inter % W2_CUBE_INPUT_TILE == 0
+        and hidden >= W2_CUBE_MIN_INPUT_DIM
+        and inter >= W2_CUBE_MIN_INPUT_DIM
+        and (hidden <= W3_CUBE_MAX_INPUT_DIM or _infer_bits(gate_codes[0], hidden) != W3_BITS)
+        and (hidden <= W3_CUBE_MAX_INPUT_DIM or _infer_bits(up_codes[0], hidden) != W3_BITS)
+        and (inter <= W3_CUBE_MAX_INPUT_DIM or _infer_bits(down_codes[0], inter) != W3_BITS)
+        and _infer_bits(gate_codes[0], hidden) in (2, W3_BITS, 4)
+        and _infer_bits(up_codes[0], hidden) in (2, W3_BITS, 4)
+        and _infer_bits(down_codes[0], inter) in (2, W3_BITS, 4)
+        and not _is_nvfp4(gate_scale[0], inter, hidden)
+        and not _is_nvfp4(down_scale[0], hidden, inter)
+    )
+
+
+@register_scheme("W2A8_DYNAMIC", "moe")
+class AscendW2DynamicFusedMoEMethod310(AscendMoEScheme):
+    """310P-only FusedMoE method for DeepSeek V4.1 2-bit (W2) routed experts.
+
+    The weight *storage* is packed W2 (2-bit signed codes + per-``[32, 32]``
+    block scale); once the ``<= top_k`` active experts are widened to INT8 codes
+    the device grouped matmul is the same INT8 dynamic QDQ path as W8A8, hence
+    ``quant_type = QuantType.W8A8`` (weights land in the INT8 domain, activations
+    are per-token symmetric INT8).
+
+    Notes:
+      - Discovered via the 310P-local registry (``W2A8_DYNAMIC`` / ``moe``).
+      - Mirrors the W8A8 dynamic method's param / weight-loading surface so the
+        DeepSeek W2 loader (E3.4) reuses it.
+    """
+
+    # The device grouped matmul consumes INT8 codes + INT8 per-token activation.
+    quant_type: QuantType = QuantType.W8A8
+    act_quant_type: torch.dtype = torch.int8
+    # SwiGLU is fused into the device gmm1 path (npu_swiglu), as in the W8 method.
+    fused_activations = frozenset({"silu"})
+
+    def __init__(self):
+        # Mirror the W8 method's construction surface, but stay host-constructible
+        # (the CPU UT builds params + runs host math without a live vLLM runtime).
+        try:  # pragma: no cover - runtime-only branch
+            from vllm.distributed import get_ep_group
+
+            self.ep_group = get_ep_group()
+        except Exception:
+            self.ep_group = None
+        try:  # pragma: no cover - runtime-only branch
+            from vllm.config import get_current_vllm_config
+
+            self.in_dtype = get_current_vllm_config().model_config.dtype
+        except Exception:
+            self.in_dtype = torch.float16
+
+    # -- param creation (mirrors the W8 method: codes + block scales) ---------
+
+    def get_weight(
+        self, num_experts: int, intermediate_size_per_partition: int, hidden_sizes: int, params_dtype: torch.dtype
+    ) -> dict[str, Any]:
+        """Packed W2 code params (``uint8[E, out, in // 4]``) per the E1.1 pack.
+
+        ``w13`` fuses gate/up (``out = 2 * inter``, ``in = hidden``); ``w2`` is
+        the down projection (``out = hidden``, ``in = inter``).
+        """
+        inter = intermediate_size_per_partition
+        hidden = hidden_sizes
+        param_dict: dict[str, Any] = {}
+        # Fused gate_up_proj (column parallel): [E, 2*inter, hidden // 4] uint8.
+        param_dict["w13_codes"] = torch.empty(num_experts, 2 * inter, hidden // W2_CODES_PER_BYTE, dtype=torch.uint8)
+        # down_proj (row parallel): [E, hidden, inter // 4] uint8.
+        param_dict["w2_codes"] = torch.empty(num_experts, hidden, inter // W2_CODES_PER_BYTE, dtype=torch.uint8)
+        return param_dict
+
+    def get_dynamic_quant_param(
+        self, num_experts: int, intermediate_size_per_partition: int, hidden_sizes: int, params_dtype: torch.dtype
+    ) -> dict[str, Any]:
+        """Per-``[32, 32]`` block scales (``float32[E, out // 32, in // 32]``)."""
+        inter = intermediate_size_per_partition
+        hidden = hidden_sizes
+        param_dict: dict[str, Any] = {}
+        param_dict["w13_scale"] = torch.empty(
+            num_experts, (2 * inter) // W2_BLOCK_ROWS, hidden // W2_BLOCK_COLS, dtype=torch.float32
+        )
+        param_dict["w2_scale"] = torch.empty(
+            num_experts, hidden // W2_BLOCK_ROWS, inter // W2_BLOCK_COLS, dtype=torch.float32
+        )
+        return param_dict
+
+    def get_shared_expert_weight(
+        self, intermediate_size_per_partition: int, hidden_sizes: int, params_dtype: torch.dtype
+    ) -> dict[str, Any]:
+        """Always-on shared-expert packed W2 code params (single expert)."""
+        inter = intermediate_size_per_partition
+        hidden = hidden_sizes
+        param_dict: dict[str, Any] = {}
+        param_dict["shared_w13_codes"] = torch.empty(2 * inter, hidden // W2_CODES_PER_BYTE, dtype=torch.uint8)
+        param_dict["shared_w2_codes"] = torch.empty(hidden, inter // W2_CODES_PER_BYTE, dtype=torch.uint8)
+        return param_dict
+
+    def get_shared_expert_dynamic_quant_param(
+        self, intermediate_size_per_partition: int, hidden_sizes: int, params_dtype: torch.dtype
+    ) -> dict[str, Any]:
+        """Always-on shared-expert per-``[32, 32]`` block scales (single expert)."""
+        inter = intermediate_size_per_partition
+        hidden = hidden_sizes
+        param_dict: dict[str, Any] = {}
+        param_dict["shared_w13_scale"] = torch.empty(
+            (2 * inter) // W2_BLOCK_ROWS, hidden // W2_BLOCK_COLS, dtype=torch.float32
+        )
+        param_dict["shared_w2_scale"] = torch.empty(
+            hidden // W2_BLOCK_ROWS, inter // W2_BLOCK_COLS, dtype=torch.float32
+        )
+        return param_dict
+
+    # -- forward --------------------------------------------------------------
+
+    def moe_forward(
+        self,
+        x: torch.Tensor,
+        experts: list,
+        router_logits: torch.Tensor,
+        top_k: int,
+        shared_expert: Any | None = None,
+        *,
+        renormalize: bool = True,
+        cache: dict | None = None,
+    ) -> torch.Tensor:
+        """Router-logits host-math entrypoint: thin wrapper over E1.2.
+
+        Delegates straight to :func:`w2_active_moe_forward` -- routes the batch,
+        unpacks only the active experts (bounded cache), runs the grouped W2->INT8
+        QDQ MoE, and adds the shared expert. This is the exact host re-expression
+        of ``apply``'s device grouped matmul.
+        """
+        return w2_active_moe_forward(
+            x, experts, router_logits, top_k, shared_expert, renormalize=renormalize, cache=cache
+        )
+
+    def apply(
+        self,
+        layer: torch.nn.Module,
+        x: torch.Tensor,
+        topk_weights: torch.Tensor,
+        topk_ids: torch.Tensor,
+        shared_experts: Any | None,
+        shared_experts_input: torch.Tensor | None,
+    ) -> torch.Tensor:
+        """Fused W2 MoE forward over the router-selected experts.
+
+        The routing (softmax -> top-k -> renormalize) is done upstream by the
+        routed-experts layer, so ``apply`` receives the selected ``topk_ids`` /
+        ``topk_weights``. The packed W2 expert bank and the optional shared
+        expert are carried on ``layer`` (populated by the E3.4 loader).
+        """
+        experts = getattr(layer, "w2_experts", None)
+        if experts is None:
+            raise ValueError(
+                "AscendW2DynamicFusedMoEMethod310.apply requires the packed W2 expert bank on "
+                "`layer.w2_experts` (populated by the DeepSeek W2 loader, E3.4)."
+            )
+        shared_expert = getattr(layer, "w2_shared_expert", None)
+        if _device_kernel_available():  # pragma: no cover - device-only wave (D1.5)
+            return self._apply_device(experts, x, topk_weights, topk_ids, shared_expert)
+        local_offset = int(getattr(experts, "local_expert_offset", 0))
+        first_local = experts[local_offset]
+        if _infer_bits(first_local.gate_packed, int(first_local.hidden)) == W3_BITS:
+            # The legacy host INT8-QDQ oracle only understands W2/W4. Use the
+            # same exact eager dequant/matmul path as the device W3 fallback.
+            return self._apply_device(experts, x, topk_weights, topk_ids, shared_expert)
+        return self._apply_host(experts, x, topk_weights, topk_ids, shared_expert)
+
+    def _apply_host(
+        self,
+        experts: list,
+        x: torch.Tensor,
+        topk_weights: torch.Tensor,
+        topk_ids: torch.Tensor,
+        shared_expert: Any | None,
+    ) -> torch.Tensor:
+        """Host re-expression of the device grouped matmul via E1.2 primitives.
+
+        Unpacks only the active experts, then runs one grouped INT8 QDQ MLP per
+        active expert (fused ``w13`` -> SwiGLU -> ``w2``), scales by the router
+        weight, and scatters back -- the same grouping the device kernel does,
+        with :func:`w2_group_qdq_linear` in place of the INT8 grouped matmul.
+        """
+        x = x.double()
+        num_tokens, hidden = x.shape
+        top_k = topk_ids.shape[1]
+        cache = unpack_active_experts(experts, topk_ids)
+
+        pair_expert = topk_ids.reshape(-1)
+        pair_weight = topk_weights.reshape(-1, 1).double()
+        pair_token = torch.arange(num_tokens, device=x.device).unsqueeze(1).expand(num_tokens, top_k).reshape(-1)
+        pair_x = x[pair_token]
+
+        order = torch.argsort(pair_expert, stable=True)
+        sorted_expert = pair_expert[order]
+        sorted_x = pair_x[order]
+        sorted_weight = pair_weight[order]
+        sorted_token = pair_token[order]
+
+        uniq_expert, counts = torch.unique_consecutive(sorted_expert, return_counts=True)
+        out = torch.zeros(num_tokens, hidden, dtype=torch.float64, device=x.device)
+
+        start = 0
+        for expert_id, count in zip(uniq_expert.tolist(), counts.tolist()):
+            stop = start + count
+            weight = cache[expert_id]
+            group_x = sorted_x[start:stop]
+            gate_up = w2_group_qdq_linear(group_x, weight.w13_codes, weight.w13_scale)
+            hidden_act = swiglu_gate_up(gate_up)
+            y = w2_group_qdq_linear(hidden_act, weight.w2_codes, weight.w2_scale)
+            y = y * sorted_weight[start:stop]
+            out.index_add_(0, sorted_token[start:stop], y)
+            start = stop
+
+        if shared_expert is not None:
+            out = out + shared_expert.forward(x)
+        return out
+
+    def _apply_device(
+        self,
+        experts: list,
+        x: torch.Tensor,
+        topk_weights: torch.Tensor,
+        topk_ids: torch.Tensor,
+        shared_expert: Any | None,
+    ) -> torch.Tensor:  # pragma: no cover - device-only wave (D1.5)
+        """Run routed active experts on NPU with packed Cube or eager math.
+
+        Signed W2/W3/W4 projections use the 310P custom Cube operator through
+        its 128-token boundary. W3 device parity is pending. Unsupported shapes
+        and NVFP4 use fp32 dequantization and matmul as a correctness fallback.
+        """
+        num_tokens = x.shape[0]
+        hidden = x.shape[1]
+        top_k = topk_ids.shape[1]
+        grouped_op = _w2_grouped_mm_op()
+        max_routes = _grouped_route_limit(experts)
+        if _can_use_w2_grouped_cube(grouped_op, experts, num_tokens * top_k):
+            return self._apply_device_grouped(grouped_op, experts, x, topk_weights, topk_ids, shared_expert)
+        if (
+            num_tokens * top_k > max_routes
+            and 0 < top_k <= max_routes
+            and _can_use_w2_grouped_cube(grouped_op, experts, top_k)
+        ):
+            # The grouped operator's route limit is per call, not per prefill
+            # step. Keep every token's top-k routes together so a larger chunk
+            # can still use the resident packed bank without changing routing.
+            max_chunk_tokens = max_routes // top_k
+            routed_chunks = [
+                self._apply_device_grouped(
+                    grouped_op,
+                    experts,
+                    x[start : start + max_chunk_tokens],
+                    topk_weights[start : start + max_chunk_tokens],
+                    topk_ids[start : start + max_chunk_tokens],
+                    None,
+                )
+                for start in range(0, num_tokens, max_chunk_tokens)
+            ]
+            output = torch.cat(routed_chunks, dim=0)
+            if shared_expert is not None:
+                output += shared_expert.forward(x).to(torch.float32)
+            return output
+        if getattr(experts, "nz_packed_codes", False):
+            raise RuntimeError("NZ-packed GLM experts require the grouped 310P Cube operator")
+        pair_expert = topk_ids.reshape(-1)
+        pair_weight = topk_weights.reshape(-1, 1).to(torch.float32)
+        pair_token = torch.arange(num_tokens, device=x.device).unsqueeze(1).expand(num_tokens, top_k).reshape(-1)
+        pair_x = x[pair_token].to(torch.float32)
+
+        # EP remaps non-local selections to a valid local expert with exactly
+        # zero weight. Drop those pairs before sorting and kernel dispatch so a
+        # rank with no selected local expert performs no packed-weight staging
+        # or Cube work for the synthetic remap target.
+        active_pairs = pair_weight.squeeze(-1) != 0
+        pair_expert = pair_expert[active_pairs]
+        pair_weight = pair_weight[active_pairs]
+        pair_token = pair_token[active_pairs]
+        pair_x = pair_x[active_pairs]
+        if pair_expert.numel() == 0:
+            out = torch.zeros(num_tokens, hidden, dtype=torch.float32, device=x.device)
+            if shared_expert is not None:
+                out = out + shared_expert.forward(x).to(torch.float32)
+            return out
+
+        # ArgSort has no int32/int64 AiCore kernel on 310P (falls back to AiCPU,
+        # which dominated the eager MoE cost); sort on an fp32 key instead -- the
+        # expert ids (< 2**24) are exact in fp32, so the ordering is identical.
+        order = torch.argsort(pair_expert.to(torch.float32), stable=True)
+        sorted_expert = pair_expert[order]
+        sorted_x = pair_x[order]
+        sorted_weight = pair_weight[order]
+        sorted_token = pair_token[order]
+
+        uniq_expert, counts = torch.unique_consecutive(sorted_expert, return_counts=True)
+        out = torch.zeros(num_tokens, hidden, dtype=torch.float32, device=x.device)
+
+        # One batched device-to-host synchronization for the Python dispatch
+        # loop. Calling ``tolist`` separately for ids (twice) and counts adds
+        # avoidable scheduler stalls on NPU decode.
+        expert_groups = [
+            (int(expert_id), int(count)) for expert_id, count in torch.stack((uniq_expert, counts), dim=1).tolist()
+        ]
+
+        # Queue compact H2D copies for host-offloaded experts once per unique
+        # router selection. Device-resident banks pass through unchanged.
+        staged_experts = {
+            expert_id: _stage_packed_expert(experts[expert_id], x.device) for expert_id, _ in expert_groups
+        }
+
+        w2_op = _w2_blocked_mm_op()
+        start = 0
+        for expert_id, count in expert_groups:
+            stop = start + count
+            e = staged_experts[expert_id]
+            group_x = sorted_x[start:stop]
+            inter = int(e.inter)
+            nvfp4 = _is_nvfp4(e.gate_scale, inter, hidden)
+            # The Cube kernel unpacks signed W2/W3/W4 codes on-chip. NVFP4 uses an
+            # E2M1 floating-point codebook and must take its eager path below.
+            use_cube = _can_use_w2_cube(
+                w2_op,
+                e.gate_packed,
+                int(e.hidden),
+                int(group_x.shape[0]),
+                nvfp4,
+            )
+            if use_cube:
+                # Fast path: fused 310P Cube kernel (arch20 catlass MMAD with the
+                # per-[32,32] block dequant fused into the weight load). It
+                # expands each 128-column tile directly into NZ, avoiding the
+                # activation workspace and the ND-to-NZ matmul conversion.
+                # Its Cube epilogue writes FP16 output directly. Packed width
+                # selects signed W2 (four codes/byte), dense W3 (eight codes
+                # in three bytes), or W4 (two codes/byte) on-chip.
+                gx = group_x.to(torch.float16)
+                gate = w2_op(gx, e.gate_packed, e.gate_scale.to(torch.float32))
+                up = w2_op(gx, e.up_packed, e.up_scale.to(torch.float32))
+                hidden_act = (torch.nn.functional.silu(gate.to(torch.float32)) * up.to(torch.float32)).to(torch.float16)
+                y = w2_op(hidden_act, e.down_packed, e.down_scale.to(torch.float32)).to(torch.float32)
+            elif nvfp4:
+                # NVFP4 (E2M1 float codes + block-16 scale) has no Cube kernel;
+                # dequantize to fp32 and matmul natively, exact against the golden
+                # GPU NVFP4 weights.
+                gate_w = _nvfp4_dequant_fp32(e.gate_packed, e.gate_scale, inter, hidden)
+                up_w = _nvfp4_dequant_fp32(e.up_packed, e.up_scale, inter, hidden)
+                gate = torch.matmul(group_x, gate_w.t())
+                up = torch.matmul(group_x, up_w.t())
+                hidden_act = torch.nn.functional.silu(gate) * up
+                down_w = _nvfp4_dequant_fp32(e.down_packed, e.down_scale, hidden, inter)
+                y = torch.matmul(hidden_act, down_w.t())
+            else:
+                # Fallback: native-fp32 dequant from the packed bank (compact
+                # [out//32,in//32] block scale via tiled view-multiply, no fp64),
+                # then fp32 matmul. Correct but substantially slower and larger
+                # than the packed Cube path on 310P.
+                gate_w = _w2_dequant_fp32(e.gate_packed, e.gate_scale, inter, hidden)
+                up_w = _w2_dequant_fp32(e.up_packed, e.up_scale, inter, hidden)
+                gate = torch.matmul(group_x, gate_w.t())
+                up = torch.matmul(group_x, up_w.t())
+                hidden_act = torch.nn.functional.silu(gate) * up
+                down_w = _w2_dequant_fp32(e.down_packed, e.down_scale, hidden, inter)
+                y = torch.matmul(hidden_act, down_w.t())
+            y = y * sorted_weight[start:stop]
+            out.index_add_(0, sorted_token[start:stop], y)
+            start = stop
+
+        if shared_expert is not None:
+            out = out + shared_expert.forward(x).to(torch.float32)
+        return out
+
+    def _apply_device_grouped(
+        self,
+        grouped_op: Any,
+        experts: Any,
+        x: torch.Tensor,
+        topk_weights: torch.Tensor,
+        topk_ids: torch.Tensor,
+        shared_expert: Any | None,
+    ) -> torch.Tensor:  # pragma: no cover - device-only wave
+        """Project a resident local bank with device-only routing metadata."""
+        from vllm_ascend.models.qwen4_exp.grouped_expert_dispatch import build_grouped_expert_dispatch
+
+        num_tokens, hidden = x.shape
+        top_k = topk_ids.shape[1]
+        # Expert parallelism remaps peer-owned ids to the first local expert
+        # and gives those routes exactly zero weight so the eager fallback can
+        # safely index a resident slot. Recover an out-of-range sentinel here:
+        # the device dispatcher then sorts masked peer rows behind every local
+        # group, and the grouped kernel skips their projection entirely.
+        peer_sentinel = experts.local_expert_offset + experts.num_local_experts
+        dispatch_ids = torch.where(
+            topk_weights != 0,
+            topk_ids,
+            torch.full_like(topk_ids, peer_sentinel),
+        )
+        dispatch = build_grouped_expert_dispatch(
+            topk_weights,
+            dispatch_ids,
+            num_local_experts=experts.num_local_experts,
+            expert_offset=experts.local_expert_offset,
+            weight_dtype=torch.float32,
+            count_mode=(
+                "histogram"
+                if getattr(experts, "prefill_route_histogram", False) and num_tokens >= W2_PREFILL_HISTOGRAM_MIN_TOKENS
+                else "compare"
+            ),
+        )
+        sorted_tokens = dispatch.token_indices.index_select(0, dispatch.order)
+        sorted_x = x.index_select(0, sorted_tokens).to(torch.float16).contiguous()
+        group_ends = dispatch.group_list.to(torch.int64).contiguous()
+        fused_combine = (
+            getattr(experts, "fused_route_combine", False)
+            and num_tokens >= W2_PREFILL_HISTOGRAM_MIN_TOKENS
+            and torch_npu is not None
+        )
+        # Keep the qualified small-batch decode arithmetic and graph unchanged
+        # when measuring only the larger-chunk FP32 reduction candidate. This
+        # uses host shape metadata and adds no device-to-host synchronization.
+        fp32_combine = getattr(experts, "fp32_route_combine", False) or (
+            getattr(experts, "prefill_fp32_route_combine", False) and num_tokens >= W2_PREFILL_HISTOGRAM_MIN_TOKENS
+        )
+        fp32_combine_op = getattr(torch.ops._C_ascend, "npu_w2_route_combine_310", None) if fp32_combine else None
+        if fp32_combine and fp32_combine_op is None:
+            raise RuntimeError("FP32 route combine requires the npu_w2_route_combine_310 extension and OPP")
+        # The native FP32 kernel checks the final local-group boundary before
+        # loading a route. It never reads peer-owned output rows.
+        grouped_args = (
+            (False,) if fp32_combine or (fused_combine and getattr(experts, "empty_peer_rows", False)) else ()
+        )
+        fused_codes = getattr(experts, "gate_up_packed_bank", None)
+        fused_scales = getattr(experts, "gate_up_scale_bank", None)
+        has_fused_gate_up = (
+            fused_codes is not None
+            and fused_scales is not None
+            and fused_codes.shape[1] == 2 * experts.gate_packed_bank.shape[1]
+            and fused_scales.shape[1] == 2 * experts.gate_scale_bank.shape[1]
+        )
+        use_swiglu = (
+            has_fused_gate_up
+            and getattr(experts, "prefill_swiglu", False)
+            and num_tokens >= W2_PREFILL_HISTOGRAM_MIN_TOKENS
+        )
+        swiglu_op = getattr(torch.ops._C_ascend, "npu_w2_swiglu_310", None) if use_swiglu else None
+        if use_swiglu and swiglu_op is None:
+            raise RuntimeError("prefill SwiGLU requires the npu_w2_swiglu_310 extension and OPP")
+        if has_fused_gate_up:
+            gate_up = grouped_op(sorted_x, fused_codes, fused_scales, group_ends, *grouped_args)
+            # The native operator consumes the fused allocation directly: no
+            # contiguous copies of its strided gate/up views are needed.
+            del sorted_x
+            if use_swiglu:
+                hidden_act = swiglu_op(gate_up)
+            else:
+                gate, up = gate_up.chunk(2, dim=-1)
+                hidden_act = (torch.nn.functional.silu(gate.to(torch.float32)) * up.to(torch.float32)).to(torch.float16)
+                del gate, up
+            del gate_up
+        else:
+            gate = grouped_op(sorted_x, experts.gate_packed_bank, experts.gate_scale_bank, group_ends, *grouped_args)
+            up = grouped_op(sorted_x, experts.up_packed_bank, experts.up_scale_bank, group_ends, *grouped_args)
+            # Release route-sized intermediates after their last consumer so
+            # the stream-aware allocator can reuse storage in later stages.
+            del sorted_x
+            hidden_act = (torch.nn.functional.silu(gate.to(torch.float32)) * up.to(torch.float32)).to(torch.float16)
+            del gate, up
+        routed = grouped_op(hidden_act, experts.down_packed_bank, experts.down_scale_bank, group_ends, *grouped_args)
+        del hidden_act
+        if fp32_combine:
+            output = fp32_combine_op(
+                routed, dispatch.inverse_order.contiguous(), topk_weights.to(torch.float32).contiguous(), group_ends
+            )
+        elif fused_combine:
+            # The 310P CANN signature accepts FP16 rows, INT32 indices and
+            # FP32 route weights. Peer-owned routes have zero weights and are
+            # ignored by the fused kernel. Keep the decode path unchanged.
+            output = torch_npu.npu_moe_token_unpermute(
+                routed,
+                dispatch.inverse_order.to(torch.int32),
+                probs=topk_weights.to(torch.float32),
+            ).to(torch.float32)
+        else:
+            routed = routed.to(torch.float32)
+            routed *= dispatch.route_weights.index_select(0, dispatch.order)
+            output = routed.index_select(0, dispatch.inverse_order).reshape(num_tokens, top_k, hidden).sum(1)
+        del routed
+        if shared_expert is not None:
+            output += shared_expert.forward(x).to(torch.float32)
+        return output

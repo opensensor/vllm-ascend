@@ -15,6 +15,10 @@ prefill_route_count_mode=${9:-compare}
 profile_root=${10:-}
 qsa_opp_root=${11:-/srv/ai/src/glm-qsa-padded-20260930/opp}
 prefix_cache_mode=${12:-off}
+sse_heartbeat_mode=${13:-off}
+fused_route_combine_mode=${14:-off}
+empty_peer_rows_mode=${15:-off}
+grouped_max_routes=${16:-}
 
 if [[ ! "$max_batched_tokens" =~ ^[1-9][0-9]*$ ]] || (( max_batched_tokens < 64 || max_batched_tokens > 1280 || max_batched_tokens % 64 )); then
   echo "max_batched_tokens must be a multiple of 64 from 64 through 1280" >&2
@@ -33,6 +37,15 @@ case "$prefill_route_count_mode" in
     exit 1
     ;;
 esac
+
+if [[ -n "$grouped_max_routes" ]]; then
+  if [[ ! "$grouped_max_routes" =~ ^[1-9][0-9]*$ ]] || (( grouped_max_routes > 32768 )); then
+    echo "grouped_max_routes must be an integer from 1 through 32768" >&2
+    exit 1
+  fi
+  # The selected experimental OPP must support the same route capacity.
+  hf_overrides="${hf_overrides%?},\"ascend_glm_grouped_max_routes\":$grouped_max_routes}"
+fi
 
 case "$execution_mode" in
   eager)
@@ -60,6 +73,45 @@ case "$prefix_cache_mode" in
     ;;
   *)
     echo "prefix cache mode must be off or on: $prefix_cache_mode" >&2
+    exit 1
+    ;;
+esac
+
+case "$sse_heartbeat_mode" in
+  off)
+    heartbeat_args=()
+    ;;
+  on)
+    heartbeat_args=(--middleware vllm_ascend._310p.sse_heartbeat.SSEHeartbeatMiddleware)
+    ;;
+  *)
+    echo "SSE heartbeat mode must be off or on: $sse_heartbeat_mode" >&2
+    exit 1
+    ;;
+esac
+
+case "$fused_route_combine_mode" in
+  off) ;;
+  on)
+    hf_overrides="${hf_overrides%?},\"ascend_glm_fused_route_combine\":true}"
+    ;;
+  *)
+    echo "fused route combine mode must be off or on: $fused_route_combine_mode" >&2
+    exit 1
+    ;;
+esac
+
+case "$empty_peer_rows_mode" in
+  off) ;;
+  on)
+    if [[ "$fused_route_combine_mode" != on ]]; then
+      echo "empty peer rows requires fused route combine" >&2
+      exit 1
+    fi
+    hf_overrides="${hf_overrides%?},\"ascend_glm_empty_peer_rows\":true}"
+    ;;
+  *)
+    echo "empty peer rows mode must be off or on: $empty_peer_rows_mode" >&2
     exit 1
     ;;
 esac
@@ -124,4 +176,5 @@ exec /srv/ai/venvs/qwen38-w4-test-ce1862/bin/python -m vllm.entrypoints.cli.main
   --limit-mm-per-prompt '{"image":0,"video":0}' \
   --enable-logging-iteration-details \
   --disable-custom-all-reduce \
+  "${heartbeat_args[@]}" \
   "${profiler_args[@]}"

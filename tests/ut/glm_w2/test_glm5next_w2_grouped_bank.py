@@ -4,12 +4,16 @@
 
 from types import SimpleNamespace
 
+import pytest
 import torch
 
 from tools.deepseek_w2.w2_format import unpack_codes
+from vllm_ascend.models.glm5next_w2 import moe
 from vllm_ascend.models.glm5next_w2.model import (
     GLM_NZ_INPUT_TILE,
+    _new_packed_expert_bank,
     _pack_codes_nz,
+    _pack_codes_nz_w3,
     _PackedW2ExpertBank,
     _release_grouped_compaction_cache,
 )
@@ -175,6 +179,35 @@ def test_nz_packed_codes_preserve_all_w2_w4_values():
                 assert torch.equal(decoded, expected.t().reshape(-1).to(torch.uint8))
 
 
+def test_nz_packed_w3_preserves_codes_and_byte_count():
+    torch.manual_seed(3)
+    n, k = 32, 2 * GLM_NZ_INPUT_TILE
+    canonical = torch.randint(0, 256, (n, k * 3 // 8), dtype=torch.uint8)
+    packed = _pack_codes_nz_w3(canonical, k)
+    assert packed.shape == canonical.shape
+    assert packed.dtype == torch.uint8
+
+    tiles = packed.view(n // 16, k // GLM_NZ_INPUT_TILE, 3, 512).to(torch.int32)
+    words = tiles[:, :, 0] | (tiles[:, :, 1] << 8) | (tiles[:, :, 2] << 16)
+    decoded = torch.stack([(words >> (3 * field)) & 7 for field in range(8)], dim=2)
+    unsigned = unpack_codes(canonical, k, 3).to(torch.int32) & 7
+    expected = unsigned.view(n // 16, 16, k // GLM_NZ_INPUT_TILE, GLM_NZ_INPUT_TILE)
+    expected = expected.permute(0, 2, 3, 1).reshape_as(decoded)
+    assert torch.equal(decoded, expected)
+
+
+def test_nz_packed_w3_rejects_invalid_storage():
+    canonical = torch.zeros((16, 96), dtype=torch.uint8)
+    for invalid, width in (
+        (canonical.float(), 256),
+        (canonical.T, 256),
+        (canonical, 512),
+        (canonical[:8], 256),
+    ):
+        with pytest.raises(ValueError):
+            _pack_codes_nz_w3(invalid, width)
+
+
 def test_resident_bank_marks_nz_codes_with_int8_storage():
     bank = _PackedW2ExpertBank(
         hidden=256,
@@ -189,6 +222,50 @@ def test_resident_bank_marks_nz_codes_with_int8_storage():
     bank.place_resident_tensor(0, "gate_packed", codes, device="cpu")
     assert bank.gate_packed_bank.dtype == torch.int8
     assert torch.equal(bank.gate_packed_bank[0].view(torch.uint8), _pack_codes_nz(codes, 256))
+
+
+def test_w3_overlay_rebuilds_nz_bank_into_w3_nz_storage():
+    bank = _PackedW2ExpertBank(
+        hidden=256,
+        inter=256,
+        num_experts=2,
+        local_expert_offset=0,
+        num_local_experts=2,
+        offload_to_cpu=False,
+        nz_packed_codes=True,
+    )
+    for expert_id in range(2):
+        for projection in ("gate", "up", "down"):
+            rows = cols = 256
+            bank.place_resident_tensor(
+                expert_id,
+                f"{projection}_packed",
+                torch.full((rows, cols // 2), expert_id + 1, dtype=torch.uint8),
+                device="cpu",
+            )
+    assert bank.nz_packed_codes
+    assert bank.gate_packed_bank.dtype == torch.int8
+
+    for expert_id in range(2):
+        for projection in ("gate", "up", "down"):
+            rows = cols = 256
+            packed = torch.full((rows, cols * 3 // 8), expert_id + 3, dtype=torch.uint8)
+            bank.place_resident_tensor(expert_id, f"{projection}_packed", packed, device="cpu")
+            bank.place_resident_tensor(
+                expert_id,
+                f"{projection}_scale",
+                torch.ones(rows // 32, cols // 32),
+                device="cpu",
+            )
+            assert torch.equal(
+                getattr(bank[expert_id], f"{projection}_packed").view(torch.uint8),
+                _pack_codes_nz_w3(packed, cols),
+            )
+    bank.finalize_grouped_storage()
+    assert bank.nz_packed_codes
+    assert bank.gate_packed_bank.dtype == torch.int8
+    assert bank.gate_packed_bank.shape == (2, 256, 96)
+    assert bank.down_packed_bank.shape == (2, 256, 96)
 
 
 def test_offloaded_bank_keeps_selected_expert_staging_layout():
@@ -246,3 +323,134 @@ def test_grouped_compaction_skips_cache_release_without_npu_bank(monkeypatch):
     _release_grouped_compaction_cache([cpu_bank])
 
     assert calls == 0
+
+
+@pytest.mark.parametrize("route_limit", [None, 5120, 6144, 10240, 20480])
+def test_grouped_route_limit_is_explicit_bank_configuration(route_limit):
+    bank = _PackedW2ExpertBank(
+        hidden=256,
+        inter=128,
+        num_experts=2,
+        local_expert_offset=0,
+        num_local_experts=2,
+        offload_to_cpu=False,
+        grouped_max_routes=route_limit,
+    )
+    assert bank.grouped_max_routes == route_limit
+
+
+@pytest.mark.parametrize("route_limit", [0, -1, 32769, True, 20480.0, "20480"])
+def test_invalid_grouped_route_limit_rejected(route_limit):
+    with pytest.raises(ValueError, match="ascend_glm_grouped_max_routes"):
+        _PackedW2ExpertBank(
+            hidden=256,
+            inter=128,
+            num_experts=2,
+            local_expert_offset=0,
+            num_local_experts=2,
+            offload_to_cpu=False,
+            grouped_max_routes=route_limit,
+        )
+
+
+@pytest.mark.parametrize("combine_mode", ["fp32_route_combine", "prefill_fp32_route_combine"])
+def test_geometry_passes_experimental_route_limit_to_local_bank(monkeypatch, combine_mode):
+    monkeypatch.setattr(moe, "_ep_rank_size", lambda: (1, 2))
+    bank = _new_packed_expert_bank(
+        {
+            "hidden_size": 256,
+            "moe_intermediate_size": 128,
+            "n_routed_experts": 4,
+            "grouped_max_routes": 20480,
+            combine_mode: True,
+            "prefill_swiglu": True,
+        }
+    )
+    assert bank.local_expert_offset == 2
+    assert bank.num_local_experts == 2
+    assert bank.grouped_max_routes == 20480
+    assert getattr(bank, combine_mode)
+    assert bank.prefill_swiglu
+
+
+@pytest.mark.parametrize(
+    "modes",
+    [
+        {"fp32_route_combine": True, "fused_route_combine": True},
+        {"prefill_fp32_route_combine": True, "fused_route_combine": True},
+        {"prefill_fp32_route_combine": True, "fp32_route_combine": True},
+    ],
+)
+def test_conflicting_route_combine_modes_rejected(modes):
+    with pytest.raises(ValueError, match="choose only one"):
+        _PackedW2ExpertBank(
+            hidden=256,
+            inter=128,
+            num_experts=2,
+            local_expert_offset=0,
+            num_local_experts=2,
+            offload_to_cpu=False,
+            **modes,
+        )
+
+
+def test_cpu_offload_disables_prefill_fp32_combine():
+    bank = _PackedW2ExpertBank(
+        hidden=256,
+        inter=128,
+        num_experts=2,
+        local_expert_offset=0,
+        num_local_experts=2,
+        offload_to_cpu=True,
+        prefill_fp32_route_combine=True,
+    )
+    assert not bank.prefill_fp32_route_combine
+
+
+@pytest.mark.parametrize(
+    "flag,attr",
+    [("decode_swiglu", "decode_swiglu"), ("decode_combine", "decode_combine")],
+)
+def test_decode_fusion_geometry_plumbs_to_local_bank(monkeypatch, flag, attr):
+    monkeypatch.setattr(moe, "_ep_rank_size", lambda: (1, 2))
+    bank = _new_packed_expert_bank(
+        {
+            "hidden_size": 256,
+            "moe_intermediate_size": 128,
+            "n_routed_experts": 4,
+            flag: True,
+        }
+    )
+    assert getattr(bank, attr)
+
+
+def test_decode_combine_coexists_with_prefill_fp32_combine():
+    bank = _PackedW2ExpertBank(
+        hidden=256,
+        inter=128,
+        num_experts=2,
+        local_expert_offset=0,
+        num_local_experts=2,
+        offload_to_cpu=False,
+        prefill_fp32_route_combine=True,
+        decode_combine=True,
+        decode_swiglu=True,
+    )
+    assert bank.prefill_fp32_route_combine
+    assert bank.decode_combine
+    assert bank.decode_swiglu
+
+
+def test_cpu_offload_disables_decode_fusions():
+    bank = _PackedW2ExpertBank(
+        hidden=256,
+        inter=128,
+        num_experts=2,
+        local_expert_offset=0,
+        num_local_experts=2,
+        offload_to_cpu=True,
+        decode_swiglu=True,
+        decode_combine=True,
+    )
+    assert not bank.decode_swiglu
+    assert not bank.decode_combine

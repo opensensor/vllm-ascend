@@ -1,0 +1,18 @@
+--- a/csrc/attention/chunk_kda_fwd/op_host/op_api/aclnn_chunk_kda_fwd.cpp
++++ b/csrc/attention/chunk_kda_fwd/op_host/op_api/aclnn_chunk_kda_fwd.cpp
+@@ -892,6 +892,15 @@
+                               KDA_STAGE_PREPARE_CUBE,
+                               KDA_STAGE_PREPARE_VECTOR_FINALIZE,
+                               KDA_STAGE_PREPARE_WU_SCALE}) {
++#ifdef GLM_KDA_SKIP_SAFE_SCORE_CUBE
++            // On 310P, ComputeScores310P returns without computing scores
++            // for SAFE_GATE. Stage 7 computes them on the vector pipeline.
++            // Skipping before launchStage preserves the dependency token
++            // from stage 0, so stage 7 still waits for its input producers.
++            if (params.safeGate && stage == KDA_STAGE_PREPARE_CUBE) {
++                continue;
++            }
++#endif
+             result = launchStage(stage);
+             for (const aclTensor *tensor : result) {
+                 CHECK_RET(tensor != nullptr, ACLNN_ERR_INNER_NULLPTR);

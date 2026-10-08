@@ -554,12 +554,28 @@ class AscendMLAImpl310(AscendMLAImpl):
         op = self._get_paged_latent_op()
         if op is None:
             raise RuntimeError("vLLM Ascend was built without the native 310P paged-latent attention operator")
+        key_cache, value_cache = kv_c_and_k_pe_cache
+        if key_cache.shape != value_cache.shape:
+            raise ValueError("QSA key and value caches must have the same logical shape")
+        physical_key_cache = _qsa_physical_cache_page(key_cache)
+        physical_value_cache = _qsa_physical_cache_page(value_cache)
+        if physical_key_cache.shape != physical_value_cache.shape:
+            raise ValueError("QSA key and value physical pages must have the same shape")
+        # Continued prefill needs the same physical-page contract as decode.
+        # The native kernel derives its page stride from the supplied shape,
+        # so a narrower logical view cannot describe these padded pages.
+        physical_page_args = ()
+        if physical_key_cache.shape != key_cache.shape:
+            head_dim_blocks = query.shape[2] // _NZ_INNER
+            if head_dim_blocks == 0 or query.shape[2] % _NZ_INNER or key_cache.shape[1] % head_dim_blocks:
+                raise ValueError("QSA logical cache channels must contain whole KV heads")
+            physical_page_args = (key_cache.shape[1] // head_dim_blocks,)
         record_attention_compute_start()
         if self.host_kv_layer is None:
             latent_output = op(
                 query,
-                kv_c_and_k_pe_cache[0],
-                kv_c_and_k_pe_cache[1],
+                physical_key_cache,
+                physical_value_cache,
                 group_indices,
                 group_counts,
                 tail_starts,
@@ -568,6 +584,7 @@ class AscendMLAImpl310(AscendMLAImpl):
                 query_start_loc,
                 self.scale,
                 _QSA_COMPRESS_RATIO,
+                *physical_page_args,
             )
         else:
             if self.glm_indexer is None:
@@ -597,8 +614,8 @@ class AscendMLAImpl310(AscendMLAImpl):
                 outputs.append(
                     op(
                         query[start:end],
-                        kv_c_and_k_pe_cache[0],
-                        kv_c_and_k_pe_cache[1],
+                        physical_key_cache,
+                        physical_value_cache,
                         group_indices[start:end],
                         group_counts[start:end],
                         tail_starts[start:end],
@@ -607,6 +624,7 @@ class AscendMLAImpl310(AscendMLAImpl):
                         segment_start,
                         self.scale,
                         _QSA_COMPRESS_RATIO,
+                        *physical_page_args,
                     )
                 )
             latent_output = torch.cat(outputs, dim=1)
@@ -785,7 +803,7 @@ class AscendMLAImpl310(AscendMLAImpl):
             )
 
         num_tokens = query.shape[0]
-        if num_tokens != attn_metadata.num_decodes:
+        if num_tokens != attn_metadata.num_decodes and self.glm_indexer is None:
             raise NotImplementedError(
                 "310P native MLA currently requires one decode token per request; "
                 f"got {num_tokens} tokens for {attn_metadata.num_decodes} requests."
@@ -813,9 +831,17 @@ class AscendMLAImpl310(AscendMLAImpl):
         if op is None:
             raise RuntimeError("vLLM Ascend was built without the native 310P paged-latent attention operator.")
         block_table = _qsa_cache_block_table(
-            decode_meta.block_table[:num_tokens].to(torch.int32),
+            decode_meta.block_table[: attn_metadata.num_decodes].to(torch.int32),
             key_cache.shape[2],
         )
+        if num_tokens != attn_metadata.num_decodes:
+            # QSA already maps each query row to a request using device query
+            # boundaries. GLM's per-row pool/tail plan supplies the causal
+            # extent, so verification tokens share pages without seeing later
+            # draft tokens. Keep boundaries on device for graph replay.
+            query_start_loc = (
+                attn_metadata.query_start_loc[: attn_metadata.num_decodes + 1].to(torch.int32).contiguous()
+            )
         if self.host_kv_layer is not None:
             if self.glm_indexer is None:
                 raise RuntimeError("GLM host MLA requires the kpool indexer")

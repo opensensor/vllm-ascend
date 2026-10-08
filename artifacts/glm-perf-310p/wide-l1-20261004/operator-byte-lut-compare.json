@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "kind": "isolated_operator_comparison",
+  "metric_scope": "operator latency only; serving throughput must be measured separately",
+  "baseline": {
+    "path": "/home/matteius/experiments/glm-w3-20261004/wide-l1-20261004/opp-l1-byte-lut-20261004/baseline.json",
+    "package": {
+      "opp_root": "/srv/ai/src/build-only-glm-w3-nz-csrc-20261004/opp-w3-nz-candidate/vendors/custom_transformer",
+      "opp_search_path": [
+        "/srv/ai/src/build-only-glm-w3-nz-csrc-20261004/opp-w3-nz-candidate/vendors/custom_transformer"
+      ],
+      "operator": "npu_w2_grouped_blocked_dequant_matmul_310",
+      "binary": {
+        "path": "/srv/ai/src/build-only-glm-w3-nz-csrc-20261004/opp-w3-nz-candidate/vendors/custom_transformer/op_impl/ai_core/tbe/kernel/ascend310p/w2_grouped_blocked_dequant_matmul_v310/W2GroupedBlockedDequantMatmulV310_21ed540d36cafc1d1bee8d7cdd208e81.o",
+        "sha256": "96986b7446edc1bc27bdc4f7b75ee94316281db5b556fec63eefefb6c81a43e3"
+      },
+      "binary_metadata": {
+        "path": "/srv/ai/src/build-only-glm-w3-nz-csrc-20261004/opp-w3-nz-candidate/vendors/custom_transformer/op_impl/ai_core/tbe/kernel/ascend310p/w2_grouped_blocked_dequant_matmul_v310/W2GroupedBlockedDequantMatmulV310_21ed540d36cafc1d1bee8d7cdd208e81.json",
+        "sha256": "d3e9f0ae77feaa196aa2b482f28da50ae4fc144c3309a4cdfad21b6e93abf96e",
+        "code_dtype": "int8"
+      },
+      "sources": [
+        {
+          "path": "/srv/ai/src/build-only-glm-w3-nz-csrc-20261004/gmm/w2_blocked_dequant_matmul_v310/op_kernel/w2_blocked_dequant_matmul_v310.h",
+          "sha256": "213cddf5fe011296691e4111648cf6cdebe56bb00d15b4d814e7e09b2fcd7d82"
+        },
+        {
+          "path": "/srv/ai/src/build-only-glm-w3-nz-csrc-20261004/gmm/w2_grouped_blocked_dequant_matmul_v310/op_kernel/w2_grouped_blocked_dequant_matmul_v310.cpp",
+          "sha256": "b2b907359ce7d46e8a81894055dece0bfe807462e8f91c96cf6362e32887c3c1"
+        }
+      ]
+    },
+    "layout": "nzpacked"
+  },
+  "candidate": {
+    "path": "/home/matteius/experiments/glm-w3-20261004/wide-l1-20261004/opp-l1-byte-lut-20261004/candidate.json",
+    "package": {
+      "opp_root": "/srv/ai/src/glm-l1-wide-build-20261004/opp-l1-byte-lut-20261004/vendors/custom_transformer",
+      "opp_search_path": [
+        "/srv/ai/src/glm-l1-wide-build-20261004/opp-l1-byte-lut-20261004/vendors/custom_transformer"
+      ],
+      "operator": "npu_w2_grouped_blocked_dequant_matmul_310",
+      "binary": {
+        "path": "/srv/ai/src/glm-l1-wide-build-20261004/opp-l1-byte-lut-20261004/vendors/custom_transformer/op_impl/ai_core/tbe/kernel/ascend310p/w2_grouped_blocked_dequant_matmul_v310/W2GroupedBlockedDequantMatmulV310_21ed540d36cafc1d1bee8d7cdd208e81.o",
+        "sha256": "bae8a8f42a14c25c8ec15e24b50c2121e8e8b2edde9d6846987fa125351bac3e"
+      },
+      "binary_metadata": {
+        "path": "/srv/ai/src/glm-l1-wide-build-20261004/opp-l1-byte-lut-20261004/vendors/custom_transformer/op_impl/ai_core/tbe/kernel/ascend310p/w2_grouped_blocked_dequant_matmul_v310/W2GroupedBlockedDequantMatmulV310_21ed540d36cafc1d1bee8d7cdd208e81.json",
+        "sha256": "5d8e3e585340c3b6477c51d8661bc931d7b6c667dcc1d97b7fe10e4d7f58cbc3",
+        "code_dtype": "int8"
+      },
+      "sources": [
+        {
+          "path": "/srv/ai/src/glm-l1-wide-build-20261004/gmm/w2_blocked_dequant_matmul_v310/op_kernel/w2_blocked_dequant_matmul_v310.h",
+          "sha256": "137165fe70e141c5883f9e2044e257510a1a4d22b9b9e5bdd8e7b70882cc479a"
+        },
+        {
+          "path": "/srv/ai/src/glm-l1-wide-build-20261004/gmm/w2_grouped_blocked_dequant_matmul_v310/op_kernel/w2_grouped_blocked_dequant_matmul_v310.cpp",
+          "sha256": "4620a844aa8f7ecd2532c38a4d2a895ff3a5c349b59c72718e0402d0da62ff7d"
+        }
+      ]
+    },
+    "layout": "nzpacked"
+  },
+  "parity_bounds": {
+    "atol": 0.0,
+    "rtol": 0.0
+  },
+  "results": [
+    {
+      "key": "w2_down_5120_uniform_all_experts_quarter",
+      "parity": {
+        "passed": true,
+        "output_dtype": "torch.float16",
+        "max_abs_error": 0.0,
+        "atol": 0.0,
+        "rtol": 0.0,
+        "comparison": "bitwise"
+      },
+      "baseline_median_ms": 28.095437010051683,
+      "candidate_median_ms": 39.715193008305505,
+      "speedup_fraction": -0.41358160736551747
+    },
+    {
+      "key": "w4_gate_up_5120_uniform_all_experts_quarter",
+      "parity": {
+        "passed": true,
+        "output_dtype": "torch.float16",
+        "max_abs_error": 0.0,
+        "atol": 0.0,
+        "rtol": 0.0,
+        "comparison": "bitwise"
+      },
+      "baseline_median_ms": 45.630592008819804,
+      "candidate_median_ms": 80.24520400795154,
+      "speedup_fraction": -0.7585834519184231
+    }
+  ],
+  "all_parity_passed": true
+}

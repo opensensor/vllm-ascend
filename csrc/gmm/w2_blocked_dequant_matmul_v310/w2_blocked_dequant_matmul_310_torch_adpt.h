@@ -19,8 +19,8 @@ namespace vllm_ascend {
 
 // out[T, N] (fp16) = x[T, K] (fp16) @ W^T,
 // where W[n, k] = unpack_signed(codes)[n, k] * block_scale[n/32, k/32].
-// codes is packed uint8 [N, K/4] for W2 or [N, K/2] for W4, little-endian
-// by field. N = codes.size(0), K = x.size(1).
+// codes is packed uint8 [N, K/4] for W2, [N, 3K/8] for W3, or [N, K/2]
+// for W4, little-endian by field. N = codes.size(0), K = x.size(1).
 at::Tensor npu_w2_blocked_dequant_matmul_310(
     const at::Tensor& x,
     const at::Tensor& codes,

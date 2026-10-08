@@ -1,0 +1,23 @@
+{
+  "name": "sinkhorn_normalize_v1",
+  "libraries": [
+    {
+      "path": "/home/matteius/experiments/glm-sinkhorn-resident-20261005/glm_sinkhorn_bridge_v1.so",
+      "sha256": "85d6b90b401fdce551e10709a1eb267bbab8ea4eab953a23b538d47f941fc09a"
+    }
+  ],
+  "assets": [
+    {
+      "path": "/home/matteius/experiments/glm-sinkhorn-resident-20261005/sinkhorn_native.py",
+      "sha256": "ba64e3236a50469675e993bb3f131c28dfc000bb64a3edca777763fd4e5ff1be"
+    },
+    {
+      "path": "/home/matteius/experiments/glm-sinkhorn-resident-20261005/normalize-v1.bin",
+      "sha256": "de55b886b0178af89ad2546c0e0e247a9941c4e8cbcde9280e585a0e11463abc"
+    }
+  ],
+  "operators": [
+    "glm_sinkhorn_v1::launch"
+  ],
+  "validation_source": "# SPDX-License-Identifier: Apache-2.0\ndef prepare():\n    import importlib.util\n\n    root = \"/home/matteius/experiments/glm-sinkhorn-resident-20261005\"\n    spec = importlib.util.spec_from_file_location(\"glm_sinkhorn_normalize_v1\", root + \"/sinkhorn_native.py\")\n    module = importlib.util.module_from_spec(spec)\n    spec.loader.exec_module(module)\n    return module.SinkhornNormalize(root + \"/normalize-v1.bin\", order=2)\n\n\ndef validate(operation):\n    import torch\n\n    def reference(mix):\n        mix = mix / (mix.sum(-2, keepdim=True) + 1e-6)\n        for _ in range(19):\n            mix = mix / (mix.sum(-1, keepdim=True) + 1e-6)\n            mix = mix / (mix.sum(-2, keepdim=True) + 1e-6)\n        return mix\n\n    gen = torch.Generator().manual_seed(310)\n    for rows in (1, 2, 4, 8):\n        for scale in (0, .1, 1, 10, 100):\n            mix = torch.softmax((torch.randn(rows, 4, 4, generator=gen) * scale).npu(), -1) + 1e-6\n            torch.testing.assert_close(operation(mix), reference(mix), rtol=0, atol=0)\n    return {\"passed\": True, \"exact_fp32\": True, \"cases\": 20, \"order\": 2}\n"
+}

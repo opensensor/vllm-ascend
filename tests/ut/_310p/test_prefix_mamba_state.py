@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -20,6 +21,54 @@ from vllm_ascend._310p.prefix_mamba_state import (
 def _tier(num_slots: int = 3, archive_slots: int = 0) -> tuple[PrefixMambaStateTier, torch.Tensor]:
     states = torch.zeros((num_slots, 2), dtype=torch.float16)
     return PrefixMambaStateTier([(states,)], num_slots, archive_slots), states
+
+
+@pytest.mark.parametrize("archive_slots", [0, 2])
+def test_reset_discards_all_checkpoint_tiers_without_reallocating(archive_slots, monkeypatch):
+    tier, states = _tier(archive_slots=archive_slots)
+    for block_id in range(101, 109):
+        tier.remap_table(np.array([[block_id]], dtype=np.int32), 1)
+        states[tier.slot_for(block_id)].fill_(block_id)
+    assert tier._resident and tier._host
+    assert bool(tier._device_archive_resident) == bool(archive_slots)
+    storage = (states, *tier._device_archive, *tier._swap_tensors)
+    pointers = [tensor.data_ptr() for tensor in storage]
+    spills = tier._spill_count
+    sync = Mock()
+    monkeypatch.setattr(tier, "_synchronize_device_state", sync)
+
+    tier.reset()
+
+    sync.assert_called_once_with()
+    assert not tier._resident and not tier._device_archive_resident and not tier._host
+    assert tier._unused_slots == [2, 1]
+    assert tier._unused_device_archive_slots == list(range(archive_slots - 1, -1, -1))
+    assert [tensor.data_ptr() for tensor in (states, *tier._device_archive, *tier._swap_tensors)] == pointers
+    assert all(
+        current is original for current, original in zip((states, *tier._device_archive, *tier._swap_tensors), storage)
+    )
+    assert tier._spill_count == spills
+    assert tier.cache_status()["host_checkpoints"] == 0
+    # Reused scheduler IDs must get fresh zero state, including an old spilled ID.
+    mapped = tier.remap_table(np.array([[101, 108]], dtype=np.int32), 2)
+    assert mapped.tolist() == [[1, 2]]
+    assert torch.count_nonzero(states) == 0
+    assert tier._restore_count == 0 and tier._spill_count == spills
+    tier.reset()
+    tier.reset()
+    assert tier._unused_slots == [2, 1]
+    assert len(set(tier._unused_device_archive_slots)) == archive_slots
+
+
+def test_reset_synchronization_failure_preserves_checkpoint_metadata(monkeypatch):
+    tier, _ = _tier()
+    tier.remap_table(np.array([[101]], dtype=np.int32), 1)
+    before = tier.cache_status()
+    monkeypatch.setattr(tier, "_synchronize_device_state", Mock(side_effect=RuntimeError("pending writer")))
+    with pytest.raises(RuntimeError, match="pending writer"):
+        tier.reset()
+    assert tier.cache_status() == before
+    assert tier.slot_for(101) == 1
 
 
 def test_spill_and_restore_preserves_prefix_checkpoint() -> None:

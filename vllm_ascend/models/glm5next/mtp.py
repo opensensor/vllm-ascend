@@ -33,6 +33,7 @@ from .model import (
     get_spec_layer_idx_from_weight_name,
 )
 from .ops.fused_eh_norm import fused_eh_norm
+from .ops.mtp_norm import mtp_eh_norm
 
 
 class Glm5NextMultiTokenPredictorLayer(nn.Module):
@@ -86,7 +87,8 @@ class Glm5NextMultiTokenPredictorLayer(nn.Module):
     ) -> torch.Tensor:
         assert inputs_embeds is not None
         # Fused: zero pos-0 embeds + enorm(embeds) + hnorm(prev) + cat -> [N, 2H].
-        eh_input = fused_eh_norm(
+        normalize = mtp_eh_norm if getattr(self, "use_310p_eh_norm", False) else fused_eh_norm
+        eh_input = normalize(
             positions,
             inputs_embeds,
             previous_hidden_states,

@@ -140,3 +140,43 @@ def test_explicit_base_bypasses_prior_candidate_hooks():
     )
     assert candidate[prefix + "resident_capture"](worker) == {"captured": True}
     assert candidate[prefix + "resident_apply"](worker, "next") == {"generation": "next"}
+
+
+def test_query_forward_uses_its_permanent_converter_and_restores_on_failure():
+    from tools.glm_perf.instance_bindings import bind_indexer_forwards
+
+    class Indexer:
+        def forward(self):
+            return "ordinary cast"
+
+    indexers = [Indexer(), Indexer()]
+    for indexer in indexers:
+        indexer._native_bf16_cast = object()
+        indexer.indexer_op = object()
+    permanent_forward = indexers[0].forward = MethodType(lambda self: "permanent ordinary cast", indexers[0])
+    roots = [SimpleNamespace(modules=lambda indexer=indexer: [indexer]) for indexer in indexers]
+    runner = SimpleNamespace(model=roots[0], drafter=SimpleNamespace(model=roots[1]))
+    bindings = InstanceBindings()
+    observed = []
+
+    def factory(original, converter):
+        observed.append(converter)
+        return lambda self: converter
+
+    assert bind_indexer_forwards(bindings, runner, factory) == 2
+    assert observed == [i._native_bf16_cast for i in indexers]
+    assert all(i.forward() is i._native_bf16_cast for i in indexers)
+    bindings.restore()
+    assert indexers[0].forward is permanent_forward
+    assert indexers[1].forward() == "ordinary cast" and "forward" not in indexers[1].__dict__
+    observed.clear()
+
+    def fail_second(original, converter):
+        if observed:
+            raise ValueError("failed draft query cast")
+        return factory(original, converter)
+
+    with pytest.raises(ValueError, match="failed draft"):
+        bind_indexer_forwards(bindings, runner, fail_second)
+    assert not bindings.originals and indexers[0].forward is permanent_forward
+    assert "forward" not in indexers[1].__dict__

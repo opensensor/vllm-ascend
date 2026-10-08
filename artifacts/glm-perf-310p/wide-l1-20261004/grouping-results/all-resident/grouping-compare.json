@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "kind": "isolated_operator_comparison",
+  "metric_scope": "operator latency only; serving throughput must be measured separately",
+  "baseline": {
+    "path": "/home/matteius/experiments/glm-w3-20261004/wide-l1-20261004/opp-l1-overlap-20261004/grouping-operator.json",
+    "package": {
+      "opp_root": "/srv/ai/src/glm-l1-wide-build-20261004/opp-l1-overlap-20261004/vendors/custom_transformer",
+      "opp_search_path": [
+        "/srv/ai/src/glm-l1-wide-build-20261004/opp-l1-overlap-20261004/vendors/custom_transformer"
+      ],
+      "operator": "npu_w2_grouped_blocked_dequant_matmul_310",
+      "binary": {
+        "path": "/srv/ai/src/glm-l1-wide-build-20261004/opp-l1-overlap-20261004/vendors/custom_transformer/op_impl/ai_core/tbe/kernel/ascend310p/w2_grouped_blocked_dequant_matmul_v310/W2GroupedBlockedDequantMatmulV310_21ed540d36cafc1d1bee8d7cdd208e81.o",
+        "sha256": "6eecc8af91a6031399234a77af66f4985f40793b7e2146be67d5520496693f63"
+      },
+      "binary_metadata": {
+        "path": "/srv/ai/src/glm-l1-wide-build-20261004/opp-l1-overlap-20261004/vendors/custom_transformer/op_impl/ai_core/tbe/kernel/ascend310p/w2_grouped_blocked_dequant_matmul_v310/W2GroupedBlockedDequantMatmulV310_21ed540d36cafc1d1bee8d7cdd208e81.json",
+        "sha256": "48f2e1c1367ce19ffa3cfd0786ae1e0fa5503240c23864920c695a1aa72ada5d",
+        "code_dtype": "int8"
+      },
+      "sources": [
+        {
+          "path": "/home/matteius/experiments/glm-w3-20261004/wide-l1-20261004/opp-l1-overlap-20261004/tested-kernel.h",
+          "sha256": "e3c12b6e371186eb26008d64040f8cdb4a5e116a4fcf71d50efffe67451cff81"
+        }
+      ]
+    },
+    "layout": "nzpacked"
+  },
+  "candidate": {
+    "path": "/home/matteius/experiments/glm-w3-20261004/wide-l1-20261004/opp-l1-all-resident-v2-20261004/grouping-operator.json",
+    "package": {
+      "opp_root": "/srv/ai/src/glm-l1-wide-build-20261004/opp-l1-all-resident-v2-20261004/vendors/custom_transformer",
+      "opp_search_path": [
+        "/srv/ai/src/glm-l1-wide-build-20261004/opp-l1-all-resident-v2-20261004/vendors/custom_transformer"
+      ],
+      "operator": "npu_w2_grouped_blocked_dequant_matmul_310",
+      "binary": {
+        "path": "/srv/ai/src/glm-l1-wide-build-20261004/opp-l1-all-resident-v2-20261004/vendors/custom_transformer/op_impl/ai_core/tbe/kernel/ascend310p/w2_grouped_blocked_dequant_matmul_v310/W2GroupedBlockedDequantMatmulV310_21ed540d36cafc1d1bee8d7cdd208e81.o",
+        "sha256": "a0ae0d5e8a92d0bcbc724806c9db51d1c0171e6c24bed34e2f1ec87501e7a33a"
+      },
+      "binary_metadata": {
+        "path": "/srv/ai/src/glm-l1-wide-build-20261004/opp-l1-all-resident-v2-20261004/vendors/custom_transformer/op_impl/ai_core/tbe/kernel/ascend310p/w2_grouped_blocked_dequant_matmul_v310/W2GroupedBlockedDequantMatmulV310_21ed540d36cafc1d1bee8d7cdd208e81.json",
+        "sha256": "28fb04d25910f8475782991636a873b859ede5b922c7ff37c9cf52cdb706aafb",
+        "code_dtype": "int8"
+      },
+      "sources": [
+        {
+          "path": "/home/matteius/experiments/glm-w3-20261004/wide-l1-20261004/opp-l1-all-resident-v2-20261004/tested-kernel.h",
+          "sha256": "5b9f38ef1ef48c629bbc2e1f31cd92c8a3a83821ebc7cd15fdbf36bf63f13a74"
+        }
+      ]
+    },
+    "layout": "nzpacked"
+  },
+  "parity_bounds": {
+    "atol": 0.0,
+    "rtol": 0.0
+  },
+  "results": [
+    {
+      "key": "w2_down_5120_uniform_all_experts_quarter",
+      "parity": {
+        "passed": true,
+        "output_dtype": "torch.float16",
+        "max_abs_error": 0.0,
+        "atol": 0.0,
+        "rtol": 0.0,
+        "comparison": "bitwise"
+      },
+      "baseline_median_ms": 24.61976298945956,
+      "candidate_median_ms": 24.54523099004291,
+      "speedup_fraction": 0.003027324001801263
+    },
+    {
+      "key": "w4_gate_up_5120_uniform_all_experts_quarter",
+      "parity": {
+        "passed": true,
+        "output_dtype": "torch.float16",
+        "max_abs_error": 0.0,
+        "atol": 0.0,
+        "rtol": 0.0,
+        "comparison": "bitwise"
+      },
+      "baseline_median_ms": 38.8141919975169,
+      "candidate_median_ms": 38.510284008225426,
+      "speedup_fraction": 0.007829816199984697
+    }
+  ],
+  "all_parity_passed": true
+}

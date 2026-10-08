@@ -1,0 +1,20 @@
+diff --git a/vllm_ascend/attention/mla_v1.py b/vllm_ascend/attention/mla_v1.py
+index 3286f49e0..c3bca188b 100644
+--- a/vllm_ascend/attention/mla_v1.py
++++ b/vllm_ascend/attention/mla_v1.py
+@@ -702,7 +702,14 @@ class AscendMLAMetadataBuilder(MLACommonMetadataBuilder[AscendMLAMetadata]):
+             self.block_table = self.block_table[: self.graph_pad_size, ...]
+         seq_lens_list = self.seq_lens.tolist()
+ 
+-        if self.graph_pad_size > num_reqs:
++        # A speculative graph has multiple tokens per request. Comparing its
++        # token budget only with num_reqs enters this block even for a full
++        # bucket. Concatenating empty padding then detaches positions, slots
++        # and page tables from the runner's replay-updated storage. Preserve
++        # those views when padded drafting needs no additional token rows.
++        if self.graph_pad_size > num_reqs and (
++            self.speculative_config.disable_padded_drafter_batch or self.graph_pad_size > self.num_decode_tokens
++        ):
+             if self.speculative_config.disable_padded_drafter_batch:
+                 num_reqs_pad_size = self.graph_pad_size - num_reqs
+                 actual_seq_lengths_q = self.pad_actual_seq_len_q_mtp_disable_pad(

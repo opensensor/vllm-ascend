@@ -251,7 +251,7 @@ ge::graphStatus RecurrentGatedDeltaRuleV310Tiling::CheckShapeDimAndRelation(cons
         !CheckDim(valueShape, QKV_DIM_NUM, "value") || !CheckDim(betaShape, BETA_DIM_NUM, "beta") ||
         !CheckDim(stateShape, STATE_DIM_NUM, "state") ||
         !CheckDim(cuSeqlensShape, CUSEQLENS_DIM_NUM, "actual_seq_lengths") ||
-        !CheckDim(ssmStateShape, SSM_STATE_INDICES_DIM_NUM, "ssm_state_indices")) {
+        (ssmStateShape.GetDimNum() != SSM_STATE_INDICES_DIM_NUM && ssmStateShape.GetDimNum() != 2)) {
         return ge::GRAPH_FAILED;
     }
 
@@ -267,6 +267,15 @@ ge::graphStatus RecurrentGatedDeltaRuleV310Tiling::CheckShapeDimAndRelation(cons
         return ge::GRAPH_FAILED;
     }
 
+    if (ssmStateShape.GetDimNum() == 2) {
+        if (!CheckDimEqual(ssmStateShape, DIM_0, cuSeqlensShape, DIM_0,
+                           "ssm_state_indices", "actual_seq_lengths", "batch dimension") ||
+            ssmStateShape.GetDim(DIM_1) < 1 || ssmStateShape.GetDim(DIM_1) > MAX_MTP) {
+            return ge::GRAPH_FAILED;
+        }
+    } else if (ssmStateShape.GetDim(DIM_0) < queryShape.GetDim(DIM_0)) {
+        return ge::GRAPH_FAILED;
+    }
     return ge::GRAPH_SUCCESS;
 }
 
@@ -334,6 +343,8 @@ ge::graphStatus RecurrentGatedDeltaRuleV310Tiling::RuleFillTilingShapeData()
     const auto &stateShape = context_->GetInputShape(STATE_INDEX)->GetOriginShape();
     const auto &cuSeqlensShape = context_->GetInputShape(CUSEQLENS_INDEX)->GetOriginShape();
     FillTilingShapeData(queryShape, valueShape, stateShape, cuSeqlensShape);
+    const auto &indicesShape = context_->GetInputShape(SSM_STATE_INDICES_INDEX)->GetOriginShape();
+    tilingData_.stateIndexStride = indicesShape.GetDimNum() == 2 ? indicesShape.GetDim(DIM_1) : 0;
     return ge::GRAPH_SUCCESS;
 }
 
@@ -447,6 +458,13 @@ ge::graphStatus RecurrentGatedDeltaRuleV310Tiling::GetScale()
     auto attrs = context_->GetAttrs();
     float scaleValue = *attrs->GetAttrPointer<float>(0);
     tilingData_.scale = scaleValue;
+    constexpr size_t STATE_STRIDE_ATTR_INDEX = 1;
+    const auto *stride = attrs->GetAttrPointer<int64_t>(STATE_STRIDE_ATTR_INDEX);
+    const int64_t denseStride = static_cast<int64_t>(tilingData_.nv) * tilingData_.dv * tilingData_.dk;
+    const int64_t stateStride = (stride == nullptr || *stride == 0) ? denseStride : *stride;
+    OP_CHECK_IF(stateStride < denseStride, OP_LOGE(inputParams_.opName, "State stride is smaller than one state."),
+                return ge::GRAPH_FAILED);
+    tilingData_.stateStride = static_cast<uint64_t>(stateStride);
 
     return ge::GRAPH_SUCCESS;
 }

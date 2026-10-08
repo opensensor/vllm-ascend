@@ -13,8 +13,12 @@ from vllm_ascend.models.glm5next.kpool_ops import (
     dense_kpool_token_indices,
     expand_kpool_groups,
     score_and_select_kpool_tokens,
+    score_kpool,
     select_kpool_groups,
 )
+from vllm_ascend.models.glm5next.ops.kpool_native import score_kpool_paged, supports_live_kpool_score
+
+MAX_MTP_GRAPH_TOKENS = 8
 
 
 def _cache_tensor(cache_layer) -> torch.Tensor:
@@ -144,9 +148,11 @@ class SparseAttnIndexerKpool(CustomOp):
         pool_gates = torch.where(same_pool[:, :, None], local_gates, old_gates)
 
         # Sliding state pages can recycle the same physical slots within a
-        # large prefill. Only the request's final pool must survive this step.
+        # large prefill. Under speculation retain the pool at the earliest
+        # possible rejection as well as all later pools in the window.
         final_positions = indexer_metadata.raw_seq_lens[request_ids].long() - 1
-        final_pool_starts = torch.div(final_positions, pool_size, rounding_mode="floor") * pool_size
+        earliest_positions = final_positions - getattr(self.tail_cache, "num_speculative_tokens", 0)
+        final_pool_starts = torch.div(earliest_positions.clamp_min(0), pool_size, rounding_mode="floor") * pool_size
         valid_state = (state_slots >= 0) & (positions >= final_pool_starts)
         state_row_offsets = (
             state_cache.storage_offset()
@@ -214,6 +220,15 @@ class SparseAttnIndexerKpool(CustomOp):
             state_metadata,
         )
 
+        if getattr(self, "capture_safe_selection", False) and num_tokens <= MAX_MTP_GRAPH_TOKENS:
+            return self._select_tokens_fixed(
+                queries=q_quant[:num_tokens],
+                weights=weights[:num_tokens],
+                positions=positions,
+                pool_size=index_kpool,
+                indexer_metadata=indexer_metadata,
+            )
+
         capture = BreakableCUDAGraphCapture.current()
         if capture is not None and capture._capturing:
             # QSA's negative tail-count sentinel encodes a dense prefix and
@@ -255,6 +270,56 @@ class SparseAttnIndexerKpool(CustomOp):
             return self.topk_indices_buffer
 
         return self._select_tokens(q_quant, weights, positions, index_kpool, indexer_metadata)
+
+    def _select_tokens_fixed(self, queries, weights, positions, pool_size, indexer_metadata):
+        """Select decode rows with device-only lengths and fixed cache bounds.
+
+        A captured row can cross the dense/sparse threshold or move to another
+        request on replay. Read its current request and pages on device. Mask
+        unused pages before scoring, including recycled pages containing NaNs.
+        Prefill keeps the host-bounded batched path.
+        """
+        cache = _cache_tensor(self.k_cache)
+        block_size = cache.shape[1]
+        table = indexer_metadata.block_table
+        num_pools = min((self.max_model_len + pool_size - 1) // pool_size, table.shape[1] * block_size)
+        if getattr(self, "live_kpool_score", False) and supports_live_kpool_score(queries, cache, pool_size, num_pools):
+            logits = score_kpool_paged(
+                queries, weights, cache, table, indexer_metadata.cum_query_lens, positions, num_pools
+            )
+            self.topk_indices_buffer[: queries.shape[0]].fill_(-1)
+            # Preserve the existing per-row topk shapes and tie behavior.
+            for row in range(queries.shape[0]):
+                selected, _, tail_starts, tail_counts = select_kpool_groups(
+                    logits[row : row + 1],
+                    positions[row : row + 1],
+                    self.topk_tokens,
+                    pool_size,
+                    scores_are_causal=True,
+                )
+                expanded = expand_kpool_groups(selected, tail_starts, tail_counts, pool_size)
+                self.topk_indices_buffer[row : row + 1, : expanded.shape[1]].copy_(expanded)
+            return self.topk_indices_buffer
+        pool_ids = torch.arange(num_pools, device=cache.device, dtype=torch.long)
+        row_ids = torch.arange(queries.shape[0], device=cache.device, dtype=indexer_metadata.cum_query_lens.dtype)
+        requests = torch.searchsorted(indexer_metadata.cum_query_lens, row_ids, right=True)
+        requests = requests.clamp(max=table.shape[0] - 1).long()
+        self.topk_indices_buffer[: queries.shape[0]].fill_(-1)
+        for row in range(queries.shape[0]):
+            pages = table.index_select(0, requests[row : row + 1])[0]
+            complete = (positions[row] + 1) // pool_size
+            valid = pool_ids < complete
+            physical_pages = pages[pool_ids // block_size].long()
+            physical_pages = torch.where(valid, physical_pages, 0)
+            keys = cache[physical_pages, pool_ids % block_size, 0]
+            keys = torch.where(valid[:, None], keys, 0)
+            logits = score_kpool(queries[row : row + 1], weights[row : row + 1], keys)
+            selected, _, tail_starts, tail_counts = select_kpool_groups(
+                logits, positions[row : row + 1], self.topk_tokens, pool_size
+            )
+            expanded = expand_kpool_groups(selected, tail_starts, tail_counts, pool_size)
+            self.topk_indices_buffer[row : row + 1, : expanded.shape[1]].copy_(expanded)
+        return self.topk_indices_buffer
 
     def _select_tokens(
         self,

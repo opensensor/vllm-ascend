@@ -196,6 +196,8 @@ public:
         NV_ = tilingData->nv;
         realV_ = tilingData->dv;
         scale_ = tilingData->scale;
+        stateIndexStride_ = tilingData->stateIndexStride;
+        stateStride_ = tilingData->stateStride;
         hasAcceptedTokens_ = (tilingData->hasAcceptedTokens == 1);
         hasGama_ = (tilingData->hasGama == 1);
         hasGamaK_ = (tilingData->hasGamaK == 1);
@@ -305,6 +307,11 @@ public:
             }
             int32_t seq0 = seq1;
             seq1 += seqLen;
+            const int32_t stateBase = stateIndexStride_ ? batch_i * stateIndexStride_ : seq0;
+            const int32_t stateWidth = stateIndexStride_ ? stateIndexStride_ : seqLen;
+            if (seqLen > stateWidth) {
+                return;
+            }
             uint32_t copyFlag = 0;
             uint64_t stateOffset;
             for (uint64_t head_i = 0; head_i < NV_; head_i++) {
@@ -313,18 +320,18 @@ public:
                 }
                 copyFlag++;
                 if (copyFlag == 1) {
-                    int32_t stateTokenIdx = seq0;
+                    int32_t stateTokenIdx = stateBase;
                     if (hasAcceptedTokens_) {
                         int32_t acceptedTokenNum = numAcceptedTokensGm_.GetValue(batch_i);
-                        if (acceptedTokenNum <= 0 || acceptedTokenNum > seqLen) {
+                        if (acceptedTokenNum <= 0 || acceptedTokenNum > stateWidth) {
                             return;
                         }
-                        stateTokenIdx = seq0 + acceptedTokenNum - 1;
+                        stateTokenIdx = stateBase + acceptedTokenNum - 1;
                     }
                     stateOffset = ssmStateIndicesGm_.GetValue(stateTokenIdx);
                     CopyInGamaBeta(seq0, seq1);
                 }
-                ProcessHead(seq0, seq1, head_i, stateOffset);
+                ProcessHead(seq0, seq1, head_i, stateOffset, stateBase);
             }
         }
     }
@@ -559,7 +566,7 @@ private:
         }
     }
 
-    __aicore__ inline void ProcessHead(int32_t seq0, int32_t seq1, uint64_t head_i, uint64_t stateOffset)
+    __aicore__ inline void ProcessHead(int32_t seq0, int32_t seq1, uint64_t head_i, uint64_t stateOffset, int32_t stateBase)
     {
         uint64_t vOffset = (seq0 * NV_ + head_i) * realV_;
         uint64_t qkOffset = (seq0 * NK_ + head_i / (NV_ / NK_)) * realK_;
@@ -569,7 +576,7 @@ private:
         }
         uint64_t nextVOffset = 0;
         uint32_t nextSingleV = realV_ > vStep_ ? vStep_ : realV_;
-        uint64_t nextStateOffset = ((stateOffset * NV_ + head_i) * realV_) * realK_;
+        uint64_t nextStateOffset = stateOffset * stateStride_ + head_i * realV_ * realK_;
         PrefetchState(nextStateOffset, nextSingleV);
         for (uint64_t v_i = 0; v_i < realV_; v_i += vStep_) {
             uint32_t curSingleV = v_i + vStep_ > realV_ ? realV_ - v_i : vStep_;
@@ -577,7 +584,7 @@ private:
             nextVOffset = v_i + vStep_;
             if (nextVOffset < realV_) {
                 nextSingleV = nextVOffset + vStep_ > realV_ ? realV_ - nextVOffset : vStep_;
-                nextStateOffset = ((stateOffset * NV_ + head_i) * realV_ + nextVOffset) * realK_;
+                nextStateOffset = stateOffset * stateStride_ + (head_i * realV_ + nextVOffset) * realK_;
                 PrefetchState(nextStateOffset, nextSingleV);
             }
             evtMte3V_ = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::MTE3_V));
@@ -589,7 +596,8 @@ private:
                 uint64_t curVOffset = (seq_i - seq0) * alignV_ + v_i;
                 uint64_t attnOffset = (seq_i * NV_ + head_i) * realV_ + v_i;
                 uint64_t curStateOutOffset =
-                    ((ssmStateIndicesGm_.GetValue(seq_i) * NV_ + head_i) * realV_ + v_i) * realK_;
+                    static_cast<uint64_t>(ssmStateIndicesGm_.GetValue(stateBase + seq_i - seq0)) * stateStride_ +
+                    (head_i * realV_ + v_i) * realK_;
                 gama_ = hasGama_ ? gamaInUb.GetValue(gbOffset) : 1;
                 beta_ = betaInUb.GetValue(gbOffset);
                 Compute(curSingleV, curQKOffset, curVOffset);
@@ -660,6 +668,8 @@ private:
     uint32_t usedblk;
     uint32_t avgload;
     bool hasAcceptedTokens_;
+    uint32_t stateIndexStride_;
+    uint64_t stateStride_;
     bool hasGama_;
     bool hasGamaK_;
     bool useAddFoldReduce_;

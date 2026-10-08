@@ -1,0 +1,65 @@
+--- a/vllm_ascend/models/glm5next_w2/model.py
++++ b/vllm_ascend/models/glm5next_w2/model.py
+@@ -334,6 +334,7 @@
+         grouped_max_routes: int | None = None,
+         fp32_route_combine: bool = False,
+         prefill_swiglu: bool = False,
++        prefill_fp32_route_combine: bool = False,
+     ) -> None:
+         if grouped_max_routes is not None and (
+             type(grouped_max_routes) is not int or not 0 < grouped_max_routes <= GLM_GROUPED_ROUTE_EXPERIMENT_LIMIT
+@@ -354,9 +355,10 @@
+         # Explicit opt-in must match the installed OPP's admission limit.
+         # None inherits the quantization method's existing default.
+         self.grouped_max_routes = grouped_max_routes
+-        if fp32_route_combine and fused_route_combine:
+-            raise ValueError("choose only one of FP32 or CANN route combine")
++        if sum(map(bool, (fp32_route_combine, prefill_fp32_route_combine, fused_route_combine))) > 1:
++            raise ValueError("choose only one of all-token FP32, prefill FP32, or CANN route combine")
+         self.fp32_route_combine = bool(fp32_route_combine and not offload_to_cpu)
++        self.prefill_fp32_route_combine = bool(prefill_fp32_route_combine and not offload_to_cpu)
+         self.prefill_swiglu = bool(prefill_swiglu and not offload_to_cpu)
+ 
+     def place_resident_tensor(
+@@ -530,6 +532,7 @@
+         grouped_max_routes=geometry.get("grouped_max_routes"),
+         fp32_route_combine=bool(geometry.get("fp32_route_combine", False)),
+         prefill_swiglu=bool(geometry.get("prefill_swiglu", False)),
++        prefill_fp32_route_combine=bool(geometry.get("prefill_fp32_route_combine", False)),
+     )
+ 
+ 
+@@ -683,6 +686,7 @@
+     grouped_max_routes = getattr(config, "ascend_glm_grouped_max_routes", None)
+     geometry["fp32_route_combine"] = int(getattr(config, "ascend_glm_fp32_route_combine", False))
+     geometry["prefill_swiglu"] = int(getattr(config, "ascend_glm_prefill_swiglu", False))
++    geometry["prefill_fp32_route_combine"] = int(getattr(config, "ascend_glm_prefill_fp32_route_combine", False))
+     if grouped_max_routes is not None:
+         geometry["grouped_max_routes"] = grouped_max_routes
+     count = 0
+@@ -1300,6 +1304,9 @@
+             )
+             self._glm_text_config.ascend_glm_fp32_route_combine = bool(
+                 getattr(hf_config, "ascend_glm_fp32_route_combine", False)
++            )
++            self._glm_text_config.ascend_glm_prefill_fp32_route_combine = bool(
++                getattr(hf_config, "ascend_glm_prefill_fp32_route_combine", False)
+             )
+             # FP16-in-checkpoint fix: the dense-MLP and shared-expert projections
+             # ship as fp16 (no weight_scale_inv) but are absent from the
+--- a/vllm_ascend/_310p/quantization/methods/w2_dynamic.py
++++ b/vllm_ascend/_310p/quantization/methods/w2_dynamic.py
+@@ -731,7 +731,12 @@
+             and num_tokens >= W2_PREFILL_HISTOGRAM_MIN_TOKENS
+             and torch_npu is not None
+         )
+-        fp32_combine = getattr(experts, "fp32_route_combine", False)
++        # Keep the qualified small-batch decode arithmetic and graph unchanged
++        # when measuring only the larger-chunk FP32 reduction candidate. This
++        # uses host shape metadata and adds no device-to-host synchronization.
++        fp32_combine = getattr(experts, "fp32_route_combine", False) or (
++            getattr(experts, "prefill_fp32_route_combine", False) and num_tokens >= W2_PREFILL_HISTOGRAM_MIN_TOKENS
++        )
+         fp32_combine_op = getattr(torch.ops._C_ascend, "npu_w2_route_combine_310", None) if fp32_combine else None
+         if fp32_combine and fp32_combine_op is None:
+             raise RuntimeError("FP32 route combine requires the npu_w2_route_combine_310 extension and OPP")

@@ -1,0 +1,88 @@
+--- a/csrc/attention/chunk_kda_fwd/op_kernel/chunk_kda_fwd_prepare.h
++++ b/csrc/attention/chunk_kda_fwd/op_kernel/chunk_kda_fwd_prepare.h
+@@ -1476,6 +1476,39 @@
+         LocalTensor<float> partials = fp32Arena[K_];
+         LocalTensor<float> scoreRow = partials[maxPartials * partialStride];
+ 
++#ifdef GLM_KDA_SCORE_CACHE_COLUMNS
++        // Keep both original score passes and their FP16 operation order.
++        // Only immutable key/gate columns are cached; no score arithmetic
++        // or per-dot-product synchronization is fused by this experiment.
++        constexpr uint64_t scoreCacheByteOffset = 32 * 1024;
++        constexpr uint64_t scoreCacheMaxRows = 64;
++        constexpr uint64_t scoreCacheMaxChannels = 256;
++        const uint64_t cacheElements = curT * K_;
++        const bool cacheColumns = BT_ == scoreCacheMaxRows &&
++            curT > 0 && curT <= scoreCacheMaxRows &&
++            K_ >= 16 && K_ <= scoreCacheMaxChannels && K_ % 16 == 0 &&
++            scoreCacheByteOffset + 2 * cacheElements * sizeof(T) <=
++                KDA_VEC_ARENA_ELEMENTS * sizeof(float);
++        LocalTensor<T> cachedKeys = typedArena;
++        LocalTensor<T> cachedGates = typedArena;
++        if (cacheColumns) {
++            cachedKeys = typedArena[scoreCacheByteOffset / sizeof(T)];
++            cachedGates = cachedKeys[cacheElements];
++            if (inputSequenceMajor_) {
++                for (uint64_t col = 0; col < curT; ++col) {
++                    LocalTensor<T> keyColumn = cachedKeys[col * K_];
++                    CopyVectorIn(keyColumn, k_, QOffset(b, h, start + col, 0), K_);
++                }
++            } else {
++                CopyVectorIn(cachedKeys, k_, QOffset(b, h, start, 0), cacheElements);
++            }
++            // Gates are head-major for both public query/key layouts.
++            CopyVectorIn(cachedGates, gk_, KVOffset(b, hv, start, 0, K_), cacheElements);
++            SetFlag<HardEvent::MTE2_V>(mte2ToVEvent_);
++            WaitFlag<HardEvent::MTE2_V>(mte2ToVEvent_);
++        }
++#endif
++
+         // Run K*K and Q*K in separate passes. A single dav-m200 vector pass
+         // can otherwise leave the second adjacent dot product unwritten,
+         // even when its product and reduction buffers do not alias.
+@@ -1493,6 +1526,12 @@
+             WaitFlag<HardEvent::MTE2_V>(mte2ToVEvent_);
+ 
+             for (uint64_t col = 0; col <= row; ++col) {
++#ifdef GLM_KDA_SCORE_CACHE_COLUMNS
++                if (cacheColumns) {
++                    kCol = cachedKeys[col * K_];
++                    gCol = cachedGates[col * K_];
++                } else {
++#endif
+                 CopyVectorIn(
+                     kCol, k_, QOffset(b, h, start + col, 0), K_);
+                 SetFlag<HardEvent::MTE2_V>(mte2ToVEvent_);
+@@ -1501,6 +1540,9 @@
+                     gCol, gk_, KVOffset(b, hv, start + col, 0, K_), K_);
+                 SetFlag<HardEvent::MTE2_V>(mte2ToVEvent_);
+                 WaitFlag<HardEvent::MTE2_V>(mte2ToVEvent_);
++#ifdef GLM_KDA_SCORE_CACHE_COLUMNS
++                }
++#endif
+ 
+                 Sub(gate, gRow, gCol, static_cast<uint32_t>(K_));
+                 PipeBarrier<PIPE_V>();
+@@ -1545,6 +1587,12 @@
+             WaitFlag<HardEvent::MTE2_V>(mte2ToVEvent_);
+ 
+             for (uint64_t col = 0; col <= row; ++col) {
++#ifdef GLM_KDA_SCORE_CACHE_COLUMNS
++                if (cacheColumns) {
++                    kCol = cachedKeys[col * K_];
++                    gCol = cachedGates[col * K_];
++                } else {
++#endif
+                 CopyVectorIn(
+                     kCol, k_, QOffset(b, h, start + col, 0), K_);
+                 SetFlag<HardEvent::MTE2_V>(mte2ToVEvent_);
+@@ -1553,6 +1601,9 @@
+                     gCol, gk_, KVOffset(b, hv, start + col, 0, K_), K_);
+                 SetFlag<HardEvent::MTE2_V>(mte2ToVEvent_);
+                 WaitFlag<HardEvent::MTE2_V>(mte2ToVEvent_);
++#ifdef GLM_KDA_SCORE_CACHE_COLUMNS
++                }
++#endif
+ 
+                 Sub(gate, gRow, gCol, static_cast<uint32_t>(K_));
+                 PipeBarrier<PIPE_V>();

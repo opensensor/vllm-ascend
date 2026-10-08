@@ -101,3 +101,39 @@ def test_spill_waits_for_state_write_on_another_npu_stream():
     restored = tier.remap_table(np.array([[101]], dtype=np.int32), 1)
     actual = state[restored[0, 0]].cpu()
     torch.testing.assert_close(actual, torch.full_like(actual, 42), rtol=0, atol=0)
+
+
+@torch.inference_mode()
+def test_reset_reclaims_checkpoint_tiers_and_preserves_captured_state_storage():
+    pytest.importorskip("torch_npu")
+    if not torch.npu.is_available():
+        pytest.skip("Ascend NPU required")
+    torch.npu.set_device(0)
+    torch.npu.set_compile_mode(jit_compile=False)
+    state = torch.zeros((3, 512), dtype=torch.float16, device="npu")
+    tier = PrefixMambaStateTier([(state,)], 3, device_archive_slots=2)
+    for block_id in range(101, 108):
+        mapped = tier.remap_table(np.array([[block_id]], dtype=np.int32), 1)
+        state[mapped[0, 0]].fill_(block_id)
+    assert tier._host and tier._device_archive_resident
+    tensors = (state, *tier._device_archive, *tier._swap_tensors)
+    pointers = [tensor.data_ptr() for tensor in tensors]
+    # Capture reads a stable primary slot; reset must keep that address usable.
+    for _ in range(3):
+        state[1] + 1
+    torch.npu.synchronize()
+    graph = torch.npu.NPUGraph()
+    with torch.npu.graph(graph):
+        output = state[1] + 1
+    torch.npu.synchronize()
+
+    tier.reset()
+    mapped = tier.remap_table(np.array([[101, 107]], dtype=np.int32), 2)
+    assert mapped.tolist() == [[1, 2]]
+    state[1].fill_(5)
+    graph.replay()
+    torch.npu.synchronize()
+    torch.testing.assert_close(output.cpu(), torch.full((512,), 6, dtype=torch.float16), rtol=0, atol=0)
+    torch.testing.assert_close(state[2].cpu(), torch.zeros(512, dtype=torch.float16), rtol=0, atol=0)
+    assert [tensor.data_ptr() for tensor in (state, *tier._device_archive, *tier._swap_tensors)] == pointers
+    assert not tier._host and not tier._device_archive_resident

@@ -30,6 +30,11 @@ at::Tensor npu_causal_conv1d_310(
     int64_t pad_slot_id,
     int64_t run_mode)
 {
+    TORCH_CHECK(conv_states.dim() == 3 && conv_states.stride(2) == 1 &&
+                conv_states.stride(1) == conv_states.size(2) &&
+                conv_states.stride(0) >= conv_states.size(1) * conv_states.size(2),
+                "310P convolution state requires dense inner dimensions and a non-overlapping page stride");
+    int64_t state_stride = conv_states.stride(0);
     at::Tensor output = at::empty(x.sizes(), x.options());
     EXEC_NPU_CMD(aclnnCausalConv1dV310,
                  x,
@@ -43,6 +48,7 @@ at::Tensor npu_causal_conv1d_310(
                  activation_mode,
                  pad_slot_id,
                  run_mode,
+                 state_stride,
                  output
                 ); 
 

@@ -83,9 +83,7 @@ def requires_padded_page_layout(kv_cache_specs: Iterable[KVCacheSpec]) -> bool:
         and getattr(spec, "page_size_padded", None) is not None
         for spec in specs
     )
-    return has_padded_state and any(
-        getattr(spec, "indexes_kv_by_block_stride", False) for spec in specs
-    )
+    return has_padded_state and any(getattr(spec, "indexes_kv_by_block_stride", False) for spec in specs)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -326,9 +324,9 @@ class AscendIndexerKPoolStateSpec(AscendSlidingWindowMLASpec):
         super().__post_init__()
         if self.dtype != torch.float32:
             raise ValueError(f"Indexer K-pool compressor state must use FP32, got {self.dtype}.")
-        if self.block_size != self.sliding_window:
+        if self.sliding_window is None or self.block_size > self.sliding_window:
             raise ValueError(
-                "Indexer K-pool compressor state requires block_size == "
+                "Indexer K-pool compressor state requires block_size <= "
                 f"sliding_window, got {self.block_size} and {self.sliding_window}."
             )
 

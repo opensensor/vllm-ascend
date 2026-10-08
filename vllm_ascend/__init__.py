@@ -89,6 +89,7 @@ def register_model_loader():
     _ensure_global_patch()
 
     from .model_loader.glm_native_int4 import GlmNativeInt4Loader  # noqa: F401
+    from .model_loader.glm_w2_safetensors import GlmW2FilteredSafetensorsLoader  # noqa: F401
     from .model_loader.netloader import register_netloader
     from .model_loader.rfork import register_rforkloader
 

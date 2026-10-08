@@ -220,7 +220,7 @@ static ge::graphStatus GetShapeDtypeInfo(gert::TilingContext *context, CausalCon
 
     auto sShapePtr = context->GetInputShape(CONV_STATES_INDEX);
     OP_CHECK_NULL_WITH_CONTEXT(context, sShapePtr);
-    auto sShape = EnsureNotScalar(sShapePtr->GetStorageShape());
+    auto sShape = EnsureNotScalar(sShapePtr->GetOriginShape());
     OP_CHECK_IF(sShape.GetDimNum() != 3, OP_LOGE(context, "convStates must be 3D: (num_cache_lines, state_len, dim)"),
                 return ge::GRAPH_FAILED);
     const int64_t numCacheLines = sShape.GetDim(0);
@@ -483,6 +483,13 @@ static ge::graphStatus CausalConv1dTilingFunc(gert::TilingContext *context)
 
     OP_CHECK_IF(GetShapeDtypeInfo(context, *tiling) != ge::GRAPH_SUCCESS, OP_LOGE(context, "GetShapeDtypeInfo error"),
                 return ge::GRAPH_FAILED);
+
+    constexpr size_t STATE_STRIDE_ATTR_INDEX = 3;
+    const auto *stride = context->GetAttrs()->GetAttrPointer<int64_t>(STATE_STRIDE_ATTR_INDEX);
+    const int64_t denseStride = tiling->stateLen * tiling->dim;
+    tiling->stateStride = (stride == nullptr || *stride == 0) ? denseStride : *stride;
+    OP_CHECK_IF(tiling->stateStride < denseStride,
+                OP_LOGE(context, "State stride is smaller than one convolution state"), return ge::GRAPH_FAILED);
 
     const int64_t dim = tiling->dim;
     const int64_t batch = tiling->batch;

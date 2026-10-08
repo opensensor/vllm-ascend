@@ -1,0 +1,51 @@
+--- remote/model.py
++++ local/model.py
+@@ -335,6 +335,8 @@
+         fp32_route_combine: bool = False,
+         prefill_swiglu: bool = False,
+         prefill_fp32_route_combine: bool = False,
++        decode_swiglu: bool = False,
++        decode_combine: bool = False,
+     ) -> None:
+         if grouped_max_routes is not None and (
+             type(grouped_max_routes) is not int or not 0 < grouped_max_routes <= GLM_GROUPED_ROUTE_EXPERIMENT_LIMIT
+@@ -360,6 +362,8 @@
+         self.fp32_route_combine = bool(fp32_route_combine and not offload_to_cpu)
+         self.prefill_fp32_route_combine = bool(prefill_fp32_route_combine and not offload_to_cpu)
+         self.prefill_swiglu = bool(prefill_swiglu and not offload_to_cpu)
++        self.decode_swiglu = bool(decode_swiglu and not offload_to_cpu)
++        self.decode_combine = bool(decode_combine and not offload_to_cpu)
+ 
+     def place_resident_tensor(
+         self,
+@@ -533,6 +537,8 @@
+         fp32_route_combine=bool(geometry.get("fp32_route_combine", False)),
+         prefill_swiglu=bool(geometry.get("prefill_swiglu", False)),
+         prefill_fp32_route_combine=bool(geometry.get("prefill_fp32_route_combine", False)),
++        decode_swiglu=bool(geometry.get("decode_swiglu", False)),
++        decode_combine=bool(geometry.get("decode_combine", False)),
+     )
+ 
+ 
+@@ -687,6 +693,8 @@
+     geometry["fp32_route_combine"] = int(getattr(config, "ascend_glm_fp32_route_combine", False))
+     geometry["prefill_swiglu"] = int(getattr(config, "ascend_glm_prefill_swiglu", False))
+     geometry["prefill_fp32_route_combine"] = int(getattr(config, "ascend_glm_prefill_fp32_route_combine", False))
++    geometry["decode_swiglu"] = int(getattr(config, "ascend_glm_decode_swiglu", False))
++    geometry["decode_combine"] = int(getattr(config, "ascend_glm_decode_combine", False))
+     if grouped_max_routes is not None:
+         geometry["grouped_max_routes"] = grouped_max_routes
+     count = 0
+@@ -1345,6 +1353,12 @@
+             )
+             self._glm_text_config.ascend_glm_prefill_fp32_route_combine = bool(
+                 getattr(hf_config, "ascend_glm_prefill_fp32_route_combine", False)
++            )
++            self._glm_text_config.ascend_glm_decode_swiglu = bool(
++                getattr(hf_config, "ascend_glm_decode_swiglu", False)
++            )
++            self._glm_text_config.ascend_glm_decode_combine = bool(
++                getattr(hf_config, "ascend_glm_decode_combine", False)
+             )
+             # FP16-in-checkpoint fix: the dense-MLP and shared-expert projections
+             # ship as fp16 (no weight_scale_inv) but are absent from the

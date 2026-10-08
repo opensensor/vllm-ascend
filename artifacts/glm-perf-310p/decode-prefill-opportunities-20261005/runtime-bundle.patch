@@ -1,0 +1,149 @@
+--- a/vllm_ascend/models/glm5next/kpool_ops.py
++++ b/vllm_ascend/models/glm5next/kpool_ops.py
+@@ -49,7 +49,9 @@
+     q_rot = hadamard128(queries).to(torch.bfloat16)
+     logits = q_rot.reshape(-1, 128).float() @ pooled_keys.float().transpose(0, 1)
+     logits = logits.reshape(num_queries, num_heads, -1).relu_()
+-    return (logits * weights.float().unsqueeze(-1)).sum(dim=1)
++    # Logits are private scratch. Reuse them instead of allocating a second
++    # head-by-query-by-pool tensor (up to another 256 MiB in prefill).
++    return logits.mul_(weights.float().unsqueeze(-1)).sum(dim=1)
+ 
+ 
+ def select_kpool_groups(
+@@ -57,8 +59,15 @@
+     positions: torch.Tensor,
+     topk_tokens: int,
+     pool_size: int,
++    *,
++    scores_are_causal: bool = False,
+ ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+-    """Select completed pools and retain the current incomplete pool as tail."""
++    """Select completed pools and retain the current incomplete pool as tail.
++
++    ``scores_are_causal`` is reserved for producers that already wrote -inf
++    to every incomplete/unused pool. It avoids another full-width mask/copy;
++    index/rank checks on top-k padding remain required on 310P.
++    """
+     if logits.ndim != 2 or positions.ndim != 1 or logits.shape[0] != positions.shape[0]:
+         raise ValueError("GLM kpool logits and positions must have matching rows")
+     if pool_size <= 1 or topk_tokens <= 0 or topk_tokens % pool_size:
+@@ -66,17 +75,22 @@
+     pool_budget = topk_tokens // pool_size
+     sequence_lengths = positions.to(torch.int32) + 1
+     completed = torch.div(sequence_lengths, pool_size, rounding_mode="floor")
+-    candidate_ids = torch.arange(logits.shape[1], device=logits.device, dtype=torch.int32)
+-    valid = candidate_ids[None, :] < completed[:, None]
+-    masked = logits.masked_fill(~valid, -torch.inf)
+     selected = torch.full((logits.shape[0], pool_budget), -1, dtype=torch.int32, device=logits.device)
+     count = min(pool_budget, logits.shape[1])
+     if count:
+         if count == logits.shape[1]:
+             # Every candidate fits. Avoid a top-k and GatherElements on 310P.
++            candidate_ids = torch.arange(logits.shape[1], device=logits.device, dtype=torch.int32)
++            valid = candidate_ids[None, :] < completed[:, None]
+             candidate_rows = candidate_ids[None, :].expand(logits.shape[0], -1)
+             selected[:, :count] = torch.where(valid, candidate_rows, -1)
+         else:
++            if scores_are_causal:
++                masked = logits
++            else:
++                candidate_ids = torch.arange(logits.shape[1], device=logits.device, dtype=torch.int32)
++                valid = candidate_ids[None, :] < completed[:, None]
++                masked = logits.masked_fill(~valid, -torch.inf)
+             topk = torch.topk(masked, count, dim=1).indices.to(torch.int32)
+             # Some 310P top-k implementations leave arbitrary indices in
+             # entries whose score is -inf. An invalid index may even alias a
+@@ -145,6 +159,9 @@
+         return torch.empty((0, topk_tokens + pool_size - 1), dtype=torch.int32, device=queries.device)
+     score_elements_per_query = queries.shape[1] * pooled_keys.shape[0]
+     query_chunk_size = max(1, MAX_KPOOL_SCORE_ELEMENTS // max(1, score_elements_per_query))
++    # Every query subchunk reads the same key bank. Keep one conversion live
++    # instead of repeatedly widening all pooled keys as the context grows.
++    pooled_keys = pooled_keys.float()
+     expanded_chunks = []
+     for start in range(0, queries.shape[0], query_chunk_size):
+         end = min(start + query_chunk_size, queries.shape[0])
+--- a/vllm_ascend/models/glm5next/sparse_attn_indexer_kpool.py
++++ b/vllm_ascend/models/glm5next/sparse_attn_indexer_kpool.py
+@@ -16,7 +16,6 @@
+     score_kpool,
+     select_kpool_groups,
+ )
+-
+ from vllm_ascend.models.glm5next.ops.kpool_native import score_kpool_paged, supports_live_kpool_score
+ 
+ MAX_MTP_GRAPH_TOKENS = 8
+@@ -294,7 +293,11 @@
+             # Preserve the existing per-row topk shapes and tie behavior.
+             for row in range(queries.shape[0]):
+                 selected, _, tail_starts, tail_counts = select_kpool_groups(
+-                    logits[row : row + 1], positions[row : row + 1], self.topk_tokens, pool_size
++                    logits[row : row + 1],
++                    positions[row : row + 1],
++                    self.topk_tokens,
++                    pool_size,
++                    scores_are_causal=True,
+                 )
+                 expanded = expand_kpool_groups(selected, tail_starts, tail_counts, pool_size)
+                 self.topk_indices_buffer[row : row + 1, : expanded.shape[1]].copy_(expanded)
+--- a/vllm_ascend/_310p/attention/mla_v1_310.py
++++ b/vllm_ascend/_310p/attention/mla_v1_310.py
+@@ -544,12 +544,28 @@
+         op = self._get_paged_latent_op()
+         if op is None:
+             raise RuntimeError("vLLM Ascend was built without the native 310P paged-latent attention operator")
++        key_cache, value_cache = kv_c_and_k_pe_cache
++        if key_cache.shape != value_cache.shape:
++            raise ValueError("QSA key and value caches must have the same logical shape")
++        physical_key_cache = _qsa_physical_cache_page(key_cache)
++        physical_value_cache = _qsa_physical_cache_page(value_cache)
++        if physical_key_cache.shape != physical_value_cache.shape:
++            raise ValueError("QSA key and value physical pages must have the same shape")
++        # Continued prefill needs the same physical-page contract as decode.
++        # The native kernel derives its page stride from the supplied shape,
++        # so a narrower logical view cannot describe these padded pages.
++        physical_page_args = ()
++        if physical_key_cache.shape != key_cache.shape:
++            head_dim_blocks = query.shape[2] // _NZ_INNER
++            if head_dim_blocks == 0 or query.shape[2] % _NZ_INNER or key_cache.shape[1] % head_dim_blocks:
++                raise ValueError("QSA logical cache channels must contain whole KV heads")
++            physical_page_args = (key_cache.shape[1] // head_dim_blocks,)
+         record_attention_compute_start()
+         if self.host_kv_layer is None:
+             latent_output = op(
+                 query,
+-                kv_c_and_k_pe_cache[0],
+-                kv_c_and_k_pe_cache[1],
++                physical_key_cache,
++                physical_value_cache,
+                 group_indices,
+                 group_counts,
+                 tail_starts,
+@@ -558,6 +574,7 @@
+                 query_start_loc,
+                 self.scale,
+                 _QSA_COMPRESS_RATIO,
++                *physical_page_args,
+             )
+         else:
+             if self.glm_indexer is None:
+@@ -587,8 +604,8 @@
+                 outputs.append(
+                     op(
+                         query[start:end],
+-                        kv_c_and_k_pe_cache[0],
+-                        kv_c_and_k_pe_cache[1],
++                        physical_key_cache,
++                        physical_value_cache,
+                         group_indices[start:end],
+                         group_counts[start:end],
+                         tail_starts[start:end],
+@@ -597,6 +614,7 @@
+                         segment_start,
+                         self.scale,
+                         _QSA_COMPRESS_RATIO,
++                        *physical_page_args,
+                     )
+                 )
+             latent_output = torch.cat(outputs, dim=1)

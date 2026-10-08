@@ -1,0 +1,108 @@
+--- a/csrc/attention/kda_gate_cumsum/op_kernel/kda_gate_cumsum.cpp
++++ b/csrc/attention/kda_gate_cumsum/op_kernel/kda_gate_cumsum.cpp
+@@ -49,6 +49,11 @@
+         pipe_->InitBuffer(accBuf_, GATE_ROW_ELEMENTS * sizeof(float));
+         pipe_->InitBuffer(tmpBuf_, GATE_ROW_ELEMENTS * sizeof(float));
+         pipe_->InitBuffer(oneBuf_, GATE_ROW_ELEMENTS * sizeof(float));
++#ifdef GLM_KDA_GATE_PREPARE_HEAD
++        if constexpr (SAFE_GATE) {
++            pipe_->InitBuffer(headBiasBuf_, GATE_ROW_ELEMENTS * sizeof(float));
++        }
++#endif
+         pipe_->InitBuffer(inBuf_, GATE_ROW_ELEMENTS * sizeof(T));
+         pipe_->InitBuffer(scalarBuf_, 32);
+         pipe_->InitBuffer(scalarI64Buf_, 32);
+@@ -197,19 +202,47 @@
+         return ptr[0];
+     }
+
+-    __aicore__ inline void ApplyGate(uint64_t hv, LocalTensor<float> &row)
++#ifdef GLM_KDA_GATE_PREPARE_HEAD
++    // Immutable per-head operands. Preparation happens once per task, before
++    // its token/chunk loops; no gate or cumulative-sum arithmetic is reordered.
++    __aicore__ inline void PrepareHead(uint64_t hv)
+     {
+         if constexpr (SAFE_GATE) {
+             if (hasDtBias_) {
++                LocalTensor<float> bias = headBiasBuf_.Get<float>();
++                CopyFloatVectorIn(bias, dtBias_, hv * k_, k_);
++                SetFlag<HardEvent::MTE2_V>(GATE_MTE2_V_EVENT_ID);
++                WaitFlag<HardEvent::MTE2_V>(GATE_MTE2_V_EVENT_ID);
++            }
++            headExpA_ = hasALog_ ? ExpScalar(ReadFloat(aLog_, hv)) : 1.0f;
++            LocalTensor<float> one = oneBuf_.Get<float>();
++            Duplicate(one, 1.0f, static_cast<uint32_t>(k_));
++            PipeBarrier<PIPE_V>();
++        }
++    }
++#endif
++
++    __aicore__ inline void ApplyGate(uint64_t hv, LocalTensor<float> &row)
++    {
++        if constexpr (SAFE_GATE) {
++            if (hasDtBias_) {
++#ifdef GLM_KDA_GATE_PREPARE_HEAD
++                LocalTensor<float> tmp = headBiasBuf_.Get<float>();
++#else
+                 LocalTensor<float> tmp = tmpBuf_.Get<float>();
+                 CopyFloatVectorIn(tmp, dtBias_, hv * k_, k_);
+                 SetFlag<HardEvent::MTE2_V>(GATE_MTE2_V_EVENT_ID);
+                 WaitFlag<HardEvent::MTE2_V>(GATE_MTE2_V_EVENT_ID);
++#endif
+                 Add(row, row, tmp, static_cast<uint32_t>(k_));
+                 PipeBarrier<PIPE_V>();
+             }
+
++#ifdef GLM_KDA_GATE_PREPARE_HEAD
++            const float expA = headExpA_;
++#else
+             float expA = hasALog_ ? ExpScalar(ReadFloat(aLog_, hv)) : 1.0f;
++#endif
+             Muls(row, row, expA, static_cast<uint32_t>(k_));
+             PipeBarrier<PIPE_V>();
+
+@@ -222,8 +255,10 @@
+             PipeBarrier<PIPE_V>();
+
+             LocalTensor<float> one = oneBuf_.Get<float>();
++#ifndef GLM_KDA_GATE_PREPARE_HEAD
+             Duplicate(one, 1.0f, static_cast<uint32_t>(k_));
+             PipeBarrier<PIPE_V>();
++#endif
+             Div(row, one, tmp, static_cast<uint32_t>(k_));
+             PipeBarrier<PIPE_V>();
+             Muls(row, row, lowerBound_, static_cast<uint32_t>(k_));
+@@ -242,6 +277,9 @@
+             if (end > t_) {
+                 end = t_;
+             }
++#ifdef GLM_KDA_GATE_PREPARE_HEAD
++            PrepareHead(hv);
++#endif
+             ProcessChunk(b, hv, start, end);
+             return;
+         }
+@@ -249,6 +287,12 @@
+         uint64_t seq = task / hv_;
+         uint64_t seqStart = static_cast<uint64_t>(ReadInt64(cuSeqlens_, seq));
+         uint64_t seqEnd = static_cast<uint64_t>(ReadInt64(cuSeqlens_, seq + 1));
++#ifdef GLM_KDA_GATE_PREPARE_HEAD
++        if (seqStart == seqEnd) {
++            return;
++        }
++        PrepareHead(hv);
++#endif
+         for (uint64_t start = seqStart; start < seqEnd; start += chunkSize_) {
+             uint64_t end = start + chunkSize_;
+             if (end > seqEnd) {
+@@ -291,6 +335,10 @@
+     TBuf<TPosition::VECCALC> accBuf_;
+     TBuf<TPosition::VECCALC> tmpBuf_;
+     TBuf<TPosition::VECCALC> oneBuf_;
++#ifdef GLM_KDA_GATE_PREPARE_HEAD
++    TBuf<TPosition::VECCALC> headBiasBuf_;
++    float headExpA_ = 1.0f;
++#endif
+     TBuf<TPosition::VECCALC> inBuf_;
+     TBuf<TPosition::VECCALC> scalarBuf_;
+     TBuf<TPosition::VECCALC> scalarI64Buf_;

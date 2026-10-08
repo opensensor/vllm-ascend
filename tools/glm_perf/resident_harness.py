@@ -73,7 +73,10 @@ class ResidentClient:
         )
 
     def switch(self, control: Control) -> list[dict[str, Any]]:
-        before = self.rpc("resident_status")
+        # Reject malformed controls before broadcasting: an uncaught worker
+        # validation error can leave stale replies in the executor queues.
+        Control.from_dict(dataclasses.asdict(control))
+        before = self._acknowledged_rpc("resident_status", matches=self._status_matches)
         if any(worker.get("native_failed", False) for worker in before):
             raise RuntimeError("native load failed; restart workers before switching dispatch")
         was_paused = self.request("/is_paused", method="GET").get("is_paused")
@@ -85,7 +88,16 @@ class ResidentClient:
             raise RuntimeError("server did not finish draining requests")
         mutating = False
         try:
-            prepared = self.rpc("resident_prepare", json.dumps(dataclasses.asdict(control)))
+            prepared = self._acknowledged_rpc(
+                "resident_prepare",
+                json.dumps(dataclasses.asdict(control)),
+                matches=lambda receipts: all(
+                    receipt.get("generation") == control.generation
+                    and receipt.get("digest") == control.digest
+                    and "targets" in receipt
+                    for receipt in receipts
+                ),
+            )
             if any(
                 item.get("generation") != control.generation or item.get("digest") != control.digest
                 for item in prepared
@@ -94,10 +106,22 @@ class ResidentClient:
             if any(item.get("targets") != prepared[0].get("targets") for item in prepared):
                 raise RuntimeError("workers prepared different replacement targets")
             mutating = True
-            self.rpc("resident_reset")
-            self.rpc("resident_apply", control.generation)
-            self.rpc("resident_capture")
-            results = self.rpc("resident_reset")
+            self._acknowledged_rpc("resident_reset", matches=self._status_matches)
+            applied = lambda receipts: (
+                self._status_matches(receipts)
+                and all(
+                    receipt.get("generation") == control.generation
+                    and receipt.get("mode") == control.mode
+                    and receipt.get("digest") == control.digest
+                    for receipt in receipts
+                )
+            )
+            self._acknowledged_rpc("resident_apply", control.generation, matches=applied)
+            captured = lambda receipts: (
+                applied(receipts) and all(receipt.get("graphs_dirty") is False for receipt in receipts)
+            )
+            self._acknowledged_rpc("resident_capture", matches=captured)
+            results = self._acknowledged_rpc("resident_reset", matches=captured)
             identity_fields = ("rank", "pid", "weight_storage_digest")
             if {tuple(r.get(field) for field in identity_fields) for r in before} != {
                 tuple(r.get(field) for field in identity_fields) for r in results

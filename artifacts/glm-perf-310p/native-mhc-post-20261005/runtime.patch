@@ -1,0 +1,59 @@
+--- a/vllm_ascend/patch/worker/patch_mhc_norm.py
++++ b/vllm_ascend/patch/worker/patch_mhc_norm.py
+@@ -24,6 +24,7 @@
+     )
+     from vllm.model_executor.layers import mhc as _mhc_mod
+ 
++    from vllm_ascend.models.glm5next.ops.mhc_native import use_native_mhc_post
+     from vllm_ascend.models.glm5next.ops.mhc_ops import MHC_STREAMING_POST_MIN_TOKENS, mhc_post_streaming
+ 
+     # Four-token decode has four mHC streams of 4096 values per token.
+@@ -187,10 +188,15 @@
+             and x.shape[0] >= MHC_STREAMING_POST_MIN_TOKENS
+             and residual.shape[-2] == 4
+         )
+-        post_impl = mhc_post_streaming if use_streaming else _mhc_post_torch
+-        residual_cur = post_impl(x, residual, post_layer_mix, comb_res_mix)
+         use_ai_core = getattr(self, "use_310p_ai_core_bf16_round", False)
+-        residual_cur = _round_mhc_state(residual_cur, use_fp16, use_ai_core)
++        if use_native_mhc_post(self, x, residual, post_layer_mix, comb_res_mix):
++            # The operator returns FP16-rounded state in FP32 storage. Round
++            # before the next pre, but do not create a second cast pair here.
++            residual_cur = _t.ops._C_ascend.npu_glm_mhc_post_310(x, residual, post_layer_mix, comb_res_mix)
++        else:
++            post_impl = mhc_post_streaming if use_streaming else _mhc_post_torch
++            residual_cur = post_impl(x, residual, post_layer_mix, comb_res_mix)
++            residual_cur = _round_mhc_state(residual_cur, use_fp16, use_ai_core)
+         pre_impl = _mhc_pre_torch_sinkhorn_310 if getattr(self, "use_310p_sinkhorn", False) else _mhc_pre_torch
+         post_mix_cur, comb_mix_cur, layer_input_cur = pre_impl(
+             residual_cur,
+--- a/vllm_ascend/models/glm5next/model.py
++++ b/vllm_ascend/models/glm5next/model.py
+@@ -87,6 +87,7 @@
+     Glm5NextProcessingInfo,
+     Glm5NextVisionTransformer,
+ )
++from .ops.mhc_native import native_mhc_post_enabled
+ from .ops.mhc_ops import hc_contract, hc_expand
+ 
+ 
+@@ -383,6 +384,7 @@
+             use_310p_fp16_mhc_state = bool(getattr(config, "ascend_glm_mhc_fp16_state", False))
+             self.mhc_pre_op.use_310p_fp16_mhc_state = use_310p_fp16_mhc_state
+             self.mhc_fused_post_pre_op.use_310p_fp16_mhc_state = use_310p_fp16_mhc_state
++            self.mhc_fused_post_pre_op.use_310p_native_mhc_post = native_mhc_post_enabled(config)
+             self.mhc_fused_post_pre_op.use_310p_prefill_mhc_post = bool(
+                 getattr(config, "ascend_glm_prefill_mhc_post", False)
+             )
+--- a/vllm_ascend/models/glm5next_w2/model.py
++++ b/vllm_ascend/models/glm5next_w2/model.py
+@@ -1309,6 +1309,9 @@
+             )
+             self._glm_text_config.ascend_glm_mhc_fp16_state = bool(
+                 getattr(hf_config, "ascend_glm_mhc_fp16_state", False)
++            )
++            self._glm_text_config.ascend_glm_native_mhc_post = bool(
++                getattr(hf_config, "ascend_glm_native_mhc_post", False)
+             )
+             self._glm_text_config.ascend_glm_prefill_mhc_post = bool(
+                 getattr(hf_config, "ascend_glm_prefill_mhc_post", False)

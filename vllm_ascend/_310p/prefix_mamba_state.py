@@ -219,6 +219,34 @@ class PrefixMambaStateTier:
         if self._state_device is not None and self._state_device.type == "npu":
             torch.npu.synchronize(self._state_device)
 
+    def reset(self) -> None:
+        """Forget every checkpoint after the scheduler cache has been drained.
+
+        Keep primary, archive and swap storage intact for captured graphs.
+        Reclaimed primary slots are zeroed by their next admission. Counters
+        remain cumulative so callers can compare transfer deltas across resets.
+        This must only be called with no active or pending model execution.
+        """
+        self._synchronize_device_state()
+        self._resident.clear()
+        self._device_archive_resident.clear()
+        self._host.clear()
+        self._unused_slots = list(range(self.num_slots - 1, 0, -1))
+        self._unused_device_archive_slots = list(range(self.device_archive_slots - 1, -1, -1))
+
+    def cache_status(self) -> dict[str, int]:
+        """Report host metadata and cumulative transfers without device reads."""
+        return {
+            "resident_checkpoints": len(self._resident),
+            "archive_checkpoints": len(self._device_archive_resident),
+            "host_checkpoints": len(self._host),
+            "primary_slots": self.num_slots - 1,
+            "archive_slots": self.device_archive_slots,
+            "spill_count": self._spill_count,
+            "restore_count": self._restore_count,
+            "device_archive_hit_count": self._device_archive_hit_count,
+        }
+
     @staticmethod
     def _copy_tensors(targets: Sequence[torch.Tensor], sources: Sequence[torch.Tensor]) -> None:
         for target, source in zip(targets, sources):

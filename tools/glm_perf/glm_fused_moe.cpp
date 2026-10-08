@@ -4,6 +4,9 @@
 #include "kernel_operator.h"
 #include "glm_fused_quantize.h"
 #include "glm_route_input_layout.h"
+#if defined(GLM_NATIVE_ROUTE_COLUMNS) && (!defined(GLM_FP16_ROUTE_WORKSPACE) || defined(GLM_FUSED_GATE_UP))
+  #error "native route columns require the down stage and paired FP16 workspace reducer"
+#endif
 #ifndef GLM_INT4_OUTPUT_COLUMNS
   #define GLM_INT4_OUTPUT_COLUMNS 128
 #endif
@@ -239,8 +242,19 @@ class Projection {
 #ifndef GLM_FUSED_GATE_UP
         PipeBarrier<PIPE_ALL>();
         if (tokens_ <= BULK_TOKENS)
-          for (int64_t token = firstToken_; token < tokens_ && token < firstToken_ + M; ++token)
+          for (int64_t token = firstToken_; token < tokens_ && token < firstToken_ + M; ++token) {
+  #ifdef GLM_NATIVE_ROUTE_COLUMNS
+            // Columns are independent. Keep the exact route-add order in the
+            // Cube's column order, then permute once for the completed token.
+            Gather(LowProducts(), reduction_.Get<float>()[(token - firstToken_) * N], outputOffsets_.Get<uint32_t>(),
+                   static_cast<uint32_t>(0), N);
+            PipeBarrier<PIPE_ALL>();
+            DataCopy(y_[token * n_ + tile * N], LowProducts(), N);
+  #else
             DataCopy(y_[token * n_ + tile * N], reduction_.Get<float>()[(token - firstToken_) * N], N);
+  #endif
+            PipeBarrier<PIPE_ALL>();
+          }
         PipeBarrier<PIPE_ALL>();
 #endif
       }
@@ -327,7 +341,11 @@ class Projection {
     auto outputOffsets = outputOffsets_.Get<uint32_t>();
     for (uint32_t channel = 0; channel < N; ++channel) {
       const uint32_t physical = channel / 2 + (channel % 2 ? N / 2 : 0);
+#if defined(GLM_NATIVE_ROUTE_COLUMNS) && !defined(GLM_FUSED_GATE_UP)
+      outputOffsets.SetValue(channel, physical * sizeof(float));
+#else
       outputOffsets.SetValue(channel, physical * sizeof(half));
+#endif
       auto productOffsets = productOffsets_.Get<uint32_t>();
       for (uint32_t limbs = 1; limbs <= 2; ++limbs)
         productOffsets.SetValue((limbs - 1) * N + channel,
@@ -1426,21 +1444,26 @@ class Projection {
     Cast(output_.Get<half>(), accum, RoundMode::CAST_NONE, count * N);
     PipeBarrier<PIPE_ALL>();
     for (uint32_t m = 0; m < count; ++m) {
+#ifdef GLM_NATIVE_ROUTE_COLUMNS
+      auto routeValue = output_.Get<half>()[m * N];
+#else
       Gather(outputRow_.Get<half>(), output_.Get<half>()[m * N], outputOffsets_.Get<uint32_t>(),
              static_cast<uint32_t>(0), N);
       PipeBarrier<PIPE_ALL>();
+      auto routeValue = outputRow_.Get<half>();
+#endif
 #ifdef GLM_FP16_ROUTE_WORKSPACE
       if (tokens_ > BULK_TOKENS) {
         // This half rounding already exists in the original down epilogue.
         // Defer its exact FP32 route multiply to the stable reducer.
-        DataCopy(routedHalf_[(row + m) * n_ + tile * N], outputRow_.Get<half>(), N);
+        DataCopy(routedHalf_[(row + m) * n_ + tile * N], routeValue, N);
         PipeBarrier<PIPE_ALL>();
         continue;
       }
 #endif
       const int64_t route = order_.GetValue(row + m), token = route / topK_;
       const float weight = weights_.GetValue(route);
-      Cast(low, outputRow_.Get<half>(), RoundMode::CAST_NONE, N);
+      Cast(low, routeValue, RoundMode::CAST_NONE, N);
       PipeBarrier<PIPE_V>();
       Muls(low, low, weight, N);
       PipeBarrier<PIPE_ALL>();

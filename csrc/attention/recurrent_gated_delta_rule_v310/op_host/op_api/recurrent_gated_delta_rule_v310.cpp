@@ -42,17 +42,20 @@ const aclTensor *RecurrentGatedDeltaRuleV310(const aclTensor *query, const aclTe
     OP_CHECK(out != nullptr, OP_LOGE(ACLNN_ERR_INNER_NULLPTR, "out AllocTensor failed."),
              return nullptr);
 
+    // Preserve the physical page pitch; stateRef is an in-place cache view.
+    const int64_t stateStride = stateRef->GetViewStrides()[0];
+
     // infershape
     auto ret = INFER_SHAPE(
         RecurrentGatedDeltaRuleV310,
         OP_INPUT(query, key, value, beta, stateRef, actualSeqLengths, ssmStateIndices, g, gk, numAcceptedTokens),
-        OP_OUTPUT(out, stateRef), OP_ATTR(scaleValue));
+        OP_OUTPUT(out, stateRef), OP_ATTR(scaleValue, stateStride));
     OP_CHECK_INFERSHAPE(ret != ACLNN_SUCCESS, return nullptr, "RecurrentGatedDeltaRuleV310 InferShape failed.");
 
     ret = ADD_TO_LAUNCHER_LIST_AICORE(
         RecurrentGatedDeltaRuleV310,
         OP_INPUT(query, key, value, beta, stateRef, actualSeqLengths, ssmStateIndices, g, gk, numAcceptedTokens),
-        OP_OUTPUT(out, stateRef), OP_ATTR(scaleValue));
+        OP_OUTPUT(out, stateRef), OP_ATTR(scaleValue, stateStride));
     OP_CHECK_ADD_TO_LAUNCHER_LIST_AICORE(ret != ACLNN_SUCCESS, return nullptr,
                                          "RecurrentGatedDeltaRuleV310 ADD_TO_LAUNCHER_LIST_AICORE failed.");
 

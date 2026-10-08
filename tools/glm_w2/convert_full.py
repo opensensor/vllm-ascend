@@ -55,6 +55,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import regex as re
 import torch
 
 from tools.deepseek_w2.convert_full import (
@@ -90,28 +91,47 @@ from tools.deepseek_w2.w2_format import (
     W2_BITS,
     W2_BLOCK_COLS,
     W2_BLOCK_ROWS,
+    W3_BITS,
     W4_BITS,
     pack_codes,
     quantize_weight,
 )
 from tools.glm_w2.build_manifest import classify
 
-import re as _re
-
 
 def _expert_layer_index(name: str) -> int | None:
     """Decoder layer index for a ``...layers.{L}.mlp.experts...`` tensor, else None."""
-    m = _re.search(r"\.layers\.(\d+)\.", name)
+    m = re.search(r"\.layers\.(\d+)\.", name)
     return int(m.group(1)) if m else None
 
 
-def _routed_expert_bits(name: str, default_bits: int, w4_layers: frozenset[int]) -> int:
-    """Per-layer code width for a routed-expert weight: W4 for layers in
-    ``w4_layers`` (or when the global default is 4), else ``default_bits``."""
+def _routed_expert_bits(
+    name: str, default_bits: int, w4_layers: frozenset[int], w3_layers: frozenset[int] = frozenset()
+) -> int:
+    """Per-layer expert width, with selected W3 layers taking precedence."""
+    li = _expert_layer_index(name)
+    if li is not None and li in w3_layers:
+        return W3_BITS
     if default_bits == W4_BITS:
         return W4_BITS
-    li = _expert_layer_index(name)
     return W4_BITS if (li is not None and li in w4_layers) else default_bits
+
+
+def _packed_code_bytes(rows: int, in_features: int, bits: int) -> int:
+    if bits == W3_BITS:
+        if in_features % 8:
+            raise ValueError("W3 expert input width must be a multiple of eight")
+        return rows * in_features * W3_BITS // 8
+    return _codes_bytes(rows, in_features, bits)
+
+
+def _packed_rows(in_features: int, bits: int, target_bytes: int) -> int:
+    if bits != W3_BITS:
+        return _packed_part_rows(in_features, bits, target_bytes)
+    bytes_per_row = _packed_code_bytes(1, in_features, bits)
+    rows = max(1, target_bytes // bytes_per_row)
+    return max(W2_BLOCK_ROWS, rows // W2_BLOCK_ROWS * W2_BLOCK_ROWS)
+
 
 # --- defaults ----------------------------------------------------------------
 DEFAULT_SOURCE_DIR = "/run/media/matteius/20TB-drive/models/GLM-5.3-Flash-FP8"
@@ -173,7 +193,7 @@ def dequant_fp8_e4m3_f32block(
 class Route:
     """The target precision + source handling for one source weight tensor."""
 
-    target: str  # "W2" | "FP16" | "EXCLUDE" | "SCALE"
+    target: str  # "W2" | "W3" | "W4" | "FP16" | "EXCLUDE" | "SCALE"
     source_format: str  # "fp8_e4m3_f32block" | "cast" | ""
 
 
@@ -182,13 +202,14 @@ def route_tensor(
     dtype: str,
     default_expert_bits: int = W2_BITS,
     w4_layers: frozenset[int] = frozenset(),
+    w3_layers: frozenset[int] = frozenset(),
 ) -> Route:
     """Route one tensor to its target precision from family + header dtype.
 
     ``SCALE`` (a ``.weight_scale_inv`` companion) is consumed with its weight and
     never emitted standalone. ``EXCLUDE`` covers the vision tower (text-only).
-    Routed experts go to ``"W2"`` or ``"W4"`` per :func:`_routed_expert_bits`
-    (mixed precision: W4 for the listed/most-sensitive deep layers, W2 elsewhere).
+    Routed experts go to ``"W2"``, ``"W3"``, or ``"W4"`` per
+    :func:`_routed_expert_bits`.
     """
     family = classify(name)
     if family == "vision":
@@ -196,16 +217,20 @@ def route_tensor(
     if name.endswith(_SCALE_SUFFIX):
         return Route("SCALE", "")
     if family == "routed_expert_weight":
-        bits = _routed_expert_bits(name, default_expert_bits, w4_layers)
-        return Route("W4" if bits == W4_BITS else "W2", FMT_FP8_F32BLOCK)
+        bits = _routed_expert_bits(name, default_expert_bits, w4_layers, w3_layers)
+        return Route(f"W{bits}", FMT_FP8_F32BLOCK)
     # Everything else deploys at FP16: dequantise F8_E4M3 blocks, else cast.
     return Route("FP16", FMT_FP8_F32BLOCK if dtype == "F8_E4M3" else FMT_CAST)
 
 
 # --- planning ----------------------------------------------------------------
 def plan_items(
-    weight_map: dict[str, str], headers: dict[str, dict], target_bytes: int,
-    default_expert_bits: int = W2_BITS, w4_layers: frozenset[int] = frozenset(),
+    weight_map: dict[str, str],
+    headers: dict[str, dict],
+    target_bytes: int,
+    default_expert_bits: int = W2_BITS,
+    w4_layers: frozenset[int] = frozenset(),
+    w3_layers: frozenset[int] = frozenset(),
 ) -> tuple[list[ConvItem], list[dict]]:
     """Turn the source weight-map into a deterministic list of conversion items.
 
@@ -219,13 +244,13 @@ def plan_items(
         meta = headers[weight_map[name]][name]
         dtype = meta["dtype"]
         shape = tuple(meta["shape"])
-        route = route_tensor(name, dtype, default_expert_bits, w4_layers)
+        route = route_tensor(name, dtype, default_expert_bits, w4_layers, w3_layers)
         if route.target == "SCALE":
             continue
         if route.target == "EXCLUDE":
             excluded.append({"tensor": name, "family": classify(name), "dtype": dtype, "shape": list(shape)})
             continue
-        if route.target in ("W2", "W4"):
+        if route.target in ("W2", "W3", "W4"):
             items.extend(_plan_packed(name, dtype, shape, route, target_bytes))
         else:
             items.extend(_plan_fp16(name, dtype, shape, route, target_bytes))
@@ -238,20 +263,26 @@ def _scale_name_for(name: str) -> str:
 
 
 def _plan_packed(name: str, dtype: str, shape: tuple[int, ...], route: Route, target_bytes: int) -> list[ConvItem]:
-    bits = W4_BITS if route.target == "W4" else W2_BITS
+    bits = int(route.target[1:])
     out_features, in_features = shape  # GLM FP8 experts are stored [out, in] (not packed)
     stem = name[: -len(".weight")] if name.endswith(".weight") else name
-    total_bytes = _codes_bytes(out_features, in_features, bits) + _scale_bytes(out_features, in_features)
+    padded_out = math.ceil(out_features / W2_BLOCK_ROWS) * W2_BLOCK_ROWS
+    total_bytes = _packed_code_bytes(padded_out, in_features, bits) + _scale_bytes(padded_out, in_features)
     if total_bytes <= target_bytes:
         ranges = [(0, out_features)]
     else:
-        ranges = _part_ranges(out_features, _packed_part_rows(in_features, bits, target_bytes))
+        ranges = _part_ranges(out_features, _packed_rows(in_features, bits, target_bytes))
     n_parts = len(ranges)
     items: list[ConvItem] = []
     for k, (r0, r1) in enumerate(ranges):
         rows = r1 - r0
-        codes = OutputTensor(_suffix(f"{stem}_codes", k, n_parts), "codes", "U8", _codes_bytes(rows, in_features, bits))
-        scale = OutputTensor(_suffix(f"{stem}_scale", k, n_parts), "scale", "F32", _scale_bytes(rows, in_features))
+        padded_rows = math.ceil(rows / W2_BLOCK_ROWS) * W2_BLOCK_ROWS
+        codes = OutputTensor(
+            _suffix(f"{stem}_codes", k, n_parts), "codes", "U8", _packed_code_bytes(padded_rows, in_features, bits)
+        )
+        scale = OutputTensor(
+            _suffix(f"{stem}_scale", k, n_parts), "scale", "F32", _scale_bytes(padded_rows, in_features)
+        )
         items.append(
             ConvItem(
                 stem=stem,
@@ -356,12 +387,11 @@ def _convert_packed_range(
     multiple of 32 still tiles the ``[32, 32]`` block-scale grid. The transient
     working set is one float tile of ``chunk_rows x in_features``.
     """
-    bits = W4_BITS if item.target == "W4" else W2_BITS
+    bits = int(item.target[1:])
     in_features = item.in_features
     part_rows = item.row1 - item.row0
     padded = math.ceil(part_rows / W2_BLOCK_ROWS) * W2_BLOCK_ROWS
-    codes_per_byte = 8 // bits
-    packed = torch.zeros(padded, in_features // codes_per_byte, dtype=torch.uint8)
+    packed = torch.zeros(padded, _packed_code_bytes(1, in_features, bits), dtype=torch.uint8)
     block_scale = torch.zeros(padded // W2_BLOCK_ROWS, in_features // W2_BLOCK_COLS, dtype=torch.float32)
     stats = ConversionStats(
         out_features=part_rows,
@@ -380,8 +410,11 @@ def _convert_packed_range(
         # vs the fp8 source at zero memory cost (same code format/kernels). Set
         # GLM_W2_SCALE_METHOD=minmax to reproduce the original no-clip scale.
         codes, scale = quantize_weight(
-            tile, bits, W2_BLOCK_ROWS, W2_BLOCK_COLS,
-            method=os.environ.get("GLM_W2_SCALE_METHOD", "mse"),
+            tile,
+            bits,
+            W2_BLOCK_ROWS,
+            W2_BLOCK_COLS,
+            method="minmax" if bits == W3_BITS else os.environ.get("GLM_W2_SCALE_METHOD", "mse"),
         )
         dst = c0 - item.row0
         packed[dst : dst + padded_height] = pack_codes(codes, bits)
@@ -432,7 +465,7 @@ def convert_item(
     reader: SafetensorsShardReader, item: ConvItem, chunk_rows: int
 ) -> tuple[dict[str, torch.Tensor], ConversionStats]:
     """Convert one item to its output tensor(s) (bounded working set)."""
-    if item.target in ("W2", "W4"):
+    if item.target in ("W2", "W3", "W4"):
         packed, scale, stats = _convert_packed_range(reader, item, chunk_rows)
         return {item.outputs[0].name: packed.contiguous(), item.outputs[1].name: scale.contiguous()}, stats
     tensor, stats = _convert_fp16(reader, item, chunk_rows)
@@ -462,17 +495,20 @@ def _provenance_entry(stem_items: list[ConvItem], stats: ConversionStats | None)
         "outputs": [o.name for it in stem_items for o in it.outputs],
         "part_rows": [[it.row0, it.row1] for it in stem_items],
     }
-    if head.target in ("W2", "W4"):
-        _bits = W4_BITS if head.target == "W4" else W2_BITS
+    if head.target in ("W2", "W3", "W4"):
+        _bits = int(head.target[1:])
         entry["packing"] = {
             "n_bits": _bits,
-            "codes_per_byte": 8 // _bits,
             "grid": "signed two's-complement, symmetric",
             "block_rows": W2_BLOCK_ROWS,
             "block_cols": W2_BLOCK_COLS,
             "endianness": "little-endian by field index within byte",
             "row_pad_to_block": head.out_features % W2_BLOCK_ROWS != 0,
         }
+        if _bits == W3_BITS:
+            entry["packing"].update({"codes_per_group": 8, "bytes_per_group": 3})
+        else:
+            entry["packing"]["codes_per_byte"] = 8 // _bits
     if stats is not None:
         entry["peak_float_tile_bytes"] = stats.peak_float_tile_bytes
     return entry
@@ -487,6 +523,7 @@ def run(
     resume: bool = True,
     default_expert_bits: int = W2_BITS,
     w4_layers: frozenset[int] = frozenset(),
+    w3_layers: frozenset[int] = frozenset(),
 ) -> RunResult:
     """Convert the full GLM-5.3-Flash model, streaming + resumable + sharded.
 
@@ -500,7 +537,7 @@ def run(
 
     weight_map = json.loads((source_dir / INDEX_FILE).read_text())["weight_map"]
     headers = _load_headers(source_dir, weight_map)
-    items, excluded = plan_items(weight_map, headers, shard_target_bytes, default_expert_bits, w4_layers)
+    items, excluded = plan_items(weight_map, headers, shard_target_bytes, default_expert_bits, w4_layers, w3_layers)
     shards = bin_shards(items, shard_target_bytes)
     n_shards = len(shards)
     shard_names = [_shard_name(i, n_shards) for i in range(n_shards)]
@@ -581,8 +618,13 @@ def run(
         "out_dir": str(out_dir),
         "shard_target_bytes": shard_target_bytes,
         "chunk_rows": chunk_rows,
+        "default_expert_bits": default_expert_bits,
+        "w4_layers": sorted(w4_layers),
+        "w3_layers": sorted(w3_layers),
         "routing_table": {
-            "routed_expert mlp.experts.{E}.*_proj.weight (F8_E4M3 + F32 block)": "W2 (2-bit codes + fp32 scale)",
+            "routed_expert mlp.experts.{E}.*_proj.weight (F8_E4M3 + F32 block)": (
+                "selected W3, then selected W4, otherwise default W2/W4; fp32 scale"
+            ),
             "other F8_E4M3 weights (dense MLP / shared_experts / MLA projections)": "FP16 (dequant_fp8_e4m3_f32block)",
             "BF16/F32 (linear-attn / norms / gate / hc / embed / lm_head / MTP)": "FP16 (cast)",
             "*.weight_scale_inv": "consumed with its weight (not emitted)",
@@ -615,13 +657,22 @@ def _cli(argv=None) -> int:
     parser.add_argument("--chunk-rows", type=int, default=DEFAULT_CHUNK_ROWS)
     parser.add_argument("--no-resume", action="store_true", help="ignore progress.json and reconvert every shard")
     parser.add_argument(
-        "--expert-bits", type=int, default=W2_BITS, choices=(W2_BITS, W4_BITS),
+        "--expert-bits",
+        type=int,
+        default=W2_BITS,
+        choices=(W2_BITS, W4_BITS),
         help="default routed-expert code width (2=W2, 4=W4). 4 makes ALL experts W4.",
     )
     parser.add_argument(
-        "--w4-layers", default="",
+        "--w4-layers",
+        default="",
         help="comma-separated decoder layer indices to quantize experts at W4 while the "
-             "rest use --expert-bits (mixed precision, e.g. '34,35,...,44'); 'all' = every layer.",
+        "rest use --expert-bits (mixed precision, e.g. '34,35,...,44'); 'all' = every layer.",
+    )
+    parser.add_argument(
+        "--w3-layers",
+        default="",
+        help="comma-separated decoder layer indices to quantize experts at packed W3; overrides --w4-layers",
     )
     args = parser.parse_args(argv)
 
@@ -629,6 +680,7 @@ def _cli(argv=None) -> int:
         w4_layers = frozenset(range(0, 10000))
     else:
         w4_layers = frozenset(int(x) for x in args.w4_layers.split(",") if x.strip())
+    w3_layers = frozenset(int(x) for x in args.w3_layers.split(",") if x.strip())
 
     started = time.time()
     result = run(
@@ -639,6 +691,7 @@ def _cli(argv=None) -> int:
         resume=not args.no_resume,
         default_expert_bits=args.expert_bits,
         w4_layers=w4_layers,
+        w3_layers=w3_layers,
     )
     converted = sum(1 for s in result.shard_status.values() if s == "converted")
     skipped = sum(1 for s in result.shard_status.values() if s == "skipped")

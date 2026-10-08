@@ -1,0 +1,37 @@
+--- a/vllm_ascend/spec_decode/multi_kv_cache_group_proposer.py
++++ b/vllm_ascend/spec_decode/multi_kv_cache_group_proposer.py
+@@ -198,7 +198,14 @@
+         ):
+             max_logical_blocks = (self.max_model_len + logical_block_size - 1) // logical_block_size
+             return max_logical_blocks * blocks_per_logical_block
+-        return builder.kv_cache_spec.max_num_blocks_per_req(self.vllm_config, self.max_model_len)
++        physical_blocks = builder.kv_cache_spec.max_num_blocks_per_req(self.vllm_config, self.max_model_len)
++        # MLA's builder does not expose the indexer-specific geometry above.
++        # Its runner table still expands each scheduler page into kernel pages
++        # (640 / 32 = 20 on GLM 310P). Cropping that table to physical_blocks
++        # discards 19/20 of the request's addressable history. At 311040 context
++        # QSA then receives only 25 physical page entries and faults past 16K.
++        block_table = self.runner.input_batch.block_table[attn_group.kv_cache_group_id]
++        return physical_blocks * block_table.blocks_per_phys_block
+ 
+     def _common_attn_metadata_for_draft_group(
+         self,
+--- a/vllm_ascend/_310p/attention/mla_v1_310.py
++++ b/vllm_ascend/_310p/attention/mla_v1_310.py
+@@ -531,6 +531,16 @@
+             prefill_meta.block_table.to(device=query.device, dtype=torch.int32),
+             kv_c_and_k_pe_cache[0].shape[2],
+         )
++        addressable_tokens = block_table.shape[1] * kv_c_and_k_pe_cache[0].shape[2]
++        if prefill_meta.max_seq_lens > addressable_tokens:
++            # This is scheduler-owned host metadata, so checking it adds no
++            # device synchronization. Reject a truncated MTP table before QSA
++            # can read past its final column and turn garbage into a GM address.
++            raise ValueError(
++                "310P MLA prefill block table is shorter than the visible context: "
++                f"{addressable_tokens} addressable tokens < {prefill_meta.max_seq_lens}. "
++                "Draft metadata must retain all kernel blocks per scheduler page."
++            )
+         query_start_loc = prefill_meta.query_start_loc.to(device=query.device, dtype=torch.int32).contiguous()
+         if self.glm_indexer is None:
+             group_indices, tail_starts, tail_counts, _ = self._get_decode_constant_buffers(

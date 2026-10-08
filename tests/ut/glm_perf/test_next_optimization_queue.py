@@ -37,7 +37,7 @@ def test_batch_admission(tokens, routes):
     plan = ExpertBatch(tokens, routes).plan()
     assert plan["hf_override"]["ascend_glm_grouped_max_routes"] == routes
     assert plan["requires_runner_reallocation"]
-    assert len(queue()["experiments"]) == 7
+    assert len(queue()["experiments"]) == 11
 
 
 @pytest.mark.parametrize(

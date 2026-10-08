@@ -1,0 +1,1476 @@
+{
+  "selected": true,
+  "workers": [
+    {
+      "pid": 2512274,
+      "rank": 0,
+      "generation": "07951e99513f4a9fb993312c8add3499",
+      "mode": "graph",
+      "candidate": "all_batch_fusions",
+      "digest": "9d5b61af1c796c06c986992b6986c08ec3830328d4a5dfc758ef4e1cec58f161",
+      "graphs_dirty": false,
+      "weight_storage_digest": "ec23809661c6fbed3fabce7e858fa67faf16dedce224e18396ec9906e5747e78",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "glm_eager_fusions_v1": {
+          "native_name": "glm_eager_fusions_v1",
+          "native_digest": "58531a0b2177abb4a6d33d55a32ce59efea4f0a3d4e519db9aa9b9b8d7e7af49",
+          "validation": {
+            "passed": true,
+            "cases": [
+              {
+                "tokens": 1,
+                "swiglu_fp16_bit_mismatches": 0,
+                "mhc_post_max_abs": 0.0,
+                "mhc_post_fp32_bit_mismatches": 0
+              },
+              {
+                "tokens": 2,
+                "swiglu_fp16_bit_mismatches": 0,
+                "mhc_post_max_abs": 7.62939453125e-06,
+                "mhc_post_fp32_bit_mismatches": 1
+              },
+              {
+                "tokens": 4,
+                "swiglu_fp16_bit_mismatches": 0,
+                "mhc_post_max_abs": 0.0009765625,
+                "mhc_post_fp32_bit_mismatches": 3
+              },
+              {
+                "tokens": 8,
+                "swiglu_fp16_bit_mismatches": 2,
+                "mhc_post_max_abs": 0.001953125,
+                "mhc_post_fp32_bit_mismatches": 9
+              }
+            ],
+            "graph_shapes": [
+              1,
+              2,
+              4,
+              8
+            ],
+            "precision": "SwiGLU/mHC post FP16 step tolerance; combine bounded against independent FP64 oracle"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 24,
+        "compact_tokens": 2160,
+        "fallback_calls": 46,
+        "max_compact_tokens": 144
+      },
+      "eager_fusions": {
+        "swiglu": [
+          {
+            "geometry": [
+              8,
+              2048
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              16,
+              2048
+            ],
+            "calls": 260
+          },
+          {
+            "geometry": [
+              32,
+              2048
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              64,
+              2048
+            ],
+            "calls": 260
+          },
+          {
+            "geometry": [
+              200,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              616,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              872,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              1008,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              1064,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              1120,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              1416,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              288,
+              2048
+            ],
+            "calls": 86
+          },
+          {
+            "geometry": [
+              1152,
+              2048
+            ],
+            "calls": 86
+          }
+        ],
+        "combine": [
+          {
+            "geometry": [
+              1,
+              4096,
+              8,
+              4
+            ],
+            "calls": 3
+          },
+          {
+            "geometry": [
+              1,
+              4096,
+              8,
+              2
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              2,
+              4096,
+              8,
+              4
+            ],
+            "calls": 3
+          },
+          {
+            "geometry": [
+              2,
+              4096,
+              8,
+              2
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              4,
+              4096,
+              8,
+              4
+            ],
+            "calls": 3
+          },
+          {
+            "geometry": [
+              4,
+              4096,
+              8,
+              2
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              8,
+              4096,
+              8,
+              4
+            ],
+            "calls": 3
+          },
+          {
+            "geometry": [
+              8,
+              4096,
+              8,
+              2
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              8,
+              4096,
+              8,
+              72
+            ],
+            "calls": 258
+          },
+          {
+            "geometry": [
+              2,
+              4096,
+              8,
+              72
+            ],
+            "calls": 258
+          },
+          {
+            "geometry": [
+              25,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              77,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              109,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              126,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              133,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              140,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              177,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              36,
+              4096,
+              8,
+              72
+            ],
+            "calls": 86
+          },
+          {
+            "geometry": [
+              144,
+              4096,
+              8,
+              72
+            ],
+            "calls": 86
+          }
+        ],
+        "mhc_post": [
+          {
+            "geometry": [
+              1,
+              4096
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              2,
+              4096
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              4,
+              4096
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              8,
+              4096
+            ],
+            "calls": 2
+          }
+        ]
+      }
+    },
+    {
+      "pid": 2512653,
+      "rank": 1,
+      "generation": "07951e99513f4a9fb993312c8add3499",
+      "mode": "graph",
+      "candidate": "all_batch_fusions",
+      "digest": "9d5b61af1c796c06c986992b6986c08ec3830328d4a5dfc758ef4e1cec58f161",
+      "graphs_dirty": false,
+      "weight_storage_digest": "df3a1cf45fd6daa716a175fccf221b9ec5c81a487ada73552318770ca86f9829",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "glm_eager_fusions_v1": {
+          "native_name": "glm_eager_fusions_v1",
+          "native_digest": "58531a0b2177abb4a6d33d55a32ce59efea4f0a3d4e519db9aa9b9b8d7e7af49",
+          "validation": {
+            "passed": true,
+            "cases": [
+              {
+                "tokens": 1,
+                "swiglu_fp16_bit_mismatches": 0,
+                "mhc_post_max_abs": 0.0,
+                "mhc_post_fp32_bit_mismatches": 0
+              },
+              {
+                "tokens": 2,
+                "swiglu_fp16_bit_mismatches": 0,
+                "mhc_post_max_abs": 7.62939453125e-06,
+                "mhc_post_fp32_bit_mismatches": 1
+              },
+              {
+                "tokens": 4,
+                "swiglu_fp16_bit_mismatches": 0,
+                "mhc_post_max_abs": 0.0009765625,
+                "mhc_post_fp32_bit_mismatches": 3
+              },
+              {
+                "tokens": 8,
+                "swiglu_fp16_bit_mismatches": 2,
+                "mhc_post_max_abs": 0.001953125,
+                "mhc_post_fp32_bit_mismatches": 9
+              }
+            ],
+            "graph_shapes": [
+              1,
+              2,
+              4,
+              8
+            ],
+            "precision": "SwiGLU/mHC post FP16 step tolerance; combine bounded against independent FP64 oracle"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 46,
+        "max_compact_tokens": 0
+      },
+      "eager_fusions": {
+        "swiglu": [
+          {
+            "geometry": [
+              8,
+              2048
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              16,
+              2048
+            ],
+            "calls": 260
+          },
+          {
+            "geometry": [
+              32,
+              2048
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              64,
+              2048
+            ],
+            "calls": 260
+          },
+          {
+            "geometry": [
+              200,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              616,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              872,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              1008,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              1064,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              1120,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              1416,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              288,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              1152,
+              2048
+            ],
+            "calls": 43
+          }
+        ],
+        "combine": [
+          {
+            "geometry": [
+              1,
+              4096,
+              8,
+              4
+            ],
+            "calls": 3
+          },
+          {
+            "geometry": [
+              1,
+              4096,
+              8,
+              2
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              2,
+              4096,
+              8,
+              4
+            ],
+            "calls": 3
+          },
+          {
+            "geometry": [
+              2,
+              4096,
+              8,
+              2
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              4,
+              4096,
+              8,
+              4
+            ],
+            "calls": 3
+          },
+          {
+            "geometry": [
+              4,
+              4096,
+              8,
+              2
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              8,
+              4096,
+              8,
+              4
+            ],
+            "calls": 3
+          },
+          {
+            "geometry": [
+              8,
+              4096,
+              8,
+              2
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              8,
+              4096,
+              8,
+              72
+            ],
+            "calls": 258
+          },
+          {
+            "geometry": [
+              2,
+              4096,
+              8,
+              72
+            ],
+            "calls": 258
+          },
+          {
+            "geometry": [
+              25,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              77,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              109,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              126,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              133,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              140,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              177,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              36,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              144,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          }
+        ],
+        "mhc_post": [
+          {
+            "geometry": [
+              1,
+              4096
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              2,
+              4096
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              4,
+              4096
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              8,
+              4096
+            ],
+            "calls": 2
+          }
+        ]
+      }
+    },
+    {
+      "pid": 2513147,
+      "rank": 2,
+      "generation": "07951e99513f4a9fb993312c8add3499",
+      "mode": "graph",
+      "candidate": "all_batch_fusions",
+      "digest": "9d5b61af1c796c06c986992b6986c08ec3830328d4a5dfc758ef4e1cec58f161",
+      "graphs_dirty": false,
+      "weight_storage_digest": "6aa02cf88cd2e080c25b1dcde1f5169007ba61cccd362f6ea9198b8a6d36205f",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "glm_eager_fusions_v1": {
+          "native_name": "glm_eager_fusions_v1",
+          "native_digest": "58531a0b2177abb4a6d33d55a32ce59efea4f0a3d4e519db9aa9b9b8d7e7af49",
+          "validation": {
+            "passed": true,
+            "cases": [
+              {
+                "tokens": 1,
+                "swiglu_fp16_bit_mismatches": 0,
+                "mhc_post_max_abs": 0.0,
+                "mhc_post_fp32_bit_mismatches": 0
+              },
+              {
+                "tokens": 2,
+                "swiglu_fp16_bit_mismatches": 0,
+                "mhc_post_max_abs": 7.62939453125e-06,
+                "mhc_post_fp32_bit_mismatches": 1
+              },
+              {
+                "tokens": 4,
+                "swiglu_fp16_bit_mismatches": 0,
+                "mhc_post_max_abs": 0.0009765625,
+                "mhc_post_fp32_bit_mismatches": 3
+              },
+              {
+                "tokens": 8,
+                "swiglu_fp16_bit_mismatches": 2,
+                "mhc_post_max_abs": 0.001953125,
+                "mhc_post_fp32_bit_mismatches": 9
+              }
+            ],
+            "graph_shapes": [
+              1,
+              2,
+              4,
+              8
+            ],
+            "precision": "SwiGLU/mHC post FP16 step tolerance; combine bounded against independent FP64 oracle"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 46,
+        "max_compact_tokens": 0
+      },
+      "eager_fusions": {
+        "swiglu": [
+          {
+            "geometry": [
+              8,
+              2048
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              16,
+              2048
+            ],
+            "calls": 260
+          },
+          {
+            "geometry": [
+              32,
+              2048
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              64,
+              2048
+            ],
+            "calls": 260
+          },
+          {
+            "geometry": [
+              200,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              616,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              872,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              1008,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              1064,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              1120,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              1416,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              288,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              1152,
+              2048
+            ],
+            "calls": 43
+          }
+        ],
+        "combine": [
+          {
+            "geometry": [
+              1,
+              4096,
+              8,
+              4
+            ],
+            "calls": 3
+          },
+          {
+            "geometry": [
+              1,
+              4096,
+              8,
+              2
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              2,
+              4096,
+              8,
+              4
+            ],
+            "calls": 3
+          },
+          {
+            "geometry": [
+              2,
+              4096,
+              8,
+              2
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              4,
+              4096,
+              8,
+              4
+            ],
+            "calls": 3
+          },
+          {
+            "geometry": [
+              4,
+              4096,
+              8,
+              2
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              8,
+              4096,
+              8,
+              4
+            ],
+            "calls": 3
+          },
+          {
+            "geometry": [
+              8,
+              4096,
+              8,
+              2
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              8,
+              4096,
+              8,
+              72
+            ],
+            "calls": 258
+          },
+          {
+            "geometry": [
+              2,
+              4096,
+              8,
+              72
+            ],
+            "calls": 258
+          },
+          {
+            "geometry": [
+              25,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              77,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              109,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              126,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              133,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              140,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              177,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              36,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              144,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          }
+        ],
+        "mhc_post": [
+          {
+            "geometry": [
+              1,
+              4096
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              2,
+              4096
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              4,
+              4096
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              8,
+              4096
+            ],
+            "calls": 2
+          }
+        ]
+      }
+    },
+    {
+      "pid": 2513520,
+      "rank": 3,
+      "generation": "07951e99513f4a9fb993312c8add3499",
+      "mode": "graph",
+      "candidate": "all_batch_fusions",
+      "digest": "9d5b61af1c796c06c986992b6986c08ec3830328d4a5dfc758ef4e1cec58f161",
+      "graphs_dirty": false,
+      "weight_storage_digest": "01b2ba00751740c3ce71aeb927cf0e9f423bd1a950003e83b9a1516d9ea36a40",
+      "native_failed": false,
+      "native_loaded": {
+        "sinkhorn_normalize_v1": {
+          "native_name": "sinkhorn_normalize_v1",
+          "native_digest": "ab86c84f68fc1f5139cf274ef0bb467953ea980bf7558a7459920ce665c526ae",
+          "validation": {
+            "passed": true,
+            "exact_fp32": true,
+            "cases": 20,
+            "order": 2
+          }
+        },
+        "glm_eager_fusions_v1": {
+          "native_name": "glm_eager_fusions_v1",
+          "native_digest": "58531a0b2177abb4a6d33d55a32ce59efea4f0a3d4e519db9aa9b9b8d7e7af49",
+          "validation": {
+            "passed": true,
+            "cases": [
+              {
+                "tokens": 1,
+                "swiglu_fp16_bit_mismatches": 0,
+                "mhc_post_max_abs": 0.0,
+                "mhc_post_fp32_bit_mismatches": 0
+              },
+              {
+                "tokens": 2,
+                "swiglu_fp16_bit_mismatches": 0,
+                "mhc_post_max_abs": 7.62939453125e-06,
+                "mhc_post_fp32_bit_mismatches": 1
+              },
+              {
+                "tokens": 4,
+                "swiglu_fp16_bit_mismatches": 0,
+                "mhc_post_max_abs": 0.0009765625,
+                "mhc_post_fp32_bit_mismatches": 3
+              },
+              {
+                "tokens": 8,
+                "swiglu_fp16_bit_mismatches": 2,
+                "mhc_post_max_abs": 0.001953125,
+                "mhc_post_fp32_bit_mismatches": 9
+              }
+            ],
+            "graph_shapes": [
+              1,
+              2,
+              4,
+              8
+            ],
+            "precision": "SwiGLU/mHC post FP16 step tolerance; combine bounded against independent FP64 oracle"
+          }
+        }
+      },
+      "completed_pool_audit": {
+        "compact_calls": 0,
+        "compact_tokens": 0,
+        "fallback_calls": 46,
+        "max_compact_tokens": 0
+      },
+      "eager_fusions": {
+        "swiglu": [
+          {
+            "geometry": [
+              8,
+              2048
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              16,
+              2048
+            ],
+            "calls": 260
+          },
+          {
+            "geometry": [
+              32,
+              2048
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              64,
+              2048
+            ],
+            "calls": 260
+          },
+          {
+            "geometry": [
+              200,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              616,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              872,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              1008,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              1064,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              1120,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              1416,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              288,
+              2048
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              1152,
+              2048
+            ],
+            "calls": 43
+          }
+        ],
+        "combine": [
+          {
+            "geometry": [
+              1,
+              4096,
+              8,
+              4
+            ],
+            "calls": 3
+          },
+          {
+            "geometry": [
+              1,
+              4096,
+              8,
+              2
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              2,
+              4096,
+              8,
+              4
+            ],
+            "calls": 3
+          },
+          {
+            "geometry": [
+              2,
+              4096,
+              8,
+              2
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              4,
+              4096,
+              8,
+              4
+            ],
+            "calls": 3
+          },
+          {
+            "geometry": [
+              4,
+              4096,
+              8,
+              2
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              8,
+              4096,
+              8,
+              4
+            ],
+            "calls": 3
+          },
+          {
+            "geometry": [
+              8,
+              4096,
+              8,
+              2
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              8,
+              4096,
+              8,
+              72
+            ],
+            "calls": 258
+          },
+          {
+            "geometry": [
+              2,
+              4096,
+              8,
+              72
+            ],
+            "calls": 258
+          },
+          {
+            "geometry": [
+              25,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              77,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              109,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              126,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              133,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              140,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              177,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              36,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          },
+          {
+            "geometry": [
+              144,
+              4096,
+              8,
+              72
+            ],
+            "calls": 43
+          }
+        ],
+        "mhc_post": [
+          {
+            "geometry": [
+              1,
+              4096
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              2,
+              4096
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              4,
+              4096
+            ],
+            "calls": 2
+          },
+          {
+            "geometry": [
+              8,
+              4096
+            ],
+            "calls": 2
+          }
+        ]
+      }
+    }
+  ],
+  "pause": {
+    "is_paused": false
+  }
+}

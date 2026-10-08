@@ -3,10 +3,12 @@
 
 from types import SimpleNamespace
 
+import pytest
 import torch
 from vllm.v1.kv_cache_interface import UniformTypeKVCacheSpecs
 
 from vllm_ascend.core.kv_cache_interface import (
+    AscendIndexerKPoolStateSpec,
     AscendMLAAttentionSpec,
     AscendSlidingWindowMLASpec,
     get_kv_cache_compression_ratio,
@@ -50,3 +52,17 @@ def test_sliding_window_mla_storage_and_page_size():
     )
     assert spec.storage_block_size == 16
     assert spec.real_page_size_bytes == 16 * 128 * 2
+
+
+@pytest.mark.parametrize("window", [4, 5, 6, 11])
+def test_indexer_pool_state_retains_speculative_window(window):
+    spec = AscendIndexerKPoolStateSpec(
+        block_size=4, num_kv_heads=1, head_size=256, dtype=torch.float32, sliding_window=window
+    )
+    assert spec.block_size == 4
+    assert spec.sliding_window == window
+
+
+def test_indexer_pool_state_rejects_window_smaller_than_pool():
+    with pytest.raises(ValueError, match="block_size <="):
+        AscendIndexerKPoolStateSpec(block_size=4, num_kv_heads=1, head_size=256, dtype=torch.float32, sliding_window=3)

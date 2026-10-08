@@ -91,6 +91,7 @@ The grouped path builds token IDs as repeated `arange(num_tokens)` and gathers
 them by the route permutation. The sorted token IDs are equivalently
 `dispatch.order // top_k`, because original routes are token-major. Eliminating
 both the token-ID expansion and gather needs a GLM-specific descriptor path;
-replacing only the gather would leave the expansion allocated. This is recorded
-for follow-up, not claimed as another ready optimization. The shared Qwen
-dispatcher has not been modified.
+replacing only the gather would leave the expansion allocated. The
+[eighth experiment](direct-route-tokens.md) now stages that private descriptor
+and direct indexing, with CPU parity checks and pending NPU qualification.
+The shared Qwen dispatcher has not been modified.

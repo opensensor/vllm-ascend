@@ -13,8 +13,75 @@ import vllm_ascend.spec_decode.multi_kv_cache_group_proposer as multi_group_prop
 from vllm_ascend.spec_decode.eagle_proposer import AscendEagleProposer
 from vllm_ascend.spec_decode.multi_kv_cache_group_proposer import (
     AscendMultiKVCacheGroupMTPProposer,
+    compute_packed_draft_slots,
     is_multi_kv_cache_group_mtp,
 )
+
+PADDING_SLOT_ID = -1
+
+
+def _reference_draft_slots(block_table, query_start_loc, positions, block_size):
+    """Straightforward host reference for the device slot computation."""
+    num_reqs = query_start_loc.shape[0] - 1
+    out = []
+    for token, position in enumerate(positions.tolist()):
+        request = None
+        for req in range(num_reqs):
+            if query_start_loc[req] <= token < query_start_loc[req + 1]:
+                request = req
+                break
+        if request is None or position < 0:
+            out.append(PADDING_SLOT_ID)
+            continue
+        column = position // block_size
+        if column < 0 or column >= block_table.shape[1]:
+            out.append(PADDING_SLOT_ID)
+            continue
+        page = int(block_table[request, column])
+        if page < 0:
+            out.append(PADDING_SLOT_ID)
+            continue
+        out.append(page * block_size + position % block_size)
+    return out
+
+
+@pytest.mark.parametrize(
+    "block_table,query_start_loc,positions,block_size",
+    [
+        # Single request, positions spanning two physical pages.
+        ([[3, 4]], [0, 2], [0, 639], 640),
+        # Two requests of differing length, positions crossing block boundaries.
+        ([[3, 4, 5], [10, 11, 12]], [0, 3, 5], [0, 639, 640, 0, 1280], 640),
+        # Negative padding positions must map to the padding sentinel.
+        ([[3, 4], [10, 11]], [0, 3, 5], [0, -1, -1, 0, 0], 640),
+        # Positions past the block-table width must map to the padding sentinel.
+        ([[3, 4]], [0, 2], [0, 640 * 8], 640),
+        # A page id of -1 (free/unmapped) must be masked even when in range.
+        ([[3, -1]], [0, 2], [0, 640], 640),
+        # GLM 310P geometry: 640-token pool, 32-token kernel block, wide table.
+        (torch.arange(1, 9721).view(1, -1), [0, 1], [311039], 640),
+    ],
+)
+def test_compute_packed_draft_slots_matches_reference(block_table, query_start_loc, positions, block_size):
+    block_table = torch.tensor(block_table, dtype=torch.int32)
+    query_start_loc = torch.tensor(query_start_loc, dtype=torch.int32)
+    positions = torch.tensor(positions, dtype=torch.int64)
+    row_indices = torch.arange(max(positions.shape[0], 1) + 8, dtype=torch.int32)
+
+    actual = compute_packed_draft_slots(block_table, query_start_loc, positions, block_size, row_indices).tolist()
+    expected = _reference_draft_slots(block_table, query_start_loc, positions, block_size)
+
+    assert actual == expected
+
+
+def test_compute_packed_draft_slots_output_length_tracks_positions():
+    block_table = torch.tensor([[3, 4]], dtype=torch.int32)
+    query_start_loc = torch.tensor([0, 3], dtype=torch.int32)
+    positions = torch.tensor([0, 1, 2], dtype=torch.int64)
+    row_indices = torch.arange(8, dtype=torch.int32)
+    result = compute_packed_draft_slots(block_table, query_start_loc, positions, 640, row_indices)
+    assert result.shape == (positions.shape[0],)
+    assert result.dtype == torch.int32
 
 
 def test_multi_group_proposer_directly_inherits_ascend_eagle():
