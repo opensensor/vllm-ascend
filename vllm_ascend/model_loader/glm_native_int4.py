@@ -138,10 +138,13 @@ class GlmNativeInt4Loader(DefaultModelLoader):
             by_shard.setdefault(index[name], []).append(name)
         native_files = {record["file"] for record in self.native_manifest["native_shards"]}
         scale_records = {row["file"]: row for row in self.native_manifest.get("scale_shards", [])}
+        storage_records = {row["file"]: row for row in self.native_manifest.get("storage_promotion_shards", [])}
         marker = self.native_manifest.get("weight_scale_layout")
         for shard, names in sorted(by_shard.items()):
             if shard in scale_records and file_digest(self.folder / shard) != scale_records[shard]["sha256"]:
                 raise ValueError("permanent weight scale shard differs from its checksum")
+            if shard in storage_records and file_digest(self.folder / shard) != storage_records[shard]["sha256"]:
+                raise ValueError("permanent W4 storage shard differs from its checksum")
             with safe_open(str(self.folder / shard), framework="pt", device="cpu") as handle:
                 if shard in native_files and (handle.metadata() or {}).get("layout") != LAYOUT:
                     raise ValueError("native expert shard lacks the matching layout metadata")
