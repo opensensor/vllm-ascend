@@ -1,0 +1,10 @@
+import sys,torch
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/source-v22')
+from tools.glm_perf.integer_divide_probe import load
+native,_=load(Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-integer-v926'))
+for dtype in (torch.int32,torch.int64):
+ for divisor in (4,160,640):
+  cpu=torch.tensor([torch.iinfo(dtype).min,torch.iinfo(dtype).max,-641,-640,-639,-1,0,1,639,640,641],dtype=dtype)
+  actual=native(cpu.to('npu'),divisor).cpu()
+  print(dtype,divisor,'native',actual.tolist(),'expected',torch.div(cpu,divisor,rounding_mode='floor').tolist(),flush=True)

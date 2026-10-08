@@ -1,0 +1,9 @@
+import importlib.util,json,sys,torch
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(root/'source-v25'))
+from tools.glm_perf.integer_divide_probe import load,case
+spec=importlib.util.spec_from_file_location('prepared_integer_helper',root/'v928-prepared-division-helper.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+native,provenance=load(root/'build-integer-v927');module.prepare_counts(native,range(1,641))
+records=[case(native,dtype,divisor,count) for dtype in (torch.int32,torch.int64) for divisor in (4,160,640) for count in (2,8,15,16,17,63,64,65,640)]
+(root/'v928-prepared-metadata-gates.json').write_text(json.dumps({'complete':True,'cases':len(records),'records':records,'descriptors':len(native.configs),'prepared_matrix_bytes':3840*3*8,'build_options':provenance['_build']},indent=2)+'\n')
+print('54 prepared-descriptor hardware/replay/padding cases passed',flush=True)

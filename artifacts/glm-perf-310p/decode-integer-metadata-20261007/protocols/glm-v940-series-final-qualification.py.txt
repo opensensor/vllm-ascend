@@ -1,0 +1,33 @@
+import hashlib,json,re,sys,time,urllib.request
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(root/'source-v25'))
+from tools.glm_perf.resident_harness import ResidentClient
+client=ResidentClient('http://127.0.0.1:8001',timeout=900)
+source=root/'v938-compact-integer-candidate.py';digest=hashlib.sha256(source.read_bytes()).hexdigest()
+name='native_v919_prefill_v913_decode_state_rows_v925_compact_integer_v938'
+output=root/'v940-series-final-functional-status.json';assert not output.exists()
+def idle():
+ while True:
+  with urllib.request.urlopen(client.base_url+'/metrics',timeout=30) as response:metrics=response.read().decode()
+  values=[float(v) for v in re.findall(r'^vllm:num_requests_(?:running|waiting)(?:\{[^\n]*\})?\s+([0-9.eE+-]+)$',metrics,re.M)]
+  assert values
+  if not any(values):return
+  time.sleep(1)
+def status(replays):
+ rows=client._acknowledged_rpc('resident_status',matches=lambda rows:client._status_matches(rows) and all(r['candidate']==name and r['digest']==digest and r['prefill_graph']['replays']>=replays for r in rows))
+ assert all(not r['graphs_dirty'] and not r['native_failed'] and r['reconstruction']['fallback_dispatches']==0 for r in rows)
+ assert all(r['indexer_instance_bindings']=={'indexers':12,'methods':24} and r['integer_divide']['prepared_outside_capture'] for r in rows)
+ return rows
+idle();before=status(0);identity=sorted((r['rank'],r['pid'],r['weight_storage_digest']) for r in before)
+report={'purpose':'post-profile functional qualification, not a throughput sample','user_decision':'retain exact AI-Core metadata path for cross-build consistency','quality_evaluated':False,'before':before}
+try:
+ assert client.request('/pause?mode=wait&clear_cache=true')['status']=='paused';client.resume()
+ response=client.request('/v1/completions',{'model':'glm53-flash-selective-w3','prompt':[42]*1280,'max_tokens':1,'temperature':0,'seed':42,'ignore_eos':True})
+ assert response['usage']['prompt_tokens']==1280 and response['usage']['completion_tokens']==1 and response['choices'][0]['text']
+ report['response']=response;report['final']=status(2)
+ assert identity==sorted((r['rank'],r['pid'],r['weight_storage_digest']) for r in report['final'])
+ assert all(r['compact_bound_writer']['compact_calls']>=24 for r in report['final'])
+ report['passed']=True
+finally:
+ client.resume();report['paused']=client.request('/is_paused',method='GET');output.write_text(json.dumps(report,indent=2)+'\n')
+print('same workers/weights, compact writer executed, 640-token graphs replayed, AI-Core decode captures qualified, unpaused',flush=True)

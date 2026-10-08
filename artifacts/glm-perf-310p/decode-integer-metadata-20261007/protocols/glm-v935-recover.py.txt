@@ -1,0 +1,17 @@
+import json,sys,uuid
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(root/'source-v25'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+client=ResidentClient('http://127.0.0.1:8001',timeout=900)
+for attempt in range(12):
+ try:
+  rows=client._acknowledged_rpc('resident_status',matches=client._status_matches);print('CURRENT',[(r['rank'],r.get('candidate'),r.get('graphs_dirty'),r.get('native_failed')) for r in rows],flush=True);break
+ except RuntimeError as e: print('draining stale capture errors',attempt,str(e)[:400],flush=True)
+else:raise RuntimeError('could not collect worker status')
+for attempt in range(8):
+ try:
+  rows=client.switch(Control(uuid.uuid4().hex,candidate='native_v919_prefill_v913_decode_state_rows_v925_prepared_indexers_v935',source=(root/'v935-prepared-indexer-baseline-candidate.py').read_text()));client.resume();break
+ except RuntimeError as e:print('retry baseline recovery after queued capture acknowledgment',attempt,str(e)[:500],flush=True)
+else:raise RuntimeError('baseline recovery failed')
+(root/'v935-recovered-prepared-baseline.json').write_text(json.dumps({'workers':rows,'paused':client.request('/is_paused',method='GET')},indent=2));print('RECOVERED_UNPAUSED',flush=True)

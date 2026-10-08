@@ -1,0 +1,89 @@
+import hashlib,json,re,statistics,sys,time,urllib.request,uuid
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+sys.path.insert(0,str(root/'source-v25'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.integer_divide_control import manifest
+client=ResidentClient('http://127.0.0.1:8001',timeout=900)
+out=root/'v929-integer-instance-live.json'
+if out.exists():raise FileExistsError(out)
+base='native_v919_prefill_v913_decode'
+sources={925:(root/'v925-state-mixed-candidate.py').read_text(),929:(root/'v929-integer-instance-candidate.py').read_text()}
+def candidate_name(version):return 'native_v919_prefill_v913_decode_state_rows_v925'+('_integer_instance_v929' if version==929 else '')
+identity=None;best=925;current=None
+result={'complete':False,'quality_evaluated':False,'reason':'user assesses output quality; numerical gates remain mandatory','scope':'real model, uncached synthetic token IDs, complete graph path and fused kernels','trials':[]}
+log=Path('/home/matteius/experiments/glm-reconstruction-20261006/serve-native-disk-head-nz-recovery-20261007-v2.log');offset=log.stat().st_size
+
+def save():out.write_text(json.dumps(result,indent=2)+'\n')
+def idle():
+ announced=False
+ while True:
+  with urllib.request.urlopen(client.base_url+'/metrics',timeout=30) as response:metrics=response.read().decode()
+  values=[float(value) for value in re.findall(r'^vllm:num_requests_(?:running|waiting)(?:\{[^\n]*\})?\s+([0-9.eE+-]+)$',metrics,re.M)]
+  assert values,'missing scheduler counters'
+  if not any(values):return
+  if not announced:print('waiting for external request to finish; no mutation or cancellation',flush=True);announced=True
+  time.sleep(1)
+def status(version=None,min_replays=0):
+ rows=client._acknowledged_rpc('resident_status',matches=lambda rows:client._status_matches(rows) and (version is None or all(r['candidate']==candidate_name(version) and r['digest']==hashlib.sha256(sources[version].encode()).hexdigest() and r['prefill_graph']['replays']>=min_replays for r in rows)))
+ if identity is not None:assert sorted((r['rank'],r['pid'],r['weight_storage_digest']) for r in rows)==identity
+ assert all(not r['graphs_dirty'] and not r['native_failed'] and r['reconstruction']['fallback_dispatches']==0 for r in rows)
+ return rows
+
+def select(version):
+ global current
+ idle();current=version;client.switch(Control(uuid.uuid4().hex,candidate=candidate_name(version),source=sources[version]));client.resume()
+ print('selected',version,'same workers and weights',flush=True)
+
+def cold(version,tokens):
+ idle();assert client.request('/pause?mode=wait&clear_cache=true')['status']=='paused';client.resume();before=status(version)
+ payload={'model':'glm53-flash-selective-w3','prompt':[42]*tokens,'max_tokens':1,'temperature':0,'seed':42,'ignore_eos':True,'stream':True,'stream_options':{'include_usage':True}}
+ request=urllib.request.Request(client.base_url+'/v1/completions',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
+ start=time.monotonic();first=None;events=[];done=False
+ with urllib.request.urlopen(request,timeout=900) as response:
+  for raw in response:
+   if not raw.startswith(b'data:'):continue
+   data=raw[5:].strip()
+   if data==b'[DONE]':done=True;break
+   event=json.loads(data);assert 'error' not in event;events.append(event)
+   if any(choice.get('text') for choice in event.get('choices',[])) and first is None:first=time.monotonic()
+ end=time.monotonic();usage=next((e['usage'] for e in reversed(events) if e.get('usage')),None)
+ assert done and first is not None and usage['prompt_tokens']==tokens and usage['completion_tokens']==1
+ row={'version':version,'tokens':tokens,'ttft_s':first-start,'elapsed_s':end-start,'events':events,'usage':usage,'workers_before':before,'workers_after':status(version)}
+ result['trials'].append(row);save();print('COLD',version,tokens,row['ttft_s'],flush=True)
+def decode(version):
+ idle();assert client.request('/pause?mode=wait&clear_cache=true')['status']=='paused';client.resume();before=status(version)
+ payload={'model':'glm53-flash-selective-w3','prompt':[42]*128,'max_tokens':64,'temperature':0,'seed':42,'ignore_eos':True,'stream':True,'stream_options':{'include_usage':True}}
+ request=urllib.request.Request(client.base_url+'/v1/completions',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
+ start=time.monotonic();first=None;events=[];done=False
+ with urllib.request.urlopen(request,timeout=900) as response:
+  for raw in response:
+   if not raw.startswith(b'data:'):continue
+   data=raw[5:].strip()
+   if data==b'[DONE]':done=True;break
+   event=json.loads(data);assert 'error' not in event;events.append(event)
+   if any(choice.get('text') for choice in event.get('choices',[])) and first is None:first=time.monotonic()
+ end=time.monotonic();usage=next((e['usage'] for e in reversed(events) if e.get('usage')),None)
+ assert done and first is not None and usage['prompt_tokens']==128 and usage['completion_tokens']==64
+ row={'version':version,'tokens':128,'ttft_s':first-start,'elapsed_s':end-start,'decode_tok_s':63/(end-first),'decode_timing_scope':'63 remaining tokens from first visible text to SSE DONE, includes terminal overhead','events':events,'usage':usage,'workers_before':before,'workers_after':status(version)}
+ result['trials'].append(row);save();print('DECODE',version,row['decode_tok_s'],flush=True)
+try:
+ idle();before=status();result['before']=before
+ assert all(r['candidate']=='native_v919_prefill_v913_decode_state_rows_v925_integer_prepared_v928' for r in before)
+ identity=sorted((r['rank'],r['pid'],r['weight_storage_digest']) for r in before)
+ for version in (925,929,925,929):
+  select(version);cold(version,1280);decode(version)
+ medians={v:statistics.median(r['ttft_s'] for r in result['trials'] if r['version']==v and r['tokens']==1280) for v in (925,929)}
+ result['medians_1280_s']=medians
+ decode_medians={v:statistics.median(r['decode_tok_s'] for r in result['trials'] if r['version']==v and r['tokens']==128) for v in (925,929)}
+ result['decode_medians_tok_s']=decode_medians
+ best=max(decode_medians,key=decode_medians.get)
+ if medians[best]>medians[925]*1.01:best=925
+ result['complete']=True;result['selected_version']=best;save();print('MEDIANS',json.dumps(medians),'selected',best,flush=True)
+finally:
+ idle()
+ if current!=best:select(best);cold(best,1280)
+ result['final']=status(best,2);result['paused']=client.request('/is_paused',method='GET');save()
+ with log.open('rb') as stream:stream.seek(offset);(root/'v929-integer-instance-server.log').write_bytes(stream.read())
+ print('FINAL',best,'paused',result['paused'],flush=True)

@@ -1,0 +1,52 @@
+import csv,hashlib,importlib.util,json,statistics
+from collections import defaultdict
+from decimal import Decimal
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/trace-v925-decode-current')
+spec=importlib.util.spec_from_file_location('trace_helpers',root/'analyze-base.py');helper=importlib.util.module_from_spec(spec);spec.loader.exec_module(helper)
+def ns(v):return int(Decimal(v.strip())*1000)
+report={'scope':'Profiled current v925 decode, not an unprofiled throughput benchmark','limitations':['Task sums overlap; category union is not a dependency critical path.','Host timestamps cross-checked against CANN iteration markers.','128 and 640 are different token counts; context length is not the only changed variable.'],'workloads':{}}
+for label in ('decode_c1',):
+ ranks=[]
+ for rank in (2,3):
+  directory=root/label/f'rank{rank}';files=list(directory.glob('PROF_*/mindstudio_profiler_output/op_summary*.csv'));assert len(files)==1,files
+  metrics=[];events=[]
+  with files[0].open() as stream:
+   for row in csv.DictReader(stream):
+    begin=ns(row['Task Start Time(us)']);end=begin+ns(row['Task Duration(us)']);name=row['Op Name'];cat=helper.category(name,row['Task Type'])
+    if row['Task Type']=='AI_CPU' and 'cast' in name.lower():cat='ai_cpu_cast'
+    if 'route_input' in name:cat='native_routed_input'
+    if 'route_reduce' in name or 'fused_reduce' in name:cat='native_route_reduce'
+    metrics.append((begin,end,row,cat));events.append((begin,end,name,cat,row['Stream ID']))
+  steps=json.loads((directory/'host-steps.json').read_text());steps=[s for s in steps if s['tokens']>0 and 'end_wall_ns' in s]
+  timing=list(directory.glob('PROF_*/mindstudio_profiler_output/step_trace*.csv'));assert len(timing)==1,timing
+  with timing[0].open() as stream:timings=list(csv.DictReader(stream))
+  assert len(timings)==len(steps),(len(timings),len(steps))
+  summaries=[]
+  for s,t in zip(steps,timings):
+   end=ns(t['Iteration End(us)']);begin=end-ns(t['Iteration Time(us)'])
+   assert abs(begin-s['start_wall_ns'])<100_000_000,(label,rank,begin,s)
+   assert abs(end-s['end_wall_ns'])<1_000_000_000
+   summary={**s,'device_start_ns':begin,'device_end_ns':end,**helper.summarize(events,begin,end)}
+   pipelines=defaultdict(list)
+   for b,e,row,cat in metrics:
+    duration=max(0,min(e,end)-max(b,begin))
+    if duration:pipelines[cat].append((duration,row))
+   summary['pipeline_ratios']={}
+   for cat,rows in pipelines.items():
+    values={}
+    for key in ('vec_ratio','mac_ratio','scalar_ratio','mte1_ratio','mte2_ratio','mte3_ratio','cube_utilization(%)'):
+     weighted=[]
+     for d,row in rows:
+      try:weighted.append((d,float(row[key])))
+      except (KeyError,ValueError):pass
+     if weighted:values[key]=sum(d*v for d,v in weighted)/sum(d for d,_ in weighted)
+    summary['pipeline_ratios'][cat]=values
+   summaries.append(summary)
+  ranks.append({'rank':rank,'sha256':hashlib.sha256(files[0].read_bytes()).hexdigest(),'steps':summaries})
+ report['workloads'][label]=ranks
+(root/'decode-partial-attribution.json').write_text(json.dumps(report,indent=2)+'\n')
+for label,ranks in report['workloads'].items():
+ for step in (0,len(ranks[0]['steps'])-1):
+  samples=[r['steps'][step] for r in ranks];print(label,step,'median span ms',statistics.median(s['span_ms'] for s in samples))
+  print('rank0',samples[0]['categories']);print('top rank0',samples[0]['top_tasks'][:12]);print('expert pipelines',samples[0]['pipeline_ratios'].get('native_int4_expert'))

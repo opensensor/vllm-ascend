@@ -1,0 +1,14 @@
+from pathlib import Path
+r=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+p=r/'v940-decode-footer.py';assert not p.exists();p.write_text((r/'v938-decode-footer.py').read_text().replace('v938','v940'))
+s=(r/'glm-v938-decode-profile.py').read_text().replace('v938','v940').replace('compact-integer-candidate','compact-remainders-candidate').replace('compact_integer_v940','compact_remainders_v940')
+s=s.replace("(trace/'candidate.py').write_text(source)", """(trace/'candidate.py').write_text(source)
+selected=json.loads((root/'v940-compact-remainders-live.json').read_text())['selected_version']
+keep_name='native_v919_prefill_v913_decode_state_rows_v925'+('_compact_remainders_v940' if selected==940 else '_compact_integer_v938')
+keep_source=(root/('v940-compact-remainders-candidate.py' if selected==940 else 'v938-compact-integer-candidate.py')).read_text()""")
+s=s.replace("r['candidate']=='native_v919_prefill_v913_decode_state_rows_v925_compact_remainders_v940' and r['digest']==hashlib.sha256(base.encode()).hexdigest()", "r['candidate']==keep_name and r['digest']==hashlib.sha256(keep_source.encode()).hexdigest()")
+s=s.replace("candidate='native_v919_prefill_v913_decode_state_rows_v925_compact_remainders_v940',source=base", "candidate=keep_name,source=keep_source")
+p=r/'glm-v940-decode-profile.py';assert not p.exists();p.write_text(s)
+for name in ('export','analyze'):
+ p=r/f'glm-v940-decode-{name}.py';assert not p.exists();p.write_text((r/f'glm-v938-decode-{name}.py').read_text().replace('v938','v940'))
+compile(s,'profile940','exec');print('bounded remainder-path profile prepared',flush=True)

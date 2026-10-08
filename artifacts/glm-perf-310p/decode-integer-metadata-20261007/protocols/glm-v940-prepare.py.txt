@@ -1,0 +1,33 @@
+import ast
+from pathlib import Path
+r=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');stage=r/'v940-remainder-cache-gates';stage.mkdir(exist_ok=False)
+for name in ('kpool_ops.py','sparse_attn_indexer_kpool.py','kpool_completed_prefill.py'):(stage/name).write_bytes((r/'v936-permanent-cache-gates'/name).read_bytes())
+(stage/'integer_remainder.py').write_bytes((r/'v940-integer-remainder-helper.py').read_bytes())
+bench=(r/'v936-permanent-cache-gates/bench_permanent_cache.py').read_text()
+bench=bench.replace("scope['compress_kpool'] = native_compress", """scope['compress_kpool'] = native_compress
+    scope['_aicore_convert'] = convert
+    integer_helper = load_file('integer_remainder_helpers', root/'integer_remainder.py')
+    build = Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-integer-v927')
+    torch.ops.load_library(str(build/'glm_reconstruction_bridge_v927.so'))
+    native = integer_helper.NativeIntegerDivide(build, 'glm_reconstruction_v927')
+    integer_helper.prepare_counts(native, range(1,641))
+    rewritten = integer_helper.rewrite_pool_remainders(scope['_write_pools'], baseline_path.read_text(), integer_helper.DivisionTorch(native))""")
+bench=bench.replace('run_compact = partial(writer, compact, keys, gates, ape, positions, 4, metadata, state_meta)','run_compact = partial(rewritten, compact, keys, gates, ape, positions, 4, metadata, state_meta)')
+tree=ast.parse(bench);main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
+node=next(n for n in main.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='shapes' for t in n.targets))
+node.value=ast.parse('[( [2],[0]),([2],[3]),([8],[0]),([8],[3]),([640],[1]),([0,3,0,5],[0,3,0,1])]',mode='eval').body
+ast.fix_missing_locations(tree);(stage/'bench_remainder_caches.py').write_text(ast.unparse(tree)+'\n')
+s=(r/'v938-compact-integer-candidate.py').read_text();prefix=s.split('integer_compact_base_replacements = replacements')[0]
+factory='integer_compact_base_replacements = replacements'+s.split('integer_compact_base_replacements = replacements',1)[1]
+factory=factory.replace('    from glm_reconstruction_v927_helpers.integer_divide import NativeIntegerDivide, DivisionTorch, private_divisions\n','')
+factory=factory.replace('    counts = {', '    canonical = Path(module.__file__).read_text()\n    counts = {')
+factory=factory.replace('integer_writer = private_divisions(original, proxy)','integer_writer = rewrite_pool_remainders(original, canonical, proxy)')
+p=r/'v940-compact-remainders-candidate.py';assert not p.exists();p.write_text(prefix+'\n'+(r/'v940-integer-remainder-helper.py').read_text()+'\n'+factory)
+s=(r/'glm-compact-integer-v938-live.py').read_text().replace('936','BASE').replace('938','NEW').replace('BASE','938').replace('NEW','940')
+s=s.replace('v938-compact-prepared-candidate.py','v938-compact-integer-candidate.py').replace('v940-compact-integer-candidate.py','v940-compact-remainders-candidate.py')
+s=s.replace("('_compact_integer_v940' if version==940 else '_compact_prepared_v938')","('_compact_remainders_v940' if version==940 else '_compact_integer_v938')")
+s=s.replace('state_rows_v925_compact_prepared_v938','state_rows_v925_compact_integer_v938')
+s=s.replace('v940-compact-integer-live.json','v940-compact-remainders-live.json').replace('v940-compact-integer-server.log','v940-compact-remainders-server.log')
+# The user wants the AI-Core path retained; both variants use it.
+p=r/'glm-compact-remainders-v940-live.py';assert not p.exists();p.write_text(s)
+compile((r/'v940-compact-remainders-candidate.py').read_text(),'candidate940','exec');compile(s,'controller940','exec');print('reused quotient writer and 48 backing-bit gates prepared',flush=True)

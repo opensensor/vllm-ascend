@@ -1,0 +1,37 @@
+import hashlib,json,re,subprocess,sys,time,urllib.request
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(root/'source-v25'))
+from tools.glm_perf.resident_harness import ResidentClient
+client=ResidentClient('http://127.0.0.1:8001',timeout=900)
+name='native_v919_prefill_v913_decode_state_rows_v925_compact_prepared_v936'
+digest=hashlib.sha256((root/'v936-compact-prepared-candidate.py').read_bytes()).hexdigest()
+output=root/'v936-final-gates-status.json';assert not output.exists()
+def status():
+ rows=client._acknowledged_rpc('resident_status',matches=lambda rows:client._status_matches(rows) and all(r['candidate']==name and r['digest']==digest for r in rows))
+ assert all(not r['graphs_dirty'] and not r['native_failed'] and r['reconstruction']['fallback_dispatches']==0 for r in rows)
+ return rows
+while True:
+ with urllib.request.urlopen(client.base_url+'/metrics',timeout=30) as response:metrics=response.read().decode()
+ values=[float(v) for v in re.findall(r'^vllm:num_requests_(?:running|waiting)(?:\{[^\n]*\})?\s+([0-9.eE+-]+)$',metrics,re.M)]
+ assert values
+ if not any(values):break
+ time.sleep(1)
+report={'passed':False,'jobs':[]};identity=None
+try:
+ assert client.request('/pause?mode=wait&clear_cache=true')['status']=='paused'
+ report['before']=status();identity=sorted((r['rank'],r['pid'],r['weight_storage_digest']) for r in report['before'])
+ python='/srv/ai/venvs/qwen38-w4-test-ce1862/bin/python';stage=root/'v936-permanent-cache-gates'
+ jobs=[('integer-nightly',[python,str(stage/'integer-nightly.py'),'--integer-build-dir',str(root/'build-integer-v927'),'--junitxml='+str(stage/'integer-nightly.xml')])]
+ for layout in ('row-gapped','page-strided'):
+  for dtype in ('float16','bfloat16'):
+   label=layout+'-'+dtype;jobs.append((label,[python,str(stage/'bench_permanent_cache.py'),'--repeats','1','--layout',layout,'--input-dtype',dtype,'--output',str(stage/(label+'.json'))]))
+ for label,argv in jobs:
+  print('running',label,flush=True)
+  with (stage/(label+'.log')).open('w') as stream:result=subprocess.run(argv,cwd=stage,stdout=stream,stderr=subprocess.STDOUT)
+  report['jobs'].append({'label':label,'returncode':result.returncode});output.write_text(json.dumps(report,indent=2))
+  assert not result.returncode,label+' failed'
+  print('passed',label,flush=True)
+ report['passed']=True
+finally:
+ client.resume();report['final']=status();assert identity==sorted((r['rank'],r['pid'],r['weight_storage_digest']) for r in report['final'])
+ report['paused']=client.request('/is_paused',method='GET');output.write_text(json.dumps(report,indent=2));print('resumed',report['paused'],flush=True)

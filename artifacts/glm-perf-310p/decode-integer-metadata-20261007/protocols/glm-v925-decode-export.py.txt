@@ -1,0 +1,12 @@
+from pathlib import Path
+import subprocess
+from concurrent.futures import ThreadPoolExecutor
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/trace-v925-decode-current')
+def export(path):
+ with (path.parent/'export.log').open('w') as out:
+  p=subprocess.run(['msprof','--export=on','--output='+str(path)],stdout=out,stderr=subprocess.STDOUT)
+ print(path,p.returncode,flush=True)
+ return p.returncode
+with ThreadPoolExecutor(max_workers=2) as pool:
+ results=list(pool.map(export,root.glob('*/rank*/PROF_*')))
+assert len(results)==4 and not any(results)

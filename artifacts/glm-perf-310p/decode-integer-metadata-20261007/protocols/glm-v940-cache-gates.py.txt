@@ -1,0 +1,24 @@
+import json,re,subprocess,sys,time,urllib.request
+from pathlib import Path
+r=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(r/'source-v25'))
+from tools.glm_perf.resident_harness import ResidentClient
+c=ResidentClient('http://127.0.0.1:8001',timeout=900)
+while True:
+ with urllib.request.urlopen(c.base_url+'/metrics',timeout=30) as response:metrics=response.read().decode()
+ values=[float(v) for v in re.findall(r'^vllm:num_requests_(?:running|waiting)(?:\{[^\n]*\})?\s+([0-9.eE+-]+)$',metrics,re.M)]
+ assert values
+ if not any(values):break
+ time.sleep(1)
+report={'passed':False,'jobs':[]};out=r/'v940-remainder-cache-gates.json';assert not out.exists()
+try:
+ assert c.request('/pause?mode=wait&clear_cache=true')['status']=='paused'
+ for layout in ('row-gapped','page-strided'):
+  for dtype in ('float16','bfloat16'):
+   stage=r/'v940-remainder-cache-gates';label=layout+'-'+dtype
+   with (stage/(label+'.log')).open('w') as stream:
+    result=subprocess.run(['/srv/ai/venvs/qwen38-w4-test-ce1862/bin/python',str(stage/'bench_remainder_caches.py'),'--repeats','1','--layout',layout,'--input-dtype',dtype,'--output',str(stage/(label+'.json'))],stdout=stream,stderr=subprocess.STDOUT)
+   report['jobs'].append({'label':label,'returncode':result.returncode});out.write_text(json.dumps(report,indent=2));assert not result.returncode,label
+   print('passed',label,flush=True)
+ report['passed']=True
+finally:
+ c.resume();report['paused']=c.request('/is_paused',method='GET');out.write_text(json.dumps(report,indent=2));print('resumed',report['paused'],flush=True)

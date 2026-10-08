@@ -1,0 +1,41 @@
+import ast, hashlib, json
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+stage=root/'v936-permanent-cache-gates';stage.mkdir(exist_ok=False)
+source=root/'v936-compact-prepared-candidate.py';tree=ast.parse(source.read_text())
+names={'PoolWritePlan','plan_rows','make_plan','write_compact_pools','wrap_writer'}
+nodes=[n for n in tree.body if isinstance(n,(ast.ClassDef,ast.FunctionDef)) and n.name in names]
+assert len(nodes)==5
+prefix='import torch\nMAX_GRAPH_TOKENS=8\nMAX_SPECULATIVE_TOKENS=1\nPOOL_SIZE=4\n'
+(stage/'kpool_completed_prefill.py').write_text(prefix+'\n\n'.join(ast.unparse(n) for n in nodes)+'\n')
+assert 'out_dtype=key_cache.dtype' in (stage/'kpool_completed_prefill.py').read_text()
+canonical=Path('/srv/ai/src/glm-selective-w3-nz-test-20261004/vllm_ascend/models/glm5next')
+for filename in ('kpool_ops.py','sparse_attn_indexer_kpool.py'):(stage/filename).write_bytes((canonical/filename).read_bytes())
+s=(root/'v936-gates-bench-input.py').read_text()
+s=s.replace('args = parser.parse_args()', 'parser.add_argument("--input-dtype", choices=("float16", "bfloat16"), required=True)\n    args = parser.parse_args()')
+s=s.replace('generator = torch.Generator().manual_seed(310)', '''generator = torch.Generator().manual_seed(310)
+    torch.empty(1, device=device)
+    permanent = Path('/srv/ai/models/GLM-5.3-Flash-selective-W3-native-int4-310p/indexer-kernels-v6')
+    options = json.loads((permanent / 'options.json').read_text())
+    torch.ops.load_library(str(permanent / options['bridge']))
+    native_helper = load_file('permanent_bf16_helper', permanent / 'bf16_cast.py')
+    convert = native_helper.NativeBF16Cast(permanent, options['namespace'])
+    native_tree = ast.parse((permanent / 'candidate.py').read_text())
+    factory = next(n for n in native_tree.body if isinstance(n, ast.FunctionDef) and n.name == 'replacements')
+    compressor = next(n for n in factory.body if isinstance(n, ast.FunctionDef) and n.name == 'compress')
+    compressor.args.defaults = [ast.Attribute(value=ast.Name(id='torch', ctx=ast.Load()), attr='float16', ctx=ast.Load())]
+    ast.fix_missing_locations(compressor)
+    namespace = {'torch': torch, 'convert': convert, 'kpool_ops': ops}
+    exec(compile(ast.Module(body=[compressor], type_ignores=[]), '<permanent-compress>', 'exec'), namespace)
+    native_compress = namespace['compress']
+    scope['compress_kpool'] = native_compress''')
+s=s.replace('"model_loaded": False,','"model_loaded": False,\n        "input_dtype": args.input_dtype,\n        "cache_dtype": "float16",\n        "permanent_compressor": True,')
+s=s.replace('torch.randn(count, 128, generator=generator).bfloat16().to(device)','torch.randn(count, 128, generator=generator).to(getattr(torch, args.input_dtype)).to(device)')
+s=s.replace('generator=generator).bfloat16()', 'generator=generator).half()')
+s=s.replace('dtype=torch.bfloat16, device=device','dtype=torch.float16, device=device')
+s=s.replace('scope["_masked_storage_write"], ops.compress_kpool','scope["_masked_storage_write"], native_compress')
+(stage/'bench_permanent_cache.py').write_text(s)
+(stage/'integer_divide_probe.py').write_bytes((root/'v936-gates-integer-probe-input.py').read_bytes())
+nightly=(root/'v936-gates-nightly-input.py').read_text().replace('from tools.glm_perf.integer_divide_probe import case, load','from integer_divide_probe import case, load')
+(stage/'integer-nightly.py').write_text(nightly)
+print('frozen actual writer, permanent native compressor, FP16 caches, 48 strided cache cases, 60 integer cases',flush=True)

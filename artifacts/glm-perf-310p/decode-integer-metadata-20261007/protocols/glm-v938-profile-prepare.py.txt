@@ -1,0 +1,13 @@
+from pathlib import Path
+r=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+footer=(r/'v928-decode-footer.py').read_text().replace('trace-v928-decode-current','trace-v938-decode-current')
+p=r/'v938-decode-footer.py';assert not p.exists();p.write_text(footer)
+s=(r/'glm-v928-decode-profile.py').read_text().replace('source-v21','source-v25').replace('v928','v938').replace('integer-prepared-candidate','compact-integer-candidate').replace('integer_prepared_v938','compact_integer_v938')
+# Retain the proven compact writer and prepared integer instances after profiling.
+s=s.replace("print('v938 restored, unpaused, workers and weights retained',flush=True)","print('v938 restored, unpaused, workers and weights retained',flush=True)")
+p=r/'glm-v938-decode-profile.py';assert not p.exists();p.write_text(s)
+s=(r/'glm-v928-decode-export.py').read_text().replace('v928','v938')
+p=r/'glm-v938-decode-export.py';assert not p.exists();p.write_text(s)
+s=(r/'glm-v928-decode-analyze.py').read_text().replace('v928','v938')
+p=r/'glm-v938-decode-analyze.py';assert not p.exists();p.write_text(s)
+compile((r/'glm-v938-decode-profile.py').read_text(),'profile938','exec');print('bounded 16-output all-rank decode profile prepared',flush=True)

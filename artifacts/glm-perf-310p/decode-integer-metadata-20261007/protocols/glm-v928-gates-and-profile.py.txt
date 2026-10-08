@@ -1,0 +1,6 @@
+import subprocess,sys
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+for file in ('glm-v928-prepared-gates-controller.py','glm-v928-decode-profile.py'):
+ result=subprocess.run([sys.executable,'-u',str(root/file)])
+ if result.returncode:raise SystemExit(result.returncode)

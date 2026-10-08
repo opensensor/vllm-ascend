@@ -1,0 +1,73 @@
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+s=(root/'v936-compact-prepared-candidate.py').read_text().split('compact_clean_base_replacements = replacements')[0]
+helper=(root/'v928-prepared-division-helper.py').read_text()
+s+='\n'+helper+'\n'
+s+='''
+integer_compact_base_replacements = replacements
+
+def replacements(native_resources):
+    from pathlib import Path
+    from tools.glm_perf.resident_worker import ResidentWorkerExtension
+    from glm_reconstruction_v925_helpers.kda_state_rows import prepare_models
+    from glm_reconstruction_v927_helpers.integer_divide import NativeIntegerDivide, DivisionTorch, private_divisions
+    from vllm_ascend.models.glm5next import sparse_attn_indexer_kpool as module
+    native = NativeIntegerDivide(Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-integer-v927'), 'glm_reconstruction_v927')
+    prepare_counts(native, range(1,641))
+    counts = {'compact_calls':0,'fallback_calls':0}
+    divisions = {}
+    class AuditedDivision(DivisionTorch):
+        def div(self, value, divisor, *, rounding_mode=None, out=None):
+            before = native.calls
+            result = super().div(value, divisor, rounding_mode=rounding_mode, out=out)
+            if native.calls > before:
+                key = str(value.numel())+':'+str(divisor)+':'+str(value.dtype)
+                divisions[key] = divisions.get(key,0)+1
+            return result
+    proxy = AuditedDivision(native)
+    changes = integer_compact_base_replacements(native_resources)
+    def writer_factory(original):
+        if 'compress_kpool' not in original.__globals__:
+            raise ValueError('expected permanent plain writer before transaction capture')
+        integer_writer = private_divisions(original, proxy)
+        compact = wrap_writer(integer_writer, module._cache_tensor, module._masked_storage_write, original.__globals__['compress_kpool'])
+        def audited(self, keys,gates,ape,positions,pool_size,indexer_metadata,state_metadata):
+            eligible=(getattr(indexer_metadata,'_glm_completed_pool_plan',None) is not None and keys.shape[0]>8 and pool_size==4 and 0<=getattr(self.tail_cache,'num_speculative_tokens',0)<=1)
+            counts['compact_calls' if eligible else 'fallback_calls'] += 1
+            return compact(self,keys,gates,ape,positions,pool_size,indexer_metadata,state_metadata)
+        return audited
+    def selector_factory(original):
+        candidate=private_divisions(original,proxy)
+        for name in ('dense_kpool_token_indices','select_kpool_groups'):
+            if name in candidate.__globals__:
+                candidate.__globals__[name] = private_divisions(candidate.__globals__[name],proxy)
+        return candidate
+    def immutable_capture(self):
+        prepare_models(native_resources['state_rows_v925'],self.model_runner)
+        return ResidentWorkerExtension.resident_capture(self)
+    changes=extend_bindings(changes,writer_factory,selector_factory,capture_hook=immutable_capture,apply_hook=ResidentWorkerExtension.resident_apply)
+    target='vllm_ascend._310p.worker_310p:NPUWorker310.resident_status'
+    original_status=changes[target]
+    def status(self):
+        result=original_status(self)
+        result['compact_bound_writer']=dict(counts)
+        result['integer_divide']={'calls':native.calls,'descriptors':len(native.configs),'prepared_outside_capture':True,'capture_geometry':dict(divisions)}
+        return result
+    changes[target]=status
+    return changes
+'''
+p=root/'v938-compact-integer-candidate.py';assert not p.exists();p.write_text(s)
+base=(root/'glm-compact-v936-live.py').read_text()
+base=base.replace('935','BASE').replace('936','NEW').replace('BASE','936').replace('NEW','938')
+base=base.replace('v936-prepared-indexer-baseline-candidate.py','v936-compact-prepared-candidate.py')
+base=base.replace('v938-compact-prepared-candidate.py','v938-compact-integer-candidate.py')
+base=base.replace("('_compact_prepared_v938' if version==938 else '_prepared_indexers_v936')","('_compact_integer_v938' if version==938 else '_compact_prepared_v936')")
+base=base.replace('v938-compact-prepared-live.json','v938-compact-integer-live.json').replace('v938-compact-prepared-server.log','v938-compact-integer-server.log')
+base=base.replace("'_prepared_indexers_v936'", "'_compact_prepared_v936'")
+base=base.replace('state_rows_v925_prepared_indexers_v936','state_rows_v925_compact_prepared_v936')
+base=base.replace("best=min(medians,key=medians.get)", "best=max(decode_medians,key=decode_medians.get)\n if medians[best]>medians[936]*1.01:best=936")
+base=base.replace("def select(version):", "def select(version):")
+base=base.replace("print('selected',version,'same workers and weights',flush=True)", "rows=status(version)\n if version==938:\n  assert all(any(k.split(':')[0] in ('1','2','8') and v>=12 for k,v in r['integer_divide']['capture_geometry'].items()) for r in rows), 'native division must reach small decode graphs on every rank'\n print('selected',version,'same workers and weights',flush=True)")
+p=root/'glm-compact-integer-v938-live.py';assert not p.exists();p.write_text(base)
+compile(s,'v938','exec');compile(base,'v938control','exec')
+print('frozen compact + prepared exact integer candidate and interleaved e2e protocol',flush=True)

@@ -1,0 +1,148 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Exact signed division and changed-input graph replay on the real NPU."""
+
+import argparse
+import hashlib
+import importlib
+import json
+import statistics
+import sys
+from pathlib import Path
+
+import torch
+
+
+def load(build):
+    provenance = json.loads((build / "provenance.json").read_text())
+    options = provenance["_build"]
+    if not options.get("integer_metadata_divide"):
+        raise ValueError("not an integer metadata bundle")
+    for name, digest in provenance["_helpers"].items():
+        if hashlib.sha256((build / options["helper_package"] / name).read_bytes()).hexdigest() != digest:
+            raise ValueError("frozen helper changed")
+    if (
+        hashlib.sha256((build / "glm_integer_divide.bin").read_bytes()).hexdigest()
+        != provenance["glm_integer_divide.bin"]["binary_sha256"]
+    ):
+        raise ValueError("frozen integer kernel changed")
+    torch.empty(1, device="npu")
+    sys.path.insert(0, str(build))
+    torch.ops.load_library(str(build / f"glm_reconstruction_bridge_v{options['version']}.so"))
+    module = importlib.import_module(options["helper_package"] + ".integer_divide")
+    return module.NativeIntegerDivide(build, options["namespace"]), provenance
+
+
+def case(native, dtype, divisor, count):
+    limits = torch.iinfo(dtype)
+    seed = [
+        limits.min,
+        limits.max,
+        -641,
+        -640,
+        -639,
+        -161,
+        -160,
+        -159,
+        -5,
+        -4,
+        -3,
+        -1,
+        0,
+        1,
+        3,
+        4,
+        5,
+        159,
+        160,
+        161,
+        639,
+        640,
+        641,
+    ]
+    cpu = torch.tensor((seed * ((count + len(seed) - 1) // len(seed)))[:count], dtype=dtype)
+    value = cpu.to(native.device)
+    native(value, divisor)
+    graph = torch.npu.NPUGraph()
+    with torch.npu.graph(graph):
+        output = native(value, divisor)
+    for changed in (cpu, cpu.roll(1)):
+        value.copy_(changed)
+        graph.replay()
+        assert torch.equal(output.cpu(), torch.div(changed, divisor, rounding_mode="floor"))
+    return {
+        "dtype": str(dtype),
+        "divisor": divisor,
+        "count": count,
+        "passed": True,
+        "changed_input_replay": True,
+        "signed_extremes": count >= len(seed),
+    }
+
+
+def timing(operation, value, divisor):
+    operation(value, divisor)
+    graph = torch.npu.NPUGraph()
+    with torch.npu.graph(graph):
+        output = operation(value, divisor)
+    graph.replay()
+    samples = []
+    for _ in range(10):
+        start, end = torch.npu.Event(enable_timing=True), torch.npu.Event(enable_timing=True)
+        start.record()
+        for _ in range(20):
+            graph.replay()
+        end.record()
+        end.synchronize()
+        samples.append(start.elapsed_time(end) / 20)
+    return {"median_ms": statistics.median(samples), "samples_ms": samples, "output_elements": output.numel()}
+
+
+def run(build, output):
+    native, provenance = load(build)
+    records = [
+        case(native, dtype, divisor, count)
+        for dtype in (torch.int32, torch.int64)
+        for divisor in (4, 160, 640)
+        for count in (2, 8, 640)
+    ]
+    performance = []
+    for dtype in (torch.int32, torch.int64):
+        for count in (2, 8, 640):
+            value = torch.arange(count, dtype=dtype, device=native.device) * 639
+            performance.append(
+                {
+                    "dtype": str(dtype),
+                    "count": count,
+                    "torch": timing(lambda x, d: torch.div(x, d, rounding_mode="floor"), value, 4),
+                    "native": timing(native, value, 4),
+                }
+            )
+    binary = build / "glm_integer_divide.bin"
+    output.write_text(
+        json.dumps(
+            {
+                "complete": True,
+                "build_options": provenance["_build"],
+                "records": records,
+                "binaries": {
+                    p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+                    for p in (binary, build / f"glm_reconstruction_bridge_v{provenance['_build']['version']}.so")
+                },
+                "performance": performance,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--build-dir", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    run(args.build_dir.resolve(strict=True), args.output)
+
+
+if __name__ == "__main__":
+    main()

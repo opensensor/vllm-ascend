@@ -1,0 +1,33 @@
+import json,re,sys,time,urllib.request
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(root/'source-v25'))
+from tools.glm_perf.resident_harness import ResidentClient
+client=ResidentClient('http://127.0.0.1:8001',timeout=900)
+while True:
+ with urllib.request.urlopen(client.base_url+'/metrics',timeout=30) as response:metrics=response.read().decode()
+ values=[float(v) for v in re.findall(r'^vllm:num_requests_(?:running|waiting)(?:\{[^\n]*\})?\s+([0-9.eE+-]+)$',metrics,re.M)]
+ assert values
+ if not any(values):break
+ time.sleep(1)
+report={'passed':False,'cases':[]};out=root/'v939-remainder-probe.json';assert not out.exists()
+try:
+ assert client.request('/pause?mode=wait&clear_cache=true')['status']=='paused'
+ import torch,torch_npu
+ torch.npu.set_device(0);torch_npu.npu.set_compile_mode(jit_compile=False)
+ sys.path.insert(0,str(root/'v936-permanent-cache-gates'))
+ from integer_divide_probe import load
+ native,_=load(root/'build-integer-v927')
+ for dtype in (torch.int32,torch.int64):
+  limits=torch.iinfo(dtype);seed=[limits.min,limits.max,-641,-160,-5,-1,0,1,5,160,641]
+  for divisor in (4,160,640):
+   for count in (1,2,8,15,16,17,63,64,65,640):
+    cpu=torch.tensor((seed*((count+len(seed)-1)//len(seed)))[:count],dtype=dtype);value=cpu.to(native.device)
+    def remainder():return value-native(value,divisor)*divisor
+    remainder();torch.npu.synchronize();graph=torch.npu.NPUGraph()
+    with torch.npu.graph(graph):output=remainder()
+    for current in (cpu, cpu.roll(1) if count>1 else torch.tensor([limits.max],dtype=dtype)):
+     value.copy_(current);graph.replay();assert torch.equal(output.cpu(),torch.remainder(current,divisor)),(dtype,divisor,count)
+    report['cases'].append({'dtype':str(dtype),'divisor':divisor,'count':count,'passed':True,'changed_input_replay':True});out.write_text(json.dumps(report,indent=2))
+ report['passed']=True
+finally:
+ client.resume();report['paused']=client.request('/is_paused',method='GET');out.write_text(json.dumps(report,indent=2));print('remainder arithmetic gate',report['passed'],'cases',len(report['cases']),'resumed',report['paused'],flush=True)

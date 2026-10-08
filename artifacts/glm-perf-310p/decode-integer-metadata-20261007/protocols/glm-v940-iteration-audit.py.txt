@@ -1,0 +1,16 @@
+import json,re,statistics
+from pathlib import Path
+r=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');j=json.loads((r/'v940-compact-remainders-live.json').read_text());groups=[];current=None;overlap=[]
+for line in (r/'v940-compact-remainders-server.log').read_text().splitlines():
+ m=re.search(r'(\d+) context requests, (\d+) context tokens, (\d+) generation requests, (\d+) generation tokens, iteration elapsed time: ([0-9.]+) ms',line)
+ if not m:continue
+ c,ct,g,gt=map(int,m.groups()[:4]);ms=float(m.group(5))
+ if c+g>1:overlap.append(line)
+ if c and ct==128:current=[];groups.append(current)
+ elif c:current=None
+ elif g and current is not None:current.append(ms)
+trials=[t for t in j['trials'] if t['tokens']==128];assert len(groups)==len(trials),(len(groups),len(trials))
+out={'scope':'archived unprofiled live server iteration logs; MTP step count and latency explain throughput variation; no text-quality scoring','other_requests_detected':bool(overlap),'trials':[]}
+for t,grp in zip(trials,groups):
+ row={'version':t['version'],'decode_tok_s':t['decode_tok_s'],'generation_iterations':len(grp),'median_iteration_ms':statistics.median(grp),'total_iteration_ms':sum(grp),'completion_tokens':64};out['trials'].append(row);print(row)
+(r/'v940-decode-iteration-audit.json').write_text(json.dumps(out,indent=2)+'\n')
