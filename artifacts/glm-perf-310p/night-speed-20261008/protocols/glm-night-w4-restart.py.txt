@@ -1,0 +1,29 @@
+import sys,json,os,signal,time,socket,psutil
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+c=ResidentClient('http://127.0.0.1:8001');c.request('/pause?mode=wait&clear_cache=true')
+rows=c._acknowledged_rpc('resident_status',matches=c._status_matches)
+assert all(not r['graphs_dirty'] and not r['native_failed'] and r['candidate']=='fp16_query967_state925_qsa941_tiled971_compact3_int927_bf16v975' for r in rows)
+(root/'night-speed-20261008/before-w4-restart.json').write_text(json.dumps(rows,indent=2))
+r=json.loads((root/'fp16-scales-server-process-20261008.json').read_text())
+parent=psutil.Process(r['pid']);assert abs(parent.create_time()-r['created'])<1
+members=parent.children(recursive=True);owned=[parent,*members]
+assert set(row['pid'] for row in rows)<=set(p.pid for p in members)
+for p in owned:
+ try:p.terminate()
+ except psutil.NoSuchProcess:pass
+_,remaining=psutil.wait_procs(owned,timeout=40)
+for p in remaining:
+ try:p.kill()
+ except psutil.NoSuchProcess:pass
+psutil.wait_procs(remaining,timeout=5)
+assert not any(p.is_running() and p.status()!=psutil.STATUS_ZOMBIE for p in owned)
+with socket.socket() as sock:assert sock.connect_ex(('127.0.0.1',8001))!=0
+print('Prior GLM process tree stopped after drain',flush=True)
+source=(root/'glm-fp16-launch-20261008.py').read_text()
+source=source.replace("checkpoint=Path('/srv/ai/models/GLM-5.3-Flash-native-int4-fp16-scales-20261008')","checkpoint=Path('/srv/ai/models/GLM-5.3-Flash-native-int4-fp16-scales-w4-down7-20261008')")
+source=source.replace("log=root/'fp16-scales-server-20261008.log'","log=root/'w4-down7-server-20261008.log'").replace("root/'fp16-scales-server-process-20261008.json'","root/'w4-down7-server-process-20261008.json'")
+source=source.replace('FP16 scale storage candidate, direct disk load; original context/graph/OPP configuration','Lossless W4 down7 candidate, direct disk load; original context/graph/OPP configuration')
+(root/'night-speed-20261008/w4-launch.py').write_text(source)
+exec(compile(source,'<saved-w4-down7-launch>','exec'),{'__name__':'__main__'})

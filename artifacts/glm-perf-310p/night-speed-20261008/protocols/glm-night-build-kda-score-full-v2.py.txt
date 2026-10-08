@@ -1,0 +1,34 @@
+import json,hashlib,sys,shutil,subprocess,os
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(root/'source-night-sinkhorn-v971'))
+from tools.glm_perf.stage_kda_score_vector_reduce import stage
+old=Path('/home/matteius/experiments/glm-prompt-profile-20261005')
+experiment=root/'night-kda-score-vector-full-v2';experiment.mkdir(exist_ok=False)
+source=experiment/'source';build=experiment/'build';package=experiment/'opp-score-vector'
+parent=root/'night-kda-beta-vector-full/source';source.mkdir()
+for path in parent.iterdir():
+ if path.name=='third_party':(source/path.name).symlink_to(path.resolve(),target_is_directory=True)
+ elif path.is_dir():shutil.copytree(path,source/path.name,ignore=shutil.ignore_patterns('__pycache__'))
+ else:shutil.copy2(path,source/path.name)
+relative=Path('attention/chunk_kda_fwd/op_kernel/chunk_kda_fwd_prepare.h')
+header=source/relative
+original=header.read_bytes();expected=hashlib.sha256(original).hexdigest()
+parent_header=root/'night-kda-beta-vector-full/opp-beta-vector/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_kda_fwd/chunk_kda_fwd_prepare.h'
+assert parent_header.read_bytes()==original,'parent deployed header differs from source'
+staged=header.with_suffix('.candidate')
+record=stage(header,staged,expected);staged.replace(header)
+record['destination']=str(header);(experiment/'stage.json').write_text(json.dumps(record,indent=2))
+build.mkdir()
+env=dict(os.environ);env['PATH']=str(Path(sys.executable).parent)+os.pathsep+env['PATH']
+commands=[['cmake','-S',str(source),'-B',str(build),'-G','Ninja','-DASCEND_COMPUTE_UNIT=ascend310p','-DASCEND_OP_NAME=chunk_kda_fwd','-DCUSTOM_ASCEND_CANN_PACKAGE_PATH=/usr/local/Ascend/cann-9.1.0','-DCANN_3RD_LIB_PATH='+str(source/'third_party'),'-DBUILD_TYPE=Release','-DVERSION=9.1.0','-DENABLE_OPS_HOST=ON','-DENABLE_OPS_KERNEL=ON','-DOPS_COMPILE_OPTIONS=-DGLM_KDA_SCORE_CACHE_COLUMNS;-DGLM_KDA_VECTOR_BETA_SCALE;-DGLM_KDA_SCORE_VECTOR_REDUCE','-DPython3_EXECUTABLE='+sys.executable,'-DASCEND_PYTHON_EXECUTABLE='+sys.executable,'-DHI_PYTHON='+sys.executable],['cmake','--build',str(build),'--target','ops_transformer_kernel','-j2']]
+for command,label in zip(commands,('configure','build')):
+ print(label,flush=True)
+ with (build/(label+'.log')).open('w') as output:subprocess.run(command,cwd=source,env=env,stdout=output,stderr=subprocess.STDOUT,check=True)
+objects=list((build/'binary/ascend310p/bin/chunk_kda_fwd').glob('*.o'));assert len(objects)==1,objects
+shutil.copytree(root/'night-kda-beta-vector-full/opp-beta-vector',package)
+dest=package/'vendors/custom_transformer/op_impl/ai_core/tbe/kernel/ascend310p/chunk_kda_fwd'
+for binary in objects:
+ for path in (binary,binary.with_suffix('.json')):shutil.copy2(path,dest/path.name)
+shutil.copy2(header,package/'vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_kda_fwd'/header.name)
+record.update(package=str(package),binary=str(dest/objects[0].name),binary_sha256=hashlib.sha256(objects[0].read_bytes()).hexdigest(),full_kda_evaluated=False,serving_evaluated=False)
+(experiment/'build.json').write_text(json.dumps(record,indent=2)+'\n');print(json.dumps(record),flush=True)

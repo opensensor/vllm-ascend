@@ -1,0 +1,11 @@
+import json,uuid,sys
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+c=ResidentClient('http://127.0.0.1:8001')
+rows=c.switch(Control(uuid.uuid4().hex,candidate='fp16_query967_state925_norm1',source=(root/'glm-night-state-norm-candidate.py').read_text()))
+c.resume()
+(root/'night-speed-20261008/state-norm-switch.json').write_text(json.dumps(rows,indent=2)+'\n')
+print('State rows and normalization restored, all workers captured and unpaused',flush=True)

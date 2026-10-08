@@ -1,0 +1,16 @@
+import json,uuid,sys,hashlib
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_native import NativeManifest
+from tools.glm_perf.qsa_metadata_control import manifest
+c=ResidentClient('http://127.0.0.1:8001')
+value=manifest(root/'build-qsa-v941',root/'qsa-v941-gates.json').value
+loaded=c.load_native(NativeManifest(value))
+rows=c.switch(Control(uuid.uuid4().hex,candidate='fp16_query967_state925_norm1_qsa941',source=(root/'glm-night-qsa-candidate.py').read_text()))
+assert all(r['fused_qsa_metadata']['attention_instances']==12 and r['fused_qsa_metadata']['calls']>0 for r in rows),rows
+c.resume()
+(root/'night-speed-20261008/qsa-switch.json').write_text(json.dumps({'manifest':value,'loaded':loaded,'receipts':rows},indent=2)+'\n')
+print('Fused QSA metadata combined with FP16, query, KDA and normalization',flush=True)

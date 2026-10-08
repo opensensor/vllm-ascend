@@ -1,0 +1,24 @@
+import torch,json,sys
+from pathlib import Path
+import torch_npu
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+c=ResidentClient('http://127.0.0.1:8001');c.request('/pause?mode=wait&clear_cache=true')
+try:
+ torch.npu.set_device(0);torch.npu.set_compile_mode(jit_compile=False);torch.npu.config.allow_internal_format=False
+ generator=torch.Generator().manual_seed(971);records=[]
+ for rows in range(1,641):
+  cpu=torch.randn(rows,4,4,generator=generator).abs()+1e-6;value=cpu.npu();axes={}
+  for axis in (-2,-1):
+   a,b,d,e=cpu.unbind(axis);seq=((a+b)+d)+e;pair=(a+b)+(d+e)
+   expected=value.sum(axis).cpu().view(torch.int32)
+   axes[str(axis)]={'sequential':torch.equal(expected,seq.view(torch.int32)),'pairwise':torch.equal(expected,pair.view(torch.int32))}
+  records.append({'rows':rows,'axes':axes})
+ (root/'night-speed-20261008/sinkhorn-sum-orders.json').write_text(json.dumps({'records':records},indent=2)+'\n')
+ transitions=[];last=None
+ for r in records:
+  current=r['axes']
+  if current!=last:transitions.append(r);last=current
+ print(json.dumps(transitions),flush=True)
+finally:c.resume()

@@ -1,0 +1,43 @@
+import hashlib,json,re,sys,time,urllib.request,uuid
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+client=ResidentClient('http://127.0.0.1:8001',timeout=900)
+trace=root/'night-speed-20261008/trace-final';trace.mkdir(parents=True,exist_ok=False)
+base=(root/'night-speed-20261008/w4-vector-candidate.py').read_text();source=base+'\n'+(root/'glm-night-final-profile-footer.py').read_text()
+(trace/'candidate.py').write_text(source)
+def idle():
+ while True:
+  with urllib.request.urlopen(client.base_url+'/metrics',timeout=30) as reply:metrics=reply.read().decode()
+  counts=[float(v) for v in re.findall(r'^vllm:num_requests_(?:running|waiting)(?:\{[^\n]*\})?\s+([0-9.eE+-]+)$',metrics,re.M)]
+  assert counts
+  if not any(counts):return
+  time.sleep(1)
+def mutation(start,label):
+ return client._acknowledged_rpc('profile',start,label,matches=lambda rows:all(r.get('cann_active',r.get('cann_profile',{}).get('active')) is start for r in rows))
+idle();before=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+assert all(r['candidate']=='w4_down7_fp16_query967_state925_qsa941_tiled971_compact3_int927_bf16v975' and r['digest']==hashlib.sha256(base.encode()).hexdigest() for r in before)
+for r in before:
+ env=dict(p.split(b'=',1) for p in Path(f"/proc/{r['pid']}/environ").read_bytes().split(b'\0') if b'=' in p)
+ assert env.get(b'ASCEND_LAUNCH_BLOCKING',b'0') in (b'0',b'')
+(trace/'before.json').write_text(json.dumps(before,indent=2))
+active=False
+try:
+ client.switch(Control(uuid.uuid4().hex,candidate='night_final_w4_profile',source=source))
+ for label,tokens in (('decode_c1',128),('prefill_1280',1280)):
+  idle();assert client.request('/pause?mode=wait&clear_cache=true')['status']=='paused'
+  active=True;mutation(True,label);client.resume()
+  outputs=1 if label.startswith('prefill') else 16
+  began=time.time_ns();response=client.request('/v1/completions',{'model':'glm53-flash-selective-w3','prompt':[42]*tokens,'max_tokens':outputs,'temperature':0,'seed':42,'ignore_eos':True})
+  assert response['usage']['prompt_tokens']==tokens and response['usage']['completion_tokens']==outputs
+  (trace/(label+'-request.json')).write_text(json.dumps({'scope':'profiled, not throughput benchmark','start_wall_ns':began,'end_wall_ns':time.time_ns(),'response':response},indent=2))
+  client.request('/pause?mode=wait&clear_cache=false');stopped=mutation(False,label);active=False
+  (trace/(label+'-stopped.json')).write_text(json.dumps(stopped,indent=2));print(label,'captured and finalized',flush=True)
+finally:
+ if active:
+  client.request('/pause?mode=wait&clear_cache=false');mutation(False,'cleanup')
+ restored=client.switch(Control(uuid.uuid4().hex,candidate='w4_down7_fp16_query967_state925_qsa941_tiled971_compact3_int927_bf16v975',source=base));client.resume()
+ (trace/'restored.json').write_text(json.dumps(restored,indent=2))
+ assert sorted((r['rank'],r['pid'],r['weight_storage_digest']) for r in before)==sorted((r['rank'],r['pid'],r['weight_storage_digest']) for r in restored)
+ print('Final W4 combined candidate restored, unpaused, workers and weights retained',flush=True)

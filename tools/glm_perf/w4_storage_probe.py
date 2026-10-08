@@ -239,6 +239,8 @@ def run(
     import torch_npu  # noqa: F401 -- explicit hardware gate only.
 
     torch.npu.set_device(device)
+    torch.npu.set_compile_mode(jit_compile=False)
+    torch.npu.config.allow_internal_format = False
     helper, _ = frozen_helper(build)
     records = [
         dict(fixture=label, **gate_case(helper, build, options, codes, scales, count, activation, repeats))

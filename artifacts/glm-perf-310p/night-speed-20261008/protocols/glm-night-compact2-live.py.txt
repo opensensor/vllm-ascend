@@ -1,0 +1,13 @@
+import json,uuid,sys
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.integer_divide_control import manifest
+c=ResidentClient('http://127.0.0.1:8001')
+loaded=c.load_native(manifest(root/'build-integer-v927',root/'v927-integer-gates.json'))
+rows=c.switch(Control(uuid.uuid4().hex,candidate='fp16_query967_state925_qsa941_tiled971_compact2_integer927',source=(root/'glm-night-compact2-candidate.py').read_text()))
+c.resume()
+(root/'night-speed-20261008/compact2-switch.json').write_text(json.dumps({'loaded':loaded,'receipts':rows},indent=2)+'\n')
+print('Compact writer and integer metadata installed with the full combined candidate',flush=True)

@@ -67,6 +67,7 @@ def write_compact_pools(
     compress,
     storage_write,
     preserve_cache_dtype=False,
+    integer_ops=None,
 ):
     if not 0 <= num_speculative_tokens <= MAX_SPECULATIVE_TOKENS:
         raise ValueError("completed-pool candidate is qualified only for no speculation or MTP1")
@@ -75,15 +76,18 @@ def write_compact_pools(
     if state_cache.shape[1:] != (POOL_SIZE, 256) or key_cache.shape[-2:] != (1, 128):
         raise ValueError("unsupported kpool cache geometry")
 
+    divide = torch.div if integer_ops is None else integer_ops.div
+    remainder = torch.remainder if integer_ops is None else integer_ops.remainder
+
     count = plan.complete.shape[0]
     if count:
         bases, starts, ends = plan.complete.unbind(1)
         first_positions = positions.index_select(0, starts)
-        rows = bases + (POOL_SIZE - 1 - first_positions.remainder(POOL_SIZE))
+        rows = bases + (POOL_SIZE - 1 - remainder(first_positions, POOL_SIZE))
         safe_rows = torch.minimum(rows, ends - 1)
         selected_positions = positions.index_select(0, safe_rows)
         state_slots = state_meta.slot_mapping.index_select(0, safe_rows).long().clamp_min(0)
-        blocks = state_slots // POOL_SIZE
+        blocks = divide(state_slots, POOL_SIZE, rounding_mode="floor")
         # Gather every required previous-state row before any state write.
         old = state_cache[blocks]
         offsets = torch.arange(POOL_SIZE - 1, -1, -1, device=keys.device)
@@ -95,19 +99,21 @@ def write_compact_pools(
         pool_keys = torch.where(same_pool[:, :, None], keys[safe_local].float(), old[:, :, :128])
         pool_gates = torch.where(same_pool[:, :, None], gates[safe_local].float(), old[:, :, 128:])
         slots = index_meta.slot_mapping.index_select(0, safe_rows).long()
-        completed = (rows < ends) & (slots >= 0) & ((selected_positions + 1).remainder(POOL_SIZE) == 0)
+        completed = (rows < ends) & (slots >= 0) & (remainder(selected_positions + 1, POOL_SIZE) == 0)
 
     if plan.tail.shape[0]:
         tail_rows, requests = plan.tail.unbind(1)
         slots_tail = state_meta.slot_mapping.index_select(0, tail_rows).long()
         safe_slots = slots_tail.clamp_min(0)
         final_positions = index_meta.raw_seq_lens.index_select(0, requests).long() - 1
-        first_retained_pool = (final_positions - num_speculative_tokens).clamp_min(0) // POOL_SIZE
+        first_retained_pool = divide(
+            (final_positions - num_speculative_tokens).clamp_min(0), POOL_SIZE, rounding_mode="floor"
+        )
         valid = (slots_tail >= 0) & (positions.index_select(0, tail_rows) >= first_retained_pool * POOL_SIZE)
         offsets_tail = (
             state_cache.storage_offset()
-            + (safe_slots // POOL_SIZE) * state_cache.stride(0)
-            + safe_slots.remainder(POOL_SIZE) * state_cache.stride(1)
+            + divide(safe_slots, POOL_SIZE, rounding_mode="floor") * state_cache.stride(0)
+            + remainder(safe_slots, POOL_SIZE) * state_cache.stride(1)
         )
         # Match the existing writer's gather dispatch: aclnnIndexSelect rejects
         # BF16 on 310P, while advanced indexing handles this storage format.
@@ -125,8 +131,8 @@ def write_compact_pools(
         safe_slots = slots.clamp_min(0)
         offsets_key = (
             key_cache.storage_offset()
-            + (safe_slots // key_cache.shape[1]) * key_cache.stride(0)
-            + safe_slots.remainder(key_cache.shape[1]) * key_cache.stride(1)
+            + divide(safe_slots, key_cache.shape[1], rounding_mode="floor") * key_cache.stride(0)
+            + remainder(safe_slots, key_cache.shape[1]) * key_cache.stride(1)
         )
         storage_write(key_cache, offsets_key, compressed.to(key_cache.dtype), completed)
 
@@ -150,7 +156,7 @@ def wrap_builder(original):
     return build
 
 
-def wrap_writer(original, cache_tensor, storage_write, compress, *, preserve_cache_dtype=False):
+def wrap_writer(original, cache_tensor, storage_write, compress, *, preserve_cache_dtype=False, integer_ops=None):
     original = getattr(original, "__glm_resident_original__", original)
 
     def write(self, keys, gates, ape, positions, pool_size, indexer_metadata, state_metadata):
@@ -177,6 +183,7 @@ def wrap_writer(original, cache_tensor, storage_write, compress, *, preserve_cac
             compress=compress,
             storage_write=storage_write,
             preserve_cache_dtype=preserve_cache_dtype,
+            integer_ops=integer_ops,
         )
 
     write.__glm_resident_original__ = original

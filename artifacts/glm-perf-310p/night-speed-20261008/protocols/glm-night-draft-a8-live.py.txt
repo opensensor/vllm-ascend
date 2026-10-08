@@ -1,0 +1,11 @@
+import json,uuid,sys
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+c=ResidentClient('http://127.0.0.1:8001');before=c._acknowledged_rpc('resident_status',matches=c._status_matches)
+rows=c.switch(Control(uuid.uuid4().hex,candidate='w4_down7_combined_draft_a8',source=(root/'glm-night-draft-a8-candidate.py').read_text()));c.resume()
+assert all(r['draft_activation_trial']['layers']==['layers.45'] and not r['graphs_dirty'] for r in rows)
+assert sorted((r['rank'],r['pid'],r['weight_storage_digest']) for r in rows)==sorted((r['rank'],r['pid'],r['weight_storage_digest']) for r in before)
+(root/'night-speed-20261008/draft-a8-switch.json').write_text(json.dumps({'before':before,'receipts':rows},indent=2))
+print('Draft-only A8 trial captured; target activation precision and weight storage retained',flush=True)

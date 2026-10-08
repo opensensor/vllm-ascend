@@ -1,0 +1,45 @@
+import sys,json,os,socket,psutil,hashlib
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+experiment=root/'night-kda-tail-wu-vector-full-v2';build=json.loads((experiment/'build.json').read_text())
+assert hashlib.sha256(Path(build['binary']).read_bytes()).hexdigest()==build['binary_sha256']
+safe=[r for r in json.loads((experiment/'full-kda-cached.json').read_text()) if '_True_' in r['case']]
+assert len(safe)==17 and all(r['finite'] and sum(r['bit_mismatches'])==0 and sum(r['repeat_bit_mismatches'])==0 for r in safe)
+log=root/'kda-tail-wu-vector-server-20261008.log';receipt=root/'kda-tail-wu-vector-server-process-20261008.json'
+assert not log.exists() and not receipt.exists()
+oldvendor='/home/matteius/experiments/glm-prompt-profile-20261005/opp-score-cache/vendors/custom_transformer'
+newvendor=str(Path(build['package'])/'vendors/custom_transformer')
+saved=json.loads(Path('/home/matteius/experiments/glm-decode-flags-20261006/candidate-config.json').read_text())
+assert saved['opp_stack'].count(oldvendor)==1
+source=(root/'night-speed-20261008/kda-score-vector-launch.py').read_text()
+for before,after in (
+ ('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/night-kda-score-vector-full-v2/opp-score-vector/vendors/custom_transformer',newvendor),
+ ("log=root/'kda-score-vector-server-20261008.log'","log=root/'kda-tail-wu-vector-server-20261008.log'"),
+ ("root/'kda-score-vector-server-process-20261008.json'","root/'kda-tail-wu-vector-server-process-20261008.json'"),
+ ('Lossless disk checkpoint; vector beta and qualified batched full score reduction','Lossless disk checkpoint; vector beta, batched scores, qualified vector tail W/U'),
+):
+ assert source.count(before)==1,before
+ source=source.replace(before,after)
+compiled=compile(source,'<saved-kda-tail-wu-vector-launch>','exec')
+with (root/'night-speed-20261008/kda-tail-wu-vector-launch.py').open('x') as output:output.write(source)
+c=ResidentClient('http://127.0.0.1:8001');c.request('/pause?mode=wait&clear_cache=true')
+rows=c._acknowledged_rpc('resident_status',matches=c._status_matches)
+assert all(not r['graphs_dirty'] and not r['native_failed'] and r['candidate']=='w4_down7_fp16_query967_state925_qsa941_tiled971_compact3_int927_bf16v975' for r in rows)
+(root/'night-speed-20261008/before-kda-tail-wu-vector-restart.json').write_text(json.dumps(rows,indent=2))
+r=json.loads((root/'kda-score-vector-server-process-20261008.json').read_text())
+parent=psutil.Process(r['pid']);assert abs(parent.create_time()-r['created'])<1
+members=parent.children(recursive=True);owned=[parent,*members]
+assert set(row['pid'] for row in rows)<=set(p.pid for p in members)
+for p in owned:
+ try:p.terminate()
+ except psutil.NoSuchProcess:pass
+_,remaining=psutil.wait_procs(owned,timeout=40)
+for p in remaining:
+ try:p.kill()
+ except psutil.NoSuchProcess:pass
+psutil.wait_procs(remaining,timeout=5)
+assert not any(p.is_running() and p.status()!=psutil.STATUS_ZOMBIE for p in owned)
+with socket.socket() as sock:assert sock.connect_ex(('127.0.0.1',8001))!=0
+print('GLM tree drained and stopped; replacing only cached KDA vendor slot',flush=True)
+exec(compiled,{'__name__':'__main__'})

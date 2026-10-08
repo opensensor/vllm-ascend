@@ -1,0 +1,50 @@
+import json,time,urllib.request,uuid,sys
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+client=ResidentClient('http://127.0.0.1:8001')
+results=[]
+def stream(tokens,output_tokens,nonce):
+ prompt=[101+nonce]+[43]*(tokens-2)+[201+nonce]
+ payload={'model':'glm53-flash-selective-w3','prompt':prompt,'max_tokens':output_tokens,'temperature':0,'ignore_eos':True,'stream':True,'stream_options':{'include_usage':True}}
+ request=urllib.request.Request(client.base_url+'/v1/completions',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
+ start=time.monotonic();first=None;last=None;usage=None;done=False;fragments=[]
+ with urllib.request.urlopen(request,timeout=900) as reply:
+  for raw in reply:
+   if not raw.startswith(b'data:'):continue
+   data=raw[5:].strip()
+   if data==b'[DONE]':done=True;break
+   event=json.loads(data);assert 'error' not in event,event
+   if event.get('usage'):usage=event['usage']
+   for choice in event.get('choices',[]):
+    if choice.get('text'):
+     now=time.monotonic();first=now if first is None else first;last=now;fragments.append(choice['text'])
+ assert done and usage and first is not None
+ assert usage['prompt_tokens']==tokens and usage['completion_tokens']==output_tokens
+ elapsed=time.monotonic()-start
+ return dict(prompt_tokens=tokens,completion_tokens=output_tokens,ttft_s=first-start,total_s=elapsed,
+             generation_tok_s=(output_tokens-1)/(last-first) if output_tokens>1 and last>first else None,
+             text=''.join(fragments),nonce=nonce)
+def save():
+ (root/'night-speed-20261008/kda-tail-wu-vector-serving.json').write_text(json.dumps({'complete':False,'scope':'synthetic token-id prompts; absolute timing, no matched server baseline','records':results},indent=2)+'\n')
+for tokens,generated,nonce in ((128,128,2),(128,128,3),(640,1,4),(1280,1,5),(6400,1,6)):
+ # Reset scheduler prefix state so prefill measurements are cold.
+ assert client.request('/pause?mode=wait&clear_cache=true')['status']=='paused';client.resume()
+ row=stream(tokens,generated,nonce);results.append(row);save();print(json.dumps(row),flush=True)
+assert client.request('/pause?mode=wait&clear_cache=true')['status']=='paused';client.resume()
+start=time.monotonic()
+with ThreadPoolExecutor(max_workers=4) as pool:
+ rows=list(pool.map(lambda nonce:stream(128,32,nonce),range(10,14)))
+results.extend(rows)
+c4={'elapsed_s':time.monotonic()-start,'aggregate_tok_s':128/(time.monotonic()-start),'rows':rows}
+sample=client.request('/v1/chat/completions',{'model':'glm53-flash-selective-w3','messages':[{'role':'user','content':'Explain in one sentence why plants need sunlight.'}],'max_tokens':256,'temperature':0})
+status=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+assert all(not r['graphs_dirty'] and not r['native_failed'] and r['fp16_scale_storage']['dtypes']==['torch.float16'] for r in status)
+assert all(r['vector_bf16_conversion']['converters']==2 for r in status)
+assert all(r['vector_query_cast']['indexers']==12 and r['vector_query_cast']['native_calls']>0 for r in status)
+assert all(r['fp16_scale_storage']['dispatches']['prefill']>0 and r['fp16_scale_storage']['dispatches']['decode']>0 for r in status)
+final={'complete':True,'scope':'synthetic token-id timing prompts; absolute measurements, no matched server baseline','records':results,'c4':c4,'sample_response':sample,'quality_evaluated':False,'status':status,'paused':client.request('/is_paused',method='GET')}
+(root/'night-speed-20261008/kda-tail-wu-vector-serving.json').write_text(json.dumps(final,indent=2)+'\n')
+print('COMPLETE',flush=True)

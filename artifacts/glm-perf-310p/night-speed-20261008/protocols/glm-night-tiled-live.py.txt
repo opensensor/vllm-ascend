@@ -1,0 +1,14 @@
+import json,uuid,sys
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+sys.path.insert(0,str(root/'source-night-sinkhorn-v971'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.sinkhorn_tiled_control import manifest
+c=ResidentClient('http://127.0.0.1:8001')
+loaded=c.load_native(manifest(root/'build-sinkhorn-tiled-v971',root/'night-speed-20261008/sinkhorn-tiled-v971-gates.json'))
+rows=c.switch(Control(uuid.uuid4().hex,candidate='fp16_query967_state925_qsa941_tiled971',source=(root/'glm-night-tiled-candidate.py').read_text()))
+assert all(r['tiled_normalization']['calls_by_rows'].get('640',0)>0 for r in rows),rows
+c.resume()
+(root/'night-speed-20261008/tiled-switch.json').write_text(json.dumps({'loaded':loaded,'receipts':rows},indent=2)+'\n')
+print('Tiled normalization, fused metadata, selected states and FP16/query kernels captured and resumed',flush=True)

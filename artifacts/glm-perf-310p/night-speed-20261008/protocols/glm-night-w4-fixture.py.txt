@@ -1,0 +1,20 @@
+import json,sys,time,urllib.request,re
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+sys.path.insert(0,str(root/'source-night-sinkhorn-v971'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.w4_storage_probe import run
+client=ResidentClient('http://127.0.0.1:8001')
+while True:
+ with urllib.request.urlopen(client.base_url+'/metrics',timeout=30) as reply:metrics=reply.read().decode()
+ counts=[float(v) for v in re.findall(r'^vllm:num_requests_(?:running|waiting)(?:\{[^\n]*\})?\s+([0-9.eE+-]+)$',metrics,re.M)]
+ assert counts
+ if not any(counts):break
+ time.sleep(1)
+assert client.request('/pause?mode=wait&clear_cache=true')['status']=='paused'
+try:
+ report=run(root/'build-v964-fp16-scales',root/'night-speed-20261008/w4-real-layer10.json',allow_device_gate=True,device=0,repeats=15,checkpoint=Path('/srv/ai/models/GLM-5.3-Flash-native-int4-fp16-scales-20261008'),layer=10,experts=3,tokens=(2,8,640),activations=(4,))
+ print(json.dumps({'complete':report['complete'],'records':report['records']}),flush=True)
+finally:
+ client.resume()
+ print('Server resumed after W4 fixture',flush=True)

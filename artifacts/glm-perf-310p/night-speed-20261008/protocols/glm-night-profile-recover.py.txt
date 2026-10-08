@@ -1,0 +1,17 @@
+import sys,json,urllib.error,uuid
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+c=ResidentClient('http://127.0.0.1:8001')
+for index in range(24):
+ try:
+  rows=c.rpc('resident_status')
+  if c._status_matches(rows):break
+ except (RuntimeError,urllib.error.HTTPError) as error:print(index,type(error).__name__,flush=True)
+else:raise RuntimeError('Could not drain old rejected-label replies')
+assert all(not r['cann_profile']['active'] for r in rows)
+(root/'night-speed-20261008/rejected-profile-label-status.json').write_text(json.dumps(rows,indent=2))
+restored=c.switch(Control(uuid.uuid4().hex,candidate='w4_down7_fp16_query967_state925_qsa941_tiled971_compact3_int927_bf16v975',source=(root/'night-speed-20261008/w4-vector-candidate.py').read_text()));c.resume()
+assert all(not r['graphs_dirty'] and not r['native_failed'] for r in restored)
+print('Rejected profiler label drained; complete qualified serving candidate restored',flush=True)

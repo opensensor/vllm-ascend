@@ -1,0 +1,15 @@
+import sys,json
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(root/'source-night-sinkhorn-v971'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.kda_beta_scale_vector_probe import run
+c=ResidentClient('http://127.0.0.1:8001');assert c.request('/pause?mode=wait&clear_cache=true')['status']=='paused'
+try:
+ import hashlib
+ frozen=root/'build-kda-beta-vector-v978/kda_beta_scale_vector_probe.py'
+ import tools.glm_perf.kda_beta_scale_vector_probe as executed
+ assert hashlib.sha256(frozen.read_bytes()).digest()==hashlib.sha256(Path(executed.__file__).read_bytes()).digest()
+ report=run(root/'build-kda-beta-vector-v978',root/'night-speed-20261008/kda-beta-vector-v978-gates.json',allow_device_gate=True)
+ print(json.dumps({'complete':report['complete'],'cases':len(report['records'])}),flush=True)
+finally:
+ c.resume();print('Server resumed after KDA beta diagnostic',flush=True)

@@ -1,0 +1,15 @@
+import sys,json,torch,time
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(root/'source-night-sinkhorn-v971'))
+from tools.glm_perf.w4_storage_checkpoint import export,plan
+source=Path('/srv/ai/models/GLM-5.3-Flash-native-int4-fp16-scales-20261008')
+output=Path('/srv/ai/models/GLM-5.3-Flash-native-int4-fp16-scales-w4-down7-20261008')
+banks=[f'layers.{n}.down' for n in (8,9,10,12,13,14,16)]
+torch.set_num_threads(4)
+p=plan(source,banks,extra_bytes_per_rank=512*1024*1024,source_bits=3)
+assert p['fits_allowance'];assert len([b for b in p['banks'] if b['selected']])==7
+(root/'night-speed-20261008/w4-down7-plan.json').write_text(json.dumps(p,indent=2))
+started=time.monotonic();print('Exporting lossless W4 down banks',banks,flush=True)
+r=export(source,output,banks,extra_bytes_per_rank=512*1024*1024,source_bits=3)
+print(json.dumps({'complete':r['complete'],'elapsed_s':time.monotonic()-started,'output':str(output),'shards':len(r['storage_promotion_shards'])}),flush=True)
+(root/'night-speed-20261008/w4-down7-export.json').write_text(json.dumps(r,indent=2))

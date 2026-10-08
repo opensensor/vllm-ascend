@@ -1,0 +1,11 @@
+import sys,subprocess
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+c=ResidentClient('http://127.0.0.1:8001')
+assert c.request('/pause?mode=wait&clear_cache=true')['status']=='paused'
+try:
+ subprocess.run([sys.executable,'-m','tools.glm_perf.sinkhorn_tiled_probe','--build-dir',str(root/'build-sinkhorn-tiled-v970'),'--output',str(root/'night-speed-20261008/sinkhorn-tiled-v970-gates.json'),'--allow-device-gate'],cwd=root/'source-night-sinkhorn-v970',check=True)
+finally:
+ c.resume()

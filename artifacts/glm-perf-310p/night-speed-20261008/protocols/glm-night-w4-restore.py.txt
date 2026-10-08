@@ -1,0 +1,39 @@
+import json,sys,time,urllib.request,uuid
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(root/'source-night-sinkhorn-v971'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_native import NativeManifest
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.query_vector_control import manifest as query_manifest
+from tools.glm_perf.state_rows_control import manifest as state_manifest
+from tools.glm_perf.qsa_metadata_control import manifest as qsa_manifest
+from tools.glm_perf.sinkhorn_tiled_control import manifest as tiled_manifest
+from tools.glm_perf.integer_divide_control import manifest as integer_manifest
+from tools.glm_perf.bf16_vector_control import manifest as bf16_manifest
+c=ResidentClient('http://127.0.0.1:8001');deadline=time.monotonic()+1200
+while True:
+ try:
+  with urllib.request.urlopen(c.base_url+'/health',timeout=2) as reply:
+   if reply.status==200:break
+ except Exception:pass
+ if time.monotonic()>deadline:raise TimeoutError('cold W4 server did not become healthy')
+ time.sleep(5)
+print('W4 disk server healthy; admitting native resources',flush=True)
+resources=[
+ NativeManifest(json.loads((root/'fp16-scales-v965-resident-manifest-20261008.json').read_text())),
+ query_manifest(root/'build-query-vector-v967',root/'query-vector-v967-device-gates-20261008.json'),
+ state_manifest(root/'build-state-rows-v925',root/'v925-state-gates.json'),
+ NativeManifest(json.loads(Path('/home/matteius/experiments/glm-sinkhorn-resident-20261005/native-manifest.json').read_text())),
+ qsa_manifest(root/'build-qsa-v941',root/'qsa-v941-gates.json'),
+ tiled_manifest(root/'build-sinkhorn-tiled-v971',root/'night-speed-20261008/sinkhorn-tiled-v971-gates.json'),
+ integer_manifest(root/'build-integer-v927',root/'v927-integer-gates.json'),
+ bf16_manifest(root/'build-bf16-vector-v975',root/'night-speed-20261008/bf16-vector-v975-gates.json')]
+loaded={}
+for manifest in resources:
+ loaded[manifest.name]=c.load_native(manifest);print(manifest.name,'admitted',flush=True)
+source=(root/'glm-night-vector-candidate.py').read_text().replace('/srv/ai/models/GLM-5.3-Flash-native-int4-fp16-scales-20261008/native-kernels-v56','/srv/ai/models/GLM-5.3-Flash-native-int4-fp16-scales-w4-down7-20261008/native-kernels-v56')
+(root/'night-speed-20261008/w4-vector-candidate.py').write_text(source)
+rows=c.switch(Control(uuid.uuid4().hex,candidate='w4_down7_fp16_query967_state925_qsa941_tiled971_compact3_int927_bf16v975',source=source));c.resume()
+assert all(not row['graphs_dirty'] and not row['native_failed'] for row in rows)
+(root/'night-speed-20261008/w4-switch.json').write_text(json.dumps({'loaded':loaded,'receipts':rows},indent=2))
+print('All fusions restored on the permanent W4 down7 layout; server unpaused',flush=True)

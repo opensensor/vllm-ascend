@@ -83,7 +83,8 @@ def caches(requests, dtype, seed):
 @pytest.mark.parametrize("speculative", [0, 1])
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
 @pytest.mark.parametrize("lengths", [[1, 2, 3], [0, 9, 0, 17], [640], [11, 13, 18]])
-def test_strided_caches_exact_for_all_pool_phases(reference, phase, speculative, dtype, lengths):
+@pytest.mark.parametrize("use_integer_ops", [False, True])
+def test_strided_caches_exact_for_all_pool_phases(reference, phase, speculative, dtype, lengths, use_integer_ops):
     phases = [phase + 4 * request for request in range(len(lengths))]
     boundaries, positions, metadata, state_metadata = inputs(lengths, phases)
     expected = caches(len(lengths), dtype, 73)
@@ -98,6 +99,16 @@ def test_strided_caches_exact_for_all_pool_phases(reference, phase, speculative,
         k_cache=SimpleNamespace(kv_cache=expected[3]),
     )
     reference._write_pools(indexer, keys, gates, ape, positions, 4, metadata, state_metadata)
+
+    class CpuIntegerNative:
+        device = torch.device("cpu")
+        calls = 0
+
+        def __call__(self, values, divisor):
+            self.calls += 1
+            return torch.div(values, divisor, rounding_mode="floor")
+
+    native = CpuIntegerNative()
     candidate.write_compact_pools(
         keys,
         gates,
@@ -111,7 +122,9 @@ def test_strided_caches_exact_for_all_pool_phases(reference, phase, speculative,
         speculative,
         compress=reference.compress_kpool,
         storage_write=reference._masked_storage_write,
+        integer_ops=DivisionTorch(native) if use_integer_ops else None,
     )
+    assert (native.calls > 0) == use_integer_ops
     assert torch.equal(actual[0], expected[0])
     assert torch.equal(actual[1], expected[1])
 

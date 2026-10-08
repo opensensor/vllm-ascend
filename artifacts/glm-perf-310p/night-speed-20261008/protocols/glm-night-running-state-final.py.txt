@@ -1,0 +1,28 @@
+import json,sys,hashlib,psutil,urllib.request,subprocess,time
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+c=ResidentClient('http://127.0.0.1:8001')
+rows=c._acknowledged_rpc('resident_status',matches=c._status_matches)
+source=root/'night-speed-20261008/gated-key-vector-candidate.py'
+digest=hashlib.sha256(source.read_bytes()).hexdigest()
+assert len(rows)==4 and all(r['candidate']=='fp16_query967_state925_qsa941_tiled971_compact3_int927_bf16v975_kda_reuse_v2' and r['digest']==digest and not r['graphs_dirty'] and not r['native_failed'] for r in rows)
+assert all(r['fp16_scale_storage']['dtypes']==['torch.float16'] and r['fp16_scale_storage']['bytes']==152174592 for r in rows)
+assert all(r['vector_bf16_conversion']['converters']==2 and r['vector_query_cast']['indexers']==12 for r in rows)
+process=json.loads((root/'gated-key-reuse-server-process-20261008.json').read_text())
+p=psutil.Process(process['pid']);assert abs(p.create_time()-process['created'])<1
+vendor=str(root/'night-kda-gated-key-reuse-full-v2/opp-gated-key-reuse/vendors/custom_transformer')
+environment=p.environ();stack=environment['ASCEND_CUSTOM_OPP_PATH'].split(':');assert stack.count(vendor)==1
+assert not any('opp-score-cache' in item or 'opp-tail-wu-vector' in item for item in stack)
+record=json.loads((root/'night-kda-gated-key-reuse-full-v2/build.json').read_text())
+assert hashlib.sha256(Path(record['binary']).read_bytes()).hexdigest()==record['binary_sha256']
+gates=json.loads((root/'night-kda-gated-key-reuse-full-v2/full-kda-cached.json').read_text());safe=[r for r in gates if '_True_' in r['case']]
+assert len(safe)==17 and all(r['finite'] and r['inputs_unchanged'] and sum(r['bit_mismatches'])==0 and sum(r['repeat_bit_mismatches'])==0 for r in safe)
+paused=c.request('/is_paused',method='GET');assert not paused['is_paused']
+with urllib.request.urlopen(c.base_url+'/health') as response:assert response.status==200
+models=c.request('/v1/models',method='GET');assert any(r['id']=='glm53-flash-selective-w3' for r in models['data'])
+receipt={'collected_wall_ns':time.time_ns(),'process':process,'native_build':record,'source_sha256':digest,'opp_stack':stack,'host_library_path':environment['LD_LIBRARY_PATH'],'status':rows,'paused':paused,'models':models,'safe_operator_cases_verified':len(safe),'model_accuracy_evaluated':False}
+(root/'night-speed-20261008/running-state-final.json').write_text(json.dumps(receipt,indent=2)+'\n')
+(root/'night-speed-20261008/npu-smi-final.txt').write_text(subprocess.check_output(['npu-smi','info'],text=True))
+print('Current server healthy and unpaused; all ranks/source/package/FP16 scales verified',flush=True)

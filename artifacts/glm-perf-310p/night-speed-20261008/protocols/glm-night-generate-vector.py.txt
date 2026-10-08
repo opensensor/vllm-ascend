@@ -1,0 +1,28 @@
+from pathlib import Path
+r=Path('/tmp/glm-night-speed-20261008/tools/glm_perf')
+completed=(r/'resident_candidates/kpool_completed_prefill.py').read_text()
+compact=(r/'resident_candidates/kpool_bound_compact.py').read_text().replace('from ..','from tools.glm_perf.')
+line='from .kpool_completed_prefill import MAX_GRAPH_TOKENS, MAX_SPECULATIVE_TOKENS, POOL_SIZE, wrap_builder, wrap_writer\n'
+assert compact.count(line)==1;compact=compact.replace(line,'')
+source=Path('/tmp/glm-night-tiled-candidate.py').read_text()+f'''\nnight_compact3_parent_replacements = replacements
+
+def replacements(native_resources):
+    from types import ModuleType
+    completed=ModuleType('glm_night_completed_pools_integer_v3')
+    exec(compile({completed!r},'<frozen-completed-pools-integer>','exec'),completed.__dict__)
+    capsule=ModuleType('glm_night_compact_pools_integer_v3')
+    capsule.__dict__.update({{key:getattr(completed,key) for key in ('MAX_GRAPH_TOKENS','MAX_SPECULATIVE_TOKENS','POOL_SIZE','wrap_builder','wrap_writer')}})
+    exec(compile({compact!r},'<frozen-bound-compact-integer>','exec'),capsule.__dict__)
+    return capsule.extend_replacements(night_compact3_parent_replacements(native_resources),native_resources['integer_divide_v927'])
+'''
+Path('/tmp/glm-night-compact3-candidate.py').write_text(source)
+vector=(r/'resident_candidates/bf16_vector.py').read_text().replace('from ..','from tools.glm_perf.').replace('from tools.glm_perf.bf16_vector import MODES','MODES = (0, 1, 4, 5)')
+source+=f'''\nnight_vector_parent_replacements = replacements
+
+def replacements(native_resources):
+    from types import ModuleType
+    capsule=ModuleType('glm_night_bf16_vector_v975')
+    exec(compile({vector!r},'<frozen-bound-bf16-vector>','exec'),capsule.__dict__)
+    return capsule.extend_replacements(night_vector_parent_replacements(native_resources),native_resources['bf16_vector_v975'])
+'''
+Path('/tmp/glm-night-vector-candidate.py').write_text(source)

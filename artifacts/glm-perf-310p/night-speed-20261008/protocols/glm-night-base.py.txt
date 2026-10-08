@@ -1,0 +1,60 @@
+from pathlib import Path
+from tools.glm_perf.resident_candidates.prefill_decode import PrefillDecodeNative
+from tools.glm_perf.resident_candidates.prefill_graphs import extend_replacements as with_prefill_graphs
+from tools.glm_perf.resident_candidates.expert_reconstruction import extend_replacements
+
+def fp16_base_replacements(native_resources):
+    from glm_reconstruction_v964_helpers.glm_fused_moe import NativeFusedMoE
+    from vllm_ascend._310p.worker_310p import NPUWorker310
+    root=Path('/srv/ai/models/GLM-5.3-Flash-native-int4-fp16-scales-20261008/native-kernels-v56')
+    decode=NativeFusedMoE(root,namespace='glm_reconstruction_v964',activation_bits=4,prepared_weight_layout=True,fp16_route_workspace=True)
+    prefill=native_resources['reconstruction_v965']['fused_int4a4']
+    mixed=PrefillDecodeNative(prefill,decode)
+    selected=dict(native_resources)
+    selected['fp16_decode']={'fused_int4a4':decode}
+    selected['reconstruction_v965']=dict(native_resources['reconstruction_v965'],fused_int4a4=mixed)
+    from tools.glm_perf.resident_worker import ResidentWorkerExtension
+    prefix='vllm_ascend._310p.worker_310p:NPUWorker310.'
+    base={prefix+name:getattr(ResidentWorkerExtension,name) for name in ('resident_capture','resident_apply','resident_status')}
+    changes=extend_replacements(base,selected,'fused_int4a4',resource_name='reconstruction_v965')
+    changes=with_prefill_graphs(changes,selected)
+    key='vllm_ascend._310p.worker_310p:NPUWorker310.resident_status'
+    original=changes.get(key,NPUWorker310.resident_status)
+    def status(self):
+        receipt=original(self)
+        banks=[]
+        for wrapper in self._resident_wrappers():
+            for owner in wrapper.runnable.modules():
+                bank=getattr(owner,'w2_experts',None)
+                if bank is not None:banks.append(bank)
+        receipt['fp16_scale_storage']={'banks':len(banks),'layouts':sorted({getattr(b,'native_weight_scale_layout',None) for b in banks}),
+            'dtypes':sorted({str(getattr(b,n).dtype) for b in banks for n in ('gate_up_scale_bank','down_scale_bank')}),
+            'bytes':sum(getattr(b,n).numel()*getattr(b,n).element_size() for b in banks for n in ('gate_up_scale_bank','down_scale_bank')),
+            'dispatches':dict(mixed.dispatches),'decode_version':964,'prefill_version':965}
+        return receipt
+    changes[key]=status
+    return changes
+
+
+def replacements(native_resources):
+    from vllm_ascend._310p.worker_310p import NPUWorker310
+    import importlib.util,sys
+    from tools.glm_perf.query_bf16_vector_probe import verify
+    build=Path("/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-query-vector-v967")
+    provenance=verify(build)
+    package=provenance["helper_package"]
+    package_root=build/package
+    if package not in sys.modules:
+        spec=importlib.util.spec_from_file_location(package,package_root/"__init__.py",submodule_search_locations=[str(package_root)])
+        module=importlib.util.module_from_spec(spec);sys.modules[package]=module;spec.loader.exec_module(module)
+    if Path(sys.modules[package].__file__).resolve()!=(package_root/"__init__.py").resolve():
+        raise ValueError("query vector helper belongs to another frozen build")
+    from glm_query_vector_v967_helpers.query_vector import extend_replacements as vector_queries
+    changes=fp16_base_replacements(native_resources)
+    prefix='vllm_ascend._310p.worker_310p:NPUWorker310.'
+    source=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/runtime-fp16-scales-20261008/vllm_ascend/models/glm5next/attention.py').read_text()
+    result=vector_queries(changes,native_resources['query_vector_v967'],source,
+        capture_hook=changes.get(prefix+'resident_capture',NPUWorker310.resident_capture),
+        apply_hook=changes.get(prefix+'resident_apply',NPUWorker310.resident_apply))
+
+    return result

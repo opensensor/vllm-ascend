@@ -1,0 +1,15 @@
+import sys,json,torch
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(root/'source-night-sinkhorn-v971'))
+from tools.glm_perf.resident_harness import ResidentClient
+c=ResidentClient('http://127.0.0.1:8001');c.request('/pause?mode=wait&clear_cache=true')
+try:
+ import torch_npu
+ from tools.glm_perf.bf16_vector_probe import load
+ torch.npu.set_device(0);torch.npu.set_compile_mode(jit_compile=False);torch.npu.config.allow_internal_format=False
+ h,p=load(root/'build-bf16-vector-v972');n=h.NativeBf16Vector(root/'build-bf16-vector-v972',p['namespace']);n.prepare_counts([1,16,128])
+ for count in (1,16,128):
+  bits=torch.tensor([17,128,32767,-32768,-1,1,0,16384]*16,dtype=torch.int16)[:count]
+  x=bits.view(torch.bfloat16).npu();y=n.convert(x,torch.float32,1)
+  print(count,bits.tolist()[:16],y.cpu().view(torch.int32).tolist()[:16],h.reference(bits,1).tolist()[:16],flush=True)
+finally:c.resume()

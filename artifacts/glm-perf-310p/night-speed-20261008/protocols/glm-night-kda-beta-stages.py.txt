@@ -1,0 +1,19 @@
+import csv,json,statistics
+from pathlib import Path
+from decimal import Decimal
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/night-speed-20261008/trace-kda-beta')
+for folder in root.glob('prefill_1280/rank*'):
+ prof=next(folder.glob('PROF_*/mindstudio_profiler_output'))
+ with next(prof.glob('step_trace*.csv')).open() as f:steps=list(csv.DictReader(f))
+ row=steps[-1];end=Decimal(row['Iteration End(us)']);begin=end-Decimal(row['Iteration Time(us)'])
+ selected=[]
+ with next(prof.glob('op_summary*.csv')).open() as f:
+  for row in csv.DictReader(f):
+   if 'ChunkKdaFwd_KdaChunkForward' in row['Op Name'] and begin<=Decimal(row['Task Start Time(us)'])<end:selected.append(row)
+ selected.sort(key=lambda row:Decimal(row['Task Start Time(us)']))
+ assert len(selected)==306,len(selected)
+ stages=[]
+ for index,stage in enumerate((0,6,7,8,1,4,2,3,5)):
+  times=[float(row['Task Duration(us)'])/1000 for row in selected[index::9]]
+  stages.append(dict(stage=stage,calls=len(times),summed_ms=sum(times),median_ms=statistics.median(times),max_ms=max(times)))
+ print(json.dumps(dict(rank=folder.name,scope='chronological ordinal attribution using source-confirmed nine-launch stage order; last 640-token profiled step',stages=stages)),flush=True)

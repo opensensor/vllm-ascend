@@ -1,0 +1,22 @@
+import csv,json
+from pathlib import Path
+from collections import defaultdict
+from decimal import Decimal
+import sys
+root=Path(sys.argv[1])
+for folder in root.glob('*/rank*'):
+ files=list(folder.glob('PROF_*/mindstudio_profiler_output/op_summary*.csv'));steps=list(folder.glob('PROF_*/mindstudio_profiler_output/step_trace*.csv'))
+ if len(files)!=1 or len(steps)!=1:continue
+ with steps[0].open() as f:timings=list(csv.DictReader(f))
+ if not timings:continue
+ t=timings[-1];end=int(Decimal(t['Iteration End(us)'])*1000);beg=end-int(Decimal(t['Iteration Time(us)'])*1000)
+ groups=defaultdict(lambda:[0,0,[]])
+ with files[0].open() as f:
+  for row in csv.DictReader(f):
+   b=int(Decimal(row['Task Start Time(us)'])*1000);e=b+int(Decimal(row['Task Duration(us)'])*1000)
+   d=max(0,min(e,end)-max(b,beg))
+   if not d:continue
+   key=(row['Op Name'],row['Task Type']);v=groups[key];v[0]+=d/1e6;v[1]+=1
+   if len(v[2])<2:v[2].append({'shapes':row.get('Input Shapes'),'types':row.get('Input Data Types')})
+ result={'folder':str(folder),'span_ms':(end-beg)/1e6,'groups':[{'name':k[0],'core':k[1],'ms':v[0],'count':v[1],'examples':v[2]} for k,v in sorted(groups.items(),key=lambda x:-x[1][0])]}
+ print(json.dumps(result),flush=True)

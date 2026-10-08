@@ -1,0 +1,183 @@
+profile_base_replacements = replacements
+# SPDX-License-Identifier: Apache-2.0
+"""Direct CANN profiling lifecycle, without torch profiler allocator hooks."""
+
+import ctypes
+from pathlib import Path
+
+
+class AclProfile:
+    # Values from the deployed CANN 9.1.0 include/acl/acl_prof.h.
+    ACL_API = 0x0001
+    TASK_TIME = 0x0002
+    AICORE_METRICS = 0x0004
+    HCCL_TRACE = 0x0020
+    TRAINING_TRACE = 0x0040
+    RUNTIME_API = 0x0100
+    OP_ATTR = 0x4000
+    PIPE_UTILIZATION = 1
+
+    def __init__(self):
+        self.library = ctypes.CDLL("/usr/local/Ascend/cann-9.1.0/lib64/libascendcl.so")
+        signatures = {
+            "aclprofInit": ([ctypes.c_char_p, ctypes.c_size_t], ctypes.c_int),
+            "aclprofCreateConfig": (
+                [ctypes.POINTER(ctypes.c_uint32), ctypes.c_uint32, ctypes.c_int, ctypes.c_void_p, ctypes.c_uint64],
+                ctypes.c_void_p,
+            ),
+            "aclprofStart": ([ctypes.c_void_p], ctypes.c_int),
+            "aclprofStop": ([ctypes.c_void_p], ctypes.c_int),
+            "aclprofDestroyConfig": ([ctypes.c_void_p], ctypes.c_int),
+            "aclprofFinalize": ([], ctypes.c_int),
+        }
+        for name, (arguments, result) in signatures.items():
+            function = getattr(self.library, name)
+            function.argtypes = arguments
+            function.restype = result
+        self.config = None
+        self.initialized = False
+        self.active = False
+
+    @staticmethod
+    def check(result, operation):
+        if result != 0:
+            raise RuntimeError(f"{operation} returned CANN error {result}")
+
+    def start(self, output, device):
+        if self.initialized:
+            raise RuntimeError("profiling session already initialized")
+        Path(output).mkdir(parents=True, exist_ok=True)
+        encoded = str(output).encode()
+        self.check(self.library.aclprofInit(encoded, len(encoded)), "aclprofInit")
+        self.initialized = True
+        devices = (ctypes.c_uint32 * 1)(device)
+        flags = (
+            self.ACL_API
+            | self.TASK_TIME
+            | self.AICORE_METRICS
+            | self.HCCL_TRACE
+            | self.TRAINING_TRACE
+            | self.RUNTIME_API
+            | self.OP_ATTR
+        )
+        try:
+            self.config = self.library.aclprofCreateConfig(devices, 1, self.PIPE_UTILIZATION, None, flags)
+            if not self.config:
+                raise RuntimeError("aclprofCreateConfig returned null")
+            self.check(self.library.aclprofStart(self.config), "aclprofStart")
+            self.active = True
+        except Exception:
+            self.stop()
+            raise
+
+    def stop(self):
+        # Stop collection before releasing the configuration or recapturing graphs.
+        if self.active:
+            self.check(self.library.aclprofStop(self.config), "aclprofStop")
+            self.active = False
+        if self.config:
+            self.check(self.library.aclprofDestroyConfig(self.config), "aclprofDestroyConfig")
+            self.config = None
+        if self.initialized:
+            self.check(self.library.aclprofFinalize(), "aclprofFinalize")
+            self.initialized = False
+
+# SPDX-License-Identifier: Apache-2.0
+"""Append CANN lifecycle after qualified fused factory and AclProfile class."""
+
+
+def replacements(native_resources=None):
+    import ctypes
+    import importlib
+    import json
+    import time
+    from pathlib import Path
+
+    import torch
+
+    changes = profile_base_replacements(native_resources)  # noqa: F821
+    profile = AclProfile()  # noqa: F821
+    state = {"label": None, "steps": [], "pending": None, "path": None}
+    lib = profile.library
+    lib.aclprofCreateStepInfo.argtypes = []
+    lib.aclprofCreateStepInfo.restype = ctypes.c_void_p
+    lib.aclprofDestroyStepInfo.argtypes = [ctypes.c_void_p]
+    lib.aclprofDestroyStepInfo.restype = None
+    lib.aclprofGetStepTimestamp.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p]
+    lib.aclprofGetStepTimestamp.restype = ctypes.c_int
+    status_target = "vllm_ascend._310p.worker_310p:NPUWorker310.resident_status"
+    original_status = changes[status_target]
+    runner = importlib.import_module("vllm_ascend._310p.model_runner_310p").NPUModelRunner310
+    original_execute = runner.execute_model
+    original_sample = runner.sample_tokens
+
+    def execute(self, scheduler_output, intermediate_tensors=None):
+        if not profile.active or scheduler_output.total_num_scheduled_tokens == 0:
+            return original_execute(self, scheduler_output, intermediate_tensors)
+        if state["pending"] is not None:
+            raise RuntimeError("previous sampled step has not ended")
+        step = lib.aclprofCreateStepInfo()
+        if not step:
+            raise RuntimeError("aclprofCreateStepInfo returned null")
+        stream = torch.npu.current_stream().npu_stream
+        profile.check(lib.aclprofGetStepTimestamp(step, 0, stream), "step start")
+        record = {
+            "step": len(state["steps"]),
+            "tokens": scheduler_output.total_num_scheduled_tokens,
+            "requests": len(scheduler_output.num_scheduled_tokens),
+            "start_wall_ns": time.time_ns(),
+            "handle": step,
+        }
+        state["steps"].append(record)
+        state["pending"] = record
+        return original_execute(self, scheduler_output, intermediate_tensors)
+
+    def sample(self, grammar_output):
+        try:
+            return original_sample(self, grammar_output)
+        finally:
+            record = state["pending"]
+            if record is not None:
+                stream = torch.npu.current_stream().npu_stream
+                profile.check(lib.aclprofGetStepTimestamp(record["handle"], 1, stream), "step end")
+                record["end_wall_ns"] = time.time_ns()
+                state["pending"] = None
+
+    def profile_rpc(self, is_start=True, profile_prefix=None):
+        rank = torch.distributed.get_rank()
+        if is_start:
+            if profile_prefix not in ("decode_c1", "prefill_1280"):
+                raise ValueError("only bounded c1/c4 captures are allowed")
+            if profile.active or state["pending"] is not None:
+                raise RuntimeError("CANN profiling is already active")
+            state["steps"].clear()
+            state["label"] = profile_prefix
+            state["path"] = f"/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/night-speed-20261008/trace-combined/{profile_prefix}/rank{rank}"
+            profile.start(state["path"], torch.npu.current_device())
+        else:
+            torch.npu.synchronize()
+            profile.stop()
+            state["pending"] = None
+            for row in state["steps"]:
+                handle = row.pop("handle", None)
+                if handle is not None:
+                    lib.aclprofDestroyStepInfo(handle)
+            Path(state["path"]).joinpath("host-steps.json").write_text(json.dumps(state["steps"], indent=2) + "\n")
+        return {"rank": rank, "cann_active": profile.active, "label": state["label"], "path": state["path"]}
+
+    def status(self):
+        result = original_status(self)
+        result["cann_profile"] = {
+            "active": profile.active,
+            "initialized": profile.initialized,
+            "label": state["label"],
+            "steps": len(state["steps"]),
+        }
+        return result
+
+    changes["vllm_ascend._310p.worker_310p:NPUWorker310.profile"] = profile_rpc
+    changes["vllm_ascend._310p.model_runner_310p:NPUModelRunner310.execute_model"] = execute
+    # sample_tokens is inherited; the transaction records/removes this temporary override.
+    changes["vllm_ascend._310p.model_runner_310p:NPUModelRunner310.sample_tokens"] = sample
+    changes[status_target] = status
+    return changes

@@ -1,0 +1,15 @@
+import sys,json
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_native import NativeManifest
+from tools.glm_perf.state_rows_control import manifest as state_manifest
+from tools.glm_perf.qsa_metadata_control import manifest as qsa_manifest
+c=ResidentClient('http://127.0.0.1:8001')
+result={}
+result['state']=c.load_native(state_manifest(root/'build-state-rows-v925',root/'v925-state-gates.json'))
+result['sinkhorn']=c.load_native(NativeManifest(json.loads(Path('/home/matteius/experiments/glm-sinkhorn-resident-20261005/native-manifest.json').read_text())))
+result['qsa']=c.load_native(qsa_manifest(root/'build-qsa-v941',root/'qsa-v941-gates.json'))
+(root/'night-speed-20261008/resource-load-receipts.json').write_text(json.dumps(result,indent=2)+'\n')
+print('All three resources requalified on all four workers',flush=True)

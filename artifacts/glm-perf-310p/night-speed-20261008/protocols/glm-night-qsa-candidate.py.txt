@@ -1,0 +1,92 @@
+from pathlib import Path
+from tools.glm_perf.resident_candidates.prefill_decode import PrefillDecodeNative
+from tools.glm_perf.resident_candidates.prefill_graphs import extend_replacements as with_prefill_graphs
+from tools.glm_perf.resident_candidates.expert_reconstruction import extend_replacements
+
+def fp16_base_replacements(native_resources):
+    from glm_reconstruction_v964_helpers.glm_fused_moe import NativeFusedMoE
+    from vllm_ascend._310p.worker_310p import NPUWorker310
+    root=Path('/srv/ai/models/GLM-5.3-Flash-native-int4-fp16-scales-20261008/native-kernels-v56')
+    decode=NativeFusedMoE(root,namespace='glm_reconstruction_v964',activation_bits=4,prepared_weight_layout=True,fp16_route_workspace=True)
+    prefill=native_resources['reconstruction_v965']['fused_int4a4']
+    mixed=PrefillDecodeNative(prefill,decode)
+    selected=dict(native_resources)
+    selected['fp16_decode']={'fused_int4a4':decode}
+    selected['reconstruction_v965']=dict(native_resources['reconstruction_v965'],fused_int4a4=mixed)
+    from tools.glm_perf.resident_worker import ResidentWorkerExtension
+    prefix='vllm_ascend._310p.worker_310p:NPUWorker310.'
+    base={prefix+name:getattr(ResidentWorkerExtension,name) for name in ('resident_capture','resident_apply','resident_status')}
+    changes=extend_replacements(base,selected,'fused_int4a4',resource_name='reconstruction_v965')
+    changes=with_prefill_graphs(changes,selected)
+    key='vllm_ascend._310p.worker_310p:NPUWorker310.resident_status'
+    original=changes.get(key,NPUWorker310.resident_status)
+    def status(self):
+        receipt=original(self)
+        banks=[]
+        for wrapper in self._resident_wrappers():
+            for owner in wrapper.runnable.modules():
+                bank=getattr(owner,'w2_experts',None)
+                if bank is not None:banks.append(bank)
+        receipt['fp16_scale_storage']={'banks':len(banks),'layouts':sorted({getattr(b,'native_weight_scale_layout',None) for b in banks}),
+            'dtypes':sorted({str(getattr(b,n).dtype) for b in banks for n in ('gate_up_scale_bank','down_scale_bank')}),
+            'bytes':sum(getattr(b,n).numel()*getattr(b,n).element_size() for b in banks for n in ('gate_up_scale_bank','down_scale_bank')),
+            'dispatches':dict(mixed.dispatches),'decode_version':964,'prefill_version':965}
+        return receipt
+    changes[key]=status
+    return changes
+
+
+def replacements(native_resources):
+    from vllm_ascend._310p.worker_310p import NPUWorker310
+    import importlib.util,sys
+    from tools.glm_perf.query_bf16_vector_probe import verify
+    build=Path("/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-query-vector-v967")
+    provenance=verify(build)
+    package=provenance["helper_package"]
+    package_root=build/package
+    if package not in sys.modules:
+        spec=importlib.util.spec_from_file_location(package,package_root/"__init__.py",submodule_search_locations=[str(package_root)])
+        module=importlib.util.module_from_spec(spec);sys.modules[package]=module;spec.loader.exec_module(module)
+    if Path(sys.modules[package].__file__).resolve()!=(package_root/"__init__.py").resolve():
+        raise ValueError("query vector helper belongs to another frozen build")
+    from glm_query_vector_v967_helpers.query_vector import extend_replacements as vector_queries
+    changes=fp16_base_replacements(native_resources)
+    prefix='vllm_ascend._310p.worker_310p:NPUWorker310.'
+    source=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/runtime-fp16-scales-20261008/vllm_ascend/models/glm5next/attention.py').read_text()
+    result=vector_queries(changes,native_resources['query_vector_v967'],source,
+        capture_hook=changes.get(prefix+'resident_capture',NPUWorker310.resident_capture),
+        apply_hook=changes.get(prefix+'resident_apply',NPUWorker310.resident_apply))
+
+    return result
+
+night_base_replacements = replacements
+
+def replacements(native_resources):
+    from glm_reconstruction_v925_helpers.kda_state_rows import extend_replacements as state_rows
+    from tools.glm_perf.resident_candidates.mhc_sinkhorn_normalize import wrap_pre
+    from vllm_ascend.patch.worker import patch_mhc_norm
+    changes=state_rows(night_base_replacements(native_resources),native_resources['state_rows_v925'])
+    operation=native_resources['sinkhorn_normalize_v1']
+    calls={}
+    def normalize(value):
+        rows=value.shape[0];calls[rows]=calls.get(rows,0)+1
+        return operation(value)
+    changes['vllm_ascend.patch.worker.patch_mhc_norm:_mhc_pre_torch']=wrap_pre(patch_mhc_norm._mhc_pre_torch,normalize)
+    key='vllm_ascend._310p.worker_310p:NPUWorker310.resident_status'
+    parent=changes[key]
+    def status(self):
+        row=parent(self)
+        row['restored_normalization']={'calls_by_rows':dict(calls),'source':'qualified normalization-only v1','scope':'capture and eager calls; replay does not increment Python counters'}
+        return row
+    changes[key]=status
+    return changes
+
+night_qsa_parent_replacements = replacements
+
+def replacements(native_resources):
+    from types import ModuleType
+    from glm_reconstruction_v941_helpers.qsa_metadata import Geometry, geometry
+    capsule=ModuleType('glm_night_metadata_composition_v2')
+    exec(compile('# SPDX-License-Identifier: Apache-2.0\n"""Compose fused attention metadata with existing resident capture policies."""\n\nfrom tools.glm_perf.instance_bindings import InstanceBindings\nfrom tools.glm_perf.qsa_metadata import geometry\nfrom tools.glm_perf.qsa_metadata_binding import bind_attention\nfrom tools.glm_perf.resident_rpc_guard import WORKER_PREFIX, guard_replacements\n\nMAX_PREFILL_ROWS = 640\nMAX_REQUESTS = 4\nPOOL_SIZE = 4\nPHYSICAL_BLOCK_SIZE = 32\nLOGICAL_BLOCK_SIZE = 640\n\n\nclass PreparedMetadata:\n    """Adapt earlier frozen helpers without changing their code or descriptors."""\n\n    def __init__(self, native, geometry_function):\n        self.native, self.geometry_function = native, geometry_function\n        self.fallbacks = 0\n\n    def __getattr__(self, name):\n        return getattr(self.native, name)\n\n    def available(self, ids, positions, table, **options):\n        if any(value.device != self.device for value in (ids, positions, table)):\n            return False\n        try:\n            case = self.geometry_function(ids, positions, table, **options)\n        except ValueError:\n            return False\n        return case in self.configs\n\n\ndef prepare_runner(native, runner, geometry_type):\n    """Prepare descriptors from host shapes before target and draft capture."""\n    roots = [runner.model]\n    draft = getattr(getattr(runner, "drafter", None), "model", None)\n    if draft is not None:\n        roots.append(draft)\n    tables = [\n        table.block_table.gpu\n        for table in runner.input_batch.block_table.block_tables\n        if not table.is_mamba_group and table.block_size == PHYSICAL_BLOCK_SIZE\n    ]\n    if not tables:\n        raise ValueError("no qualified sparse-attention block table found")\n    cases, seen = [], set()\n    for root in roots:\n        for module in root.modules():\n            owner = getattr(module, "impl", None)\n            indexer = getattr(owner, "glm_indexer", None)\n            if owner is None or indexer is None or id(owner) in seen or not hasattr(owner, "_forward_decode_fused"):\n                continue\n            seen.add(id(owner))\n            if indexer.index_kpool != POOL_SIZE:\n                raise ValueError("only pool size four is qualified for fused metadata")\n            ids = indexer.topk_indices_buffer\n            budget = indexer.topk_tokens // POOL_SIZE\n            for table in tables:\n                for rows in range(1, min(ids.shape[0], MAX_PREFILL_ROWS) + 1):\n                    for requests in range(1, min(table.shape[0], MAX_REQUESTS) + 1):\n                        for position_bytes in (4, 8):\n                            cases.append(\n                                geometry_type(\n                                    rows,\n                                    requests,\n                                    budget,\n                                    0,\n                                    *ids.stride(),\n                                    1,\n                                    position_bytes,\n                                    table.shape[1],\n                                    *table.stride(),\n                                    LOGICAL_BLOCK_SIZE // PHYSICAL_BLOCK_SIZE,\n                                )\n                            )\n    if not seen:\n        raise ValueError("no loaded GLM sparse-attention instance found")\n    native.prepare(cases)\n    return [dict(shape=list(table.shape), stride=list(table.stride())) for table in tables]\n\n\ndef extend_replacements(changes, native, geometry_type, *, geometry_function=geometry):\n    """Preserve parent hooks and restore per-instance bindings on transition."""\n    bindings = InstanceBindings()\n    native = PreparedMetadata(native, geometry_function)\n    state = {"attention_instances": 0, "prepared_tables": []}\n    capture_base, apply_base, status_base = (\n        changes[WORKER_PREFIX + name] for name in ("resident_capture", "resident_apply", "resident_status")\n    )\n\n    def capture(self):\n        try:\n            state["prepared_tables"] = prepare_runner(native, self.model_runner, geometry_type)\n            state["attention_instances"] = bind_attention(bindings, self.model_runner, native)\n            result = capture_base(self)\n            if "error" in result:\n                bindings.restore()\n            return result\n        except Exception as error:\n            bindings.restore()\n            self._resident_session().graphs_dirty = True\n            return self._resident_error(error)\n\n    def apply(self, generation):\n        bindings.restore()\n        return apply_base(self, generation)\n\n    def status(self):\n        receipt = status_base(self)\n        receipt["fused_qsa_metadata"] = dict(\n            state,\n            calls=native.calls,\n            descriptors=len(native.configs),\n            metadata_fallbacks=native.fallbacks,\n            capture_geometry=dict(native.geometries),\n            instance_methods=len(bindings.originals),\n            prepared_outside_capture=True,\n        )\n        return receipt\n\n    result = dict(changes)\n    for name, function in (("resident_capture", capture), ("resident_apply", apply), ("resident_status", status)):\n        result[WORKER_PREFIX + name] = function\n    return guard_replacements(result)\n','<frozen-night-qsa-composition>','exec'),capsule.__dict__)
+    changes=night_qsa_parent_replacements(native_resources)
+    return capsule.extend_replacements(changes,native_resources['qsa_metadata_v941'],Geometry,geometry_function=geometry)

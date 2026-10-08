@@ -1,0 +1,29 @@
+import sys,json,os,subprocess,shutil,hashlib
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+experiment=root/'night-kda-beta-vector-full';old=Path('/home/matteius/experiments/glm-prompt-profile-20261005')
+# Save the fixture references again under the currently deployed cached package.
+source=(old/'validate-full-kda.py').read_text().replace('root = Path(__file__).resolve().parent',f'root = Path({str(experiment)!r})')
+(experiment/'validate-full-kda.py').write_text(source)
+record=json.loads((experiment/'build.json').read_text())
+assert hashlib.sha256(Path(record['binary']).read_bytes()).hexdigest()==record['binary_sha256']
+base='/srv/ai/src/vllm-ascend/vllm_ascend/_cann_ops_custom/vendors/custom_transformer'
+overlap='/srv/ai/src/glm-l1-wide-build-20261004/opp-l1-overlap-20261004/vendors/custom_transformer'
+parent='/srv/ai/src/kda-persistent-scores-opp/vendors/custom_transformer'
+client=ResidentClient('http://127.0.0.1:8001');assert client.request('/pause?mode=wait&clear_cache=true')['status']=='paused'
+try:
+ for label,package in (('baseline',old/'opp-score-cache'),('cached',Path(record['package']))):
+  vendor=str(package/'vendors/custom_transformer');env=dict(os.environ)
+  env['ASCEND_CUSTOM_OPP_PATH']=':'.join((vendor,overlap,parent,base))
+  env['LD_LIBRARY_PATH']=':'.join(str(Path(v)/'op_api/lib') for v in (vendor,overlap,parent,base))+':'+env.get('LD_LIBRARY_PATH','')
+  env['PYTHONPATH']='/srv/ai/src/glm-selective-w3-nz-test-20261004:'+env.get('PYTHONPATH','')
+  env['ASCEND_RT_VISIBLE_DEVICES']='0'
+  with (experiment/('gate-'+label+'.log')).open('w') as output:
+   subprocess.run([sys.executable,str(experiment/'validate-full-kda.py'),label],env=env,stdout=output,stderr=subprocess.STDOUT,check=True)
+  print(label,'complete full KDA gate finished',flush=True)
+ rows=json.loads((experiment/'full-kda-cached.json').read_text());safe=[r for r in rows if '_True_' in r['case']]
+ assert len(safe)==17 and all(r['finite'] and sum(r['bit_mismatches'])==0 and sum(r['repeat_bit_mismatches'])==0 for r in safe)
+ print('All 17 safe-gate full KDA cases preserve every returned output byte and recurrent carry',flush=True)
+finally:
+ client.resume();print('Server resumed after full KDA gate',flush=True)

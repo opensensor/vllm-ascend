@@ -1,0 +1,16 @@
+from pathlib import Path
+import tarfile,json,hashlib
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+output=root/'night-speed-20261008/qualified-kda-tail-wu-v2.tar.gz'
+parent=root/'night-kda-tail-wu-vector-full-v2'
+paths=list((parent/'opp-tail-wu-vector').rglob('*'))
+paths += [parent/'build.json',parent/'stage.json',parent/'validate-full-kda.py']
+paths += []
+records={}
+with tarfile.open(output,'w:gz') as archive:
+ for path in paths:
+  if path.is_file() and path.suffix!='.pyc':
+   archive.add(path,arcname=str(path.relative_to(root)),recursive=False)
+   records[str(path.relative_to(root))]=hashlib.sha256(path.read_bytes()).hexdigest()
+(root/'night-speed-20261008/qualified-kda-tail-wu-v2-assets.json').write_text(json.dumps(dict(archive=str(output),sha256=hashlib.sha256(output.read_bytes()).hexdigest(),assets=records),indent=2)+'\n')
+print(output.stat().st_size,flush=True)

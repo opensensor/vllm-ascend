@@ -1,0 +1,24 @@
+import json,uuid,sys,dataclasses
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+sys.path.insert(0,str(root/'runtime-fp16-scales-20261008'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+c=ResidentClient('http://127.0.0.1:8001')
+assert c.request('/is_paused',method='GET')['is_paused']
+control=Control(uuid.uuid4().hex,candidate='fp16_query967_state925_norm1_qsa941',source=(root/'glm-night-qsa-candidate.py').read_text())
+prepared=c.rpc('resident_prepare',json.dumps(dataclasses.asdict(control)))
+assert all(r['generation']==control.generation and r['digest']==control.digest for r in prepared)
+applied=c.rpc('resident_apply',control.generation)
+assert all(r['generation']==control.generation and not r['native_failed'] for r in applied)
+c.rpc('resident_reset')
+captured=c.rpc('resident_capture')
+assert all(not r['graphs_dirty'] and not r['native_failed'] for r in captured)
+rows=c.rpc('resident_reset')
+identity=lambda rs:sorted((r['rank'],r['pid'],r['weight_storage_digest']) for r in rs)
+before=json.loads((root/'night-speed-20261008/state-norm-serving.json').read_text())['status']
+assert identity(before)==identity(rows)
+assert all(r['fused_qsa_metadata']['attention_instances']==12 and r['fused_qsa_metadata']['calls']>0 for r in rows)
+c.resume()
+(root/'night-speed-20261008/qsa-switch-repaired.json').write_text(json.dumps({'prepared':prepared,'applied':applied,'captured':captured,'receipts':rows,'paused':False},indent=2)+'\n')
+print('Repaired, all four workers recaptured, original weights retained, resumed',flush=True)

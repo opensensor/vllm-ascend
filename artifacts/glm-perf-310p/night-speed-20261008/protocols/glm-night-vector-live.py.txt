@@ -1,0 +1,15 @@
+import json,uuid,sys
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007');sys.path.insert(0,str(root/'source-night-sinkhorn-v971'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.bf16_vector_control import manifest
+c=ResidentClient('http://127.0.0.1:8001')
+before=c._acknowledged_rpc('resident_status',matches=c._status_matches)
+loaded=c.load_native(manifest(root/'build-bf16-vector-v975',root/'night-speed-20261008/bf16-vector-v975-gates.json'))
+rows=c.switch(Control(uuid.uuid4().hex,candidate='fp16_query967_state925_qsa941_tiled971_compact3_int927_bf16v975',source=(root/'glm-night-vector-candidate.py').read_text()))
+c.resume()
+assert all(not r['graphs_dirty'] and not r['native_failed'] for r in rows)
+assert sorted((r['rank'],r['pid'],r['weight_storage_digest']) for r in before)==sorted((r['rank'],r['pid'],r['weight_storage_digest']) for r in rows)
+(root/'night-speed-20261008/vector-switch.json').write_text(json.dumps({'loaded':loaded,'receipts':rows,'before':before},indent=2)+'\n')
+print('Complete candidate installed: selected state, tiled normalization, compact integer pools, vector BF16, FP16 scales and native INT4 experts',flush=True)
