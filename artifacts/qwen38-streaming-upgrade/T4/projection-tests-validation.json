@@ -1,0 +1,43 @@
+{
+  "task": "T4_projection_cpu_validation",
+  "tests": {
+    "passed": 70,
+    "failed": 0,
+    "command": "OMP_NUM_THREADS=2 python -m pytest --noconftest -q tests/ut/qwen38_1m/test_streaming_projection.py"
+  },
+  "scoped_checks": "passed",
+  "contract_sha256": "4f36a03afebcfe5f9548ef1b1032f8dc6f2c6bff3a14edc54ba7a823906966c9",
+  "compiler": "g++ (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
+  "flags": [
+    "-std=c++17",
+    "-O2",
+    "-shared",
+    "-fPIC",
+    "-ffp-contract=off"
+  ],
+  "native_entries": [
+    "qwen_streaming_projection_v1",
+    "qwen_streaming_columns_v1"
+  ],
+  "source_sha256": {
+    "tests/ut/qwen38_1m/test_streaming_projection.py": "8efe0a75ad35822059829fc5bb1562c6c12bdf3876598a35ee0e33a7ac820e62",
+    "tests/ut/qwen38_1m/streaming_cpu_stubs/kernel_operator.h": "4a856c21834eb8afc1650f23cf2999aee03b9ccf5bdd3e75d5633a5d8413940c",
+    "tests/ut/qwen38_1m/streaming_cpu_stubs/harness.cpp": "665a8c78a07c4cf8d32037ecefacdd4f2bf25b5248057505e1f6d6776aa05964",
+    "tools/qwen4exp/native_streaming.cpp": "551a61c9e2b94f8a0af6317ca7ecec69fcf971c8013fa526005f7c13aeb1f7aa",
+    "tools/qwen4exp/native_streaming.py": "7efeb1ee8814f661ce29962c77d971e5aa87c1180cae96fcd3ebc4a8e7295e17",
+    "tools/qwen4exp/qwen_streaming_projection.h": "179bd25ceaa153b8b1414d3e394a77fe1c0ab9585cdbb0e1df911a227ad51c5a",
+    "tools/qwen4exp/qwen_streaming_operands.h": "5f764003431cc737aa957d48b61f9cd473d21835bf821997fcd4fd57468bf61d",
+    "tools/qwen4exp/qwen_streaming_contract.h": "261f293e969cd82613235d5615fe08e8fb8a7714781a40605d889f41e8b074dd"
+  },
+  "actual_native_body_compiled": true,
+  "reference": "independent NumPy signed INT4 dot products, separate FP32 G128 correction operations and ascending additions; host FP16 rounding",
+  "device_rounding_validated": false,
+  "hardware_ordering_validated": false,
+  "hardware_overlap_proven": false,
+  "npu_opened": false,
+  "server_touched": false,
+  "device_library_loaded": false,
+  "device_kernel_launched": false,
+  "sustained_thermal_tested": false,
+  "maximum_whole_model_memory_tested": false
+}

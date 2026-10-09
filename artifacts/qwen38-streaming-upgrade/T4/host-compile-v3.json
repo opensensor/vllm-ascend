@@ -1,0 +1,31 @@
+{
+  "task": "T4",
+  "revision": 3,
+  "validation": "host-only CANN ACLRTC compilation",
+  "npu_arch": "dav-2002",
+  "cann_root": "/usr/local/Ascend/cann-9.1.0",
+  "compiler_exit_code": 0,
+  "sources": {
+    "tools/qwen4exp/native_streaming.cpp": "825c3214386eba5a064804c27d49beb245af6dacce581365c8fa7f5a1ba93bd4",
+    "tools/qwen4exp/qwen_streaming_projection.h": "179bd25ceaa153b8b1414d3e394a77fe1c0ab9585cdbb0e1df911a227ad51c5a",
+    "tools/qwen4exp/qwen_streaming_contract.h": "22ac408374835c4224ce9b11ff7baabd158ceee050f510517bbcc54913486863",
+    "tools/qwen4exp/qwen_streaming_operands.h": "5f764003431cc737aa957d48b61f9cd473d21835bf821997fcd4fd57468bf61d",
+    "tools/glm_perf/compile_reconstruction.cpp": "e7df352d8e98426001f43dd17116443c72ce9eafa9d7a07930329278d0c3447e"
+  },
+  "binary": {
+    "path": "/home/matteius/experiments/qwen-streaming-build-source-3/native_streaming.bin",
+    "sha256": "18c0de0747d47b0c024a1d6cc597ea838a01c058fb5575b5a6e7422ed1dd47c0",
+    "bytes": 61736
+  },
+  "entries": [
+    "qwen_streaming_projection_v1",
+    "qwen_streaming_columns_v1"
+  ],
+  "npu_opened": false,
+  "kernel_loaded": false,
+  "kernel_launched": false,
+  "server_touched": false,
+  "hardware_ordering_validated": false,
+  "hardware_qualified": false,
+  "note": "ACLRTC compiler uses aclInit on host; no aclrtSetDevice or kernel/library load. The linked artifact is not serving qualified."
+}

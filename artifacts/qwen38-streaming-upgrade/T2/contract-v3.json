@@ -1,0 +1,348 @@
+{
+  "abi_version": 1,
+  "kind": "qwen_g128_streaming_ownership_contract",
+  "target": "dav-2002",
+  "sdk_provenance_sha256": "c55c2c74f9e647cb79bb58204021e1f28ef66421c43a6ca85fbca67d9e490ecb",
+  "constants": {
+    "M": 16,
+    "N": 128,
+    "GROUP": 128,
+    "K0": 64,
+    "BLOCK": 16,
+    "LANES": 8,
+    "MAX_K": 2560,
+    "MAX_GROUPS": 20,
+    "SLOTS": 2,
+    "BLOCKS": 8,
+    "CONTROL_EVENT": 2,
+    "ALIGNMENT": 32,
+    "QUANTIZER_BYTES": 32768
+  },
+  "capacities_bytes": {
+    "UB": 253952,
+    "L1": 1048576,
+    "L0A": 65536,
+    "L0B": 65536,
+    "L0C": 262144
+  },
+  "ub_sdk_reserve_bytes": 8192,
+  "usage_bytes": {
+    "UB": 140032,
+    "L1": 167936,
+    "L0A": 4096,
+    "L0B": 16384,
+    "L0C": 16384
+  },
+  "regions": [
+    {
+      "name": "packed_activation",
+      "space": "UB",
+      "offset": 0,
+      "nbytes": 4096,
+      "dtype": "int4_packed",
+      "layout": "[slot,limb,GROUP/K0,M,K0/2]",
+      "lifetime": "load through L0A staging"
+    },
+    {
+      "name": "raw_product",
+      "space": "UB",
+      "offset": 4096,
+      "nbytes": 32768,
+      "dtype": "int32",
+      "layout": "[slot,N/16,2*M,16]",
+      "lifetime": "CO1 readback through vector cast"
+    },
+    {
+      "name": "float_product",
+      "space": "UB",
+      "offset": 36864,
+      "nbytes": 32768,
+      "dtype": "float32",
+      "layout": "[slot,N/16,2*M,16]",
+      "lifetime": "vector correction through accumulation"
+    },
+    {
+      "name": "accumulator",
+      "space": "UB",
+      "offset": 69632,
+      "nbytes": 8192,
+      "dtype": "float32",
+      "layout": "[N/16,M,16]",
+      "lifetime": "all G128 additions through final FP16 cast"
+    },
+    {
+      "name": "weight_metadata",
+      "space": "UB",
+      "offset": 77824,
+      "nbytes": 15360,
+      "dtype": "float16",
+      "layout": "bank stride=N*MAX_GROUPS; active [N/16,groups,16] within each bank",
+      "lifetime": "expert/output tile across every M tile"
+    },
+    {
+      "name": "metadata_stage",
+      "space": "UB",
+      "offset": 93184,
+      "nbytes": 3072,
+      "dtype": "float32",
+      "layout": "[slot,bank,N]",
+      "lifetime": "group staging through correction"
+    },
+    {
+      "name": "activation_metadata",
+      "space": "UB",
+      "offset": 96256,
+      "nbytes": 2048,
+      "dtype": "float32",
+      "layout": "[slot,scale_or_sum,M,8]",
+      "lifetime": "load through correction"
+    },
+    {
+      "name": "projected_output",
+      "space": "UB",
+      "offset": 98304,
+      "nbytes": 4096,
+      "dtype": "float16",
+      "layout": "[N/16,M,16]",
+      "lifetime": "final cast through GM store completion"
+    },
+    {
+      "name": "persistent_gate",
+      "space": "UB",
+      "offset": 102400,
+      "nbytes": 4096,
+      "dtype": "float16",
+      "layout": "[N/16,M,16]",
+      "lifetime": "gate complete through paired up epilogue"
+    },
+    {
+      "name": "quantizer_scratch",
+      "space": "UB",
+      "offset": 106496,
+      "nbytes": 32768,
+      "dtype": "byte",
+      "layout": "exclusive epilogue arena",
+      "lifetime": "entire nonlinear/requantize call"
+    },
+    {
+      "name": "ends",
+      "space": "UB",
+      "offset": 139264,
+      "nbytes": 256,
+      "dtype": "int64",
+      "layout": "[32]",
+      "lifetime": "route boundary iteration"
+    },
+    {
+      "name": "route_ids",
+      "space": "UB",
+      "offset": 139520,
+      "nbytes": 512,
+      "dtype": "int32",
+      "layout": "[128]",
+      "lifetime": "sparse route iteration"
+    },
+    {
+      "name": "activation_l1",
+      "space": "L1",
+      "offset": 0,
+      "nbytes": 4096,
+      "dtype": "int4_packed",
+      "layout": "[slot,limb,GROUP/K0,M,K0/2]",
+      "lifetime": "MTE2 write through MTE1 read completion"
+    },
+    {
+      "name": "resident_weight",
+      "space": "L1",
+      "offset": 4096,
+      "nbytes": 163840,
+      "dtype": "int4_packed",
+      "layout": "[N/16,MAX_GROUPS,G128/64,16,32]",
+      "lifetime": "expert/output tile across every M tile"
+    },
+    {
+      "name": "activation_l0",
+      "space": "L0A",
+      "offset": 0,
+      "nbytes": 4096,
+      "dtype": "int4_packed",
+      "layout": "[slot,limb,M/16,GROUP/K0,16,K0/2]",
+      "lifetime": "MTE1 write through Cube consumption"
+    },
+    {
+      "name": "weight_l0",
+      "space": "L0B",
+      "offset": 0,
+      "nbytes": 16384,
+      "dtype": "int4_packed",
+      "layout": "[slot,G128/64,N/16,16,32]",
+      "lifetime": "MTE1 write through Cube consumption"
+    },
+    {
+      "name": "cube_product",
+      "space": "L0C",
+      "offset": 0,
+      "nbytes": 16384,
+      "dtype": "int32",
+      "layout": "[N/16,2*M,16]",
+      "lifetime": "Cube issue through completed UB readback"
+    }
+  ],
+  "event_ids": {
+    "S_MTE2": [
+      0,
+      1
+    ],
+    "MTE2_S": [
+      0,
+      1
+    ],
+    "V_MTE2": [
+      0,
+      1,
+      2
+    ],
+    "MTE2_V": [
+      0,
+      1,
+      2
+    ],
+    "MTE2_MTE1": [
+      0,
+      1,
+      2
+    ],
+    "MTE1_MTE2": [
+      0,
+      1,
+      2
+    ],
+    "MTE2_MTE3": [
+      0,
+      1
+    ],
+    "MTE3_MTE1": [
+      0,
+      1
+    ],
+    "MTE1_MTE3": [
+      0,
+      1
+    ],
+    "MTE3_MTE2": [
+      0,
+      1
+    ],
+    "MTE1_M": [
+      0,
+      1
+    ],
+    "M_MTE1": [
+      0,
+      1
+    ],
+    "M_V": [
+      0,
+      1
+    ],
+    "V_M": [
+      0,
+      1
+    ],
+    "V_MTE3": [
+      0,
+      1,
+      2
+    ],
+    "MTE3_V": [
+      0,
+      1,
+      2
+    ]
+  },
+  "event_rules": {
+    "generation": "group integer; distinct tile/store strings for non-group lifetime",
+    "signal_wait": "one outstanding signal per direction/id, consumed exactly once",
+    "co1_release": "V_M after complete UB readback, before the next Cube issue",
+    "slot_release": "V_MTE2 after correction/addition, never merely after load submission",
+    "operand_release": "M_V after Cube consumes both activation limbs and weight",
+    "store_release": "MTE3_V after projected FP16 output store",
+    "control_event": "ID 2 for expert-cache and output-store lifetimes; all slot tokens are drained before reuse",
+    "pipe_v": "cast and correction dependencies require explicit vector ordering"
+  },
+  "projection": {
+    "gate_up": {
+      "N": 1280,
+      "K": 2560
+    },
+    "down": {
+      "N": 2560,
+      "K": 640
+    },
+    "blocks": 8,
+    "output_tile_assignment": "tile = block_id + k*8; no duplicated writes",
+    "column_windows": "optional first_tile/count<=8; full bank strides retained; output uses window stride",
+    "product": "paired low/high INT4 MMAD: m=32,n=128,k=128; CO1/UB [N/16,2*M,16]",
+    "correction": "(((low+16*high)-offset*sum)+8*weight_sum)*weight_scale*activation_scale; add groups 0..K/128-1 in FP32",
+    "projection_boundary": "FP16 CAST_NONE after all G128 groups",
+    "bulk": "16 live rows; strip or row loop respecting paired layout",
+    "sparse": "1..15 live rows; row loop only over live rows",
+    "peer_rows": "every peer FP16 row explicitly zeroed before completed launch is consumed; no stale graph output",
+    "metadata": "three FP16 banks cached once per expert/output tile; bank base=N*MAX_GROUPS; strip stride=actual groups*16; cast cached FP16 directly to per-slot FP32",
+    "decode": "existing bounded decode remains separate; no automatic replacement"
+  },
+  "epilogue": {
+    "paired_gate_owner": "same core owns gate N128 columns and matching up N128 columns; reserve FP16 gate while computing up",
+    "qualified_reference": "cann_builtin_fp16 requires surviving projected GM boundary until nonlinear parity is proven",
+    "fp32_candidate": "separate explicit ABI; unqualified against builtin FP16; no implicit activation precision substitution",
+    "handoff": "packed low/high hidden plus FP32 scale/sum written to GM; down depends on multiple column owners; same-core shortcut unsupported",
+    "persistent_scratch_bytes": 36864
+  },
+  "whole_rank": {
+    "required_components": [
+      "checkpoint_resident",
+      "old_native_resources",
+      "new_native_resources",
+      "kv_cache",
+      "mamba_primary",
+      "mamba_archive",
+      "activation_workspace",
+      "route_workspace",
+      "graphs",
+      "hccl",
+      "shadow_comparison",
+      "verification_scratch",
+      "runtime_reserve"
+    ],
+    "available_bytes": null,
+    "values": {
+      "checkpoint_resident": null,
+      "old_native_resources": null,
+      "new_native_resources": null,
+      "kv_cache": null,
+      "mamba_primary": null,
+      "mamba_archive": null,
+      "activation_workspace": null,
+      "route_workspace": null,
+      "graphs": null,
+      "hccl": null,
+      "shadow_comparison": null,
+      "verification_scratch": null,
+      "runtime_reserve": null
+    },
+    "qualification": "unknown; must reject before hardware allocation",
+    "host_spill_capacity": "separate host budget; never credit against NPU bytes"
+  },
+  "rejected_alternatives": [
+    "all G128 products simultaneously: 20*2*16*128*4=327680 bytes exceeds usable UB before scratch",
+    "double resident gate/up K2560 weights with M32/N320 or all-rank inferred free memory",
+    "reuse CO1 while UB readback is pending",
+    "reuse result/activation/metadata slot before prior correction",
+    "pair only K32 arithmetic borrowed from GLM: incompatible G128 correction contract",
+    "same-core down consumes incomplete hidden columns",
+    "silently replace builtin FP16 SwiGLU with FP32 fusion"
+  ],
+  "qualification": "offline byte/ownership proof only; compiler, device correctness, overlap, image, service and thermal gates pending",
+  "hardware_validated": false,
+  "contract_sha256": "4f36a03afebcfe5f9548ef1b1032f8dc6f2c6bff3a14edc54ba7a823906966c9"
+}

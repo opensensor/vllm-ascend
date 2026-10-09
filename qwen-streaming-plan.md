@@ -1,8 +1,10 @@
 # Plan: Qwen streaming architecture on Ascend 310P
 
 Date: 2026-10-09. Source baseline: `36ba88244`.
-Status: design only; implementation and hardware qualification are pending.
+Status: T1–T8 completed offline; T9 hardware qualification remains deferred.
 Server startup and NPU execution remain deferred.
+Execution starts from clean commit `2a2a4e416`; unrelated workspace overlays are
+excluded from the frozen reference and implementation worktree.
 
 ## Objective and scope
 
@@ -89,14 +91,30 @@ only after their individual gates; their composition is not already qualified.
 
 ## Work packages and dependencies
 
-All packages are pending. Dependencies describe implementation order; this plan
-does not authorize agents, server changes, NPU execution, or a new hardware lease.
+The user invoked `$parallel-task qwen-streaming-plan.md` on 2026-10-09,
+authorizing offline implementation and subagents. Dependencies describe order;
+server changes, NPU execution, and a new hardware lease remain deferred.
 Each package requires CPU regression tests and versioned evidence in
-`artifacts/qwen38-streaming-upgrade/Tn/`. Future CLI names are not executable yet.
+`artifacts/qwen38-streaming-upgrade/Tn/`. The offline builder and composition APIs
+are implemented; live worker/scheduler adapter binding and qualification remain
+deferred.
 
 ### T1: Freeze the reference and end-to-end evidence protocol
 
 **depends_on**: []
+
+**agent_type**: worker
+**ownership**: `tools/qwen4exp/streaming_protocol.py`,
+`tests/ut/qwen38_1m/test_streaming_protocol.py`, artifacts `T1/`.
+**status**: Completed (offline reference preparation)
+**log**: Worker verified 41 CPU tests, including concrete payload follow-up.
+Git blob and submodule identities, 132 workload definitions, candidate and
+evidence schema are frozen in `T1/reference-v2.json`. Historical
+runtime is thermally unqualified; live identity and actual payloads remain pending
+hardware qualification. No server queries.
+**files edited/created**: `tools/qwen4exp/streaming_protocol.py`,
+`tests/ut/qwen38_1m/test_streaming_protocol.py`, `T1/reference.json`,
+`T1/tests.log` under the execution artifact root.
 
 Freeze a clean source snapshot, coherent OPP/bridge/binary hashes, checkpoint
 identity, dtype policy, dispatch, TP/EP, graph sizes, MTP, chunk/cache settings,
@@ -117,6 +135,23 @@ work. No runtime mutation or NPU allocation during reference preparation.
 
 **depends_on**: [T1]
 
+**agent_type**: worker
+**ownership**: `tools/qwen4exp/streaming_memory.py`,
+`tools/qwen4exp/qwen_streaming_contract.h`,
+`tests/ut/qwen38_1m/test_streaming_memory.py`, artifacts `T2/`.
+**status**: Completed (offline byte and ownership proof)
+**log**: Worker and coordinator verified 122 CPU tests.
+Coverage includes generated-header host
+compilation, aliases, event generations, startup/drain and unknown rank budgets.
+The M16/N128 two-slot contract uses 140,032 UB bytes. SDK inspection opened no
+device. The integrated kernel now compiles for dav-2002; device event ordering,
+overlap and whole-rank fit remain hardware gates. Contract v3 includes the
+dedicated cache/store control event and bounded column-window geometry.
+**files edited/created**: `tools/qwen4exp/streaming_memory.py`,
+`tools/qwen4exp/qwen_streaming_contract.h`,
+`tests/ut/qwen38_1m/test_streaming_memory.py`, SDK snapshots, provenance and
+`contract.json` in `T2/`.
+
 Create a machine-checked byte/alignment/lifetime model for GM, UB, L1, L0A/B/C,
 event IDs, route workspace, accumulators, packed activations, and output slots.
 Cover producer acquire, ready, consumer release, startup, steady state, and drain.
@@ -136,6 +171,17 @@ resources, graphs, cache archive, HCCL, shadow comparison, and verification scra
 
 **depends_on**: [T2]
 
+**agent_type**: worker
+**ownership**: `tools/qwen4exp/streaming_operands.py`,
+`tools/qwen4exp/qwen_streaming_operands.h`,
+`tests/ut/qwen38_1m/test_streaming_operands.py`, artifacts `T3/`.
+**status**: Completed (offline producer implementation)
+**log**: 31 CPU tests passed, including 100 executions of the native producer
+against independent packed/layout/padding references. Hardware ordering pending.
+**files edited/created**: `tools/qwen4exp/streaming_operands.py`,
+`tools/qwen4exp/qwen_streaming_operands.h`,
+`tests/ut/qwen38_1m/test_streaming_operands.py`, `T3/` receipts and report.
+
 Keep quantization once per token. Compare device-indexed token operands against
 compact local-expert packing; choose using complete transfer and projection cost,
 not gather count alone. Device route boundaries control active work while physical
@@ -153,6 +199,19 @@ no new device-to-host route decisions or allocations proportional to all weights
 
 **depends_on**: [T2, T3]
 
+**agent_type**: coordinator
+**ownership**: `tools/qwen4exp/qwen_streaming_projection.h`,
+`tools/qwen4exp/native_streaming.cpp`,
+`tools/qwen4exp/native_streaming.py`,
+`tests/ut/qwen38_1m/test_streaming_projection.py`, artifacts `T4/`.
+**status**: Completed (offline native implementation)
+**log**: 70 CPU tests execute the actual full/column native entries against an
+independent numerical reference. Both entries compile with host-only CANN 9.1.0
+ACLRTC for dav-2002. Event legality and overlap during device execution remain
+pending. Source/binary identities are in `T4/host-compile-v3.json`.
+**files edited/created**: Owned native projection/header/Python files, CPU SDK
+stubs and projection test file, `T4/` report and receipts.
+
 Implement acquired operand/product slots, batched Cube readback and vector
 correction, retaining FP32 accumulators until each full projection is complete.
 Preserve every G128 limb product and correction in baseline order. One integration
@@ -167,6 +226,17 @@ selection. Host compilation is not hardware ordering or overlap validation.
 ### T5: Stream the activation handoff and finalization
 
 **depends_on**: [T2, T4]
+
+**agent_type**: worker
+**ownership**: `tools/qwen4exp/qwen_streaming_epilogue.h`,
+`tools/qwen4exp/streaming_epilogue.py`,
+`tests/ut/qwen38_1m/test_streaming_epilogue.py`, artifacts `T5/`.
+**status**: Completed (offline bounded handoff)
+**log**: 41 CPU tests pass. Builtin FP16 activation remains unchanged; down uses
+8/8/4 column windows with exact full-output reference checks. Maximum routed
+output shrinks from 125 MiB to 50 MiB, but writes/reads survive and launches/copies
+increase. No performance gain is claimed.
+**files edited/created**: Owned epilogue Python/header/tests and `T5/` evidence.
 
 Design paired gate/up tile ownership so qualified activation and packing can run
 at the earliest valid boundary. Retain required FP16 rounding before consumers.
@@ -187,6 +257,16 @@ Document each surviving GM boundary and logical bytes per token/route/chunk.
 
 **depends_on**: [T1, T2, T5]
 
+**agent_type**: worker
+**ownership**: `tools/qwen4exp/streaming_schedule.py`,
+`tests/ut/qwen38_1m/test_streaming_schedule.py`, artifacts `T6/`.
+**status**: Completed (offline chunk scheduler)
+**log**: 47 CPU tests cover all four ranks, shared placement, two-slot bounds,
+completion before reuse and failure poisoning. Default 2560-token geometry gives
+one chunk at the reference scheduler batch limit; smaller chunks need new gates.
+Scratch remains per invocation. Device adapter is implemented but unexecuted.
+**files edited/created**: Owned schedule Python/tests and `T6/` evidence.
+
 Use fixed, rank-agreed chunks and bounded output slots. Submit reduction only
 when routed and the configured shared contribution are ready. Evaluate overlapping
 reduction of a completed chunk with independent computation of the next chunk.
@@ -201,6 +281,15 @@ shared-expert contention must be measured rather than called automatic savings.
 ### T7: Integrate attention, state, PLE, and MTP lifetimes
 
 **depends_on**: [T1, T2]
+
+**agent_type**: worker
+**ownership**: `tools/qwen4exp/streaming_layer.py`,
+`tests/ut/qwen38_1m/test_streaming_layer.py`, artifacts `T7/`.
+**status**: Completed (offline scoped layer composition)
+**log**: 24 new CPU tests and 150 existing integration tests pass. Native state IO
+and WY share one GDN hook; prefix phase barriers and PLE DMA ownership remain.
+QSA graph-copy fusion and device accepted-state selection are not implemented.
+**files edited/created**: Owned layer Python/tests and `T7/` evidence.
 
 Extend the ownership contract beyond MoE. GDN should consume/return native state
 layout without redundant transpose materialization, retain necessary layer/phase
@@ -223,6 +312,29 @@ dependency boundaries unless an independently proven schedule can overlap them.
 
 **depends_on**: [T3, T4, T5, T6, T7]
 
+**agent_type**: coordinator
+**ownership**: `tools/qwen4exp/streaming_candidate.py`,
+`tools/qwen4exp/build_streaming.py`,
+`tools/qwen4exp/compile_streaming.cpp`,
+`tools/qwen4exp/host_compile_sandbox.cpp`,
+`tools/qwen4exp/streaming_resident.py`,
+`tools/qwen4exp/resident_candidates/streaming.py`,
+`tests/ut/qwen38_1m/test_streaming_candidate.py`,
+`tests/ut/qwen38_1m/test_streaming_resident.py`,
+`tests/ut/qwen38_1m/test_streaming_build.py`,
+`tests/ut/qwen38_1m/test_host_compile_sandbox.py`, artifacts `T8/`.
+**status**: Completed (offline guarded composition)
+**log**: 39 composition, 49 builder, 37 controller and 17 real Linux containment
+tests pass. The integrated suite passes 518 CPU tests. Final qwen_streaming_v5
+compiles four binaries/six entries and a bridge for dav-2002 under enforced
+Landlock/seccomp. Actual sources/artifacts/logs rehash successfully; 40 other-device
+open attempts are denied and zero succeed. The preliminary uncontained v3 bundle
+accessed manager nodes and is quarantined. No inference or server operations ran.
+Real worker/scheduler binding, memory and all model/thermal gates remain T9 work.
+**files edited/created**: All owned T8 source/tests above; `T8/build/`,
+`T8/composition/`, `T8/controller/`, `T8/containment/`, `T8/host-build/`,
+`T8/configuration.json` and `T8/configuration-identity.json`.
+
 Integrate validated seams through an explicit candidate object/configuration,
 not a stack of temporary monkey-patches whose ordering changes behavior. Reuse
 plugin components and scoped hooks; avoid broad runner patches, new environment
@@ -242,6 +354,14 @@ offline candidates. A new source or binary hash invalidates dependent gates.
 ### T9: Qualify kernels, complete model behavior, and measured service gains
 
 **depends_on**: [T1, T8]
+
+**agent_type**: coordinator
+**ownership**: artifacts `T9/`, final execution report and plan logs.
+**status**: Blocked
+**log**: NPU/server testing explicitly deferred by the user; no device or
+service mutation is authorized by this offline execution.
+**files edited/created**: `artifacts/qwen38-streaming-upgrade/T9/RUNBOOK.md`,
+`artifacts/qwen38-streaming-upgrade/T9/deferred-profile.json`.
 
 Deferred until the user grants NPU access. Prove allocation headroom before
 standalone tests with any loaded service. Serialize hardware work; do not unload
@@ -278,16 +398,29 @@ T7 addresses the rest of the layer under the same contract; T8 composes the
 architecture. T9 remains pending until hardware access is explicitly available.
 Existing GLM/Qwen edits and qualified runtime snapshots must remain intact.
 
-This planning change does not implement any package or start a server. Previously
-staged component candidates and their CPU/build evidence are described in the
+T1–T8 now implement the offline candidate, with execution evidence in the
+[streaming report](artifacts/qwen38-streaming-upgrade/REPORT.md). The deferred
+[qualification runbook](artifacts/qwen38-streaming-upgrade/T9/RUNBOOK.md)
+records remaining worker/scheduler binding, hardware gates and promotion limits.
+No candidate is installed on a server. Previously staged component candidates
+and their CPU/build evidence are described in the
 [transfer report](artifacts/qwen38-transfer-next-20261009/REPORT.en.md) and
 [earlier offline report](artifacts/qwen38-five-offline-20261009/REPORT.en.md).
 Their hardware, end-to-end, and thermal gains remain unqualified.
 
-## Planning validation
+## Planning and execution validation
 
 Local-link and dependency checks passed: five source/report links and nine
 ordered work packages. Scoped manual repository hooks passed for the plan and
 policy changes. Repository-wide `bash format.sh ci` reported existing unrelated
 lint/format failures; its unrelated formatter changes were restored in the
-isolated worktree. No runtime code changed, and no NPU or server tests ran.
+isolated worktree. That was the original planning-only validation.
+
+Execution validation now passes 518 CPU tests and scoped manual checks. The final
+contained CANN build and actual source/binary/bridge/log byte checks pass. An
+uncontained preliminary compiler's manager-device accesses are documented and
+quarantined; containment rejects subsequent opens. No inference or server tests
+ran. Repository-wide CI retains unrelated failures; formatter changes to 144
+unrelated files were restored in the isolated worktree. A broader regression
+group gives 179 passes and four GDN CPU-stub failures identically on the clean
+unchanged baseline. Full receipts and limitations are in the execution report.

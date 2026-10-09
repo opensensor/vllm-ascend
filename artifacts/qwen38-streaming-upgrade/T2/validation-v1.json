@@ -1,0 +1,45 @@
+{
+  "task": "T2",
+  "status": "offline_complete",
+  "contract_sha256": "aa0531e2113460777d83326731f7215801dc621b275570c761a2ad60f15458db",
+  "tests": {
+    "passed": 122,
+    "failed": 0,
+    "command": "OMP_NUM_THREADS=2 python -m pytest --noconftest -q tests/ut/qwen38_1m/test_streaming_memory.py"
+  },
+  "ruff": "passed",
+  "host_cpp_header_compile": "passed",
+  "hardware_validated": false,
+  "npu_opened": false,
+  "server_touched": false,
+  "whole_rank_admitted": false,
+  "full_three_stage_overlap_proven": false,
+  "source_sha256": {
+    "tools/qwen4exp/streaming_memory.py": "2ec734a15ae2833f09e34db847233ad31de5190965145b7b71d2b0619fac581c",
+    "tools/qwen4exp/qwen_streaming_contract.h": "4fadbd6a5b711d88623c223d3b943b3a2fab120b49323f37f8906a072935973d",
+    "tests/ut/qwen38_1m/test_streaming_memory.py": "9823d5e94ea3d220c273994278f1cd3a033ee610d489a8339335f501c0762976"
+  },
+  "example_moe_gm": {
+    "tokens": 2560,
+    "top_k": 10,
+    "rows": 25600,
+    "components": {
+      "route_ids_and_weights": 204800,
+      "stable_route_row_map": 102400,
+      "routing_sort_scratch": 409600,
+      "expert_ends": 1024,
+      "routed_input_fp16": 131072000,
+      "input_packed_limbs": 65536000,
+      "input_scale_sum": 32768000,
+      "projected_gate_up_fp16": 65536000,
+      "swiglu_hidden_fp16": 32768000,
+      "hidden_packed_limbs": 16384000,
+      "hidden_scale_sum": 8192000,
+      "routed_output_fp16": 131072000,
+      "combined_output_fp32": 26214400
+    },
+    "total_bytes": 510260224,
+    "measured_bus_bytes": false
+  },
+  "example_aligned_gm_bytes": 510260224
+}

@@ -1,0 +1,47 @@
+............................FF...                                        [100%]
+=================================== FAILURES ===================================
+____ test_installation_admission_binds_every_policy_resource_and_rank[rank] ____
+tests/ut/qwen38_1m/test_streaming_candidate.py:471: in test_installation_admission_binds_every_policy_resource_and_rank
+    elif change == "plan":
+        ^^^^^^^^^^^^^^^^^^^
+tools/qwen4exp/streaming_candidate.py:188: in replacements
+    self.require_admission()
+tools/qwen4exp/streaming_candidate.py:102: in require_admission
+    if tuple(self.admission.plan_receipts) != self.rank_receipts:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'FakeAdmission' object has no attribute 'plan_receipts'. Did you mean: 'rank_plan_receipts'?
+________________ test_composition_map_one_owner_and_no_stacking ________________
+tests/ut/qwen38_1m/test_streaming_candidate.py:477: in test_composition_map_one_owner_and_no_stacking
+    ???
+tools/qwen4exp/streaming_candidate.py:188: in replacements
+    self.require_admission()
+tools/qwen4exp/streaming_candidate.py:102: in require_admission
+    if tuple(self.admission.plan_receipts) != self.rank_receipts:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'FakeAdmission' object has no attribute 'plan_receipts'. Did you mean: 'rank_plan_receipts'?
+=============================== warnings summary ===============================
+../../usr/lib/python3.14/importlib/metadata/__init__.py:1046
+../../usr/lib/python3.14/importlib/metadata/__init__.py:1046
+../../usr/lib/python3.14/importlib/metadata/__init__.py:1046
+  /usr/lib/python3.14/importlib/metadata/__init__.py:1046: DeprecationWarning: Implicit None on return values is deprecated and will raise KeyErrors.
+    pkg_to_dist[pkg].append(dist.metadata['Name'])
+
+<frozen importlib._bootstrap>:491
+  <frozen importlib._bootstrap>:491: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:491
+  <frozen importlib._bootstrap>:491: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+../../home/matteius/.local/lib/python3.14/site-packages/torch/cuda/__init__.py:1061
+  /home/matteius/.local/lib/python3.14/site-packages/torch/cuda/__init__.py:1061: UserWarning: Can't initialize NVML
+    raw_cnt = _raw_device_count_nvml()
+
+../../home/matteius/.local/lib/python3.14/site-packages/torch/jit/_script.py:359: 14 warnings
+  /home/matteius/.local/lib/python3.14/site-packages/torch/jit/_script.py:359: DeprecationWarning: `torch.jit.script_method` is not supported in Python 3.14+ and may break. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/ut/qwen38_1m/test_streaming_candidate.py::test_installation_admission_binds_every_policy_resource_and_rank[rank]
+FAILED tests/ut/qwen38_1m/test_streaming_candidate.py::test_composition_map_one_owner_and_no_stacking
+2 failed, 31 passed, 20 warnings in 10.99s

@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "hardware_validated": false,
+  "model_type": "dependency contract; not a device completion proof",
+  "scoped_hooks": [
+    "_GDNAttention._native_delta_rule",
+    "NPUModelRunner310._update_states",
+    "NPUModelRunner310._remap_compact_mamba_block_tables",
+    "_PLEInjection._forward_eager"
+  ],
+  "boundaries": [
+    {
+      "resource": "GDN FP32 recurrent cache and native packed state",
+      "owner": "one layer and its state indices",
+      "producer": "native gather, WY and H/O stream submissions",
+      "last_consumer": "native scatter and later checkpoint phase",
+      "reuse_guard": "existing same-stream ordering plus worker completion drain before primary slot reuse"
+    },
+    {
+      "resource": "prefix primary/archive and CoW scratch",
+      "owner": "Mamba group tier",
+      "producer": "valid completed model state or preserved prefix source",
+      "last_consumer": "serialized copy/invalidation/admission",
+      "reuse_guard": "fresh required per-phase worker drain; no model interleaving"
+    },
+    {
+      "resource": "QSA key/value/index caches",
+      "owner": "unique layer cache storage",
+      "producer": "layer cache update and current-step selection",
+      "last_consumer": "same-layer sparse attention",
+      "reuse_guard": "baseline attention and graph ownership",
+      "surviving_boundary": "graph selection callback copies into fixed-width persistent buffers"
+    },
+    {
+      "resource": "PLE pinned host staging",
+      "owner": "existing PLE layer",
+      "producer": "CPU hash and table row gather",
+      "last_consumer": "submitted host-to-device DMA",
+      "reuse_guard": "existing event completion before rewriting host bytes",
+      "surviving_boundary": "host table lookup and one H2D transfer; device output lifetime separately guarded"
+    },
+    {
+      "resource": "MTP target/draft and acceptance snapshot",
+      "owner": "exact step, sampled storage and request order",
+      "producer": "verification and required sampled-token host delivery",
+      "last_consumer": "verification, accepted-state commit and alignment",
+      "reuse_guard": "baseline runner identity checks, existing completion, finally cleanup",
+      "surviving_boundary": "raw CPU acceptance counts; device accepted-state selector unsupported"
+    },
+    {
+      "resource": "residual and multimodal text-layer tensors",
+      "owner": "existing decoder/vision pipeline",
+      "producer": "PLE, attention, residual mixing",
+      "last_consumer": "MoE and next layer or MTP verification",
+      "reuse_guard": "existing model dependency order; no cross-stage overlap installed"
+    }
+  ],
+  "unsupported": [
+    "device accepted-state selection",
+    "W8A16 MTP device routing",
+    "graph QSA selection-copy elimination",
+    "shared logical positions without independently proven image/causal semantics",
+    "cross-layer attention/MoE barrier removal",
+    "hardware qualification of composed native state IO and WY"
+  ]
+}

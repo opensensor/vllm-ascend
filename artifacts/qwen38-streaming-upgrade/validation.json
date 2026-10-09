@@ -1,0 +1,103 @@
+{
+  "status": "offline_implementation_complete_hardware_deferred",
+  "tasks": {
+    "T1": "completed_offline_preparation",
+    "T2": "completed_offline",
+    "T3": "completed_offline",
+    "T4": "completed_offline",
+    "T5": "completed_offline",
+    "T6": "completed_offline",
+    "T7": "completed_offline",
+    "T8": "completed_offline",
+    "T9": "blocked_by_user_defer"
+  },
+  "cpu_tests": {
+    "passed": 518,
+    "failed": 0,
+    "existing_warnings": 20,
+    "command": "OMP_NUM_THREADS=2 python -m pytest --noconftest -q tests/ut/qwen38_1m/test_streaming_*.py tests/ut/qwen38_1m/test_host_compile_sandbox.py"
+  },
+  "existing_regression": {
+    "passed": 179,
+    "failed": 4,
+    "identical_on_clean_baseline": "2a2a4e416",
+    "failure": "torch_npu CPU stub missing float4_e2m1fn_x2"
+  },
+  "targeted_existing_T7_integration_passed": 150,
+  "host_build": {
+    "namespace": "qwen_streaming_v5",
+    "source_and_actual_byte_verification": true,
+    "candidate_sha256": "e65674ad94c314c52ae76d8da579ff5e1125f2c7f18e877699c85cdb76221bd6",
+    "resources_sha256": "8ea61dc71cbabd0e2beb9d32de1a689d35fa0f5df0d5dc6fdbc16b47d82d0232",
+    "entrypoints": 6,
+    "binaries": 4,
+    "bridges": 1,
+    "landlock_abi": 8,
+    "contained_compiler_commands": 6,
+    "successful_other_device_opens": 0,
+    "denied_other_device_open_attempts": 40,
+    "hardware_qualified": false
+  },
+  "preliminary_uncontained_build": {
+    "status": "quarantined",
+    "driver_manager_access_observed": true,
+    "no_device_open_claim_invalidated": true
+  },
+  "source_hashes": {
+    "tools/qwen4exp/build_streaming.py": "b7a88167044490a8dbed59389bc30a3c839f8df9f0d77e99a56db1117e2c95da",
+    "tools/qwen4exp/compile_streaming.cpp": "ab15546fb09932bf1c10b250b8bacd8e93d046968691b323a9bf7d433e129323",
+    "tools/qwen4exp/host_compile_sandbox.cpp": "90c079f83eed5d5705aaade2cde38f937b7da41074fc478ecf1bc135dec640cf",
+    "tools/qwen4exp/native_streaming.cpp": "825c3214386eba5a064804c27d49beb245af6dacce581365c8fa7f5a1ba93bd4",
+    "tools/qwen4exp/native_streaming.py": "7efeb1ee8814f661ce29962c77d971e5aa87c1180cae96fcd3ebc4a8e7295e17",
+    "tools/qwen4exp/qwen_streaming_contract.h": "22ac408374835c4224ce9b11ff7baabd158ceee050f510517bbcc54913486863",
+    "tools/qwen4exp/qwen_streaming_epilogue.h": "42888c7c8dabeef685d3d8e59c6a4b6a81f09e081a355ed61e81ec9cfc1b2ccd",
+    "tools/qwen4exp/qwen_streaming_operands.h": "5f764003431cc737aa957d48b61f9cd473d21835bf821997fcd4fd57468bf61d",
+    "tools/qwen4exp/qwen_streaming_projection.h": "179bd25ceaa153b8b1414d3e394a77fe1c0ab9585cdbb0e1df911a227ad51c5a",
+    "tools/qwen4exp/resident_candidates/streaming.py": "7a87c80299c23be1c1fe5566828d74ac65b3065237fedf3a9acc8df5f190c702",
+    "tools/qwen4exp/streaming_candidate.py": "487bc4e25bdb876dbd89cff05cc2a077e6202d542542975295dad42c3f396090",
+    "tools/qwen4exp/streaming_epilogue.py": "3f924a342320726de954e0e882bf4d4a3c39764acd24006dd9e0351522bdbb0d",
+    "tools/qwen4exp/streaming_layer.py": "f5618c9c0d49fcd304ef6400b3401d3db6559796f190269945bb14f2bdb58bd4",
+    "tools/qwen4exp/streaming_memory.py": "02c929f3388de7ac816ff3ccbfb9bcf06c6b603b9dcb9c5d0fbbfad182076a19",
+    "tools/qwen4exp/streaming_operands.py": "37049df4303e5f247e78571ef9e88ba3ca0e93c008e0718bd8ea1b794dac89df",
+    "tools/qwen4exp/streaming_protocol.py": "b92de9eb71b004720299f0f008619b198dc2d0dea432d056acd4cf40d1abedfe",
+    "tools/qwen4exp/streaming_resident.py": "2d6c25a5ca11076ca5145a96c0d8900cfefb33062ea671189fb06762591a4982",
+    "tools/qwen4exp/streaming_schedule.py": "d5a915ec0b8f1f1031df5e2df5bba711fec033d33505efc2cd54ccf2c0036792"
+  },
+  "live_server_operated": false,
+  "inference_submitted": false,
+  "candidate_installed": false,
+  "thermal_benchmark_run": false,
+  "measured_speedup": null,
+  "measured_thermal_improvement": null,
+  "repository_wide_ci": {
+    "command": "bash format.sh ci",
+    "passed": false,
+    "hook_results": [
+      "ruff check..................................................................Failed",
+      "ruff format.................................................................Failed",
+      "codespell...................................................................Failed",
+      "typos.......................................................................Failed",
+      "clang-format................................................................Failed",
+      "markdownlint................................................................Failed",
+      "Lint GitHub Actions workflow files..........................................Passed",
+      "Gitleaks Secret Scan(Local Binary)..........................................Passed",
+      "Lint shell scripts..........................................................Passed",
+      "Lint PNG exports from excalidraw............................................Passed",
+      "Check for spaces in all filenames...........................................Passed",
+      "Enforce __init__.py in Python packages......................................Passed",
+      "Forbid init_logger(__name__) in vllm_ascend modules.........................Passed",
+      "Check for forbidden imports.................................................Failed",
+      "Check for boolean ops in with-statements....................................Passed",
+      "Check that new functions over 100 lines have comments.......................Passed",
+      "Check symbolic shapes in meta kernels.......................................Passed",
+      "Suggestion..................................................................Passed"
+    ],
+    "unrelated_formatter_files_restored": 144,
+    "owned_formatting_changes": [],
+    "limitation": "pre-existing repository lint/format failures; owned files checked separately"
+  },
+  "scoped_manual_checks": {
+    "passed": true,
+    "command": "pre-commit run --hook-stage manual --files <all owned files>"
+  }
+}

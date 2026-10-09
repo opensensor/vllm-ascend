@@ -1,0 +1,302 @@
+..................................................FFFF.................. [ 39%]
+........................................................................ [ 78%]
+.......................................                                  [100%]
+=================================== FAILURES ===================================
+________________ test_model_state_per_rank_replication_no_alias ________________
+
+    def test_model_state_per_rank_replication_no_alias():
+>       state = _make_model_state()
+                ^^^^^^^^^^^^^^^^^^^
+
+tests/ut/qwen38_1m/test_gdn_lifecycle.py:397: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/ut/qwen38_1m/test_gdn_lifecycle.py:388: in _make_model_state
+    from vllm_ascend._310p.worker.v2.model_state import Ascend310PQwen4ExpModelState
+vllm_ascend/_310p/worker/v2/model_state.py:43: in <module>
+    from .rejection_sampler import RejectionSampler310V2
+vllm_ascend/_310p/worker/v2/rejection_sampler.py:22: in <module>
+    from vllm_ascend.sample.rejection_sampler import (
+vllm_ascend/sample/rejection_sampler.py:24: in <module>
+    from vllm_ascend.ops.triton.reject_sample import (
+vllm_ascend/ops/__init__.py:21: in <module>
+    import vllm_ascend.ops.fused_moe.fused_moe  # noqa
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+vllm_ascend/ops/fused_moe/fused_moe.py:35: in <module>
+    from vllm_ascend.ops.fused_moe.moe_comm_method import get_moe_comm_method, setup_moe_comm_method
+vllm_ascend/ops/fused_moe/moe_comm_method.py:36: in <module>
+    from vllm_ascend.ops.fused_moe.prepare_finalize import (
+vllm_ascend/ops/fused_moe/prepare_finalize.py:37: in <module>
+    from vllm_ascend.quantization.utils import get_dynamic_mx_quant_scale_alg
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    #
+    # Copyright (c) 2025 Huawei Technologies Co., Ltd. All Rights Reserved.
+    #
+    # Licensed under the Apache License, Version 2.0 (the "License");
+    # you may not use this file except in compliance with the License.
+    # You may obtain a copy of the License at
+    #
+    #     http://www.apache.org/licenses/LICENSE-2.0
+    #
+    # Unless required by applicable law or agreed to in writing, software
+    # distributed under the License is distributed on an "AS IS" BASIS,
+    # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    # See the License for the specific language governing permissions and
+    # limitations under the License.
+    # This file is a part of the vllm-ascend project.
+    #
+    
+    import json
+    from pathlib import Path
+    
+    import torch
+    import torch_npu  # noqa: F401
+    from vllm import envs
+    from vllm.logger import logger
+    
+    from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_hardware_profile
+    from vllm_ascend.utils import (
+        ASCEND_QUANTIZATION_METHOD,
+        COMPRESSED_TENSORS_METHOD,
+        FP8_METHOD,
+    )
+    
+    # TODO(zzzzzz198): Currently three formats(float8_e8m0fnu, float4_e2m1fn_x2, hifloat8) have to be
+    # specified for some operators like GMM in Ascend950, while float8_e4m3fn does not. Remove these
+    # filterations when operators allow to pass data with these three dtypes directly.
+>   QUANT_DTYPES = (torch_npu.float4_e2m1fn_x2, torch_npu.hifloat8)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'torch_npu' has no attribute 'float4_e2m1fn_x2'
+
+vllm_ascend/quantization/utils.py:36: AttributeError
+____________ test_model_state_preempt_fans_across_ranks_fail_closed ____________
+
+    def test_model_state_preempt_fans_across_ranks_fail_closed():
+>       state = _make_model_state()
+                ^^^^^^^^^^^^^^^^^^^
+
+tests/ut/qwen38_1m/test_gdn_lifecycle.py:414: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/ut/qwen38_1m/test_gdn_lifecycle.py:388: in _make_model_state
+    from vllm_ascend._310p.worker.v2.model_state import Ascend310PQwen4ExpModelState
+vllm_ascend/_310p/worker/v2/model_state.py:43: in <module>
+    from .rejection_sampler import RejectionSampler310V2
+vllm_ascend/_310p/worker/v2/rejection_sampler.py:22: in <module>
+    from vllm_ascend.sample.rejection_sampler import (
+vllm_ascend/sample/rejection_sampler.py:24: in <module>
+    from vllm_ascend.ops.triton.reject_sample import (
+vllm_ascend/ops/__init__.py:21: in <module>
+    import vllm_ascend.ops.fused_moe.fused_moe  # noqa
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+vllm_ascend/ops/fused_moe/fused_moe.py:35: in <module>
+    from vllm_ascend.ops.fused_moe.moe_comm_method import get_moe_comm_method, setup_moe_comm_method
+vllm_ascend/ops/fused_moe/moe_comm_method.py:36: in <module>
+    from vllm_ascend.ops.fused_moe.prepare_finalize import (
+vllm_ascend/ops/fused_moe/prepare_finalize.py:37: in <module>
+    from vllm_ascend.quantization.utils import get_dynamic_mx_quant_scale_alg
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    #
+    # Copyright (c) 2025 Huawei Technologies Co., Ltd. All Rights Reserved.
+    #
+    # Licensed under the Apache License, Version 2.0 (the "License");
+    # you may not use this file except in compliance with the License.
+    # You may obtain a copy of the License at
+    #
+    #     http://www.apache.org/licenses/LICENSE-2.0
+    #
+    # Unless required by applicable law or agreed to in writing, software
+    # distributed under the License is distributed on an "AS IS" BASIS,
+    # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    # See the License for the specific language governing permissions and
+    # limitations under the License.
+    # This file is a part of the vllm-ascend project.
+    #
+    
+    import json
+    from pathlib import Path
+    
+    import torch
+    import torch_npu  # noqa: F401
+    from vllm import envs
+    from vllm.logger import logger
+    
+    from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_hardware_profile
+    from vllm_ascend.utils import (
+        ASCEND_QUANTIZATION_METHOD,
+        COMPRESSED_TENSORS_METHOD,
+        FP8_METHOD,
+    )
+    
+    # TODO(zzzzzz198): Currently three formats(float8_e8m0fnu, float4_e2m1fn_x2, hifloat8) have to be
+    # specified for some operators like GMM in Ascend950, while float8_e4m3fn does not. Remove these
+    # filterations when operators allow to pass data with these three dtypes directly.
+>   QUANT_DTYPES = (torch_npu.float4_e2m1fn_x2, torch_npu.hifloat8)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'torch_npu' has no attribute 'float4_e2m1fn_x2'
+
+vllm_ascend/quantization/utils.py:36: AttributeError
+_______________ test_model_state_gdn_step_advances_and_persists ________________
+
+    def test_model_state_gdn_step_advances_and_persists():
+>       state = _make_model_state()
+                ^^^^^^^^^^^^^^^^^^^
+
+tests/ut/qwen38_1m/test_gdn_lifecycle.py:425: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/ut/qwen38_1m/test_gdn_lifecycle.py:388: in _make_model_state
+    from vllm_ascend._310p.worker.v2.model_state import Ascend310PQwen4ExpModelState
+vllm_ascend/_310p/worker/v2/model_state.py:43: in <module>
+    from .rejection_sampler import RejectionSampler310V2
+vllm_ascend/_310p/worker/v2/rejection_sampler.py:22: in <module>
+    from vllm_ascend.sample.rejection_sampler import (
+vllm_ascend/sample/rejection_sampler.py:24: in <module>
+    from vllm_ascend.ops.triton.reject_sample import (
+vllm_ascend/ops/__init__.py:21: in <module>
+    import vllm_ascend.ops.fused_moe.fused_moe  # noqa
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+vllm_ascend/ops/fused_moe/fused_moe.py:35: in <module>
+    from vllm_ascend.ops.fused_moe.moe_comm_method import get_moe_comm_method, setup_moe_comm_method
+vllm_ascend/ops/fused_moe/moe_comm_method.py:36: in <module>
+    from vllm_ascend.ops.fused_moe.prepare_finalize import (
+vllm_ascend/ops/fused_moe/prepare_finalize.py:37: in <module>
+    from vllm_ascend.quantization.utils import get_dynamic_mx_quant_scale_alg
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    #
+    # Copyright (c) 2025 Huawei Technologies Co., Ltd. All Rights Reserved.
+    #
+    # Licensed under the Apache License, Version 2.0 (the "License");
+    # you may not use this file except in compliance with the License.
+    # You may obtain a copy of the License at
+    #
+    #     http://www.apache.org/licenses/LICENSE-2.0
+    #
+    # Unless required by applicable law or agreed to in writing, software
+    # distributed under the License is distributed on an "AS IS" BASIS,
+    # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    # See the License for the specific language governing permissions and
+    # limitations under the License.
+    # This file is a part of the vllm-ascend project.
+    #
+    
+    import json
+    from pathlib import Path
+    
+    import torch
+    import torch_npu  # noqa: F401
+    from vllm import envs
+    from vllm.logger import logger
+    
+    from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_hardware_profile
+    from vllm_ascend.utils import (
+        ASCEND_QUANTIZATION_METHOD,
+        COMPRESSED_TENSORS_METHOD,
+        FP8_METHOD,
+    )
+    
+    # TODO(zzzzzz198): Currently three formats(float8_e8m0fnu, float4_e2m1fn_x2, hifloat8) have to be
+    # specified for some operators like GMM in Ascend950, while float8_e4m3fn does not. Remove these
+    # filterations when operators allow to pass data with these three dtypes directly.
+>   QUANT_DTYPES = (torch_npu.float4_e2m1fn_x2, torch_npu.hifloat8)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'torch_npu' has no attribute 'float4_e2m1fn_x2'
+
+vllm_ascend/quantization/utils.py:36: AttributeError
+__________________ test_model_state_complete_frees_all_ranks ___________________
+
+    def test_model_state_complete_frees_all_ranks():
+>       state = _make_model_state()
+                ^^^^^^^^^^^^^^^^^^^
+
+tests/ut/qwen38_1m/test_gdn_lifecycle.py:444: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/ut/qwen38_1m/test_gdn_lifecycle.py:388: in _make_model_state
+    from vllm_ascend._310p.worker.v2.model_state import Ascend310PQwen4ExpModelState
+vllm_ascend/_310p/worker/v2/model_state.py:43: in <module>
+    from .rejection_sampler import RejectionSampler310V2
+vllm_ascend/_310p/worker/v2/rejection_sampler.py:22: in <module>
+    from vllm_ascend.sample.rejection_sampler import (
+vllm_ascend/sample/rejection_sampler.py:24: in <module>
+    from vllm_ascend.ops.triton.reject_sample import (
+vllm_ascend/ops/__init__.py:21: in <module>
+    import vllm_ascend.ops.fused_moe.fused_moe  # noqa
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+vllm_ascend/ops/fused_moe/fused_moe.py:35: in <module>
+    from vllm_ascend.ops.fused_moe.moe_comm_method import get_moe_comm_method, setup_moe_comm_method
+vllm_ascend/ops/fused_moe/moe_comm_method.py:36: in <module>
+    from vllm_ascend.ops.fused_moe.prepare_finalize import (
+vllm_ascend/ops/fused_moe/prepare_finalize.py:37: in <module>
+    from vllm_ascend.quantization.utils import get_dynamic_mx_quant_scale_alg
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    #
+    # Copyright (c) 2025 Huawei Technologies Co., Ltd. All Rights Reserved.
+    #
+    # Licensed under the Apache License, Version 2.0 (the "License");
+    # you may not use this file except in compliance with the License.
+    # You may obtain a copy of the License at
+    #
+    #     http://www.apache.org/licenses/LICENSE-2.0
+    #
+    # Unless required by applicable law or agreed to in writing, software
+    # distributed under the License is distributed on an "AS IS" BASIS,
+    # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    # See the License for the specific language governing permissions and
+    # limitations under the License.
+    # This file is a part of the vllm-ascend project.
+    #
+    
+    import json
+    from pathlib import Path
+    
+    import torch
+    import torch_npu  # noqa: F401
+    from vllm import envs
+    from vllm.logger import logger
+    
+    from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_hardware_profile
+    from vllm_ascend.utils import (
+        ASCEND_QUANTIZATION_METHOD,
+        COMPRESSED_TENSORS_METHOD,
+        FP8_METHOD,
+    )
+    
+    # TODO(zzzzzz198): Currently three formats(float8_e8m0fnu, float4_e2m1fn_x2, hifloat8) have to be
+    # specified for some operators like GMM in Ascend950, while float8_e4m3fn does not. Remove these
+    # filterations when operators allow to pass data with these three dtypes directly.
+>   QUANT_DTYPES = (torch_npu.float4_e2m1fn_x2, torch_npu.hifloat8)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'torch_npu' has no attribute 'float4_e2m1fn_x2'
+
+vllm_ascend/quantization/utils.py:36: AttributeError
+=============================== warnings summary ===============================
+../../usr/lib/python3.14/importlib/metadata/__init__.py:1046
+../../usr/lib/python3.14/importlib/metadata/__init__.py:1046
+../../usr/lib/python3.14/importlib/metadata/__init__.py:1046
+  /usr/lib/python3.14/importlib/metadata/__init__.py:1046: DeprecationWarning: Implicit None on return values is deprecated and will raise KeyErrors.
+    pkg_to_dist[pkg].append(dist.metadata['Name'])
+
+<frozen importlib._bootstrap>:491
+  <frozen importlib._bootstrap>:491: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:491
+  <frozen importlib._bootstrap>:491: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+../../home/matteius/.local/lib/python3.14/site-packages/torch/cuda/__init__.py:1061
+tests/ut/qwen38_1m/test_gdn_lifecycle.py::test_model_state_per_rank_replication_no_alias
+  /home/matteius/.local/lib/python3.14/site-packages/torch/cuda/__init__.py:1061: UserWarning: Can't initialize NVML
+    raw_cnt = _raw_device_count_nvml()
+
+../../home/matteius/.local/lib/python3.14/site-packages/torch/jit/_script.py:359: 14 warnings
+  /home/matteius/.local/lib/python3.14/site-packages/torch/jit/_script.py:359: DeprecationWarning: `torch.jit.script_method` is not supported in Python 3.14+ and may break. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/ut/qwen38_1m/test_gdn_lifecycle.py::test_model_state_per_rank_replication_no_alias
+FAILED tests/ut/qwen38_1m/test_gdn_lifecycle.py::test_model_state_preempt_fans_across_ranks_fail_closed
+FAILED tests/ut/qwen38_1m/test_gdn_lifecycle.py::test_model_state_gdn_step_advances_and_persists
+FAILED tests/ut/qwen38_1m/test_gdn_lifecycle.py::test_model_state_complete_frees_all_ranks
+4 failed, 179 passed, 21 warnings in 13.45s
+<sys>:0: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
