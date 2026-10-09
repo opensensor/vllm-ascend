@@ -17,7 +17,8 @@ enum class TPosition { VECCALC };
 enum class RoundMode { CAST_NONE };
 constexpr unsigned PIPE_ALL = 0, PIPE_V = 1;
 inline unsigned blockIndex = 0, blockCount = 8;
-inline uint64_t scalarReads = 0;
+inline uint64_t scalarReads = 0, gatherCalls = 0;
+inline size_t allocatedBytes = 0;
 inline float* outputBegin = nullptr;
 inline std::vector<unsigned> outputWrites;
 inline unsigned GetBlockIdx() { return blockIndex; }
@@ -32,6 +33,10 @@ struct LocalTensor {
   LocalTensor operator[](size_t offset) const {
     assert(offset <= count);
     return {data + offset, count - offset};
+  }
+  template <typename U>
+  LocalTensor<U> ReinterpretCast() const {
+    return {reinterpret_cast<U*>(data), count * sizeof(T) / sizeof(U)};
   }
   T GetValue(size_t offset) const {
     assert(offset < count);
@@ -63,6 +68,7 @@ struct TBuf {
 struct TPipe {
   template <TPosition P>
   void InitBuffer(TBuf<P>& buffer, size_t bytes) {
+    allocatedBytes += (bytes + 7) / 8 * 8;
     buffer.words.resize((bytes + 7) / 8);
   }
 };
@@ -81,10 +87,17 @@ void DataCopy(GlobalTensor<T> dst, LocalTensor<T> src, size_t count) {
   assert(count <= src.count);
   std::copy_n(src.data, count, dst.data);
   if constexpr (std::is_same_v<T, float>) {
-    size_t offset = dst.data - outputBegin;
-    assert(offset + count <= outputWrites.size());
-    for (size_t i = 0; i < count; ++i) ++outputWrites[offset + i];
+    if (outputBegin) {
+      size_t offset = dst.data - outputBegin;
+      assert(offset + count <= outputWrites.size());
+      for (size_t i = 0; i < count; ++i) ++outputWrites[offset + i];
+    }
   }
+}
+template <typename T>
+void DataCopy(LocalTensor<T> dst, LocalTensor<T> src, size_t count) {
+  assert(count <= dst.count && count <= src.count);
+  std::copy_n(src.data, count, dst.data);
 }
 template <typename T, typename U>
 void Cast(LocalTensor<T> dst, LocalTensor<U> src, RoundMode, size_t count) {
@@ -101,11 +114,20 @@ inline void Add(LocalTensor<float> dst, LocalTensor<float> a, LocalTensor<float>
 }
 inline void Gather(LocalTensor<float> dst, LocalTensor<float> src, LocalTensor<uint32_t> offsets, uint32_t,
                    size_t count) {
+  ++gatherCalls;
   assert(count <= dst.count && count <= offsets.count);
   for (size_t i = 0; i < count; ++i) {
     size_t index = offsets.data[i] / sizeof(float);
     assert(index < src.count);
     dst.data[i] = src.data[index];
   }
+}
+struct BrcbRepeatParams {
+  unsigned dstBlkStride, dstRepStride;
+};
+inline void Brcb(LocalTensor<float> dst, LocalTensor<float> src, unsigned repeats, BrcbRepeatParams params) {
+  assert(params.dstBlkStride == 1 && params.dstRepStride == 8);
+  assert(repeats * 8 <= src.count && repeats * 64 <= dst.count);
+  for (unsigned row = 0; row < repeats * 8; ++row) std::fill_n(dst.data + row * 8, 8, src.data[row]);
 }
 }  // namespace AscendC

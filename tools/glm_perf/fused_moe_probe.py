@@ -6,7 +6,7 @@ import json
 
 import torch
 
-from .glm_fused_moe import FUSED_REDUCTION_TOKENS, REDUCE_CACHE_MIN_TOKENS, NativeFusedMoE
+from .glm_fused_moe import FUSED_REDUCTION_TOKENS, INPUT_SCALE_MIN_ROWS, REDUCE_CACHE_MIN_TOKENS, NativeFusedMoE
 from .glm_int4 import unpack_canonical_codes
 
 
@@ -52,7 +52,9 @@ def route_metadata(ids, weights, experts, offset):
     return order, ends
 
 
-def gate_case(native, bits, tokens=2, hidden=256, inter=256, real=None, nz_density_boundary=False):
+def gate_case(
+    native, bits, tokens=2, hidden=256, inter=256, real=None, nz_density_boundary=False, input_scale_boundary=False
+):
     generator = torch.Generator().manual_seed(5700 + bits + tokens)
     experts = 3 if real is None else 1
     if real is None:
@@ -76,7 +78,12 @@ def gate_case(native, bits, tokens=2, hidden=256, inter=256, real=None, nz_densi
     offset = 5
     ids += offset
     boundary = getattr(native, "nz_prefill_min_rows", 0)
-    if nz_density_boundary:
+    if input_scale_boundary:
+        if nz_density_boundary or not getattr(native, "group_major_input_scales", False) or native.activation_bits != 4:
+            raise ValueError("input scale boundary gate requires the paired A4 layout")
+        boundary = INPUT_SCALE_MIN_ROWS
+    boundary_gate = nz_density_boundary or input_scale_boundary
+    if boundary_gate:
         if not boundary or tokens <= FUSED_REDUCTION_TOKENS or ids.numel() < boundary:
             raise ValueError("NZ boundary gate requires bulk tokens and an explicit reachable threshold")
         ids.fill_(offset + experts)
@@ -106,7 +113,7 @@ def gate_case(native, bits, tokens=2, hidden=256, inter=256, real=None, nz_densi
         actual = pipeline()
     gx.copy_((x * 1.25).npu())
     changed_ids = torch.full_like(ids, offset)
-    if nz_density_boundary:
+    if boundary_gate:
         changed_ids.fill_(offset + experts)
         changed_ids.view(-1)[:boundary] = offset
     gi.copy_(changed_ids.npu())
@@ -134,6 +141,8 @@ def gate_case(native, bits, tokens=2, hidden=256, inter=256, real=None, nz_densi
         "prefill_reduce_meta_cache": getattr(native, "prefill_reduce_meta_cache", False),
         "direct_compact_down_scales": getattr(native, "direct_compact_down_scales", False),
         "nz_boundary_rows": [boundary - 1, boundary] if nz_density_boundary else [],
+        "group_major_input_scales": getattr(native, "group_major_input_scales", False),
+        "input_scale_boundary_rows": [boundary - 1, boundary] if input_scale_boundary else [],
         "tokens": tokens,
         "hidden": hidden,
         "intermediate": inter,
@@ -211,6 +220,10 @@ def run(build_dir, output, *, checkpoint=None, real_prefixes=()):
                     record = gate_case(native, bits, tokens)
                     payload["records"].append(record)
                     print(json.dumps(record), flush=True)
+                if options.get("group_major_input_scales") and activation_bits == 4:
+                    record = gate_case(native, bits, tokens=31, input_scale_boundary=True)
+                    payload["records"].append(record)
+                    print(json.dumps(record), flush=True)
                 if options.get("nz_prefill_min_rows"):
                     record = gate_case(native, bits, tokens=31, nz_density_boundary=True)
                     payload["records"].append(record)
@@ -273,6 +286,13 @@ def run(build_dir, output, *, checkpoint=None, real_prefixes=()):
                         print(json.dumps(record), flush=True)
                     if options.get("prefill_reduce_meta_cache"):
                         record = gate_case(native, bits, tokens=REDUCE_CACHE_MIN_TOKENS, real=(gate, gs, down, ds))
+                        record.update(tensor_prefix=prefix, checkpoint_tensor_hashes=hashes)
+                        payload["real_weight_records"].append(record)
+                        print(json.dumps(record), flush=True)
+                    if options.get("group_major_input_scales") and activation_bits == 4:
+                        record = gate_case(
+                            native, bits, tokens=31, real=(gate, gs, down, ds), input_scale_boundary=True
+                        )
                         record.update(tensor_prefix=prefix, checkpoint_tensor_hashes=hashes)
                         payload["real_weight_records"].append(record)
                         print(json.dumps(record), flush=True)

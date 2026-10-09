@@ -7,6 +7,12 @@
 #include "glm_fused_route_cache.h"
 #include "glm_fused_compact_scales.h"
 #include "glm_route_input_layout.h"
+#include "glm_fused_input_scales.h"
+#if defined(GLM_GROUP_MAJOR_INPUT_SCALES) &&                                                             \
+    (!defined(GLM_ROUTE_PACKED_INPUT) || !defined(GLM_FUSED_GATE_UP) || !defined(GLM_PREFILL_ROWS_32) || \
+     !defined(GLM_VECTOR_SCALE_PRODUCTS) || !defined(GLM_PREPARED_WEIGHT_LAYOUT))
+  #error "group-major input scales require prepared routed M32 vector-scale gate/up"
+#endif
 #if defined(GLM_FP16_WEIGHT_SCALES) && (!defined(GLM_PREPARED_WEIGHT_LAYOUT) || defined(GLM_PREROUNDED_WEIGHT_SCALES))
   #error "FP16 scale storage requires prepared weights and excludes prerounded FP32 storage"
 #endif
@@ -142,6 +148,10 @@ constexpr uint32_t SCALE_INDEX_OFFSET = (N / GROUP) * MAX_K_GROUPS * (sizeof(flo
 #endif
 static_assert(SCALE_INDEX_OFFSET + N * sizeof(uint32_t) <= SCALE_CACHE_BYTES, "scale indices overlap rounded weights");
 constexpr uint32_t MAX_CACHED_SCALE_ROWS = 4;
+#ifdef GLM_GROUP_MAJOR_INPUT_SCALES
+static_assert(GlmRouteInput::GROUP_MAJOR_MIN_ROWS == MAX_CACHED_SCALE_ROWS + 1,
+              "producer layout must retain sparse cached-factor rows");
+#endif
 constexpr uint32_t MAX_REPEAT_CAST_ROWS = 4;
 constexpr uint32_t SCALE_PRODUCTS_OFFSET = Scratch::SCALE_PRODUCTS_OFFSET;
 constexpr uint32_t MASK_RETAINED_OFFSET = N * NZ_K * 3 / 4;
@@ -1126,14 +1136,15 @@ class Projection {
     PipeBarrier<PIPE_V>();
   }
 #ifdef GLM_NZ_PREFILL_ACCUMULATOR
-  __aicore__ inline void ScaleNzProducts(LocalTensor<float> weightVector, LocalTensor<float> sx) {
+  __aicore__ inline void ScaleNzProducts(LocalTensor<float> weightVector, LocalTensor<float> sx,
+                                         bool contiguousScales = false) {
     auto temporary = ProductTemporary<float>();
     auto scalarFactors = temporary[NZ_SCALAR_FACTORS_OFFSET];
     auto coefficients = temporary[NZ_COEFFICIENT_OFFSET];
     auto broadcastCoefficients = temporary[NZ_COEFFICIENT_BROADCAST_OFFSET];
     auto rowScalars = temporary[NZ_ROW_SCALARS_OFFSET];
     auto rowIndices = mask_.Get<uint32_t>()[SCALE_ROW_INDEX_OFFSET / sizeof(uint32_t)];
-    Gather(rowScalars, sx, rowIndices, static_cast<uint32_t>(0), M);
+    GlmFusedInputScales::CopyRows(rowScalars, sx, rowIndices, M, contiguousScales);
     Duplicate(coefficients, 0.0f, LANES);
     PipeBarrier<PIPE_V>();
     Gather(coefficients, weightVector, productOffsets_.Get<uint32_t>()[N], static_cast<uint32_t>(0), NZ_SCALE_BLOCKS);
@@ -1272,6 +1283,11 @@ class Projection {
       PrepareScales(expert, tile, cachedWeights);
     auto sx = activationScales_.Get<float>();
     auto temporary = sx[M * MAX_K_GROUPS];
+    // Recompute the layout even when up reuses gate's already-loaded scale bank.
+    bool groupMajorScales = false;
+#ifdef GLM_GROUP_MAJOR_INPUT_SCALES
+    groupMajorScales = tokens_ > BULK_TOKENS && activationBits_ == 4 && GlmRouteInput::GroupMajorScales(count);
+#endif
 #ifdef GLM_DIRECT_COMPACT_DOWN_SCALES
     bool directCompactScales = false;
 #endif
@@ -1344,7 +1360,7 @@ class Projection {
 #ifdef GLM_VECTOR_SCALE_PRODUCTS
     const bool vectorFactors = tokens_ > BULK_TOKENS && !cachedFactors;
     const uint32_t factorRows = vectorFactors && activationBits_ == 4 ? 0 : count;
-    if (vectorFactors) {
+    if (vectorFactors && !groupMajorScales) {
       auto rowIndices = mask_.Get<uint32_t>()[SCALE_ROW_INDEX_OFFSET / sizeof(uint32_t)];
       // Gather a complete M-element scalar vector. Brcb reads all M slots;
       // clamp unused slots to a valid row instead of reading uninitialized sx.
@@ -1429,12 +1445,13 @@ class Projection {
         for (uint32_t part = 0; part < (wideGroups ? wideGroups : (paired ? 2 : 1)); ++part) {
           ExtractProducts(count, part, paired);
           uint32_t activationGroupOffset = group + part;
+          if (groupMajorScales) activationGroupOffset *= GlmRouteInput::ROWS;
 #ifdef GLM_DIRECT_COMPACT_DOWN_SCALES
           if (directCompactScales) activationGroupOffset = GlmFusedCompactScales::GroupOffset(group + part);
 #endif
 #ifdef GLM_NZ_PREFILL_ACCUMULATOR
           if (nzProducts_) {
-            ScaleNzProducts(weightVectors[(inner + part) * N], sx[activationGroupOffset]);
+            ScaleNzProducts(weightVectors[(inner + part) * N], sx[activationGroupOffset], groupMajorScales);
             continue;
           }
 #endif
@@ -1469,10 +1486,9 @@ class Projection {
           if (vectorFactors) {
             auto factors = ProductTemporary<float>();
             auto rowIndices = mask_.Get<uint32_t>()[SCALE_ROW_INDEX_OFFSET / sizeof(uint32_t)];
-            Gather(factors, sx[activationGroupOffset], rowIndices, static_cast<uint32_t>(0), M);
-            PipeBarrier<PIPE_V>();
             auto rowScales = factors[ELEMENTS];
-            Brcb(rowScales, factors, M / LANES, {1, LANES});
+            GlmFusedInputScales::BroadcastRows(rowScales, factors, sx[activationGroupOffset], rowIndices, M,
+                                               groupMajorScales);
             PipeBarrier<PIPE_V>();
             // Two 64-lane instructions broadcast the same weight vector to
             // every row. Keep weight * activation before scaling the dot.

@@ -76,6 +76,7 @@ def build(
     cache_expert_ends=False,
     prefill_reduce_meta_cache=False,
     direct_compact_down_scales=False,
+    group_major_input_scales=False,
 ):
     """Freeze helper sources and compile a unique, append-only native version."""
     if type(version) is not int or version < 1 or output_columns not in (16, 32, 64, 128):
@@ -112,6 +113,7 @@ def build(
             cache_expert_ends,
             prefill_reduce_meta_cache,
             direct_compact_down_scales,
+            group_major_input_scales,
         )
     ):
         raise ValueError("prefill experiment flags must be boolean")
@@ -209,6 +211,8 @@ def build(
         raise ValueError("raw hidden scales require compact down scales and four-row quantization")
     if raw_input_scales and not route_packed_input:
         raise ValueError("raw input scales require routed input packing")
+    if group_major_input_scales and not (raw_input_scales and prefill_rows_32 and vector_scale_products):
+        raise ValueError("group-major input scales require raw routed M32 vector-scale gate/up")
     if nz_prefill_accumulator and not (prefill_rows_32 and pair_prefill_scale_groups):
         raise ValueError("NZ prefill accumulator requires wide paired prefill rows")
     # M32 reserves one row for the A8 bias product; its route ABI batches 31.
@@ -335,6 +339,10 @@ def build(
             "cache_expert_ends": cache_expert_ends,
             "prefill_reduce_meta_cache": prefill_reduce_meta_cache,
             "direct_compact_down_scales": direct_compact_down_scales,
+            "group_major_input_scales": group_major_input_scales,
+            "input_scale_layout": "dense_group_major_sparse_row_major_v1"
+            if group_major_input_scales
+            else "row_major_v1",
             "prefill_product_cast": prefill_product_cast,
             "weight_decode_lut": weight_decode_lut,
             "wide_cube_k": wide_cube_k,
@@ -411,6 +419,7 @@ def build(
                     *(["-DGLM_PAIR_PREFILL_SCALE_GROUPS"] if pair_prefill_scale_groups else []),
                     *(["-DGLM_FUSED_GATE_UP"] if stage == "gate_up" else []),
                     *(["-DGLM_ROUTE_PACKED_INPUT"] if stage == "gate_up" and route_packed_input else []),
+                    *(["-DGLM_GROUP_MAJOR_INPUT_SCALES"] if stage == "gate_up" and group_major_input_scales else []),
                     *(["-DGLM_ROUTE_PACKED_DOWN"] if route_packed_down else []),
                     *(["-DGLM_COMPACT_DOWN_SCALES"] if route_compact_down_scales else []),
                     *(["-DGLM_DIRECT_COMPACT_DOWN_SCALES"] if stage == "down" and direct_compact_down_scales else []),
@@ -429,6 +438,7 @@ def build(
         provenance["glm_fused_scratch.h"] = {"source_sha256": sha256(HERE / "glm_fused_scratch.h")}
         provenance["glm_fused_compact_scales.h"] = {"source_sha256": sha256(HERE / "glm_fused_compact_scales.h")}
         provenance["glm_fused_route_cache.h"] = {"source_sha256": sha256(HERE / "glm_fused_route_cache.h")}
+        provenance["glm_fused_input_scales.h"] = {"source_sha256": sha256(HERE / "glm_fused_input_scales.h")}
         provenance["glm_route_input_layout.h"] = {"source_sha256": sha256(HERE / "glm_route_input_layout.h")}
         if route_packed_input:
             source = HERE / "glm_fused_route_input.cpp"
@@ -441,6 +451,7 @@ def build(
                     *options,
                     f"-I{HERE}",
                     *(["-DGLM_RAW_INPUT_SCALES"] if raw_input_scales else []),
+                    *(["-DGLM_GROUP_MAJOR_INPUT_SCALES"] if group_major_input_scales else []),
                 ],
                 check=True,
             )
@@ -651,6 +662,11 @@ def main():
         help="reuse route positions and weights across a balanced token's output tiles",
     )
     parser.add_argument(
+        "--group-major-input-scales",
+        action="store_true",
+        help="prepare dense routed scales once in group-major order for gate/up",
+    )
+    parser.add_argument(
         "--direct-compact-down-scales",
         action="store_true",
         help="retain dense down activation scales in their compact producer layout",
@@ -736,6 +752,7 @@ def main():
             cache_expert_ends=args.cache_expert_ends,
             prefill_reduce_meta_cache=args.prefill_reduce_meta_cache,
             direct_compact_down_scales=args.direct_compact_down_scales,
+            group_major_input_scales=args.group_major_input_scales,
         )
     )
 

@@ -1,0 +1,40 @@
+{
+  "status": "offline_only_uncompiled_on_ascend",
+  "baseline_commit": "5a0cd25b34f5a02b02e8dc48516f368a55ac58e4",
+  "flag": "group_major_input_scales",
+  "default": false,
+  "layout": "dense_group_major_sparse_row_major_v1",
+  "minimum_expert_rows": 5,
+  "source_sha256": {
+    "tools/glm_perf/glm_fused_route_input.cpp": "b376d5a652df724a9786f8f4787349a74cfbf8874ef23823741e60b7f5a44ad5",
+    "tools/glm_perf/glm_fused_moe.cpp": "c63e0256ff9eeac87a9f6f9f8d66d96f3ec0f9e6c05da43d3f6163bd7011caa3",
+    "tools/glm_perf/glm_fused_input_scales.h": "53da107eba4dc546ef2a8ccba7aacbc38d61fecfbaeca60bff41802d73787fd8",
+    "tools/glm_perf/glm_route_input_layout.h": "94a4c725cd5c2ff05541f7856463a46e3121305d559af01dce5b72e1fd0c7a15"
+  },
+  "raw_producer_declared_ub_bytes": {
+    "baseline": 18432,
+    "candidate": 32896,
+    "delta_per_core": 14464
+  },
+  "consumer_ub_delta_bytes": 0,
+  "gm_scale_bytes_per_slot": 16384,
+  "gm_allocation_delta_bytes": 0,
+  "example_source_call_counts": {
+    "hidden": 4096,
+    "intermediate": 2048,
+    "output_columns": 128,
+    "consumer_gathers_before": 4096,
+    "consumer_gathers_after": 0,
+    "producer_gathers_added": 128,
+    "net_gathers_removed": 3968,
+    "measured_latency": null
+  },
+  "device_gates_executed": false,
+  "server_operations": false,
+  "cpu_validation": {
+    "passed": 1921,
+    "warnings": 6,
+    "log": "group-major-scales-cpu-tests.log.gz",
+    "npu_compilation": false
+  }
+}

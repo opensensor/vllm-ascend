@@ -25,6 +25,8 @@ ROUTE_INPUT_PAIR_BYTES = 2 * ROUTE_INPUT_ROWS * 32
 REDUCE_CACHE_MIN_TOKENS = 64
 REDUCE_CACHE_MAX_TOP_K = 8
 FUSED_KERNEL_CORES = 8
+INPUT_SCALE_MIN_ROWS = 5
+GROUP_MAJOR_INPUT_SCALE_LAYOUT = "dense_group_major_sparse_row_major_v1"
 
 
 def sorted_token_route_ranks(order, tokens, top_k):
@@ -195,6 +197,22 @@ class NativeFusedMoE:
         ):
             raise ValueError("direct compact scales require raw M32 vector-scale down projection")
         self.direct_compact_down_scales = direct_scales
+        group_major = options.get("group_major_input_scales", False)
+        if (
+            type(group_major) is not bool
+            or group_major
+            and not (
+                options.get("raw_input_scales")
+                and options.get("route_packed_input")
+                and options.get("prefill_rows_32")
+                and options.get("vector_scale_products")
+                and prepared_weight_layout
+            )
+        ):
+            raise ValueError("group-major input scales require raw routed M32 vector-scale gate/up")
+        if group_major and options.get("input_scale_layout") != GROUP_MAJOR_INPUT_SCALE_LAYOUT:
+            raise ValueError("group-major input scales require a matching producer/consumer layout marker")
+        self.group_major_input_scales = group_major
         if type(options.get("route_packed_input", False)) is not bool:
             raise ValueError("routed input packing flag must be boolean")
         if type(options.get("route_packed_down", False)) is not bool:

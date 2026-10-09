@@ -7,6 +7,7 @@ import json
 from tools.glm_perf.glm_fused_moe import (
     FUSED_KERNEL_CORES,
     FUSED_REDUCTION_TOKENS,
+    INPUT_SCALE_MIN_ROWS,
     REDUCE_CACHE_MAX_TOP_K,
     REDUCE_CACHE_MIN_TOKENS,
 )
@@ -63,6 +64,17 @@ def manifest(build_dir, gate_report):
             r.get("direct_compact_down_scales") is not True for r in rows
         ):
             raise ValueError("direct compact scales require matching loaded-weight and replay gates")
+        if options.get("group_major_input_scales"):
+            if any(r.get("group_major_input_scales") is not True for r in rows):
+                raise ValueError("group-major input scales require matching producer/consumer replay gates")
+            if {
+                r.get("weight_bits")
+                for r in rows
+                if r.get("activation_bits") == 4
+                and r.get("tokens", 0) > FUSED_REDUCTION_TOKENS
+                and r.get("input_scale_boundary_rows") == [INPUT_SCALE_MIN_ROWS - 1, INPUT_SCALE_MIN_ROWS]
+            } != {2, 3, 4}:
+                raise ValueError("group-major input scales require sparse/dense real-weight and synthetic replay gates")
         if options.get("prefill_reduce_meta_cache"):
             if any(r.get("prefill_reduce_meta_cache") is not True for r in rows):
                 raise ValueError("cached reducer metadata requires matching replay gates")

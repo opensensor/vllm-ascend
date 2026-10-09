@@ -2,6 +2,16 @@
 
 ## US English summary
 
+The latest offline candidate is [group-major input scales](GROUP_MAJOR_INPUT_SCALES.md).
+Its paired producer/consumer layout removes repeated gate/up scale Gathers
+from the row-accumulator K loop. At GLM's 4,096/2,048 shape, a dense expert
+batch replaces 4,096 consumer Gathers with 128 producer Gathers. GM allocation
+and consumer UB are unchanged; the producer adds 14.125 KiB/core of declared
+UB by reusing the packed-code scratch lifetime. Sparse batches retain the old
+layout. Admission requires real/synthetic four-to-five-row graph replays.
+The candidate is default-off, uncompiled on Ascend and not device-qualified.
+The current CPU suite passes 1,921 tests; no server/NPU action occurred.
+
 Cold prefill remains the priority: the qualified 6,400-token baseline is about
 51 seconds. The trace attributes 23.049 seconds of summed native expert tasks
 to rank 0, with vector/scalar work dominant; these durations may overlap.
@@ -61,12 +71,14 @@ Build provenance and admission checks require matching thresholds plus
 synthetic and real-weight changed-input replay just below and at the boundary.
 The candidate is **not compiled or NPU-qualified**. Earlier unrestricted NZ
 candidate v920 was slower; no speed gain is claimed for this narrower selection.
-The current GLM CPU suite passed **1,905 tests**, with six environment warnings,
+The current GLM CPU suite passed **1,921 tests**, with six environment warnings,
 using `python -m pytest --confcutdir=tests/ut/glm_perf -q tests/ut/glm_perf`.
 The ordinary repository conftest cannot load the local incomplete vLLM FLA
 package; the isolated tool suite bypasses that unrelated NPU setup.
 
-Scoped manual pre-commit checks pass. The required whole-repository
+Scoped manual pre-commit checks pass. Latest logs: `group-major-scales-cpu-tests.log.gz`
+and `group-major-scales-scoped-checks.log.gz`; the isolated whole-repository
+check is `group-major-scales-format-ci.log.gz`. The required whole-repository
 `bash format.sh ci` fails on existing archived
 Python lint, Markdown and forbidden-import errors outside this delivery.
 An accidental shared-checkout run changed 142 unrelated tracked paths; those
@@ -77,11 +89,11 @@ were preserved through three exact typos exceptions; the evidence was not edited
 
 ### Further opportunities
 
-- Gate/up scale broadcasts still Gather activation scales and Brcb them for
-  each K-group/output tile. Preparing a paired group-major producer/consumer
-  layout could remove the Gather step repeatedly; the new compact-down path
-  removes only its preliminary row transpose. Such a producer change needs
-  byte-exact layout gates, scratch accounting and replay tests.
+- The gate/up group-major candidate removes repeated row-accumulator scale
+  Gathers but retains Brcb, factor arithmetic and product readbacks. Down's
+  compact-scale path still gathers columns inside its K loop. A paired down
+  producer/consumer layout is another candidate; its quantizer/store lifetime
+  and sparse-path compatibility need separate analysis before implementation.
 - [Archived projection shapes](projection-shape-evidence.json) contain 540
   FP32-to-FP16 weight casts for `[24,16384]`, plus 360 activation casts for
   `[1280,16384]` and 180 for `[640,16384]`. These match mHC projection geometry.
@@ -159,6 +171,14 @@ per rank; qualifications cannot be reused across process restarts.
 
 ## 中文摘要
 
+最新离线候选见 group-major input scales 双语报告。生产/消费两端配对调整，
+删除 gate/up row-accumulator 的反复 scale Gather。GLM 4,096/2,048 形状
+每 dense 专家批次由 4,096 次消费者 Gather 改为一次性 128 次生产者 Gather。
+GM 分配和消费者 UB 不变；复用 code scratch 生命周期，生产者每核声明 UB
+增加 14.125 KiB。稀疏批次保留旧布局；准入要求合成和真实四行至五行 ACL 重放。
+默认关闭，尚未 Ascend 编译或设备验证。当前 CPU 测试通过 1,921 项，本阶段
+无服务或 NPU 操作。
+
 后续离线工作新增两个独立候选，默认均关闭，尚未 Ascend 编译、设备图重放或完整
 性能验证。`--prefill-reduce-meta-cache` 为均衡的大批次按 token 分配各核，缓存
 至多八个路由位置及 FP32 权重，每核新增 UB 64 字节。宽度 4,096 时，除每核固定
@@ -191,7 +211,7 @@ helper 与既有 descriptor 对比保持位模式、padding 行及 ABI，权重�
 累加，尾批保留行布局；默认零保持旧版 17 行门槛。描述符、权重布局、路由缓冲区
 及算术顺序不因门槛选择改变。构建记录和准入检查要求门槛一致，并要求合成及真实
 权重在门槛前后完成输入变化图重放。候选尚未编译或 NPU 验证；旧版 v920 较慢，
-本次不宣称加速。隔离 GLM CPU 测试通过 1,905 项，有六条环境警告。普通仓库
+本次不宣称加速。隔离 GLM CPU 测试通过 1,921 项，有六条环境警告。普通仓库
 conftest 因本地 vLLM FLA 包不完整无法加载，隔离工具测试绕过该无关 NPU 初始化。
 改动文件的 manual pre-commit 检查通过；全仓库 `bash format.sh ci`
 仍因既有归档 Python、Markdown 和禁止导入错误失败。仅同步本次文件格式，未修改
@@ -199,8 +219,10 @@ conftest 因本地 vLLM FLA 包不完整无法加载，隔离工具测试绕过�
 误在共享 checkout 运行 formatter 后，已恢复 142 个无关 tracked 文件的格式改动；
 本次文件与运行前快照一致，既有 Qwen 改动保留。改动范围检查在隔离快照执行。
 
-进一步机会：gate/up 每个 K-group/output tile 仍有 scale Gather/Brcb，配对的
-group-major 生产/消费布局可能删除反复 Gather，但需位一致、scratch 和图重放检查。
+进一步机会：group-major gate/up 候选删除 row-accumulator 的反复 Gather，
+Brcb、factor 算术和 product readback 仍在。down compact scale 的 K 循环
+仍有列 Gather；配对 down producer/consumer 布局需单独分析量化/store 生命周期
+及稀疏路径兼容性。
 归档 projection 形状含 540 次 `[24,16384]` 权重 FP32→FP16 cast，以及 360 次
 `[1280,16384]`、180 次 `[640,16384]` 激活 cast，符合 mHC geometry；不能仅凭
 形状将所有 220 MiB 分配关联到具体 launch。下一版 projection 应避免重复缓存，

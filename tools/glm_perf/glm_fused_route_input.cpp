@@ -2,9 +2,14 @@
 // Gather each routed INT4 row and its scales once, before all output tiles.
 #include "kernel_operator.h"
 #include "glm_route_input_layout.h"
+#if defined(GLM_GROUP_MAJOR_INPUT_SCALES) && !defined(GLM_RAW_INPUT_SCALES)
+  #error "group-major routed scales require the raw scalar-scale quantizer"
+#endif
 namespace {
 using namespace AscendC;
 using namespace GlmRouteInput;
+static_assert(GROUP_MAJOR_TILE_BYTES >= PAIR_BYTES, "shared scale/code storage must fit a packed pair");
+static_assert(sizeof(uint32_t) == sizeof(unsigned), "scale Gather offsets must remain four bytes");
 class RouteInput {
  public:
   __aicore__ inline void Run(GM_ADDR low, GM_ADDR scales, GM_ADDR order, GM_ADDR ends, GM_ADDR packed,
@@ -17,7 +22,13 @@ class RouteInput {
     ends_.SetGlobalBuffer(reinterpret_cast<__gm__ int64_t*>(ends));
     packed_.SetGlobalBuffer(reinterpret_cast<__gm__ int8_t*>(packed));
     compact_.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(compactScales));
+#ifdef GLM_GROUP_MAJOR_INPUT_SCALES
+    // Scale preparation and packed-code copying have disjoint lifetimes.
+    pipe_.InitBuffer(tile_, GROUP_MAJOR_TILE_BYTES);
+    pipe_.InitBuffer(rowIndices_, GROUP_MAJOR_INDEX_BYTES);
+#else
     pipe_.InitBuffer(tile_, PAIR_BYTES);
+#endif
     pipe_.InitBuffer(scaleRows_, ROWS * MAX_GROUPS * sizeof(float));
 #ifndef GLM_RAW_INPUT_SCALES
     pipe_.InitBuffer(scaleInput_, MAX_GROUPS * 8 * sizeof(float));
@@ -50,7 +61,21 @@ class RouteInput {
 #endif
             PipeBarrier<PIPE_ALL>();
           }
-          DataCopy(compact_[slot * ROWS * MAX_GROUPS], sx, ROWS * MAX_GROUPS);
+#ifdef GLM_GROUP_MAJOR_INPUT_SCALES
+          if (GroupMajorScales(count)) {
+            auto transposed = tile_.Get<float>();
+            auto rowIndices = rowIndices_.Get<uint32_t>();
+            Duplicate(transposed, 0.0f, SCALE_ELEMENTS);
+            for (uint32_t m = 0; m < ROWS; ++m)
+              rowIndices.SetValue(m, (m < count ? m : 0) * MAX_GROUPS * sizeof(float));
+            PipeBarrier<PIPE_ALL>();
+            for (uint32_t group = 0; group < groups; ++group)
+              Gather(transposed[group * ROWS], sx[group], rowIndices, static_cast<uint32_t>(0), ROWS);
+            PipeBarrier<PIPE_ALL>();
+            DataCopy(compact_[slot * SCALE_ELEMENTS], transposed, SCALE_ELEMENTS);
+          } else
+#endif
+            DataCopy(compact_[slot * ROWS * MAX_GROUPS], sx, ROWS * MAX_GROUPS);
           PipeBarrier<PIPE_ALL>();
         }
         for (int64_t pair = 0; pair < groups / 2; ++pair) {
@@ -74,7 +99,7 @@ class RouteInput {
 
  private:
   TPipe pipe_;
-  TBuf<TPosition::VECCALC> tile_, scaleRows_, scaleInput_, indices_;
+  TBuf<TPosition::VECCALC> tile_, scaleRows_, scaleInput_, indices_, rowIndices_;
   GlobalTensor<int8_t> low_, packed_;
   GlobalTensor<float> scales_, compact_;
   GlobalTensor<int64_t> order_, ends_;
