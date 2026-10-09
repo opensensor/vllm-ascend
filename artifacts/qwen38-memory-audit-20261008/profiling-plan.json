@@ -1,0 +1,75 @@
+{
+  "auto_execute": false,
+  "auto_start_server": false,
+  "requires_later_npu_authorization": true,
+  "runtime": "/srv/ai/src/qwen38-prefix-bounded-runtime-20261008",
+  "served_model": "qwen38-prefix-bounded-validation",
+  "port": 8001,
+  "baseline": {
+    "tp": 4,
+    "max_num_seqs": 3,
+    "max_num_batched_tokens": 2560,
+    "mtp": 2,
+    "graph_sizes": [
+      3,
+      9
+    ],
+    "images": 1,
+    "qsa_prefill": "batched_gather",
+    "mtp_expert_execution": "w8a16_routed",
+    "native_hc": "native_hc_residual",
+    "bounded_prefix": true
+  },
+  "thermal_control": {
+    "hold_at_c": 94,
+    "resume_at_or_below_c": 85,
+    "emergency_cutoff_c": 96,
+    "hardware_validation_pending": true
+  },
+  "phases": [
+    "unique cold prefill",
+    "verified cached-prefix reuse",
+    "C1 decode",
+    "C2 decode",
+    "C3 decode",
+    "mixed long prefill and streamed decode",
+    "fresh image encoding",
+    "same-image encoder cache reuse"
+  ],
+  "captures": {
+    "all_four_ranks": true,
+    "maximum_profiled_iterations_per_phase": 2,
+    "baseline_timings_separate_from_profiles": true,
+    "no_automatic_cache_reset": true,
+    "no_new_sync_for_timing": true,
+    "no_device_item_for_logging": true
+  },
+  "record": [
+    "copy direction and payload bytes if exposed",
+    "host wait begin/end with correlation IDs",
+    "graph eager-segment and replay counts",
+    "Mamba D2D copied bytes and CPU spill/restore deltas",
+    "QSA selected K/V scratch payload",
+    "MoE local/peer route geometry and scratch",
+    "HCCL task intervals and dtype/shape",
+    "MTE pipeline counters with exporter validity checks",
+    "CPU sampling around PLE page faults and routing",
+    "streaming token gaps",
+    "thermal-controller actions and all chip temperatures on the same clock"
+  ],
+  "gates": [
+    "state values and stable storage preserved through thermal hold",
+    "prefix cached-token receipts",
+    "text/tool/image coherence",
+    "MTP accepted counts and original versus adjusted counts",
+    "C1/C2/C3 concurrent replay ordering",
+    "numeric recurrence parity at production head geometry",
+    "no unqualified optional backend enabled by this plan"
+  ],
+  "limitations": [
+    "opaque proprietary operator and driver internals need actual tracing",
+    "physical DDR reads can differ from logical scratch bytes",
+    "profiler task sums overlap",
+    "source candidates do not establish power or heat contribution"
+  ]
+}

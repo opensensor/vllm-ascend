@@ -1,0 +1,23 @@
+{
+  "not_measured_ddr_or_pcie_bytes": true,
+  "conditions": "Fully sparse pure prefill, one request, full 2048-token selection budget, 64-query tile, TP4. Partial tiles and shorter selected widths differ. Cache reuse can reduce physical reads; these numbers count logical scratch payload written, excluding scores and indexer work.",
+  "tokens_per_chunk": 2560,
+  "query_tile": 64,
+  "local_query_heads": 6,
+  "local_kv_heads": 1,
+  "qsa_layers": 12,
+  "gdn_layers": 36,
+  "padded_selected_tokens": 2064,
+  "selected_kv_bytes_per_query": 2113536,
+  "selected_kv_scratch_bytes_per_tile": 135266304,
+  "selected_kv_payload_bytes_per_layer_chunk": 5410652160,
+  "selected_kv_payload_bytes_per_target_chunk_per_rank": 64927825920,
+  "gather_calls_per_target_chunk_per_rank": 960,
+  "ple_h2d_bytes_per_chunk_per_rank": 13107200,
+  "mtp_counts_bytes_per_draft_forward_per_rank": 1024,
+  "target_decoder_all_reduce_call_sites": 96,
+  "grouped_routes": 25600,
+  "route_count_comparison_elements_per_moe_chunk": 3276800,
+  "gate_up_route_output_bytes_per_moe_chunk": 65536000,
+  "down_route_output_bytes_per_moe_chunk": 131072000
+}

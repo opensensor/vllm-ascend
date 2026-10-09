@@ -12,6 +12,10 @@ stopped and restarting is deferred by the operator. A 94°C request hold with
 passing and NPU validation pending. See the
 [thermal incident report](../../../../artifacts/qwen38-thermal-incident-20261008/REPORT.en.md).
 
+The [memory and barrier audit](../../../../artifacts/qwen38-memory-audit-20261008/REPORT.en.md)
+reviews the deployed sources, historical traces and deferred fixes across
+host transfers, device-local scratch, recurrent copies and graph/TP ordering.
+
 ## Purpose and scope
 
 Attention KV capacity and retained Mamba checkpoints have separate budgets.

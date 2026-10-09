@@ -1,0 +1,506 @@
+[
+  {
+    "id": "A01",
+    "area": "QSA selected scratch",
+    "priority": "P1",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/models/qwen4_exp/ops/qsa_batched_attention_310.py",
+      "symbol": "qsa_batched_prefill_310",
+      "line": 55,
+      "end_line": 350,
+      "sha256": "eae684c0ed7efe1d9c4c8b388cc8160d0efd0b1616bb37eed42304ead63b9661"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A02",
+    "area": "MTP count readback",
+    "priority": "P1",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/models/qwen4_exp/mtp.py",
+      "symbol": "_forward_eager",
+      "line": 209,
+      "end_line": 262,
+      "sha256": "4acd04bba725a8529e8d555c87fa7ae80746b5f284922bb2795d3ef06e7cdc4a"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A03",
+    "area": "PLE H2D rows",
+    "priority": "P1",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/models/qwen4_exp/ple_layer.py",
+      "symbol": "gather_embeddings",
+      "line": 166,
+      "end_line": 199,
+      "sha256": "73fe9c817f53dc423512a88f8deec80ece3b4a6829d29bd62cd04d3d74d1b2ce"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A04",
+    "area": "GDN plan readback",
+    "priority": "P1",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/_310p/ops/fla/gdn_310.py",
+      "symbol": "_cached_chunk_plan",
+      "line": 151,
+      "end_line": 175,
+      "sha256": "b5560bd92b1e928939205b18680639aa835e7ab48d550643d9b95af8abc302d8"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A05",
+    "area": "Mamba accepted count readback",
+    "priority": "P1",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/patch/worker/patch_mamba_utils.py",
+      "symbol": "_postprocess_mamba_align_gpu_cpu_fallback",
+      "line": 177,
+      "end_line": 252,
+      "sha256": "d85c6a0b40fb6a0ee08147e7bcac7aeaa568c75e50f93ede92ec2eb239934b1a"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A06",
+    "area": "FULL target replay drain",
+    "priority": "P1",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/compilation/breakable_aclgraph.py",
+      "symbol": "_replay",
+      "line": 77,
+      "end_line": 91,
+      "sha256": "98300feade9457b67cfb5a3300ce07aab56d1086b4d1d7bd4c3998e96dd6c5f0"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A07",
+    "area": "Request layout drain",
+    "priority": "P2",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/_310p/model_runner_310p.py",
+      "symbol": "_update_states",
+      "line": 353,
+      "end_line": 418,
+      "sha256": "31383c28e9919fb917c75a651e607ab6a991c997eafef36af6bef7731e234acd"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A08",
+    "area": "Checkpoint archive and spills",
+    "priority": "P2",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/_310p/prefix_mamba_state.py",
+      "symbol": "_admit",
+      "line": 369,
+      "end_line": 413,
+      "sha256": "8223b9f48652616a5add31691c02bf0c609eeaf86aa41a13bce5422e8cdbe7be"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A09",
+    "area": "Compact Mamba table staging",
+    "priority": "P1",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/_310p/model_runner_310p.py",
+      "symbol": "_remap_compact_mamba_block_tables",
+      "line": 576,
+      "end_line": 639,
+      "sha256": "31383c28e9919fb917c75a651e607ab6a991c997eafef36af6bef7731e234acd"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A10",
+    "area": "PLE history staging",
+    "priority": "P2",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/_310p/model_runner_310p.py",
+      "symbol": "_stage_qwen4exp_ple_inputs",
+      "line": 337,
+      "end_line": 351,
+      "sha256": "31383c28e9919fb917c75a651e607ab6a991c997eafef36af6bef7731e234acd"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A11",
+    "area": "Generic metadata buffers",
+    "priority": "required",
+    "source": {
+      "root": "vllm",
+      "path": "v1/utils.py",
+      "symbol": "copy_to_gpu",
+      "line": 139,
+      "end_line": 142,
+      "sha256": "4093f1c040a5f3def599bb044b72109301b970f70a5e5b622fd03a450a11e36a"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A12",
+    "area": "Sampled output readback",
+    "priority": "required",
+    "source": {
+      "root": "vllm",
+      "path": "v1/sample/rejection_sampler.py",
+      "symbol": "parse_output",
+      "line": 267,
+      "end_line": 301,
+      "sha256": "1e069677a3615146ede3082fb5def9190ac335b7456462138c363352a6cf6f36"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A13",
+    "area": "Overlap safe Mamba copies",
+    "priority": "P2",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/patch/worker/patch_mamba_utils.py",
+      "symbol": "_do_mamba_copy_block_torch",
+      "line": 161,
+      "end_line": 174,
+      "sha256": "d85c6a0b40fb6a0ee08147e7bcac7aeaa568c75e50f93ede92ec2eb239934b1a"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A14",
+    "area": "QSA logical positions",
+    "priority": "P2",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/models/qwen4_exp/model.py",
+      "symbol": "_logical_query_positions",
+      "line": 1525,
+      "end_line": 1562,
+      "sha256": "07af8af8511cc460d36ec13419adc9a7bdba9196d2df51404caafb27cc609a81"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A15",
+    "area": "QSA compressed key scores",
+    "priority": "P2",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/models/qwen4_exp/ops/qsa_indexer.py",
+      "symbol": "qsa_indexer_select_groups_310",
+      "line": 411,
+      "end_line": 526,
+      "sha256": "97d674b123020f4c9a508c921ab53cb73991b66620237485777b5471eb435cdc"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A16",
+    "area": "QSA group major candidate",
+    "priority": "candidate",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/models/qwen4_exp/ops/qsa_group_major_attention_310.py",
+      "symbol": "build_qsa_group_major_plan",
+      "line": 68,
+      "end_line": 143,
+      "sha256": "a48e788bd30ecddd9164a6650c8e48b074b19ba30cf95e13edc7867a92aba4d1"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A17",
+    "area": "QSA cache writes",
+    "priority": "required",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/models/qwen4_exp/ops/qsa_index_cache_310.py",
+      "symbol": "qsa_index_cache_update_310",
+      "line": 67,
+      "end_line": 110,
+      "sha256": "20a506d1d6c80070988e800a114440c1f07abaaa8051f0e6cb64348905dc3f02"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A18",
+    "area": "MoE sorting and counting",
+    "priority": "P2",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/models/qwen4_exp/grouped_expert_dispatch.py",
+      "symbol": "build_grouped_expert_dispatch",
+      "line": 43,
+      "end_line": 107,
+      "sha256": "138486c6395f2d80881bdccb98b24fd22446dcef74f9f6e93f3337aa67644f77"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A19",
+    "area": "MoE packed route expansion",
+    "priority": "P1",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/models/qwen4_exp/w4_moe.py",
+      "symbol": "_forward_grouped",
+      "line": 662,
+      "end_line": 718,
+      "sha256": "aa0c616d3857f9b13bf538c7908ca0796a2b0e710743d47b6c2d39c929c70067"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A20",
+    "area": "MoE CANN finalizer",
+    "priority": "preserve",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/models/qwen4_exp/w4_moe.py",
+      "symbol": "finalize_grouped_routes",
+      "line": 182,
+      "end_line": 225,
+      "sha256": "aa0c616d3857f9b13bf538c7908ca0796a2b0e710743d47b6c2d39c929c70067"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A21",
+    "area": "Shared expert stream branches",
+    "priority": "inactive",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/models/qwen4_exp/w4_moe.py",
+      "symbol": "_start_shared_overlap",
+      "line": 521,
+      "end_line": 536,
+      "sha256": "aa0c616d3857f9b13bf538c7908ca0796a2b0e710743d47b6c2d39c929c70067"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A22",
+    "area": "GDN WY intermediates",
+    "priority": "P1",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/_310p/ops/fla/chunk_gated_delta_rule.py",
+      "symbol": "_compute_kernel_inputs_from_torch_wy",
+      "line": 531,
+      "end_line": 614,
+      "sha256": "e024ecaee543964c44c6e80fa1c1ed5baaa1ec5e04df98c3555615bcbc19295d"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A23",
+    "area": "GDN state layout",
+    "priority": "P2",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/models/qwen4_exp/model.py",
+      "symbol": "_native_delta_rule",
+      "line": 941,
+      "end_line": 1025,
+      "sha256": "07af8af8511cc460d36ec13419adc9a7bdba9196d2df51404caafb27cc609a81"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A24",
+    "area": "HC mix and norm",
+    "priority": "P1",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/models/qwen4_exp/model.py",
+      "symbol": "mix",
+      "line": 590,
+      "end_line": 597,
+      "sha256": "07af8af8511cc460d36ec13419adc9a7bdba9196d2df51404caafb27cc609a81"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A25",
+    "area": "Native HC Python bridge",
+    "priority": "preserve",
+    "source": {
+      "root": "runtime",
+      "path": "tools/qwen4exp/direct_hc_residual.py",
+      "symbol": "__call__",
+      "line": 28,
+      "end_line": 60,
+      "sha256": "bf933e4298dbed7337e040221453e9a5fb82f8dbb43d12211f29441c195e98c9"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A26",
+    "area": "Native HC runtime launch",
+    "priority": "preserve",
+    "source": {
+      "root": "native_hc",
+      "path": "bridge.cpp",
+      "symbol": "Launch",
+      "line": 40,
+      "end_line": null,
+      "sha256": "5fa34fb31779cacffaf0296027ec9d8ea8bb19ad5a5e8ead3e5b5afb6e11e6d8"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A27",
+    "area": "Native HC pipeline",
+    "priority": "P2",
+    "source": {
+      "root": "native_hc",
+      "path": "residual-v2.cpp",
+      "symbol": "Run",
+      "line": 13,
+      "end_line": null,
+      "sha256": "5955dfd85c02397919ffa67f1a7b2fa6bb101e025e78b2957f9936dde8962cec"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A28",
+    "area": "Native W4 pipeline source",
+    "priority": "P2",
+    "source": {
+      "root": "fork",
+      "path": "csrc/gmm/qwen_w4_a8_int4_matmul_v310/op_kernel/native_int4_schedule.h",
+      "symbol": "Schedule",
+      "line": 16,
+      "end_line": null,
+      "sha256": "7569e0d841808805ee4096004433f417e091198cf54973e4e116227dfd095175"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A29",
+    "area": "TP communicator",
+    "priority": "required",
+    "source": {
+      "root": "vllm",
+      "path": "distributed/device_communicators/base_device_communicator.py",
+      "symbol": "all_reduce",
+      "line": 231,
+      "end_line": 233,
+      "sha256": "4a7670f12ed7c7621b25d476e2687c24ca01f3be183fff4a6a25337596fe506b"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A30",
+    "area": "Image encoder staging",
+    "priority": "required",
+    "source": {
+      "root": "vllm",
+      "path": "v1/worker/gpu_model_runner.py",
+      "symbol": "_execute_mm_encoder",
+      "line": 2986,
+      "end_line": 3202,
+      "sha256": "87c29d08c0bbf66993d8b984811e7325e35e6436242a773feb55ec88f16b2c51"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A31",
+    "area": "Attention zeroing",
+    "priority": "required",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/_310p/kv_block_zeroer.py",
+      "symbol": "zero_block_ids",
+      "line": 79,
+      "end_line": 88,
+      "sha256": "3e1f9f1f716caf7d0efc889cf70f04f07c079d9f9ab1a775d070d151f0643c28"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A32",
+    "area": "KV block CoW",
+    "priority": "required",
+    "source": {
+      "root": "vllm",
+      "path": "v1/worker/utils.py",
+      "symbol": "copy_kv_cache_blocks_inplace",
+      "line": 682,
+      "end_line": 728,
+      "sha256": "0ca3ec6bf4d20076145b7fe64e564962adebedc8f75a856b517ba0b2f2d77acf"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A33",
+    "area": "Optional sleep offload",
+    "priority": "inactive",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/worker/worker.py",
+      "symbol": "sleep",
+      "line": 245,
+      "end_line": 273,
+      "sha256": "7e7f258fbf1f3b1989e11d99265c4d0e06e7aba851bcc045e61b3b404a9fb8d8"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A34",
+    "area": "Latent GDN variable shape defect",
+    "priority": "P2",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/_310p/ops/fla/gdn_310.py",
+      "symbol": "_flatten_state_indices",
+      "line": 66,
+      "end_line": 99,
+      "sha256": "b5560bd92b1e928939205b18680639aa835e7ab48d550643d9b95af8abc302d8"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A35",
+    "area": "LM head quantization",
+    "priority": "startup",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/models/qwen4_exp/lm_head_w8a8.py",
+      "symbol": "process_weights_after_loading",
+      "line": 73,
+      "end_line": 92,
+      "sha256": "b56ae98f724aa01588cd17f06b399ec7083ed0dcdbd3856a76fed0bd5ecf40ff"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  },
+  {
+    "id": "A36",
+    "area": "PLE projection quantization",
+    "priority": "startup",
+    "source": {
+      "root": "runtime",
+      "path": "vllm_ascend/models/qwen4_exp/ple_layer.py",
+      "symbol": "prepare_projection_weight",
+      "line": 144,
+      "end_line": 162,
+      "sha256": "73fe9c817f53dc423512a88f8deec80ece3b4a6829d29bd62cd04d3d74d1b2ce"
+    },
+    "dispatch_and_limits": "See REPORT.en.md and REPORT.zh.md; source candidates are not current hardware measurements."
+  }
+]

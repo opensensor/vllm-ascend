@@ -9,6 +9,10 @@
 94°C hold / 85°C resume已stage供下次获准启动使用，24项离线测试通过，
 NPU验证待运行。见[热停机报告](../../../../artifacts/qwen38-thermal-incident-20261008/REPORT.zh.md)。
 
+[内存与barrier审计](../../../../artifacts/qwen38-memory-audit-20261008/REPORT.zh.md)
+核对实际runtime sources、历史traces及延后修复，覆盖host transfers、device-local
+scratch、recurrent copies与graph/TP ordering。
+
 图片能力已确认，但长会话 checkpoint 保留量和 attention KV token 容量是
 两个独立预算。旧服务在 KV usage约10%时仍耗尽 primary63与archive175–194，
 发生NPU→CPU spill；只读状态当时所有group的restore_count仍为0。
