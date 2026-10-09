@@ -132,7 +132,7 @@ from .ngram_embedding import (
     AscendPLEPinnedHostEmbeddingMethod,
     AscendQwen4ExpNGramEmbedding,
 )
-from .ops.qsa_batched_attention_310 import QSAPrefillGatherStreams, qsa_batched_prefill_310
+from .ops.qsa_batched_attention_310 import _PREFILL_QUERY_TILE, QSAPrefillGatherStreams, qsa_batched_prefill_310
 from .ops.qsa_group_major_attention_310 import (
     QSA_GROUP_MAJOR_DEFAULT_QUERY_TILE,
     QSA_GROUP_MAJOR_MAX_QUERY_TILE,
@@ -549,6 +549,7 @@ class _GatedResidual(nn.Module):
         params_dtype: torch.dtype,
         compute_dtype: torch.dtype,
         use_combine: bool = True,
+        share_projection_operand: bool = False,
     ) -> None:
         super().__init__()
         self.hc_count = hc_count
@@ -557,6 +558,9 @@ class _GatedResidual(nn.Module):
         self.eps = eps
         self.params_dtype = params_dtype
         self.compute_dtype = compute_dtype
+        if type(share_projection_operand) is not bool:
+            raise ValueError("share_projection_operand must be a boolean")
+        self.share_projection_operand = share_projection_operand
         self.use_combine = use_combine
         self.hc_norm_weight = nn.Parameter(torch.zeros(self.hyper_hidden, dtype=params_dtype))
         self._hc_norm_affine_cache: _GemmaAffineCache | None = None
@@ -590,11 +594,19 @@ class _GatedResidual(nn.Module):
     def mix(self, hyper_input: torch.Tensor) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         num_tokens = hyper_input.shape[0]
         xn = self._normalize(hyper_input)
-        gate = F.silu(_linear(xn, self.input_mix_weight_down, self.compute_dtype) / self.hc_count)
+        projection_input = xn
+        saved_input = xn
+        if self.share_projection_operand and self.use_combine and not torch.is_grad_enabled():
+            down_dtype = _linear_operand_dtype(xn.device.type, self.input_mix_weight_down.dtype, self.compute_dtype)
+            injection_dtype = _linear_operand_dtype(xn.device.type, self.block_inject_weight.dtype, self.compute_dtype)
+            if down_dtype == injection_dtype:
+                projection_input = xn.to(down_dtype)
+                saved_input = projection_input
+        gate = F.silu(_linear(projection_input, self.input_mix_weight_down, self.compute_dtype) / self.hc_count)
         gate = torch.sigmoid(_linear(gate, self.input_mix_weight_up, self.compute_dtype))
         gate = gate.view(num_tokens, self.hc_count, self.hidden_size)
         mixed = (gate * xn.view(num_tokens, self.hc_count, self.hidden_size)).mean(dim=-2)
-        return mixed.to(self.params_dtype), (hyper_input, xn)
+        return mixed.to(self.params_dtype), (hyper_input, saved_input)
 
     def combine(
         self,
@@ -1216,7 +1228,10 @@ _QSA_SELECTION_CONFIG_KEY = "ascend_qsa_selection"
 _QSA_PREFILL_CONFIG_KEY = "ascend_qsa_prefill"
 _QSA_PREFILL_BATCHED_GATHER = "batched_gather"
 _QSA_PREFILL_GROUP_MAJOR_UNION = "group_major_union"
-_QSA_PREFILL_BACKENDS = frozenset((_QSA_PREFILL_BATCHED_GATHER, _QSA_PREFILL_GROUP_MAJOR_UNION))
+_QSA_PREFILL_FIXED_GROUP_MAJOR_UNION = "fixed_group_major_union"
+_QSA_PREFILL_BACKENDS = frozenset(
+    (_QSA_PREFILL_BATCHED_GATHER, _QSA_PREFILL_GROUP_MAJOR_UNION, _QSA_PREFILL_FIXED_GROUP_MAJOR_UNION)
+)
 
 
 def _qsa_selection_policies(config: object) -> tuple[str, str]:
@@ -1364,6 +1379,9 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
             scope="local",
         )
         self.qsa_prefill_backend, self.qsa_group_major_query_tile, _ = _qsa_prefill_policy(config)
+        self.qsa_batched_query_tile = (getattr(config, _QSA_PREFILL_CONFIG_KEY, None) or {}).get(
+            "query_tile", _PREFILL_QUERY_TILE
+        )
         expert_quant = w4_config(config)
         self.reuse_query_rope = expert_quant is None or expert_quant["backend"] in CUBE_DEVICE_ROUTED_BACKENDS
         # QSA arithmetic is independent of expert quantization. Both W8 and
@@ -1931,7 +1949,9 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
             if (use_batched_prefill or use_batched_decode) and self._has_qsa_request_boundaries(metadata):
                 sparse_attention = (
                     qsa_group_major_prefill_310
-                    if use_batched_prefill and self.qsa_prefill_backend == _QSA_PREFILL_GROUP_MAJOR_UNION
+                    if use_batched_prefill
+                    and self.qsa_prefill_backend
+                    in (_QSA_PREFILL_GROUP_MAJOR_UNION, _QSA_PREFILL_FIXED_GROUP_MAJOR_UNION)
                     else qsa_batched_prefill_310
                 )
             sparse_kwargs = {}
@@ -1940,7 +1960,10 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
                     sparse_kwargs["query_lens"] = query_lens_cpu.tolist()
             if sparse_attention is qsa_group_major_prefill_310:
                 sparse_kwargs["query_tile"] = self.qsa_group_major_query_tile
+                sparse_kwargs["fixed_plan"] = self.qsa_prefill_backend == _QSA_PREFILL_FIXED_GROUP_MAJOR_UNION
             if sparse_attention is qsa_batched_prefill_310:
+                if use_batched_prefill:
+                    sparse_kwargs["query_tile"] = self.qsa_batched_query_tile
                 if use_batched_prefill and self.prefill_gather_streams is not None:
                     sparse_kwargs["gather_streams"] = self.prefill_gather_streams.get()
             if sparse_attention is qsa_batched_prefill_310 and use_batched_decode:
@@ -2562,6 +2585,9 @@ class AscendQwen4ExpDecoderLayer(nn.Module):
                 eps=eps,
                 params_dtype=main_dtype,
                 compute_dtype=accum_dtype,
+                share_projection_operand=(getattr(config, "ascend_expert_quantization", None) or {}).get(
+                    "hc_share_projection_operand", False
+                ),
             )
 
         self.attn_hyper_connection = _make_hc()

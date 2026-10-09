@@ -1,0 +1,109 @@
+{
+  "base_fork_commit": "2d8eb1b48f17098039d603d0337afc4b4d0287fa",
+  "pinned_vllm_commit": "3ab5dda29acabea01f6a63d0806bdbbb4a27bde5",
+  "hardware_validated": false,
+  "server_modified": false,
+  "runtime_deployed": false,
+  "original_archive_sha256": "a00740c633188c92d144b72866a07ef6284e1ca74b20ffef770bd34d743a3c4b",
+  "compatibility_patch_sha256": "a67b87a0e45e7fe29358c6277ba995e64448a8d133e10d63dc5085ff08ca69a4",
+  "compatibility_context_adaptation": "Keep frozen QSA policy two-value unpacking; fork uses three values.",
+  "sampler_output_dataclass_confirmed_in_pinned_source": true,
+  "fork_tests": {
+    "passed": 307,
+    "skipped": 1,
+    "skip_reason": "optional msmodelslim dependency unavailable"
+  },
+  "patched_runtime_tests": {
+    "passed": 75,
+    "deselected": 1,
+    "deselection_reason": "main-only three-value QSA policy / parallel-gather option"
+  },
+  "python_compilation": true,
+  "test_method": "CPU tensors plus AST isolation and mocked completion events; no NPU correctness or throughput claim",
+  "files": [
+    {
+      "path": "vllm_ascend/_310p/model_runner_310p.py",
+      "frozen_sha256": "31383c28e9919fb917c75a651e607ab6a991c997eafef36af6bef7731e234acd",
+      "fork_sha256": "000d4bc85b4c63d3e5692310c6a6f92acce08921fe6aa57b7785f22477b7ff8a",
+      "patched_runtime_sha256": "000d4bc85b4c63d3e5692310c6a6f92acce08921fe6aa57b7785f22477b7ff8a"
+    },
+    {
+      "path": "vllm_ascend/_310p/ops/fla/chunk_gated_delta_rule.py",
+      "frozen_sha256": "e024ecaee543964c44c6e80fa1c1ed5baaa1ec5e04df98c3555615bcbc19295d",
+      "fork_sha256": "8e7c8d588a209b705dfb83b7e7d4759515f23aded9a0600a3e06bc6281b5d287",
+      "patched_runtime_sha256": "8e7c8d588a209b705dfb83b7e7d4759515f23aded9a0600a3e06bc6281b5d287"
+    },
+    {
+      "path": "vllm_ascend/_310p/ops/fla/gdn_310.py",
+      "frozen_sha256": "b5560bd92b1e928939205b18680639aa835e7ab48d550643d9b95af8abc302d8",
+      "fork_sha256": "4600274f58c380fa5bd6db2a57db95f78c02eb00a3e2a960fc1f8df8f605f6f5",
+      "patched_runtime_sha256": "4600274f58c380fa5bd6db2a57db95f78c02eb00a3e2a960fc1f8df8f605f6f5"
+    },
+    {
+      "path": "vllm_ascend/compilation/breakable_aclgraph.py",
+      "frozen_sha256": "98300feade9457b67cfb5a3300ce07aab56d1086b4d1d7bd4c3998e96dd6c5f0",
+      "fork_sha256": "0511bbe7ff75872a44dcf5c1d2a7cfc404d239a83e3afd9531ab8803fafdda1b",
+      "patched_runtime_sha256": "0511bbe7ff75872a44dcf5c1d2a7cfc404d239a83e3afd9531ab8803fafdda1b"
+    },
+    {
+      "path": "vllm_ascend/models/qwen4_exp/model.py",
+      "frozen_sha256": "07af8af8511cc460d36ec13419adc9a7bdba9196d2df51404caafb27cc609a81",
+      "fork_sha256": "dee74e8909daa6c0b97e7359e8b632d99c1d721599b13501ac207a3d744f221c",
+      "patched_runtime_sha256": "3ef678db20d737247bf4e3ccff44a00ee3677e5d7e2a08f08a33196680ee3e2f"
+    },
+    {
+      "path": "vllm_ascend/models/qwen4_exp/mtp.py",
+      "frozen_sha256": "4acd04bba725a8529e8d555c87fa7ae80746b5f284922bb2795d3ef06e7cdc4a",
+      "fork_sha256": "2ab84cc32601a6d27cb976ec1d08ed0304d61fe8725678a32d4fbd711ce4b067",
+      "patched_runtime_sha256": "2ab84cc32601a6d27cb976ec1d08ed0304d61fe8725678a32d4fbd711ce4b067"
+    },
+    {
+      "path": "vllm_ascend/models/qwen4_exp/ops/qsa_group_major_attention_310.py",
+      "frozen_sha256": "a48e788bd30ecddd9164a6650c8e48b074b19ba30cf95e13edc7867a92aba4d1",
+      "fork_sha256": "5cfb297a2be3ad5422b3133837264224a3374ea0dce0aa662eb26a4842593910",
+      "patched_runtime_sha256": "5cfb297a2be3ad5422b3133837264224a3374ea0dce0aa662eb26a4842593910"
+    },
+    {
+      "path": "vllm_ascend/models/qwen4_exp/ple_layer.py",
+      "frozen_sha256": "73fe9c817f53dc423512a88f8deec80ece3b4a6829d29bd62cd04d3d74d1b2ce",
+      "fork_sha256": "8dcacd14a01bb2f5091effd787fbbe9104439e5b0addc83f97248c406cf3b3e6",
+      "patched_runtime_sha256": "8dcacd14a01bb2f5091effd787fbbe9104439e5b0addc83f97248c406cf3b3e6"
+    },
+    {
+      "path": "vllm_ascend/models/qwen4_exp/w4_moe.py",
+      "frozen_sha256": "aa0c616d3857f9b13bf538c7908ca0796a2b0e710743d47b6c2d39c929c70067",
+      "fork_sha256": "5ed21cfeb32cc382110fde651e6b59d9c56af2114a528d1a42787a31cdd3bb9f",
+      "patched_runtime_sha256": "5ed21cfeb32cc382110fde651e6b59d9c56af2114a528d1a42787a31cdd3bb9f"
+    },
+    {
+      "path": "vllm_ascend/ops/gdn_attn_builder.py",
+      "frozen_sha256": "499b30235bcef4b4b4a24ee2b2eaff91c21e306b7a129bc9f0a5fd91731f899e",
+      "fork_sha256": "65b5dd5662bc6f8e5c00e0bc0d2302dfe623ff956522cba290449e4739eabd84",
+      "patched_runtime_sha256": "65b5dd5662bc6f8e5c00e0bc0d2302dfe623ff956522cba290449e4739eabd84"
+    },
+    {
+      "path": "vllm_ascend/patch/worker/patch_mamba_utils.py",
+      "frozen_sha256": "d85c6a0b40fb6a0ee08147e7bcac7aeaa568c75e50f93ede92ec2eb239934b1a",
+      "fork_sha256": "45d15970952658b5cba736354777156b4807308d246db4bda44f4cf09b88196d",
+      "patched_runtime_sha256": "45d15970952658b5cba736354777156b4807308d246db4bda44f4cf09b88196d"
+    },
+    {
+      "path": "vllm_ascend/_310p/graph_update_ordering.py",
+      "frozen_sha256": null,
+      "fork_sha256": "1047bfa977cebd56c65549cd264a03fb26472a5e2af6232789d74e7305fec4aa",
+      "patched_runtime_sha256": "1047bfa977cebd56c65549cd264a03fb26472a5e2af6232789d74e7305fec4aa"
+    },
+    {
+      "path": "vllm_ascend/_310p/host_staging.py",
+      "frozen_sha256": null,
+      "fork_sha256": "2a4048404f20a8aae69cd12235933143fee314ca7d0faba82116e9f67651b628",
+      "patched_runtime_sha256": "2a4048404f20a8aae69cd12235933143fee314ca7d0faba82116e9f67651b628"
+    },
+    {
+      "path": "vllm_ascend/models/qwen4_exp/route_workspace.py",
+      "frozen_sha256": null,
+      "fork_sha256": "076ba28e8b54308ce9dd69d1b7c88ca887127345e18ac1901d2161d9b96c12c5",
+      "patched_runtime_sha256": "076ba28e8b54308ce9dd69d1b7c88ca887127345e18ac1901d2161d9b96c12c5"
+    }
+  ]
+}

@@ -86,6 +86,12 @@ class BreakableACLGraphWrapper(BreakableCUDAGraphWrapper):
             # parameter updates and the previous/current FULL graph replay.
             is_draft_eagle = _EXTRA_CTX.is_draft_model and self.use_eagle
             if not self.enable_enpu and not is_draft_eagle:
-                torch.npu.current_stream().synchronize()
+                ready_event = getattr(forward_context, "_ascend_replay_ready_event", None)
+                if ready_event is not None:
+                    # The owning 310P runner installed an exact completion
+                    # boundary for input staging and graph parameter updates.
+                    ready_event.synchronize()
+                else:
+                    torch.npu.current_stream().synchronize()
         super()._replay(entry, args, kwargs)
         return entry.output

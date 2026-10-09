@@ -36,7 +36,13 @@ from .model import (
     _remap_non_expert,
     _resolve_expert_sharding,
 )
-from .moe import _w8a8_packed_grouped_experts_npu, _w8a16_linear_npu, route_topk, swiglu_gate_up
+from .moe import (
+    _FUSED_ROUTING_MAX_TOKENS,
+    _w8a8_packed_grouped_experts_npu,
+    _w8a16_linear_npu,
+    route_topk,
+    swiglu_gate_up,
+)
 from .w4_moe import w4_config
 
 
@@ -83,6 +89,12 @@ class _MTPFP16MoE(nn.Module):
         self.intermediate_size = intermediate
         self.quantized_experts = quantize_experts
         self.grouped_experts = grouped_experts
+        metadata = getattr(config, "ascend_expert_quantization", None) or {}
+        self.grouped_graph = metadata.get("mtp_grouped_graph", False)
+        if type(self.grouped_graph) is not bool:
+            raise ValueError("mtp_grouped_graph must be a boolean")
+        if self.grouped_graph and not (grouped_experts and quantize_experts):
+            raise ValueError("mtp_grouped_graph requires explicitly quantized w8a8_grouped experts")
         self._grouped_weights_prepared = False
         if self.grouped_experts and not self.quantized_experts:
             raise ValueError("grouped MTP experts require quantized weights")
@@ -262,6 +274,12 @@ class _MTPFP16MoE(nn.Module):
         return self._finish_output(x, output)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.grouped_graph and x.device.type == "npu" and x.shape[0] <= _FUSED_ROUTING_MAX_TOKENS:
+            # Only the fixed-output small-batch route has no count readback.
+            # Large grouped prefills can call item() and must stay eager.
+            if not self._grouped_weights_prepared:
+                raise RuntimeError("grouped MTP graph weights must be prepared before capture")
+            return self._forward_eager(x)
         capture = BreakableCUDAGraphCapture.current()
         if capture is None or not capture._capturing:
             return self._forward_eager(x)

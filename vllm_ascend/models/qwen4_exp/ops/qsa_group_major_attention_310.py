@@ -42,9 +42,16 @@ class QSAGroupMajorPlan:
 
     group_indices: torch.Tensor
     token_mask: torch.Tensor
+    device_group_count: torch.Tensor | None = None
 
     @property
     def unique_group_reads(self) -> int:
+        if self.device_group_count is not None:
+            raise RuntimeError("fixed-plan distinct count stays on device; use group_capacity for allocation")
+        return self.group_indices.shape[0]
+
+    @property
+    def group_capacity(self) -> int:
         return self.group_indices.shape[0]
 
 
@@ -143,6 +150,56 @@ def build_qsa_group_major_plan(
     )
 
 
+def build_qsa_fixed_group_major_plan(
+    selection: QSAGroupSelection,
+    *,
+    compress_ratio: int = 4,
+) -> QSAGroupMajorPlan:
+    """Fixed-shape union without unique, nonzero or masked_select.
+
+    Capacity is the host-known maximum number of selected groups plus tails.
+    Only distinct valid groups are read from KV; unused output lanes remain
+    allocated and are masked out. QK/PV work can increase at poor overlap, so
+    this schedule is an opt-in candidate rather than the prefill default.
+    """
+    groups = selection.group_indices
+    if groups.ndim != 2 or min(groups.shape) <= 0 or compress_ratio <= 0:
+        raise ValueError("fixed group-major planning needs nonempty [T,K] groups and positive ratio")
+    queries, width = groups.shape
+    for tensor in (selection.group_counts, selection.tail_starts, selection.tail_counts):
+        if tensor.shape != (queries,) or tensor.device != groups.device:
+            raise ValueError("selection vectors must be [T] on the group device")
+    group_valid = torch.arange(width, device=groups.device)[None, :] < selection.group_counts[:, None]
+    tail_valid = selection.tail_counts > 0
+    tail_groups = torch.div(selection.tail_starts, compress_ratio, rounding_mode="floor")
+    candidates = torch.cat((groups.reshape(-1), tail_groups)).to(torch.int32)
+    candidate_valid = torch.cat((group_valid.reshape(-1), tail_valid))
+    sentinel = torch.iinfo(torch.int32).max
+    candidates = torch.where(candidate_valid, candidates, sentinel)
+    ordered, order = torch.sort(candidates, stable=True)
+    unique = torch.cat((torch.ones_like(ordered[:1], dtype=torch.bool), ordered[1:] != ordered[:-1]))
+    unique = unique & (ordered != sentinel)
+    compact_columns = (unique.to(torch.int64).cumsum(0) - 1).clamp_min(0)
+    capacity = candidates.numel()
+    union = torch.zeros_like(candidates)
+    union.scatter_add_(0, compact_columns, torch.where(unique, ordered, 0))
+    original_columns = torch.empty_like(order)
+    original_columns.scatter_(0, order, compact_columns)
+    group_columns = original_columns[: queries * width].reshape(queries, width)
+    group_columns = torch.where(group_valid, group_columns, capacity)
+    membership = torch.zeros((queries, capacity + 1), dtype=torch.bool, device=groups.device)
+    membership.scatter_(1, group_columns, group_valid)
+    mask = membership[:, :capacity, None].expand(-1, -1, compress_ratio).clone()
+    tail_columns = original_columns[queries * width :]
+    offsets = torch.arange(compress_ratio, device=groups.device)
+    mask.logical_or_(
+        (torch.arange(capacity, device=groups.device)[None, :, None] == tail_columns[:, None, None])
+        & tail_valid[:, None, None]
+        & (offsets[None, None, :] < selection.tail_counts[:, None, None])
+    )
+    return QSAGroupMajorPlan(union, mask.reshape(queries, -1), unique.sum().reshape(1).to(torch.int32))
+
+
 def _group_major_attention(
     query: torch.Tensor,
     selected_keys: torch.Tensor,
@@ -199,6 +256,9 @@ def _group_major_attention(
         ~token_mask[None, :, None, :], -torch.inf
     )
     probabilities = torch.softmax(logits, dim=-1).to(query.dtype)
+    # Fixed-shape plans can contain inactive rows. Preserve NaN propagation
+    # for active input rows while giving fully masked placeholders zero output.
+    probabilities = torch.where(token_mask.any(dim=-1)[None, :, None, None], probabilities, 0)
     output = torch.matmul(
         probabilities.view(num_kv_heads, num_queries * heads_per_kv_head, selected_tokens),
         selected_values[0],
@@ -218,6 +278,7 @@ def qsa_group_major_prefill_310(
     compress_ratio: int = 4,
     query_lens: Sequence[int] | None = None,
     query_tile: int = QSA_GROUP_MAJOR_DEFAULT_QUERY_TILE,
+    fixed_plan: bool = False,
 ) -> torch.Tensor:
     """Run the opt-in union-gather QSA prefill schedule on 310P."""
     _validate_contract(query, key_cache, value_cache, selection, block_table, query_start_loc, compress_ratio)
@@ -245,11 +306,16 @@ def qsa_group_major_prefill_310(
                 tail_starts=selection.tail_starts[start:stop],
                 tail_counts=selection.tail_counts[start:stop],
             )
-            plan = build_qsa_group_major_plan(tile_selection, compress_ratio=compress_ratio)
+            planner = build_qsa_fixed_group_major_plan if fixed_plan else build_qsa_group_major_plan
+            plan = planner(tile_selection, compress_ratio=compress_ratio)
             union_size = plan.group_indices.shape[0]
             union_selection = QSAGroupSelection(
                 group_indices=plan.group_indices.unsqueeze(0),
-                group_counts=torch.full((1,), union_size, dtype=torch.int32, device=query.device),
+                group_counts=(
+                    plan.device_group_count
+                    if plan.device_group_count is not None
+                    else torch.full((1,), union_size, dtype=torch.int32, device=query.device)
+                ),
                 tail_starts=torch.zeros(1, dtype=torch.int32, device=query.device),
                 tail_counts=torch.zeros(1, dtype=torch.int32, device=query.device),
             )
@@ -289,5 +355,6 @@ __all__ = [
     "QSA_GROUP_MAJOR_MAX_QUERY_TILE",
     "QSAGroupMajorPlan",
     "build_qsa_group_major_plan",
+    "build_qsa_fixed_group_major_plan",
     "qsa_group_major_prefill_310",
 ]

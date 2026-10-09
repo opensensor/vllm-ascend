@@ -29,6 +29,8 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from vllm_ascend._310p.host_staging import PinnedHostStaging
+
 from .dtype_policy import ASCEND_QWEN4EXP_DTYPE_POLICY, Qwen4ExpDtypePolicy
 from .lm_head_w8a8 import dynamic_w8a8_linear, quantize_linear_weight
 from .ops.ple import ple_decode_310, ple_gate, ple_short_conv
@@ -39,6 +41,7 @@ if TYPE_CHECKING:
 # The PLE short convolution uses the SiLU activation, matching the fork layer.
 _PLE_CONV_ACTIVATION = "silu"
 _ASCEND_310P_DEVICE_TOKEN = "310P"
+_MAX_HOST_STAGING_TOKENS = 65536
 
 
 class AscendQwen4ExpPLELayer(nn.Module):
@@ -86,6 +89,11 @@ class AscendQwen4ExpPLELayer(nn.Module):
         self.projection_execution = (
             quant_metadata.get("ple_projection_execution", "float16") if quant_metadata else "float16"
         )
+
+        self.host_staging_tokens = (quant_metadata or {}).get("ple_host_staging_tokens", 0)
+        if type(self.host_staging_tokens) is not int or not 0 <= self.host_staging_tokens <= _MAX_HOST_STAGING_TOKENS:
+            raise ValueError("ple_host_staging_tokens must be an integer in [0, 65536]")
+        self._row_host_stage = None
 
         self.hidden_size = int(config.hidden_size)
         self.hc_count = int(config.hc_count)
@@ -187,9 +195,19 @@ class AscendQwen4ExpPLELayer(nn.Module):
         # One batched gather over all (token, head) rows -- batched lookup only.
         # The host PLE table method (lazy mmap / pinned host) returns CPU rows;
         # move them onto the request's device before the on-device projection.
-        rows = self.ple_method.gather_rows(ngram_ids.reshape(-1)).to(
-            ngram_ids.device if output_device is None else output_device
-        )
+        rows = self.ple_method.gather_rows(ngram_ids.reshape(-1))
+        destination = ngram_ids.device if output_device is None else output_device
+        if self.host_staging_tokens and destination.type == "npu" and rows.device.type == "cpu":
+            if num_tokens > self.host_staging_tokens:
+                raise ValueError("PLE request exceeds the configured host staging capacity")
+            if self._row_host_stage is None:
+                self._row_host_stage = PinnedHostStaging(
+                    (self.host_staging_tokens * heads, self.per_head_dim), rows.dtype
+                )
+            device_rows = torch.empty(rows.shape, dtype=rows.dtype, device=destination)
+            rows = self._row_host_stage.copy_to(rows, device_rows)
+        else:
+            rows = rows.to(destination)
         per_head_dim = rows.shape[-1]
         if per_head_dim != self.per_head_dim:
             raise ValueError(

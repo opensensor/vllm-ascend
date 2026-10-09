@@ -20,6 +20,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable, Iterator
 from contextlib import AbstractContextManager, contextmanager, nullcontext
+from dataclasses import replace
 from functools import partial
 from typing import Any, cast
 
@@ -47,6 +48,8 @@ from vllm.v1.spec_decode.metadata import SpecDecodeMetadata
 from vllm.v1.utils import CpuGpuBuffer
 
 from vllm_ascend._310p.block_table import MultiGroupBlockTable as MultiGroupBlockTable310
+from vllm_ascend._310p.graph_update_ordering import GraphUpdateOrdering
+from vllm_ascend._310p.host_staging import PinnedHostStaging
 from vllm_ascend._310p.kv_block_zeroer import AscendKVBlockZeroer310
 from vllm_ascend._310p.npu_input_batch import NPUInputBatch310 as NPUInputBatch
 from vllm_ascend._310p.ops.rotary_embedding import prepare_mrope_cos_sin_slices_from_runner
@@ -573,6 +576,45 @@ class NPUModelRunner310(NPUModelRunner):
             self.attn_state = attn_state
         return attn_state
 
+    def _bookkeeping_sync(self, scheduler_output, sampler_output, *args, **kwargs):
+        self._mamba_sample_snapshot = None
+        if self._qwen4exp_mtp_ple and not self.use_async_scheduling and self.need_accepted_tokens:
+            sampled = sampler_output.sampled_token_ids
+            host_sampled = sampled.cpu()
+            # Count before vocabulary/discard filtering: alignment consumes raw
+            # rejection-sampler acceptance, including discarded prefill rows.
+            counts = (host_sampled != -1).sum(dim=1)
+            self._mamba_sample_snapshot = (sampled, tuple(self.input_batch.req_ids), counts)
+            sampler_output = replace(sampler_output, sampled_token_ids=host_sampled)
+        try:
+            return super()._bookkeeping_sync(scheduler_output, sampler_output, *args, **kwargs)
+        except BaseException:
+            self._mamba_sample_snapshot = None
+            raise
+
+    def _update_states_after_model_execute(self, output_token_ids, scheduler_output):
+        snapshot = getattr(self, "_mamba_sample_snapshot", None)
+        self._mamba_sample_snapshot = None
+        if snapshot is not None:
+            sampled, req_ids, counts = snapshot
+            if sampled is output_token_ids and req_ids == tuple(self.input_batch.req_ids):
+                self.input_batch._mamba_accepted_counts_snapshot = counts
+        try:
+            return super()._update_states_after_model_execute(output_token_ids, scheduler_output)
+        finally:
+            # Never publish a snapshot to a later step or a reordered batch.
+            if hasattr(self.input_batch, "_mamba_accepted_counts_snapshot"):
+                del self.input_batch._mamba_accepted_counts_snapshot
+
+    def _copy_compact_mamba_table(self, group_idx, mapped, device_table):
+        stages = getattr(self, "_compact_mamba_host_stages", None)
+        if stages is None:
+            stages = self._compact_mamba_host_stages = {}
+        if group_idx not in stages:
+            stages[group_idx] = PinnedHostStaging(tuple(device_table.shape), device_table.dtype)
+        source = torch.from_numpy(mapped).to(dtype=device_table.dtype)
+        stages[group_idx].copy_to(source, device_table[: source.shape[0]])
+
     def _remap_compact_mamba_block_tables(self, num_reqs: int, num_scheduled_tokens: np.ndarray | None = None) -> None:
         if not self.supports_compact_mamba_state:
             return
@@ -614,9 +656,7 @@ class NPUModelRunner310(NPUModelRunner):
                     self._prefix_mamba_active_columns[group_idx] = active_columns
                     mapped = tier.remap_rows(block_table.block_table.np[:num_reqs], used_columns, active_columns)
                     mapped_tables[group_idx] = mapped
-                    block_table.block_table.gpu[:num_reqs].copy_(
-                        torch.as_tensor(mapped, device=self.device), non_blocking=True
-                    )
+                    self._copy_compact_mamba_table(group_idx, mapped, block_table.block_table.gpu)
                     continue
                 # The running block advances with context length. Reuse the
                 # compact slots cyclically, including columns beyond the first
@@ -626,7 +666,7 @@ class NPUModelRunner310(NPUModelRunner):
                 num_columns = device_table.shape[1]
                 if live_slots is not None:
                     mapped = live_slots.mapped_columns(live_lanes, num_columns)
-                    device_table[:num_reqs].copy_(torch.as_tensor(mapped, device=device_table.device))
+                    self._copy_compact_mamba_table(group_idx, mapped, device_table)
                     mapped_tables[group_idx] = mapped
                 else:
                     compact_columns = torch.arange(num_columns, dtype=device_table.dtype, device=device_table.device)
@@ -1102,14 +1142,34 @@ class NPUModelRunner310(NPUModelRunner):
                 # the host. BreakableACLGraphWrapper retains the final host
                 # synchronization before replay, so mutable MTP/GDN metadata
                 # is still complete before the graph consumes it.
-                self.update_stream.wait_stream(main_stream)
+                ordering_mode = self.vllm_config.additional_config.get("qwen_graph_update_ordering", "stream")
+                if ordering_mode not in ("stream", "completion_events"):
+                    raise ValueError("qwen_graph_update_ordering must be stream or completion_events")
+                ordering = None
+                if ordering_mode == "completion_events":
+                    if not self._qwen4exp_mtp_ple:
+                        raise ValueError("completion_events graph ordering requires the Qwen MTP/PLE runner")
+                    ordering = getattr(self, "_qwen_graph_ordering", None)
+                    if ordering is None:
+                        ordering = self._qwen_graph_ordering = GraphUpdateOrdering()
+                    ordering.before_update(main_stream, self.update_stream)
+                else:
+                    self.update_stream.wait_stream(main_stream)
             self._update_full_graph_params_if_needed(
                 forward_context,
                 num_tokens_padded,
             )
             if update_before_replay:
-                main_stream.wait_stream(self.update_stream)
-            hidden_states = run_model()
+                if ordering is not None:
+                    forward_context._ascend_replay_ready_event = ordering.ready(main_stream, self.update_stream)
+                else:
+                    main_stream.wait_stream(self.update_stream)
+            try:
+                hidden_states = run_model()
+            finally:
+                if update_before_replay and ordering is not None:
+                    ordering.replay_submitted(main_stream)
+                    del forward_context._ascend_replay_ready_event
         else:
             hidden_states = run_model()
             self._update_full_graph_params_if_needed(

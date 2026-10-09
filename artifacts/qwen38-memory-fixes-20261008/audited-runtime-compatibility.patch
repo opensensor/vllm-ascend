@@ -1,0 +1,802 @@
+diff --git a/vllm_ascend/_310p/graph_update_ordering.py b/vllm_ascend/_310p/graph_update_ordering.py
+new file mode 100644
+index 000000000..49e6e81ad
+--- /dev/null
++++ b/vllm_ascend/_310p/graph_update_ordering.py
+@@ -0,0 +1,36 @@
++# SPDX-License-Identifier: Apache-2.0
++# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
++"""Opt-in completion boundaries for mutable FULL graph task updates.
++
++Host task-parameter mutation requires the previous replay to have completed.
++A device wait alone cannot order this host mutation. Ready events additionally
++cover current input staging and the update stream before starting replay.
++"""
++
++from collections.abc import Callable
++
++import torch
++
++
++class GraphUpdateOrdering:
++    def __init__(self, event_factory: Callable | None = None) -> None:
++        make_event = event_factory or torch.npu.Event
++        self.previous_replay = make_event()
++        self.update_done = make_event()
++        self.replay_ready = make_event()
++        self.has_previous_replay = False
++
++    def before_update(self, main_stream, update_stream) -> None:
++        if self.has_previous_replay and not self.previous_replay.query():
++            self.previous_replay.synchronize()
++        update_stream.wait_stream(main_stream)
++
++    def ready(self, main_stream, update_stream):
++        self.update_done.record(update_stream)
++        main_stream.wait_event(self.update_done)
++        self.replay_ready.record(main_stream)
++        return self.replay_ready
++
++    def replay_submitted(self, main_stream) -> None:
++        self.previous_replay.record(main_stream)
++        self.has_previous_replay = True
+diff --git a/vllm_ascend/_310p/host_staging.py b/vllm_ascend/_310p/host_staging.py
+new file mode 100644
+index 000000000..237814907
+--- /dev/null
++++ b/vllm_ascend/_310p/host_staging.py
+@@ -0,0 +1,48 @@
++# SPDX-License-Identifier: Apache-2.0
++# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
++"""Bounded host staging with explicit DMA lifetime ownership.
++
++Only the copy completion event is waited on before rewriting host storage.
++Device destinations must be consumed on the stream which submitted the copy.
++This class does not make an independently reused device output safe.
++"""
++
++from collections.abc import Callable
++
++import torch
++
++
++class PinnedHostStaging:
++    def __init__(
++        self,
++        capacity: tuple[int, ...],
++        dtype: torch.dtype,
++        *,
++        pin_memory: bool = True,
++        event_factory: Callable | None = None,
++    ) -> None:
++        if not capacity or any(size <= 0 for size in capacity):
++            raise ValueError("host staging capacity must be positive")
++        # Allocate without zero-fill: pinned FP16 zero-fill has failed on this
++        # host. Every submitted byte is populated before its DMA is enqueued.
++        self.host = torch.empty(capacity, dtype=dtype, device="cpu", pin_memory=pin_memory)
++        self._event_factory = event_factory
++        self._completion = None
++
++    def copy_to(self, source: torch.Tensor, destination: torch.Tensor) -> torch.Tensor:
++        if source.device.type != "cpu" or source.dtype != self.host.dtype:
++            raise ValueError("host staging requires CPU source in the staging dtype")
++        if source.shape != destination.shape or destination.dtype != self.host.dtype:
++            raise ValueError("host staging source and destination must match")
++        if source.ndim != self.host.ndim or any(size > cap for size, cap in zip(source.shape, self.host.shape)):
++            raise ValueError("host staging source exceeds its fixed capacity")
++        if self._completion is not None and not self._completion.query():
++            # A host write cannot be protected with a device stream wait.
++            self._completion.synchronize()
++        view = self.host[tuple(slice(0, size) for size in source.shape)]
++        view.copy_(source)
++        destination.copy_(view, non_blocking=True)
++        if self._completion is None:
++            self._completion = (self._event_factory or torch.npu.Event)()
++        self._completion.record()
++        return destination
+diff --git a/vllm_ascend/_310p/model_runner_310p.py b/vllm_ascend/_310p/model_runner_310p.py
+index 71d530d6e..57627b5c9 100644
+--- a/vllm_ascend/_310p/model_runner_310p.py
++++ b/vllm_ascend/_310p/model_runner_310p.py
+@@ -22,2 +22,3 @@ from collections.abc import Iterable, Iterator
+ from contextlib import AbstractContextManager, contextmanager, nullcontext
++from dataclasses import replace
+ from functools import partial
+@@ -49,2 +50,4 @@ from vllm.v1.utils import CpuGpuBuffer
+ from vllm_ascend._310p.block_table import MultiGroupBlockTable as MultiGroupBlockTable310
++from vllm_ascend._310p.graph_update_ordering import GraphUpdateOrdering
++from vllm_ascend._310p.host_staging import PinnedHostStaging
+ from vllm_ascend._310p.kv_block_zeroer import AscendKVBlockZeroer310
+@@ -575,2 +578,41 @@ class NPUModelRunner310(NPUModelRunner):
+ 
++    def _bookkeeping_sync(self, scheduler_output, sampler_output, *args, **kwargs):
++        self._mamba_sample_snapshot = None
++        if self._qwen4exp_mtp_ple and not self.use_async_scheduling and self.need_accepted_tokens:
++            sampled = sampler_output.sampled_token_ids
++            host_sampled = sampled.cpu()
++            # Count before vocabulary/discard filtering: alignment consumes raw
++            # rejection-sampler acceptance, including discarded prefill rows.
++            counts = (host_sampled != -1).sum(dim=1)
++            self._mamba_sample_snapshot = (sampled, tuple(self.input_batch.req_ids), counts)
++            sampler_output = replace(sampler_output, sampled_token_ids=host_sampled)
++        try:
++            return super()._bookkeeping_sync(scheduler_output, sampler_output, *args, **kwargs)
++        except BaseException:
++            self._mamba_sample_snapshot = None
++            raise
++
++    def _update_states_after_model_execute(self, output_token_ids, scheduler_output):
++        snapshot = getattr(self, "_mamba_sample_snapshot", None)
++        self._mamba_sample_snapshot = None
++        if snapshot is not None:
++            sampled, req_ids, counts = snapshot
++            if sampled is output_token_ids and req_ids == tuple(self.input_batch.req_ids):
++                self.input_batch._mamba_accepted_counts_snapshot = counts
++        try:
++            return super()._update_states_after_model_execute(output_token_ids, scheduler_output)
++        finally:
++            # Never publish a snapshot to a later step or a reordered batch.
++            if hasattr(self.input_batch, "_mamba_accepted_counts_snapshot"):
++                del self.input_batch._mamba_accepted_counts_snapshot
++
++    def _copy_compact_mamba_table(self, group_idx, mapped, device_table):
++        stages = getattr(self, "_compact_mamba_host_stages", None)
++        if stages is None:
++            stages = self._compact_mamba_host_stages = {}
++        if group_idx not in stages:
++            stages[group_idx] = PinnedHostStaging(tuple(device_table.shape), device_table.dtype)
++        source = torch.from_numpy(mapped).to(dtype=device_table.dtype)
++        stages[group_idx].copy_to(source, device_table[: source.shape[0]])
++
+     def _remap_compact_mamba_block_tables(self, num_reqs: int, num_scheduled_tokens: np.ndarray | None = None) -> None:
+@@ -616,5 +658,3 @@ class NPUModelRunner310(NPUModelRunner):
+                     mapped_tables[group_idx] = mapped
+-                    block_table.block_table.gpu[:num_reqs].copy_(
+-                        torch.as_tensor(mapped, device=self.device), non_blocking=True
+-                    )
++                    self._copy_compact_mamba_table(group_idx, mapped, block_table.block_table.gpu)
+                     continue
+@@ -628,3 +668,3 @@ class NPUModelRunner310(NPUModelRunner):
+                     mapped = live_slots.mapped_columns(live_lanes, num_columns)
+-                    device_table[:num_reqs].copy_(torch.as_tensor(mapped, device=device_table.device))
++                    self._copy_compact_mamba_table(group_idx, mapped, device_table)
+                     mapped_tables[group_idx] = mapped
+@@ -1104,3 +1144,15 @@ class NPUModelRunner310(NPUModelRunner):
+                 # is still complete before the graph consumes it.
+-                self.update_stream.wait_stream(main_stream)
++                ordering_mode = self.vllm_config.additional_config.get("qwen_graph_update_ordering", "stream")
++                if ordering_mode not in ("stream", "completion_events"):
++                    raise ValueError("qwen_graph_update_ordering must be stream or completion_events")
++                ordering = None
++                if ordering_mode == "completion_events":
++                    if not self._qwen4exp_mtp_ple:
++                        raise ValueError("completion_events graph ordering requires the Qwen MTP/PLE runner")
++                    ordering = getattr(self, "_qwen_graph_ordering", None)
++                    if ordering is None:
++                        ordering = self._qwen_graph_ordering = GraphUpdateOrdering()
++                    ordering.before_update(main_stream, self.update_stream)
++                else:
++                    self.update_stream.wait_stream(main_stream)
+             self._update_full_graph_params_if_needed(
+@@ -1110,4 +1162,12 @@ class NPUModelRunner310(NPUModelRunner):
+             if update_before_replay:
+-                main_stream.wait_stream(self.update_stream)
+-            hidden_states = run_model()
++                if ordering is not None:
++                    forward_context._ascend_replay_ready_event = ordering.ready(main_stream, self.update_stream)
++                else:
++                    main_stream.wait_stream(self.update_stream)
++            try:
++                hidden_states = run_model()
++            finally:
++                if update_before_replay and ordering is not None:
++                    ordering.replay_submitted(main_stream)
++                    del forward_context._ascend_replay_ready_event
+         else:
+diff --git a/vllm_ascend/_310p/ops/fla/chunk_gated_delta_rule.py b/vllm_ascend/_310p/ops/fla/chunk_gated_delta_rule.py
+index 00453be66..8ebb05719 100644
+--- a/vllm_ascend/_310p/ops/fla/chunk_gated_delta_rule.py
++++ b/vllm_ascend/_310p/ops/fla/chunk_gated_delta_rule.py
+@@ -553,8 +553,3 @@ def _compute_kernel_inputs_from_torch_wy(
+     if use_grouped_gram:
+-        key_grouped = (
+-            k.transpose(1, 2)
+-            .contiguous()
+-            .to(torch.float32)
+-            .reshape(batch_size, k_heads, num_chunks, chunk_size, k_dim)
+-        )
++        key_grouped = k_kernel.to(torch.float32).reshape(batch_size, k_heads, num_chunks, chunk_size, k_dim)
+         key = None
+@@ -562,6 +557,10 @@ def _compute_kernel_inputs_from_torch_wy(
+         key_grouped = None
+-        key = _expand_qk_to_v_heads(k, num_v_heads).transpose(1, 2).contiguous().to(torch.float32)
+-    value = v.transpose(1, 2).contiguous().to(torch.float32)
+-    g = g.transpose(1, 2).contiguous().to(torch.float32)
+-    beta = beta.transpose(1, 2).contiguous().to(torch.float32)
++        key = (
++            _expand_qk_to_v_heads(k, num_v_heads)
++            .transpose(1, 2)
++            .to(dtype=torch.float32, memory_format=torch.contiguous_format)
++        )
++    value = v.transpose(1, 2).to(dtype=torch.float32, memory_format=torch.contiguous_format)
++    g = g.transpose(1, 2).to(dtype=torch.float32, memory_format=torch.contiguous_format)
++    beta = beta.transpose(1, 2).to(dtype=torch.float32, memory_format=torch.contiguous_format)
+ 
+@@ -593,5 +592,3 @@ def _compute_kernel_inputs_from_torch_wy(
+ 
+-        value = attn.reshape(batch_size, num_v_heads, num_chunks, chunk_size, chunk_size) @ (
+-            value * beta.unsqueeze(-1)
+-        )
++        value = attn.reshape(batch_size, num_v_heads, num_chunks, chunk_size, chunk_size) @ (value * beta.unsqueeze(-1))
+         # attn @ (key * c[..., None]) == (attn * c[..., None, :]) @ key, which
+diff --git a/vllm_ascend/_310p/ops/fla/gdn_310.py b/vllm_ascend/_310p/ops/fla/gdn_310.py
+index cf2abd372..c4b4934bb 100644
+--- a/vllm_ascend/_310p/ops/fla/gdn_310.py
++++ b/vllm_ascend/_310p/ops/fla/gdn_310.py
+@@ -79,3 +79,3 @@ def _flatten_state_indices(
+     # NPU masked_select which breaks stream capture (aclnnMaskedSelect / 107027).
+-    if uniform_state_indices or _EXTRA_CTX.capturing or (seq_lens.numel() > 0 and torch.all(seq_lens == seq_lens[0])):
++    if uniform_state_indices or _EXTRA_CTX.capturing:
+         q_per_seq = ssm_state_indices.shape[1]
+@@ -94,3 +94,3 @@ def _flatten_state_indices(
+     flat_cpu = ssm_cpu.masked_select(valid).to(torch.int32).contiguous()[:total_tokens]
+-    if not flat_cpu.is_pinned:
++    if ssm_state_indices.device.type != "cpu" and not flat_cpu.is_pinned():
+         flat_cpu = flat_cpu.pin_memory()
+@@ -151,14 +151,9 @@ def _cached_recurrent_step_meta(
+ def _cached_chunk_plan(attn_metadata, cu_seqlens):
+-    """The step's GDN chunk padding layout, derived once for all 48 layers.
+-
+-    ``chunk_gated_delta_rule_310`` needs ``cu_seqlens`` on the host to work out
+-    where each sequence is padded to a chunk boundary. Doing that inside the op
+-    put a device-to-host copy in every GDN layer, and on 310P a D2H copy is a
+-    synchronisation point: the host cannot issue the next layer until the device
+-    has drained. Prefill depends on the host staying ahead, so 48 drains a step
+-    cost more than the 40-odd bytes they move.
+-
+-    Memoised on ``attn_metadata`` for the same reason as
+-    :func:`_cached_recurrent_step_meta` -- the builder makes a fresh one every
+-    step, so the cache cannot outlive the tensor it came from.
++    """Build chunk padding once from this step's host request boundaries.
++
++    The builder attaches immutable CPU bounds for the exact non-spec partition,
++    including ordinary decode rows in mixed prefill batches. Reusing them
++    avoids even the first per-group D2H synchronization of the cached plan.
++    External callers without the matching mirror retain a one-read fallback.
++    The cache belongs to the fresh per-step metadata object.
+     """
+@@ -171,3 +166,12 @@ def _cached_chunk_plan(attn_metadata, cu_seqlens):
+     if cache is None or cache[0] != key:
+-        plan = build_varlen_chunk_plan(cu_seqlens.to(torch.int64).cpu(), CHUNK_SIZE)
++        host_bounds = getattr(attn_metadata, "_gdn_host_chunk_bounds", None)
++        host_source = getattr(attn_metadata, "_gdn_host_chunk_source", None)
++        if host_bounds is not None and host_source is cu_seqlens:
++            # Immutable CPU bounds belong to this metadata object, not a
++            # mutable input-batch buffer or a previous step's device address.
++            bounds = torch.tensor(host_bounds, dtype=torch.int64, device="cpu")
++        else:
++            # Compatibility for external callers without scheduler mirrors.
++            bounds = cu_seqlens.to(torch.int64).cpu()
++        plan = build_varlen_chunk_plan(bounds, CHUNK_SIZE)
+         attn_metadata._gdn_chunk_plan = (key, plan)
+diff --git a/vllm_ascend/compilation/breakable_aclgraph.py b/vllm_ascend/compilation/breakable_aclgraph.py
+index 392aff3a0..91e905f97 100644
+--- a/vllm_ascend/compilation/breakable_aclgraph.py
++++ b/vllm_ascend/compilation/breakable_aclgraph.py
+@@ -88,3 +88,9 @@ class BreakableACLGraphWrapper(BreakableCUDAGraphWrapper):
+             if not self.enable_enpu and not is_draft_eagle:
+-                torch.npu.current_stream().synchronize()
++                ready_event = getattr(forward_context, "_ascend_replay_ready_event", None)
++                if ready_event is not None:
++                    # The owning 310P runner installed an exact completion
++                    # boundary for input staging and graph parameter updates.
++                    ready_event.synchronize()
++                else:
++                    torch.npu.current_stream().synchronize()
+         super()._replay(entry, args, kwargs)
+diff --git a/vllm_ascend/models/qwen4_exp/model.py b/vllm_ascend/models/qwen4_exp/model.py
+index e6372b9c6..d514815e9 100644
+--- a/vllm_ascend/models/qwen4_exp/model.py
++++ b/vllm_ascend/models/qwen4_exp/model.py
+@@ -134,3 +134,3 @@ from .ngram_embedding import (
+ )
+-from .ops.qsa_batched_attention_310 import QSAPrefillGatherStreams, qsa_batched_prefill_310
++from .ops.qsa_batched_attention_310 import _PREFILL_QUERY_TILE, QSAPrefillGatherStreams, qsa_batched_prefill_310
+ from .ops.qsa_group_major_attention_310 import (
+@@ -551,2 +551,3 @@ class _GatedResidual(nn.Module):
+         use_combine: bool = True,
++        share_projection_operand: bool = False,
+     ) -> None:
+@@ -559,2 +560,5 @@ class _GatedResidual(nn.Module):
+         self.compute_dtype = compute_dtype
++        if type(share_projection_operand) is not bool:
++            raise ValueError("share_projection_operand must be a boolean")
++        self.share_projection_operand = share_projection_operand
+         self.use_combine = use_combine
+@@ -592,3 +596,11 @@ class _GatedResidual(nn.Module):
+         xn = self._normalize(hyper_input)
+-        gate = F.silu(_linear(xn, self.input_mix_weight_down, self.compute_dtype) / self.hc_count)
++        projection_input = xn
++        saved_input = xn
++        if self.share_projection_operand and self.use_combine and not torch.is_grad_enabled():
++            down_dtype = _linear_operand_dtype(xn.device.type, self.input_mix_weight_down.dtype, self.compute_dtype)
++            injection_dtype = _linear_operand_dtype(xn.device.type, self.block_inject_weight.dtype, self.compute_dtype)
++            if down_dtype == injection_dtype:
++                projection_input = xn.to(down_dtype)
++                saved_input = projection_input
++        gate = F.silu(_linear(projection_input, self.input_mix_weight_down, self.compute_dtype) / self.hc_count)
+         gate = torch.sigmoid(_linear(gate, self.input_mix_weight_up, self.compute_dtype))
+@@ -596,3 +608,3 @@ class _GatedResidual(nn.Module):
+         mixed = (gate * xn.view(num_tokens, self.hc_count, self.hidden_size)).mean(dim=-2)
+-        return mixed.to(self.params_dtype), (hyper_input, xn)
++        return mixed.to(self.params_dtype), (hyper_input, saved_input)
+ 
+@@ -1218,3 +1230,6 @@ _QSA_PREFILL_BATCHED_GATHER = "batched_gather"
+ _QSA_PREFILL_GROUP_MAJOR_UNION = "group_major_union"
+-_QSA_PREFILL_BACKENDS = frozenset((_QSA_PREFILL_BATCHED_GATHER, _QSA_PREFILL_GROUP_MAJOR_UNION))
++_QSA_PREFILL_FIXED_GROUP_MAJOR_UNION = "fixed_group_major_union"
++_QSA_PREFILL_BACKENDS = frozenset(
++    (_QSA_PREFILL_BATCHED_GATHER, _QSA_PREFILL_GROUP_MAJOR_UNION, _QSA_PREFILL_FIXED_GROUP_MAJOR_UNION)
++)
+ 
+@@ -1366,2 +1381,5 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
+         self.qsa_prefill_backend, self.qsa_group_major_query_tile = _qsa_prefill_policy(config)
++        self.qsa_batched_query_tile = (getattr(config, _QSA_PREFILL_CONFIG_KEY, None) or {}).get(
++            "query_tile", _PREFILL_QUERY_TILE
++        )
+         expert_quant = w4_config(config)
+@@ -1933,3 +1951,5 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
+                     qsa_group_major_prefill_310
+-                    if use_batched_prefill and self.qsa_prefill_backend == _QSA_PREFILL_GROUP_MAJOR_UNION
++                    if use_batched_prefill
++                    and self.qsa_prefill_backend
++                    in (_QSA_PREFILL_GROUP_MAJOR_UNION, _QSA_PREFILL_FIXED_GROUP_MAJOR_UNION)
+                     else qsa_batched_prefill_310
+@@ -1942,3 +1962,6 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
+                 sparse_kwargs["query_tile"] = self.qsa_group_major_query_tile
++                sparse_kwargs["fixed_plan"] = self.qsa_prefill_backend == _QSA_PREFILL_FIXED_GROUP_MAJOR_UNION
+             if sparse_attention is qsa_batched_prefill_310:
++                if use_batched_prefill:
++                    sparse_kwargs["query_tile"] = self.qsa_batched_query_tile
+                 if use_batched_prefill and self.prefill_gather_streams is not None:
+@@ -2564,2 +2587,5 @@ class AscendQwen4ExpDecoderLayer(nn.Module):
+                 compute_dtype=accum_dtype,
++                share_projection_operand=(getattr(config, "ascend_expert_quantization", None) or {}).get(
++                    "hc_share_projection_operand", False
++                ),
+             )
+diff --git a/vllm_ascend/models/qwen4_exp/mtp.py b/vllm_ascend/models/qwen4_exp/mtp.py
+index a182834b0..5c9b7fef9 100644
+--- a/vllm_ascend/models/qwen4_exp/mtp.py
++++ b/vllm_ascend/models/qwen4_exp/mtp.py
+@@ -38,3 +38,9 @@ from .model import (
+ )
+-from .moe import _w8a8_packed_grouped_experts_npu, _w8a16_linear_npu, route_topk, swiglu_gate_up
++from .moe import (
++    _FUSED_ROUTING_MAX_TOKENS,
++    _w8a8_packed_grouped_experts_npu,
++    _w8a16_linear_npu,
++    route_topk,
++    swiglu_gate_up,
++)
+ from .w4_moe import w4_config
+@@ -85,2 +91,8 @@ class _MTPFP16MoE(nn.Module):
+         self.grouped_experts = grouped_experts
++        metadata = getattr(config, "ascend_expert_quantization", None) or {}
++        self.grouped_graph = metadata.get("mtp_grouped_graph", False)
++        if type(self.grouped_graph) is not bool:
++            raise ValueError("mtp_grouped_graph must be a boolean")
++        if self.grouped_graph and not (grouped_experts and quantize_experts):
++            raise ValueError("mtp_grouped_graph requires explicitly quantized w8a8_grouped experts")
+         self._grouped_weights_prepared = False
+@@ -264,2 +276,8 @@ class _MTPFP16MoE(nn.Module):
+     def forward(self, x: torch.Tensor) -> torch.Tensor:
++        if self.grouped_graph and x.device.type == "npu" and x.shape[0] <= _FUSED_ROUTING_MAX_TOKENS:
++            # Only the fixed-output small-batch route has no count readback.
++            # Large grouped prefills can call item() and must stay eager.
++            if not self._grouped_weights_prepared:
++                raise RuntimeError("grouped MTP graph weights must be prepared before capture")
++            return self._forward_eager(x)
+         capture = BreakableCUDAGraphCapture.current()
+diff --git a/vllm_ascend/models/qwen4_exp/ops/qsa_group_major_attention_310.py b/vllm_ascend/models/qwen4_exp/ops/qsa_group_major_attention_310.py
+index d028447cb..9da3552e7 100644
+--- a/vllm_ascend/models/qwen4_exp/ops/qsa_group_major_attention_310.py
++++ b/vllm_ascend/models/qwen4_exp/ops/qsa_group_major_attention_310.py
+@@ -44,2 +44,3 @@ class QSAGroupMajorPlan:
+     token_mask: torch.Tensor
++    device_group_count: torch.Tensor | None = None
+ 
+@@ -47,2 +48,8 @@ class QSAGroupMajorPlan:
+     def unique_group_reads(self) -> int:
++        if self.device_group_count is not None:
++            raise RuntimeError("fixed-plan distinct count stays on device; use group_capacity for allocation")
++        return self.group_indices.shape[0]
++
++    @property
++    def group_capacity(self) -> int:
+         return self.group_indices.shape[0]
+@@ -145,2 +152,52 @@ def build_qsa_group_major_plan(
+ 
++def build_qsa_fixed_group_major_plan(
++    selection: QSAGroupSelection,
++    *,
++    compress_ratio: int = 4,
++) -> QSAGroupMajorPlan:
++    """Fixed-shape union without unique, nonzero or masked_select.
++
++    Capacity is the host-known maximum number of selected groups plus tails.
++    Only distinct valid groups are read from KV; unused output lanes remain
++    allocated and are masked out. QK/PV work can increase at poor overlap, so
++    this schedule is an opt-in candidate rather than the prefill default.
++    """
++    groups = selection.group_indices
++    if groups.ndim != 2 or min(groups.shape) <= 0 or compress_ratio <= 0:
++        raise ValueError("fixed group-major planning needs nonempty [T,K] groups and positive ratio")
++    queries, width = groups.shape
++    for tensor in (selection.group_counts, selection.tail_starts, selection.tail_counts):
++        if tensor.shape != (queries,) or tensor.device != groups.device:
++            raise ValueError("selection vectors must be [T] on the group device")
++    group_valid = torch.arange(width, device=groups.device)[None, :] < selection.group_counts[:, None]
++    tail_valid = selection.tail_counts > 0
++    tail_groups = torch.div(selection.tail_starts, compress_ratio, rounding_mode="floor")
++    candidates = torch.cat((groups.reshape(-1), tail_groups)).to(torch.int32)
++    candidate_valid = torch.cat((group_valid.reshape(-1), tail_valid))
++    sentinel = torch.iinfo(torch.int32).max
++    candidates = torch.where(candidate_valid, candidates, sentinel)
++    ordered, order = torch.sort(candidates, stable=True)
++    unique = torch.cat((torch.ones_like(ordered[:1], dtype=torch.bool), ordered[1:] != ordered[:-1]))
++    unique = unique & (ordered != sentinel)
++    compact_columns = (unique.to(torch.int64).cumsum(0) - 1).clamp_min(0)
++    capacity = candidates.numel()
++    union = torch.zeros_like(candidates)
++    union.scatter_add_(0, compact_columns, torch.where(unique, ordered, 0))
++    original_columns = torch.empty_like(order)
++    original_columns.scatter_(0, order, compact_columns)
++    group_columns = original_columns[: queries * width].reshape(queries, width)
++    group_columns = torch.where(group_valid, group_columns, capacity)
++    membership = torch.zeros((queries, capacity + 1), dtype=torch.bool, device=groups.device)
++    membership.scatter_(1, group_columns, group_valid)
++    mask = membership[:, :capacity, None].expand(-1, -1, compress_ratio).clone()
++    tail_columns = original_columns[queries * width :]
++    offsets = torch.arange(compress_ratio, device=groups.device)
++    mask.logical_or_(
++        (torch.arange(capacity, device=groups.device)[None, :, None] == tail_columns[:, None, None])
++        & tail_valid[:, None, None]
++        & (offsets[None, None, :] < selection.tail_counts[:, None, None])
++    )
++    return QSAGroupMajorPlan(union, mask.reshape(queries, -1), unique.sum().reshape(1).to(torch.int32))
++
++
+ def _group_major_attention(
+@@ -201,2 +258,5 @@ def _group_major_attention(
+     probabilities = torch.softmax(logits, dim=-1).to(query.dtype)
++    # Fixed-shape plans can contain inactive rows. Preserve NaN propagation
++    # for active input rows while giving fully masked placeholders zero output.
++    probabilities = torch.where(token_mask.any(dim=-1)[None, :, None, None], probabilities, 0)
+     output = torch.matmul(
+@@ -220,2 +280,3 @@ def qsa_group_major_prefill_310(
+     query_tile: int = QSA_GROUP_MAJOR_DEFAULT_QUERY_TILE,
++    fixed_plan: bool = False,
+ ) -> torch.Tensor:
+@@ -247,3 +308,4 @@ def qsa_group_major_prefill_310(
+             )
+-            plan = build_qsa_group_major_plan(tile_selection, compress_ratio=compress_ratio)
++            planner = build_qsa_fixed_group_major_plan if fixed_plan else build_qsa_group_major_plan
++            plan = planner(tile_selection, compress_ratio=compress_ratio)
+             union_size = plan.group_indices.shape[0]
+@@ -251,3 +313,7 @@ def qsa_group_major_prefill_310(
+                 group_indices=plan.group_indices.unsqueeze(0),
+-                group_counts=torch.full((1,), union_size, dtype=torch.int32, device=query.device),
++                group_counts=(
++                    plan.device_group_count
++                    if plan.device_group_count is not None
++                    else torch.full((1,), union_size, dtype=torch.int32, device=query.device)
++                ),
+                 tail_starts=torch.zeros(1, dtype=torch.int32, device=query.device),
+@@ -291,2 +357,3 @@ __all__ = [
+     "build_qsa_group_major_plan",
++    "build_qsa_fixed_group_major_plan",
+     "qsa_group_major_prefill_310",
+diff --git a/vllm_ascend/models/qwen4_exp/ple_layer.py b/vllm_ascend/models/qwen4_exp/ple_layer.py
+index 206eb63fa..b85d81d39 100644
+--- a/vllm_ascend/models/qwen4_exp/ple_layer.py
++++ b/vllm_ascend/models/qwen4_exp/ple_layer.py
+@@ -31,2 +31,4 @@ from torch.nn import functional as F
+ 
++from vllm_ascend._310p.host_staging import PinnedHostStaging
++
+ from .dtype_policy import ASCEND_QWEN4EXP_DTYPE_POLICY, Qwen4ExpDtypePolicy
+@@ -41,2 +43,3 @@ _PLE_CONV_ACTIVATION = "silu"
+ _ASCEND_310P_DEVICE_TOKEN = "310P"
++_MAX_HOST_STAGING_TOKENS = 65536
+ 
+@@ -89,2 +92,7 @@ class AscendQwen4ExpPLELayer(nn.Module):
+ 
++        self.host_staging_tokens = (quant_metadata or {}).get("ple_host_staging_tokens", 0)
++        if type(self.host_staging_tokens) is not int or not 0 <= self.host_staging_tokens <= _MAX_HOST_STAGING_TOKENS:
++            raise ValueError("ple_host_staging_tokens must be an integer in [0, 65536]")
++        self._row_host_stage = None
++
+         self.hidden_size = int(config.hidden_size)
+@@ -189,5 +197,15 @@ class AscendQwen4ExpPLELayer(nn.Module):
+         # move them onto the request's device before the on-device projection.
+-        rows = self.ple_method.gather_rows(ngram_ids.reshape(-1)).to(
+-            ngram_ids.device if output_device is None else output_device
+-        )
++        rows = self.ple_method.gather_rows(ngram_ids.reshape(-1))
++        destination = ngram_ids.device if output_device is None else output_device
++        if self.host_staging_tokens and destination.type == "npu" and rows.device.type == "cpu":
++            if num_tokens > self.host_staging_tokens:
++                raise ValueError("PLE request exceeds the configured host staging capacity")
++            if self._row_host_stage is None:
++                self._row_host_stage = PinnedHostStaging(
++                    (self.host_staging_tokens * heads, self.per_head_dim), rows.dtype
++                )
++            device_rows = torch.empty(rows.shape, dtype=rows.dtype, device=destination)
++            rows = self._row_host_stage.copy_to(rows, device_rows)
++        else:
++            rows = rows.to(destination)
+         per_head_dim = rows.shape[-1]
+diff --git a/vllm_ascend/models/qwen4_exp/route_workspace.py b/vllm_ascend/models/qwen4_exp/route_workspace.py
+new file mode 100644
+index 000000000..22359e7c2
+--- /dev/null
++++ b/vllm_ascend/models/qwen4_exp/route_workspace.py
+@@ -0,0 +1,51 @@
++# SPDX-License-Identifier: Apache-2.0
++# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
++"""Conservative logical payload bound for grouped native INT4 routes.
++
++This excludes backend-private GEMM workspaces, allocator fragmentation, weights
++and the caller's persistent inputs/outputs. It is not a device-memory limit.
++"""
++
++_MIB = 1 << 20
++_ROUTE_INDEX_BYTES = 32
++_FP16_BYTES = 2
++_FP32_BYTES = 4
++_INT64_BYTES = 8
++_PACKED_PLANES_BYTES_PER_ELEMENT = 4
++
++
++def grouped_route_chunk_tokens(
++    requested_tokens: int,
++    *,
++    top_k: int,
++    hidden: int,
++    intermediate: int,
++    local_experts: int,
++    scratch_mib: int,
++    histogram_counts: bool,
++) -> int:
++    if type(scratch_mib) is not int or scratch_mib < 0:
++        raise ValueError("grouped_route_scratch_mib must be a nonnegative integer")
++    if min(requested_tokens, top_k, hidden, intermediate, local_experts) <= 0:
++        raise ValueError("route workspace geometry must be positive")
++    if scratch_mib == 0:
++        return requested_tokens
++    # Bound simultaneously live route operands rather than relying on Python
++    # reference destruction to make the previous projection disappear:
++    # FP16 expanded input, gate/up, activation, down; FP32 converted/down
++    # weighting/unpermutation and torch SwiGLU intermediates; activation
++    # pack's four integer planes.
++    route_bytes = (
++        _FP16_BYTES * (hidden + 3 * intermediate + hidden)
++        + _FP32_BYTES * (3 * hidden + 4 * intermediate)
++        + _PACKED_PLANES_BYTES_PER_ELEMENT * (hidden + intermediate)
++        + _ROUTE_INDEX_BYTES
++        + (0 if histogram_counts else local_experts)
++    )
++    # Histogram output is fixed-size; reserve both keys/counts buffers.
++    fixed_bytes = (local_experts + 1) * 2 * _INT64_BYTES
++    token_bytes = top_k * route_bytes + _FP16_BYTES * hidden
++    capacity = (scratch_mib * _MIB - fixed_bytes) // token_bytes
++    if capacity < 1:
++        raise ValueError("grouped route scratch budget cannot hold one token")
++    return min(requested_tokens, capacity)
+diff --git a/vllm_ascend/models/qwen4_exp/w4_moe.py b/vllm_ascend/models/qwen4_exp/w4_moe.py
+index 06e475837..7f0441b17 100644
+--- a/vllm_ascend/models/qwen4_exp/w4_moe.py
++++ b/vllm_ascend/models/qwen4_exp/w4_moe.py
+@@ -20,2 +20,3 @@ from .grouped_expert_dispatch import GroupedExpertDispatch, build_grouped_expert
+ from .moe import route_topk
++from .route_workspace import grouped_route_chunk_tokens
+ from .w4a8_int4 import (
+@@ -405,5 +406,2 @@ class W4SparseMoE(nn.Module):
+         )
+-        self.grouped_chunk_tokens = min(grouped_token_limit, grouped_route_limit // self.top_k)
+-        if self.grouped_routing and self.grouped_chunk_tokens == 0:
+-            raise ValueError("W4 grouped top_k exceeds the bounded route workspace")
+         self.expert_tp_rank, self.expert_tp_size = expert_sharding
+@@ -417,2 +415,19 @@ class W4SparseMoE(nn.Module):
+         self.num_local_experts = stop - self.expert_offset
++        self.grouped_route_count_mode = metadata.get("grouped_route_count_mode", "compare")
++        if self.grouped_route_count_mode not in ("compare", "histogram"):
++            raise ValueError("grouped_route_count_mode must be compare or histogram")
++        scratch_mib = metadata.get("grouped_route_scratch_mib", 0)
++        if scratch_mib and not self.native_int4:
++            raise ValueError("grouped_route_scratch_mib requires the native INT4 backend")
++        self.grouped_chunk_tokens = grouped_route_chunk_tokens(
++            min(grouped_token_limit, grouped_route_limit // self.top_k),
++            top_k=self.top_k,
++            hidden=hidden,
++            intermediate=intermediate,
++            local_experts=self.num_local_experts,
++            scratch_mib=scratch_mib,
++            histogram_counts=self.grouped_route_count_mode == "histogram",
++        )
++        if self.grouped_routing and self.grouped_chunk_tokens == 0:
++            raise ValueError("W4 grouped top_k exceeds the bounded route workspace")
+         self.params_dtype, self.compute_dtype = dtype_policy.main_dtype, dtype_policy.accumulation_dtype
+@@ -665,56 +680,61 @@ class W4SparseMoE(nn.Module):
+             stop = start + self.grouped_chunk_tokens
+-            inputs = block_input[start:stop]
+-            tokens, hidden = inputs.shape
+-            dispatch = build_grouped_expert_dispatch(
+-                weights[start:stop],
+-                ids[start:stop],
+-                num_local_experts=self.num_local_experts,
+-                expert_offset=self.expert_offset,
+-                weight_dtype=self.compute_dtype,
++            # Confine route tensors to one call. The next chunk must not keep
++            # the previous chunk's projected/packed operands alive in locals.
++            result[start:stop] = self._forward_grouped_chunk(
++                block_input[start:stop], weights[start:stop], ids[start:stop]
+             )
+-            sorted_tokens = dispatch.token_indices.index_select(0, dispatch.order)
+-            group_ends = dispatch.group_list.contiguous()
+-            gate_up_bank = self.projections["gate_up_proj"]
+-            if self.native_int4 and tokens * self.top_k > self.max_routed_rows:
+-                # Quantization belongs to the token, not its top-k copies.
+-                # Share it across prefill routes; small decode avoids four
+-                # gather launches because its packing work is already tiny.
+-                prepared = tuple(value.index_select(0, sorted_tokens) for value in pack_activation_device(inputs))
+-                projected = gate_up_bank.native_linear(prepared, group_ends)
+-            else:
+-                inputs = inputs.index_select(0, sorted_tokens).contiguous()
+-                projected = gate_up_bank.grouped_linear(inputs, group_ends)
+-            if self.grouped_activation == "cann_swiglu_pack":
+-                # Opt-in until full prefill rows pass exact packing parity and
+-                # a real-weight service gate on the coherent 310P OPP package.
+-                packed_activation = swiglu_pack_activation_device(projected)
+-                output = self.projections["down_proj"].native_linear(packed_activation, group_ends)
+-            elif self.grouped_activation == "cann_builtin_fp16":
+-                # Native INT4 prefill default; preserve an explicit torch
+-                # override for numerical comparisons and other workloads.
+-                # Keep the import lazy for host-only model configuration.
+-                import torch_npu
+-
+-                activation = torch_npu.npu_swiglu(projected, dim=-1)
+-                output = self.projections["down_proj"].grouped_linear(activation, group_ends)
+-            else:
+-                gate, up = projected.to(self.compute_dtype).chunk(2, -1)
+-                activation = (F.silu(gate) * up).to(self.params_dtype)
+-                output = self.projections["down_proj"].grouped_linear(activation, group_ends)
+-            if self.grouped_finalize == "torch":
+-                output = output.to(self.compute_dtype)
+-                output *= dispatch.route_weights.index_select(0, dispatch.order)
+-                result[start:stop] = (
+-                    output.index_select(0, dispatch.inverse_order).reshape(tokens, self.top_k, hidden).sum(1)
+-                )
+-            else:
+-                result[start:stop] = finalize_grouped_routes(
+-                    output,
+-                    dispatch,
+-                    weights[start:stop],
+-                    self.compute_dtype,
+-                    self.grouped_finalize,
+-                )
+         return result
+ 
++    def _forward_grouped_chunk(self, inputs: torch.Tensor, weights: torch.Tensor, ids: torch.Tensor) -> torch.Tensor:
++        tokens, hidden = inputs.shape
++        dispatch = build_grouped_expert_dispatch(
++            weights,
++            ids,
++            num_local_experts=self.num_local_experts,
++            expert_offset=self.expert_offset,
++            weight_dtype=self.compute_dtype,
++            count_mode=self.grouped_route_count_mode,
++        )
++        sorted_tokens = dispatch.token_indices.index_select(0, dispatch.order)
++        group_ends = dispatch.group_list.contiguous()
++        gate_up_bank = self.projections["gate_up_proj"]
++        if self.native_int4 and tokens * self.top_k > self.max_routed_rows:
++            # Quantization belongs to the token, not its top-k copies.
++            # Share it across prefill routes; small decode avoids four
++            # gather launches because its packing work is already tiny.
++            prepared = tuple(value.index_select(0, sorted_tokens) for value in pack_activation_device(inputs))
++            projected = gate_up_bank.native_linear(prepared, group_ends)
++        else:
++            inputs = inputs.index_select(0, sorted_tokens).contiguous()
++            projected = gate_up_bank.grouped_linear(inputs, group_ends)
++        if self.grouped_activation == "cann_swiglu_pack":
++            # Opt-in until full prefill rows pass exact packing parity and
++            # a real-weight service gate on the coherent 310P OPP package.
++            packed_activation = swiglu_pack_activation_device(projected)
++            output = self.projections["down_proj"].native_linear(packed_activation, group_ends)
++        elif self.grouped_activation == "cann_builtin_fp16":
++            # Native INT4 prefill default; preserve an explicit torch
++            # override for numerical comparisons and other workloads.
++            # Keep the import lazy for host-only model configuration.
++            import torch_npu
++
++            activation = torch_npu.npu_swiglu(projected, dim=-1)
++            output = self.projections["down_proj"].grouped_linear(activation, group_ends)
++        else:
++            gate, up = projected.to(self.compute_dtype).chunk(2, -1)
++            activation = (F.silu(gate) * up).to(self.params_dtype)
++            output = self.projections["down_proj"].grouped_linear(activation, group_ends)
++        if self.grouped_finalize == "torch":
++            output = output.to(self.compute_dtype)
++            output *= dispatch.route_weights.index_select(0, dispatch.order)
++            return output.index_select(0, dispatch.inverse_order).reshape(tokens, self.top_k, hidden).sum(1)
++        else:
++            return finalize_grouped_routes(
++                output,
++                dispatch,
++                weights,
++                self.compute_dtype,
++                self.grouped_finalize,
++            )
++
+ 
+diff --git a/vllm_ascend/ops/gdn_attn_builder.py b/vllm_ascend/ops/gdn_attn_builder.py
+index f4fa1684d..754489976 100644
+--- a/vllm_ascend/ops/gdn_attn_builder.py
++++ b/vllm_ascend/ops/gdn_attn_builder.py
+@@ -955,2 +955,7 @@ class AscendGDNAttentionMetadataBuilder(GDNAttentionMetadataBuilder):
+         self._attach_non_spec_decode_metadata(attn_metadata, non_spec_conv1d_cache_indices)
++        if num_prefills > 0 and non_spec_query_start_loc_cpu is not None:
++            # 310P chunk planning uses the entire non-spec partition, including
++            # any ordinary decode rows. Preserve its exact packed ordering.
++            attn_metadata._gdn_host_chunk_source = attn_metadata.non_spec_query_start_loc
++            attn_metadata._gdn_host_chunk_bounds = tuple(non_spec_query_start_loc_cpu.to(torch.int64).tolist())
+         return attn_metadata
+diff --git a/vllm_ascend/patch/worker/patch_mamba_utils.py b/vllm_ascend/patch/worker/patch_mamba_utils.py
+index 75f2cb254..8bf6d1285 100644
+--- a/vllm_ascend/patch/worker/patch_mamba_utils.py
++++ b/vllm_ascend/patch/worker/patch_mamba_utils.py
+@@ -160,2 +160,16 @@ def _collect_mamba_copy_meta_torch(
+ 
++def _copy_mamba_state(src_state: torch.Tensor, dst_state: torch.Tensor) -> None:
++    """Avoid scratch for disjoint dense views; retain memmove semantics."""
++    if src_state.is_contiguous() and dst_state.is_contiguous():
++        src_start, dst_start = src_state.data_ptr(), dst_state.data_ptr()
++        src_end = src_start + src_state.numel() * src_state.element_size()
++        dst_end = dst_start + dst_state.numel() * dst_state.element_size()
++        if src_start == dst_start and src_end == dst_end:
++            return
++        if src_end <= dst_start or dst_end <= src_start:
++            dst_state.copy_(src_state)
++            return
++    dst_state.copy_(src_state.clone())
++
++
+ def _do_mamba_copy_block_torch(copy_bufs: mamba_utils.MambaCopyBuffers):
+@@ -172,3 +186,3 @@ def _do_mamba_copy_block_torch(copy_bufs: mamba_utils.MambaCopyBuffers):
+     for src_state, dst_state in tensor_copy_pairs:
+-        dst_state.copy_(src_state.clone())
++        _copy_mamba_state(src_state, dst_state)
+     copy_bufs._tensor_copy_pairs = []
+@@ -208,3 +222,9 @@ def _postprocess_mamba_align_gpu_cpu_fallback(
+     # accept_token_bias when multiple draft tokens were accepted.
+-    num_accepted_tokens_cpu_tensor[:num_reqs].copy_(num_accepted_tokens_gpu[:num_reqs])
++    host_counts = getattr(input_batch, "_mamba_accepted_counts_snapshot", None)
++    if host_counts is not None:
++        if host_counts.device.type != "cpu" or host_counts.shape != (num_reqs,):
++            raise ValueError("invalid one-step Mamba accepted-count snapshot")
++        num_accepted_tokens_cpu_tensor[:num_reqs].copy_(host_counts)
++    else:
++        num_accepted_tokens_cpu_tensor[:num_reqs].copy_(num_accepted_tokens_gpu[:num_reqs])
+     # InputBatch rows may be condensed/reused by async scheduling before this
+@@ -251,3 +271,3 @@ def _postprocess_mamba_align_gpu_cpu_fallback(
+                     )
+-                    dst_state.copy_(src_state.clone())
++                    _copy_mamba_state(src_state, dst_state)
+ 
+@@ -366,3 +386,3 @@ def do_mamba_copy_block_for_layer(copy_bufs: mamba_utils.MambaCopyBuffers, layer
+         for src_state, dst_state in copy_bufs._layer_tensor_copy_pairs.pop(layer_name, []):
+-            dst_state.copy_(src_state.clone())
++            _copy_mamba_state(src_state, dst_state)
+         return

@@ -18,6 +18,7 @@ from torch import nn
 from .dtype_policy import ASCEND_QWEN4EXP_DTYPE_POLICY, Qwen4ExpDtypePolicy
 from .grouped_expert_dispatch import GroupedExpertDispatch, build_grouped_expert_dispatch
 from .moe import route_topk
+from .route_workspace import grouped_route_chunk_tokens
 from .w4a8_int4 import (
     NATIVE_INT4_BACKEND,
     pack_activation_device,
@@ -403,9 +404,6 @@ class W4SparseMoE(nn.Module):
             if self.native_int4
             else (MAX_GROUPED_W4A16_TOKENS, MAX_GROUPED_W4A16_ROUTES)
         )
-        self.grouped_chunk_tokens = min(grouped_token_limit, grouped_route_limit // self.top_k)
-        if self.grouped_routing and self.grouped_chunk_tokens == 0:
-            raise ValueError("W4 grouped top_k exceeds the bounded route workspace")
         self.expert_tp_rank, self.expert_tp_size = expert_sharding
         if (
             self.expert_tp_size < 1
@@ -415,6 +413,23 @@ class W4SparseMoE(nn.Module):
             raise ValueError("invalid W4 expert TP ownership")
         self.expert_offset, stop = local_expert_range(self.num_experts, self.expert_tp_size, self.expert_tp_rank)
         self.num_local_experts = stop - self.expert_offset
+        self.grouped_route_count_mode = metadata.get("grouped_route_count_mode", "compare")
+        if self.grouped_route_count_mode not in ("compare", "histogram"):
+            raise ValueError("grouped_route_count_mode must be compare or histogram")
+        scratch_mib = metadata.get("grouped_route_scratch_mib", 0)
+        if scratch_mib and not self.native_int4:
+            raise ValueError("grouped_route_scratch_mib requires the native INT4 backend")
+        self.grouped_chunk_tokens = grouped_route_chunk_tokens(
+            min(grouped_token_limit, grouped_route_limit // self.top_k),
+            top_k=self.top_k,
+            hidden=hidden,
+            intermediate=intermediate,
+            local_experts=self.num_local_experts,
+            scratch_mib=scratch_mib,
+            histogram_counts=self.grouped_route_count_mode == "histogram",
+        )
+        if self.grouped_routing and self.grouped_chunk_tokens == 0:
+            raise ValueError("W4 grouped top_k exceeds the bounded route workspace")
         self.params_dtype, self.compute_dtype = dtype_policy.main_dtype, dtype_policy.accumulation_dtype
         self.shared_expert_execution = metadata.get("shared_expert_execution", "tp_sharded")
         self.shared_expert_replicated = self.shared_expert_execution.startswith("replicated")
@@ -663,59 +678,64 @@ class W4SparseMoE(nn.Module):
         result = torch.empty_like(block_input, dtype=self.compute_dtype)
         for start in range(0, block_input.shape[0], self.grouped_chunk_tokens):
             stop = start + self.grouped_chunk_tokens
-            inputs = block_input[start:stop]
-            tokens, hidden = inputs.shape
-            dispatch = build_grouped_expert_dispatch(
-                weights[start:stop],
-                ids[start:stop],
-                num_local_experts=self.num_local_experts,
-                expert_offset=self.expert_offset,
-                weight_dtype=self.compute_dtype,
+            # Confine route tensors to one call. The next chunk must not keep
+            # the previous chunk's projected/packed operands alive in locals.
+            result[start:stop] = self._forward_grouped_chunk(
+                block_input[start:stop], weights[start:stop], ids[start:stop]
             )
-            sorted_tokens = dispatch.token_indices.index_select(0, dispatch.order)
-            group_ends = dispatch.group_list.contiguous()
-            gate_up_bank = self.projections["gate_up_proj"]
-            if self.native_int4 and tokens * self.top_k > self.max_routed_rows:
-                # Quantization belongs to the token, not its top-k copies.
-                # Share it across prefill routes; small decode avoids four
-                # gather launches because its packing work is already tiny.
-                prepared = tuple(value.index_select(0, sorted_tokens) for value in pack_activation_device(inputs))
-                projected = gate_up_bank.native_linear(prepared, group_ends)
-            else:
-                inputs = inputs.index_select(0, sorted_tokens).contiguous()
-                projected = gate_up_bank.grouped_linear(inputs, group_ends)
-            if self.grouped_activation == "cann_swiglu_pack":
-                # Opt-in until full prefill rows pass exact packing parity and
-                # a real-weight service gate on the coherent 310P OPP package.
-                packed_activation = swiglu_pack_activation_device(projected)
-                output = self.projections["down_proj"].native_linear(packed_activation, group_ends)
-            elif self.grouped_activation == "cann_builtin_fp16":
-                # Native INT4 prefill default; preserve an explicit torch
-                # override for numerical comparisons and other workloads.
-                # Keep the import lazy for host-only model configuration.
-                import torch_npu
-
-                activation = torch_npu.npu_swiglu(projected, dim=-1)
-                output = self.projections["down_proj"].grouped_linear(activation, group_ends)
-            else:
-                gate, up = projected.to(self.compute_dtype).chunk(2, -1)
-                activation = (F.silu(gate) * up).to(self.params_dtype)
-                output = self.projections["down_proj"].grouped_linear(activation, group_ends)
-            if self.grouped_finalize == "torch":
-                output = output.to(self.compute_dtype)
-                output *= dispatch.route_weights.index_select(0, dispatch.order)
-                result[start:stop] = (
-                    output.index_select(0, dispatch.inverse_order).reshape(tokens, self.top_k, hidden).sum(1)
-                )
-            else:
-                result[start:stop] = finalize_grouped_routes(
-                    output,
-                    dispatch,
-                    weights[start:stop],
-                    self.compute_dtype,
-                    self.grouped_finalize,
-                )
         return result
+
+    def _forward_grouped_chunk(self, inputs: torch.Tensor, weights: torch.Tensor, ids: torch.Tensor) -> torch.Tensor:
+        tokens, hidden = inputs.shape
+        dispatch = build_grouped_expert_dispatch(
+            weights,
+            ids,
+            num_local_experts=self.num_local_experts,
+            expert_offset=self.expert_offset,
+            weight_dtype=self.compute_dtype,
+            count_mode=self.grouped_route_count_mode,
+        )
+        sorted_tokens = dispatch.token_indices.index_select(0, dispatch.order)
+        group_ends = dispatch.group_list.contiguous()
+        gate_up_bank = self.projections["gate_up_proj"]
+        if self.native_int4 and tokens * self.top_k > self.max_routed_rows:
+            # Quantization belongs to the token, not its top-k copies.
+            # Share it across prefill routes; small decode avoids four
+            # gather launches because its packing work is already tiny.
+            prepared = tuple(value.index_select(0, sorted_tokens) for value in pack_activation_device(inputs))
+            projected = gate_up_bank.native_linear(prepared, group_ends)
+        else:
+            inputs = inputs.index_select(0, sorted_tokens).contiguous()
+            projected = gate_up_bank.grouped_linear(inputs, group_ends)
+        if self.grouped_activation == "cann_swiglu_pack":
+            # Opt-in until full prefill rows pass exact packing parity and
+            # a real-weight service gate on the coherent 310P OPP package.
+            packed_activation = swiglu_pack_activation_device(projected)
+            output = self.projections["down_proj"].native_linear(packed_activation, group_ends)
+        elif self.grouped_activation == "cann_builtin_fp16":
+            # Native INT4 prefill default; preserve an explicit torch
+            # override for numerical comparisons and other workloads.
+            # Keep the import lazy for host-only model configuration.
+            import torch_npu
+
+            activation = torch_npu.npu_swiglu(projected, dim=-1)
+            output = self.projections["down_proj"].grouped_linear(activation, group_ends)
+        else:
+            gate, up = projected.to(self.compute_dtype).chunk(2, -1)
+            activation = (F.silu(gate) * up).to(self.params_dtype)
+            output = self.projections["down_proj"].grouped_linear(activation, group_ends)
+        if self.grouped_finalize == "torch":
+            output = output.to(self.compute_dtype)
+            output *= dispatch.route_weights.index_select(0, dispatch.order)
+            return output.index_select(0, dispatch.inverse_order).reshape(tokens, self.top_k, hidden).sum(1)
+        else:
+            return finalize_grouped_routes(
+                output,
+                dispatch,
+                weights,
+                self.compute_dtype,
+                self.grouped_finalize,
+            )
 
 
 def validate_w4_inventory(layers: nn.ModuleList, names: set[str]) -> None:

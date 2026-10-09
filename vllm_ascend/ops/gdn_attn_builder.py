@@ -953,6 +953,11 @@ class AscendGDNAttentionMetadataBuilder(GDNAttentionMetadataBuilder):
         )
         self._attach_spec_decode_metadata(attn_metadata)
         self._attach_non_spec_decode_metadata(attn_metadata, non_spec_conv1d_cache_indices)
+        if num_prefills > 0 and non_spec_query_start_loc_cpu is not None:
+            # 310P chunk planning uses the entire non-spec partition, including
+            # any ordinary decode rows. Preserve its exact packed ordering.
+            attn_metadata._gdn_host_chunk_source = attn_metadata.non_spec_query_start_loc
+            attn_metadata._gdn_host_chunk_bounds = tuple(non_spec_query_start_loc_cpu.to(torch.int64).tolist())
         return attn_metadata
 
     def _build_prefill_has_initial_state(

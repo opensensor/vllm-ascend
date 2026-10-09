@@ -1,0 +1,56 @@
+{
+  "schema": 1,
+  "enabled": false,
+  "autostart": false,
+  "requires_later_npu_authorization": true,
+  "partial_overrides_only": true,
+  "preserve_image_enabled_configuration": true,
+  "combine_only_after_individual_hardware_gates": true,
+  "thermal_hold_c": 94,
+  "thermal_resume_c": 85,
+  "profiles": {
+    "qsa_batched_tile8": {
+      "hf_overrides": {
+        "ascend_qsa_prefill": {
+          "backend": "batched_gather",
+          "query_tile": 8
+        }
+      }
+    },
+    "qsa_fixed_union_tile8": {
+      "hf_overrides": {
+        "ascend_qsa_prefill": {
+          "backend": "fixed_group_major_union",
+          "query_tile": 8
+        }
+      }
+    },
+    "ple_pinned_rows": {
+      "expert_quantization_merge": {
+        "ple_host_staging_tokens": 2560
+      }
+    },
+    "moe_scratch128": {
+      "expert_quantization_merge": {
+        "grouped_route_scratch_mib": 128,
+        "grouped_route_count_mode": "histogram"
+      }
+    },
+    "hc_shared_operand": {
+      "expert_quantization_merge": {
+        "hc_share_projection_operand": true
+      }
+    },
+    "mtp_grouped_graph": {
+      "expert_quantization_merge": {
+        "mtp_expert_execution": "w8a8_grouped",
+        "mtp_grouped_graph": true
+      }
+    },
+    "graph_completion_events": {
+      "additional_config_merge": {
+        "qwen_graph_update_ordering": "completion_events"
+      }
+    }
+  }
+}

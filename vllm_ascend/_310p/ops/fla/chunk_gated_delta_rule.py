@@ -551,19 +551,18 @@ def _compute_kernel_inputs_from_torch_wy(
     # path, which raises for it, rather than silently regrouping garbage.
     use_grouped_gram = _WY_GROUPED_GRAM and group > 1 and num_v_heads % k_heads == 0
     if use_grouped_gram:
-        key_grouped = (
-            k.transpose(1, 2)
-            .contiguous()
-            .to(torch.float32)
-            .reshape(batch_size, k_heads, num_chunks, chunk_size, k_dim)
-        )
+        key_grouped = k_kernel.to(torch.float32).reshape(batch_size, k_heads, num_chunks, chunk_size, k_dim)
         key = None
     else:
         key_grouped = None
-        key = _expand_qk_to_v_heads(k, num_v_heads).transpose(1, 2).contiguous().to(torch.float32)
-    value = v.transpose(1, 2).contiguous().to(torch.float32)
-    g = g.transpose(1, 2).contiguous().to(torch.float32)
-    beta = beta.transpose(1, 2).contiguous().to(torch.float32)
+        key = (
+            _expand_qk_to_v_heads(k, num_v_heads)
+            .transpose(1, 2)
+            .to(dtype=torch.float32, memory_format=torch.contiguous_format)
+        )
+    value = v.transpose(1, 2).to(dtype=torch.float32, memory_format=torch.contiguous_format)
+    g = g.transpose(1, 2).to(dtype=torch.float32, memory_format=torch.contiguous_format)
+    beta = beta.transpose(1, 2).to(dtype=torch.float32, memory_format=torch.contiguous_format)
 
     if key is not None:
         key = key.reshape(batch_size, num_v_heads, num_chunks, chunk_size, k_dim)
@@ -591,9 +590,7 @@ def _compute_kernel_inputs_from_torch_wy(
         attn = gram.unsqueeze(2) * neg_beta.view(*shape5).unsqueeze(-1) * lower_decay.view(*shape5, chunk_size)
         attn = _ut_transform(attn, chunk_size)
 
-        value = attn.reshape(batch_size, num_v_heads, num_chunks, chunk_size, chunk_size) @ (
-            value * beta.unsqueeze(-1)
-        )
+        value = attn.reshape(batch_size, num_v_heads, num_chunks, chunk_size, chunk_size) @ (value * beta.unsqueeze(-1))
         # attn @ (key * c[..., None]) == (attn * c[..., None, :]) @ key, which
         # keeps `key` at K head count on the right of the matmul and lets the
         # batch dims broadcast instead of being copied.

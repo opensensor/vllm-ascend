@@ -77,7 +77,7 @@ def _flatten_state_indices(
 
     # Uniform spec-decode ACL graph uses fixed q_len per request; reshape avoids
     # NPU masked_select which breaks stream capture (aclnnMaskedSelect / 107027).
-    if uniform_state_indices or _EXTRA_CTX.capturing or (seq_lens.numel() > 0 and torch.all(seq_lens == seq_lens[0])):
+    if uniform_state_indices or _EXTRA_CTX.capturing:
         q_per_seq = ssm_state_indices.shape[1]
         flat = ssm_state_indices[:, :q_per_seq].reshape(-1)
         return flat[:total_tokens].to(torch.int32).contiguous()
@@ -92,7 +92,7 @@ def _flatten_state_indices(
     positions = torch.arange(q_per_seq)
     valid = positions.unsqueeze(0) < seq_lens_cpu.unsqueeze(1)
     flat_cpu = ssm_cpu.masked_select(valid).to(torch.int32).contiguous()[:total_tokens]
-    if not flat_cpu.is_pinned:
+    if ssm_state_indices.device.type != "cpu" and not flat_cpu.is_pinned():
         flat_cpu = flat_cpu.pin_memory()
     flat_dev = torch.empty(flat_cpu.numel(), dtype=torch.int32, device=ssm_state_indices.device)
     flat_dev.copy_(flat_cpu, non_blocking=True)
@@ -149,18 +149,13 @@ def _cached_recurrent_step_meta(
 
 
 def _cached_chunk_plan(attn_metadata, cu_seqlens):
-    """The step's GDN chunk padding layout, derived once for all 48 layers.
+    """Build chunk padding once from this step's host request boundaries.
 
-    ``chunk_gated_delta_rule_310`` needs ``cu_seqlens`` on the host to work out
-    where each sequence is padded to a chunk boundary. Doing that inside the op
-    put a device-to-host copy in every GDN layer, and on 310P a D2H copy is a
-    synchronisation point: the host cannot issue the next layer until the device
-    has drained. Prefill depends on the host staying ahead, so 48 drains a step
-    cost more than the 40-odd bytes they move.
-
-    Memoised on ``attn_metadata`` for the same reason as
-    :func:`_cached_recurrent_step_meta` -- the builder makes a fresh one every
-    step, so the cache cannot outlive the tensor it came from.
+    The builder attaches immutable CPU bounds for the exact non-spec partition,
+    including ordinary decode rows in mixed prefill batches. Reusing them
+    avoids even the first per-group D2H synchronization of the cached plan.
+    External callers without the matching mirror retain a one-read fallback.
+    The cache belongs to the fresh per-step metadata object.
     """
     cache = getattr(attn_metadata, "_gdn_chunk_plan", None)
     # Keyed on the tensor itself rather than just memoised, so that a second
@@ -169,7 +164,16 @@ def _cached_chunk_plan(attn_metadata, cu_seqlens):
     # would corrupt prefill silently rather than raise.
     key = (cu_seqlens.data_ptr(), cu_seqlens.shape[0])
     if cache is None or cache[0] != key:
-        plan = build_varlen_chunk_plan(cu_seqlens.to(torch.int64).cpu(), CHUNK_SIZE)
+        host_bounds = getattr(attn_metadata, "_gdn_host_chunk_bounds", None)
+        host_source = getattr(attn_metadata, "_gdn_host_chunk_source", None)
+        if host_bounds is not None and host_source is cu_seqlens:
+            # Immutable CPU bounds belong to this metadata object, not a
+            # mutable input-batch buffer or a previous step's device address.
+            bounds = torch.tensor(host_bounds, dtype=torch.int64, device="cpu")
+        else:
+            # Compatibility for external callers without scheduler mirrors.
+            bounds = cu_seqlens.to(torch.int64).cpu()
+        plan = build_varlen_chunk_plan(bounds, CHUNK_SIZE)
         attn_metadata._gdn_chunk_plan = (key, plan)
         return plan
     return cache[1]

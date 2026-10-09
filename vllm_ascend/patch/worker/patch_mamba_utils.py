@@ -158,6 +158,20 @@ def _collect_mamba_copy_meta_torch(
     copy_bufs.offset = offset
 
 
+def _copy_mamba_state(src_state: torch.Tensor, dst_state: torch.Tensor) -> None:
+    """Avoid scratch for disjoint dense views; retain memmove semantics."""
+    if src_state.is_contiguous() and dst_state.is_contiguous():
+        src_start, dst_start = src_state.data_ptr(), dst_state.data_ptr()
+        src_end = src_start + src_state.numel() * src_state.element_size()
+        dst_end = dst_start + dst_state.numel() * dst_state.element_size()
+        if src_start == dst_start and src_end == dst_end:
+            return
+        if src_end <= dst_start or dst_end <= src_start:
+            dst_state.copy_(src_state)
+            return
+    dst_state.copy_(src_state.clone())
+
+
 def _do_mamba_copy_block_torch(copy_bufs: mamba_utils.MambaCopyBuffers):
     n = copy_bufs.offset
     if n == 0:
@@ -170,7 +184,7 @@ def _do_mamba_copy_block_torch(copy_bufs: mamba_utils.MambaCopyBuffers):
         raise RuntimeError("Mamba tensor copy metadata is incomplete.")
 
     for src_state, dst_state in tensor_copy_pairs:
-        dst_state.copy_(src_state.clone())
+        _copy_mamba_state(src_state, dst_state)
     copy_bufs._tensor_copy_pairs = []
 
 
@@ -206,7 +220,13 @@ def _postprocess_mamba_align_gpu_cpu_fallback(
     # counts, then only overwrites entries where src and dest are the same
     # block. Preserve that default so the next preprocess keeps the right
     # accept_token_bias when multiple draft tokens were accepted.
-    num_accepted_tokens_cpu_tensor[:num_reqs].copy_(num_accepted_tokens_gpu[:num_reqs])
+    host_counts = getattr(input_batch, "_mamba_accepted_counts_snapshot", None)
+    if host_counts is not None:
+        if host_counts.device.type != "cpu" or host_counts.shape != (num_reqs,):
+            raise ValueError("invalid one-step Mamba accepted-count snapshot")
+        num_accepted_tokens_cpu_tensor[:num_reqs].copy_(host_counts)
+    else:
+        num_accepted_tokens_cpu_tensor[:num_reqs].copy_(num_accepted_tokens_gpu[:num_reqs])
     # InputBatch rows may be condensed/reused by async scheduling before this
     # fallback consumes the snapshot. Keep this step's accepted counts
     # independent from those mutable request rows.
@@ -249,7 +269,7 @@ def _postprocess_mamba_align_gpu_cpu_fallback(
                     dst_state = _tensor_view_from_data_ptr(
                         state, state[dest_block_id].data_ptr(), copy_spec.num_elements
                     )
-                    dst_state.copy_(src_state.clone())
+                    _copy_mamba_state(src_state, dst_state)
 
 
 def _batch_memcpy_unavailable(src_ptrs, dst_ptrs, sizes):
@@ -364,7 +384,7 @@ def do_mamba_copy_block_for_layer(copy_bufs: mamba_utils.MambaCopyBuffers, layer
         return
     if not _can_launch_triton_batch_memcpy():
         for src_state, dst_state in copy_bufs._layer_tensor_copy_pairs.pop(layer_name, []):
-            dst_state.copy_(src_state.clone())
+            _copy_mamba_state(src_state, dst_state)
         return
     layer_slice = copy_bufs._layer_copy_slices.pop(layer_name, None)
     if layer_slice is None:

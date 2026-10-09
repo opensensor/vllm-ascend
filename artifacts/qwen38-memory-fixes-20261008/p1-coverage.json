@@ -1,0 +1,76 @@
+{
+  "all_p1_areas_addressed_offline": true,
+  "hardware_validated": false,
+  "areas": [
+    {
+      "id": "A01",
+      "area": "QSA selected scratch",
+      "implementation": "qsa_group_major_attention_310.py",
+      "regression_test": "test_fixed_union_exact_masks_and_attention_without_dynamic_outputs",
+      "status": "opt_in"
+    },
+    {
+      "id": "A02",
+      "area": "MTP count readback",
+      "implementation": "mtp.py",
+      "regression_test": "test_mtp_grouped_capture_bypasses_host_callback_only_for_fixed_route_shape",
+      "status": "opt_in"
+    },
+    {
+      "id": "A03",
+      "area": "PLE H2D rows",
+      "implementation": "ple_layer.py",
+      "regression_test": "test_ple_staging_reuses_host_storage_and_dequantizes_after_transfer",
+      "status": "opt_in"
+    },
+    {
+      "id": "A04",
+      "area": "GDN plan readback",
+      "implementation": "gdn_310.py",
+      "regression_test": "test_gdn_host_bounds_never_read_device_boundaries",
+      "status": "default_semantic_fix"
+    },
+    {
+      "id": "A05",
+      "area": "Mamba accepted count readback",
+      "implementation": "model_runner_310p.py",
+      "regression_test": "test_mamba_align_reuses_raw_host_acceptance_and_preserves_reset_rule",
+      "status": "default_semantic_fix"
+    },
+    {
+      "id": "A06",
+      "area": "FULL target replay drain",
+      "implementation": "graph_update_ordering.py",
+      "regression_test": "test_runner_scopes_ready_event_to_target_forward_and_orders_failed_replay",
+      "status": "opt_in"
+    },
+    {
+      "id": "A09",
+      "area": "Compact Mamba table staging",
+      "implementation": "host_staging.py",
+      "regression_test": "test_compact_table_stage_preserves_scheduler_table_and_has_no_device_temporary",
+      "status": "default_semantic_fix"
+    },
+    {
+      "id": "A19",
+      "area": "MoE packed route expansion",
+      "implementation": "route_workspace.py",
+      "regression_test": "test_bounded_grouped_routes_preserve_peer_zeros_and_token_order",
+      "status": "default_lifetime_fix_plus_opt_in_budget"
+    },
+    {
+      "id": "A22",
+      "area": "GDN WY intermediates",
+      "implementation": "chunk_gated_delta_rule.py",
+      "regression_test": "test_wy_fp16_layout_copy_count_regression",
+      "status": "default_semantic_fix"
+    },
+    {
+      "id": "A24",
+      "area": "HC mix and norm",
+      "implementation": "model.py",
+      "regression_test": "test_core_hc_operand_reuse_retains_gate_precision",
+      "status": "opt_in"
+    }
+  ]
+}
