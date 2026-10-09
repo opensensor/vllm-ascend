@@ -46,6 +46,22 @@ def manifest(build_dir, gate_report):
             raise ValueError("FP16 storage kernels require explicitly matching scale gates")
         if options.get("compact_w4_scratch") and any(r.get("compact_w4_scratch") is not True for r in rows):
             raise ValueError("compact W4 kernels require explicit specialized dispatch gates")
+        if options.get("fused_scale_accumulation") and any(r.get("fused_scale_accumulation") is not True for r in rows):
+            raise ValueError("fused scale accumulation requires explicitly matching arithmetic gates")
+        if options.get("nz_prefill_min_rows") and any(
+            r.get("nz_prefill_min_rows") != options["nz_prefill_min_rows"] for r in rows
+        ):
+            raise ValueError("NZ row threshold requires explicitly matching dispatch gates")
+        if options.get("cache_expert_ends") and any(r.get("cache_expert_ends") is not True for r in rows):
+            raise ValueError("expert boundary cache requires matching changed-route replay gates")
+        if options.get("nz_prefill_min_rows"):
+            threshold = options["nz_prefill_min_rows"]
+            if {
+                r.get("weight_bits")
+                for r in rows
+                if r.get("activation_bits") == 4 and r.get("nz_boundary_rows") == [threshold - 1, threshold]
+            } != {2, 3, 4}:
+                raise ValueError("NZ row threshold requires below/at-threshold replay gates for all weight precisions")
         if {(r.get("weight_bits"), r.get("activation_bits")) for r in rows} != required:
             raise ValueError("fused MoE requires all weight and activation precisions")
     if {(r["weight_bits"], r["activation_bits"]) for r in gates["records"] if r["tokens"] > 64} != required:

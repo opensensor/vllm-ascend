@@ -81,6 +81,7 @@ def test_switch_drains_applies_captures_and_resets_before_resuming():
         "resident_prepare",
         "resident_reset",
         "resident_apply",
+        "resident_apply",
         "resident_capture",
         "resident_reset",
         "/resume",
@@ -130,11 +131,11 @@ def test_stale_prepare_acknowledgments_are_retried_before_mutation():
     server.request = response
     server.switch(Control(uuid.uuid4().hex))
     assert server.calls.count("resident_prepare") == 2
-    assert server.calls.count("resident_apply") == 1
+    assert server.calls.count("resident_apply") == 2
     assert not server.paused
 
 
-def test_stale_apply_receipt_is_confirmed_by_status_without_repeating_apply():
+def test_stale_receipt_uses_status_without_repeating_either_apply_phase():
     server = Server()
     original = server.request
 
@@ -146,9 +147,31 @@ def test_stale_apply_receipt_is_confirmed_by_status_without_repeating_apply():
 
     server.request = response
     server.switch(Control(uuid.uuid4().hex))
-    assert server.calls.count("resident_apply") == 1
-    assert server.calls.count("resident_status") == 2
+    assert server.calls.count("resident_apply") == 2
+    assert server.calls.count("resident_status") == 3
     assert not server.paused
+
+
+def test_installed_adapter_is_qualified_before_capture():
+    server = Server()
+    original = server.request
+    phase = {"installed": False, "qualified": False}
+
+    def response(path, payload=None, method="POST"):
+        if payload and payload["method"] == "resident_apply":
+            if phase["installed"]:
+                phase["qualified"] = True
+            else:
+                # The outgoing hook installs its successor, but cannot
+                # qualify the successor's separate adapter object.
+                phase["installed"] = True
+        if payload and payload["method"] == "resident_capture":
+            assert phase["qualified"], "capturing an unsealed successor"
+        return original(path, payload, method)
+
+    server.request = response
+    server.switch(Control(uuid.uuid4().hex))
+    assert phase == {"installed": True, "qualified": True}
 
 
 def test_missing_worker_acknowledgment_prevents_apply():

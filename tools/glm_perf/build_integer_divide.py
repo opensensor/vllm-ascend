@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .build_reconstruction import build as build_bridge
 from .build_reconstruction import sha256
+from .integer_divide import INTEGER_DIVIDE_ENTRY
 
 
 def build(directory, cann_root, source_root, version):
@@ -38,6 +39,7 @@ def build(directory, cann_root, source_root, version):
         shutil.copy2(source / name, package / name)
         provenance["_helpers"][name] = sha256(package / name)
     provenance["_build"]["integer_metadata_divide"] = True
+    provenance["_build"]["integer_divide_entry"] = INTEGER_DIVIDE_ENTRY
     provenance[binary.name] = {"source_sha256": sha256(frozen), "binary_sha256": sha256(binary)}
     provenance_path.write_text(json.dumps(provenance, indent=2) + "\n")
 

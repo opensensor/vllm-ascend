@@ -130,6 +130,16 @@ def _mamba_block_aligned_split(
                     num_new_tokens = chunked_tokens
             elif num_computed_tokens < last_cache_position < scheduled_end:
                 num_new_tokens = last_cache_position - num_computed_tokens
+            # Identical replay cannot consume the prompt's final token. Larger
+            # chunks may skip the preceding full-block KDA state entirely.
+            # Preserve that endpoint as well as the prompt-end checkpoint;
+            # the coordinator already advertises both replay boundaries.
+            if getattr(self.cache_config, "enable_prefix_caching", False) and _skips_eagle_block_drop(
+                kv_transfer_config
+            ):
+                replay_position = (request.num_prompt_tokens - 1) // block_size * block_size
+                if num_computed_tokens < replay_position < num_computed_tokens + num_new_tokens:
+                    num_new_tokens = replay_position - num_computed_tokens
         return num_new_tokens
 
     if not _skips_eagle_block_drop(kv_transfer_config):

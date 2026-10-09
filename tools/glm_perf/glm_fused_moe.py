@@ -9,7 +9,7 @@ defers the FP32 route multiply to the reducer; it does not reduce precision.
 """
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import torch
 
@@ -138,11 +138,13 @@ class NativeFusedMoE:
         prepared_weight_layout=False,
         weight_decode_lut=False,
         fp16_route_workspace=False,
+        shared_prefill_max_tokens=None,
     ):
         if activation_bits not in (4, 8):
             raise ValueError("activation bits must be 4 or 8")
         if type(fp16_route_workspace) is not bool:
             raise ValueError("FP16 route workspace flag must be boolean")
+        self.configure_prefill_scratch(shared_prefill_max_tokens)
         options = {}
         provenance = root / "provenance.json"
         if provenance.exists():
@@ -151,6 +153,29 @@ class NativeFusedMoE:
                 raise ValueError("route workspace dtype differs from compiled bundle")
         elif fp16_route_workspace:
             raise ValueError("FP16 route workspace requires build provenance")
+        nz_min_rows = options.get("nz_prefill_min_rows", 0)
+        if type(nz_min_rows) is not int or nz_min_rows not in (0, *range(17, ROUTE_INPUT_ROWS)):
+            raise ValueError("NZ prefill minimum rows must be 0 (legacy) or 17 through 31")
+        if nz_min_rows and not (
+            options.get("nz_prefill_accumulator")
+            and options.get("prefill_rows_32")
+            and options.get("pair_prefill_scale_groups")
+        ):
+            raise ValueError("NZ prefill minimum rows require the wide paired NZ accumulator")
+        self.nz_prefill_min_rows = nz_min_rows
+        cache_ends = options.get("cache_expert_ends", False)
+        if (
+            type(cache_ends) is not bool
+            or cache_ends
+            and not (
+                options.get("fused_moe")
+                and options.get("prepared_weight_layout")
+                and options.get("vector_scale_products")
+                and not options.get("weight_decode_lut")
+            )
+        ):
+            raise ValueError("expert boundary cache requires prepared vector-scale fused MoE without lookup tables")
+        self.cache_expert_ends = cache_ends
         if type(options.get("route_packed_input", False)) is not bool:
             raise ValueError("routed input packing flag must be boolean")
         if type(options.get("route_packed_down", False)) is not bool:
@@ -191,13 +216,20 @@ class NativeFusedMoE:
         gate_w4, down_w4 = root / "glm_fused_gate_up_w4.bin", root / "glm_fused_down_w4.bin"
         if gate_w4.exists() != compact or down_w4.exists() != compact:
             raise ValueError("compact W4 scratch requires declared paired W4 stage binaries")
-        for flag in ("product_pipe_events", "bulk_route_store"):
+        for flag in ("product_pipe_events", "bulk_route_store", "fused_scale_accumulation"):
             if type(options.get(flag, False)) is not bool:
                 raise ValueError("expert scheduling flags must be boolean")
         if options.get("bulk_route_store") and not (
             options.get("fp16_route_workspace") and options.get("native_route_columns")
         ):
             raise ValueError("bulk route stores require native-column FP16 workspace")
+        if options.get("fused_scale_accumulation") and (
+            not options.get("fused_moe")
+            or not options.get("vector_scale_products")
+            or options.get("nz_prefill_accumulator")
+        ):
+            raise ValueError("fused scale accumulation requires vector-scale fused MoE with the row accumulator")
+        self.fused_scale_accumulation = options.get("fused_scale_accumulation", False)
         offsets = options.get("prepared_offset_tables", False)
         if type(offsets) is not bool or (offsets and not prepared_weight_layout):
             raise ValueError("prepared offsets require matching prepared weights")
@@ -237,6 +269,52 @@ class NativeFusedMoE:
         self.weight_lookup = weight_decode_table().to(self.device) if weight_decode_lut else None
         self.configs = {}
         self.scratch = {}
+
+    def configure_prefill_scratch(self, max_tokens):
+        """Opt in while idle, before capture; None preserves the 640-row policy."""
+        if max_tokens is not None and (
+            type(max_tokens) is not int or not FUSED_REDUCTION_TOKENS < max_tokens <= MAX_GROUPED_ROUTES
+        ):
+            raise ValueError("shared prefill capacity requires a bounded integer above decode rows")
+        if getattr(self, "scratch", None):
+            raise ValueError("retire graphs and release scratch before changing its capacity")
+        self.shared_prefill_max_tokens = max_tokens
+
+    def shared_scratch(self, geometry):
+        """One capacity allocation per bank geometry; prefix views retain the ABI.
+
+        Successive eager prefill segments share scratch, while returned outputs
+        remain independent. Call only on the existing single serving stream.
+        A capacity allocation prevents partial chunks accumulating cached buffers.
+        """
+        capacity = getattr(self, "shared_prefill_max_tokens", None)
+        eligible = (
+            FUSED_REDUCTION_TOKENS < geometry.tokens <= capacity
+            if capacity is not None
+            else geometry.tokens == SHARED_PREFILL_SCRATCH_TOKENS
+        )
+        if not eligible:
+            return None
+        allocated = replace(geometry, tokens=capacity) if capacity is not None else geometry
+        key = (allocated.tokens, geometry.top_k, geometry.hidden, geometry.intermediate)
+        if getattr(self, "route_packed_down", False) and geometry.activation_bits == 4:
+            key += (geometry.experts,)
+        if key not in self.scratch:
+            self.scratch[key] = self.allocate_scratch(allocated)
+        buffers = self.scratch[key]
+        if geometry.tokens == allocated.tokens:
+            return buffers
+        routes = geometry.tokens * geometry.top_k
+        shapes = (
+            (geometry.tokens,),
+            (geometry.tokens if self.activation_bits == 8 else 1,),
+            self.input_scale_shape(geometry),
+            self.hidden_code_shape(geometry),
+            (routes if self.activation_bits == 8 else 1,),
+            self.hidden_scale_shape(geometry),
+            (routes,),
+        )
+        return tuple(buffer[: shape[0]] for buffer, shape in zip(buffers, shapes))
 
     def stage_kernel(self, stage, bits):
         specialized = getattr(self, f"{stage}_w{bits}_kernel", None) if bits in (3, 4) else None
@@ -340,16 +418,9 @@ class NativeFusedMoE:
             self.configs[geometry] = (*projection_configs, pack_config)
         gate_config, down_config, pack_config = self.configs[geometry]
         bulk = geometry.tokens > FUSED_REDUCTION_TOKENS
-        if geometry.tokens == SHARED_PREFILL_SCRATCH_TOKENS:
-            # One serving stream and eager state boundaries separate the
-            # qualified 640-token graph segments. Share their large scratch,
-            # but retain independent returned outputs.
-            scratch_key = (geometry.tokens, geometry.top_k, geometry.hidden, geometry.intermediate)
-            if getattr(self, "route_packed_down", False) and geometry.activation_bits == 4:
-                scratch_key += (geometry.experts,)
-            if scratch_key not in self.scratch:
-                self.scratch[scratch_key] = self.allocate_scratch(geometry)
-            input_low, input_high, input_scales, low, high, scales, workspace = self.scratch[scratch_key]
+        shared = self.shared_scratch(geometry)
+        if shared is not None:
+            input_low, input_high, input_scales, low, high, scales, workspace = shared
             output = torch.empty((geometry.tokens, geometry.hidden), dtype=torch.float32, device=self.device)
             down_output = workspace
         else:
@@ -380,13 +451,21 @@ class NativeFusedMoE:
         if getattr(self, "route_input_kernel", None) is not None and bulk and self.activation_bits == 4:
             shapes = route_input_shapes(geometry)
             key = ("route-input", geometry.tokens, geometry.top_k, geometry.hidden, geometry.experts)
-            if geometry.tokens == SHARED_PREFILL_SCRATCH_TOKENS:
+            if shared is not None:
+                capacity = getattr(self, "shared_prefill_max_tokens", None)
+                allocated = replace(geometry, tokens=capacity) if capacity is not None else geometry
+                key = ("route-input", allocated.tokens, geometry.top_k, geometry.hidden, geometry.experts)
+                capacity_shapes = route_input_shapes(allocated)
                 if key not in self.scratch:
                     self.scratch[key] = (
-                        torch.empty(shapes[0], dtype=torch.int8, device=self.device),
-                        torch.empty(shapes[1], dtype=torch.float32, device=self.device),
+                        torch.empty(capacity_shapes[0], dtype=torch.int8, device=self.device),
+                        torch.empty(capacity_shapes[1], dtype=torch.float32, device=self.device),
                     )
                 routed_input, routed_scales = self.scratch[key]
+                if geometry.tokens != allocated.tokens:
+                    routed_input, routed_scales = (
+                        buffer[: shape[0]] for buffer, shape in zip(self.scratch[key], shapes)
+                    )
             else:
                 routed_input = torch.empty(shapes[0], dtype=torch.int8, device=self.device)
                 routed_scales = torch.empty(shapes[1], dtype=torch.float32, device=self.device)

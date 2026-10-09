@@ -31,6 +31,11 @@ from vllm.v1.kv_cache_interface import (
 
 from vllm_ascend import envs
 from vllm_ascend.core.kv_cache_interface import get_kv_cache_compression_ratio
+from vllm_ascend.models.glm5next.kv_cache import (
+    PACKED_KPOOL_COMPRESSION_TOKENS,
+    PACKED_KPOOL_STATE_BLOCK_TOKENS,
+    PACKED_KPOOL_STATE_ELEMENTS,
+)
 from vllm_ascend.utils import vllm_version_is
 
 _HOST_HOT_BLOCK_SIZE = 32
@@ -183,9 +188,20 @@ def _create_glm5_next_attention_groups(
                 f"compression ratio: block_size={main_spec.block_size}, "
                 f"compress_ratio={compress_ratio}."
             )
-        if state_spec.block_size != compress_ratio or state_spec.sliding_window < compress_ratio:
+        packed_state = (
+            compress_ratio == PACKED_KPOOL_COMPRESSION_TOKENS
+            and state_spec.block_size == PACKED_KPOOL_STATE_BLOCK_TOKENS
+            and state_spec.head_size == PACKED_KPOOL_STATE_ELEMENTS
+            and state_spec.num_kv_heads == 1
+        )
+        if (
+            state_spec.block_size != compress_ratio
+            and not packed_state
+            or state_spec.sliding_window < state_spec.block_size
+        ):
             raise ValueError(
-                f"GLM-Next indexer state block size must equal {compress_ratio} and window must cover a full pool."
+                "GLM-Next indexer state requires compression-sized or qualified "
+                "packed pages and a window covering the full state page."
             )
 
     # Main and indexer caches deliberately share scheduler block IDs. Keep a

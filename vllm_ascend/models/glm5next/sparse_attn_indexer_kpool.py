@@ -113,17 +113,30 @@ class SparseAttnIndexerKpool(CustomOp):
         device = keys.device
         state_cache = _cache_tensor(self.tail_cache)
         key_cache = _cache_tensor(self.k_cache)
-        if state_cache.shape[1] != pool_size or state_cache.shape[2] != 2 * self.head_dim:
+        state_block_size = state_cache.shape[1] if state_cache.ndim == 3 else 0
+        if (
+            state_cache.ndim != 3
+            or state_block_size < pool_size
+            or state_block_size % pool_size
+            or state_cache.shape[2] != 2 * self.head_dim
+            or getattr(state_metadata, "block_size", state_block_size) != state_block_size
+        ):
             raise RuntimeError("GLM kpool state cache has unexpected page geometry")
         if key_cache.shape[-2:] != (1, self.head_dim):
             raise RuntimeError("GLM kpool key cache has unexpected page geometry")
 
         state_slots = state_metadata.slot_mapping[:num_tokens].long()
         safe_state_slots = state_slots.clamp_min(0)
-        state_blocks = torch.div(safe_state_slots, pool_size, rounding_mode="floor")
+        state_blocks = torch.div(safe_state_slots, state_block_size, rounding_mode="floor")
+        state_offsets = safe_state_slots - state_blocks * state_block_size
         # Gather before scattering this step: a previous step may have left
         # the first three members of a pool in the sliding state page.
-        old_state = state_cache[state_blocks]
+        if state_block_size == pool_size:
+            old_state = state_cache[state_blocks]
+        else:
+            pool_starts = torch.div(state_offsets, pool_size, rounding_mode="floor") * pool_size
+            pool_rows = pool_starts[:, None] + torch.arange(pool_size, device=device)[None, :]
+            old_state = state_cache[state_blocks[:, None], pool_rows]
         offsets = torch.arange(pool_size - 1, -1, -1, device=device)
         local_indices = torch.arange(num_tokens, device=device)[:, None] - offsets[None, :]
         safe_local_indices = local_indices.clamp_min(0)
@@ -155,9 +168,7 @@ class SparseAttnIndexerKpool(CustomOp):
         final_pool_starts = torch.div(earliest_positions.clamp_min(0), pool_size, rounding_mode="floor") * pool_size
         valid_state = (state_slots >= 0) & (positions >= final_pool_starts)
         state_row_offsets = (
-            state_cache.storage_offset()
-            + state_blocks * state_cache.stride(0)
-            + (safe_state_slots % pool_size) * state_cache.stride(1)
+            state_cache.storage_offset() + state_blocks * state_cache.stride(0) + state_offsets * state_cache.stride(1)
         )
         _masked_storage_write(
             state_cache,

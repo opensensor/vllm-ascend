@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """FP32 expert outputs stay FP32 when selecting the native post mixer."""
 
+import json
+
 import pytest
 import torch
 
@@ -110,3 +112,41 @@ def test_new_shape_descriptor_uses_device_fills(monkeypatch):
     assert descriptor.dtype == torch.int64 and descriptor.device == args[0].device
     native(*args)
     assert calls[1][1][-1] is descriptor
+
+
+@pytest.mark.parametrize("rows", [1, 8, 33, 639, 641, 2560])
+def test_final_mixer_cannot_enter_decode_or_unqualified_prefill(rows):
+    assert not supported_inputs(*inputs(rows), final_only=True)
+
+
+@pytest.mark.parametrize("rows", [640, 1280])
+def test_final_mixer_keeps_original_fp32_inputs_and_has_no_einsum(monkeypatch, rows):
+    from tools.glm_perf.mhc_post_native import NativeMhcFinalPost
+
+    args = inputs(rows)
+    native = NativeMhcFinalPost.__new__(NativeMhcFinalPost)
+    native.finish_only = False
+    native.configs = {(args[0].shape, args[0].device): torch.tensor(args[0].shape)}
+    native.kernels = {torch.float32: "final kernel"}
+    calls = []
+    native.launch = lambda *values: calls.append(values)
+    monkeypatch.setattr(torch, "einsum", lambda *a, **k: pytest.fail("large final mixer temporary"))
+    output = native(*args)
+    assert output.dtype == torch.float32 and output.shape == args[1].shape
+    assert all(actual is expected for actual, expected in zip(calls[0][1][:4], args, strict=True))
+
+
+@pytest.mark.parametrize(
+    "provenance",
+    [
+        {},
+        {"state_rounding": "fp16_in_fp32_storage", "finish_only": False},
+        {"state_rounding": "none_fp32", "finish_only": True},
+    ],
+)
+def test_final_mixer_rejects_rounded_or_partial_build_before_device_access(tmp_path, provenance):
+    from tools.glm_perf.mhc_post_native import NativeMhcFinalPost
+
+    (tmp_path / "mhc-provenance.json").write_text(json.dumps(provenance))
+    with pytest.raises(ValueError, match="complete, unrounded FP32"):
+        NativeMhcFinalPost(tmp_path, "unused")

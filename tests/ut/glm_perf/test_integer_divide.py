@@ -3,13 +3,17 @@
 
 import hashlib
 import json
-from types import SimpleNamespace
+import sys
+from pathlib import Path
+from types import ModuleType, SimpleNamespace
 
 import pytest
 import torch
 
 from tools.glm_perf.integer_divide import (
+    DIVISION_GATE_COUNTS,
     DIVISORS,
+    INTEGER_DIVIDE_ENTRY,
     DivisionTorch,
     NativeIntegerDivide,
     prepare_counts,
@@ -98,6 +102,7 @@ def bundle(tmp_path):
         "namespace": "glm_reconstruction_v927",
         "version": 927,
         "integer_metadata_divide": True,
+        "integer_divide_entry": INTEGER_DIVIDE_ENTRY,
     }
     binary, bridge = tmp_path / "glm_integer_divide.bin", tmp_path / "glm_reconstruction_bridge_v927.so"
     for file in (binary, bridge):
@@ -118,7 +123,7 @@ def bundle(tmp_path):
         }
         for dtype in ("torch.int32", "torch.int64")
         for divisor in DIVISORS
-        for count in (2, 8, 640)
+        for count in DIVISION_GATE_COUNTS
     ]
     report = tmp_path / "gates.json"
     report.write_text(
@@ -141,6 +146,29 @@ def test_complete_signed_manifest(bundle):
     assert value.name == "integer_divide_v927"
 
 
+def test_manifest_rejects_old_entry_and_missing_32_gate(bundle):
+    root, report, _, _ = bundle
+    provenance_path = root / "provenance.json"
+    original = json.loads(provenance_path.read_text())
+    stale = json.loads(provenance_path.read_text())
+    stale["_build"]["integer_divide_entry"] = "glm_integer_divide_v1"
+    provenance_path.write_text(json.dumps(stale))
+    with pytest.raises(ValueError, match="matching gates"):
+        manifest(root, report)
+    provenance_path.write_text(json.dumps(original))
+    gates = json.loads(report.read_text())
+    gates["records"] = [row for row in gates["records"] if row["divisor"] != 32]
+    report.write_text(json.dumps(gates))
+    with pytest.raises(ValueError, match="signed extremes"):
+        manifest(root, report)
+
+
+def test_native_entry_declares_32_support():
+    source = (Path(__file__).resolve().parents[3] / "tools/glm_perf/glm_integer_divide.cpp").read_text()
+    assert INTEGER_DIVIDE_ENTRY in source
+    assert "Divide<T, 32>" in source
+
+
 @pytest.mark.parametrize("field", ["passed", "changed_input_replay", "owned_padding_checked", "signed_extremes"])
 def test_incomplete_hardware_gate_rejected(bundle, field):
     root, report, _, _ = bundle
@@ -161,7 +189,7 @@ def test_changed_binary_or_helper_rejected(bundle, index):
 def test_prepared_descriptors_cover_shapes_without_replacing_existing_storage():
     native = SimpleNamespace(device=torch.device("cpu"), configs={})
     prepare_counts(native, [2, 8, 2, 640])
-    assert len(native.configs) == 18
+    assert len(native.configs) == 3 * len(DIVISORS) * 2
     for (count, divisor, dtype), descriptor in native.configs.items():
         assert descriptor.tolist() == [count, divisor, dtype.itemsize] and descriptor.is_contiguous()
     held = dict(native.configs)
@@ -197,3 +225,25 @@ def test_unsupported_remainders_delegate(dtype, divisor):
         DivisionTorch(SimpleNamespace(device=torch.device("cpu"))).remainder(values, divisor),
         torch.remainder(values, divisor),
     )
+
+
+def test_resident_admission_retains_probe_storage_metadata_in_inference_rpc(bundle, monkeypatch):
+    native = object()
+    calls = []
+    probe = ModuleType("glm_reconstruction_v927_helpers.integer_divide_probe")
+
+    def check(actual, dtype, divisor, count):
+        assert actual is native and not torch.is_inference_mode_enabled()
+        backing = torch.zeros(count + 8, dtype=dtype)
+        assert backing[:count]._base is backing
+        calls.append((dtype, divisor, count))
+        return {"passed": True}
+
+    probe.case = check
+    monkeypatch.setitem(sys.modules, probe.__name__, probe)
+    namespace = {}
+    exec(manifest(bundle[0], bundle[1]).value["validation_source"], namespace)
+    with torch.inference_mode():
+        assert namespace["validate"](native)["passed"]
+        assert torch.is_inference_mode_enabled()
+    assert len(calls) == 2 * len(DIVISORS)

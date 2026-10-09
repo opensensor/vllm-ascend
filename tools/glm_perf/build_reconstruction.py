@@ -71,6 +71,9 @@ def build(
     prepared_offset_tables=False,
     product_pipe_events=False,
     bulk_route_store=False,
+    fused_scale_accumulation=False,
+    nz_prefill_min_rows=0,
+    cache_expert_ends=False,
 ):
     """Freeze helper sources and compile a unique, append-only native version."""
     if type(version) is not int or version < 1 or output_columns not in (16, 32, 64, 128):
@@ -103,6 +106,8 @@ def build(
             prepared_offset_tables,
             product_pipe_events,
             bulk_route_store,
+            fused_scale_accumulation,
+            cache_expert_ends,
         )
     ):
         raise ValueError("prefill experiment flags must be boolean")
@@ -202,6 +207,16 @@ def build(
         raise ValueError("raw input scales require routed input packing")
     if nz_prefill_accumulator and not (prefill_rows_32 and pair_prefill_scale_groups):
         raise ValueError("NZ prefill accumulator requires wide paired prefill rows")
+    # M32 reserves one row for the A8 bias product; its route ABI batches 31.
+    # Zero preserves the original >16-row selection for existing bundles.
+    if type(nz_prefill_min_rows) is not int or nz_prefill_min_rows not in (0, *range(17, 32)):
+        raise ValueError("NZ prefill minimum rows must be 0 (legacy) or 17 through 31")
+    if nz_prefill_min_rows and not nz_prefill_accumulator:
+        raise ValueError("NZ prefill minimum rows require the NZ accumulator")
+    if cache_expert_ends and not (
+        fused_moe and prepared_weight_layout and vector_scale_products and not weight_decode_lut
+    ):
+        raise ValueError("expert boundary cache requires prepared vector-scale fused MoE without lookup tables")
     if prefill_product_cast and not (prefill_rows_32 and pair_prefill_scale_groups):
         raise ValueError("contiguous prefill cast requires wide paired prefill rows")
     if prefill_product_cast and nz_prefill_accumulator:
@@ -220,6 +235,10 @@ def build(
         raise ValueError("product pipe events require fused MoE")
     if bulk_route_store and not (fused_moe and fp16_route_workspace and native_route_columns):
         raise ValueError("bulk route store requires fused native-column FP16 workspace")
+    if fused_scale_accumulation and not (fused_moe and vector_scale_products):
+        raise ValueError("fused scale accumulation requires vector-scale fused MoE")
+    if fused_scale_accumulation and nz_prefill_accumulator:
+        raise ValueError("fused scale accumulation requires the row accumulator")
     build_dir.mkdir(parents=True, exist_ok=False)
     helper_package = namespace + "_helpers"
     helper_root = build_dir / helper_package
@@ -290,6 +309,7 @@ def build(
             "prepared_offset_tables": prepared_offset_tables,
             "product_pipe_events": product_pipe_events,
             "bulk_route_store": bulk_route_store,
+            "fused_scale_accumulation": fused_scale_accumulation,
             "share_gate_up_input": share_gate_up_input,
             "cache_gate_up_activations": cache_gate_up_activations,
             "vector_scale_products": vector_scale_products,
@@ -303,6 +323,8 @@ def build(
             "raw_hidden_scales": raw_hidden_scales,
             "raw_input_scales": raw_input_scales,
             "nz_prefill_accumulator": nz_prefill_accumulator,
+            "nz_prefill_min_rows": nz_prefill_min_rows,
+            "cache_expert_ends": cache_expert_ends,
             "prefill_product_cast": prefill_product_cast,
             "weight_decode_lut": weight_decode_lut,
             "wide_cube_k": wide_cube_k,
@@ -370,6 +392,7 @@ def build(
                     *(["-DGLM_DIRECT_W4_L1"] if direct_w4_l1 else []),
                     *(["-DGLM_PREPARED_OFFSET_TABLES"] if prepared_offset_tables else []),
                     *(["-DGLM_PRODUCT_PIPE_EVENTS"] if product_pipe_events else []),
+                    *(["-DGLM_FUSED_SCALE_ACCUMULATION"] if fused_scale_accumulation else []),
                     *(["-DGLM_BULK_ROUTE_STORE"] if stage == "down" and bulk_route_store else []),
                     *(["-DGLM_GATHER_PRODUCT_MATRIX"] if gather_product_matrix else []),
                     *(["-DGLM_FP16_ROUTE_WORKSPACE"] if fp16_route_workspace else []),
@@ -382,6 +405,8 @@ def build(
                     *(["-DGLM_COMPACT_DOWN_SCALES"] if route_compact_down_scales else []),
                     *(["-DGLM_RAW_HIDDEN_SCALES"] if raw_hidden_scales else []),
                     *(["-DGLM_NZ_PREFILL_ACCUMULATOR"] if nz_prefill_accumulator else []),
+                    *([f"-DGLM_NZ_PREFILL_MIN_ROWS={nz_prefill_min_rows}"] if nz_prefill_min_rows else []),
+                    *(["-DGLM_CACHE_EXPERT_ENDS"] if cache_expert_ends else []),
                     *(["-DGLM_PREFILL_PRODUCT_CAST"] if prefill_product_cast else []),
                     *(["-DGLM_DIRECT_HIDDEN_GATHER"] if stage == "gate_up" and direct_hidden_gather else []),
                     *(["-DGLM_SHARE_GATE_UP_INPUT"] if stage == "gate_up" and share_gate_up_input else []),
@@ -391,6 +416,7 @@ def build(
             )
             provenance[output.name] = {"source_sha256": sha256(source), "binary_sha256": sha256(output)}
         provenance["glm_fused_scratch.h"] = {"source_sha256": sha256(HERE / "glm_fused_scratch.h")}
+        provenance["glm_fused_route_cache.h"] = {"source_sha256": sha256(HERE / "glm_fused_route_cache.h")}
         provenance["glm_route_input_layout.h"] = {"source_sha256": sha256(HERE / "glm_route_input_layout.h")}
         if route_packed_input:
             source = HERE / "glm_fused_route_input.cpp"
@@ -596,9 +622,23 @@ def main():
         help="accumulate dense A4 prefill in native Cube layout with unique FP32 scale factors",
     )
     parser.add_argument(
+        "--nz-prefill-min-rows",
+        type=int,
+        default=0,
+        help="NZ accumulator active-row threshold: 0 preserves legacy 17; 31 selects full route batches",
+    )
+    parser.add_argument(
+        "--cache-expert-ends", action="store_true", help="cache bulk expert boundaries in existing UB scratch"
+    )
+    parser.add_argument(
         "--prefill-product-cast",
         action="store_true",
         help="cast paired dense prefill Cube output contiguously before row copies",
+    )
+    parser.add_argument(
+        "--fused-scale-accumulation",
+        action="store_true",
+        help="fuse A4 prefill product scaling and FP32 accumulation; changes FP32 rounding",
     )
     parser.add_argument(
         "--compact-w4-scratch",
@@ -666,6 +706,9 @@ def main():
             args.prepared_offset_tables,
             args.product_pipe_events,
             args.bulk_route_store,
+            args.fused_scale_accumulation,
+            nz_prefill_min_rows=args.nz_prefill_min_rows,
+            cache_expert_ends=args.cache_expert_ends,
         )
     )
 

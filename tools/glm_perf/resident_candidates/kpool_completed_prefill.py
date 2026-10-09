@@ -73,7 +73,15 @@ def write_compact_pools(
         raise ValueError("completed-pool candidate is qualified only for no speculation or MTP1")
     if plan.num_tokens != keys.shape[0] or keys.shape != gates.shape or keys.shape[-1] != 128:
         raise ValueError("compact pool plan and key/gate geometry disagree")
-    if state_cache.shape[1:] != (POOL_SIZE, 256) or key_cache.shape[-2:] != (1, 128):
+    state_block_size = state_cache.shape[1] if state_cache.ndim == 3 else 0
+    if (
+        state_cache.ndim != 3
+        or state_block_size < POOL_SIZE
+        or state_block_size % POOL_SIZE
+        or state_cache.shape[2] != 256
+        or getattr(state_meta, "block_size", state_block_size) != state_block_size
+        or key_cache.shape[-2:] != (1, 128)
+    ):
         raise ValueError("unsupported kpool cache geometry")
 
     divide = torch.div if integer_ops is None else integer_ops.div
@@ -87,9 +95,15 @@ def write_compact_pools(
         safe_rows = torch.minimum(rows, ends - 1)
         selected_positions = positions.index_select(0, safe_rows)
         state_slots = state_meta.slot_mapping.index_select(0, safe_rows).long().clamp_min(0)
-        blocks = divide(state_slots, POOL_SIZE, rounding_mode="floor")
+        blocks = divide(state_slots, state_block_size, rounding_mode="floor")
         # Gather every required previous-state row before any state write.
-        old = state_cache[blocks]
+        if state_block_size == POOL_SIZE:
+            old = state_cache[blocks]
+        else:
+            offsets_in_page = state_slots - blocks * state_block_size
+            pool_starts = divide(offsets_in_page, POOL_SIZE, rounding_mode="floor") * POOL_SIZE
+            pool_rows = pool_starts[:, None] + torch.arange(POOL_SIZE, device=keys.device)[None, :]
+            old = state_cache[blocks[:, None], pool_rows]
         offsets = torch.arange(POOL_SIZE - 1, -1, -1, device=keys.device)
         local = safe_rows[:, None] - offsets[None, :]
         safe_local = local.clamp_min(0)
@@ -112,8 +126,8 @@ def write_compact_pools(
         valid = (slots_tail >= 0) & (positions.index_select(0, tail_rows) >= first_retained_pool * POOL_SIZE)
         offsets_tail = (
             state_cache.storage_offset()
-            + divide(safe_slots, POOL_SIZE, rounding_mode="floor") * state_cache.stride(0)
-            + remainder(safe_slots, POOL_SIZE) * state_cache.stride(1)
+            + divide(safe_slots, state_block_size, rounding_mode="floor") * state_cache.stride(0)
+            + remainder(safe_slots, state_block_size) * state_cache.stride(1)
         )
         # Match the existing writer's gather dispatch: aclnnIndexSelect rejects
         # BF16 on 310P, while advanced indexing handles this storage format.

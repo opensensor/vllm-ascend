@@ -4,6 +4,7 @@
 #include "kernel_operator.h"
 #include "glm_fused_quantize.h"
 #include "glm_fused_scratch.h"
+#include "glm_fused_route_cache.h"
 #include "glm_route_input_layout.h"
 #if defined(GLM_FP16_WEIGHT_SCALES) && (!defined(GLM_PREPARED_WEIGHT_LAYOUT) || defined(GLM_PREROUNDED_WEIGHT_SCALES))
   #error "FP16 scale storage requires prepared weights and excludes prerounded FP32 storage"
@@ -52,6 +53,16 @@ constexpr uint32_t N = GLM_INT4_OUTPUT_COLUMNS, K0 = 64, GROUP = 32, NZ_K = 256,
 static_assert(N == 128, "fused native MoE uses 128-column tiles");
 constexpr uint32_t RAW_BYTES = N * NZ_K / 2;
 constexpr uint32_t MAX_ROWS = M - 1, MAX_K_GROUPS = 4096 / GROUP;
+#ifdef GLM_NZ_PREFILL_ACCUMULATOR
+  #ifndef GLM_NZ_PREFILL_MIN_ROWS
+    #define GLM_NZ_PREFILL_MIN_ROWS (M / 2 + 1)
+  #endif
+constexpr uint32_t NZ_PREFILL_MIN_ROWS = GLM_NZ_PREFILL_MIN_ROWS;
+static_assert(NZ_PREFILL_MIN_ROWS > M / 2 && NZ_PREFILL_MIN_ROWS <= MAX_ROWS,
+              "NZ accumulation threshold must select reachable paired bulk rows");
+#elif defined(GLM_NZ_PREFILL_MIN_ROWS)
+  #error "NZ row threshold requires the NZ accumulator"
+#endif
 #ifdef GLM_PREFILL_WEIGHT_CACHE
 constexpr uint32_t MAX_WEIGHT_K = MAX_K_GROUPS * GROUP;
 constexpr uint32_t CACHED_PROJECTION_BYTES = N * MAX_WEIGHT_K / 2;
@@ -125,6 +136,15 @@ constexpr uint32_t MAX_CACHED_SCALE_ROWS = 4;
 constexpr uint32_t MAX_REPEAT_CAST_ROWS = 4;
 constexpr uint32_t SCALE_PRODUCTS_OFFSET = Scratch::SCALE_PRODUCTS_OFFSET;
 constexpr uint32_t MASK_RETAINED_OFFSET = N * NZ_K * 3 / 4;
+#ifdef GLM_CACHE_EXPERT_ENDS
+  #if !defined(GLM_PREPARED_WEIGHT_LAYOUT) || !defined(GLM_VECTOR_SCALE_PRODUCTS) || defined(GLM_WEIGHT_DECODE_LUT)
+    #error "expert boundary cache requires prepared vector-scale reconstruction without lookup tables"
+  #endif
+using RouteCache = GlmFusedRouteCache::Layout<M>;
+static_assert(RouteCache::RECONSTRUCTION_BYTES == MASK_RETAINED_OFFSET &&
+                  RouteCache::END_OFFSET >= MASK_RETAINED_OFFSET + M * sizeof(uint32_t),
+              "expert boundaries overlap reconstruction or row indices");
+#endif
 #ifdef GLM_GATHER_PRODUCT_MATRIX
   #if !defined(GLM_PREPARED_WEIGHT_LAYOUT) || defined(GLM_WEIGHT_DECODE_LUT)
     #error "matrix product gather requires prepared weights without lookup tables"
@@ -246,6 +266,12 @@ class Projection {
     offsetTables_.SetGlobalBuffer(reinterpret_cast<__gm__ uint32_t*>(offsetConfig) + 24);
 #endif
     PrepareOffsets();
+#ifdef GLM_CACHE_EXPERT_ENDS
+    if (tokens_ > BULK_TOKENS) {
+      if (experts_ < 1 || experts_ > RouteCache::MAX_EXPERTS) return;
+      PrepareExpertEnds();
+    }
+#endif
 #ifdef GLM_WEIGHT_DECODE_LUT
     GlobalTensor<half> table;
     table.SetGlobalBuffer(reinterpret_cast<__gm__ half*>(lookup));
@@ -268,7 +294,7 @@ class Projection {
 #endif
         int64_t first = 0;
         for (int64_t expert = 0; expert < experts_; ++expert) {
-          const int64_t end = ends_.GetValue(expert);
+          const int64_t end = ExpertEnd(expert);
           if (end < first || end > rows_) return;
           int64_t selectedFirst = first, selectedEnd = end;
 #ifndef GLM_FUSED_GATE_UP
@@ -1219,7 +1245,9 @@ class Projection {
     auto high = HighProducts();
     auto accumulator = Accumulator();
 #ifdef GLM_NZ_PREFILL_ACCUMULATOR
-    nzProducts_ = tokens_ > BULK_TOKENS && activationBits_ == 4 && count > M / 2;
+    // The route ABI carries at most M-1 rows. A higher threshold avoids
+    // converting/scaling all M padded NZ rows for sparse tail batches.
+    nzProducts_ = tokens_ > BULK_TOKENS && activationBits_ == 4 && count >= NZ_PREFILL_MIN_ROWS;
     Duplicate(accumulator, 0.0f, nzProducts_ ? ELEMENTS : count * N);
 #else
     Duplicate(accumulator, 0.0f, count * N);
@@ -1424,9 +1452,21 @@ class Projection {
             PipeBarrier<PIPE_V>();
           }
 #endif
-          Mul(low, low, ProductTemporary<float>(), count * N);
-          PipeBarrier<PIPE_V>();
-          Add(accumulator, accumulator, low, count * N);
+#ifdef GLM_FUSED_SCALE_ACCUMULATION
+          if (tokens_ > BULK_TOKENS && activationBits_ == 4) {
+            // Keep independent block32 dots, factors and their sum order.
+            // The fused FP32 operation rounds once rather than rounding the
+            // scaled product before addition. Numerical qualification is
+            // mandatory; scratch ownership and its lifetime are unchanged.
+            MulAddDst(accumulator, low, ProductTemporary<float>(), count * N);
+          } else {
+#endif
+            Mul(low, low, ProductTemporary<float>(), count * N);
+            PipeBarrier<PIPE_V>();
+            Add(accumulator, accumulator, low, count * N);
+#ifdef GLM_FUSED_SCALE_ACCUMULATION
+          }
+#endif
           PipeBarrier<PIPE_V>();
         }
       }
@@ -1673,6 +1713,24 @@ class Projection {
       PipeBarrier<PIPE_ALL>();
     }
   }
+  __aicore__ inline int64_t ExpertEnd(int64_t expert) {
+#ifdef GLM_CACHE_EXPERT_ENDS
+    if (tokens_ > BULK_TOKENS) return mask_.Get<int64_t>()[RouteCache::END_OFFSET / sizeof(int64_t)].GetValue(expert);
+#endif
+    return ends_.GetValue(expert);
+  }
+#ifdef GLM_CACHE_EXPERT_ENDS
+  __aicore__ inline void PrepareExpertEnds() {
+    // Reload every launch/replay. Aligned prefix DMA never reads beyond ends;
+    // up to three trailing entries use scalar loads once per core, not per tile.
+    auto cached = mask_.Get<int64_t>()[RouteCache::END_OFFSET / sizeof(int64_t)];
+    const uint32_t aligned = experts_ / RouteCache::ENDS_PER_DMA * RouteCache::ENDS_PER_DMA;
+    if (aligned) DataCopy(cached, ends_, aligned);
+    PipeBarrier<PIPE_ALL>();
+    for (int64_t expert = aligned; expert < experts_; ++expert) cached.SetValue(expert, ends_.GetValue(expert));
+    PipeBarrier<PIPE_ALL>();
+  }
+#endif
   int64_t rows_, experts_, n_, k_, activationBits_, tokens_, topK_, firstToken_;
 #ifdef GLM_STATIC_WEIGHT_BITS
   static constexpr int64_t bits_ = GLM_STATIC_WEIGHT_BITS;

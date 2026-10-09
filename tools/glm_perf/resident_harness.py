@@ -117,6 +117,13 @@ class ResidentClient:
                 )
             )
             self._acknowledged_rpc("resident_apply", control.generation, matches=applied)
+            # The first call enters the previous generation's hook, which
+            # installs the successor. Invoke the now-installed hook with the
+            # same generation so its own preparation/qualification runs.
+            # PatchSession.apply is idempotent for this generation; doing only
+            # the transition can qualify an old adapter and bind an unsealed
+            # new adapter during capture.
+            self._acknowledged_rpc("resident_apply", control.generation, matches=applied)
             captured = lambda receipts: (
                 applied(receipts) and all(receipt.get("graphs_dirty") is False for receipt in receipts)
             )

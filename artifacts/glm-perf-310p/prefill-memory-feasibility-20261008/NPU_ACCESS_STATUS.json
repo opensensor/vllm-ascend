@@ -1,0 +1,49 @@
+{
+  "requested_action": "NPU validation of packed GLM state pages",
+  "user_authorized": true,
+  "remote_host": "192.168.53.187",
+  "ssh_attempts": [
+    {
+      "scope": "default SSH configuration",
+      "exit_code": 255,
+      "error": "Bad owner or permissions on /etc/ssh/ssh_config.d/20-systemd-ssh-proxy.conf"
+    },
+    {
+      "scope": "explicit empty SSH configuration (-F /dev/null)",
+      "exit_code": 255,
+      "error": "socket: Operation not permitted; connect to host port 22: failure"
+    }
+  ],
+  "blocking_constraint": "Current execution sandbox has restricted networking and approval policy never",
+  "remote_connection_established": false,
+  "local_ascend_runtime_present": false,
+  "local_ascend_devices_present": false,
+  "server_actions": [],
+  "npu_tests_run": 0,
+  "native_binary_compiled": false,
+  "source_archive": "packed-state-source-20261008.tar.gz",
+  "source_archive_sha256": "1dfc4b75db8109a88aaa50162dff58e992738f9b60c8440a5d1690db9daeedb2",
+  "source_archive_members": [
+    "vllm_ascend/models/glm5next/kv_cache.py",
+    "vllm_ascend/models/glm5next/sparse_attn_indexer_kpool.py",
+    "tools/glm_perf/resident_candidates/kpool_completed_prefill.py",
+    "tools/glm_perf/integer_divide.py",
+    "tools/glm_perf/glm_integer_divide.cpp",
+    "tools/glm_perf/build_integer_divide.py",
+    "tools/glm_perf/integer_divide_control.py",
+    "tools/glm_perf/integer_divide_probe.py",
+    "tests/ut/glm_perf/test_integer_divide.py",
+    "tests/ut/glm_perf/test_kpool_completed_prefill.py",
+    "tests/ut/glm_perf/test_packed_kpool_state.py",
+    "tools/glm_perf/prefill_memory_budget.py",
+    "tests/ut/glm_perf/test_prefill_memory_budget.py"
+  ],
+  "next_steps": [
+    "Resume in an execution session that permits SSH to the authorized host",
+    "Check current device and server ownership; retain process receipts",
+    "Stage files in a new isolated source copy and rebuild the v2 division bundle",
+    "Require signed integer/replay gates plus real writer-state parity",
+    "Measure candidate-specific per-rank memory bounds before launching larger prefill",
+    "Complete real-weight cold-prefill, decode and prefix/MTP checks"
+  ]
+}

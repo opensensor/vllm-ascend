@@ -369,6 +369,9 @@ def test_rewritten_pool_remainders_preserve_full_strided_backings(reference, len
 
 def test_remainder_rewrite_rejects_changed_authoritative_writer(reference):
     source = (ROOT / "vllm_ascend/models/glm5next/sparse_attn_indexer_kpool.py").read_text()
-    source = source.replace("safe_state_slots % pool_size", "safe_state_slots.remainder(pool_size)")
+    source = source.replace(
+        "state_offsets = safe_state_slots - state_blocks * state_block_size",
+        "state_offsets = safe_state_slots.remainder(state_block_size)",
+    )
     with pytest.raises(ValueError, match="expressions changed"):
         rewrite_pool_remainders(reference._write_pools, source, DivisionTorch(None))

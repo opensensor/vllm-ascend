@@ -1,20 +1,27 @@
 # SPDX-License-Identifier: Apache-2.0
 """Native post mixer retaining FP32 expert inputs and FP16-rounded mHC state."""
 
+import json
+
 import torch
 
 GLM_HIDDEN_SIZE = 4096
 RESIDUAL_STREAMS = 4
 MAX_DECODE_ROWS = 8
 PREFILL_GRAPH_ROWS = 640
+FINAL_POST_ROWS = frozenset({640, 1280})
 
 
-def supported_inputs(x, residual, post_mix, comb_mix):
+def supported_inputs(x, residual, post_mix, comb_mix, *, final_only=False):
     if (
         x.ndim != 2
         or x.dtype not in (torch.float16, torch.float32)
         or not x.is_contiguous()
-        or not (1 <= x.shape[0] <= MAX_DECODE_ROWS or x.shape[0] == PREFILL_GRAPH_ROWS)
+        or not (
+            x.shape[0] in FINAL_POST_ROWS
+            if final_only
+            else (1 <= x.shape[0] <= MAX_DECODE_ROWS or x.shape[0] == PREFILL_GRAPH_ROWS)
+        )
         or x.shape[1] != GLM_HIDDEN_SIZE
     ):
         return False
@@ -31,6 +38,8 @@ def supported_inputs(x, residual, post_mix, comb_mix):
 
 
 class NativeMhcPost:
+    final_only = False
+
     def __init__(self, root, namespace, *, finish_only=False):
         self.finish_only = finish_only
         factory = getattr(torch.classes, namespace).Kernel
@@ -42,7 +51,7 @@ class NativeMhcPost:
         self.configs = {}
 
     def __call__(self, x, residual, post_mix, comb_mix):
-        if not supported_inputs(x, residual, post_mix, comb_mix):
+        if not supported_inputs(x, residual, post_mix, comb_mix, final_only=self.final_only):
             raise ValueError("native mHC requires qualified GLM rows, precision and contiguous streams")
         key = (x.shape, x.device)
         if key not in self.configs:
@@ -58,6 +67,23 @@ class NativeMhcPost:
         output = torch.empty_like(residual)
         self.launch(self.kernels[x.dtype], [x, residual, post_mix, comb_mix, output, self.configs[key]], 8)
         return output
+
+
+class NativeMhcFinalPost(NativeMhcPost):
+    """Opt-in final mixer: bounded vector tiles and unrounded FP32 output.
+
+    Intermediate state mixers must keep their existing rounding contract.
+    Changing the reduction order requires numerical and real-model gates;
+    construction alone does not authorize a serving binding.
+    """
+
+    final_only = True
+
+    def __init__(self, root, namespace):
+        provenance = json.loads((root / "mhc-provenance.json").read_text())
+        if provenance.get("state_rounding") != "none_fp32" or provenance.get("finish_only") is not False:
+            raise ValueError("final mixer requires a complete, unrounded FP32 build")
+        super().__init__(root, namespace)
 
 
 def wrap_post(original, native):

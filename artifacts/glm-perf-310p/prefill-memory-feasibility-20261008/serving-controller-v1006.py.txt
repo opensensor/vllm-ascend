@@ -1,0 +1,62 @@
+import hashlib,json,re,sys,time,urllib.request,uuid,subprocess,threading
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+root=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+sys.path.insert(0,str(root/'runtime-packed-state-20261008-v1006'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+client=ResidentClient('http://127.0.0.1:8001',timeout=1800)
+protocol=(root/'glm-next-qsa-996-paired-serving.py').read_text()
+exec(compile(protocol[protocol.index('def idle():'):protocol.index('for version in (991,996):')].replace("return dict(prompt_tokens=tokens,","return dict(usage=usage,prompt_tokens=tokens,"),'<complete-stream-accounting>','exec'))
+report=root/'packed-state-serving-v1006.json'
+records=[]
+stop_sampling=threading.Event()
+def sample_memory():
+ with (root/'packed-state-serving-v1006-device-samples.jsonl').open('w') as log:
+  while not stop_sampling.is_set():
+   try:
+    reply=subprocess.run(['npu-smi','info'],capture_output=True,text=True,timeout=10)
+    log.write(json.dumps(dict(time=time.time(),exit_code=reply.returncode,output=reply.stdout))+'\n');log.flush()
+   except Exception as error:log.write(json.dumps(dict(time=time.time(),error=repr(error)))+'\n');log.flush()
+   stop_sampling.wait(2)
+sampler=threading.Thread(target=sample_memory,daemon=True);sampler.start()
+def status():
+ rows=client._acknowledged_rpc('resident_status',matches=client._status_matches)
+ assert len(rows)==4 and all(not r['graphs_dirty'] and not r['native_failed'] and not r['reconstruction']['fallback_dispatches'] for r in rows)
+ assert all(r['packed_state']['count']==12 and r['packed_state']['blocks']==[32] and r['packed_state']['windows']==[33] for r in rows),[(r['rank'],r['packed_state']) for r in rows]
+ return rows
+def save(rows,complete=False,**extra):
+ report.write_text(json.dumps(dict(complete=complete,records=records,status=rows,budget=1280,context=131072,kv_cache_bytes=2415919104,prefill_graph=False,**extra),indent=2)+'\n')
+def cold():
+ idle();client.request('/pause?mode=wait&clear_cache=true');client.resume()
+try:
+ idle()
+ source=(root/'packed-state-candidate-1280-v1006.py').read_text()
+ control=Control(uuid.uuid4().hex,candidate='packed_state_direct_prefill_1280_v1006',source=source)
+ rows=client.switch(control,before_capture=lambda c:c.rpc('resident_apply',control.generation));client.resume()
+ (root/'packed-state-capture-v1006.json').write_text(json.dumps(rows,indent=2)+'\n')
+ rows=status();save(rows)
+ print('PACKED_STATE_BOUND',[(r['rank'],r['packed_state']) for r in rows],flush=True)
+ assert min(r['packed_state']['memory']['free'] for r in rows)>=2147483648,'Post-capture free reserve below planned 2 GiB'
+ for tokens,output,nonce in ((640,1,104),(1280,1,105),(6400,1,106),(6400,1,107),(12800,1,108),(6529,1,109),(128,128,110),(128,128,111)):
+  cold();row=stream(tokens,output,nonce);records.append(row);rows=status();save(rows)
+  print('PACKED_STATE_E2E',tokens,output,row['ttft_s'],row['generation_tok_s'],'FREE',min(r['packed_state']['memory']['free'] for r in rows),flush=True)
+ cold()
+ with ThreadPoolExecutor(max_workers=4) as pool:
+  concurrent=list(pool.map(lambda n:stream(128,64,120+n),range(4)))
+ records.extend(dict(r,concurrency=4) for r in concurrent);rows=status();save(rows)
+ print('PACKED_STATE_C4',[r['generation_tok_s'] for r in concurrent],flush=True)
+ cold();prefix_cold=stream(6400,1,130);prefix_warm=stream(6400,1,130)
+ records.extend((dict(prefix_cold,prefix='cold'),dict(prefix_warm,prefix='warm')))
+ idle();smoke=client.request('/v1/completions',dict(model='glm53-flash-selective-w3',prompt='Explain why plants need sunlight in three short sentences.',max_tokens=80,temperature=0))
+ assert smoke.get('choices') and smoke['choices'][0].get('text')
+ rows=status();metrics=urllib.request.urlopen(client.base_url+'/metrics',timeout=30).read().decode();(root/'packed-state-serving-v1006-metrics.txt').write_text(metrics);save(rows,complete=True,smoke=smoke,scope='Real-weight end-to-end requests; preserved quantization arithmetic; language quality remains user judged')
+ print('PACKED_STATE_COMPLETE',flush=True)
+except Exception as error:
+ (root/'packed-state-serving-v1006-failure.json').write_text(json.dumps(dict(error=repr(error)),indent=2)+'\n')
+ print('PACKED_STATE_FAILURE',repr(error),flush=True)
+ raise
+finally:
+ stop_sampling.set();sampler.join(timeout=12)
+ try:client.resume()
+ except Exception:pass

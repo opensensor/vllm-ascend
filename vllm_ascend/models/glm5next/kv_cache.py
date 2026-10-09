@@ -14,7 +14,28 @@ from vllm_ascend.core.kv_cache_interface import (
     AscendIndexerKPoolStateSpec,
     AscendMLAAttentionSpec,
 )
-from vllm_ascend.utils import vllm_version_is
+from vllm_ascend.utils import is_310p, vllm_version_is
+
+PACKED_KPOOL_STATE_BLOCK_TOKENS = 32
+PACKED_KPOOL_COMPRESSION_TOKENS = 4
+PACKED_KPOOL_STATE_ELEMENTS = 256
+
+
+def get_kpool_state_block_size(text_config: Any, compress_ratio: int, state_dim: int) -> int:
+    """Opt in to 310P state-page packing without changing compression math."""
+    block_size = getattr(text_config, "ascend_glm_kpool_state_block_size", compress_ratio)
+    if type(block_size) is not int or block_size <= 0:
+        raise ValueError("ascend_glm_kpool_state_block_size must be a positive integer")
+    if block_size == compress_ratio:
+        return block_size
+    if (
+        block_size != PACKED_KPOOL_STATE_BLOCK_TOKENS
+        or compress_ratio != PACKED_KPOOL_COMPRESSION_TOKENS
+        or state_dim != PACKED_KPOOL_STATE_ELEMENTS
+        or not is_310p()
+    ):
+        raise ValueError("packed GLM kpool state requires 310P, 32-token pages, four-token pools and 256 FP32 elements")
+    return block_size
 
 
 def is_glm5_next_cache_spec(spec: KVCacheSpec) -> bool:
@@ -134,15 +155,23 @@ class Glm5NextStateCache(nn.Module, AttentionLayerBase):
         self.dtype = dtype
         self.prefix = prefix
         self.compress_ratio = compress_ratio
-        self.block_size = compress_ratio
         self.cache_config = cache_config
         self.cache_role = "indexer_state"
         current_config = get_current_vllm_config()
+        model_config = getattr(current_config, "model_config", None)
+        text_config = getattr(model_config, "hf_text_config", None)
+        flat_config = getattr(model_config, "hf_config", None)
+        # GLM's text-only adapter also accepts overrides on the multimodal
+        # wrapper config. Match its flat-override precedence for this setting.
+        if hasattr(flat_config, "ascend_glm_kpool_state_block_size"):
+            text_config = flat_config
+        self.block_size = get_kpool_state_block_size(text_config, compress_ratio, state_dim)
         spec_config = getattr(current_config, "speculative_config", None)
         self.num_speculative_tokens = spec_config.num_speculative_tokens if spec_config else 0
         # Preserve the pool containing the earliest possible rejected token.
-        # Physical pages remain one pool wide; the scheduler retains more pages.
-        self.sliding_window = compress_ratio + self.num_speculative_tokens
+        # Whole state pages contain one or eight compression pools. Retain a
+        # conservative full page plus speculation across rejection boundaries.
+        self.sliding_window = self.block_size + self.num_speculative_tokens
         self.kv_cache = [torch.tensor([]) for _ in range(current_config.parallel_config.pipeline_parallel_size)]
         static_context = current_config.compilation_config.static_forward_context
         if prefix in static_context:

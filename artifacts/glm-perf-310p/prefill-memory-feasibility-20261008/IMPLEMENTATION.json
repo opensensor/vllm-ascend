@@ -1,0 +1,151 @@
+{
+  "implementation": "opt-in 32-token compressor state pages",
+  "hf_override": {
+    "ascend_glm_kpool_state_block_size": 32
+  },
+  "default_state_block_tokens": 4,
+  "native_entry": "glm_integer_divide_v2",
+  "binary_rebuild_required": true,
+  "hardware_validated": false,
+  "server_actions": [],
+  "offline_execution_memory_qualified": false,
+  "cache_admission_prediction": {
+    "chunk_tokens": 1280,
+    "context_tokens": 131072,
+    "old_required_bytes": 4478730240,
+    "new_required_bytes": 2139095040,
+    "predicted_savings_bytes": 2339635200
+  },
+  "cpu_tests": {
+    "isolated_glm_worktree": {
+      "command": "python -m pytest --noconftest -q tests/ut/glm_perf",
+      "passed": 1764,
+      "warnings": 6,
+      "seconds": 32.07,
+      "log": "packed-state-cpu-tests.log.gz"
+    },
+    "delivery_workspace": {
+      "command": "python -m pytest --noconftest -q tests/ut/glm_perf/test_packed_kpool_state.py tests/ut/glm_perf/test_integer_divide.py tests/ut/glm_perf/test_prefill_memory_budget.py tests/ut/glm_perf/test_kpool_completed_prefill.py",
+      "passed": 302,
+      "seconds": 5.73,
+      "evidence": "Captured tool output in this session"
+    }
+  },
+  "checks": [
+    {
+      "command": [
+        "ruff",
+        "check",
+        "vllm_ascend/models/glm5next/kv_cache.py",
+        "vllm_ascend/models/glm5next/sparse_attn_indexer_kpool.py",
+        "tools/glm_perf/resident_candidates/kpool_completed_prefill.py",
+        "tools/glm_perf/integer_divide.py",
+        "tools/glm_perf/build_integer_divide.py",
+        "tools/glm_perf/integer_divide_control.py",
+        "tools/glm_perf/integer_divide_probe.py",
+        "tests/ut/glm_perf/test_integer_divide.py",
+        "tests/ut/glm_perf/test_kpool_completed_prefill.py",
+        "tests/ut/glm_perf/test_packed_kpool_state.py",
+        "tools/glm_perf/prefill_memory_budget.py",
+        "tests/ut/glm_perf/test_prefill_memory_budget.py"
+      ],
+      "exit_code": 0,
+      "stdout": "All checks passed!\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "ruff",
+        "format",
+        "--check",
+        "vllm_ascend/models/glm5next/kv_cache.py",
+        "vllm_ascend/models/glm5next/sparse_attn_indexer_kpool.py",
+        "tools/glm_perf/resident_candidates/kpool_completed_prefill.py",
+        "tools/glm_perf/integer_divide.py",
+        "tools/glm_perf/build_integer_divide.py",
+        "tools/glm_perf/integer_divide_control.py",
+        "tools/glm_perf/integer_divide_probe.py",
+        "tests/ut/glm_perf/test_integer_divide.py",
+        "tests/ut/glm_perf/test_kpool_completed_prefill.py",
+        "tests/ut/glm_perf/test_packed_kpool_state.py",
+        "tools/glm_perf/prefill_memory_budget.py",
+        "tests/ut/glm_perf/test_prefill_memory_budget.py"
+      ],
+      "exit_code": 0,
+      "stdout": "12 files already formatted\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/matteius/.cache/pre-commit/repo8pjqjo30/py_env-python3.14/bin/clang-format",
+        "--dry-run",
+        "--Werror",
+        "--style=file",
+        "tools/glm_perf/glm_integer_divide.cpp"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/matteius/.cache/pre-commit/repoy9jpx_0l/node_env-default/bin/node",
+        "/home/matteius/.cache/pre-commit/repoy9jpx_0l/node_env-default/bin/markdownlint",
+        "/run/media/matteius/20TB-drive/vllm-ascend/artifacts/glm-perf-310p/prefill-memory-feasibility-20261008/IMPLEMENTATION.md",
+        "/run/media/matteius/20TB-drive/vllm-ascend/artifacts/glm-perf-310p/prefill-memory-feasibility-20261008/IMPLEMENTATION.zh-CN.md",
+        "/run/media/matteius/20TB-drive/vllm-ascend/artifacts/glm-perf-310p/prefill-memory-feasibility-20261008/README.md",
+        "/run/media/matteius/20TB-drive/vllm-ascend/artifacts/glm-perf-310p/prefill-memory-feasibility-20261008/README.zh-CN.md"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check",
+        "--",
+        "vllm_ascend/models/glm5next/kv_cache.py",
+        "vllm_ascend/models/glm5next/sparse_attn_indexer_kpool.py",
+        "tools/glm_perf/resident_candidates/kpool_completed_prefill.py",
+        "tools/glm_perf/integer_divide.py",
+        "tools/glm_perf/glm_integer_divide.cpp",
+        "tools/glm_perf/build_integer_divide.py",
+        "tools/glm_perf/integer_divide_control.py",
+        "tools/glm_perf/integer_divide_probe.py",
+        "tests/ut/glm_perf/test_integer_divide.py",
+        "tests/ut/glm_perf/test_kpool_completed_prefill.py",
+        "tests/ut/glm_perf/test_packed_kpool_state.py",
+        "tools/glm_perf/prefill_memory_budget.py",
+        "tests/ut/glm_perf/test_prefill_memory_budget.py"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "source_root": "/run/media/matteius/20TB-drive/vllm-ascend",
+  "file_sha256": {
+    "vllm_ascend/models/glm5next/kv_cache.py": "2622041fcb892510b475834af9773c46862f2ecc51f536ea9807fec226562a85",
+    "vllm_ascend/models/glm5next/sparse_attn_indexer_kpool.py": "6e643093af88709f5f32940eab7369180b9362e5e9808c630e060ea88990642c",
+    "tools/glm_perf/resident_candidates/kpool_completed_prefill.py": "27bc2ae6fdeefd73756c8ca727d601106d9d1d0bf542ab2d488763e056bd4b9e",
+    "tools/glm_perf/integer_divide.py": "d497d213eb8f0b04ec9af0f263e825f7ce882aec79720c0f489b0359359f816a",
+    "tools/glm_perf/glm_integer_divide.cpp": "b202ae555f08eb078ee9f9c915a519e6dbc5662469204f5c3a9ed8dfe028e4ed",
+    "tools/glm_perf/build_integer_divide.py": "6995081cd3cd312002161687acc79de47f18a5c600a30583bd9a3b68e9564062",
+    "tools/glm_perf/integer_divide_control.py": "9dcc21f3be92c8dbeba9c05789d73af2294386df45efd6b13d6119dccd94d048",
+    "tools/glm_perf/integer_divide_probe.py": "7b40e0030e1d7c5ddc6a626fd129793dc1d7dd723682a359103d83bc8a8bb506",
+    "tests/ut/glm_perf/test_integer_divide.py": "4b1cd631e1a8b1417f7cb0647f19333af2f1176b6bde7a7d3b447c8ca00d20ba",
+    "tests/ut/glm_perf/test_kpool_completed_prefill.py": "21e18585e3286716f12ea8f8d5dc20e5fbd0a3e774c889f51087474fe15fcb2f",
+    "tests/ut/glm_perf/test_packed_kpool_state.py": "524b79f5e02c5dfd6758ed46ece713a9e22ff32452865194c9b2d26a8828ee6b",
+    "tools/glm_perf/prefill_memory_budget.py": "6c4d718b93b5a9169ad76d0aea8cc0d3d4e4edd1c6b62f92fbb5b2c3beb5c3d0",
+    "tests/ut/glm_perf/test_prefill_memory_budget.py": "278c55c818026943a791c40599b4fde034f73fdb543c727eda52966776e1fa26"
+  },
+  "commit_status": "uncommitted working files",
+  "limitations": [
+    "CANN binary not compiled locally",
+    "No native graph replay or server test",
+    "Writer-level prefix/rejection parity is not full scheduler integration qualification",
+    "No measured speed or memory savings"
+  ]
+}

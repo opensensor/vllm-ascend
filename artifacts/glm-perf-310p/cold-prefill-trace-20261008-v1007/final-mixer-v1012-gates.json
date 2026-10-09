@@ -1,0 +1,185 @@
+{
+  "complete": true,
+  "scope": "operator gates only; no serving speed claim",
+  "cases": [
+    {
+      "rows": 640,
+      "input_dtype": "torch.float16",
+      "finite": true,
+      "graph_changed_inputs": true,
+      "fp32_output_unrounded": true,
+      "incremental_peak_bytes": {
+        "einsum": 293931520,
+        "native": 41943552
+      },
+      "median_ms": {
+        "einsum": 5.930129031185061,
+        "native": 1.0128269786946476
+      },
+      "samples_ms": {
+        "einsum": [
+          6.002996989991516,
+          5.952822044491768,
+          5.839737015776336,
+          5.930129031185061,
+          5.9617889928631485,
+          5.9273430379107594,
+          5.917303962633014
+        ],
+        "native": [
+          1.1447370052337646,
+          0.9234260069206357,
+          1.0128269786946476,
+          0.9539740276522934,
+          1.0796330170705914,
+          0.9244679822586477,
+          1.0422319755889475
+        ]
+      }
+    },
+    {
+      "rows": 640,
+      "input_dtype": "torch.float32",
+      "finite": true,
+      "graph_changed_inputs": true,
+      "fp32_output_unrounded": true,
+      "incremental_peak_bytes": {
+        "einsum": 293931520,
+        "native": 41943552
+      },
+      "median_ms": {
+        "einsum": 5.766789021436125,
+        "native": 0.9123149793595076
+      },
+      "samples_ms": {
+        "einsum": [
+          5.766789021436125,
+          5.844024999532849,
+          5.706012016162276,
+          5.771316995378584,
+          5.889391002710909,
+          5.731151031795889,
+          5.727894022129476
+        ],
+        "native": [
+          1.149916963186115,
+          1.0845130309462547,
+          0.9039189899340272,
+          0.8954229997470975,
+          1.0086990077979863,
+          0.9123149793595076,
+          0.907456036657095
+        ]
+      }
+    },
+    {
+      "rows": 1280,
+      "input_dtype": "torch.float16",
+      "finite": true,
+      "graph_changed_inputs": true,
+      "fp32_output_unrounded": true,
+      "incremental_peak_bytes": {
+        "einsum": 587860480,
+        "native": 83886592
+      },
+      "median_ms": {
+        "einsum": 11.403279029764235,
+        "native": 1.671008998528123
+      },
+      "samples_ms": {
+        "einsum": [
+          11.39728701673448,
+          11.387479025870562,
+          11.403279029764235,
+          11.394010973162949,
+          11.414389009587467,
+          11.501795030198991,
+          11.5488349692896
+        ],
+        "native": [
+          1.6601980314590037,
+          1.6767389606684446,
+          1.6780110308900476,
+          1.6471529961563647,
+          1.671008998528123,
+          1.6470919945277274,
+          1.7578430124558508
+        ]
+      }
+    },
+    {
+      "rows": 1280,
+      "input_dtype": "torch.float32",
+      "finite": true,
+      "graph_changed_inputs": true,
+      "fp32_output_unrounded": true,
+      "incremental_peak_bytes": {
+        "einsum": 587860480,
+        "native": 83886592
+      },
+      "median_ms": {
+        "einsum": 11.275545984972268,
+        "native": 1.6918070032261312
+      },
+      "samples_ms": {
+        "einsum": [
+          11.34710101177916,
+          11.24383503338322,
+          11.217053979635239,
+          11.401986004784703,
+          11.275545984972268,
+          11.358272982761264,
+          11.222153960261494
+        ],
+        "native": [
+          1.6918070032261312,
+          1.6775010153651237,
+          1.6951640136539936,
+          1.7479039961472154,
+          1.8843639991246164,
+          1.6658079694025218,
+          1.6800950397737324
+        ]
+      }
+    }
+  ],
+  "provenance": {
+    "namespace": "glm_reconstruction_v1012",
+    "version": 1012,
+    "source_sha256": "f161c2223ad4ef3454ec80ea958072a0f54bca9152fc959f7967816007f16d74",
+    "helper_sha256": "9453e794f78a76068bbc228b7e3a9d800a4cde57718e8611c195479d92aae085",
+    "binaries": {
+      "mhc_post_fp16.bin": {
+        "sha256": "79766831efdecb6f0167befcb0801145ede0107c65eb73efcb9c1f73440c5725",
+        "command": [
+          "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-final-mixer-v1012/compile-reconstruction",
+          "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-final-mixer-v1012/mhc_post_kernel.cpp",
+          "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-final-mixer-v1012/mhc_post_fp16.bin",
+          "--npu-arch=dav-2002",
+          "--sysroot=/usr/local/Ascend/cann-9.1.0/tools/hcc/sysroot",
+          "-isystem/usr/local/Ascend/cann-9.1.0/tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0",
+          "-isystem/usr/local/Ascend/cann-9.1.0/tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0/aarch64-target-linux-gnu",
+          "-DGLM_MHC_NO_STATE_ROUNDING"
+        ]
+      },
+      "mhc_post_fp32.bin": {
+        "sha256": "7d4d8ec88df80a082fc32f337e203799329a39885cafdc8abd43aeaae61b969c",
+        "command": [
+          "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-final-mixer-v1012/compile-reconstruction",
+          "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-final-mixer-v1012/mhc_post_kernel.cpp",
+          "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-final-mixer-v1012/mhc_post_fp32.bin",
+          "--npu-arch=dav-2002",
+          "--sysroot=/usr/local/Ascend/cann-9.1.0/tools/hcc/sysroot",
+          "-isystem/usr/local/Ascend/cann-9.1.0/tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0",
+          "-isystem/usr/local/Ascend/cann-9.1.0/tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0/aarch64-target-linux-gnu",
+          "-DGLM_MHC_FP32_INPUT",
+          "-DGLM_MHC_NO_STATE_ROUNDING"
+        ]
+      }
+    },
+    "state_rounding": "none_fp32",
+    "fp32_input_preserved": true,
+    "finish_only": false
+  },
+  "helper_sha256": "9453e794f78a76068bbc228b7e3a9d800a4cde57718e8611c195479d92aae085"
+}

@@ -348,6 +348,15 @@ def test_fused_wrapper_counts_rejected_bank_as_fallback():
         {"share_gate_up_input": True},
         {"share_gate_up_input": True, "cache_gate_up_activations": True},
         {"vector_scale_products": True},
+        {"fused_moe": True, "prepared_weight_layout": True, "vector_scale_products": True, "cache_expert_ends": True},
+        {"vector_scale_products": True, "fused_scale_accumulation": True},
+        {
+            "nz_prefill_accumulator": True,
+            "nz_prefill_min_rows": 31,
+            "prefill_rows_32": True,
+            "pair_prefill_scale_groups": True,
+            "vector_scale_products": True,
+        },
         {"gather_product_matrix": True},
         {"vector_scale_products": True, "gather_product_matrix": True},
     ],
@@ -378,6 +387,10 @@ def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_pat
     row = {"passed": True, "graph_changed_inputs_routes_weights": True, "fp16_intermediate_gm_bytes": 0, "tokens": 128}
     row["compact_w4_scratch"] = prefill_options.get("compact_w4_scratch", False)
     row["fp16_weight_scales"] = prefill_options.get("fp16_weight_scales", False)
+    row["fused_scale_accumulation"] = prefill_options.get("fused_scale_accumulation", False)
+    row["nz_prefill_min_rows"] = prefill_options.get("nz_prefill_min_rows", 0)
+    row["cache_expert_ends"] = prefill_options.get("cache_expert_ends", False)
+    row["nz_boundary_rows"] = [30, 31] if prefill_options.get("nz_prefill_min_rows") else []
     row["prerounded_weight_scales"] = prefill_options.get("prerounded_weight_scales", False)
     if prefill_options.get("fp16_route_workspace"):
         row.update(
@@ -423,6 +436,13 @@ def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_pat
             manifest(tmp_path, report)
         gates["records"] = records
         write()
+    if prefill_options.get("fused_scale_accumulation"):
+        gates["records"] = [dict(record, fused_scale_accumulation=False) for record in records]
+        write()
+        with pytest.raises(ValueError, match="matching arithmetic gates"):
+            manifest(tmp_path, report)
+        gates["records"] = records
+        write()
     if prefill_options.get("compact_w4_scratch"):
         gates["records"] = [dict(record, compact_w4_scratch=False) for record in records]
         write()
@@ -437,6 +457,26 @@ def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_pat
         with pytest.raises(ValueError, match="exact binaries"):
             manifest(tmp_path, report)
         path.write_bytes(original)
+    if prefill_options.get("nz_prefill_min_rows"):
+        gates["records"] = [dict(record, nz_prefill_min_rows=17) for record in records]
+        write()
+        with pytest.raises(ValueError, match="matching dispatch gates"):
+            manifest(tmp_path, report)
+        gates["records"] = records
+        write()
+        gates["real_weight_records"] = [dict(record, nz_boundary_rows=[]) for record in records]
+        write()
+        with pytest.raises(ValueError, match="below/at-threshold replay gates"):
+            manifest(tmp_path, report)
+        gates["real_weight_records"] = records
+        write()
+    if prefill_options.get("cache_expert_ends"):
+        gates["records"] = [dict(record, cache_expert_ends=False) for record in records]
+        write()
+        with pytest.raises(ValueError, match="changed-route replay gates"):
+            manifest(tmp_path, report)
+        gates["records"] = records
+        write()
     if specialize_w3:
         specialized = tmp_path / "glm_fused_down_w3.bin"
         assert str(specialized) in {entry["path"] for entry in payload["assets"]}

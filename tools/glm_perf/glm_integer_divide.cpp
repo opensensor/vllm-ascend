@@ -39,13 +39,15 @@ template <typename T>
 __aicore__ inline void Dispatch(GM_ADDR input, GM_ADDR output, int64_t count, int64_t divisor) {
   if (divisor == 4)
     Divide<T, 4>(input, output, count);
+  else if (divisor == 32)
+    Divide<T, 32>(input, output, count);
   else if (divisor == 160)
     Divide<T, 160>(input, output, count);
   else if (divisor == 640)
     Divide<T, 640>(input, output, count);
 }
 }  // namespace
-extern "C" __global__ __aicore__ void glm_integer_divide_v1(GM_ADDR input, GM_ADDR output, GM_ADDR config) {
+extern "C" __global__ __aicore__ void glm_integer_divide_v2(GM_ADDR input, GM_ADDR output, GM_ADDR config) {
   AscendC::InitSocState();
   const auto values = reinterpret_cast<__gm__ int64_t*>(config);
   if (values[2] == 4)

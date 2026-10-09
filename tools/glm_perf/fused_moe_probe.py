@@ -52,7 +52,7 @@ def route_metadata(ids, weights, experts, offset):
     return order, ends
 
 
-def gate_case(native, bits, tokens=2, hidden=256, inter=256, real=None):
+def gate_case(native, bits, tokens=2, hidden=256, inter=256, real=None, nz_density_boundary=False):
     generator = torch.Generator().manual_seed(5700 + bits + tokens)
     experts = 3 if real is None else 1
     if real is None:
@@ -75,6 +75,13 @@ def gate_case(native, bits, tokens=2, hidden=256, inter=256, real=None):
         weights[-1, 0] = 0
     offset = 5
     ids += offset
+    boundary = getattr(native, "nz_prefill_min_rows", 0)
+    if nz_density_boundary:
+        if not boundary or tokens <= FUSED_REDUCTION_TOKENS or ids.numel() < boundary:
+            raise ValueError("NZ boundary gate requires bulk tokens and an explicit reachable threshold")
+        ids.fill_(offset + experts)
+        ids.view(-1)[: boundary - 1] = offset
+        weights.fill_(0.75)
     gx, gi, gw = x.npu(), ids.npu(), weights.npu()
     gc, dc = native.pack_weight_codes(gate, bits).npu(), native.pack_weight_codes(down, bits).npu()
     # Qualification is explicit and performed on the small CPU fixture. Keep
@@ -98,7 +105,11 @@ def gate_case(native, bits, tokens=2, hidden=256, inter=256, real=None):
     with torch.npu.graph(graph):
         actual = pipeline()
     gx.copy_((x * 1.25).npu())
-    gi.copy_(torch.full_like(ids, offset).npu())
+    changed_ids = torch.full_like(ids, offset)
+    if nz_density_boundary:
+        changed_ids.fill_(offset + experts)
+        changed_ids.view(-1)[:boundary] = offset
+    gi.copy_(changed_ids.npu())
     gw.copy_((weights * 0.75).npu())
     gate = torch.roll(gate, 1, -1)
     down = torch.roll(down, 2, -1)
@@ -117,6 +128,10 @@ def gate_case(native, bits, tokens=2, hidden=256, inter=256, real=None):
         "fp16_weight_scales": half_storage,
         "compact_w4_scratch": getattr(native, "compact_w4_scratch", False),
         "activation_bits": native.activation_bits,
+        "fused_scale_accumulation": getattr(native, "fused_scale_accumulation", False),
+        "nz_prefill_min_rows": getattr(native, "nz_prefill_min_rows", 0),
+        "cache_expert_ends": getattr(native, "cache_expert_ends", False),
+        "nz_boundary_rows": [boundary - 1, boundary] if nz_density_boundary else [],
         "tokens": tokens,
         "hidden": hidden,
         "intermediate": inter,
@@ -194,6 +209,10 @@ def run(build_dir, output, *, checkpoint=None, real_prefixes=()):
                     record = gate_case(native, bits, tokens)
                     payload["records"].append(record)
                     print(json.dumps(record), flush=True)
+                if options.get("nz_prefill_min_rows"):
+                    record = gate_case(native, bits, tokens=31, nz_density_boundary=True)
+                    payload["records"].append(record)
+                    print(json.dumps(record), flush=True)
             if checkpoint:
                 index = json.loads((checkpoint / "model.safetensors.index.json").read_text())["weight_map"]
                 for prefix in real_prefixes:
@@ -247,6 +266,11 @@ def run(build_dir, output, *, checkpoint=None, real_prefixes=()):
                     )
                     for tokens in real_tokens:
                         record = gate_case(native, bits, tokens=tokens, real=(gate, gs, down, ds))
+                        record.update(tensor_prefix=prefix, checkpoint_tensor_hashes=hashes)
+                        payload["real_weight_records"].append(record)
+                        print(json.dumps(record), flush=True)
+                    if options.get("nz_prefill_min_rows"):
+                        record = gate_case(native, bits, tokens=31, real=(gate, gs, down, ds), nz_density_boundary=True)
                         record.update(tensor_prefix=prefix, checkpoint_tensor_hashes=hashes)
                         payload["real_weight_records"].append(record)
                         print(json.dumps(record), flush=True)

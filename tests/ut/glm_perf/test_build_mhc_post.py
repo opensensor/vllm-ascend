@@ -23,3 +23,10 @@ def test_existing_build_is_never_overwritten(tmp_path):
         build_mhc(output, tmp_path, tmp_path, 76)
     assert binary.read_bytes() == b"resident kernel"
     assert list(output.iterdir()) == [binary]
+
+
+def test_final_mixer_cannot_retain_general_einsum(tmp_path):
+    output = tmp_path / "build"
+    with pytest.raises(ValueError, match="complete einsum"):
+        build_mhc(output, tmp_path, tmp_path, 1012, finish_only=True, round_state=False)
+    assert not output.exists()

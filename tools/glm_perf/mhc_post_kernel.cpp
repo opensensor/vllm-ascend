@@ -77,6 +77,7 @@ class MhcPost {
         Add(accumulator, accumulator, scratch, count);
 #endif
         PipeBarrier<PIPE_V>();
+#ifndef GLM_MHC_NO_STATE_ROUNDING
         // The qualified 310P torch_npu cast saturates finite overflow and
         // +/-Inf; NaN becomes +65504. Match that observed backend behavior.
         Mins(accumulator, accumulator, FP16_MAX, count);
@@ -96,6 +97,7 @@ class MhcPost {
         Cast(roundedHalf, accumulator, RoundMode::CAST_NONE, count);
         PipeBarrier<PIPE_V>();
         Cast(accumulator, roundedHalf, RoundMode::CAST_NONE, count);
+#endif
         SetFlag<HardEvent::V_MTE3>(EVENT_ID0);
         WaitFlag<HardEvent::V_MTE3>(EVENT_ID0);
         DataCopy(output_[(row * STREAMS + j) * td.width + col], accumulator, count);

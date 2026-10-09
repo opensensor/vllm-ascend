@@ -4,6 +4,7 @@
 import hashlib
 import json
 
+from .integer_divide import DIVISION_GATE_COUNTS, DIVISORS, INTEGER_DIVIDE_ENTRY
 from .resident_native import NativeManifest
 
 
@@ -14,6 +15,7 @@ def manifest(build, gate_report):
     gates = json.loads(gate_report.read_text())
     if (
         not options.get("integer_metadata_divide")
+        or options.get("integer_divide_entry") != INTEGER_DIVIDE_ENTRY
         or gates.get("complete") is not True
         or gates.get("build_options") != options
     ):
@@ -27,10 +29,10 @@ def manifest(build, gate_report):
     required = {
         (dtype, divisor, count)
         for dtype in ("torch.int32", "torch.int64")
-        for divisor in (4, 160, 640)
-        for count in (2, 8, 640)
+        for divisor in DIVISORS
+        for count in DIVISION_GATE_COUNTS
     }
-    if coverage != required or any(r.get("signed_extremes") is not True for r in records if r["count"] == 640):
+    if coverage != required or any(r.get("signed_extremes") is not True for r in records):
         raise ValueError("integer metadata requires signed extremes, both widths and changed replay")
     package, namespace = options["helper_package"], options["namespace"]
     assets = (build / "glm_integer_divide.bin", build / f"glm_reconstruction_bridge_v{options['version']}.so")
@@ -54,8 +56,11 @@ def manifest(build, gate_report):
 def validate(native):
     import torch
     from {package}.integer_divide_probe import case
-    records=[case(native, dtype, divisor, 640)
-             for dtype in (torch.int32,torch.int64) for divisor in (4,160,640)]
+    # Worker RPCs run in inference mode, which omits Tensor._base metadata.
+    # The standalone padding probe needs that metadata to audit owned storage.
+    with torch.inference_mode(False):
+        records=[case(native, dtype, divisor, 640)
+                 for dtype in (torch.int32,torch.int64) for divisor in {DIVISORS!r}]
     return {{'passed':True,'cases':len(records),'signed_extremes':True,'changed_input_replay':True}}
 """
     return NativeManifest(

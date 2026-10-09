@@ -6,7 +6,9 @@ import types
 
 import torch
 
-DIVISORS = (4, 160, 640)
+DIVISORS = (4, 32, 160, 640)
+INTEGER_DIVIDE_ENTRY = "glm_integer_divide_v2"
+DIVISION_GATE_COUNTS = (2, 8, 640, 1280, 2560)
 DIVISION_CORES = 8
 DIVISION_TILE = 64
 DMA_BYTES = 32
@@ -41,7 +43,7 @@ class NativeIntegerDivide:
         self.device = torch.device("npu", torch.npu.current_device())
         torch.empty(1, device=self.device)
         self.kernel = getattr(torch.classes, namespace).Kernel(
-            str(build / "glm_integer_divide.bin"), "glm_integer_divide_v1"
+            str(build / "glm_integer_divide.bin"), INTEGER_DIVIDE_ENTRY
         )
         self.launch = getattr(torch.ops, namespace).launch
         self.configs = {}
@@ -127,8 +129,16 @@ def rewrite_pool_remainders(original, authoritative_source, proxy):
     owner = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "SparseAttnIndexerKpool")
     method = next(node for node in owner.body if isinstance(node, ast.FunctionDef) and node.name == "_write_pools")
     source = ast.unparse(method)
-    replacements = (
-        ("safe_state_slots % pool_size", "(safe_state_slots - state_blocks * pool_size)"),
+    # Legacy deployed writers still use one pool per page. New writers already
+    # reuse the state quotient for both gathers and padded row writes.
+    if "state_block_size = state_cache.shape[1]" in source:
+        expected = "state_offsets = safe_state_slots - state_blocks * state_block_size"
+        if source.count(expected) != 1 or source.count("state_offsets * state_cache.stride(1)") != 1:
+            raise ValueError("authoritative pool writer expressions changed")
+        state_replacements = ()
+    else:
+        state_replacements = (("safe_state_slots % pool_size", "(safe_state_slots - state_blocks * pool_size)"),)
+    replacements = state_replacements + (
         ("pool_slots % block_size", "(pool_slots - pool_blocks * block_size)"),
         ("torch.div(pool_slots, block_size, rounding_mode='floor')", "pool_blocks"),
         (

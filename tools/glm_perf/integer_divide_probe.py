@@ -11,11 +11,13 @@ from pathlib import Path
 
 import torch
 
+from .integer_divide import DIVISION_GATE_COUNTS, DIVISORS, INTEGER_DIVIDE_ENTRY
+
 
 def load(build):
     provenance = json.loads((build / "provenance.json").read_text())
     options = provenance["_build"]
-    if not options.get("integer_metadata_divide"):
+    if not options.get("integer_metadata_divide") or options.get("integer_divide_entry") != INTEGER_DIVIDE_ENTRY:
         raise ValueError("not an integer metadata bundle")
     for name, digest in provenance["_helpers"].items():
         if hashlib.sha256((build / options["helper_package"] / name).read_bytes()).hexdigest() != digest:
@@ -77,7 +79,8 @@ def case(native, dtype, divisor, count):
         "count": count,
         "passed": True,
         "changed_input_replay": True,
-        "signed_extremes": count >= len(seed),
+        # The first two seed values are the signed minimum and maximum.
+        "signed_extremes": count >= 2,
         "owned_padding_checked": True,
     }
 
@@ -105,8 +108,8 @@ def run(build, output):
     records = [
         case(native, dtype, divisor, count)
         for dtype in (torch.int32, torch.int64)
-        for divisor in (4, 160, 640)
-        for count in (2, 8, 640)
+        for divisor in DIVISORS
+        for count in DIVISION_GATE_COUNTS
     ]
     performance = []
     for dtype in (torch.int32, torch.int64):
