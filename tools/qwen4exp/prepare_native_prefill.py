@@ -56,6 +56,7 @@ def make_manifest(build: Path, runtime: Path):
             "tools/qwen4exp/resident_candidates/local_routes.py",
             "vllm_ascend/_310p/ops/fla/chunk_gated_delta_rule.py",
             "vllm_ascend/models/qwen4_exp/w4_moe.py",
+            "vllm_ascend/models/qwen4_exp/model.py",
         )
     ]
 

@@ -728,11 +728,14 @@ def chunk_gated_delta_rule_310(
     use_qk_l2norm_in_kernel: bool = False,
     chunk_plan: VarlenChunkPlan | None = None,
     wy_prepare: Callable[..., tuple[torch.Tensor, ...]] | None = None,
+    state_is_kernel_layout: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
     """310P chunk GDN path backed by AscendC fwd_h/fwd_o kernels.
 
     ``wy_prepare`` is an explicit, prevalidated resident experiment callback.
     Leaving it unset retains the qualified torch WY preparation.
+    ``state_is_kernel_layout`` accepts/returns contiguous FP32 [N,H,K,V]
+    states for fused cache IO; the default public [N,H,V,K] contract remains.
 
     Triton is unavailable on 310P, so the local WY preparation is done with
     torch ops and the inter-chunk state/output matmuls are delegated to the
@@ -776,10 +779,16 @@ def chunk_gated_delta_rule_310(
         chunk_indices_list = chunk_plan.chunk_indices
         num_states = len(cu_list) - 1
 
-    expected_state_shape = (num_states, v.shape[2], v.shape[-1], k.shape[-1])
+    expected_state_shape = (
+        (num_states, v.shape[2], k.shape[-1], v.shape[-1])
+        if state_is_kernel_layout
+        else (num_states, v.shape[2], v.shape[-1], k.shape[-1])
+    )
     if initial_state is not None:
         if initial_state.device != q.device:
             raise RuntimeError(f"initial_state must be on {q.device}, got {initial_state.device}.")
+        if state_is_kernel_layout and (initial_state.dtype != torch.float32 or not initial_state.is_contiguous()):
+            raise ValueError("native-layout initial state must be contiguous FP32")
         if tuple(initial_state.shape) != expected_state_shape:
             raise ValueError(f"initial_state must have shape {expected_state_shape}, got {tuple(initial_state.shape)}.")
 
@@ -795,16 +804,13 @@ def chunk_gated_delta_rule_310(
 
     if initial_state is None:
         state = torch.zeros(
-            num_states,
-            v.shape[2],
-            v.shape[-1],
-            k.shape[-1],
+            *expected_state_shape,
             dtype=torch.float32,
             device=v.device,
         )
     else:
         state = initial_state
-    state_kernel = state.transpose(-1, -2).contiguous()
+    state_kernel = state if state_is_kernel_layout else state.transpose(-1, -2).contiguous()
 
     h, v_new, final_state_kernel = torch.ops._C_ascend.chunk_gated_delta_rule_fwd_h(
         k_kernel,
@@ -839,5 +845,5 @@ def chunk_gated_delta_rule_310(
     out = _unpad_chunk_output(out, seq_ranges, original_tokens, input_was_tnd, cu_seqlens is not None)
     if not output_final_state:
         return out, None
-    final_state = final_state_kernel.transpose(-1, -2).contiguous()
+    final_state = final_state_kernel if state_is_kernel_layout else final_state_kernel.transpose(-1, -2).contiguous()
     return out, final_state

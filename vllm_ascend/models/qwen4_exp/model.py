@@ -998,8 +998,12 @@ class _GDNAttention(nn.Module, MambaBase):
             ).squeeze(0)
         if metadata.num_prefills > 0:
             assert has_initial_state is not None
-            initial_state = self.kv_cache[1][state_indices].contiguous()
-            initial_state = initial_state * has_initial_state[:, None, None, None].to(initial_state.dtype)
+            state_io = getattr(self, "_gdn_state_io", None)
+            if state_io is None:
+                initial_state = self.kv_cache[1][state_indices].contiguous()
+                initial_state = initial_state * has_initial_state[:, None, None, None].to(initial_state.dtype)
+            else:
+                initial_state = state_io.gather(self.kv_cache[1], state_indices, has_initial_state)
             out, final_state = chunk_gated_delta_rule_310(
                 q=q,
                 k=k,
@@ -1012,9 +1016,14 @@ class _GDNAttention(nn.Module, MambaBase):
                 head_first=False,
                 use_qk_l2norm_in_kernel=True,
                 chunk_plan=_cached_chunk_plan(metadata, query_start_loc),
+                state_is_kernel_layout=state_io is not None,
+                wy_prepare=getattr(self, "_gdn_wy_prepare", None),
             )
             assert final_state is not None
-            self.kv_cache[1][state_indices] = final_state.to(self.kv_cache[1].dtype)
+            if state_io is None:
+                self.kv_cache[1][state_indices] = final_state.to(self.kv_cache[1].dtype)
+            else:
+                state_io.scatter(self.kv_cache[1], state_indices, has_initial_state, final_state)
             return out.squeeze(0)
 
         return npu_recurrent_gated_delta_rule_310(

@@ -56,10 +56,12 @@ from vllm_ascend._310p.ops.rotary_embedding import prepare_mrope_cos_sin_slices_
 from vllm_ascend._310p.prefix_mamba_state import (
     LiveMambaRequestSlots,
     PrefixMambaStateTier,
+    apply_prefix_mamba_updates,
     prefix_mamba_active_columns,
     prefix_mamba_device_archive_slots,
     prefix_mamba_slot_count,
     prefix_mamba_state_bytes_per_slot,
+    remap_prefix_mamba_rows,
     retain_prefix_mamba_blocks,
     supports_compact_live_mamba_state,
 )
@@ -351,6 +353,10 @@ class NPUModelRunner310(NPUModelRunner):
         )
         self._ple_context_gpu.copy_(self._ple_context_cpu, non_blocking=True)
         self._ple_query_start_loc_gpu.copy_(self._ple_query_start_loc_cpu, non_blocking=True)
+        ledger = getattr(self, "_transfer_ledger", None)
+        if ledger is not None:
+            for source in (self._ple_context_cpu, self._ple_query_start_loc_cpu):
+                ledger.record("h2d", "ple_history", nbytes=source.numel() * source.element_size())
         return self._ple_query_start_loc_gpu, self._ple_context_gpu
 
     def _update_states(self, scheduler_output: SchedulerOutput):
@@ -366,7 +372,7 @@ class NPUModelRunner310(NPUModelRunner):
             # A prior ACL graph can still be writing a request's recurrent
             # state on another stream. Drain it before the base runner moves
             # rows or this runner invalidates/reassigns prefix state slots.
-            torch.npu.synchronize(self.device)
+            next(iter(prefix_tiers.values()))._drain("runner_layout_change")
         elif scheduler_output.finished_req_ids:
             # Non-prefix 310P paths also stage slot mappings on the CPU.
             torch.npu.current_stream().synchronize()
@@ -404,8 +410,8 @@ class NPUModelRunner310(NPUModelRunner):
             for req_id in reset_ids:
                 state_indices.pop(req_id, None)
             multi_group_table = cast(MultiGroupBlockTable310, self.input_batch.block_table)
-            for group_idx, tier in prefix_tiers.items():
-                tier.invalidate(fresh_mamba_ids.get(group_idx, ()))
+            tier_copies = {group_idx: [] for group_idx in prefix_tiers}
+            for group_idx in prefix_tiers:
                 if block_copies:
                     block_table = multi_group_table.block_tables[group_idx]
                     active_ids = {
@@ -417,7 +423,13 @@ class NPUModelRunner310(NPUModelRunner):
                     active_ids.update(fresh_mamba_ids.get(group_idx, ()))
                     for source_id, target_id in block_copies:
                         if target_id in active_ids:
-                            tier.copy(source_id, target_id)
+                            tier_copies[group_idx].append((source_id, target_id))
+            apply_prefix_mamba_updates(
+                prefix_tiers,
+                fresh_mamba_ids,
+                tier_copies,
+                batched=getattr(self, "_prefix_phase_batching", False),
+            )
         return deferred
 
     def _new_prefix_mamba_block_ids(self, scheduler_output: SchedulerOutput) -> dict[int, set[int]]:
@@ -581,6 +593,9 @@ class NPUModelRunner310(NPUModelRunner):
         if self._qwen4exp_mtp_ple and not self.use_async_scheduling and self.need_accepted_tokens:
             sampled = sampler_output.sampled_token_ids
             host_sampled = sampled.cpu()
+            ledger = getattr(self, "_transfer_ledger", None)
+            if ledger is not None and sampled.device.type != "cpu":
+                ledger.record("d2h", "sampled_token_delivery", nbytes=sampled.numel() * sampled.element_size())
             # Count before vocabulary/discard filtering: alignment consumes raw
             # rejection-sampler acceptance, including discarded prefill rows.
             counts = (host_sampled != -1).sum(dim=1)
@@ -614,6 +629,9 @@ class NPUModelRunner310(NPUModelRunner):
             stages[group_idx] = PinnedHostStaging(tuple(device_table.shape), device_table.dtype)
         source = torch.from_numpy(mapped).to(dtype=device_table.dtype)
         stages[group_idx].copy_to(source, device_table[: source.shape[0]])
+        ledger = getattr(self, "_transfer_ledger", None)
+        if ledger is not None:
+            ledger.record("h2d", "compact_mamba_table", nbytes=source.numel() * source.element_size())
 
     def _remap_compact_mamba_block_tables(self, num_reqs: int, num_scheduled_tokens: np.ndarray | None = None) -> None:
         if not self.supports_compact_mamba_state:
@@ -631,10 +649,10 @@ class NPUModelRunner310(NPUModelRunner):
         multi_group_table = cast(MultiGroupBlockTable310, self.input_batch.block_table)
         self._prefix_mamba_active_columns = {}
         mapped_tables: dict[int, np.ndarray] = {}
+        prefix_plans = {}
         for group_idx, block_table in enumerate(multi_group_table.block_tables):
             if block_table.is_mamba_group:
                 if self.supports_prefix_mamba_state_tier:
-                    tier = self._prefix_mamba_tiers[group_idx]
                     used_columns = block_table.num_blocks_per_row[:num_reqs]
                     active_columns = tuple(tuple(range(int(used))) for used in used_columns)
                     if num_scheduled_tokens is not None:
@@ -654,9 +672,7 @@ class NPUModelRunner310(NPUModelRunner):
                             previous_columns,
                         )
                     self._prefix_mamba_active_columns[group_idx] = active_columns
-                    mapped = tier.remap_rows(block_table.block_table.np[:num_reqs], used_columns, active_columns)
-                    mapped_tables[group_idx] = mapped
-                    self._copy_compact_mamba_table(group_idx, mapped, block_table.block_table.gpu)
+                    prefix_plans[group_idx] = (block_table.block_table.np[:num_reqs], used_columns, active_columns)
                     continue
                 # The running block advances with context length. Reuse the
                 # compact slots cyclically, including columns beyond the first
@@ -676,6 +692,17 @@ class NPUModelRunner310(NPUModelRunner):
                         np.arange(num_columns, dtype=np.int32) % self.num_compact_mamba_blocks,
                         (num_reqs, num_columns),
                     ).copy()
+        if prefix_plans:
+            mapped_tables.update(
+                remap_prefix_mamba_rows(
+                    self._prefix_mamba_tiers,
+                    prefix_plans,
+                    batched=getattr(self, "_prefix_phase_batching", False),
+                )
+            )
+            for group_idx, mapped in mapped_tables.items():
+                table = multi_group_table.block_tables[group_idx].block_table.gpu
+                self._copy_compact_mamba_table(group_idx, mapped, table)
         self.input_batch._prefix_mamba_postprocess_tables = mapped_tables
 
     def _stage_prefix_mamba_request_ids(self) -> None:

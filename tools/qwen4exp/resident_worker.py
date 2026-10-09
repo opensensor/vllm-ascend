@@ -27,6 +27,24 @@ class QwenResidentExtension(ResidentWorkerExtension):
             str(group_id): tier.cache_status()
             for group_id, tier in getattr(self.model_runner, "_prefix_mamba_tiers", {}).items()
         }
+        result["transfer_audit"] = {
+            "rank": result["rank"],
+            "pid": result["pid"],
+            "prefix_mamba": {
+                str(group): tier.transfer_ledger.snapshot()
+                for group, tier in getattr(self.model_runner, "_prefix_mamba_tiers", {}).items()
+            },
+            "runner": (
+                self.model_runner._transfer_ledger.snapshot()
+                if hasattr(self.model_runner, "_transfer_ledger")
+                else None
+            ),
+            "modules": {
+                name: module._transfer_ledger.snapshot()
+                for name, module in self.model_runner.model.named_modules()
+                if hasattr(module, "_transfer_ledger")
+            },
+        }
         return result
 
 

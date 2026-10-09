@@ -20,7 +20,7 @@ inline void InitSocState() { allocatedUB = 0; }
 inline int64_t GetBlockIdx() { return blockIndex; }
 inline int64_t GetBlockNum() { return blockCount; }
 enum class TPosition { VECCALC };
-enum class HardEvent { MTE2_V, MTE2_S, V_MTE2, S_V, V_S, V_MTE3, MTE3_V, MTE3_MTE2, MTE2_MTE3 };
+enum class HardEvent { MTE2_V, MTE2_S, V_MTE2, S_V, V_S, V_MTE3, MTE3_V, MTE3_MTE2, MTE2_MTE3, S_MTE3, MTE3_S };
 enum class RoundMode { CAST_NONE };
 enum Pipe { PIPE_V, PIPE_ALL };
 constexpr int EVENT_ID0 = 0;

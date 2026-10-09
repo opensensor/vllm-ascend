@@ -12,12 +12,13 @@ using namespace AscendC;
 // The direct lookup improved high fan-out operator cases but did not improve
 // the paired serving gate. Keep it available for explicit specializations.
 template <uint32_t M, uint32_t N = 64, bool COMBINE_ROUTES = false, bool PIPELINE_EXPERT_WEIGHTS = false,
-          bool ENABLE_DIRECT_LOOKUP = false>
+          bool ENABLE_DIRECT_LOOKUP = false, bool CACHE_GROUP_METADATA = false>
 class Schedule {
   static constexpr uint32_t GROUP = 128, BLOCK = 16, K0 = 64, LANES = 8;
   static constexpr uint32_t A_BYTES = M * GROUP / 2, B_BYTES = N * GROUP / 2;
   static constexpr uint32_t ELEMENTS = M * N, COLUMN_ELEMENTS = M * BLOCK;
   static constexpr uint32_t MAX_K = 2560;
+  static constexpr uint32_t MAX_GROUPS = MAX_K / GROUP;
   static constexpr uint32_t END_CACHE_SIZE = 32;
   static constexpr uint32_t MAX_COMBINED_ROUTES = 30;
   static constexpr uint32_t MAX_PIPELINED_ROUTES = 30;
@@ -64,6 +65,7 @@ class Schedule {
     pipe_.InitBuffer(integers_, (M <= 32 ? 2 : 1) * ELEMENTS * sizeof(int32_t));
     pipe_.InitBuffer(result_, 3 * ELEMENTS * sizeof(float));
     pipe_.InitBuffer(metadata_, 3 * N * sizeof(half) + 3 * N * sizeof(float));
+    if constexpr (CACHE_GROUP_METADATA) pipe_.InitBuffer(metadataCache_, 3 * N * MAX_GROUPS * sizeof(half));
     pipe_.InitBuffer(activation_, 2 * M * LANES * sizeof(float));
     pipe_.InitBuffer(output_, ELEMENTS * sizeof(half));
     pipe_.InitBuffer(endCache_, END_CACHE_SIZE * sizeof(int64_t));
@@ -106,6 +108,7 @@ class Schedule {
           DataCopy(b1_.Get<int8_t>(), codes_[(expert * n_ + tile * N) * k_ / 2], N * k_ / 2);
           SetFlag<HardEvent::MTE2_MTE1>(EVENT_ID0);
           WaitFlag<HardEvent::MTE2_MTE1>(EVENT_ID0);
+          if constexpr (CACHE_GROUP_METADATA) CacheMetadata(expert, tile);
           for (int64_t row = begin; row < end; row += M) {
             Project(expert, tile, row, Min(M, end - row));
           }
@@ -371,6 +374,20 @@ class Schedule {
     }
   }
 
+  __aicore__ inline void CacheMetadata(int64_t expert, int64_t tile) {
+    static_assert(!COMBINE_ROUTES && !PIPELINE_EXPERT_WEIGHTS);
+    auto cache = metadataCache_.Get<half>();
+    // Protect the preceding tile's vector reads before overwriting this bank.
+    SetFlag<HardEvent::V_MTE2>(EVENT_ID1);
+    WaitFlag<HardEvent::V_MTE2>(EVENT_ID1);
+    const int64_t first = (expert * n_ + tile * N) * groups_;
+    DataCopy(cache, sw_[first], N * groups_);
+    DataCopy(cache[N * MAX_GROUPS], zw_[first], N * groups_);
+    DataCopy(cache[2 * N * MAX_GROUPS], ws_[first], N * groups_);
+    SetFlag<HardEvent::MTE2_V>(EVENT_ID1);
+    WaitFlag<HardEvent::MTE2_V>(EVENT_ID1);
+  }
+
   __aicore__ inline void LoadWeight(int64_t group) {
     const uint32_t buffer = group % 2;
     LoadData2DParams load;
@@ -553,11 +570,13 @@ class Schedule {
     for (int64_t group = 0; group < groups_; ++group) {
       // One strided DMA per metadata bank spans every N=16 strip in this
       // output tile. The existing packed layout and arithmetic stay unchanged.
-      const int64_t index = ((expert * n_ / BLOCK + tile * N / BLOCK) * groups_ + group) * BLOCK;
-      DataCopyParams metadataCopy{N / BLOCK, 1, static_cast<uint16_t>(groups_ - 1), 0};
-      DataCopy(metadata, sw_[index], metadataCopy);
-      DataCopy(metadata[N], zw_[index], metadataCopy);
-      DataCopy(metadata[2 * N], ws_[index], metadataCopy);
+      if constexpr (!CACHE_GROUP_METADATA) {
+        const int64_t index = ((expert * n_ / BLOCK + tile * N / BLOCK) * groups_ + group) * BLOCK;
+        DataCopyParams metadataCopy{N / BLOCK, 1, static_cast<uint16_t>(groups_ - 1), 0};
+        DataCopy(metadata, sw_[index], metadataCopy);
+        DataCopy(metadata[N], zw_[index], metadataCopy);
+        DataCopy(metadata[2 * N], ws_[index], metadataCopy);
+      }
       LoadActivation(row, group, count);
       // Alternate L0B buffers let next-group weight loads overlap integer GEMM.
       if constexpr (M <= 32) {
@@ -587,7 +606,15 @@ class Schedule {
       WaitFlag<HardEvent::M_MTE1>(EVENT_ID0);
       SetFlag<HardEvent::MTE2_V>(EVENT_ID0);
       WaitFlag<HardEvent::MTE2_V>(EVENT_ID0);
-      Cast(sw, metadata, RoundMode::CAST_NONE, 3 * N);
+      if constexpr (CACHE_GROUP_METADATA) {
+        auto cached = metadataCache_.Get<half>();
+        for (uint32_t bank = 0; bank < 3; ++bank)
+          for (uint32_t nb = 0; nb < N / BLOCK; ++nb)
+            Cast(sw[bank * N + nb * BLOCK], cached[bank * N * MAX_GROUPS + (nb * groups_ + group) * BLOCK],
+                 RoundMode::CAST_NONE, BLOCK);
+      } else {
+        Cast(sw, metadata, RoundMode::CAST_NONE, 3 * N);
+      }
       PipeBarrier<PIPE_V>();
       Muls(ws, ws, 8.0f, N);
       if constexpr (M <= 32) {
@@ -673,7 +700,7 @@ class Schedule {
   TBuf<TPosition::B2> b2_;
   TBuf<TPosition::CO1> c_;
   TBuf<TPosition::VECCALC> packing_, integers_, result_, metadata_, activation_, output_, endCache_, routeCache_,
-      routeOutput_;
+      routeOutput_, metadataCache_;
   GlobalTensor<int8_t> low_, high_, codes_;
   GlobalTensor<float> xs_, sums_;
   GlobalTensor<half> sw_, zw_, ws_, y_;

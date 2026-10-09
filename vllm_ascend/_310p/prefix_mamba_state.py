@@ -11,11 +11,14 @@ states to host tensors. Scheduler-owned block IDs are never modified.
 
 from collections import OrderedDict
 from collections.abc import Mapping, Sequence
+from time import perf_counter_ns
 from typing import Any
 
 import numpy as np
 import torch
 from vllm.logger import logger
+
+from vllm_ascend._310p.transfer_audit import TransferLedger, copy_direction
 
 PREFIX_MAMBA_MIN_SLOTS = 64
 
@@ -161,6 +164,7 @@ class PrefixMambaStateTier:
         if device_archive_slots < 0:
             raise ValueError("Prefix Mamba device archive slot count cannot be negative")
         self.layer_states = tuple(tuple(states) for states in layer_states)
+        self.transfer_ledger = TransferLedger()
         self._state_device = next((state.device for states in self.layer_states for state in states), None)
         self.num_slots = num_slots
         self._resident: OrderedDict[int, int] = OrderedDict()
@@ -220,6 +224,12 @@ class PrefixMambaStateTier:
         if self._state_device is not None and self._state_device.type == "npu":
             torch.npu.synchronize(self._state_device)
 
+    def _drain(self, reason: str) -> None:
+        started = perf_counter_ns()
+        self._synchronize_device_state()
+        if self._state_device is not None and self._state_device.type == "npu":
+            self.transfer_ledger.record("barrier", reason, elapsed_ns=perf_counter_ns() - started)
+
     def reset(self) -> None:
         """Forget every checkpoint after the scheduler cache has been drained.
 
@@ -228,7 +238,7 @@ class PrefixMambaStateTier:
         remain cumulative so callers can compare transfer deltas across resets.
         This must only be called with no active or pending model execution.
         """
-        self._synchronize_device_state()
+        self._drain("reset")
         self._resident.clear()
         self._device_archive_resident.clear()
         self._host.clear()
@@ -265,7 +275,7 @@ class PrefixMambaStateTier:
             # A previous graph may still be writing on a different stream.
             # Drain before reusing its slots, and leave metadata intact if
             # synchronization fails. No device reads or host snapshot copies.
-            self._synchronize_device_state()
+            self._drain("retirement")
         for block_id in resident:
             self._unused_slots.append(self._resident.pop(block_id))
         for block_id in archived:
@@ -274,10 +284,19 @@ class PrefixMambaStateTier:
             del self._host[block_id]
         self._retirement_count += len(resident) + len(archived) + len(host)
 
-    @staticmethod
-    def _copy_tensors(targets: Sequence[torch.Tensor], sources: Sequence[torch.Tensor]) -> None:
+    def _copy_tensors(
+        self, targets: Sequence[torch.Tensor], sources: Sequence[torch.Tensor], reason: str = "checkpoint_copy"
+    ) -> None:
         for target, source in zip(targets, sources):
+            started = perf_counter_ns()
             target.copy_(source)
+            elapsed = perf_counter_ns() - started
+            self.transfer_ledger.record(
+                copy_direction(source.device, target.device),
+                reason,
+                nbytes=target.numel() * target.element_size(),
+                elapsed_ns=elapsed,
+            )
 
     @staticmethod
     def _snapshot(tensors: Sequence[torch.Tensor]) -> tuple[torch.Tensor, ...]:
@@ -290,7 +309,17 @@ class PrefixMambaStateTier:
         return slot
 
     def _spill_to_host(self, block_id: int, tensors: Sequence[torch.Tensor]) -> None:
+        started = perf_counter_ns()
         self._host[block_id] = self._snapshot(tensors)
+        elapsed = perf_counter_ns() - started
+        for source, target in zip(tensors, self._host[block_id]):
+            self.transfer_ledger.record(
+                copy_direction(source.device, target.device),
+                "host_spill",
+                nbytes=target.numel() * target.element_size(),
+                elapsed_ns=elapsed,
+            )
+            elapsed = 0  # Charge the whole snapshot once, not once per tensor.
         self._spill_count += 1
         if self._spill_count == 1:
             logger.warning(
@@ -320,13 +349,13 @@ class PrefixMambaStateTier:
                 return
             archive_slot = self._device_archive_resident.pop(archive_victim)
             self._spill_to_host(archive_victim, self._device_archive_tensors(archive_slot))
-        self._copy_tensors(self._device_archive_tensors(archive_slot), tensors)
+        self._copy_tensors(self._device_archive_tensors(archive_slot), tensors, "archive_store")
         self._device_archive_resident[block_id] = archive_slot
 
-    def invalidate(self, block_ids: Sequence[int]) -> None:
+    def invalidate(self, block_ids: Sequence[int], *, synchronized: bool = False) -> None:
         """Forget bytes belonging to newly allocated (possibly reused) IDs."""
-        if any(block_id > 0 and block_id in self._resident for block_id in block_ids):
-            self._synchronize_device_state()
+        if not synchronized and any(block_id > 0 and block_id in self._resident for block_id in block_ids):
+            self._drain("invalidation")
         for block_id in block_ids:
             if block_id <= 0:
                 continue
@@ -337,12 +366,12 @@ class PrefixMambaStateTier:
                 for tensor in self._slot_tensors(slot):
                     tensor.zero_()
 
-    def copy(self, source_id: int, target_id: int) -> None:
+    def copy(self, source_id: int, target_id: int, *, synchronized: bool = False) -> None:
         """Apply a scheduler CoW copy to the tier's authoritative state."""
         if source_id <= 0 or target_id <= 0:
             return
-        if source_id in self._resident or target_id in self._resident:
-            self._synchronize_device_state()
+        if not synchronized and (source_id in self._resident or target_id in self._resident):
+            self._drain("copy_on_write")
         source_slot = self._resident.get(source_id)
         if source_slot is not None:
             source = self._slot_tensors(source_slot)
@@ -357,12 +386,12 @@ class PrefixMambaStateTier:
         target_slot = self._resident.get(target_id)
         if target_slot is not None:
             self._release_device_archive(target_id)
-            self._copy_tensors(self._slot_tensors(target_slot), source)
+            self._copy_tensors(self._slot_tensors(target_slot), source, "copy_on_write")
             return
         archive_slot = self._device_archive_resident.get(target_id)
         if archive_slot is not None:
             self._device_archive_resident.move_to_end(target_id)
-            self._copy_tensors(self._device_archive_tensors(archive_slot), source)
+            self._copy_tensors(self._device_archive_tensors(archive_slot), source, "copy_on_write")
             return
         self._store_on_device_or_host(target_id, source, {source_id})
 
@@ -380,9 +409,9 @@ class PrefixMambaStateTier:
             incoming_archive_slot = self._device_archive_resident.pop(block_id, None)
             if incoming_archive_slot is not None:
                 incoming = self._device_archive_tensors(incoming_archive_slot)
-                self._copy_tensors(self._swap_tensors, incoming)
-                self._copy_tensors(incoming, self._slot_tensors(slot))
-                self._copy_tensors(self._slot_tensors(slot), self._swap_tensors)
+                self._copy_tensors(self._swap_tensors, incoming, "archive_swap_stage")
+                self._copy_tensors(incoming, self._slot_tensors(slot), "archive_swap_out")
+                self._copy_tensors(self._slot_tensors(slot), self._swap_tensors, "archive_swap_in")
                 self._device_archive_resident[victim_id] = incoming_archive_slot
                 self._device_archive_hit_count += 1
                 self._resident[block_id] = slot
@@ -391,7 +420,7 @@ class PrefixMambaStateTier:
         archive_slot = self._device_archive_resident.pop(block_id, None)
         if archive_slot is not None:
             snapshot = self._device_archive_tensors(archive_slot)
-            self._copy_tensors(self._slot_tensors(slot), snapshot)
+            self._copy_tensors(self._slot_tensors(slot), snapshot, "checkpoint_restore")
             self._unused_device_archive_slots.append(archive_slot)
             self._device_archive_hit_count += 1
             self._resident[block_id] = slot
@@ -408,7 +437,7 @@ class PrefixMambaStateTier:
                     self._bytes_per_slot,
                     self._spill_count,
                 )
-            self._copy_tensors(self._slot_tensors(slot), snapshot)
+            self._copy_tensors(self._slot_tensors(slot), snapshot, "checkpoint_restore")
         self._resident[block_id] = slot
         return slot
 
@@ -420,7 +449,12 @@ class PrefixMambaStateTier:
         return self.remap_rows(table, [used_columns] * len(table), [columns] * len(table))
 
     def remap_rows(
-        self, table: np.ndarray, used_columns: Sequence[int], active_columns: Sequence[Sequence[int]]
+        self,
+        table: np.ndarray,
+        used_columns: Sequence[int],
+        active_columns: Sequence[Sequence[int]],
+        *,
+        synchronized: bool = False,
     ) -> np.ndarray:
         """Stage only the Mamba checkpoints read by this step.
 
@@ -447,8 +481,8 @@ class PrefixMambaStateTier:
                 f"Mamba prefix table references {len(block_ids)} states but has "
                 f"only {self.num_slots - 1} non-null NPU slots"
             )
-        if len(block_ids.difference(self._resident)) > len(self._unused_slots):
-            self._synchronize_device_state()
+        if not synchronized and len(block_ids.difference(self._resident)) > len(self._unused_slots):
+            self._drain("admission")
         for block_id in sorted(block_ids):
             self._admit(block_id, block_ids)
         for row, columns in enumerate(rows):
@@ -487,6 +521,69 @@ def retain_prefix_mamba_blocks(
         for group_id, tier in tiers.items()
     )
     if needs_drain and not already_synchronized:
-        next(iter(tiers.values()))._synchronize_device_state()
+        next(iter(tiers.values()))._drain("batch_retirement")
     for group_id, tier in tiers.items():
         tier.retain_blocks(retained_ids[group_id], synchronized=True)
+
+
+def apply_prefix_mamba_updates(tiers, fresh_ids, copies, *, batched: bool = False) -> None:
+    """Run one serialized invalidation/CoW phase after base runner updates.
+
+    All copies/zeros here enqueue on the caller's current stream. A fresh
+    worker-wide drain protects primary-slot writes in this phase; a drain
+    from before base runner updates must not be reused. Archive storage is
+    only touched by serialized current-stream copies, not model execution.
+    No model work may interleave with this call.
+    This is ordering consolidation, not an atomic rollback transaction.
+    """
+    if set(fresh_ids) != set(tiers) or set(copies) != set(tiers):
+        raise ValueError("Mamba update groups must match the resident tiers")
+    needs_drain = any(
+        any(block_id in tier._resident for block_id in fresh_ids[group])
+        or any(
+            source > 0 and target > 0 and (source in tier._resident or target in tier._resident)
+            for source, target in copies[group]
+        )
+        for group, tier in tiers.items()
+    )
+    if batched and needs_drain:
+        _drain_prefix_phase(tiers, "batch_updates")
+    for group, tier in tiers.items():
+        tier.invalidate(fresh_ids[group], synchronized=batched)
+        for source_id, target_id in copies[group]:
+            tier.copy(source_id, target_id, synchronized=batched)
+
+
+def _drain_prefix_phase(tiers, reason):
+    devices = {tier._state_device for tier in tiers.values()}
+    if len(devices) > 1:
+        raise ValueError("A prefix phase must use one worker device")
+    if tiers:
+        # The selected phase needs primary storage reuse. Drain the whole
+        # worker once so previous model writers on every stream are complete.
+        next(iter(tiers.values()))._drain(reason)
+
+
+def remap_prefix_mamba_rows(tiers, plans, *, batched: bool = False):
+    """Admit all groups before staging device tables, with one phase drain.
+
+    Plans contain CPU tables, used-column counts and active windows. The union
+    of each group's live IDs is still admitted by remap_rows; groups never
+    share storage. No unrelated device writes are submitted inside this call.
+    """
+    if set(plans) != set(tiers):
+        raise ValueError("Mamba remap plans must match all worker tiers")
+    if batched:
+        # Admission hits that neither overwrite nor move state require no drain.
+        needs_drain = any(
+            len(
+                {int(table[row, col]) for row, columns in enumerate(active) for col in columns if table[row, col] > 0}
+                - tier._resident.keys()
+            )
+            > len(tier._unused_slots)
+            for group, tier in tiers.items()
+            for table, used, active in (plans[group],)
+        )
+        if needs_drain:
+            _drain_prefix_phase(tiers, "batch_admission")
+    return {group: tier.remap_rows(*plans[group], synchronized=batched) for group, tier in tiers.items()}
