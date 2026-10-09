@@ -1,0 +1,33 @@
+import json,time,uuid,sys,urllib.request
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-scale-layout-20261009')
+exec(compile((root/'live-queue-r3.py').read_text().split('cases=[',1)[0],'<resident-functions>','exec'))
+path=root/'critical-profile-request.json';report={'complete':False,'scope':'attribution only; profiler overhead is excluded from speed comparisons'}
+original=(root/'final-candidate-v1021.py').read_text()
+footer=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/packed-state-profile-v1007.py').read_text().split('profiling_parent=replacements',1)[1]
+footer='\nprofiling_parent=replacements'+footer.replace('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/cold-prefill-torch-v1007',str(root/'critical-torch-v1021'))
+source=original+footer
+(root/'critical-profile-source-v1021.py').write_text(source)
+started=False
+claimed=False
+changed=False
+try:
+ idle();client.request('/resident/maintenance',method='POST');claimed=True
+ changed=True
+ rows=client.switch(Control(uuid.uuid4().hex,candidate='critical_profile_v1021',source=source));client.resume()
+ report['before']=rows;save();print('PROFILE_HOOK_READY',flush=True)
+ client.request('/pause?mode=wait&clear_cache=true');client.resume()
+ client.request('/collective_rpc',dict(method='profile',args=[True,'cold-prefill-v1021'],timeout=1800));started=True
+ print('PROFILE_STARTED',flush=True)
+ report['request']=stream(6400,1,151);save();print('PROFILE_REQUEST_COMPLETE',report['request']['ttft_s'],flush=True)
+finally:
+ try:
+  if started:
+   client.request('/collective_rpc',dict(method='profile',args=[False,None],timeout=1800));print('PROFILE_STOPPED',flush=True)
+  if not claimed:
+   print('NO_MUTATION_IDLE_CHECK_FAILED',flush=True)
+   raise RuntimeError('profiling aborted before acquiring maintenance')
+  report['restored']=client.switch(Control(uuid.uuid4().hex,candidate='qualified_profiled_v1021',source=original));client.resume()
+  report['complete']=True;save();client.request('/resident/maintenance',method='DELETE');print('SERVER_OPEN_V1021',flush=True)
+ except BaseException as error:
+  report['recovery_error']=repr(error);save();print('PROFILE_RECOVERY_FAILED',repr(error),flush=True);raise

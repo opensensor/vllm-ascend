@@ -1,0 +1,60 @@
+import json,uuid,hashlib,time,urllib.request
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-scale-layout-20261009')
+exec(compile((root/'live-queue-r3.py').read_text().split('cases=[',1)[0],'<resident-functions>','exec'))
+path=root/'shadow-serving-results.json';report={'complete':False,'purpose':'compare every actual prefill MoE input against baseline before accepting the candidate'}
+text=candidate(1021,'down-group')
+text+='''
+_shadow_parent=replacements
+def replacements(native_resources):
+    import torch
+    from vllm.logger import logger
+    current=native_resources['reconstruction_v1021']['fused_int4a4']
+    reference=native_resources['reconstruction_v1001']['fused_int4a4']
+    state={'cases':[],'mismatches':0}
+    class Shadow:
+        def __getattr__(self,name):return getattr(current,name)
+        def __call__(self,x,*args,**kwargs):
+            result=current(x,*args,**kwargs)
+            if x.shape[0]>=640:
+                expected=reference(x,*args,**kwargs)
+                a=result.cpu();b=expected.cpu()
+                exact=torch.equal(a.view(torch.int32),b.view(torch.int32))
+                geometry=current.geometry(x,*args[:6])
+                row=dict(tokens=x.shape[0],bits=geometry.gate_bits,exact=exact,bank_pointer=args[0].data_ptr())
+                if not exact:
+                    row.update(different_bits=int((a.view(torch.int32)!=b.view(torch.int32)).sum()),max_abs=float((a-b).abs().max()))
+                    state['mismatches']+=1
+                state['cases'].append(row)
+                logger.info('GLM actual-input MoE parity: tokens=%d weight_bits=%d exact=%s',x.shape[0],geometry.gate_bits,exact)
+            return result
+    selected=dict(native_resources)
+    selected['reconstruction_v1021']=dict(native_resources['reconstruction_v1021'],fused_int4a4=Shadow())
+    changes=_shadow_parent(selected)
+    key='vllm_ascend._310p.worker_310p:NPUWorker310.resident_status'
+    parent=changes[key]
+    def status(self):
+        row=parent(self);row['actual_input_parity']=dict(state);return row
+    changes[key]=status
+    return changes
+'''
+(root/'shadow-candidate-v1021.py').write_text(text)
+try:
+ idle();client.request('/resident/maintenance',method='POST')
+ rows=client.switch(Control(uuid.uuid4().hex,candidate='shadow_down_group_v1021',source=text));client.resume()
+ report['switched']=rows;save();print('SHADOW_INSTALLED',flush=True)
+ trial=stream(1920,1,160);report['trial']=trial
+ rows=client.rpc('resident_status');report['workers']=rows;save()
+ exact=all(w['actual_input_parity']['mismatches']==0 and len(w['actual_input_parity']['cases'])==86 for w in rows)
+ print('SHADOW_RESULT',[(w['rank'],len(w['actual_input_parity']['cases']),w['actual_input_parity']['mismatches']) for w in rows],flush=True)
+ version=1021 if exact else 1001
+ chosen=candidate(version,'down-group' if exact else 'baseline')
+ if version==1021:
+  chosen+='\n_clean_parent=replacements\ndef replacements(native_resources):\n    changes=_clean_parent(native_resources)\n    key="vllm_ascend._310p.worker_310p:NPUWorker310.resident_capture"\n    capture=changes[key]\n    def clean_capture(self):\n        if self._resident_session().graphs_dirty:\n            reference=native_resources["reconstruction_v1001"]["fused_int4a4"]\n            reference.scratch.clear();reference.configs.clear()\n        return capture(self)\n    changes[key]=clean_capture\n    return changes\n'
+ report['final_workers']=client.switch(Control(uuid.uuid4().hex,candidate=f'qualified_scale_layout_v{version}',source=chosen));client.resume()
+ report['complete']=True;report['kept_version']=version;save();print('FINAL_VERSION',version,flush=True)
+except BaseException as error:
+ report['error']=repr(error);save()
+ report['recovered']=client.switch(Control(uuid.uuid4().hex,candidate='qualified_baseline_recovery',source=candidate(1001,'baseline')));client.resume();save();raise
+finally:
+ client.request('/resident/maintenance',method='DELETE');print('SERVER_OPEN',flush=True)

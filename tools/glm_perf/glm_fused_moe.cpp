@@ -8,10 +8,18 @@
 #include "glm_fused_compact_scales.h"
 #include "glm_route_input_layout.h"
 #include "glm_fused_input_scales.h"
+#include "glm_fused_down_scales.h"
 #if defined(GLM_GROUP_MAJOR_INPUT_SCALES) &&                                                             \
     (!defined(GLM_ROUTE_PACKED_INPUT) || !defined(GLM_FUSED_GATE_UP) || !defined(GLM_PREFILL_ROWS_32) || \
      !defined(GLM_VECTOR_SCALE_PRODUCTS) || !defined(GLM_PREPARED_WEIGHT_LAYOUT))
   #error "group-major input scales require prepared routed M32 vector-scale gate/up"
+#endif
+#if defined(GLM_GROUP_MAJOR_DOWN_SCALES) &&                                                              \
+    (!defined(GLM_RAW_HIDDEN_SCALES) || !defined(GLM_COMPACT_DOWN_SCALES) ||                             \
+     (defined(GLM_FUSED_GATE_UP) && !defined(GLM_QUAD_HIDDEN_QUANT)) || !defined(GLM_PREFILL_ROWS_32) || \
+     !defined(GLM_VECTOR_SCALE_PRODUCTS) || !defined(GLM_PREPARED_WEIGHT_LAYOUT) ||                      \
+     defined(GLM_DIRECT_COMPACT_DOWN_SCALES))
+  #error "group-major down scales require raw compact M32 quantization and exclude direct compact scales"
 #endif
 #if defined(GLM_FP16_WEIGHT_SCALES) && (!defined(GLM_PREPARED_WEIGHT_LAYOUT) || defined(GLM_PREROUNDED_WEIGHT_SCALES))
   #error "FP16 scale storage requires prepared weights and excludes prerounded FP32 storage"
@@ -151,6 +159,13 @@ constexpr uint32_t MAX_CACHED_SCALE_ROWS = 4;
 #ifdef GLM_GROUP_MAJOR_INPUT_SCALES
 static_assert(GlmRouteInput::GROUP_MAJOR_MIN_ROWS == MAX_CACHED_SCALE_ROWS + 1,
               "producer layout must retain sparse cached-factor rows");
+#endif
+#ifdef GLM_GROUP_MAJOR_DOWN_SCALES
+static_assert(GlmFusedDownScales::GROUPS == N / GROUP, "down scale tile must match quantized output width");
+static_assert(GlmFusedDownScales::MIN_ROWS == MAX_CACHED_SCALE_ROWS + 1,
+              "down layout must retain sparse combined-scale caching");
+static_assert(GlmFusedDownScales::STORAGE_BYTES <= M * MAX_K_GROUPS * sizeof(float),
+              "down scale staging exceeds dead gate/up input-scale scratch");
 #endif
 constexpr uint32_t MAX_REPEAT_CAST_ROWS = 4;
 constexpr uint32_t SCALE_PRODUCTS_OFFSET = Scratch::SCALE_PRODUCTS_OFFSET;
@@ -1288,7 +1303,10 @@ class Projection {
 #ifdef GLM_GROUP_MAJOR_INPUT_SCALES
     groupMajorScales = tokens_ > BULK_TOKENS && activationBits_ == 4 && GlmRouteInput::GroupMajorScales(count);
 #endif
-#ifdef GLM_DIRECT_COMPACT_DOWN_SCALES
+#if defined(GLM_GROUP_MAJOR_DOWN_SCALES) && !defined(GLM_FUSED_GATE_UP)
+    groupMajorScales = tokens_ > BULK_TOKENS && activationBits_ == 4 && GlmFusedDownScales::GroupMajor(count);
+#endif
+#if (defined(GLM_DIRECT_COMPACT_DOWN_SCALES) || defined(GLM_GROUP_MAJOR_DOWN_SCALES)) && !defined(GLM_FUSED_GATE_UP)
     bool directCompactScales = false;
 #endif
     auto indices = activationScales_.Get<uint32_t>()[(M + LANES) * MAX_K_GROUPS];
@@ -1300,7 +1318,7 @@ class Projection {
         // Product readback scratch is dead until the first Cube operation.
         // Copy one tile-major scale bank, then gather each active row.
         const uint32_t elements = groups / (N / GROUP) * M * DOWN_SCALE_ROW_LANES;
-  #ifdef GLM_DIRECT_COMPACT_DOWN_SCALES
+  #if defined(GLM_DIRECT_COMPACT_DOWN_SCALES) || defined(GLM_GROUP_MAJOR_DOWN_SCALES)
         directCompactScales = count > MAX_CACHED_SCALE_ROWS;
         if (directCompactScales) {
           // Retain the producer's layout; dense factor columns gather directly.
@@ -1317,7 +1335,7 @@ class Projection {
             PipeBarrier<PIPE_V>();
           }
           PipeBarrier<PIPE_ALL>();
-  #ifdef GLM_DIRECT_COMPACT_DOWN_SCALES
+  #if defined(GLM_DIRECT_COMPACT_DOWN_SCALES) || defined(GLM_GROUP_MAJOR_DOWN_SCALES)
         }
   #endif
       } else {
@@ -1633,6 +1651,10 @@ class Projection {
     Cast(output_.Get<half>(), low, RoundMode::CAST_NONE, activeElements);
 #endif
     PipeBarrier<PIPE_ALL>();
+#ifdef GLM_GROUP_MAJOR_DOWN_SCALES
+    const bool groupMajorDown = tokens_ > BULK_TOKENS && activationBits_ == 4 && GlmFusedDownScales::GroupMajor(count);
+    if (groupMajorDown) GlmFusedDownScales::Prepare(activationScales_.Get<float>());
+#endif
 #if defined(GLM_PAIR_HIDDEN_QUANT) || defined(GLM_QUAD_HIDDEN_QUANT)
     for (uint32_t m = 0; m < count; m += QUANT_ROWS_PER_BATCH) {
       auto input = ProductTemporary<half>();
@@ -1660,13 +1682,22 @@ class Projection {
   #ifdef GLM_RAW_HIDDEN_SCALES
       if (tokens_ > BULK_TOKENS && activationBits_ == 4) {
         static_assert(QUANT_ROWS_PER_BATCH == 4, "raw scale copy requires four-row quantization");
-        // The quantizer retains all sixteen scalar FP32 scales. Four rows
-        // form one aligned copy, including a defined partial-tail padding row.
-        const int64_t destination =
-            (prepackedBatch_ * (n_ / 2 / N) + tile) * M * DOWN_SCALE_ROW_LANES + m * DOWN_SCALE_ROW_LANES;
-        DataCopy(xs_[destination], ProductTemporary<float>()[GlmFusedQuant::SCALAR_SCALE_OFFSET],
-                 QUANT_ROWS_PER_BATCH * DOWN_SCALE_ROW_LANES);
-        PipeBarrier<PIPE_ALL>();
+          // The quantizer retains all sixteen scalar FP32 scales. Four rows
+          // form one aligned copy, including a defined partial-tail padding row.
+    #ifdef GLM_GROUP_MAJOR_DOWN_SCALES
+        if (groupMajorDown) {
+          GlmFusedDownScales::Stage(activationScales_.Get<float>(),
+                                    ProductTemporary<float>()[GlmFusedQuant::SCALAR_SCALE_OFFSET], m);
+        } else {
+    #endif
+          const int64_t destination =
+              (prepackedBatch_ * (n_ / 2 / N) + tile) * M * DOWN_SCALE_ROW_LANES + m * DOWN_SCALE_ROW_LANES;
+          DataCopy(xs_[destination], ProductTemporary<float>()[GlmFusedQuant::SCALAR_SCALE_OFFSET],
+                   QUANT_ROWS_PER_BATCH * DOWN_SCALE_ROW_LANES);
+          PipeBarrier<PIPE_ALL>();
+    #ifdef GLM_GROUP_MAJOR_DOWN_SCALES
+        }
+    #endif
       }
   #endif
       auto packed = ProductTemporary<int8_t>()[24 * GlmFusedQuant::ELEMENTS];
@@ -1708,6 +1739,15 @@ class Projection {
           DataCopy(high_[offset * K0 / 2], packed[GlmFusedQuant::ELEMENTS + group * GROUP], K0 / 2);
         StoreHiddenScales(scales, group, offset, tile, group, m);
       }
+      PipeBarrier<PIPE_ALL>();
+    }
+#endif
+#ifdef GLM_GROUP_MAJOR_DOWN_SCALES
+    if (groupMajorDown) {
+      GlmFusedDownScales::Finish(activationScales_.Get<float>(), count);
+      const int64_t destination = (prepackedBatch_ * (n_ / 2 / N) + tile) * GlmFusedDownScales::TILE_ELEMENTS;
+      DataCopy(xs_[destination], activationScales_.Get<float>()[GlmFusedDownScales::TRANSPOSE_OFFSET],
+               GlmFusedDownScales::TILE_ELEMENTS);
       PipeBarrier<PIPE_ALL>();
     }
 #endif

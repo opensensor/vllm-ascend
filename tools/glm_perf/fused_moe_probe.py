@@ -6,7 +6,13 @@ import json
 
 import torch
 
-from .glm_fused_moe import FUSED_REDUCTION_TOKENS, INPUT_SCALE_MIN_ROWS, REDUCE_CACHE_MIN_TOKENS, NativeFusedMoE
+from .glm_fused_moe import (
+    DOWN_SCALE_MIN_ROWS,
+    FUSED_REDUCTION_TOKENS,
+    INPUT_SCALE_MIN_ROWS,
+    REDUCE_CACHE_MIN_TOKENS,
+    NativeFusedMoE,
+)
 from .glm_int4 import unpack_canonical_codes
 
 
@@ -53,7 +59,15 @@ def route_metadata(ids, weights, experts, offset):
 
 
 def gate_case(
-    native, bits, tokens=2, hidden=256, inter=256, real=None, nz_density_boundary=False, input_scale_boundary=False
+    native,
+    bits,
+    tokens=2,
+    hidden=256,
+    inter=256,
+    real=None,
+    nz_density_boundary=False,
+    input_scale_boundary=False,
+    down_scale_boundary=False,
 ):
     generator = torch.Generator().manual_seed(5700 + bits + tokens)
     experts = 3 if real is None else 1
@@ -82,7 +96,16 @@ def gate_case(
         if nz_density_boundary or not getattr(native, "group_major_input_scales", False) or native.activation_bits != 4:
             raise ValueError("input scale boundary gate requires the paired A4 layout")
         boundary = INPUT_SCALE_MIN_ROWS
-    boundary_gate = nz_density_boundary or input_scale_boundary
+    if down_scale_boundary:
+        if (
+            nz_density_boundary
+            or input_scale_boundary
+            or native.activation_bits != 4
+            or not getattr(native, "group_major_down_scales", False)
+        ):
+            raise ValueError("down scale boundary gate requires the paired A4 layout")
+        boundary = DOWN_SCALE_MIN_ROWS
+    boundary_gate = nz_density_boundary or input_scale_boundary or down_scale_boundary
     if boundary_gate:
         if not boundary or tokens <= FUSED_REDUCTION_TOKENS or ids.numel() < boundary:
             raise ValueError("NZ boundary gate requires bulk tokens and an explicit reachable threshold")
@@ -125,6 +148,14 @@ def gate_case(
     graph.replay()
     torch.npu.synchronize()
     check(actual)
+    if down_scale_boundary:
+        # Revisit sparse layout in the same captured graph after dense staging.
+        sparse_ids = torch.full_like(ids, offset + experts)
+        sparse_ids.view(-1)[: boundary - 1] = offset
+        gi.copy_(sparse_ids.npu())
+        graph.replay()
+        torch.npu.synchronize()
+        check(actual)
     gi.copy_(torch.full_like(ids, offset + experts).npu())
     graph.replay()
     torch.npu.synchronize()
@@ -142,6 +173,8 @@ def gate_case(
         "direct_compact_down_scales": getattr(native, "direct_compact_down_scales", False),
         "nz_boundary_rows": [boundary - 1, boundary] if nz_density_boundary else [],
         "group_major_input_scales": getattr(native, "group_major_input_scales", False),
+        "group_major_down_scales": getattr(native, "group_major_down_scales", False),
+        "down_scale_boundary_rows": [boundary - 1, boundary, boundary - 1] if down_scale_boundary else [],
         "input_scale_boundary_rows": [boundary - 1, boundary] if input_scale_boundary else [],
         "tokens": tokens,
         "hidden": hidden,
@@ -220,6 +253,10 @@ def run(build_dir, output, *, checkpoint=None, real_prefixes=()):
                     record = gate_case(native, bits, tokens)
                     payload["records"].append(record)
                     print(json.dumps(record), flush=True)
+                if options.get("group_major_down_scales") and activation_bits == 4:
+                    record = gate_case(native, bits, tokens=31, down_scale_boundary=True)
+                    payload["records"].append(record)
+                    print(json.dumps(record), flush=True)
                 if options.get("group_major_input_scales") and activation_bits == 4:
                     record = gate_case(native, bits, tokens=31, input_scale_boundary=True)
                     payload["records"].append(record)
@@ -286,6 +323,11 @@ def run(build_dir, output, *, checkpoint=None, real_prefixes=()):
                         print(json.dumps(record), flush=True)
                     if options.get("prefill_reduce_meta_cache"):
                         record = gate_case(native, bits, tokens=REDUCE_CACHE_MIN_TOKENS, real=(gate, gs, down, ds))
+                        record.update(tensor_prefix=prefix, checkpoint_tensor_hashes=hashes)
+                        payload["real_weight_records"].append(record)
+                        print(json.dumps(record), flush=True)
+                    if options.get("group_major_down_scales") and activation_bits == 4:
+                        record = gate_case(native, bits, tokens=31, real=(gate, gs, down, ds), down_scale_boundary=True)
                         record.update(tensor_prefix=prefix, checkpoint_tensor_hashes=hashes)
                         payload["real_weight_records"].append(record)
                         print(json.dumps(record), flush=True)

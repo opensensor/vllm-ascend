@@ -5,6 +5,7 @@ import hashlib
 import json
 
 from tools.glm_perf.glm_fused_moe import (
+    DOWN_SCALE_MIN_ROWS,
     FUSED_KERNEL_CORES,
     FUSED_REDUCTION_TOKENS,
     INPUT_SCALE_MIN_ROWS,
@@ -64,6 +65,21 @@ def manifest(build_dir, gate_report):
             r.get("direct_compact_down_scales") is not True for r in rows
         ):
             raise ValueError("direct compact scales require matching loaded-weight and replay gates")
+        if options.get("group_major_down_scales"):
+            if any(r.get("group_major_down_scales") is not True for r in rows):
+                raise ValueError("group-major down scales require matching producer/consumer replay gates")
+            if {
+                r.get("weight_bits")
+                for r in rows
+                if r.get("activation_bits") == 4
+                and r.get("tokens", 0) > FUSED_REDUCTION_TOKENS
+                and r.get("down_scale_boundary_rows")
+                == [DOWN_SCALE_MIN_ROWS - 1, DOWN_SCALE_MIN_ROWS, DOWN_SCALE_MIN_ROWS - 1]
+                and r.get("all_peer_output_zero") is True
+            } != {2, 3, 4}:
+                raise ValueError(
+                    "group-major down scales require sparse/dense/sparse real-weight and synthetic replay gates"
+                )
         if options.get("group_major_input_scales"):
             if any(r.get("group_major_input_scales") is not True for r in rows):
                 raise ValueError("group-major input scales require matching producer/consumer replay gates")

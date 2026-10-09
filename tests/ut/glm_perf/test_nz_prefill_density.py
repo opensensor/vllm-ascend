@@ -110,4 +110,5 @@ def test_cli_passes_threshold_as_keyword(tmp_path, monkeypatch):
         "prefill_reduce_meta_cache": False,
         "direct_compact_down_scales": False,
         "group_major_input_scales": False,
+        "group_major_down_scales": False,
     }

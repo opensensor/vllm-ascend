@@ -1,0 +1,1027 @@
+{
+  "complete": true,
+  "final_comparison": {
+    "selected_by_initial_pair": 1021,
+    "initial_mean_ttft": {
+      "1001": 51.79105660755886,
+      "1020": 51.10475225397386,
+      "1021": 50.762701171974186,
+      "1022": 51.299915935553145,
+      "1023": 51.12713968846947,
+      "1024": 52.18863003101433,
+      "1025": 64.85136549046729
+    },
+    "trials": [
+      {
+        "prompt_tokens": 6400,
+        "completion_tokens": 1,
+        "nonce": 160,
+        "ttft_s": 52.27697182400152,
+        "total_s": 52.27707950794138,
+        "generation_tok_s": null,
+        "text": "q",
+        "version": 1001,
+        "name": "baseline",
+        "workers_after": [
+          {
+            "rank": 0,
+            "candidate": "final_scale_baseline_v1001",
+            "native_launch_audit": {
+              "operator": "glm_reconstruction_v1001.launch",
+              "counts": {
+                "pack_kernel": 258,
+                "route_input_kernel": 258,
+                "gate_w4_kernel": 132,
+                "down_w4_kernel": 132,
+                "reduce_kernel": 258,
+                "gate_kernel": 126,
+                "down_kernel": 126
+              },
+              "binaries": {
+                "pack_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_pack.bin",
+                  "sha256": "649cf14bfeebed5e67d28698c2751bb45c884e25bc6651c04c38e6db27c70f9a"
+                },
+                "route_input_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_route_input.bin",
+                  "sha256": "88c97073f7a99c651e06e9ac6c012b783ab1e3a78309ce514fec0950d9068061"
+                },
+                "gate_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_gate_up.bin",
+                  "sha256": "36476fca50056776680bdc5e35672f105a4563ed25cb76247f41cbb89c9d37ed"
+                },
+                "down_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_down.bin",
+                  "sha256": "2074e248e03182f208311055cb3fc66cb150410496fc74a85cd2daf4408f52d2"
+                },
+                "gate_w4_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_gate_up_w4.bin",
+                  "sha256": "f98ed3d2f18e6d2f31c79da523fcc7cd3cdc06f2d88fc5e8ddab78d807bc3ba4"
+                },
+                "down_w4_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_down_w4.bin",
+                  "sha256": "100c2998d479a94f4de5f7ec6da5b5817f83cca2d23ddb11100a89d35edcd113"
+                },
+                "reduce_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_reduce.bin",
+                  "sha256": "c1e7ade7ca84f1c1d251944dea2eacef08a6fc047e197ebe5d4b77e73b1e39a6"
+                }
+              },
+              "active": true
+            },
+            "memory": {
+              "allocated": 40124322816,
+              "reserved": 43387977728,
+              "peak_allocated": 43052996608,
+              "peak_reserved": 43387977728,
+              "free": 4191211520
+            },
+            "reconstruction": {
+              "profile": "fused_int4a4",
+              "native_dispatches": 860,
+              "fallback_dispatches": 0,
+              "kernel_fused_calls": 430,
+              "activation_bits": 4
+            }
+          },
+          {
+            "rank": 1,
+            "candidate": "final_scale_baseline_v1001",
+            "native_launch_audit": {
+              "operator": "glm_reconstruction_v1001.launch",
+              "counts": {
+                "pack_kernel": 258,
+                "route_input_kernel": 258,
+                "gate_w4_kernel": 132,
+                "down_w4_kernel": 132,
+                "reduce_kernel": 258,
+                "gate_kernel": 126,
+                "down_kernel": 126
+              },
+              "binaries": {
+                "pack_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_pack.bin",
+                  "sha256": "649cf14bfeebed5e67d28698c2751bb45c884e25bc6651c04c38e6db27c70f9a"
+                },
+                "route_input_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_route_input.bin",
+                  "sha256": "88c97073f7a99c651e06e9ac6c012b783ab1e3a78309ce514fec0950d9068061"
+                },
+                "gate_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_gate_up.bin",
+                  "sha256": "36476fca50056776680bdc5e35672f105a4563ed25cb76247f41cbb89c9d37ed"
+                },
+                "down_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_down.bin",
+                  "sha256": "2074e248e03182f208311055cb3fc66cb150410496fc74a85cd2daf4408f52d2"
+                },
+                "gate_w4_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_gate_up_w4.bin",
+                  "sha256": "f98ed3d2f18e6d2f31c79da523fcc7cd3cdc06f2d88fc5e8ddab78d807bc3ba4"
+                },
+                "down_w4_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_down_w4.bin",
+                  "sha256": "100c2998d479a94f4de5f7ec6da5b5817f83cca2d23ddb11100a89d35edcd113"
+                },
+                "reduce_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_reduce.bin",
+                  "sha256": "c1e7ade7ca84f1c1d251944dea2eacef08a6fc047e197ebe5d4b77e73b1e39a6"
+                }
+              },
+              "active": true
+            },
+            "memory": {
+              "allocated": 40124322816,
+              "reserved": 43432017920,
+              "peak_allocated": 43030916096,
+              "peak_reserved": 43432017920,
+              "free": 3584462848
+            },
+            "reconstruction": {
+              "profile": "fused_int4a4",
+              "native_dispatches": 860,
+              "fallback_dispatches": 0,
+              "kernel_fused_calls": 430,
+              "activation_bits": 4
+            }
+          },
+          {
+            "rank": 2,
+            "candidate": "final_scale_baseline_v1001",
+            "native_launch_audit": {
+              "operator": "glm_reconstruction_v1001.launch",
+              "counts": {
+                "pack_kernel": 258,
+                "route_input_kernel": 258,
+                "gate_w4_kernel": 132,
+                "down_w4_kernel": 132,
+                "reduce_kernel": 258,
+                "gate_kernel": 126,
+                "down_kernel": 126
+              },
+              "binaries": {
+                "pack_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_pack.bin",
+                  "sha256": "649cf14bfeebed5e67d28698c2751bb45c884e25bc6651c04c38e6db27c70f9a"
+                },
+                "route_input_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_route_input.bin",
+                  "sha256": "88c97073f7a99c651e06e9ac6c012b783ab1e3a78309ce514fec0950d9068061"
+                },
+                "gate_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_gate_up.bin",
+                  "sha256": "36476fca50056776680bdc5e35672f105a4563ed25cb76247f41cbb89c9d37ed"
+                },
+                "down_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_down.bin",
+                  "sha256": "2074e248e03182f208311055cb3fc66cb150410496fc74a85cd2daf4408f52d2"
+                },
+                "gate_w4_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_gate_up_w4.bin",
+                  "sha256": "f98ed3d2f18e6d2f31c79da523fcc7cd3cdc06f2d88fc5e8ddab78d807bc3ba4"
+                },
+                "down_w4_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_down_w4.bin",
+                  "sha256": "100c2998d479a94f4de5f7ec6da5b5817f83cca2d23ddb11100a89d35edcd113"
+                },
+                "reduce_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_reduce.bin",
+                  "sha256": "c1e7ade7ca84f1c1d251944dea2eacef08a6fc047e197ebe5d4b77e73b1e39a6"
+                }
+              },
+              "active": true
+            },
+            "memory": {
+              "allocated": 40124322816,
+              "reserved": 43432017920,
+              "peak_allocated": 43030916096,
+              "peak_reserved": 43432017920,
+              "free": 4041248768
+            },
+            "reconstruction": {
+              "profile": "fused_int4a4",
+              "native_dispatches": 860,
+              "fallback_dispatches": 0,
+              "kernel_fused_calls": 430,
+              "activation_bits": 4
+            }
+          },
+          {
+            "rank": 3,
+            "candidate": "final_scale_baseline_v1001",
+            "native_launch_audit": {
+              "operator": "glm_reconstruction_v1001.launch",
+              "counts": {
+                "pack_kernel": 258,
+                "route_input_kernel": 258,
+                "gate_w4_kernel": 132,
+                "down_w4_kernel": 132,
+                "reduce_kernel": 258,
+                "gate_kernel": 126,
+                "down_kernel": 126
+              },
+              "binaries": {
+                "pack_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_pack.bin",
+                  "sha256": "649cf14bfeebed5e67d28698c2751bb45c884e25bc6651c04c38e6db27c70f9a"
+                },
+                "route_input_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_route_input.bin",
+                  "sha256": "88c97073f7a99c651e06e9ac6c012b783ab1e3a78309ce514fec0950d9068061"
+                },
+                "gate_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_gate_up.bin",
+                  "sha256": "36476fca50056776680bdc5e35672f105a4563ed25cb76247f41cbb89c9d37ed"
+                },
+                "down_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_down.bin",
+                  "sha256": "2074e248e03182f208311055cb3fc66cb150410496fc74a85cd2daf4408f52d2"
+                },
+                "gate_w4_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_gate_up_w4.bin",
+                  "sha256": "f98ed3d2f18e6d2f31c79da523fcc7cd3cdc06f2d88fc5e8ddab78d807bc3ba4"
+                },
+                "down_w4_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_down_w4.bin",
+                  "sha256": "100c2998d479a94f4de5f7ec6da5b5817f83cca2d23ddb11100a89d35edcd113"
+                },
+                "reduce_kernel": {
+                  "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_reduce.bin",
+                  "sha256": "c1e7ade7ca84f1c1d251944dea2eacef08a6fc047e197ebe5d4b77e73b1e39a6"
+                }
+              },
+              "active": true
+            },
+            "memory": {
+              "allocated": 40124322816,
+              "reserved": 43348131840,
+              "peak_allocated": 43042510336,
+              "peak_reserved": 43348131840,
+              "free": 3799166976
+            },
+            "reconstruction": {
+              "profile": "fused_int4a4",
+              "native_dispatches": 860,
+              "fallback_dispatches": 0,
+              "kernel_fused_calls": 430,
+              "activation_bits": 4
+            }
+          }
+        ]
+      },
+      {
+        "prompt_tokens": 6400,
+        "completion_tokens": 1,
+        "nonce": 160,
+        "ttft_s": 50.93031639198307,
+        "total_s": 50.9304175140569,
+        "generation_tok_s": null,
+        "text": "b",
+        "version": 1021,
+        "name": "down-group",
+        "workers_after": [
+          {
+            "rank": 0,
+            "candidate": "final_scale_down_group_v1021",
+            "native_launch_audit": {
+              "operator": "glm_reconstruction_v1021.launch",
+              "counts": {
+                "pack_kernel": 258,
+                "route_input_kernel": 258,
+                "gate_w4_kernel": 132,
+                "down_w4_kernel": 132,
+                "reduce_kernel": 258,
+                "gate_kernel": 126,
+                "down_kernel": 126
+              },
+              "binaries": {
+                "pack_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_pack.bin",
+                  "sha256": "649cf14bfeebed5e67d28698c2751bb45c884e25bc6651c04c38e6db27c70f9a"
+                },
+                "route_input_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_route_input.bin",
+                  "sha256": "99d9d188e02755cf09e5e04daaeae8f76e20c076c7df30ee6cbab6c113ccea03"
+                },
+                "gate_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_gate_up.bin",
+                  "sha256": "294be41f95530a2efb7c348a08b19c83eaa5c1a501683b5f33f620fd2b698fe8"
+                },
+                "down_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_down.bin",
+                  "sha256": "b8cd153feb19710941080e67d4e70255120f322aba3808b54ea567a2030ee173"
+                },
+                "gate_w4_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_gate_up_w4.bin",
+                  "sha256": "a5879cb23d6bd72e7f2183a5daa128e81cec008bbd28c733867969abf45e765e"
+                },
+                "down_w4_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_down_w4.bin",
+                  "sha256": "b54c615be858b8996474dcb407f84ab140649582a5dc739a74c1796b584b5254"
+                },
+                "reduce_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_reduce.bin",
+                  "sha256": "b711d177b110d0bac26fd04d69802d98f746776c7553ea0b94abb400861db483"
+                }
+              },
+              "active": true
+            },
+            "memory": {
+              "allocated": 40122871296,
+              "reserved": 43322966016,
+              "peak_allocated": 43051512832,
+              "peak_reserved": 43322966016,
+              "free": 4255703040
+            },
+            "reconstruction": {
+              "profile": "fused_int4a4",
+              "native_dispatches": 860,
+              "fallback_dispatches": 0,
+              "kernel_fused_calls": 430,
+              "activation_bits": 4
+            }
+          },
+          {
+            "rank": 1,
+            "candidate": "final_scale_down_group_v1021",
+            "native_launch_audit": {
+              "operator": "glm_reconstruction_v1021.launch",
+              "counts": {
+                "pack_kernel": 258,
+                "route_input_kernel": 258,
+                "gate_w4_kernel": 132,
+                "down_w4_kernel": 132,
+                "reduce_kernel": 258,
+                "gate_kernel": 126,
+                "down_kernel": 126
+              },
+              "binaries": {
+                "pack_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_pack.bin",
+                  "sha256": "649cf14bfeebed5e67d28698c2751bb45c884e25bc6651c04c38e6db27c70f9a"
+                },
+                "route_input_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_route_input.bin",
+                  "sha256": "99d9d188e02755cf09e5e04daaeae8f76e20c076c7df30ee6cbab6c113ccea03"
+                },
+                "gate_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_gate_up.bin",
+                  "sha256": "294be41f95530a2efb7c348a08b19c83eaa5c1a501683b5f33f620fd2b698fe8"
+                },
+                "down_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_down.bin",
+                  "sha256": "b8cd153feb19710941080e67d4e70255120f322aba3808b54ea567a2030ee173"
+                },
+                "gate_w4_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_gate_up_w4.bin",
+                  "sha256": "a5879cb23d6bd72e7f2183a5daa128e81cec008bbd28c733867969abf45e765e"
+                },
+                "down_w4_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_down_w4.bin",
+                  "sha256": "b54c615be858b8996474dcb407f84ab140649582a5dc739a74c1796b584b5254"
+                },
+                "reduce_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_reduce.bin",
+                  "sha256": "b711d177b110d0bac26fd04d69802d98f746776c7553ea0b94abb400861db483"
+                }
+              },
+              "active": true
+            },
+            "memory": {
+              "allocated": 40122871296,
+              "reserved": 43341840384,
+              "peak_allocated": 43028174336,
+              "peak_reserved": 43341840384,
+              "free": 3674046464
+            },
+            "reconstruction": {
+              "profile": "fused_int4a4",
+              "native_dispatches": 860,
+              "fallback_dispatches": 0,
+              "kernel_fused_calls": 430,
+              "activation_bits": 4
+            }
+          },
+          {
+            "rank": 2,
+            "candidate": "final_scale_down_group_v1021",
+            "native_launch_audit": {
+              "operator": "glm_reconstruction_v1021.launch",
+              "counts": {
+                "pack_kernel": 258,
+                "route_input_kernel": 258,
+                "gate_w4_kernel": 132,
+                "down_w4_kernel": 132,
+                "reduce_kernel": 258,
+                "gate_kernel": 126,
+                "down_kernel": 126
+              },
+              "binaries": {
+                "pack_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_pack.bin",
+                  "sha256": "649cf14bfeebed5e67d28698c2751bb45c884e25bc6651c04c38e6db27c70f9a"
+                },
+                "route_input_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_route_input.bin",
+                  "sha256": "99d9d188e02755cf09e5e04daaeae8f76e20c076c7df30ee6cbab6c113ccea03"
+                },
+                "gate_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_gate_up.bin",
+                  "sha256": "294be41f95530a2efb7c348a08b19c83eaa5c1a501683b5f33f620fd2b698fe8"
+                },
+                "down_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_down.bin",
+                  "sha256": "b8cd153feb19710941080e67d4e70255120f322aba3808b54ea567a2030ee173"
+                },
+                "gate_w4_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_gate_up_w4.bin",
+                  "sha256": "a5879cb23d6bd72e7f2183a5daa128e81cec008bbd28c733867969abf45e765e"
+                },
+                "down_w4_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_down_w4.bin",
+                  "sha256": "b54c615be858b8996474dcb407f84ab140649582a5dc739a74c1796b584b5254"
+                },
+                "reduce_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_reduce.bin",
+                  "sha256": "b711d177b110d0bac26fd04d69802d98f746776c7553ea0b94abb400861db483"
+                }
+              },
+              "active": true
+            },
+            "memory": {
+              "allocated": 40122871296,
+              "reserved": 43425726464,
+              "peak_allocated": 43028174336,
+              "peak_reserved": 43425726464,
+              "free": 4048351232
+            },
+            "reconstruction": {
+              "profile": "fused_int4a4",
+              "native_dispatches": 860,
+              "fallback_dispatches": 0,
+              "kernel_fused_calls": 430,
+              "activation_bits": 4
+            }
+          },
+          {
+            "rank": 3,
+            "candidate": "final_scale_down_group_v1021",
+            "native_launch_audit": {
+              "operator": "glm_reconstruction_v1021.launch",
+              "counts": {
+                "pack_kernel": 258,
+                "route_input_kernel": 258,
+                "gate_w4_kernel": 132,
+                "down_w4_kernel": 132,
+                "reduce_kernel": 258,
+                "gate_kernel": 126,
+                "down_kernel": 126
+              },
+              "binaries": {
+                "pack_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_pack.bin",
+                  "sha256": "649cf14bfeebed5e67d28698c2751bb45c884e25bc6651c04c38e6db27c70f9a"
+                },
+                "route_input_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_route_input.bin",
+                  "sha256": "99d9d188e02755cf09e5e04daaeae8f76e20c076c7df30ee6cbab6c113ccea03"
+                },
+                "gate_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_gate_up.bin",
+                  "sha256": "294be41f95530a2efb7c348a08b19c83eaa5c1a501683b5f33f620fd2b698fe8"
+                },
+                "down_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_down.bin",
+                  "sha256": "b8cd153feb19710941080e67d4e70255120f322aba3808b54ea567a2030ee173"
+                },
+                "gate_w4_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_gate_up_w4.bin",
+                  "sha256": "a5879cb23d6bd72e7f2183a5daa128e81cec008bbd28c733867969abf45e765e"
+                },
+                "down_w4_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_down_w4.bin",
+                  "sha256": "b54c615be858b8996474dcb407f84ab140649582a5dc739a74c1796b584b5254"
+                },
+                "reduce_kernel": {
+                  "path": "/srv/ai/artifacts/glm-scale-layout-20261009/build-down-group-v1021/glm_fused_reduce.bin",
+                  "sha256": "b711d177b110d0bac26fd04d69802d98f746776c7553ea0b94abb400861db483"
+                }
+              },
+              "active": true
+            },
+            "memory": {
+              "allocated": 40122871296,
+              "reserved": 43406852096,
+              "peak_allocated": 43041026560,
+              "peak_reserved": 43406852096,
+              "free": 3740594176
+            },
+            "reconstruction": {
+              "profile": "fused_int4a4",
+              "native_dispatches": 860,
+              "fallback_dispatches": 0,
+              "kernel_fused_calls": 430,
+              "activation_bits": 4
+            }
+          }
+        ]
+      }
+    ],
+    "ratio": 0.9742399877989839,
+    "kept": 1001
+  },
+  "initial_pairs": [
+    {
+      "version": 1001,
+      "name": "baseline",
+      "cold_ttft_s": [
+        51.93734505807515,
+        51.64476815704256
+      ],
+      "mean_cold_ttft_s": 51.79105660755886,
+      "decode_tok_s": 10.161251793441199,
+      "decode_text_matches_baseline": true,
+      "fallback_dispatches": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "version": 1020,
+      "name": "input-group",
+      "cold_ttft_s": [
+        51.33797983301338,
+        50.871524674934335
+      ],
+      "mean_cold_ttft_s": 51.10475225397386,
+      "decode_tok_s": 10.094514757532496,
+      "decode_text_matches_baseline": true,
+      "fallback_dispatches": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "version": 1021,
+      "name": "down-group",
+      "cold_ttft_s": [
+        50.88470856100321,
+        50.64069378294516
+      ],
+      "mean_cold_ttft_s": 50.762701171974186,
+      "decode_tok_s": 9.85231122432477,
+      "decode_text_matches_baseline": false,
+      "fallback_dispatches": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "version": 1022,
+      "name": "reduce-cache",
+      "cold_ttft_s": [
+        51.422867294051684,
+        51.176964577054605
+      ],
+      "mean_cold_ttft_s": 51.299915935553145,
+      "decode_tok_s": 9.117265660005051,
+      "decode_text_matches_baseline": false,
+      "fallback_dispatches": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "version": 1023,
+      "name": "compact-down",
+      "cold_ttft_s": [
+        51.438523250981234,
+        50.815756125957705
+      ],
+      "mean_cold_ttft_s": 51.12713968846947,
+      "decode_tok_s": 10.146742316180504,
+      "decode_text_matches_baseline": true,
+      "fallback_dispatches": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "version": 1024,
+      "name": "expert-ends",
+      "cold_ttft_s": [
+        52.14691061805934,
+        52.23034944396932
+      ],
+      "mean_cold_ttft_s": 52.18863003101433,
+      "decode_tok_s": 9.169866123835048,
+      "decode_text_matches_baseline": false,
+      "fallback_dispatches": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "version": 1025,
+      "name": "nz-full",
+      "cold_ttft_s": [
+        65.14962201996241,
+        64.55310896097217
+      ],
+      "mean_cold_ttft_s": 64.85136549046729,
+      "decode_tok_s": 9.579448651523085,
+      "decode_text_matches_baseline": false,
+      "fallback_dispatches": [
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "final_workers": [
+    {
+      "rank": 0,
+      "pid": 79013,
+      "candidate": "final_scale_baseline_v1001",
+      "graphs_dirty": false,
+      "native_failed": false,
+      "native_launch_audit": {
+        "operator": "glm_reconstruction_v1001.launch",
+        "counts": {
+          "pack_kernel": 43,
+          "route_input_kernel": 43,
+          "gate_w4_kernel": 22,
+          "down_w4_kernel": 22,
+          "reduce_kernel": 43,
+          "gate_kernel": 21,
+          "down_kernel": 21
+        },
+        "binaries": {
+          "pack_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_pack.bin",
+            "sha256": "649cf14bfeebed5e67d28698c2751bb45c884e25bc6651c04c38e6db27c70f9a"
+          },
+          "route_input_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_route_input.bin",
+            "sha256": "88c97073f7a99c651e06e9ac6c012b783ab1e3a78309ce514fec0950d9068061"
+          },
+          "gate_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_gate_up.bin",
+            "sha256": "36476fca50056776680bdc5e35672f105a4563ed25cb76247f41cbb89c9d37ed"
+          },
+          "down_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_down.bin",
+            "sha256": "2074e248e03182f208311055cb3fc66cb150410496fc74a85cd2daf4408f52d2"
+          },
+          "gate_w4_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_gate_up_w4.bin",
+            "sha256": "f98ed3d2f18e6d2f31c79da523fcc7cd3cdc06f2d88fc5e8ddab78d807bc3ba4"
+          },
+          "down_w4_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_down_w4.bin",
+            "sha256": "100c2998d479a94f4de5f7ec6da5b5817f83cca2d23ddb11100a89d35edcd113"
+          },
+          "reduce_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_reduce.bin",
+            "sha256": "c1e7ade7ca84f1c1d251944dea2eacef08a6fc047e197ebe5d4b77e73b1e39a6"
+          }
+        },
+        "active": true
+      },
+      "prompt_progress": {
+        "calls": 33,
+        "rows": 1
+      },
+      "fp16_scale_storage": {
+        "banks": 43,
+        "layouts": [
+          "fp16_storage_fp32_compute_v1"
+        ],
+        "dtypes": [
+          "torch.float16"
+        ],
+        "bytes": 152174592,
+        "dispatches": {
+          "prefill": 43,
+          "decode": 172
+        },
+        "decode_version": 984,
+        "prefill_version": 1001
+      },
+      "packed_state": {
+        "count": 12,
+        "blocks": [
+          32
+        ],
+        "windows": [
+          33
+        ],
+        "compression": [
+          4
+        ],
+        "memory": {
+          "allocated": 40122774528,
+          "reserved": 40458256384,
+          "peak_allocated": 40287864832,
+          "peak_reserved": 40458256384,
+          "free": 7164452864
+        },
+        "scope": "direct target prefill; retained full decode/MTP graphs"
+      }
+    },
+    {
+      "rank": 1,
+      "pid": 79400,
+      "candidate": "final_scale_baseline_v1001",
+      "graphs_dirty": false,
+      "native_failed": false,
+      "native_launch_audit": {
+        "operator": "glm_reconstruction_v1001.launch",
+        "counts": {
+          "pack_kernel": 43,
+          "route_input_kernel": 43,
+          "gate_w4_kernel": 22,
+          "down_w4_kernel": 22,
+          "reduce_kernel": 43,
+          "gate_kernel": 21,
+          "down_kernel": 21
+        },
+        "binaries": {
+          "pack_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_pack.bin",
+            "sha256": "649cf14bfeebed5e67d28698c2751bb45c884e25bc6651c04c38e6db27c70f9a"
+          },
+          "route_input_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_route_input.bin",
+            "sha256": "88c97073f7a99c651e06e9ac6c012b783ab1e3a78309ce514fec0950d9068061"
+          },
+          "gate_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_gate_up.bin",
+            "sha256": "36476fca50056776680bdc5e35672f105a4563ed25cb76247f41cbb89c9d37ed"
+          },
+          "down_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_down.bin",
+            "sha256": "2074e248e03182f208311055cb3fc66cb150410496fc74a85cd2daf4408f52d2"
+          },
+          "gate_w4_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_gate_up_w4.bin",
+            "sha256": "f98ed3d2f18e6d2f31c79da523fcc7cd3cdc06f2d88fc5e8ddab78d807bc3ba4"
+          },
+          "down_w4_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_down_w4.bin",
+            "sha256": "100c2998d479a94f4de5f7ec6da5b5817f83cca2d23ddb11100a89d35edcd113"
+          },
+          "reduce_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_reduce.bin",
+            "sha256": "c1e7ade7ca84f1c1d251944dea2eacef08a6fc047e197ebe5d4b77e73b1e39a6"
+          }
+        },
+        "active": true
+      },
+      "prompt_progress": {
+        "calls": 0,
+        "rows": 0
+      },
+      "fp16_scale_storage": {
+        "banks": 43,
+        "layouts": [
+          "fp16_storage_fp32_compute_v1"
+        ],
+        "dtypes": [
+          "torch.float16"
+        ],
+        "bytes": 152174592,
+        "dispatches": {
+          "prefill": 43,
+          "decode": 172
+        },
+        "decode_version": 984,
+        "prefill_version": 1001
+      },
+      "packed_state": {
+        "count": 12,
+        "blocks": [
+          32
+        ],
+        "windows": [
+          33
+        ],
+        "compression": [
+          4
+        ],
+        "memory": {
+          "allocated": 40122774528,
+          "reserved": 40458256384,
+          "peak_allocated": 40291030528,
+          "peak_reserved": 40458256384,
+          "free": 6602235904
+        },
+        "scope": "direct target prefill; retained full decode/MTP graphs"
+      }
+    },
+    {
+      "rank": 2,
+      "pid": 79888,
+      "candidate": "final_scale_baseline_v1001",
+      "graphs_dirty": false,
+      "native_failed": false,
+      "native_launch_audit": {
+        "operator": "glm_reconstruction_v1001.launch",
+        "counts": {
+          "pack_kernel": 43,
+          "route_input_kernel": 43,
+          "gate_w4_kernel": 22,
+          "down_w4_kernel": 22,
+          "reduce_kernel": 43,
+          "gate_kernel": 21,
+          "down_kernel": 21
+        },
+        "binaries": {
+          "pack_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_pack.bin",
+            "sha256": "649cf14bfeebed5e67d28698c2751bb45c884e25bc6651c04c38e6db27c70f9a"
+          },
+          "route_input_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_route_input.bin",
+            "sha256": "88c97073f7a99c651e06e9ac6c012b783ab1e3a78309ce514fec0950d9068061"
+          },
+          "gate_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_gate_up.bin",
+            "sha256": "36476fca50056776680bdc5e35672f105a4563ed25cb76247f41cbb89c9d37ed"
+          },
+          "down_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_down.bin",
+            "sha256": "2074e248e03182f208311055cb3fc66cb150410496fc74a85cd2daf4408f52d2"
+          },
+          "gate_w4_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_gate_up_w4.bin",
+            "sha256": "f98ed3d2f18e6d2f31c79da523fcc7cd3cdc06f2d88fc5e8ddab78d807bc3ba4"
+          },
+          "down_w4_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_down_w4.bin",
+            "sha256": "100c2998d479a94f4de5f7ec6da5b5817f83cca2d23ddb11100a89d35edcd113"
+          },
+          "reduce_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_reduce.bin",
+            "sha256": "c1e7ade7ca84f1c1d251944dea2eacef08a6fc047e197ebe5d4b77e73b1e39a6"
+          }
+        },
+        "active": true
+      },
+      "prompt_progress": {
+        "calls": 0,
+        "rows": 0
+      },
+      "fp16_scale_storage": {
+        "banks": 43,
+        "layouts": [
+          "fp16_storage_fp32_compute_v1"
+        ],
+        "dtypes": [
+          "torch.float16"
+        ],
+        "bytes": 152174592,
+        "dispatches": {
+          "prefill": 43,
+          "decode": 172
+        },
+        "decode_version": 984,
+        "prefill_version": 1001
+      },
+      "packed_state": {
+        "count": 12,
+        "blocks": [
+          32
+        ],
+        "windows": [
+          33
+        ],
+        "compression": [
+          4
+        ],
+        "memory": {
+          "allocated": 40122774528,
+          "reserved": 40460353536,
+          "peak_allocated": 40291030528,
+          "peak_reserved": 40460353536,
+          "free": 7056904192
+        },
+        "scope": "direct target prefill; retained full decode/MTP graphs"
+      }
+    },
+    {
+      "rank": 3,
+      "pid": 80521,
+      "candidate": "final_scale_baseline_v1001",
+      "graphs_dirty": false,
+      "native_failed": false,
+      "native_launch_audit": {
+        "operator": "glm_reconstruction_v1001.launch",
+        "counts": {
+          "pack_kernel": 43,
+          "route_input_kernel": 43,
+          "gate_w4_kernel": 22,
+          "down_w4_kernel": 22,
+          "reduce_kernel": 43,
+          "gate_kernel": 21,
+          "down_kernel": 21
+        },
+        "binaries": {
+          "pack_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_pack.bin",
+            "sha256": "649cf14bfeebed5e67d28698c2751bb45c884e25bc6651c04c38e6db27c70f9a"
+          },
+          "route_input_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_route_input.bin",
+            "sha256": "88c97073f7a99c651e06e9ac6c012b783ab1e3a78309ce514fec0950d9068061"
+          },
+          "gate_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_gate_up.bin",
+            "sha256": "36476fca50056776680bdc5e35672f105a4563ed25cb76247f41cbb89c9d37ed"
+          },
+          "down_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_down.bin",
+            "sha256": "2074e248e03182f208311055cb3fc66cb150410496fc74a85cd2daf4408f52d2"
+          },
+          "gate_w4_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_gate_up_w4.bin",
+            "sha256": "f98ed3d2f18e6d2f31c79da523fcc7cd3cdc06f2d88fc5e8ddab78d807bc3ba4"
+          },
+          "down_w4_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_down_w4.bin",
+            "sha256": "100c2998d479a94f4de5f7ec6da5b5817f83cca2d23ddb11100a89d35edcd113"
+          },
+          "reduce_kernel": {
+            "path": "/srv/ai/artifacts/glm-prefill-weight-reuse-20261007/build-chunk-capacity-v1001/glm_fused_reduce.bin",
+            "sha256": "c1e7ade7ca84f1c1d251944dea2eacef08a6fc047e197ebe5d4b77e73b1e39a6"
+          }
+        },
+        "active": true
+      },
+      "prompt_progress": {
+        "calls": 0,
+        "rows": 0
+      },
+      "fp16_scale_storage": {
+        "banks": 43,
+        "layouts": [
+          "fp16_storage_fp32_compute_v1"
+        ],
+        "dtypes": [
+          "torch.float16"
+        ],
+        "bytes": 152174592,
+        "dispatches": {
+          "prefill": 43,
+          "decode": 172
+        },
+        "decode_version": 984,
+        "prefill_version": 1001
+      },
+      "packed_state": {
+        "count": 12,
+        "blocks": [
+          32
+        ],
+        "windows": [
+          33
+        ],
+        "compression": [
+          4
+        ],
+        "memory": {
+          "allocated": 40122774528,
+          "reserved": 40458256384,
+          "peak_allocated": 40287864832,
+          "peak_reserved": 40458256384,
+          "free": 6733455360
+        },
+        "scope": "direct target prefill; retained full decode/MTP graphs"
+      }
+    }
+  ],
+  "unchanged_weight_storage_and_worker_pids": true,
+  "full_report_sha256": "aa0c51b9c6025b0a127046e5a255913a6024b2914488920b32e752900c3014a9",
+  "final_decode": {
+    "prompt_tokens": 128,
+    "completion_tokens": 64,
+    "nonce": 20,
+    "ttft_s": 1.5396316720871255,
+    "total_s": 7.7517723680939525,
+    "generation_tok_s": 10.141431606740086,
+    "version": 1001
+  }
+}

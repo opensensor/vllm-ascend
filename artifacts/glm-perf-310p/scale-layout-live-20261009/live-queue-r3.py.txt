@@ -1,0 +1,150 @@
+import gc,hashlib,importlib,json,sys,time,urllib.request,uuid
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-scale-layout-20261009')
+old=Path('/srv/ai/artifacts/glm-prefill-weight-reuse-20261007')
+sys.path.insert(0,str(root/'source'))
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.fused_moe_control import manifest
+client=ResidentClient('http://127.0.0.1:8001',timeout=1800)
+base=(old/'qualified-memory-baseline-r6.py').read_text()
+progress=(root/'prefill_progress.py').read_text()
+report={'complete':False,'scope':'resident real-model cold prefill and decode controls; unchanged loaded weights','trials':[],'switches':[]}
+path=root/'live-serving-results.json'
+previous=json.loads(path.read_text())
+(root/'live-serving-results-second-attempt.json').write_text(json.dumps(previous,indent=2)+'\n')
+report['trials']=previous['trials']
+report['switches']=previous['switches']
+def save():path.write_text(json.dumps(report,indent=2)+'\n')
+def idle():
+ with urllib.request.urlopen(client.base_url+'/metrics',timeout=30) as response:lines=response.read().decode().splitlines()
+ vals=[float(line.split()[-1]) for line in lines if line.startswith(('vllm:num_requests_running{','vllm:num_requests_waiting{'))]
+ assert vals and not any(vals),'active request; stop before mutation'
+def stream(tokens,output,nonce):
+ payload=dict(model='glm53-flash-selective-w3',prompt=[101+nonce]+[43]*(tokens-2)+[201+nonce],max_tokens=output,temperature=0,ignore_eos=True,stream=True,stream_options=dict(include_usage=True))
+ request=urllib.request.Request(client.base_url+'/v1/completions',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
+ start=time.monotonic();first=None;last=None;usage=None;pieces=[];done=False
+ print('REQUEST_START',json.dumps({'prompt_tokens':tokens,'completion_tokens':output,'nonce':nonce}),flush=True)
+ with urllib.request.urlopen(request,timeout=1800) as response:
+  for line in response:
+   if not line.startswith(b'data:'):continue
+   value=line[5:].strip()
+   if value==b'[DONE]':done=True;break
+   event=json.loads(value);assert 'error' not in event,event
+   if event.get('usage'):usage=event['usage']
+   for choice in event.get('choices',[]):
+    if choice.get('text'):
+     now=time.monotonic();first=now if first is None else first;last=now;pieces.append(choice['text'])
+ end=time.monotonic();assert done and usage and first is not None
+ assert usage['prompt_tokens']==tokens and usage['completion_tokens']==output
+ return dict(prompt_tokens=tokens,completion_tokens=output,nonce=nonce,ttft_s=first-start,total_s=end-start,generation_tok_s=(output-1)/(end-first) if output>1 else None,text=''.join(pieces))
+def candidate(version,name):
+ source=base+'\n'
+ source+='import sys,types\n_progress_module=types.ModuleType("glm_prompt_progress_resident")\nsys.modules[_progress_module.__name__]=_progress_module\n'
+ source+='exec('+repr(progress)+',_progress_module.__dict__)\n_base_replacements=replacements\n'
+ source+=f'''VERSION={version!r}
+def replacements(native_resources):
+    import torch
+    from vllm.logger import logger
+    from vllm_ascend._310p.worker_310p import NPUWorker310
+    selected=dict(native_resources)
+    if VERSION!=1001:
+        prefill=native_resources['reconstruction_v'+str(VERSION)]['fused_int4a4']
+        prefill.scratch.clear()
+        if prefill.shared_prefill_max_tokens!=1280:prefill.configure_prefill_scratch(1280)
+        selected['reconstruction_v1001']=dict(native_resources['reconstruction_v1001'],fused_int4a4=prefill)
+    else:prefill=native_resources['reconstruction_v1001']['fused_int4a4']
+    changes=_base_replacements(selected)
+    prefix='vllm_ascend._310p.worker_310p:NPUWorker310.'
+    original=NPUWorker310.execute_model
+    original=getattr(original,'__prefill_progress_original__',original)
+    tracker=_progress_module.PrefillProgress()
+    progress_state={{'calls':0,'rows':0}}
+    info=logger.info
+    def execute(self,scheduler_output,*args,**kwargs):
+        if self.rank==0:
+            progress_state['calls']+=1
+            for row in tracker.scheduled(scheduler_output):
+                progress_state['rows']+=1
+                info('Prefill scheduled: request=%s prompt_tokens=%d reused_at_admission=%s prompt_chunk=%d scheduled_through=%d remaining_to_schedule=%d',*row)
+        return original(self,scheduler_output,*args,**kwargs)
+    execute.__prefill_progress_original__=original
+    changes[prefix+'execute_model']=execute
+    apply_base=changes[prefix+'resident_apply'];status_base=changes[prefix+'resident_status']
+    state={{'passed':VERSION==1001,'cases':[]}}
+    def apply(self,generation):
+        receipt=apply_base(self,generation)
+        if 'error' in receipt or state['passed']:return receipt
+        reference=native_resources['reconstruction_v1001']['fused_int4a4']
+        banks={{}}
+        for wrapper in self._resident_wrappers():
+            for owner in wrapper.runnable.modules():
+                bank=getattr(owner,'w2_experts',None)
+                if bank is not None:
+                    hidden=bank.down_packed_bank.shape[1]
+                    bits=bank.gate_up_packed_bank.shape[-1]*8//hidden
+                    banks.setdefault(bits,bank)
+        assert set(banks)=={{2,3,4}},'missing loaded precision banks'
+        for bits,bank in banks.items():
+            hidden=bank.down_packed_bank.shape[1];experts=bank.gate_up_packed_bank.shape[0];offset=bank.local_expert_offset
+            for tokens in (31,64):
+                x=torch.randn(tokens,hidden,device=prefill.device,dtype=torch.float16)*0.25
+                weights=torch.full((tokens,2),0.5,device=prefill.device,dtype=torch.float32)
+                ids=torch.full((tokens,2),offset,device=prefill.device,dtype=torch.int64)
+                args=(bank.gate_up_packed_bank,bank.gate_up_scale_bank,bank.down_packed_bank,bank.down_scale_bank,weights,ids,offset)
+                expected=reference(x,*args);actual=prefill(x,*args)
+                assert torch.equal(expected.cpu().view(torch.int32),actual.cpu().view(torch.int32)),('loaded mismatch',bits,tokens)
+                graph=torch.npu.NPUGraph()
+                with torch.npu.graph(graph):actual=prefill(x,*args)
+                x.mul_(1.25);weights.mul_(0.75);ids.fill_(offset+experts);ids.view(-1)[:5].fill_(offset)
+                graph.replay();torch.npu.synchronize();expected=reference(x,*args)
+                assert torch.equal(expected.cpu().view(torch.int32),actual.cpu().view(torch.int32)),('loaded replay mismatch',bits,tokens)
+                ids.view(-1)[4:].fill_(offset+experts)
+                graph.replay();torch.npu.synchronize();expected=reference(x,*args)
+                assert torch.equal(expected.cpu().view(torch.int32),actual.cpu().view(torch.int32)),('loaded sparse replay mismatch',bits,tokens)
+                ids.fill_(offset+experts);graph.replay();torch.npu.synchronize()
+                assert torch.equal(actual.cpu(),torch.zeros(tokens,hidden)),('loaded peer output',bits,tokens)
+                state['cases'].append(dict(bits=bits,tokens=tokens,experts=experts,exact=True,changed_replay=True,all_peer=True))
+        state['passed']=True
+        return receipt
+    def status(self):
+        row=status_base(self)
+        row['prompt_progress']=dict(progress_state)
+        row['scale_queue']={{'version':VERSION,'gate':state,'prefill_kernel_calls':getattr(prefill,'kernel_fused_calls',None)}}
+        row['fp16_scale_storage']['prefill_version']=VERSION
+        return row
+    changes[prefix+'resident_apply']=apply;changes[prefix+'resident_status']=status
+    return changes
+'''
+ return source
+cases=[(1020,'input-group'),(1021,'down-group'),(1022,'reduce-cache'),(1023,'compact-down'),(1024,'expert-ends'),(1025,'nz-full')]
+try:
+ idle();client.request('/resident/maintenance',method='POST');report['before']=client.rpc('resident_status');save()
+ for version,name in cases:
+  idle()
+  if version!=1001:
+   m=manifest(root/f'build-{name}-v{version}',root/f'gates-{name}-v{version}.json')
+   (root/f'manifest-{name}-v{version}.json').write_text(json.dumps(m.value,indent=2)+'\n')
+   print('LOAD_NATIVE',version,flush=True)
+   loaded=client.load_native(m);report.setdefault('admissions',{})[str(version)]=loaded;save()
+  source=candidate(version,name);(root/f'candidate-{name}-v{version}.py').write_text(source)
+  print('HOT_SWAP_START',version,flush=True)
+  rows=client.switch(Control(uuid.uuid4().hex,candidate=f'scale_queue_{name.replace(chr(45),chr(95))}_v{version}',source=source));client.resume()
+  assert all(row['scale_queue']['gate']['passed'] for row in rows)
+  report['switches'].append(dict(version=version,name=name,source_sha256=hashlib.sha256(source.encode()).hexdigest(),workers=rows));save()
+  print('HOT_SWAP_COMPLETE',version,[(row['rank'],len(row['scale_queue']['gate']['cases'])) for row in rows],flush=True)
+  for tokens,output,nonce in ((640,1,170),(6400,1,160),(6400,1,161),(128,64,20)):
+   idle();client.request('/pause?mode=wait&clear_cache=true');client.resume()
+   row=stream(tokens,output,nonce);row.update(version=version,name=name);row['workers_after']=client.rpc('resident_status')
+   report['trials'].append(row);save();print('REQUEST_COMPLETE',version,tokens,row['ttft_s'],row['generation_tok_s'],flush=True)
+  print('CASE_COMPLETE',version,flush=True)
+ report['complete']=True;save()
+except Exception as error:
+ report['error']=repr(error);save();print('FAILED',repr(error),flush=True);raise
+finally:
+ print('RESTORING_QUALIFIED_BASELINE_WITH_PROGRESS',flush=True)
+ try:
+  rows=client.switch(Control(uuid.uuid4().hex,candidate='qualified_v1001_with_prompt_progress',source=candidate(1001,'baseline')));client.resume();report['restored']=rows;save()
+  client.request('/resident/maintenance',method='DELETE');print('SERVER_OPEN_BASELINE_PROGRESS',flush=True)
+ except Exception as error:
+  report['recovery_error']=repr(error);save();print('RECOVERY_FAILED',repr(error),flush=True);raise

@@ -1,0 +1,77 @@
+import json,time,uuid,hashlib,urllib.request
+from pathlib import Path
+root=Path('/srv/ai/artifacts/glm-scale-layout-20261009')
+source=(root/'live-queue-r3.py').read_text().split('cases=[',1)[0]
+exec(compile(source,'<scale-queue-functions>','exec'))
+report['complete']=False
+pairs={}
+for row in report['trials']:
+ if row['prompt_tokens']==6400:pairs.setdefault(row['version'],[]).append(row['ttft_s'])
+means={version:sum(values)/len(values) for version,values in pairs.items()}
+chosen=min((version for version in means if version!=1001),key=means.get)
+name=next(row['name'] for row in report['trials'] if row['version']==chosen)
+report['final_comparison']={'selected_by_initial_pair':chosen,'initial_mean_ttft':means,'trials':[]}
+def switch(version,name):
+ text=candidate(version,name)
+ audit_source=(root/'native_launch_audit.py').read_text()
+ text+='\n_launch_audit_parent=replacements\n'
+ text+='import types\n_launch_audit_module=types.ModuleType("glm_live_launch_audit")\n'
+ text+='exec('+repr(audit_source)+',_launch_audit_module.__dict__)\n'
+ text+="""def replacements(native_resources):
+    import sys
+    from pathlib import Path
+    from vllm.logger import logger
+    from vllm_ascend._310p.worker_310p import NPUWorker310
+    native=native_resources['reconstruction_v'+str(VERSION)]['fused_int4a4']
+    root=Path(sys.modules[type(native).__module__].__file__).parent.parent
+    audit=_launch_audit_module.NativeLaunchAudit(native,root,logger.info if NPUWorker310 is not None else None)
+    changes=_launch_audit_parent(native_resources)
+    prefix='vllm_ascend._310p.worker_310p:NPUWorker310.'
+    execute=changes[prefix+'execute_model'];status=changes[prefix+'resident_status']
+    def live_execute(self,*args,**kwargs):
+        audit.begin_requests()
+        return execute(self,*args,**kwargs)
+    live_execute.__prefill_progress_original__=execute.__prefill_progress_original__
+    def live_status(self):
+        row=status(self)
+        row['native_launch_audit']=audit.snapshot()
+        return row
+    changes[prefix+'execute_model']=live_execute
+    changes[prefix+'resident_status']=live_status
+    return changes
+"""
+
+ if version!=1001:
+  # The resident reference was needed only for admission checks. Retire its
+  # scratch after the old graphs are gone, before capturing new decode graphs.
+  text+='\n_final_parent=replacements\ndef replacements(native_resources):\n    changes=_final_parent(native_resources)\n    key="vllm_ascend._310p.worker_310p:NPUWorker310.resident_capture"\n    capture=changes[key]\n    def clean_capture(self):\n        if self._resident_session().graphs_dirty:\n            reference=native_resources["reconstruction_v1001"]["fused_int4a4"]\n            reference.scratch.clear()\n            reference.configs.clear()\n        return capture(self)\n    changes[key]=clean_capture\n    return changes\n'
+ rows=client.switch(Control(uuid.uuid4().hex,candidate=f'final_scale_{name.replace(chr(45),chr(95))}_v{version}',source=text));client.resume()
+ assert all(r['scale_queue']['gate']['passed'] for r in rows)
+ report['switches'].append(dict(version=version,name='final_'+name,source_sha256=hashlib.sha256(text.encode()).hexdigest(),workers=rows))
+ (root/f'final-candidate-v{version}.py').write_text(text);save()
+ print('FINAL_SWAP',version,flush=True)
+ return rows
+try:
+ idle();client.request('/resident/maintenance',method='POST')
+ for version,case in ((1001,'baseline'),(chosen,name)):
+  switch(version,case)
+  idle();client.request('/pause?mode=wait&clear_cache=true');client.resume()
+  trial=stream(6400,1,160);trial.update(version=version,name=case);trial['workers_after']=client.rpc('resident_status')
+  assert all(w['native_launch_audit']['active'] and sum(w['native_launch_audit']['counts'].get(k,0) for k in ('gate_kernel','gate_w3_kernel','gate_w4_kernel'))==258 for w in trial['workers_after']), 'actual native launch count mismatch'
+  report['final_comparison']['trials'].append(trial);save();print('FINAL_COLD',version,trial['ttft_s'],flush=True)
+ baseline,candidate_trial=report['final_comparison']['trials']
+ ratio=candidate_trial['ttft_s']/baseline['ttft_s']
+ keep=ratio<0.995 and candidate_trial['text']==baseline['text']
+ report['final_comparison'].update(ratio=ratio,kept=chosen if keep else 1001)
+ if not keep:switch(1001,'baseline')
+ idle();client.request('/pause?mode=wait&clear_cache=true');client.resume()
+ trial=stream(128,64,20);trial.update(version=chosen if keep else 1001);report['final_decode']=trial
+ original=next(t for t in report['trials'] if t['version']==1001 and t['completion_tokens']==64)
+ assert trial['text']==original['text'],'final decode text changed'
+ report['final_workers']=client.rpc('resident_status');report['complete']=True;save()
+ print('FINAL_READY',report['final_comparison']['kept'],trial['generation_tok_s'],flush=True)
+except BaseException as error:
+ report['final_error']=repr(error);save()
+ client.switch(Control(uuid.uuid4().hex,candidate='qualified_v1001_with_prompt_progress',source=candidate(1001,'baseline')));client.resume();raise
+finally:
+ client.request('/resident/maintenance',method='DELETE');print('SERVER_OPEN',flush=True)

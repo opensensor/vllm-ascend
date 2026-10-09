@@ -25,6 +25,8 @@ ROUTE_INPUT_PAIR_BYTES = 2 * ROUTE_INPUT_ROWS * 32
 REDUCE_CACHE_MIN_TOKENS = 64
 REDUCE_CACHE_MAX_TOP_K = 8
 FUSED_KERNEL_CORES = 8
+DOWN_SCALE_MIN_ROWS = 5
+GROUP_MAJOR_DOWN_SCALE_LAYOUT = "dense_group_major_sparse_tile_row_v1"
 INPUT_SCALE_MIN_ROWS = 5
 GROUP_MAJOR_INPUT_SCALE_LAYOUT = "dense_group_major_sparse_row_major_v1"
 
@@ -197,6 +199,26 @@ class NativeFusedMoE:
         ):
             raise ValueError("direct compact scales require raw M32 vector-scale down projection")
         self.direct_compact_down_scales = direct_scales
+        group_major_down = options.get("group_major_down_scales", False)
+        if (
+            type(group_major_down) is not bool
+            or group_major_down
+            and not (
+                options.get("raw_hidden_scales")
+                and options.get("route_compact_down_scales")
+                and options.get("quad_hidden_quant")
+                and options.get("prefill_rows_32")
+                and options.get("vector_scale_products")
+                and prepared_weight_layout
+                and not direct_scales
+            )
+        ):
+            raise ValueError(
+                "group-major down scales require raw compact M32 quantization and exclude direct compact scales"
+            )
+        if group_major_down and options.get("down_scale_layout") != GROUP_MAJOR_DOWN_SCALE_LAYOUT:
+            raise ValueError("group-major down scales require a matching producer/consumer layout marker")
+        self.group_major_down_scales = group_major_down
         group_major = options.get("group_major_input_scales", False)
         if (
             type(group_major) is not bool

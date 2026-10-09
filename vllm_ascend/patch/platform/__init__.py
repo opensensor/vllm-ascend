@@ -41,6 +41,7 @@ if os.getenv("DYNAMIC_EPLB", "false").lower() in ("true", "1") or os.getenv("EXP
 
 import vllm_ascend.patch.platform.patch_balance_schedule  # noqa
 import vllm_ascend.patch.platform.patch_engine_core  # noqa
+import vllm_ascend.patch.platform.patch_prefill_progress  # noqa
 
 import vllm_ascend.patch.platform.patch_kv_cache_coordinator  # noqa
 import vllm_ascend.patch.platform.patch_speculative_config  # noqa
@@ -106,3 +107,11 @@ import vllm_ascend.patch.platform.patch_kv_cache_dtype  # noqa
 #    Future Plan:
 #       Remove this patch when upstream supports per-group or backend-defined
 #       prefill boundaries.
+
+# ** File: platform/patch_prefill_progress.py **
+#   Target: Scheduler.add_request and Scheduler._update_after_schedule.
+#   Why: Chunk logs expose 1,280 tokens without request total or remaining work.
+#   How: Log CPU prompt/cache counters, with progress explicitly labeled as
+#        scheduled rather than completed. Reuse enable_logging_iteration_details;
+#        no new environment setting, tensor access or scheduler mutation.
+#   Upstream plan: Remove when request totals are part of vLLM iteration logs.

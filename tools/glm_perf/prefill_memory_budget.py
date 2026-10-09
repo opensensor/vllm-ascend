@@ -197,6 +197,56 @@ def moe_scratch_bytes(
     return {"buffers": buffers, "total_bytes": sum(buffers.values()), "route_slots": slots}
 
 
+def interior_prefill_capacity(
+    batch_tokens: int,
+    prefill_limit: int,
+    decode_requests: int,
+    *,
+    decode_query_tokens: int = 2,
+    draft_slots_per_request: int = 0,
+    alignment_tokens: int = 640,
+    scheduled_tokens: int | None = None,
+) -> dict:
+    """CPU budget worksheet for one interior prefill beside existing decodes.
+
+    Apply the scheduler's query/input budgets and per-request prefill cap before
+    the common cache-block alignment. MTP1 uses two verifier query tokens and
+    zero additional draft slots in the current upstream contract. This does not
+    predict prompt tails, prefix checkpoints, encoder caps, preemption or order.
+    It is not a launch or whole-model memory admission decision.
+    """
+    require_positive(
+        batch_tokens=batch_tokens,
+        prefill_limit=prefill_limit,
+        decode_query_tokens=decode_query_tokens,
+        alignment_tokens=alignment_tokens,
+    )
+    if any(type(value) is not int or value < 0 for value in (decode_requests, draft_slots_per_request)):
+        raise ValueError("decode requests and draft slots require nonnegative integers")
+    scheduled_tokens = batch_tokens if scheduled_tokens is None else scheduled_tokens
+    require_positive(scheduled_tokens=scheduled_tokens)
+    decode_tokens = decode_requests * decode_query_tokens
+    draft_slots = (decode_requests + 1) * draft_slots_per_request
+    available = min(
+        prefill_limit,
+        max(0, scheduled_tokens - decode_tokens),
+        max(0, batch_tokens - decode_tokens - draft_slots),
+    )
+    aligned = available // alignment_tokens * alignment_tokens
+    return {
+        "batch_tokens": batch_tokens,
+        "scheduled_tokens": scheduled_tokens,
+        "prefill_limit": prefill_limit,
+        "decode_requests": decode_requests,
+        "decode_tokens": decode_tokens,
+        "reserved_draft_slots": draft_slots,
+        "available_prefill_tokens": available,
+        "aligned_full_block_tokens": aligned,
+        "alignment_unused_tokens": available - aligned,
+        "scope": "interior full-block capacity only; excludes tail and admission decisions",
+    }
+
+
 @dataclass(frozen=True)
 class RankEnvelope:
     """Non-overlapping upper bounds for a specified candidate and rank.

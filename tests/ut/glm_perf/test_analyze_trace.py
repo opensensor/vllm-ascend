@@ -149,3 +149,21 @@ def test_cann_total_row_is_not_a_collective(tmp_path):
     collectives = read_collectives(path)
     assert len(collectives) == 1
     assert collectives[0]["key"] == "hcom_allReduce__0_0_1"
+
+
+@pytest.mark.parametrize(
+    "name,core,expected",
+    [
+        ("glm_fused_gate_up_w4_v1", "AI_CORE", "moe_gate_up"),
+        ("glm_fused_gate_up_v1", "AI_CORE", "moe_gate_up"),
+        ("glm_fused_down_v1", "AI_CORE", "moe_down"),
+        ("glm_fused_reduce_half_v1", "AI_CORE", "moe_reduce"),
+        ("glm_fused_route_input_v1", "AI_CORE", "moe_prepare"),
+        ("glm_fused_pack_v1", "AI_CORE", "moe_prepare"),
+        ("aclnnInplaceCopy_CastAiCpu_Cast", "AI_CPU", "ai_cpu_cast"),
+        ("aclnnMatmul_CastAiCore_Cast", "AI_CORE", "other_matmul"),
+        ("Broadcast", "AI_CPU", "other"),
+    ],
+)
+def test_actual_native_stage_names_and_cpu_casts(name, core, expected):
+    assert kernel_category(name, core) == expected

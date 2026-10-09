@@ -77,6 +77,7 @@ def build(
     prefill_reduce_meta_cache=False,
     direct_compact_down_scales=False,
     group_major_input_scales=False,
+    group_major_down_scales=False,
 ):
     """Freeze helper sources and compile a unique, append-only native version."""
     if type(version) is not int or version < 1 or output_columns not in (16, 32, 64, 128):
@@ -114,6 +115,7 @@ def build(
             prefill_reduce_meta_cache,
             direct_compact_down_scales,
             group_major_input_scales,
+            group_major_down_scales,
         )
     ):
         raise ValueError("prefill experiment flags must be boolean")
@@ -229,6 +231,18 @@ def build(
         raise ValueError("cached reducer metadata requires fused MoE with FP16 route workspace")
     if direct_compact_down_scales and not (raw_hidden_scales and prefill_rows_32 and vector_scale_products):
         raise ValueError("direct compact scales require raw M32 vector-scale down projection")
+    if group_major_down_scales and not (
+        raw_hidden_scales
+        and route_compact_down_scales
+        and quad_hidden_quant
+        and prefill_rows_32
+        and vector_scale_products
+        and prepared_weight_layout
+        and not direct_compact_down_scales
+    ):
+        raise ValueError(
+            "group-major down scales require raw compact M32 quantization and exclude direct compact scales"
+        )
     if prefill_product_cast and not (prefill_rows_32 and pair_prefill_scale_groups):
         raise ValueError("contiguous prefill cast requires wide paired prefill rows")
     if prefill_product_cast and nz_prefill_accumulator:
@@ -340,6 +354,8 @@ def build(
             "prefill_reduce_meta_cache": prefill_reduce_meta_cache,
             "direct_compact_down_scales": direct_compact_down_scales,
             "group_major_input_scales": group_major_input_scales,
+            "group_major_down_scales": group_major_down_scales,
+            "down_scale_layout": "dense_group_major_sparse_tile_row_v1" if group_major_down_scales else "tile_row_v1",
             "input_scale_layout": "dense_group_major_sparse_row_major_v1"
             if group_major_input_scales
             else "row_major_v1",
@@ -405,6 +421,7 @@ def build(
                     *(["-DGLM_COMPACT_W4_SCRATCH"] if precision == 4 else []),
                     *(["-DGLM_PREFILL_WEIGHT_CACHE"] if prefill_weight_cache else []),
                     *(["-DGLM_VECTOR_SCALE_PRODUCTS"] if vector_scale_products else []),
+                    *(["-DGLM_GROUP_MAJOR_DOWN_SCALES"] if group_major_down_scales else []),
                     *(["-DGLM_PREFILL_ROWS_32"] if prefill_rows_32 else []),
                     *(["-DGLM_ACTIVE_CUBE_ROWS"] if active_cube_rows else []),
                     *(["-DGLM_DIRECT_W4_L1"] if direct_w4_l1 else []),
@@ -438,6 +455,7 @@ def build(
         provenance["glm_fused_scratch.h"] = {"source_sha256": sha256(HERE / "glm_fused_scratch.h")}
         provenance["glm_fused_compact_scales.h"] = {"source_sha256": sha256(HERE / "glm_fused_compact_scales.h")}
         provenance["glm_fused_route_cache.h"] = {"source_sha256": sha256(HERE / "glm_fused_route_cache.h")}
+        provenance["glm_fused_down_scales.h"] = {"source_sha256": sha256(HERE / "glm_fused_down_scales.h")}
         provenance["glm_fused_input_scales.h"] = {"source_sha256": sha256(HERE / "glm_fused_input_scales.h")}
         provenance["glm_route_input_layout.h"] = {"source_sha256": sha256(HERE / "glm_route_input_layout.h")}
         if route_packed_input:
@@ -662,6 +680,11 @@ def main():
         help="reuse route positions and weights across a balanced token's output tiles",
     )
     parser.add_argument(
+        "--group-major-down-scales",
+        action="store_true",
+        help="stage hidden scales once for direct dense down broadcasts",
+    )
+    parser.add_argument(
         "--group-major-input-scales",
         action="store_true",
         help="prepare dense routed scales once in group-major order for gate/up",
@@ -753,6 +776,7 @@ def main():
             prefill_reduce_meta_cache=args.prefill_reduce_meta_cache,
             direct_compact_down_scales=args.direct_compact_down_scales,
             group_major_input_scales=args.group_major_input_scales,
+            group_major_down_scales=args.group_major_down_scales,
         )
     )
 

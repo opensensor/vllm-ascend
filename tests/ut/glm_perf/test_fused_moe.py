@@ -340,6 +340,7 @@ def test_fused_wrapper_counts_rejected_bank_as_fallback():
         {},
         {"prefill_weight_cache": True},
         {"group_major_input_scales": True, "route_packed_input": True},
+        {"group_major_down_scales": True, "vector_scale_products": True},
         {"fp16_route_workspace": True},
         {"fp16_route_workspace": True, "prefill_reduce_meta_cache": True},
         {"fp16_route_workspace": True, "native_route_columns": True},
@@ -402,6 +403,9 @@ def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_pat
     row["cache_expert_ends"] = prefill_options.get("cache_expert_ends", False)
     row["prefill_reduce_meta_cache"] = prefill_options.get("prefill_reduce_meta_cache", False)
     row["direct_compact_down_scales"] = prefill_options.get("direct_compact_down_scales", False)
+    row["group_major_down_scales"] = prefill_options.get("group_major_down_scales", False)
+    row["down_scale_boundary_rows"] = [4, 5, 4] if prefill_options.get("group_major_down_scales") else []
+    row["all_peer_output_zero"] = True
     row["group_major_input_scales"] = prefill_options.get("group_major_input_scales", False)
     row["input_scale_boundary_rows"] = [4, 5] if prefill_options.get("group_major_input_scales") else []
     row["nz_boundary_rows"] = [30, 31] if prefill_options.get("nz_prefill_min_rows") else []
@@ -518,6 +522,23 @@ def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_pat
             manifest(tmp_path, report)
         gates["real_weight_records"] = records
         write()
+    if prefill_options.get("group_major_down_scales"):
+        for key in ("records", "real_weight_records"):
+            for boundary in ([], [4, 5]):
+                gates[key] = [dict(record, down_scale_boundary_rows=boundary) for record in records]
+                write()
+                with pytest.raises(ValueError, match="sparse/dense/sparse real-weight and synthetic replay"):
+                    manifest(tmp_path, report)
+            gates[key] = [dict(record, all_peer_output_zero=False) for record in records]
+            write()
+            with pytest.raises(ValueError, match="sparse/dense/sparse real-weight and synthetic replay"):
+                manifest(tmp_path, report)
+            gates[key] = [dict(record, group_major_down_scales=False) for record in records]
+            write()
+            with pytest.raises(ValueError, match="matching producer/consumer replay gates"):
+                manifest(tmp_path, report)
+            gates[key] = records
+            write()
     if prefill_options.get("group_major_input_scales"):
         for key in ("records", "real_weight_records"):
             gates[key] = [dict(record, input_scale_boundary_rows=[]) for record in records]
@@ -549,7 +570,7 @@ def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_pat
     write()
     with pytest.raises(
         ValueError,
-        match="prefill gates|eligible synthetic and real-weight replay|sparse/dense real-weight and synthetic replay",
+        match="prefill gates|eligible synthetic|sparse/dense.*real-weight",
     ):
         manifest(tmp_path, report)
     gates["records"] = records
@@ -560,7 +581,7 @@ def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_pat
         write()
         with pytest.raises(
             ValueError,
-            match="real-weight multibatch|eligible synthetic|sparse/dense real-weight",
+            match="real-weight multibatch|eligible synthetic|sparse/dense.*real-weight",
         ):
             manifest(tmp_path, report)
         gates["real_weight_records"] = records

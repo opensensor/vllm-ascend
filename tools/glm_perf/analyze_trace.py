@@ -43,8 +43,16 @@ def rank_from_path(path: Path) -> int:
 
 def kernel_category(name: str, accelerator_core: str = "") -> str:
     compact = name.lower().replace("_", "")
-    if compact == "cast" and accelerator_core == "AI_CPU":
+    if (compact == "cast" or "castaicpu" in compact) and accelerator_core == "AI_CPU":
         return "ai_cpu_cast"
+    if "glmfusedgateup" in compact:
+        return "moe_gate_up"
+    if "glmfuseddown" in compact:
+        return "moe_down"
+    if "glmfusedreduce" in compact:
+        return "moe_reduce"
+    if "glmfusedpack" in compact or "glmfusedrouteinput" in compact:
+        return "moe_prepare"
     if "w2groupedblockeddequantmatmul" in compact:
         return "grouped_w2_w4"
     if any(token in compact for token in ("hcom", "hccl", "allreduce", "allgather", "reducescatter")):
