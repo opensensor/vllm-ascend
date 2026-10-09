@@ -70,11 +70,13 @@ Qwen serving method. Regression tests verify that callback execution, state IO
 and restoration occur on the model path. The old kernel component gate did not
 establish this integration. Previous artifact reports describe their historical
 snapshot; use this corrected runtime for later serving gates. The previous WY
-manifest now fingerprints the model file too.
+manifest now fingerprints the model file too. The native WY helper also accepts
+the serving gate's FP16 beta and widens those already-rounded values to FP32,
+matching the reference; its deferred component gate now uses that dtype.
 
 ## Validation
 
-- Focused CPU suite: **332 passed, one skipped** for unavailable `msmodelslim`.
+- Focused CPU suite: **341 passed, one skipped** for unavailable `msmodelslim`.
   See [CPU receipt](offline-tests.log).
 - Native state gather/scatter bodies compiled and executed against bounded CPU
   DMA/vector stubs at 1/12/48 value heads, including four sequences, shuffled

@@ -51,11 +51,12 @@ GEMM 数值；未声称跨层、attention 或 decode 图通信重叠。
 此前 fused-WY 候选修改 upstream GDN 的 alias，但自定义 Qwen 不调用该路径。
 现在通过真正的 Qwen 方法传递回调，新增执行、状态 IO 与异常恢复回归测试。
 旧内核组件验证不能证明模型集成。旧报告保持历史快照，后续服务验证应使用
-本次修正后的 runtime；WY manifest 也纳入模型文件指纹。
+本次修正后的 runtime；WY manifest 也纳入模型文件指纹。原生 WY 接受服务 gate 的 FP16 beta，
+按参考路径将已舍入值拓宽为 FP32，后续组件验证也使用此类型。
 
 ## 验证证据
 
-- 聚焦 CPU 测试：**332 项通过，一项因缺少 `msmodelslim` 跳过**。
+- 聚焦 CPU 测试：**341 项通过，一项因缺少 `msmodelslim` 跳过**。
 - 状态内核以有界 CPU DMA/vector stub 编译执行，覆盖 1/12/48 值头、四序列、
   乱序 slot 与冷状态 NaN；FP32 数值和参考一致。stub 的事件为空操作。
 - 检查点 CoW 链、阶段同步次数、失败保护、复用、runner staging、空更新通过。

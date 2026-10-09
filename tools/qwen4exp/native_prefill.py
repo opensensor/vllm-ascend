@@ -68,10 +68,14 @@ class NativeWY(NativeResource):
             or g.shape != (batch, tokens, value_heads)
             or beta.shape != g.shape
             or any(t.dtype != torch.float16 for t in (q, k, v))
-            or any(t.dtype != torch.float32 for t in (g, beta))
+            or g.dtype != torch.float32
+            or beta.dtype not in (torch.float16, torch.float32)
         ):
             raise ValueError("unsupported native WY geometry or dtype")
         _tensors_on_one_device((q, k, v, g, beta), k.device)
+        # The serving gate rounds sigmoid(b) to FP16. Widen those values just
+        # as the torch WY reference does; never recompute or re-round gates.
+        beta = beta.to(torch.float32)
         q_kernel = q.transpose(1, 2).contiguous()
         k_kernel = k.transpose(1, 2).contiguous()
         key = k_kernel.float().reshape(batch, key_heads, tokens // CHUNK_SIZE, CHUNK_SIZE, dim)

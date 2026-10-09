@@ -63,7 +63,7 @@ def wy_gate(resources, tokens=128, timing=None):
         k = F.normalize(torch.randn(1, tokens, key_heads, 128, generator=generator), dim=-1).half().npu()
         v = torch.randn(1, tokens, value_heads, 128, generator=generator).half().npu()
         g = F.logsigmoid(torch.randn(1, tokens, value_heads, generator=generator)).npu()
-        beta = torch.rand(1, tokens, value_heads, generator=generator).npu()
+        beta = torch.rand(1, tokens, value_heads, generator=generator).half().npu()
         expected = _compute_kernel_inputs_from_torch_wy(q, k, v, g, beta, 64)
         actual = resources["wy"](q, k, v, g, beta, 64)
         errors = [error_metrics(a, b) for a, b in zip(actual, expected)]

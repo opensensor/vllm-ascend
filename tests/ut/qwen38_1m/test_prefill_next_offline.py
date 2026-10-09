@@ -96,7 +96,10 @@ def wy_reference(q, k, v, g, beta):
 
 @pytest.mark.parametrize("key_heads,value_heads", [(1, 1), (4, 12), (16, 48)])
 @pytest.mark.parametrize("seed", [0, 13, 42])
-def test_native_wy_body_and_layout_match_blocked_reference(monkeypatch, cpu_library, key_heads, value_heads, seed):
+@pytest.mark.parametrize("beta_dtype", [torch.float16, torch.float32])
+def test_native_wy_body_and_layout_match_blocked_reference(
+    monkeypatch, cpu_library, key_heads, value_heads, seed, beta_dtype
+):
     monkeypatch.setattr(native_prefill, "_on_npu", lambda d: True)
     monkeypatch.setattr(native_prefill, "_capturing", lambda d: False)
     torch.manual_seed(seed)
@@ -105,7 +108,7 @@ def test_native_wy_body_and_layout_match_blocked_reference(monkeypatch, cpu_libr
     k = F.normalize(torch.randn_like(q.float()), dim=-1).half()
     v = torch.randn(batch, 128, value_heads, 128).half()
     g = F.logsigmoid(torch.randn(batch, 128, value_heads))
-    beta = torch.rand_like(g)
+    beta = torch.rand_like(g).to(beta_dtype)
     native = NativeWY(None, launch_for(cpu_library.cpu_wy))
     actual = native(q, k, v, g, beta, 64)
     expected = wy_reference(q, k, v, g, beta)
