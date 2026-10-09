@@ -230,7 +230,7 @@ git commit -sm "<message>"
 Confirm:
 
 - one signed commit only
-- Chinese analysis + Chinese runbook present
+- US English analysis and runbook present; Chinese versions optional unless requested
 - feature status matrix included with pass/fail reason
 - dummy stage and real stage validation evidence included
 - false-ready cases (if any) documented with final fallback status
