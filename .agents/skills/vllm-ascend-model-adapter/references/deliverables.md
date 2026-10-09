@@ -3,7 +3,7 @@
 ## Required outputs in current repo
 
 1. One final signed commit (`git commit -sm ...`) containing the adaptation changes.
-2. Chinese analysis report（精简但完整）:
+2. Concise but complete analysis report in US English by default:
    - model architecture summary
    - incompatibility root causes
    - code changes and rationale
@@ -13,7 +13,7 @@
    - dummy-vs-real validation matrix（what dummy proved / what only real proved）
    - false-ready cases and final resolution path（if any）
    - fallback ladder evidence（which fallback was tried, what changed）
-3. Chinese compact runbook:
+3. Compact runbook in US English by default:
    - how to start server in `/workspace` (direct command, default `:8000`)
    - how to run OpenAI-compatible validation
    - optional eager fallback command
@@ -23,6 +23,10 @@
 6. Post SKILL.md content or AI-assisted workflow summary as a comment on the originating GitHub issue.
 
 ## Commit discipline
+
+English-only documentation satisfies this fork's delivery requirements. Chinese
+versions are optional unless requested by the user. Preserve historical reports;
+when providing multiple languages, keep their technical claims in agreement.
 
 - Keep one signed commit for code changes in the current working repo.
 - If implementation occurred in `/vllm-workspace/*`, backport minimal final diff to current repo before commit.

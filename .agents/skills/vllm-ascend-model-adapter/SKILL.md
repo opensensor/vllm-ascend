@@ -31,7 +31,8 @@ Adapt Hugging Face or local models to run on `vllm-ascend` with minimal changes,
 - Do not rely on `PYTHONPATH=<modified-src>:$PYTHONPATH` unless debugging fallback is strictly needed.
 - Keep code changes minimal and focused on the target model.
 - Final deliverable commit must be one single signed commit in the current working repo (`git commit -sm ...`).
-- Keep final docs in Chinese and compact.
+- Keep final docs concise and in US English by default. Chinese versions are
+  optional unless the user requests them; follow the fork's AGENTS.md policy.
 - **Dummy-first is encouraged for speed, but dummy is NOT fully equivalent to real weights.**
 - **Never sign off adaptation using dummy-only evidence; real-weight gate is mandatory.**
 
@@ -119,8 +120,9 @@ Adapt Hugging Face or local models to run on `vllm-ascend` with minimal changes,
 
 ### 8) Prepare handoff artifacts
 
-- Write comprehensive Chinese analysis report.
-- Write compact Chinese runbook for server startup and validation commands.
+- Write a comprehensive analysis report in US English by default.
+- Write a compact runbook for server startup and validation commands in US
+  English by default. Add Chinese versions only when requested or useful.
 - Include feature status matrix (supported / unsupported / checkpoint-missing / not-applicable).
 - Include dummy-vs-real validation matrix and explicit non-equivalence notes.
 - Include changed-file list, key logs, and final commit hash.

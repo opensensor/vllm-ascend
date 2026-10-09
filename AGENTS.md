@@ -426,12 +426,13 @@ or ACL graph settings.
 
 ## Delivery Summary Languages
 
-Every delivery must include a concise US English summary alongside the Chinese
-summary or report required by the applicable workflow or skill. Keep the Chinese
-deliverable; add the US English summary rather than replacing it.
+Use US English for plans, reports, runbooks, and delivery summaries by default.
+English-only deliverables are sufficient in this fork, including when a bundled
+workflow or skill specifies Chinese documentation. Chinese versions are optional
+unless the user explicitly requests them. Preserve existing Chinese documents;
+this policy does not require translating or removing historical artifacts.
 
-Both summaries must agree on the changes, validation results, measured
-performance, and known limitations. Clearly distinguish hardware-validated work
-from offline or untested candidates. For saved reports, provide an English
-companion file or a US English summary section and link both versions in the
-handoff.
+Clearly distinguish hardware-validated work from offline or untested candidates,
+and report validation results, measured performance, and known limitations.
+When multiple language versions are provided, keep their technical claims in
+agreement and link each version in the handoff.
