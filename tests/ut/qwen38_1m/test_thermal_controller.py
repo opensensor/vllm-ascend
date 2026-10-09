@@ -166,6 +166,22 @@ def test_parse_real_smi_columns_and_reject_partial_readings():
         parse_temperatures("\n".join(rows).replace("94", "NA"))
 
 
+@pytest.mark.parametrize("page_separator", [" |", ""])
+def test_parse_six_devices_with_combined_power_temperature_cells(page_separator):
+    rows = [
+        f"| {card} 310P3 | OK | NA {temperature}{page_separator} 0 / 0 |"
+        for card, temperature in zip((9, 9, 8217, 8217, 16409, 16409), (59, 57, 56, 55, 94, 58))
+    ]
+    output = "\n".join(rows)
+    assert parse_temperatures(output, expected_devices=6) == [59, 57, 56, 55, 94, 58]
+    controller = ThermalController(Engine(), expected_devices=6)
+    assert controller.step(parse_temperatures(output, expected_devices=6))["action"] == "pause"
+    with pytest.raises(ValueError):
+        parse_temperatures("\n".join(rows[:-1]), expected_devices=6)
+    with pytest.raises(ValueError):
+        parse_temperatures(output.replace("NA 94", "NA"), expected_devices=6)
+
+
 @pytest.mark.parametrize("high,low", [(85, 94), (85, 85), (94, -1), (float("nan"), 85)])
 def test_invalid_thresholds_are_rejected(high, low):
     with pytest.raises(ValueError):

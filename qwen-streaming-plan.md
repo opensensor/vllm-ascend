@@ -1,8 +1,9 @@
 # Plan: Qwen streaming architecture on Ascend 310P
 
 Date: 2026-10-09. Source baseline: `36ba88244`.
-Status: T1–T8 completed offline; T9 hardware qualification remains deferred.
-Server startup and NPU execution remain deferred.
+Status: T1–T8 completed offline; T9 hardware gate rejected v5 on October 9.
+The image-enabled baseline is running for user testing. Further candidate work
+is offline; no further NPU diagnostics or service mutations are planned.
 Execution starts from clean commit `2a2a4e416`; unrelated workspace overlays are
 excluded from the frozen reference and implementation worktree.
 
@@ -357,13 +358,30 @@ offline candidates. A new source or binary hash invalidates dependent gates.
 
 **agent_type**: coordinator
 **ownership**: artifacts `T9/`, final execution report and plan logs.
-**status**: Blocked
-**log**: NPU/server testing explicitly deferred by the user; no device or
-service mutation is authorized by this offline execution.
+**status**: Needs retry (v5 rejected; baseline retained October 9)
+**log**: Renewed hardware authorization enabled standalone tests on the third
+card after disabling its ECC and activating the setting by isolated SMP reset.
+TP6 is rejected by the model's 16 GDN key heads; the accepted baseline remains
+TP4 on original logical devices 2–5. Image processing works for the tested
+fresh/cached screenshot. Four scheduling slots share 937,737 cache tokens,
+approximately 3.58 full 262,144-token contexts. Text/tool smoke passes six of
+seven checks. All four real-weight expert partials match exactly, but streaming
+is about 2 times slower at 128 tokens and 3.5 times slower at 2,560 tokens.
+Native WY fails downstream GDN output parity; final-state validation is not reached.
+The user requested retaining the faster baseline and is doing service testing.
+All diagnostic jobs finished and the baseline was resumed. No streaming/WY
+candidate was installed in its workers. Thermal parsing now handles the driver's
+combined cells; 26 CPU regressions pass. Recorded maximum temperature is 72C,
+with no sustained thermal or actual-temperature hold qualification. Source-based
+follow-up targets vector instruction inflation, wider tiles, proven prefetch
+ownership, boundary caching and fewer down windows. Profiler attribution remains
+unmeasured. Full model/graph/cache/EP/MTP/thermal gates remain incomplete.
 **files edited/created**: `artifacts/qwen38-streaming-upgrade/T9/RUNBOOK.md`,
-`artifacts/qwen38-streaming-upgrade/T9/deferred-profile.json`.
+`artifacts/qwen38-streaming-upgrade/T9/deferred-profile.json`, and
+[October 9 hardware evidence and follow-up](artifacts/qwen38-streaming-upgrade/T9/hardware-20261009/REPORT.md).
 
-Deferred until the user grants NPU access. Prove allocation headroom before
+The original qualification procedure below remains required for a new candidate.
+Defer further hardware experiments while the user tests the baseline. Prove allocation headroom before
 standalone tests with any loaded service. Serialize hardware work; do not unload
 or shrink the service to make required coverage fit without authorization.
 Run production-shape kernel parity and changed-input graph stress, then shadow
@@ -395,14 +413,15 @@ overall gain is established. Publish the final evidence and runtime disposition.
 
 Start with T1 and T2 offline, then the complete expert path T3 through T6.
 T7 addresses the rest of the layer under the same contract; T8 composes the
-architecture. T9 remains pending until hardware access is explicitly available.
+architecture. T9 needs a new candidate after the October 9 hardware rejection.
 Existing GLM/Qwen edits and qualified runtime snapshots must remain intact.
 
 T1–T8 now implement the offline candidate, with execution evidence in the
 [streaming report](artifacts/qwen38-streaming-upgrade/REPORT.md). The deferred
 [qualification runbook](artifacts/qwen38-streaming-upgrade/T9/RUNBOOK.md)
 records remaining worker/scheduler binding, hardware gates and promotion limits.
-No candidate is installed on a server. Previously staged component candidates
+No candidate is installed in the live baseline workers. October 9 standalone
+hardware results and the offline follow-up are linked above. Previously staged component candidates
 and their CPU/build evidence are described in the
 [transfer report](artifacts/qwen38-transfer-next-20261009/REPORT.en.md) and
 [earlier offline report](artifacts/qwen38-five-offline-20261009/REPORT.en.md).
@@ -420,7 +439,8 @@ Execution validation now passes 518 CPU tests and scoped manual checks. The fina
 contained CANN build and actual source/binary/bridge/log byte checks pass. An
 uncontained preliminary compiler's manager-device accesses are documented and
 quarantined; containment rejects subsequent opens. No inference or server tests
-ran. Repository-wide CI retains unrelated failures; formatter changes to 144
+ran during that offline implementation phase. The October 9 hardware gate
+subsequently rejected v5, as recorded under T9. Repository-wide CI retains unrelated failures; formatter changes to 144
 unrelated files were restored in the isolated worktree. A broader regression
 group gives 179 passes and four GDN CPU-stub failures identically on the clean
 unchanged baseline. Full receipts and limitations are in the execution report.

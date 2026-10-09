@@ -30,10 +30,27 @@ def parse_temperatures(output, expected_devices=EXPECTED_DEVICES):
     temperatures = []
     for line in output.splitlines():
         if "310P" in line:
-            fields = line.split("|")
-            if len(fields) < 5:
+            fields = [field.strip() for field in line.strip().strip("|").split("|")]
+            if len(fields) == 3:
+                # Current 26.0.rc1 output also folds hugepage usage into
+                # the same cell: "NA 61 0 / 0". Do not mistake page counts
+                # for temperature or accept truncated sensor rows.
+                power_temperature_pages = fields[2].split()
+                if len(power_temperature_pages) != 5 or power_temperature_pages[3] != "/":
+                    raise ValueError("Incomplete NPU power/temperature/hugepage row")
+                temperature = power_temperature_pages[1]
+            elif len(fields) == 4:
+                # npu-smi 26.0.rc1 groups Power(W) and Temp(C) in one
+                # physical table cell. Hugepage usage follows that cell.
+                power_temperature = fields[2].split()
+                if len(power_temperature) != 2:
+                    raise ValueError("Incomplete NPU power/temperature row")
+                temperature = power_temperature[1]
+            elif len(fields) == 5:
+                temperature = fields[3]
+            else:
                 raise ValueError("Incomplete NPU temperature row")
-            temperatures.append(float(fields[4].strip()))
+            temperatures.append(float(temperature))
     if len(temperatures) != expected_devices or any(
         not math.isfinite(value) or not 0 <= value <= MAX_SENSOR_TEMPERATURE_C for value in temperatures
     ):

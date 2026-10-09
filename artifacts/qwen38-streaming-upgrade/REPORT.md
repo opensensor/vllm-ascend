@@ -1,8 +1,14 @@
 # Qwen streaming architecture: offline execution
 
-T1–T8 are implemented offline. T9 hardware qualification is deferred by the user.
-Nothing is promoted or enabled on the live server. Images remain a required gate;
-no vision configuration or context/concurrency capacity was changed.
+T1–T8 were implemented offline. The October 9 T9 hardware gate rejected v5:
+exact real-weight expert output, but about 3.5 times slower at 2,560 tokens, plus
+a downstream native WY correctness failure. The image-enabled baseline remains
+running for user testing. See the [hardware report](T9/hardware-20261009/REPORT.md)
+and [offline follow-up plan](T9/hardware-20261009/FOLLOWUP_PLAN.md).
+
+The remaining sections document the original offline implementation and its
+validation boundary. They do not supersede the subsequent hardware rejection.
+No candidate is promoted or enabled in live baseline workers.
 
 The candidate composes once-per-token quantization and device-local routing,
 resident W4 projection tiles, two bounded Cube/vector slots, builtin FP16
