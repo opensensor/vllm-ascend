@@ -5,6 +5,7 @@
 #include "glm_fused_quantize.h"
 #include "glm_fused_scratch.h"
 #include "glm_fused_route_cache.h"
+#include "glm_fused_compact_scales.h"
 #include "glm_route_input_layout.h"
 #if defined(GLM_FP16_WEIGHT_SCALES) && (!defined(GLM_PREPARED_WEIGHT_LAYOUT) || defined(GLM_PREROUNDED_WEIGHT_SCALES))
   #error "FP16 scale storage requires prepared weights and excludes prerounded FP32 storage"
@@ -78,6 +79,14 @@ constexpr uint32_t ELEMENTS = M * N, LANES = 8;
 constexpr uint32_t DOWN_SCALE_ROW_LANES = N / GROUP;
 #else
 constexpr uint32_t DOWN_SCALE_ROW_LANES = LANES;
+#endif
+#ifdef GLM_DIRECT_COMPACT_DOWN_SCALES
+  #if !defined(GLM_COMPACT_DOWN_SCALES) || !defined(GLM_RAW_HIDDEN_SCALES) || !defined(GLM_VECTOR_SCALE_PRODUCTS) || \
+      !defined(GLM_PREFILL_ROWS_32) || defined(GLM_FUSED_GATE_UP)
+    #error "direct compact scales require raw M32 vector-scale down projection"
+  #endif
+static_assert(M == GlmFusedCompactScales::ROWS && DOWN_SCALE_ROW_LANES == GlmFusedCompactScales::GROUPS_PER_TILE,
+              "compact scale producer and consumer geometries differ");
 #endif
 #ifdef GLM_NATIVE_WIDE_CUBE_K
 constexpr uint32_t WIDE_CUBE_K = GLM_NATIVE_WIDE_CUBE_K;
@@ -1263,6 +1272,9 @@ class Projection {
       PrepareScales(expert, tile, cachedWeights);
     auto sx = activationScales_.Get<float>();
     auto temporary = sx[M * MAX_K_GROUPS];
+#ifdef GLM_DIRECT_COMPACT_DOWN_SCALES
+    bool directCompactScales = false;
+#endif
     auto indices = activationScales_.Get<uint32_t>()[(M + LANES) * MAX_K_GROUPS];
 #ifdef GLM_SHARE_GATE_UP_INPUT
     if (!reuseInput) {
@@ -1271,15 +1283,27 @@ class Projection {
       if (tokens_ > BULK_TOKENS && activationBits_ == 4) {
         // Product readback scratch is dead until the first Cube operation.
         // Copy one tile-major scale bank, then gather each active row.
-        auto compact = Products<float>();
         const uint32_t elements = groups / (N / GROUP) * M * DOWN_SCALE_ROW_LANES;
-        DataCopy(compact, xs_[prepackedBatch_ * elements], elements);
-        PipeBarrier<PIPE_ALL>();
-        for (uint32_t m = 0; m < count; ++m) {
-          Gather(sx[m * MAX_K_GROUPS], compact[m * DOWN_SCALE_ROW_LANES], indices, static_cast<uint32_t>(0), groups);
-          PipeBarrier<PIPE_V>();
+  #ifdef GLM_DIRECT_COMPACT_DOWN_SCALES
+        directCompactScales = count > MAX_CACHED_SCALE_ROWS;
+        if (directCompactScales) {
+          // Retain the producer's layout; dense factor columns gather directly.
+          // Raw four-lane scales fit the existing M*MAX_K_GROUPS allocation.
+          DataCopy(sx, xs_[prepackedBatch_ * elements], elements);
+          PipeBarrier<PIPE_ALL>();
+        } else {
+  #endif
+          auto compact = Products<float>();
+          DataCopy(compact, xs_[prepackedBatch_ * elements], elements);
+          PipeBarrier<PIPE_ALL>();
+          for (uint32_t m = 0; m < count; ++m) {
+            Gather(sx[m * MAX_K_GROUPS], compact[m * DOWN_SCALE_ROW_LANES], indices, static_cast<uint32_t>(0), groups);
+            PipeBarrier<PIPE_V>();
+          }
+          PipeBarrier<PIPE_ALL>();
+  #ifdef GLM_DIRECT_COMPACT_DOWN_SCALES
         }
-        PipeBarrier<PIPE_ALL>();
+  #endif
       } else {
 #endif
 #ifdef GLM_ROUTE_PACKED_INPUT
@@ -1324,7 +1348,11 @@ class Projection {
       auto rowIndices = mask_.Get<uint32_t>()[SCALE_ROW_INDEX_OFFSET / sizeof(uint32_t)];
       // Gather a complete M-element scalar vector. Brcb reads all M slots;
       // clamp unused slots to a valid row instead of reading uninitialized sx.
-      for (uint32_t m = 0; m < M; ++m) rowIndices.SetValue(m, (m < count ? m : 0) * MAX_K_GROUPS * sizeof(float));
+      uint32_t rowStride = MAX_K_GROUPS;
+  #ifdef GLM_DIRECT_COMPACT_DOWN_SCALES
+      if (directCompactScales) rowStride = DOWN_SCALE_ROW_LANES;
+  #endif
+      for (uint32_t m = 0; m < M; ++m) rowIndices.SetValue(m, (m < count ? m : 0) * rowStride * sizeof(float));
       PipeBarrier<PIPE_ALL>();
     }
 #else
@@ -1400,9 +1428,13 @@ class Projection {
         Product(count, paired, wideGroups);
         for (uint32_t part = 0; part < (wideGroups ? wideGroups : (paired ? 2 : 1)); ++part) {
           ExtractProducts(count, part, paired);
+          uint32_t activationGroupOffset = group + part;
+#ifdef GLM_DIRECT_COMPACT_DOWN_SCALES
+          if (directCompactScales) activationGroupOffset = GlmFusedCompactScales::GroupOffset(group + part);
+#endif
 #ifdef GLM_NZ_PREFILL_ACCUMULATOR
           if (nzProducts_) {
-            ScaleNzProducts(weightVectors[(inner + part) * N], sx[group + part]);
+            ScaleNzProducts(weightVectors[(inner + part) * N], sx[activationGroupOffset]);
             continue;
           }
 #endif
@@ -1437,7 +1469,7 @@ class Projection {
           if (vectorFactors) {
             auto factors = ProductTemporary<float>();
             auto rowIndices = mask_.Get<uint32_t>()[SCALE_ROW_INDEX_OFFSET / sizeof(uint32_t)];
-            Gather(factors, sx[group + part], rowIndices, static_cast<uint32_t>(0), M);
+            Gather(factors, sx[activationGroupOffset], rowIndices, static_cast<uint32_t>(0), M);
             PipeBarrier<PIPE_V>();
             auto rowScales = factors[ELEMENTS];
             Brcb(rowScales, factors, M / LANES, {1, LANES});

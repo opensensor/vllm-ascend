@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Stable FP32 reduction of bulk-prefill native INT4 down projections.
 #include "kernel_operator.h"
+#include "glm_fused_reduce_schedule.h"
 namespace {
 using namespace AscendC;
 constexpr uint32_t N = 128;
 #if defined(GLM_NATIVE_ROUTE_COLUMNS) && !defined(GLM_FP16_ROUTE_WORKSPACE)
   #error "native route columns require the paired FP16 workspace producer"
+#endif
+#if defined(GLM_PREFILL_REDUCE_META_CACHE) && !defined(GLM_FP16_ROUTE_WORKSPACE)
+  #error "cached reducer metadata requires the FP16 route workspace"
 #endif
 class Reduce {
  public:
@@ -24,7 +28,9 @@ class Reduce {
     ends_.SetGlobalBuffer(reinterpret_cast<__gm__ int64_t*>(ends));
     output_.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(output));
     pipe_.InitBuffer(storage_, 2 * N * sizeof(float));
-    auto accum = storage_.Get<float>(), value = accum[N];
+#ifdef GLM_PREFILL_REDUCE_META_CACHE
+    pipe_.InitBuffer(metadataStorage_, GlmFusedReduceSchedule::METADATA_BYTES);
+#endif
 #ifdef GLM_NATIVE_ROUTE_COLUMNS
     pipe_.InitBuffer(offsetStorage_, N * sizeof(uint32_t));
     auto offsets = offsetStorage_.Get<uint32_t>();
@@ -34,40 +40,86 @@ class Reduce {
 #endif
     const int64_t localRows = ends_.GetValue(experts - 1), tiles = width / N;
     if (localRows < 0 || localRows > rows) return;
+#ifdef GLM_PREFILL_REDUCE_META_CACHE
+    // Every core owns the same number of complete tokens. Each token's routes
+    // and weights are read once, then reused across all of its output tiles.
+    // Uneven/small batches retain the balanced column-task schedule below.
+    if (tokens >= GlmFusedReduceSchedule::MIN_TOKENS && tokens % GetBlockNum() == 0 &&
+        topK <= GlmFusedReduceSchedule::MAX_TOP_K) {
+      for (int64_t token = GetBlockIdx(); token < tokens; token += GetBlockNum()) {
+        PrepareToken(token, topK, localRows);
+        for (int64_t column = 0; column < width; column += N) ReduceTile(token, column, width, topK, localRows, true);
+      }
+      return;
+    }
+#endif
     for (int64_t task = GetBlockIdx(); task < tokens * tiles; task += GetBlockNum()) {
       const int64_t token = task / tiles, column = (task % tiles) * N;
-      Duplicate(accum, 0.0f, N);
-      PipeBarrier<PIPE_ALL>();
-      // ranks are sorted by expert's stable route position within each token.
-      // Never read the uninitialized peer/zero-weight suffix of the workspace.
-      for (int64_t slot = 0; slot < topK; ++slot) {
-        const int64_t row = ranks_.GetValue(token * topK + slot);
-        if (row < 0 || row >= localRows) continue;
-#ifdef GLM_FP16_ROUTE_WORKSPACE
-        DataCopy(halfStorage_.Get<half>(), halfInput_[row * width + column], N);
-        PipeBarrier<PIPE_ALL>();
-        Cast(value, halfStorage_.Get<half>(), RoundMode::CAST_NONE, N);
-        PipeBarrier<PIPE_V>();
-        Muls(value, value, weights_.GetValue(order_.GetValue(row)), N);
-#else
-        DataCopy(value, input_[row * width + column], N);
-#endif
-        PipeBarrier<PIPE_ALL>();
-        Add(accum, accum, value, N);
-        PipeBarrier<PIPE_ALL>();
-      }
-#ifdef GLM_NATIVE_ROUTE_COLUMNS
-      Gather(value, accum, offsets, static_cast<uint32_t>(0), N);
-      PipeBarrier<PIPE_ALL>();
-      DataCopy(output_[token * width + column], value, N);
-#else
-      DataCopy(output_[token * width + column], accum, N);
-#endif
-      PipeBarrier<PIPE_ALL>();
+      ReduceTile(token, column, width, topK, localRows, false);
     }
   }
 
  private:
+  __aicore__ inline void ReduceTile(int64_t token, int64_t column, int64_t width, int64_t topK, int64_t localRows,
+                                    bool cached) {
+    auto accum = storage_.Get<float>(), value = accum[N];
+    Duplicate(accum, 0.0f, N);
+    PipeBarrier<PIPE_ALL>();
+    // ranks are sorted by expert's stable route position within each token.
+    // Never read the uninitialized peer/zero-weight suffix of the workspace.
+    for (int64_t slot = 0; slot < topK; ++slot) {
+      const int64_t row = Rank(token, slot, topK, cached);
+      if (row < 0 || row >= localRows) continue;
+#ifdef GLM_FP16_ROUTE_WORKSPACE
+      DataCopy(halfStorage_.Get<half>(), halfInput_[row * width + column], N);
+      PipeBarrier<PIPE_ALL>();
+      Cast(value, halfStorage_.Get<half>(), RoundMode::CAST_NONE, N);
+      PipeBarrier<PIPE_V>();
+      Muls(value, value, Weight(row, slot, cached), N);
+#else
+      DataCopy(value, input_[row * width + column], N);
+#endif
+      PipeBarrier<PIPE_ALL>();
+      Add(accum, accum, value, N);
+      PipeBarrier<PIPE_ALL>();
+    }
+#ifdef GLM_NATIVE_ROUTE_COLUMNS
+    auto offsets = offsetStorage_.Get<uint32_t>();
+    Gather(value, accum, offsets, static_cast<uint32_t>(0), N);
+    PipeBarrier<PIPE_ALL>();
+    DataCopy(output_[token * width + column], value, N);
+#else
+    DataCopy(output_[token * width + column], accum, N);
+#endif
+    PipeBarrier<PIPE_ALL>();
+  }
+  __aicore__ inline int64_t Rank(int64_t token, int64_t slot, int64_t topK, bool cached) {
+#ifdef GLM_PREFILL_REDUCE_META_CACHE
+    if (cached) return metadataStorage_.Get<int32_t>().GetValue(slot);
+#endif
+    return ranks_.GetValue(token * topK + slot);
+  }
+#ifdef GLM_FP16_ROUTE_WORKSPACE
+  __aicore__ inline float Weight(int64_t row, int64_t slot, bool cached) {
+  #ifdef GLM_PREFILL_REDUCE_META_CACHE
+    if (cached) return metadataStorage_.Get<float>()[GlmFusedReduceSchedule::MAX_TOP_K].GetValue(slot);
+  #endif
+    return weights_.GetValue(order_.GetValue(row));
+  }
+#endif
+#ifdef GLM_PREFILL_REDUCE_META_CACHE
+  __aicore__ inline void PrepareToken(int64_t token, int64_t topK, int64_t localRows) {
+    auto cachedRanks = metadataStorage_.Get<int32_t>();
+    auto cachedWeights = metadataStorage_.Get<float>()[GlmFusedReduceSchedule::MAX_TOP_K];
+    for (int64_t slot = 0; slot < topK; ++slot) {
+      const int32_t row = ranks_.GetValue(token * topK + slot);
+      cachedRanks.SetValue(slot, row);
+      cachedWeights.SetValue(slot, row >= 0 && row < localRows ? weights_.GetValue(order_.GetValue(row)) : 0.0f);
+    }
+    PipeBarrier<PIPE_ALL>();
+  }
+  TBuf<TPosition::VECCALC> metadataStorage_;
+#endif
   TPipe pipe_;
   TBuf<TPosition::VECCALC> storage_;
 #ifdef GLM_NATIVE_ROUTE_COLUMNS

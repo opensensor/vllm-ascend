@@ -68,4 +68,11 @@ def test_cli_records_cache_option(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(builder, "build", lambda *args, **kwargs: calls.append(kwargs))
     builder.main()
-    assert calls == [{"nz_prefill_min_rows": 0, "cache_expert_ends": True}]
+    assert calls == [
+        {
+            "nz_prefill_min_rows": 0,
+            "cache_expert_ends": True,
+            "prefill_reduce_meta_cache": False,
+            "direct_compact_down_scales": False,
+        }
+    ]

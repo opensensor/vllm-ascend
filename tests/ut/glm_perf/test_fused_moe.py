@@ -340,6 +340,7 @@ def test_fused_wrapper_counts_rejected_bank_as_fallback():
         {},
         {"prefill_weight_cache": True},
         {"fp16_route_workspace": True},
+        {"fp16_route_workspace": True, "prefill_reduce_meta_cache": True},
         {"fp16_route_workspace": True, "native_route_columns": True},
         {"prerounded_weight_scales": True},
         {"compact_w4_scratch": True},
@@ -348,6 +349,12 @@ def test_fused_wrapper_counts_rejected_bank_as_fallback():
         {"share_gate_up_input": True},
         {"share_gate_up_input": True, "cache_gate_up_activations": True},
         {"vector_scale_products": True},
+        {
+            "vector_scale_products": True,
+            "raw_hidden_scales": True,
+            "prefill_rows_32": True,
+            "direct_compact_down_scales": True,
+        },
         {"fused_moe": True, "prepared_weight_layout": True, "vector_scale_products": True, "cache_expert_ends": True},
         {"vector_scale_products": True, "fused_scale_accumulation": True},
         {
@@ -390,6 +397,8 @@ def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_pat
     row["fused_scale_accumulation"] = prefill_options.get("fused_scale_accumulation", False)
     row["nz_prefill_min_rows"] = prefill_options.get("nz_prefill_min_rows", 0)
     row["cache_expert_ends"] = prefill_options.get("cache_expert_ends", False)
+    row["prefill_reduce_meta_cache"] = prefill_options.get("prefill_reduce_meta_cache", False)
+    row["direct_compact_down_scales"] = prefill_options.get("direct_compact_down_scales", False)
     row["nz_boundary_rows"] = [30, 31] if prefill_options.get("nz_prefill_min_rows") else []
     row["prerounded_weight_scales"] = prefill_options.get("prerounded_weight_scales", False)
     if prefill_options.get("fp16_route_workspace"):
@@ -477,6 +486,33 @@ def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_pat
             manifest(tmp_path, report)
         gates["records"] = records
         write()
+    if prefill_options.get("prefill_reduce_meta_cache"):
+        gates["real_weight_records"] = [
+            dict(
+                record,
+                tokens=31,
+                fp16_intermediate_gm_bytes=31 * 2 * 256 * 2,
+                unweighted_fp16_workspace_bytes=31 * 2 * 256 * 2,
+            )
+            for record in records
+        ]
+        write()
+        with pytest.raises(ValueError, match="eligible synthetic and real-weight replay"):
+            manifest(tmp_path, report)
+        gates["real_weight_records"] = records
+        gates["records"] = [dict(record, prefill_reduce_meta_cache=False) for record in records]
+        write()
+        with pytest.raises(ValueError, match="matching replay gates"):
+            manifest(tmp_path, report)
+        gates["records"] = records
+        write()
+    if prefill_options.get("direct_compact_down_scales"):
+        gates["real_weight_records"] = [dict(record, direct_compact_down_scales=False) for record in records]
+        write()
+        with pytest.raises(ValueError, match="matching loaded-weight and replay"):
+            manifest(tmp_path, report)
+        gates["real_weight_records"] = records
+        write()
     if specialize_w3:
         specialized = tmp_path / "glm_fused_down_w3.bin"
         assert str(specialized) in {entry["path"] for entry in payload["assets"]}
@@ -494,7 +530,7 @@ def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_pat
         dict(r, tokens=2, fp16_intermediate_gm_bytes=0, unweighted_fp16_workspace_bytes=0) for r in records
     ]
     write()
-    with pytest.raises(ValueError, match="prefill gates"):
+    with pytest.raises(ValueError, match="prefill gates|eligible synthetic and real-weight replay"):
         manifest(tmp_path, report)
     gates["records"] = records
     if prefill_options:
@@ -502,7 +538,7 @@ def test_fused_manifest_requires_real_weights_prefill_and_exact_binaries(tmp_pat
             dict(r, tokens=2, fp16_intermediate_gm_bytes=0, unweighted_fp16_workspace_bytes=0) for r in records
         ]
         write()
-        with pytest.raises(ValueError, match="real-weight multibatch"):
+        with pytest.raises(ValueError, match="real-weight multibatch|eligible synthetic and real-weight replay"):
             manifest(tmp_path, report)
         gates["real_weight_records"] = records
     write()

@@ -74,6 +74,8 @@ def build(
     fused_scale_accumulation=False,
     nz_prefill_min_rows=0,
     cache_expert_ends=False,
+    prefill_reduce_meta_cache=False,
+    direct_compact_down_scales=False,
 ):
     """Freeze helper sources and compile a unique, append-only native version."""
     if type(version) is not int or version < 1 or output_columns not in (16, 32, 64, 128):
@@ -108,6 +110,8 @@ def build(
             bulk_route_store,
             fused_scale_accumulation,
             cache_expert_ends,
+            prefill_reduce_meta_cache,
+            direct_compact_down_scales,
         )
     ):
         raise ValueError("prefill experiment flags must be boolean")
@@ -217,6 +221,10 @@ def build(
         fused_moe and prepared_weight_layout and vector_scale_products and not weight_decode_lut
     ):
         raise ValueError("expert boundary cache requires prepared vector-scale fused MoE without lookup tables")
+    if prefill_reduce_meta_cache and not (fused_moe and fp16_route_workspace):
+        raise ValueError("cached reducer metadata requires fused MoE with FP16 route workspace")
+    if direct_compact_down_scales and not (raw_hidden_scales and prefill_rows_32 and vector_scale_products):
+        raise ValueError("direct compact scales require raw M32 vector-scale down projection")
     if prefill_product_cast and not (prefill_rows_32 and pair_prefill_scale_groups):
         raise ValueError("contiguous prefill cast requires wide paired prefill rows")
     if prefill_product_cast and nz_prefill_accumulator:
@@ -325,6 +333,8 @@ def build(
             "nz_prefill_accumulator": nz_prefill_accumulator,
             "nz_prefill_min_rows": nz_prefill_min_rows,
             "cache_expert_ends": cache_expert_ends,
+            "prefill_reduce_meta_cache": prefill_reduce_meta_cache,
+            "direct_compact_down_scales": direct_compact_down_scales,
             "prefill_product_cast": prefill_product_cast,
             "weight_decode_lut": weight_decode_lut,
             "wide_cube_k": wide_cube_k,
@@ -403,6 +413,7 @@ def build(
                     *(["-DGLM_ROUTE_PACKED_INPUT"] if stage == "gate_up" and route_packed_input else []),
                     *(["-DGLM_ROUTE_PACKED_DOWN"] if route_packed_down else []),
                     *(["-DGLM_COMPACT_DOWN_SCALES"] if route_compact_down_scales else []),
+                    *(["-DGLM_DIRECT_COMPACT_DOWN_SCALES"] if stage == "down" and direct_compact_down_scales else []),
                     *(["-DGLM_RAW_HIDDEN_SCALES"] if raw_hidden_scales else []),
                     *(["-DGLM_NZ_PREFILL_ACCUMULATOR"] if nz_prefill_accumulator else []),
                     *([f"-DGLM_NZ_PREFILL_MIN_ROWS={nz_prefill_min_rows}"] if nz_prefill_min_rows else []),
@@ -416,6 +427,7 @@ def build(
             )
             provenance[output.name] = {"source_sha256": sha256(source), "binary_sha256": sha256(output)}
         provenance["glm_fused_scratch.h"] = {"source_sha256": sha256(HERE / "glm_fused_scratch.h")}
+        provenance["glm_fused_compact_scales.h"] = {"source_sha256": sha256(HERE / "glm_fused_compact_scales.h")}
         provenance["glm_fused_route_cache.h"] = {"source_sha256": sha256(HERE / "glm_fused_route_cache.h")}
         provenance["glm_route_input_layout.h"] = {"source_sha256": sha256(HERE / "glm_route_input_layout.h")}
         if route_packed_input:
@@ -457,11 +469,14 @@ def build(
                 str(output),
                 *options,
                 *(["-DGLM_FP16_ROUTE_WORKSPACE"] if fp16_route_workspace else []),
+                f"-I{HERE}",
                 *(["-DGLM_NATIVE_ROUTE_COLUMNS"] if native_route_columns else []),
+                *(["-DGLM_PREFILL_REDUCE_META_CACHE"] if prefill_reduce_meta_cache else []),
             ],
             check=True,
         )
         provenance[output.name] = {"source_sha256": sha256(source), "binary_sha256": sha256(output)}
+        provenance["glm_fused_reduce_schedule.h"] = {"source_sha256": sha256(HERE / "glm_fused_reduce_schedule.h")}
     if include_w3:
         csrc = source_root / "csrc" if (source_root / "csrc").is_dir() else source_root
         kernel = csrc / "gmm/w2_blocked_dequant_matmul_v310/op_kernel"
@@ -631,6 +646,16 @@ def main():
         "--cache-expert-ends", action="store_true", help="cache bulk expert boundaries in existing UB scratch"
     )
     parser.add_argument(
+        "--prefill-reduce-meta-cache",
+        action="store_true",
+        help="reuse route positions and weights across a balanced token's output tiles",
+    )
+    parser.add_argument(
+        "--direct-compact-down-scales",
+        action="store_true",
+        help="retain dense down activation scales in their compact producer layout",
+    )
+    parser.add_argument(
         "--prefill-product-cast",
         action="store_true",
         help="cast paired dense prefill Cube output contiguously before row copies",
@@ -709,6 +734,8 @@ def main():
             args.fused_scale_accumulation,
             nz_prefill_min_rows=args.nz_prefill_min_rows,
             cache_expert_ends=args.cache_expert_ends,
+            prefill_reduce_meta_cache=args.prefill_reduce_meta_cache,
+            direct_compact_down_scales=args.direct_compact_down_scales,
         )
     )
 

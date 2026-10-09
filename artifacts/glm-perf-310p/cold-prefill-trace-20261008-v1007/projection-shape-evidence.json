@@ -1,0 +1,43 @@
+{
+  "evidence_scope": "archived rank-0 v1007 trace, not a new hardware run",
+  "member": "cold-prefill-v1007_dp0_pp0_tp0_dcp0_ep0_rank0_4050761_20261009003949111_ascend_pt/ASCEND_PROFILER_OUTPUT/kernel_details.csv",
+  "records": [
+    {
+      "kernel": "aclnnMatmul_CastAiCore_Cast",
+      "input_shapes": "\"24,16384\"",
+      "input_data_types": "FLOAT",
+      "count": 540
+    },
+    {
+      "kernel": "aclnnMatmul_TransData_TransData",
+      "input_shapes": "\"24,16384\"",
+      "input_data_types": "FLOAT16",
+      "count": 540
+    },
+    {
+      "kernel": "aclnnMatmul_CastAiCore_Cast",
+      "input_shapes": "\"1280,16384\"",
+      "input_data_types": "FLOAT",
+      "count": 360
+    },
+    {
+      "kernel": "aclnnMatmul_TransData_TransData",
+      "input_shapes": "\"1280,16384\"",
+      "input_data_types": "FLOAT16",
+      "count": 360
+    },
+    {
+      "kernel": "aclnnMatmul_CastAiCore_Cast",
+      "input_shapes": "\"640,16384\"",
+      "input_data_types": "FLOAT",
+      "count": 180
+    },
+    {
+      "kernel": "aclnnMatmul_TransData_TransData",
+      "input_shapes": "\"640,16384\"",
+      "input_data_types": "FLOAT16",
+      "count": 180
+    }
+  ],
+  "interpretation": "The shapes match the GLM mHC projection input [tokens,4*4096] and weight [24,4*4096]. This does not independently correlate every 220 MiB allocator record to a kernel launch."
+}

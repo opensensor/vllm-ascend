@@ -22,6 +22,9 @@ SHARED_PREFILL_SCRATCH_TOKENS = 640
 ROUTE_INPUT_ROWS = 32
 ROUTE_INPUT_MAX_GROUPS = 128
 ROUTE_INPUT_PAIR_BYTES = 2 * ROUTE_INPUT_ROWS * 32
+REDUCE_CACHE_MIN_TOKENS = 64
+REDUCE_CACHE_MAX_TOP_K = 8
+FUSED_KERNEL_CORES = 8
 
 
 def sorted_token_route_ranks(order, tokens, top_k):
@@ -176,6 +179,22 @@ class NativeFusedMoE:
         ):
             raise ValueError("expert boundary cache requires prepared vector-scale fused MoE without lookup tables")
         self.cache_expert_ends = cache_ends
+        reduce_cache = options.get("prefill_reduce_meta_cache", False)
+        if type(reduce_cache) is not bool or reduce_cache and not (options.get("fused_moe") and fp16_route_workspace):
+            raise ValueError("cached reducer metadata requires fused MoE with FP16 route workspace")
+        self.prefill_reduce_meta_cache = reduce_cache
+        direct_scales = options.get("direct_compact_down_scales", False)
+        if (
+            type(direct_scales) is not bool
+            or direct_scales
+            and not (
+                options.get("raw_hidden_scales")
+                and options.get("prefill_rows_32")
+                and options.get("vector_scale_products")
+            )
+        ):
+            raise ValueError("direct compact scales require raw M32 vector-scale down projection")
+        self.direct_compact_down_scales = direct_scales
         if type(options.get("route_packed_input", False)) is not bool:
             raise ValueError("routed input packing flag must be boolean")
         if type(options.get("route_packed_down", False)) is not bool:
@@ -502,7 +521,7 @@ class NativeFusedMoE:
             reduce_args = [down_output, ranks, ends, output, down_config]
             if getattr(self, "fp16_route_workspace", False):
                 reduce_args += [order, weights]
-            self.launch(self.reduce_kernel, reduce_args, 8)
+            self.launch(self.reduce_kernel, reduce_args, FUSED_KERNEL_CORES)
         return output
 
     def input_scale_shape(self, geometry):

@@ -4,7 +4,12 @@
 import hashlib
 import json
 
-from tools.glm_perf.glm_fused_moe import FUSED_REDUCTION_TOKENS
+from tools.glm_perf.glm_fused_moe import (
+    FUSED_KERNEL_CORES,
+    FUSED_REDUCTION_TOKENS,
+    REDUCE_CACHE_MAX_TOP_K,
+    REDUCE_CACHE_MIN_TOKENS,
+)
 from tools.glm_perf.resident_native import NativeManifest
 
 
@@ -54,6 +59,23 @@ def manifest(build_dir, gate_report):
             raise ValueError("NZ row threshold requires explicitly matching dispatch gates")
         if options.get("cache_expert_ends") and any(r.get("cache_expert_ends") is not True for r in rows):
             raise ValueError("expert boundary cache requires matching changed-route replay gates")
+        if options.get("direct_compact_down_scales") and any(
+            r.get("direct_compact_down_scales") is not True for r in rows
+        ):
+            raise ValueError("direct compact scales require matching loaded-weight and replay gates")
+        if options.get("prefill_reduce_meta_cache"):
+            if any(r.get("prefill_reduce_meta_cache") is not True for r in rows):
+                raise ValueError("cached reducer metadata requires matching replay gates")
+            if {
+                (r.get("weight_bits"), r.get("activation_bits"))
+                for r in rows
+                if type(r.get("tokens")) is int
+                and r["tokens"] >= REDUCE_CACHE_MIN_TOKENS
+                and r["tokens"] % FUSED_KERNEL_CORES == 0
+                and type(r.get("top_k")) is int
+                and 1 <= r["top_k"] <= REDUCE_CACHE_MAX_TOP_K
+            } != required:
+                raise ValueError("cached reducer metadata requires eligible synthetic and real-weight replay gates")
         if options.get("nz_prefill_min_rows"):
             threshold = options["nz_prefill_min_rows"]
             if {

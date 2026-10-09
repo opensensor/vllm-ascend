@@ -104,4 +104,9 @@ def test_cli_passes_threshold_as_keyword(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(builder, "build", lambda *args, **kwargs: calls.append((args, kwargs)))
     builder.main()
-    assert calls[0][1] == {"nz_prefill_min_rows": 31, "cache_expert_ends": False}
+    assert calls[0][1] == {
+        "nz_prefill_min_rows": 31,
+        "cache_expert_ends": False,
+        "prefill_reduce_meta_cache": False,
+        "direct_compact_down_scales": False,
+    }

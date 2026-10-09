@@ -6,7 +6,7 @@ import json
 
 import torch
 
-from .glm_fused_moe import FUSED_REDUCTION_TOKENS, NativeFusedMoE
+from .glm_fused_moe import FUSED_REDUCTION_TOKENS, REDUCE_CACHE_MIN_TOKENS, NativeFusedMoE
 from .glm_int4 import unpack_canonical_codes
 
 
@@ -131,6 +131,8 @@ def gate_case(native, bits, tokens=2, hidden=256, inter=256, real=None, nz_densi
         "fused_scale_accumulation": getattr(native, "fused_scale_accumulation", False),
         "nz_prefill_min_rows": getattr(native, "nz_prefill_min_rows", 0),
         "cache_expert_ends": getattr(native, "cache_expert_ends", False),
+        "prefill_reduce_meta_cache": getattr(native, "prefill_reduce_meta_cache", False),
+        "direct_compact_down_scales": getattr(native, "direct_compact_down_scales", False),
         "nz_boundary_rows": [boundary - 1, boundary] if nz_density_boundary else [],
         "tokens": tokens,
         "hidden": hidden,
@@ -266,6 +268,11 @@ def run(build_dir, output, *, checkpoint=None, real_prefixes=()):
                     )
                     for tokens in real_tokens:
                         record = gate_case(native, bits, tokens=tokens, real=(gate, gs, down, ds))
+                        record.update(tensor_prefix=prefix, checkpoint_tensor_hashes=hashes)
+                        payload["real_weight_records"].append(record)
+                        print(json.dumps(record), flush=True)
+                    if options.get("prefill_reduce_meta_cache"):
+                        record = gate_case(native, bits, tokens=REDUCE_CACHE_MIN_TOKENS, real=(gate, gs, down, ds))
                         record.update(tensor_prefix=prefix, checkpoint_tensor_hashes=hashes)
                         payload["real_weight_records"].append(record)
                         print(json.dumps(record), flush=True)

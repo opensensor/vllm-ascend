@@ -7,6 +7,38 @@ Cold prefill remains the priority: the qualified 6,400-token baseline is about
 to rank 0, with vector/scalar work dominant; these durations may overlap.
 The final-mixer operator gain did not resolve the full-model bottleneck.
 
+The follow-on offline work adds two independent candidates:
+
+- `--prefill-reduce-meta-cache`: eligible balanced batches give each core
+  complete tokens, caching up to eight route positions and FP32 weights across
+  all output column tiles. This uses 64 additional UB bytes per core. At width
+  4,096, metadata scalar GM reads are reduced 32-fold, excluding invariant
+  per-core boundary reads. Output workspace traffic and arithmetic are retained.
+  Batches below 64 tokens, uneven core assignments, and top-k above eight keep
+  the original schedule. CPU tests compile the actual reducer source with
+  explicit CPU operator semantics and verify bit-exact FP32 results, one write
+  per output, poisoned-peer guards, changed metadata and read counts. They
+  cover native and ordinary column order, 17–1,280 tokens, top-k 1/2/8/9 and
+  all-peer routes. These tests do not model NPU timing or ACL graph replay.
+- `--direct-compact-down-scales`: dense A4 down projections keep the producer's
+  compact FP32 scale layout in the existing scale buffer, eliminating the
+  preliminary row transpose and its per-row vector barriers. Sparse batches
+  of at most four expert rows retain the existing path. It requires raw
+  four-lane scales, M32 and vector scale products; wider eight-lane scale banks
+  do not fit the same buffer and are rejected. For a full 31-row expert batch
+  and 4,096-wide output, this removes 31 x 32 = 992 row Gather instructions,
+  plus their per-row barriers. Subsequent per-K column Gather and Brcb remain.
+  The actual C++ group-offset helper matches the existing prepared descriptor
+  for every tested group and row, including signed-zero/NaN bit patterns and
+  padded-row clamping. Weight packing and descriptor ABI are unchanged.
+
+Both options default off and have matching build provenance, helper validation
+and admission checks. Reducer admission additionally requires eligible real
+64-token arithmetic/replay cases; old 31-token gates cannot qualify its fast
+schedule. Ascend compilation, device replay and end-to-end performance remain
+pending. Run them separately before combining them; operation/read counts are
+not speedup factors for the full model.
+
 The second offline candidate, `--cache-expert-ends`, loads cumulative expert
 boundaries into retained mask scratch once per launch, replacing per-output-tile
 scalar GM reads. It adds no UB allocation. On M32, cached boundaries start at
@@ -29,16 +61,39 @@ Build provenance and admission checks require matching thresholds plus
 synthetic and real-weight changed-input replay just below and at the boundary.
 The candidate is **not compiled or NPU-qualified**. Earlier unrestricted NZ
 candidate v920 was slower; no speed gain is claimed for this narrower selection.
-The current GLM CPU suite passed **1,861 tests**, with six environment warnings,
+The current GLM CPU suite passed **1,905 tests**, with six environment warnings,
 using `python -m pytest --confcutdir=tests/ut/glm_perf -q tests/ut/glm_perf`.
 The ordinary repository conftest cannot load the local incomplete vLLM FLA
 package; the isolated tool suite bypasses that unrelated NPU setup.
 
 Scoped manual pre-commit checks pass. The required whole-repository
-`bash format.sh ci` ran in an isolated snapshot and fails on existing archived
+`bash format.sh ci` fails on existing archived
 Python lint, Markdown and forbidden-import errors outside this delivery.
-Only owned-file formatting was carried back. Raw profiler kernel identifiers
+An accidental shared-checkout run changed 142 unrelated tracked paths; those
+formatter-only edits were restored. Owned files matched the pre-format snapshot,
+and the pre-existing Qwen edits were retained. Scoped checks ran in the isolated
+snapshot. Raw profiler kernel identifiers
 were preserved through three exact typos exceptions; the evidence was not edited.
+
+### Further opportunities
+
+- Gate/up scale broadcasts still Gather activation scales and Brcb them for
+  each K-group/output tile. Preparing a paired group-major producer/consumer
+  layout could remove the Gather step repeatedly; the new compact-down path
+  removes only its preliminary row transpose. Such a producer change needs
+  byte-exact layout gates, scratch accounting and replay tests.
+- [Archived projection shapes](projection-shape-evidence.json) contain 540
+  FP32-to-FP16 weight casts for `[24,16384]`, plus 360 activation casts for
+  `[1280,16384]` and 180 for `[640,16384]`. These match mHC projection geometry.
+  The previous native projection's extra 90 MiB/rank prepared bank made peak
+  memory worse. A new design should replace that duplicate storage or reconstruct
+  weights in bounded tiles; another shadow bank is not a demonstrated improvement.
+  The shape evidence alone does not identify every 220 MiB allocation's launch.
+- Rank 0's summed native MoE tasks were 23.049 seconds, compared with roughly
+  19.241 seconds on rank 2. Per-layer expert-row histograms and core timing are
+  needed before changing bank placement. The 10.671 seconds of non-overlapped
+  communication are not all proven to be expert imbalance. Any eventual bank
+  permutation must be persistent on disk and keep routing IDs consistent.
 
 ### Memory evidence
 
@@ -104,6 +159,24 @@ per rank; qualifications cannot be reused across process restarts.
 
 ## 中文摘要
 
+后续离线工作新增两个独立候选，默认均关闭，尚未 Ascend 编译、设备图重放或完整
+性能验证。`--prefill-reduce-meta-cache` 为均衡的大批次按 token 分配各核，缓存
+至多八个路由位置及 FP32 权重，每核新增 UB 64 字节。宽度 4,096 时，除每核固定
+边界读取外，元数据标量 GM 读取减少 32 倍；工作区流量及算术保留。少于 64 token、
+各核 token 数不均或 top-k 大于八时保留旧调度。CPU 测试编译实际 reducer 源码，
+以明确的 CPU 算子语义验证 FP32 位一致、每输出仅写一次、poisoned peer 防护、
+元数据变化及读取计数，覆盖两种列布局、17–1,280 token、top-k 1/2/8/9 和全 peer。
+这不是 NPU 性能或 ACL 图验证；准入另要求真实 64-token 算术/重放，旧 31-token
+检查不能验证该优化路径。
+
+`--direct-compact-down-scales` 在 dense A4 down 阶段直接保留 compact FP32
+scale 布局，删除预先按行转置及逐行向量 barrier，不新增 scale buffer。至多四行
+的稀疏批次保留旧路径；只允许 raw 四通道 scale、M32 及 vector scale products，
+八通道布局不能装入相同缓冲区。31 行专家批次、宽度 4,096 时删除 992 个行 Gather
+及逐行 barrier；后续 K-group 的列 Gather/Brcb 仍保留。实际 C++ group-offset
+helper 与既有 descriptor 对比保持位模式、padding 行及 ABI，权重布局不变。
+应分别测量再组合；读取/指令计数变化不等于完整模型加速倍数。
+
 冷 prefill 仍是重点：合格 6,400-token 基线约 51 秒，rank 0 原生专家任务累计
 23.049 秒，vector/scalar 工作占主导；任务可能重叠。final mixer 单算子收益未
 解决完整模型瓶颈。第二个离线候选 `--cache-expert-ends` 每次 launch 将累计
@@ -118,11 +191,22 @@ per rank; qualifications cannot be reused across process restarts.
 累加，尾批保留行布局；默认零保持旧版 17 行门槛。描述符、权重布局、路由缓冲区
 及算术顺序不因门槛选择改变。构建记录和准入检查要求门槛一致，并要求合成及真实
 权重在门槛前后完成输入变化图重放。候选尚未编译或 NPU 验证；旧版 v920 较慢，
-本次不宣称加速。隔离 GLM CPU 测试通过 1,861 项，有六条环境警告。普通仓库
+本次不宣称加速。隔离 GLM CPU 测试通过 1,905 项，有六条环境警告。普通仓库
 conftest 因本地 vLLM FLA 包不完整无法加载，隔离工具测试绕过该无关 NPU 初始化。
-改动文件的 manual pre-commit 检查通过；隔离快照运行全仓库 `bash format.sh ci`
+改动文件的 manual pre-commit 检查通过；全仓库 `bash format.sh ci`
 仍因既有归档 Python、Markdown 和禁止导入错误失败。仅同步本次文件格式，未修改
 并行 Qwen 工作；通过三个精确 typos 例外保留原始 profiler 内核名称，证据未改写。
+误在共享 checkout 运行 formatter 后，已恢复 142 个无关 tracked 文件的格式改动；
+本次文件与运行前快照一致，既有 Qwen 改动保留。改动范围检查在隔离快照执行。
+
+进一步机会：gate/up 每个 K-group/output tile 仍有 scale Gather/Brcb，配对的
+group-major 生产/消费布局可能删除反复 Gather，但需位一致、scratch 和图重放检查。
+归档 projection 形状含 540 次 `[24,16384]` 权重 FP32→FP16 cast，以及 360 次
+`[1280,16384]`、180 次 `[640,16384]` 激活 cast，符合 mHC geometry；不能仅凭
+形状将所有 220 MiB 分配关联到具体 launch。下一版 projection 应避免重复缓存，
+之前每卡额外 90 MiB 已使峰值更差。Rank 0 MoE 任务累计 23.049 秒，rank 2 约
+19.241 秒，需先采集逐层专家行数及核时序；10.671 秒未重叠通信并非全部已证明为
+专家不均衡。若重排 bank，应持久化到磁盘并保持路由 ID 一致。
 
 归档仅含 rank-0 内存表。峰值分配 41,023.808 MiB，其中 bmm 临时分配为
 480.627 MiB；四个完整大 bmm 生命周期以外仍有 40,937.075 MiB 峰值。
