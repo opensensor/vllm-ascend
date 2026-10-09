@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 
 import torch
 import torch.nn.functional as F
@@ -726,8 +727,12 @@ def chunk_gated_delta_rule_310(
     head_first: bool = False,
     use_qk_l2norm_in_kernel: bool = False,
     chunk_plan: VarlenChunkPlan | None = None,
+    wy_prepare: Callable[..., tuple[torch.Tensor, ...]] | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
     """310P chunk GDN path backed by AscendC fwd_h/fwd_o kernels.
+
+    ``wy_prepare`` is an explicit, prevalidated resident experiment callback.
+    Leaving it unset retains the qualified torch WY preparation.
 
     Triton is unavailable on 310P, so the local WY preparation is done with
     torch ops and the inter-chunk state/output matmuls are delegated to the
@@ -784,9 +789,9 @@ def chunk_gated_delta_rule_310(
         return empty_out, final_state
 
     scale = k.shape[-1] ** -0.5 if scale is None else scale
-    q_kernel, k_kernel, w_kernel, u_kernel, g_kernel = _compute_kernel_inputs_from_torch_wy(
-        q_pad, k_pad, v_pad, g_pad, beta_pad, CHUNK_SIZE
-    )
+    # Explicit resident candidate; default math and precision remain intact.
+    prepare = _compute_kernel_inputs_from_torch_wy if wy_prepare is None else wy_prepare
+    q_kernel, k_kernel, w_kernel, u_kernel, g_kernel = prepare(q_pad, k_pad, v_pad, g_pad, beta_pad, CHUNK_SIZE)
 
     if initial_state is None:
         state = torch.zeros(

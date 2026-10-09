@@ -1227,10 +1227,16 @@ _QSARopeStepCache = dict[tuple[object, ...], tuple[torch.Tensor, torch.Tensor]]
 _QSA_SELECTION_CONFIG_KEY = "ascend_qsa_selection"
 _QSA_PREFILL_CONFIG_KEY = "ascend_qsa_prefill"
 _QSA_PREFILL_BATCHED_GATHER = "batched_gather"
+_QSA_PREFILL_PAGED_NATIVE = "paged_native"
 _QSA_PREFILL_GROUP_MAJOR_UNION = "group_major_union"
 _QSA_PREFILL_FIXED_GROUP_MAJOR_UNION = "fixed_group_major_union"
 _QSA_PREFILL_BACKENDS = frozenset(
-    (_QSA_PREFILL_BATCHED_GATHER, _QSA_PREFILL_GROUP_MAJOR_UNION, _QSA_PREFILL_FIXED_GROUP_MAJOR_UNION)
+    (
+        _QSA_PREFILL_BATCHED_GATHER,
+        _QSA_PREFILL_GROUP_MAJOR_UNION,
+        _QSA_PREFILL_FIXED_GROUP_MAJOR_UNION,
+        _QSA_PREFILL_PAGED_NATIVE,
+    )
 )
 
 
@@ -1285,12 +1291,14 @@ def _qsa_prefill_policy(config: object) -> tuple[str, int, bool]:
     backend = metadata.get("backend", _QSA_PREFILL_BATCHED_GATHER)
     if not isinstance(backend, str) or backend not in _QSA_PREFILL_BACKENDS:
         raise ValueError(f"QSA prefill backend must be one of {sorted(_QSA_PREFILL_BACKENDS)}, got {backend!r}")
+    if backend == _QSA_PREFILL_PAGED_NATIVE and set(metadata) & {"query_tile", "parallel_gather"}:
+        raise ValueError("paged_native does not use query_tile or parallel_gather")
     query_tile = metadata.get("query_tile", QSA_GROUP_MAJOR_DEFAULT_QUERY_TILE)
     if isinstance(query_tile, bool) or not isinstance(query_tile, int):
         raise ValueError("QSA group-major query_tile must be an integer")
     if query_tile < 1 or query_tile > QSA_GROUP_MAJOR_MAX_QUERY_TILE:
         raise ValueError(f"QSA group-major query_tile must be in [1, {QSA_GROUP_MAJOR_MAX_QUERY_TILE}]")
-    parallel_gather = metadata.get("parallel_gather", True)
+    parallel_gather = metadata.get("parallel_gather", backend != _QSA_PREFILL_PAGED_NATIVE)
     if not isinstance(parallel_gather, bool):
         raise ValueError("QSA prefill parallel_gather must be a boolean")
     return backend, query_tile, parallel_gather
@@ -1946,7 +1954,11 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
             )
             use_batched_decode = self._can_use_batched_qsa_decode(metadata, seq_len, selection.group_indices.shape[1])
             query_lens_cpu = getattr(metadata, "query_lens_cpu", None)
-            if (use_batched_prefill or use_batched_decode) and self._has_qsa_request_boundaries(metadata):
+            if (
+                (use_batched_prefill or use_batched_decode)
+                and self._has_qsa_request_boundaries(metadata)
+                and not (use_batched_prefill and self.qsa_prefill_backend == _QSA_PREFILL_PAGED_NATIVE)
+            ):
                 sparse_attention = (
                     qsa_group_major_prefill_310
                     if use_batched_prefill

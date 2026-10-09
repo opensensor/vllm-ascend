@@ -702,7 +702,13 @@ class W4SparseMoE(nn.Module):
             # Quantization belongs to the token, not its top-k copies.
             # Share it across prefill routes; small decode avoids four
             # gather launches because its packing work is already tiny.
-            prepared = tuple(value.index_select(0, sorted_tokens) for value in pack_activation_device(inputs))
+            token_operands = pack_activation_device(inputs)
+            local_routes = getattr(self, "_qwen_local_routes", None)
+            prepared = (
+                local_routes.gather(token_operands, sorted_tokens.to(torch.int32).contiguous(), group_ends)
+                if local_routes is not None
+                else tuple(value.index_select(0, sorted_tokens) for value in token_operands)
+            )
             projected = gate_up_bank.native_linear(prepared, group_ends)
         else:
             inputs = inputs.index_select(0, sorted_tokens).contiguous()
@@ -710,7 +716,12 @@ class W4SparseMoE(nn.Module):
         if self.grouped_activation == "cann_swiglu_pack":
             # Opt-in until full prefill rows pass exact packing parity and
             # a real-weight service gate on the coherent 310P OPP package.
-            packed_activation = swiglu_pack_activation_device(projected)
+            local_routes = getattr(self, "_qwen_local_routes", None)
+            packed_activation = (
+                local_routes.swiglu(projected, group_ends)
+                if local_routes is not None
+                else swiglu_pack_activation_device(projected)
+            )
             output = self.projections["down_proj"].native_linear(packed_activation, group_ends)
         elif self.grouped_activation == "cann_builtin_fp16":
             # Native INT4 prefill default; preserve an explicit torch

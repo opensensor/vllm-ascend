@@ -1,0 +1,125 @@
+{
+  "autostart": false,
+  "hardware_validated": false,
+  "requires_later_npu_authorization": true,
+  "preserve_image_enabled": true,
+  "preserve_base_capacity": true,
+  "thermal_hold_c": 94,
+  "thermal_resume_c": 85,
+  "combine_only_after_individual_real_weight_gates": true,
+  "candidates": [
+    {
+      "name": "qsa_paged_native",
+      "hf_overrides": {
+        "text_config": {
+          "ascend_qsa_prefill": {
+            "backend": "paged_native"
+          }
+        }
+      },
+      "default_enabled": false
+    },
+    {
+      "name": "prefill_pacing",
+      "scheduler_cls": "vllm_ascend.core.qwen_prefill_scheduler.QwenPrefillPacedScheduler",
+      "additional_config": {
+        "qwen_prefill_pacing": {
+          "target_step_ms": 500.0,
+          "min_tokens": 128,
+          "initial_tokens": 256,
+          "max_tokens": 2560,
+          "alignment": 128,
+          "smoothing": 0.25
+        }
+      },
+      "default_enabled": false
+    },
+    {
+      "name": "fused_wy",
+      "native_resource": "qwen_prefill_v2",
+      "candidate": "tools/qwen4exp/resident_candidates/fused_wy.py",
+      "default_enabled": false,
+      "requires_fp32_state_gate": true
+    },
+    {
+      "name": "local_routes",
+      "native_resource": "qwen_prefill_v2",
+      "candidate": "tools/qwen4exp/resident_candidates/local_routes.py",
+      "w4_metadata_requirement": {
+        "backend": "cube_310_int4_a8",
+        "grouped_activation": "cann_swiglu_pack"
+      },
+      "default_enabled": false,
+      "compare_against_same_activation_mode": true
+    },
+    {
+      "name": "mtp_depth",
+      "arms": [
+        {
+          "name": "mtp0",
+          "speculative_config": null,
+          "omit_speculative_config": true,
+          "compilation_config": {
+            "cudagraph_mode": "FULL_DECODE_ONLY",
+            "cudagraph_capture_sizes": [
+              1,
+              3
+            ]
+          },
+          "requires_cache_replan_and_graph_recapture": true,
+          "requires_image_gate": true,
+          "concurrencies_to_measure": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "name": "mtp1",
+          "speculative_config": {
+            "method": "mtp",
+            "num_speculative_tokens": 1
+          },
+          "omit_speculative_config": false,
+          "compilation_config": {
+            "cudagraph_mode": "FULL_DECODE_ONLY",
+            "cudagraph_capture_sizes": [
+              2,
+              6
+            ]
+          },
+          "requires_cache_replan_and_graph_recapture": true,
+          "requires_image_gate": true,
+          "concurrencies_to_measure": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "name": "mtp2",
+          "speculative_config": {
+            "method": "mtp",
+            "num_speculative_tokens": 2
+          },
+          "omit_speculative_config": false,
+          "compilation_config": {
+            "cudagraph_mode": "FULL_DECODE_ONLY",
+            "cudagraph_capture_sizes": [
+              3,
+              9
+            ]
+          },
+          "requires_cache_replan_and_graph_recapture": true,
+          "requires_image_gate": true,
+          "concurrencies_to_measure": [
+            1,
+            2,
+            3
+          ]
+        }
+      ],
+      "default_enabled": false
+    }
+  ]
+}
