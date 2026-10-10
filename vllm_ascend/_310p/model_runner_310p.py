@@ -64,6 +64,7 @@ from vllm_ascend._310p.prefix_mamba_state import (
     remap_prefix_mamba_rows,
     retain_prefix_mamba_blocks,
     supports_compact_live_mamba_state,
+    uses_bounded_prefix_mamba_scheduler,
 )
 from vllm_ascend._310p.qwen4exp_mtp import (
     is_qwen4exp_mtp_config,
@@ -285,6 +286,9 @@ class NPUModelRunner310(NPUModelRunner):
             prefix_mamba_slot_count(
                 self.max_num_reqs,
                 self.speculative_config.num_speculative_tokens if self._qwen4exp_mtp_ple else 0,
+                bounded_checkpoints=uses_bounded_prefix_mamba_scheduler(
+                    getattr(self.scheduler_config, "scheduler_cls", None)
+                ),
             )
             if self.supports_prefix_mamba_state_tier
             else (1 + self.speculative_config.num_speculative_tokens if self._qwen4exp_mtp_ple else 1)

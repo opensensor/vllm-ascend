@@ -1,0 +1,26 @@
+import hashlib,json,subprocess,uuid
+from pathlib import Path
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_native import NativeManifest
+from tools.qwen4exp.thermal_controller import parse_temperatures
+root=Path('/srv/ai/src/qwen-performance-evidence-20261010')
+runtime=Path('/srv/ai/src/qwen-performance-mtp-tp6-v2-20261010-8fce905')
+client=ResidentClient('http://127.0.0.1:8001',6,300)
+temps=parse_temperatures(subprocess.check_output(['npu-smi','info'],text=True,timeout=5),6)
+assert max(temps)<85,'Do not recapture during thermal hold or with hot chips'
+assert client.request('/is_paused',method='GET')['is_paused'] is False
+value=json.loads(Path('/home/matteius/experiments/qwen38-decode-next-20261005/native-hc-residual/native-v1.json').read_text())
+value['assets']=[value['assets'][0]]
+for rel in ['tools/qwen4exp/direct_hc_residual.py','tools/qwen4exp/resident_candidates/native_hc_residual.py','tools/qwen4exp/resident_candidates/padded_hc_injection.py','tools/qwen4exp/resident_candidates/fused_hc_projection.py']:
+ path=runtime/rel
+ value['assets'].append({'path':str(path),'sha256':hashlib.sha256(path.read_bytes()).hexdigest()})
+value['validation_source'] += "\n# Cover the actual C1 and C6 MTP2 geometry and both coefficient dtypes.\noriginal_validate = validate\ndef validate(op):\n    import torch\n    report=original_validate(op)\n    with torch.inference_mode():\n        for rows,width in [(3,2560),(18,2560)]:\n            gen=torch.Generator().manual_seed(1000+rows)\n            hyper=torch.randn(rows,4*width,generator=gen).half().npu()\n            block=torch.randn(rows,width,generator=gen).half().npu()\n            for dtype in [torch.float16,torch.float32]:\n                injection=(torch.rand(rows,4,generator=gen)*2).to(dtype).npu()\n                expected=(hyper.float().view(rows,4,width)+block.float()[:,None]*injection.float()[:,:,None]).flatten(1).half()\n                actual=op(hyper,block,injection)\n                assert torch.equal(expected.cpu().view(torch.uint8),actual.cpu().view(torch.uint8)),(rows,width,dtype)\n    report['six_chip_geometry_cases']=4\n    return report\n"
+(root/'mtp-v2-hc-native-manifest.json').write_text(json.dumps(value,indent=2))
+before=client.rpc('resident_status');(root/'mtp-v2-hc-before.json').write_text(json.dumps(before,indent=2))
+loaded=client.load_native(NativeManifest(value));(root/'mtp-v2-hc-load.json').write_text(json.dumps(loaded,indent=2))
+source=(runtime/'tools/qwen4exp/resident_candidates/native_hc_residual.py').read_text()
+control=Control(uuid.uuid4().hex,candidate='native_hc_residual',source=source,recapture=True)
+after=client.switch(control);(root/'mtp-v2-hc-selected.json').write_text(json.dumps(after,indent=2))
+assert all(not v['graphs_dirty'] and not v['native_failed'] for v in after)
+print(json.dumps({'loaded_workers':len(loaded),'selected_workers':len(after),'candidate':'native_hc_residual','temperatures_before':temps}),flush=True)

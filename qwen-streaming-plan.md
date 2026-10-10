@@ -25,8 +25,20 @@ attention, recurrent state, PLE, residual connections, and MTP. Both bulk prefil
 and decode/speculative verification are explicit modes of the architecture.
 Preserve image processing throughout; vision encoding remains a distinct stage.
 
-No speed multiplier, thermal reduction, larger context capacity, or improvement
-from overlap is assumed. Performance and sustained operation are acceptance gates.
+Completion requires at least **1.5× the older two-card baseline's decode
+tokens/second on equivalent workloads**, together with lower cold time to first
+token, working image processing, correct cache/state semantics, and sustained
+operation without checkpoint spills or thermal shutdown. Freeze prompts, output
+budgets, sampling, concurrency, cache policy, and timing definitions before the
+paired comparison. Six-request aggregate rates cannot replace the C1 comparison.
+The recorded TP4/MTP2 C1 median of 19.262 tok/s implies 28.893 tok/s for that
+specific workload; higher historical baselines require their own matched gate.
+Correctness fixes and capacity gates do not complete this performance objective.
+
+Current work: profile the live decode path, implement uneven six-chip MTP expert,
+shared-channel and vocabulary placement, qualify speculative GDN state handling,
+and test the candidate against the retained control. Baseline projections remain
+the control while grouped streaming down/gather overhead is corrected.
 
 ## Current execution and target dataflow
 
@@ -406,10 +418,12 @@ or recapture during thermal hold. Include hold time in service results, and abor
 testing if the controller cannot enforce the policy. Do not bypass missing sensors.
 
 Promotion requires real-weight numerical/quality, image, cache/CoW, EP, MTP,
-graph replay, and sustained thermal gates. Seek at least 10% improvement in
-primary cold TTFT or sustained service throughput as an objective. A smaller
-gain must exceed `max(2%, twice the maximum variant IQR/median)` over paired
-trials; this repeatability rule is not a significance proof. Reject repeatable
+graph replay, and sustained thermal gates. Completion requires at least 50%
+higher decode throughput than the older two-card control on the same workload,
+including C1, and lower cold TTFT. Intermediate gains guide the next experiment
+but do not satisfy that target. Changes must exceed
+`max(2%, twice the maximum variant IQR/median)` over paired trials; this
+repeatability rule is not a significance proof. Reject repeatable
 decode or mixed-service regressions above 5%, capacity loss, or thermal cutoff.
 Record inconclusive outcomes and retain the qualified reference if no defensible
 overall gain is established. Publish the final evidence and runtime disposition.
@@ -473,3 +487,21 @@ passed parity but remained behind baseline on most ranks. Keep it experimental;
 measure routing, gate/up, activation/packing, down, and finalization separately
 before changing more barriers. Preserve the small routed decode path and assess
 its graph/HCCL/LM-head/MTP costs separately from grouped prefill.
+
+## Six-chip MTP follow-up, October 10 UTC
+
+See [qualification and pending work](artifacts/qwen38-six-chip-mtp-20261010/README.md).
+Uneven six-chip MTP expert/shared/vocabulary loading, the shared bounded state
+pool, speculative state-view gates, and real-weight image/prefix/cancellation
+checks passed. The recorded C1 median is 27.193 tok/s, 41.18% above the older
+19.262 tok/s control. The 50% target, lower cold TTFT, matched precision A/B,
+and sustained thermal qualification remain incomplete. Small HC differences
+are not a demonstrated repeatable performance gain.
+
+After renewed access, the reversible PLE W8 cache passed component graph replay,
+image/prefix/cancellation checks on all six chips. It measured 26.128 tok/s,
+versus 26.929 in the subsequent FP16 repeat, and FP16 was restored. The paced
+scheduler string lookup remains CPU-tested only. No tests run automatically.
+Resume [queued tests](artifacts/qwen38-six-chip-mtp-20261010/queued-tests.json)
+only after renewed access. Draft graph sizing must account for its first pass;
+archive reclamation needs a proven scheduler-ownership bound.

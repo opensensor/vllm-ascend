@@ -136,6 +136,8 @@ def w4_config(config: object) -> dict | None:
     if ple_projection_execution not in PLE_PROJECTION_EXECUTIONS:
         raise ValueError(f"ple_projection_execution must be one of {PLE_PROJECTION_EXECUTIONS}")
     mtp_expert_execution = metadata.get("mtp_expert_execution", "w8a16_routed")
+    if type(metadata.get("mtp_uneven_sharding", False)) is not bool:
+        raise ValueError("mtp_uneven_sharding must be a boolean")
     if mtp_expert_execution not in MTP_EXPERT_EXECUTIONS:
         raise ValueError(f"mtp_expert_execution must be one of {MTP_EXPERT_EXECUTIONS}")
     grouped_finalize = metadata.get("grouped_finalize", "torch")

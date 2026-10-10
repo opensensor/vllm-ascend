@@ -1,0 +1,1421 @@
+{
+  "note": "Separate profiled 16-token real API request. Includes prefill and profiler overhead. Task durations may overlap and are not added into wall latency. Task names do not measure kernel-internal MTE traffic. All six untruncated traces parsed successfully.",
+  "records": [
+    {
+      "worker_pid": 1059663,
+      "trace": "/srv/ai/src/qwen-performance-evidence-20261010/decode-profile-v14/matteius-threadripper_1059663_20261010025206139_ascend_pt/ASCEND_PROFILER_OUTPUT/trace_view.json",
+      "device_task_count": 254279,
+      "explicit_memcpy_task_count": 13814,
+      "explicit_memcpy_types": {
+        "MemcopyAsync": 399,
+        "MEMCPY_ASYNC": 13415
+      },
+      "task_type_counts": {
+        "other": 399,
+        "KERNEL_AICORE": 102706,
+        "MEMCPY_ASYNC": 13415,
+        "EVENT_RECORD": 5043,
+        "KERNEL_AICPU": 544,
+        "EVENT_WAIT": 37834,
+        "NOTIFY_RECORD": 34570,
+        "EVENT_RESET": 38935,
+        "REDUCE_ASYNC_V2": 7835,
+        "KERNEL_MIX_AIC": 861,
+        "PLACE_HOLDER_SQE": 2,
+        "AI_CORE": 12135
+      },
+      "top_tasks": [
+        {
+          "name": "EVENT_WAIT",
+          "sum_duration_us": 1160445.8249570073,
+          "count": 37834,
+          "mean_duration_us": 30.672036394698083
+        },
+        {
+          "name": "aclnnMatmulWeightNz_MatMulCommon_MatMulV2",
+          "sum_duration_us": 273860.08990820154,
+          "count": 8896,
+          "mean_duration_us": 30.784632408745676
+        },
+        {
+          "name": "QwenW4A8Int4MatmulV310",
+          "sum_duration_us": 52148.51290820344,
+          "count": 816,
+          "mean_duration_us": 63.907491309072846
+        },
+        {
+          "name": "aclnnMatmulWeightNz_TransData_TransData",
+          "sum_duration_us": 45970.700804688415,
+          "count": 11008,
+          "mean_duration_us": 4.176117442286375
+        },
+        {
+          "name": "MemcopyAsync",
+          "sum_duration_us": 42732.836322784424,
+          "count": 399,
+          "mean_duration_us": 107.099840407981
+        },
+        {
+          "name": "aclnnMatmul_TransData_TransData",
+          "sum_duration_us": 42008.95604492259,
+          "count": 7884,
+          "mean_duration_us": 5.328381030558421
+        },
+        {
+          "name": "MEMCPY_ASYNC",
+          "sum_duration_us": 25877.55089648418,
+          "count": 13415,
+          "mean_duration_us": 1.9290011849783213
+        },
+        {
+          "name": "aclnnInplaceCopy_CastAiCore_Cast",
+          "sum_duration_us": 25781.326560546782,
+          "count": 19191,
+          "mean_duration_us": 1.3434071471286948
+        },
+        {
+          "name": "aclnnMul_MulAiCore_Mul",
+          "sum_duration_us": 25368.696519531157,
+          "count": 10828,
+          "mean_duration_us": 2.342879250049054
+        },
+        {
+          "name": "AI_CORE",
+          "sum_duration_us": 24517.212281249926,
+          "count": 12135,
+          "mean_duration_us": 2.020371840234852
+        },
+        {
+          "name": "aclnnInplaceCopy_ViewCopyAiCpu_ViewCopy",
+          "sum_duration_us": 23818.74876171878,
+          "count": 216,
+          "mean_duration_us": 110.27198500795731
+        },
+        {
+          "name": "REDUCE_ASYNC_V2",
+          "sum_duration_us": 21045.36345703127,
+          "count": 7835,
+          "mean_duration_us": 2.6860706390595115
+        },
+        {
+          "name": "aclnnIndexPutImpl_IndexPut_IndexPut",
+          "sum_duration_us": 17225.80639453125,
+          "count": 72,
+          "mean_duration_us": 239.24731103515626
+        },
+        {
+          "name": "aclnnRecurrentGatedDeltaRuleV310_RecurrentGatedDeltaRuleV310_RecurrentGatedDeltaRuleV310",
+          "sum_duration_us": 12616.561826171901,
+          "count": 540,
+          "mean_duration_us": 23.364003381799815
+        },
+        {
+          "name": "QwenW4A8Int4DownReduceV310",
+          "sum_duration_us": 12281.457675781272,
+          "count": 720,
+          "mean_duration_us": 17.057580105251766
+        },
+        {
+          "name": "RmsNorm",
+          "sum_duration_us": 11058.671333984385,
+          "count": 2704,
+          "mean_duration_us": 4.089745315822627
+        },
+        {
+          "name": "aclnnMean_ReduceMeanAiCore_ReduceMean",
+          "sum_duration_us": 10297.499525390644,
+          "count": 2515,
+          "mean_duration_us": 4.094433210890912
+        },
+        {
+          "name": "aclnnMatmul_MatMulCommon_MatMulV2",
+          "sum_duration_us": 7336.666292968779,
+          "count": 2304,
+          "mean_duration_us": 3.184316967434366
+        },
+        {
+          "name": "aclnnInplaceCopy_CastAiCpu_Cast",
+          "sum_duration_us": 7035.312126953126,
+          "count": 48,
+          "mean_duration_us": 146.5690026448568
+        },
+        {
+          "name": "NOTIFY_RECORD",
+          "sum_duration_us": 6967.99430664044,
+          "count": 34570,
+          "mean_duration_us": 0.20156188332775354
+        },
+        {
+          "name": "aclnnAdd_AddAiCore_Add",
+          "sum_duration_us": 4695.3383671874935,
+          "count": 3346,
+          "mean_duration_us": 1.4032690876232796
+        },
+        {
+          "name": "aclnnMean_ReduceMeanAiCore_MemSet",
+          "sum_duration_us": 4583.254857421894,
+          "count": 2515,
+          "mean_duration_us": 1.8223677365494606
+        },
+        {
+          "name": "aclnnTopk_CastAiCore_Cast",
+          "sum_duration_us": 4370.833107421886,
+          "count": 768,
+          "mean_duration_us": 5.691188941955581
+        },
+        {
+          "name": "QwenW4A8SwigluPackV310",
+          "sum_duration_us": 4297.369548828137,
+          "count": 720,
+          "mean_duration_us": 5.968568817816857
+        },
+        {
+          "name": "Cast",
+          "sum_duration_us": 4056.432074218749,
+          "count": 30,
+          "mean_duration_us": 135.2144024739583
+        },
+        {
+          "name": "CausalConv1dV310",
+          "sum_duration_us": 3964.8956484375053,
+          "count": 576,
+          "mean_duration_us": 6.883499389648446
+        },
+        {
+          "name": "aclnnReduceSum_ReduceSumOpAiCore_ReduceSum",
+          "sum_duration_us": 3799.478990234387,
+          "count": 1068,
+          "mean_duration_us": 3.5575645975977404
+        },
+        {
+          "name": "QwenW4A8PackV310",
+          "sum_duration_us": 3793.0466601562575,
+          "count": 816,
+          "mean_duration_us": 4.6483414952895314
+        },
+        {
+          "name": "aclnnMatmul_MatMulCommon_MemSet",
+          "sum_duration_us": 3700.1299824218727,
+          "count": 2304,
+          "mean_duration_us": 1.6059591937594933
+        },
+        {
+          "name": "aclnnCat_ConcatD_ConcatD",
+          "sum_duration_us": 3530.702914062504,
+          "count": 1060,
+          "mean_duration_us": 3.3308518057193433
+        },
+        {
+          "name": "aclnnMatmul_CastAiCore_Cast",
+          "sum_duration_us": 3061.926931640614,
+          "count": 2952,
+          "mean_duration_us": 1.0372381204744627
+        },
+        {
+          "name": "aclnnSubs_SubAiCore_Sub",
+          "sum_duration_us": 2935.364388671876,
+          "count": 912,
+          "mean_duration_us": 3.218601303368285
+        },
+        {
+          "name": "aclnnFloorDivides_FloorDivAiCpu_FloorDiv",
+          "sum_duration_us": 2917.343595703125,
+          "count": 48,
+          "mean_duration_us": 60.77799157714844
+        },
+        {
+          "name": "aclnnPowTensorScalar_PowsAiCore_Pows",
+          "sum_duration_us": 2805.7290332031243,
+          "count": 963,
+          "mean_duration_us": 2.913529629494418
+        },
+        {
+          "name": "aclnnMul_SliceAiCore_Slice",
+          "sum_duration_us": 2452.942574218746,
+          "count": 684,
+          "mean_duration_us": 3.5861733541209735
+        }
+      ]
+    },
+    {
+      "worker_pid": 1059664,
+      "trace": "/srv/ai/src/qwen-performance-evidence-20261010/decode-profile-v14/matteius-threadripper_1059664_20261010025206139_ascend_pt/ASCEND_PROFILER_OUTPUT/trace_view.json",
+      "device_task_count": 254275,
+      "explicit_memcpy_task_count": 13791,
+      "explicit_memcpy_types": {
+        "MemcopyAsync": 399,
+        "MEMCPY_ASYNC": 13392
+      },
+      "task_type_counts": {
+        "other": 399,
+        "KERNEL_AICORE": 102706,
+        "MEMCPY_ASYNC": 13392,
+        "EVENT_RECORD": 5043,
+        "KERNEL_AICPU": 544,
+        "EVENT_WAIT": 37834,
+        "NOTIFY_RECORD": 34570,
+        "EVENT_RESET": 38935,
+        "REDUCE_ASYNC_V2": 7835,
+        "KERNEL_MIX_AIC": 861,
+        "AI_CORE": 12135,
+        "PLACE_HOLDER_SQE": 21
+      },
+      "top_tasks": [
+        {
+          "name": "EVENT_WAIT",
+          "sum_duration_us": 1335133.133687364,
+          "count": 37834,
+          "mean_duration_us": 35.2892407275827
+        },
+        {
+          "name": "aclnnMatmulWeightNz_MatMulCommon_MatMulV2",
+          "sum_duration_us": 273498.2147871077,
+          "count": 8896,
+          "mean_duration_us": 30.743954000349337
+        },
+        {
+          "name": "QwenW4A8Int4MatmulV310",
+          "sum_duration_us": 55324.684595703424,
+          "count": 816,
+          "mean_duration_us": 67.79985857316596
+        },
+        {
+          "name": "aclnnMatmulWeightNz_TransData_TransData",
+          "sum_duration_us": 45555.466419922705,
+          "count": 11008,
+          "mean_duration_us": 4.1383962954144895
+        },
+        {
+          "name": "MemcopyAsync",
+          "sum_duration_us": 43564.971714019775,
+          "count": 399,
+          "mean_duration_us": 109.18539276696686
+        },
+        {
+          "name": "aclnnMatmul_TransData_TransData",
+          "sum_duration_us": 41449.03425195364,
+          "count": 7884,
+          "mean_duration_us": 5.257361016229534
+        },
+        {
+          "name": "aclnnInplaceCopy_ViewCopyAiCpu_ViewCopy",
+          "sum_duration_us": 25848.90491406254,
+          "count": 216,
+          "mean_duration_us": 119.67085608362287
+        },
+        {
+          "name": "aclnnInplaceCopy_CastAiCore_Cast",
+          "sum_duration_us": 25826.587261718694,
+          "count": 19191,
+          "mean_duration_us": 1.3457655808305296
+        },
+        {
+          "name": "AI_CORE",
+          "sum_duration_us": 24593.071615234327,
+          "count": 12135,
+          "mean_duration_us": 2.026623124452767
+        },
+        {
+          "name": "aclnnMul_MulAiCore_Mul",
+          "sum_duration_us": 24384.920478515676,
+          "count": 10828,
+          "mean_duration_us": 2.2520244254262725
+        },
+        {
+          "name": "aclnnIndexPutImpl_IndexPut_IndexPut",
+          "sum_duration_us": 17252.811593749997,
+          "count": 72,
+          "mean_duration_us": 239.62238324652773
+        },
+        {
+          "name": "MEMCPY_ASYNC",
+          "sum_duration_us": 13544.139802734613,
+          "count": 13392,
+          "mean_duration_us": 1.0113604990094545
+        },
+        {
+          "name": "aclnnRecurrentGatedDeltaRuleV310_RecurrentGatedDeltaRuleV310_RecurrentGatedDeltaRuleV310",
+          "sum_duration_us": 12605.233705078146,
+          "count": 540,
+          "mean_duration_us": 23.343025379774346
+        },
+        {
+          "name": "QwenW4A8Int4DownReduceV310",
+          "sum_duration_us": 12399.035833984386,
+          "count": 720,
+          "mean_duration_us": 17.22088310275609
+        },
+        {
+          "name": "RmsNorm",
+          "sum_duration_us": 10922.499482421916,
+          "count": 2704,
+          "mean_duration_us": 4.039385903262543
+        },
+        {
+          "name": "aclnnMean_ReduceMeanAiCore_ReduceMean",
+          "sum_duration_us": 10302.265078125001,
+          "count": 2515,
+          "mean_duration_us": 4.096328062872764
+        },
+        {
+          "name": "NOTIFY_RECORD",
+          "sum_duration_us": 9739.296414062756,
+          "count": 34570,
+          "mean_duration_us": 0.28172682713516795
+        },
+        {
+          "name": "REDUCE_ASYNC_V2",
+          "sum_duration_us": 9089.270326171918,
+          "count": 7835,
+          "mean_duration_us": 1.1600855553505958
+        },
+        {
+          "name": "aclnnInplaceCopy_CastAiCpu_Cast",
+          "sum_duration_us": 7807.343326171875,
+          "count": 48,
+          "mean_duration_us": 162.65298596191406
+        },
+        {
+          "name": "aclnnMatmul_MatMulCommon_MatMulV2",
+          "sum_duration_us": 7258.332937500033,
+          "count": 2304,
+          "mean_duration_us": 3.1503181152343895
+        },
+        {
+          "name": "aclnnAdd_AddAiCore_Add",
+          "sum_duration_us": 4746.718462890637,
+          "count": 3346,
+          "mean_duration_us": 1.418624764761099
+        },
+        {
+          "name": "aclnnMean_ReduceMeanAiCore_MemSet",
+          "sum_duration_us": 4592.838263671887,
+          "count": 2515,
+          "mean_duration_us": 1.8261782360524401
+        },
+        {
+          "name": "aclnnTopk_CastAiCore_Cast",
+          "sum_duration_us": 4404.270623046879,
+          "count": 768,
+          "mean_duration_us": 5.7347273737589575
+        },
+        {
+          "name": "Cast",
+          "sum_duration_us": 4337.135197265625,
+          "count": 30,
+          "mean_duration_us": 144.57117324218748
+        },
+        {
+          "name": "QwenW4A8SwigluPackV310",
+          "sum_duration_us": 4273.489355468752,
+          "count": 720,
+          "mean_duration_us": 5.93540188259549
+        },
+        {
+          "name": "CausalConv1dV310",
+          "sum_duration_us": 3950.8070976562562,
+          "count": 576,
+          "mean_duration_us": 6.859040100097667
+        },
+        {
+          "name": "aclnnMatmul_MatMulCommon_MemSet",
+          "sum_duration_us": 3677.421705078134,
+          "count": 2304,
+          "mean_duration_us": 1.596103170606829
+        },
+        {
+          "name": "aclnnReduceSum_ReduceSumOpAiCore_ReduceSum",
+          "sum_duration_us": 3649.7133789062564,
+          "count": 1068,
+          "mean_duration_us": 3.4173346244440603
+        },
+        {
+          "name": "QwenW4A8PackV310",
+          "sum_duration_us": 3635.4946035156327,
+          "count": 816,
+          "mean_duration_us": 4.4552629945044515
+        },
+        {
+          "name": "aclnnCat_ConcatD_ConcatD",
+          "sum_duration_us": 3233.5935703125037,
+          "count": 1060,
+          "mean_duration_us": 3.050559971992928
+        },
+        {
+          "name": "aclnnMatmul_CastAiCore_Cast",
+          "sum_duration_us": 3009.218578124995,
+          "count": 2952,
+          "mean_duration_us": 1.0193829871697138
+        },
+        {
+          "name": "aclnnSubs_SubAiCore_Sub",
+          "sum_duration_us": 2821.4321796875056,
+          "count": 912,
+          "mean_duration_us": 3.0936756356222648
+        },
+        {
+          "name": "aclnnPowTensorScalar_PowsAiCore_Pows",
+          "sum_duration_us": 2740.3384160156265,
+          "count": 963,
+          "mean_duration_us": 2.8456266002239112
+        },
+        {
+          "name": "aclnnFloorDivides_FloorDivAiCpu_FloorDiv",
+          "sum_duration_us": 2646.4842402343743,
+          "count": 46,
+          "mean_duration_us": 57.532266092051614
+        },
+        {
+          "name": "aclnnCumsum_CumsumAiCpu_Cumsum",
+          "sum_duration_us": 2514.296750000001,
+          "count": 48,
+          "mean_duration_us": 52.38118229166668
+        }
+      ]
+    },
+    {
+      "worker_pid": 1059665,
+      "trace": "/srv/ai/src/qwen-performance-evidence-20261010/decode-profile-v14/matteius-threadripper_1059665_20261010025206139_ascend_pt/ASCEND_PROFILER_OUTPUT/trace_view.json",
+      "device_task_count": 254284,
+      "explicit_memcpy_task_count": 13818,
+      "explicit_memcpy_types": {
+        "MemcopyAsync": 399,
+        "MEMCPY_ASYNC": 13419
+      },
+      "task_type_counts": {
+        "other": 399,
+        "KERNEL_AICORE": 102706,
+        "MEMCPY_ASYNC": 13419,
+        "EVENT_RECORD": 5043,
+        "KERNEL_AICPU": 544,
+        "EVENT_WAIT": 37834,
+        "NOTIFY_RECORD": 34570,
+        "EVENT_RESET": 38935,
+        "REDUCE_ASYNC_V2": 7835,
+        "KERNEL_MIX_AIC": 861,
+        "PLACE_HOLDER_SQE": 3,
+        "AI_CORE": 12135
+      },
+      "top_tasks": [
+        {
+          "name": "EVENT_WAIT",
+          "sum_duration_us": 1892278.7295054456,
+          "count": 37834,
+          "mean_duration_us": 50.015296545579254
+        },
+        {
+          "name": "aclnnMatmulWeightNz_MatMulCommon_MatMulV2",
+          "sum_duration_us": 273444.77747656044,
+          "count": 8896,
+          "mean_duration_us": 30.737947108426308
+        },
+        {
+          "name": "QwenW4A8Int4MatmulV310",
+          "sum_duration_us": 50638.95573242207,
+          "count": 816,
+          "mean_duration_us": 62.05754378973293
+        },
+        {
+          "name": "aclnnMatmulWeightNz_TransData_TransData",
+          "sum_duration_us": 45589.19020312591,
+          "count": 11008,
+          "mean_duration_us": 4.141459865836293
+        },
+        {
+          "name": "MemcopyAsync",
+          "sum_duration_us": 44154.52895736694,
+          "count": 399,
+          "mean_duration_us": 110.66297984302491
+        },
+        {
+          "name": "aclnnMatmul_TransData_TransData",
+          "sum_duration_us": 40438.74794921931,
+          "count": 7884,
+          "mean_duration_us": 5.129217142214524
+        },
+        {
+          "name": "MEMCPY_ASYNC",
+          "sum_duration_us": 25761.274599609013,
+          "count": 13419,
+          "mean_duration_us": 1.9197611297122745
+        },
+        {
+          "name": "aclnnInplaceCopy_CastAiCore_Cast",
+          "sum_duration_us": 25400.597882812664,
+          "count": 19191,
+          "mean_duration_us": 1.3235682290038384
+        },
+        {
+          "name": "AI_CORE",
+          "sum_duration_us": 24687.706906249936,
+          "count": 12135,
+          "mean_duration_us": 2.034421665121544
+        },
+        {
+          "name": "aclnnMul_MulAiCore_Mul",
+          "sum_duration_us": 23801.639316406166,
+          "count": 10828,
+          "mean_duration_us": 2.198156567824729
+        },
+        {
+          "name": "aclnnInplaceCopy_ViewCopyAiCpu_ViewCopy",
+          "sum_duration_us": 23028.254021484398,
+          "count": 216,
+          "mean_duration_us": 106.61228713650183
+        },
+        {
+          "name": "REDUCE_ASYNC_V2",
+          "sum_duration_us": 20790.832222656154,
+          "count": 7835,
+          "mean_duration_us": 2.6535842019982327
+        },
+        {
+          "name": "aclnnIndexPutImpl_IndexPut_IndexPut",
+          "sum_duration_us": 16660.702257812496,
+          "count": 72,
+          "mean_duration_us": 231.398642469618
+        },
+        {
+          "name": "aclnnRecurrentGatedDeltaRuleV310_RecurrentGatedDeltaRuleV310_RecurrentGatedDeltaRuleV310",
+          "sum_duration_us": 12688.957673828154,
+          "count": 540,
+          "mean_duration_us": 23.498069766348433
+        },
+        {
+          "name": "QwenW4A8Int4DownReduceV310",
+          "sum_duration_us": 12377.994146484381,
+          "count": 720,
+          "mean_duration_us": 17.191658536783862
+        },
+        {
+          "name": "RmsNorm",
+          "sum_duration_us": 10576.561830078164,
+          "count": 2704,
+          "mean_duration_us": 3.9114503809460666
+        },
+        {
+          "name": "aclnnMean_ReduceMeanAiCore_ReduceMean",
+          "sum_duration_us": 10080.52024218754,
+          "count": 2515,
+          "mean_duration_us": 4.008159142022879
+        },
+        {
+          "name": "aclnnMatmul_MatMulCommon_MatMulV2",
+          "sum_duration_us": 7258.2548359375305,
+          "count": 2304,
+          "mean_duration_us": 3.1502842169867753
+        },
+        {
+          "name": "NOTIFY_RECORD",
+          "sum_duration_us": 6946.848861327859,
+          "count": 34570,
+          "mean_duration_us": 0.20095021293977028
+        },
+        {
+          "name": "aclnnReduceSum_CastAiCpu_Cast",
+          "sum_duration_us": 6684.504861328124,
+          "count": 48,
+          "mean_duration_us": 139.26051794433593
+        },
+        {
+          "name": "aclnnAdd_AddAiCore_Add",
+          "sum_duration_us": 4606.067400390648,
+          "count": 3346,
+          "mean_duration_us": 1.376589181228526
+        },
+        {
+          "name": "aclnnMean_ReduceMeanAiCore_MemSet",
+          "sum_duration_us": 4504.426888671881,
+          "count": 2515,
+          "mean_duration_us": 1.7910246078218215
+        },
+        {
+          "name": "QwenW4A8SwigluPackV310",
+          "sum_duration_us": 4330.18208593751,
+          "count": 720,
+          "mean_duration_us": 6.01414178602432
+        },
+        {
+          "name": "aclnnTopk_CastAiCore_Cast",
+          "sum_duration_us": 4307.994568359386,
+          "count": 768,
+          "mean_duration_us": 5.6093679275512836
+        },
+        {
+          "name": "CausalConv1dV310",
+          "sum_duration_us": 3935.8331406250013,
+          "count": 576,
+          "mean_duration_us": 6.833043646918405
+        },
+        {
+          "name": "Cast",
+          "sum_duration_us": 3819.6352187500006,
+          "count": 30,
+          "mean_duration_us": 127.32117395833335
+        },
+        {
+          "name": "QwenW4A8PackV310",
+          "sum_duration_us": 3710.0258242187524,
+          "count": 816,
+          "mean_duration_us": 4.546600274777883
+        },
+        {
+          "name": "aclnnMatmul_MatMulCommon_MemSet",
+          "sum_duration_us": 3694.504960937501,
+          "count": 2304,
+          "mean_duration_us": 1.6035177781846792
+        },
+        {
+          "name": "aclnnReduceSum_ReduceSumOpAiCore_ReduceSum",
+          "sum_duration_us": 3516.249839843752,
+          "count": 1068,
+          "mean_duration_us": 3.292368763898644
+        },
+        {
+          "name": "aclnnMatmul_CastAiCore_Cast",
+          "sum_duration_us": 3055.390441406252,
+          "count": 2952,
+          "mean_duration_us": 1.0350238622649905
+        },
+        {
+          "name": "aclnnSubs_SubAiCore_Sub",
+          "sum_duration_us": 2798.020654296872,
+          "count": 912,
+          "mean_duration_us": 3.068005103395693
+        },
+        {
+          "name": "aclnnCat_ConcatD_ConcatD",
+          "sum_duration_us": 2743.9321249999985,
+          "count": 1060,
+          "mean_duration_us": 2.5886152122641497
+        },
+        {
+          "name": "aclnnFloorDivides_FloorDivAiCpu_FloorDiv",
+          "sum_duration_us": 2690.989447265624,
+          "count": 47,
+          "mean_duration_us": 57.25509462267286
+        },
+        {
+          "name": "aclnnPowTensorScalar_PowsAiCore_Pows",
+          "sum_duration_us": 2682.0050625000017,
+          "count": 963,
+          "mean_duration_us": 2.78505198598131
+        },
+        {
+          "name": "aclnnChunkFwdOVllm_ChunkFwdOVllm_ChunkFwdOVllm",
+          "sum_duration_us": 2402.473835937501,
+          "count": 36,
+          "mean_duration_us": 66.73538433159725
+        }
+      ]
+    },
+    {
+      "worker_pid": 1059666,
+      "trace": "/srv/ai/src/qwen-performance-evidence-20261010/decode-profile-v14/matteius-threadripper_1059666_20261010025206139_ascend_pt/ASCEND_PROFILER_OUTPUT/trace_view.json",
+      "device_task_count": 254283,
+      "explicit_memcpy_task_count": 13814,
+      "explicit_memcpy_types": {
+        "MemcopyAsync": 399,
+        "MEMCPY_ASYNC": 13415
+      },
+      "task_type_counts": {
+        "other": 399,
+        "KERNEL_AICORE": 102706,
+        "MEMCPY_ASYNC": 13415,
+        "EVENT_RECORD": 5043,
+        "KERNEL_AICPU": 544,
+        "EVENT_WAIT": 37834,
+        "NOTIFY_RECORD": 34570,
+        "EVENT_RESET": 38935,
+        "REDUCE_ASYNC_V2": 7835,
+        "KERNEL_MIX_AIC": 861,
+        "PLACE_HOLDER_SQE": 6,
+        "AI_CORE": 12135
+      },
+      "top_tasks": [
+        {
+          "name": "EVENT_WAIT",
+          "sum_duration_us": 1915189.249091361,
+          "count": 37834,
+          "mean_duration_us": 50.620850269370436
+        },
+        {
+          "name": "aclnnMatmulWeightNz_MatMulCommon_MatMulV2",
+          "sum_duration_us": 273426.7305585924,
+          "count": 8896,
+          "mean_duration_us": 30.735918453079183
+        },
+        {
+          "name": "QwenW4A8Int4MatmulV310",
+          "sum_duration_us": 55094.2158964847,
+          "count": 816,
+          "mean_duration_us": 67.51742144177047
+        },
+        {
+          "name": "MemcopyAsync",
+          "sum_duration_us": 46051.87261009216,
+          "count": 399,
+          "mean_duration_us": 115.41822709296281
+        },
+        {
+          "name": "aclnnMatmulWeightNz_TransData_TransData",
+          "sum_duration_us": 45181.61214648537,
+          "count": 11008,
+          "mean_duration_us": 4.1044342429583365
+        },
+        {
+          "name": "aclnnMatmul_TransData_TransData",
+          "sum_duration_us": 40915.31028125045,
+          "count": 7884,
+          "mean_duration_us": 5.1896639118785455
+        },
+        {
+          "name": "aclnnInplaceCopy_CastAiCore_Cast",
+          "sum_duration_us": 25584.373787109427,
+          "count": 19191,
+          "mean_duration_us": 1.3331443795065097
+        },
+        {
+          "name": "aclnnInplaceCopy_ViewCopyAiCpu_ViewCopy",
+          "sum_duration_us": 24801.248724609417,
+          "count": 216,
+          "mean_duration_us": 114.82059594726582
+        },
+        {
+          "name": "AI_CORE",
+          "sum_duration_us": 24534.79038281235,
+          "count": 12135,
+          "mean_duration_us": 2.0218203858930655
+        },
+        {
+          "name": "aclnnMul_MulAiCore_Mul",
+          "sum_duration_us": 23810.754064453147,
+          "count": 10828,
+          "mean_duration_us": 2.198998343595599
+        },
+        {
+          "name": "aclnnIndexPutImpl_IndexPut_IndexPut",
+          "sum_duration_us": 17165.05118945312,
+          "count": 72,
+          "mean_duration_us": 238.40348874240442
+        },
+        {
+          "name": "MEMCPY_ASYNC",
+          "sum_duration_us": 13355.338013672183,
+          "count": 13415,
+          "mean_duration_us": 0.9955525914030698
+        },
+        {
+          "name": "QwenW4A8Int4DownReduceV310",
+          "sum_duration_us": 12740.676425781261,
+          "count": 720,
+          "mean_duration_us": 17.695383924696195
+        },
+        {
+          "name": "aclnnRecurrentGatedDeltaRuleV310_RecurrentGatedDeltaRuleV310_RecurrentGatedDeltaRuleV310",
+          "sum_duration_us": 12660.650361328146,
+          "count": 540,
+          "mean_duration_us": 23.445648817274343
+        },
+        {
+          "name": "RmsNorm",
+          "sum_duration_us": 10617.707732421886,
+          "count": 2704,
+          "mean_duration_us": 3.9266670608069107
+        },
+        {
+          "name": "aclnnMean_ReduceMeanAiCore_ReduceMean",
+          "sum_duration_us": 10118.436927734381,
+          "count": 2515,
+          "mean_duration_us": 4.023235358940112
+        },
+        {
+          "name": "NOTIFY_RECORD",
+          "sum_duration_us": 9702.343384765756,
+          "count": 34570,
+          "mean_duration_us": 0.28065789368717836
+        },
+        {
+          "name": "REDUCE_ASYNC_V2",
+          "sum_duration_us": 9194.218234375037,
+          "count": 7835,
+          "mean_duration_us": 1.173480310705174
+        },
+        {
+          "name": "aclnnReduceSum_CastAiCpu_Cast",
+          "sum_duration_us": 8091.327707031248,
+          "count": 48,
+          "mean_duration_us": 168.56932722981767
+        },
+        {
+          "name": "aclnnMatmul_MatMulCommon_MatMulV2",
+          "sum_duration_us": 7288.228789062536,
+          "count": 2304,
+          "mean_duration_us": 3.1632937452528367
+        },
+        {
+          "name": "aclnnAdd_AddAiCore_Add",
+          "sum_duration_us": 4659.765335937507,
+          "count": 3346,
+          "mean_duration_us": 1.3926375779849094
+        },
+        {
+          "name": "aclnnMean_ReduceMeanAiCore_MemSet",
+          "sum_duration_us": 4453.775857421872,
+          "count": 2515,
+          "mean_duration_us": 1.7708850327721162
+        },
+        {
+          "name": "Cast",
+          "sum_duration_us": 4443.958107421874,
+          "count": 30,
+          "mean_duration_us": 148.13193691406246
+        },
+        {
+          "name": "QwenW4A8SwigluPackV310",
+          "sum_duration_us": 4329.635179687508,
+          "count": 720,
+          "mean_duration_us": 6.013382194010427
+        },
+        {
+          "name": "aclnnTopk_CastAiCore_Cast",
+          "sum_duration_us": 4315.546630859384,
+          "count": 768,
+          "mean_duration_us": 5.619201342264823
+        },
+        {
+          "name": "CausalConv1dV310",
+          "sum_duration_us": 3938.906031250003,
+          "count": 576,
+          "mean_duration_us": 6.838378526475699
+        },
+        {
+          "name": "QwenW4A8PackV310",
+          "sum_duration_us": 3706.2237675781316,
+          "count": 816,
+          "mean_duration_us": 4.541940891639867
+        },
+        {
+          "name": "aclnnMatmul_MatMulCommon_MemSet",
+          "sum_duration_us": 3680.5727246093743,
+          "count": 2304,
+          "mean_duration_us": 1.5974708006117075
+        },
+        {
+          "name": "aclnnReduceSum_ReduceSumOpAiCore_ReduceSum",
+          "sum_duration_us": 3416.0675488281236,
+          "count": 1068,
+          "mean_duration_us": 3.198565120625584
+        },
+        {
+          "name": "aclnnMatmul_CastAiCore_Cast",
+          "sum_duration_us": 3049.036337890625,
+          "count": 2952,
+          "mean_duration_us": 1.032871388174331
+        },
+        {
+          "name": "aclnnCat_ConcatD_ConcatD",
+          "sum_duration_us": 2955.833158203123,
+          "count": 1060,
+          "mean_duration_us": 2.788521847361437
+        },
+        {
+          "name": "aclnnSubs_SubAiCore_Sub",
+          "sum_duration_us": 2802.994605468752,
+          "count": 912,
+          "mean_duration_us": 3.0734589972245088
+        },
+        {
+          "name": "aclnnFloorDivides_FloorDivAiCpu_FloorDiv",
+          "sum_duration_us": 2722.4998652343747,
+          "count": 48,
+          "mean_duration_us": 56.71874719238281
+        },
+        {
+          "name": "aclnnPowTensorScalar_PowsAiCore_Pows",
+          "sum_duration_us": 2669.531097656251,
+          "count": 963,
+          "mean_duration_us": 2.7720987514602813
+        },
+        {
+          "name": "aclnnCumsum_CumsumAiCpu_Cumsum",
+          "sum_duration_us": 2390.572791015626,
+          "count": 48,
+          "mean_duration_us": 49.803599812825546
+        }
+      ]
+    },
+    {
+      "worker_pid": 1059668,
+      "trace": "/srv/ai/src/qwen-performance-evidence-20261010/decode-profile-v14/matteius-threadripper_1059668_20261010025206139_ascend_pt/ASCEND_PROFILER_OUTPUT/trace_view.json",
+      "device_task_count": 256102,
+      "explicit_memcpy_task_count": 13797,
+      "explicit_memcpy_types": {
+        "MemcopyAsync": 399,
+        "MEMCPY_ASYNC": 13398
+      },
+      "task_type_counts": {
+        "other": 399,
+        "EVENT_RECORD": 5045,
+        "MEMCPY_ASYNC": 13398,
+        "KERNEL_AICORE": 104542,
+        "KERNEL_AICPU": 544,
+        "EVENT_WAIT": 37834,
+        "NOTIFY_RECORD": 34570,
+        "EVENT_RESET": 38935,
+        "REDUCE_ASYNC_V2": 7835,
+        "KERNEL_MIX_AIC": 861,
+        "PLACE_HOLDER_SQE": 4,
+        "AI_CORE": 12135
+      },
+      "top_tasks": [
+        {
+          "name": "EVENT_WAIT",
+          "sum_duration_us": 1590230.489794691,
+          "count": 37834,
+          "mean_duration_us": 42.03178331116697
+        },
+        {
+          "name": "aclnnMatmulWeightNz_MatMulCommon_MatMulV2",
+          "sum_duration_us": 249936.36731054226,
+          "count": 8320,
+          "mean_duration_us": 30.04042876328633
+        },
+        {
+          "name": "QwenW4A8Int4MatmulV310",
+          "sum_duration_us": 54264.34614453154,
+          "count": 816,
+          "mean_duration_us": 66.50042419672982
+        },
+        {
+          "name": "aclnnMatmul_TransData_TransData",
+          "sum_duration_us": 47213.40907226661,
+          "count": 9612,
+          "mean_duration_us": 4.911923540602019
+        },
+        {
+          "name": "MemcopyAsync",
+          "sum_duration_us": 43494.81542778015,
+          "count": 399,
+          "mean_duration_us": 109.00956247563948
+        },
+        {
+          "name": "aclnnMatmulWeightNz_TransData_TransData",
+          "sum_duration_us": 39901.71666992223,
+          "count": 9856,
+          "mean_duration_us": 4.0484696296593174
+        },
+        {
+          "name": "MEMCPY_ASYNC",
+          "sum_duration_us": 26175.259033202725,
+          "count": 13398,
+          "mean_duration_us": 1.953669132199039
+        },
+        {
+          "name": "aclnnInplaceCopy_CastAiCore_Cast",
+          "sum_duration_us": 25526.613138671753,
+          "count": 19191,
+          "mean_duration_us": 1.3301346015669717
+        },
+        {
+          "name": "AI_CORE",
+          "sum_duration_us": 24468.227796874857,
+          "count": 12135,
+          "mean_duration_us": 2.0163352119385953
+        },
+        {
+          "name": "aclnnInplaceCopy_ViewCopyAiCpu_ViewCopy",
+          "sum_duration_us": 23237.446718750016,
+          "count": 216,
+          "mean_duration_us": 107.58077184606489
+        },
+        {
+          "name": "aclnnMul_MulAiCore_Mul",
+          "sum_duration_us": 22554.63419726555,
+          "count": 10828,
+          "mean_duration_us": 2.0829917064338335
+        },
+        {
+          "name": "REDUCE_ASYNC_V2",
+          "sum_duration_us": 21444.269738281113,
+          "count": 7835,
+          "mean_duration_us": 2.7369840125438563
+        },
+        {
+          "name": "aclnnIndexPutImpl_IndexPut_IndexPut",
+          "sum_duration_us": 16111.040820312497,
+          "count": 72,
+          "mean_duration_us": 223.76445583767358
+        },
+        {
+          "name": "QwenW4A8Int4DownReduceV310",
+          "sum_duration_us": 12670.962886718758,
+          "count": 720,
+          "mean_duration_us": 17.598559564887164
+        },
+        {
+          "name": "aclnnIndexPutImpl_AsStridedAiCore_AsStrided",
+          "sum_duration_us": 10902.811929687497,
+          "count": 36,
+          "mean_duration_us": 302.8558869357638
+        },
+        {
+          "name": "RmsNorm",
+          "sum_duration_us": 10706.848496093762,
+          "count": 2704,
+          "mean_duration_us": 3.9596333195613025
+        },
+        {
+          "name": "aclnnMean_ReduceMeanAiCore_ReduceMean",
+          "sum_duration_us": 10068.176560546897,
+          "count": 2515,
+          "mean_duration_us": 4.003251117513677
+        },
+        {
+          "name": "aclnnIndex_AsStridedAiCore_AsStrided",
+          "sum_duration_us": 9576.171373046875,
+          "count": 36,
+          "mean_duration_us": 266.0047603624132
+        },
+        {
+          "name": "aclnnIndexPutImpl_ViewCopyAiCore_ViewCopy",
+          "sum_duration_us": 9313.489095703122,
+          "count": 36,
+          "mean_duration_us": 258.7080304361978
+        },
+        {
+          "name": "aclnnMatmul_MatMulCommon_MatMulV2",
+          "sum_duration_us": 8859.843306640647,
+          "count": 2880,
+          "mean_duration_us": 3.076334481472447
+        },
+        {
+          "name": "aclnnRecurrentGatedDeltaRuleV310_RecurrentGatedDeltaRuleV310_RecurrentGatedDeltaRuleV310",
+          "sum_duration_us": 8136.796458984409,
+          "count": 540,
+          "mean_duration_us": 15.068141590711868
+        },
+        {
+          "name": "NOTIFY_RECORD",
+          "sum_duration_us": 6971.431912109158,
+          "count": 34570,
+          "mean_duration_us": 0.20166132230573205
+        },
+        {
+          "name": "aclnnReduceSum_CastAiCpu_Cast",
+          "sum_duration_us": 6559.60903125,
+          "count": 48,
+          "mean_duration_us": 136.658521484375
+        },
+        {
+          "name": "aclnnAdd_AddAiCore_Add",
+          "sum_duration_us": 4631.640435546897,
+          "count": 3346,
+          "mean_duration_us": 1.3842320488783313
+        },
+        {
+          "name": "aclnnMean_ReduceMeanAiCore_MemSet",
+          "sum_duration_us": 4618.307117187515,
+          "count": 2515,
+          "mean_duration_us": 1.83630501677436
+        },
+        {
+          "name": "aclnnMatmul_MatMulCommon_MemSet",
+          "sum_duration_us": 4457.343476562505,
+          "count": 2880,
+          "mean_duration_us": 1.5476887071397587
+        },
+        {
+          "name": "Cast",
+          "sum_duration_us": 4449.86955859375,
+          "count": 30,
+          "mean_duration_us": 148.32898528645833
+        },
+        {
+          "name": "aclnnTopk_CastAiCore_Cast",
+          "sum_duration_us": 4310.937242187507,
+          "count": 768,
+          "mean_duration_us": 5.6131995340983165
+        },
+        {
+          "name": "QwenW4A8SwigluPackV310",
+          "sum_duration_us": 4297.5258183593805,
+          "count": 720,
+          "mean_duration_us": 5.968785858832473
+        },
+        {
+          "name": "QwenW4A8PackV310",
+          "sum_duration_us": 3692.0831152343862,
+          "count": 816,
+          "mean_duration_us": 4.524611660826454
+        },
+        {
+          "name": "aclnnMatmul_CastAiCore_Cast",
+          "sum_duration_us": 3585.8591738281275,
+          "count": 3528,
+          "mean_duration_us": 1.0163999925816687
+        },
+        {
+          "name": "aclnnReduceSum_ReduceSumOpAiCore_ReduceSum",
+          "sum_duration_us": 3365.6509121093777,
+          "count": 1068,
+          "mean_duration_us": 3.1513585319376194
+        },
+        {
+          "name": "aclnnCat_ConcatD_ConcatD",
+          "sum_duration_us": 3128.7498769531235,
+          "count": 1060,
+          "mean_duration_us": 2.9516508273142676
+        },
+        {
+          "name": "CausalConv1dV310",
+          "sum_duration_us": 2987.604019531251,
+          "count": 576,
+          "mean_duration_us": 5.186812533908422
+        },
+        {
+          "name": "aclnnFloorDivides_FloorDivAiCpu_FloorDiv",
+          "sum_duration_us": 2979.973796875,
+          "count": 48,
+          "mean_duration_us": 62.082787434895835
+        }
+      ]
+    },
+    {
+      "worker_pid": 1059669,
+      "trace": "/srv/ai/src/qwen-performance-evidence-20261010/decode-profile-v14/matteius-threadripper_1059669_20261010025206139_ascend_pt/ASCEND_PROFILER_OUTPUT/trace_view.json",
+      "device_task_count": 256115,
+      "explicit_memcpy_task_count": 13813,
+      "explicit_memcpy_types": {
+        "MemcopyAsync": 399,
+        "MEMCPY_ASYNC": 13414
+      },
+      "task_type_counts": {
+        "other": 399,
+        "KERNEL_AICORE": 104542,
+        "MEMCPY_ASYNC": 13414,
+        "EVENT_RECORD": 5043,
+        "KERNEL_AICPU": 544,
+        "EVENT_WAIT": 37834,
+        "NOTIFY_RECORD": 34570,
+        "EVENT_RESET": 38935,
+        "REDUCE_ASYNC_V2": 7835,
+        "KERNEL_MIX_AIC": 861,
+        "PLACE_HOLDER_SQE": 3,
+        "AI_CORE": 12135
+      },
+      "top_tasks": [
+        {
+          "name": "EVENT_WAIT",
+          "sum_duration_us": 1134383.3002656114,
+          "count": 37834,
+          "mean_duration_us": 29.983171228672923
+        },
+        {
+          "name": "aclnnMatmulWeightNz_MatMulCommon_MatMulV2",
+          "sum_duration_us": 250457.92961913464,
+          "count": 8320,
+          "mean_duration_us": 30.103116540761373
+        },
+        {
+          "name": "QwenW4A8Int4MatmulV310",
+          "sum_duration_us": 54371.1950957034,
+          "count": 816,
+          "mean_duration_us": 66.6313665388522
+        },
+        {
+          "name": "aclnnMatmul_TransData_TransData",
+          "sum_duration_us": 48470.85681445446,
+          "count": 9612,
+          "mean_duration_us": 5.0427441546457
+        },
+        {
+          "name": "MemcopyAsync",
+          "sum_duration_us": 44461.24768447876,
+          "count": 399,
+          "mean_duration_us": 111.43169845734025
+        },
+        {
+          "name": "aclnnMatmulWeightNz_TransData_TransData",
+          "sum_duration_us": 40040.23213476614,
+          "count": 9856,
+          "mean_duration_us": 4.062523552634552
+        },
+        {
+          "name": "aclnnInplaceCopy_ViewCopyAiCpu_ViewCopy",
+          "sum_duration_us": 27257.134001953153,
+          "count": 216,
+          "mean_duration_us": 126.19043519422756
+        },
+        {
+          "name": "aclnnInplaceCopy_CastAiCore_Cast",
+          "sum_duration_us": 25510.467437500072,
+          "count": 19191,
+          "mean_duration_us": 1.3292932852639296
+        },
+        {
+          "name": "AI_CORE",
+          "sum_duration_us": 24498.904955077942,
+          "count": 12135,
+          "mean_duration_us": 2.018863201901767
+        },
+        {
+          "name": "aclnnMul_MulAiCore_Mul",
+          "sum_duration_us": 23407.811330078206,
+          "count": 10828,
+          "mean_duration_us": 2.1617853093903037
+        },
+        {
+          "name": "aclnnIndexPutImpl_IndexPut_IndexPut",
+          "sum_duration_us": 17352.082433593747,
+          "count": 72,
+          "mean_duration_us": 241.00114491102426
+        },
+        {
+          "name": "MEMCPY_ASYNC",
+          "sum_duration_us": 13529.530511719018,
+          "count": 13414,
+          "mean_duration_us": 1.0086126816549141
+        },
+        {
+          "name": "QwenW4A8Int4DownReduceV310",
+          "sum_duration_us": 12777.525380859392,
+          "count": 720,
+          "mean_duration_us": 17.746563028971376
+        },
+        {
+          "name": "aclnnIndexPutImpl_AsStridedAiCore_AsStrided",
+          "sum_duration_us": 10902.134845703124,
+          "count": 36,
+          "mean_duration_us": 302.837079047309
+        },
+        {
+          "name": "RmsNorm",
+          "sum_duration_us": 10883.22857226564,
+          "count": 2704,
+          "mean_duration_us": 4.024862637672204
+        },
+        {
+          "name": "aclnnMean_ReduceMeanAiCore_ReduceMean",
+          "sum_duration_us": 10201.483820312525,
+          "count": 2515,
+          "mean_duration_us": 4.0562559921719785
+        },
+        {
+          "name": "NOTIFY_RECORD",
+          "sum_duration_us": 9728.983871094117,
+          "count": 34570,
+          "mean_duration_us": 0.2814285181109088
+        },
+        {
+          "name": "REDUCE_ASYNC_V2",
+          "sum_duration_us": 9645.416238281263,
+          "count": 7835,
+          "mean_duration_us": 1.2310678032267088
+        },
+        {
+          "name": "aclnnIndex_AsStridedAiCore_AsStrided",
+          "sum_duration_us": 9626.535955078123,
+          "count": 36,
+          "mean_duration_us": 267.4037765299479
+        },
+        {
+          "name": "aclnnIndexPutImpl_ViewCopyAiCore_ViewCopy",
+          "sum_duration_us": 9343.046396484375,
+          "count": 36,
+          "mean_duration_us": 259.5290665690104
+        },
+        {
+          "name": "aclnnMatmul_MatMulCommon_MatMulV2",
+          "sum_duration_us": 9035.884925781267,
+          "count": 2880,
+          "mean_duration_us": 3.137460043674051
+        },
+        {
+          "name": "aclnnRecurrentGatedDeltaRuleV310_RecurrentGatedDeltaRuleV310_RecurrentGatedDeltaRuleV310",
+          "sum_duration_us": 8136.119408203154,
+          "count": 540,
+          "mean_duration_us": 15.066887792968805
+        },
+        {
+          "name": "aclnnReduceSum_CastAiCpu_Cast",
+          "sum_duration_us": 7723.176681640622,
+          "count": 48,
+          "mean_duration_us": 160.89951420084628
+        },
+        {
+          "name": "Cast",
+          "sum_duration_us": 4709.296632812499,
+          "count": 30,
+          "mean_duration_us": 156.9765544270833
+        },
+        {
+          "name": "aclnnAdd_AddAiCore_Add",
+          "sum_duration_us": 4699.218453125024,
+          "count": 3346,
+          "mean_duration_us": 1.4044287068514716
+        },
+        {
+          "name": "aclnnMean_ReduceMeanAiCore_MemSet",
+          "sum_duration_us": 4531.900884765637,
+          "count": 2515,
+          "mean_duration_us": 1.801948661934647
+        },
+        {
+          "name": "aclnnMatmul_MatMulCommon_MemSet",
+          "sum_duration_us": 4479.114408203131,
+          "count": 2880,
+          "mean_duration_us": 1.5552480584038648
+        },
+        {
+          "name": "aclnnTopk_CastAiCore_Cast",
+          "sum_duration_us": 4363.9841503906355,
+          "count": 768,
+          "mean_duration_us": 5.682271029154474
+        },
+        {
+          "name": "QwenW4A8SwigluPackV310",
+          "sum_duration_us": 4277.4216562500105,
+          "count": 720,
+          "mean_duration_us": 5.940863411458348
+        },
+        {
+          "name": "QwenW4A8PackV310",
+          "sum_duration_us": 3691.7185957031247,
+          "count": 816,
+          "mean_duration_us": 4.524164945714614
+        },
+        {
+          "name": "aclnnMatmul_CastAiCore_Cast",
+          "sum_duration_us": 3609.9737421874997,
+          "count": 3528,
+          "mean_duration_us": 1.0232351876948695
+        },
+        {
+          "name": "aclnnReduceSum_ReduceSumOpAiCore_ReduceSum",
+          "sum_duration_us": 3453.801925781255,
+          "count": 1068,
+          "mean_duration_us": 3.2338969342521113
+        },
+        {
+          "name": "aclnnCat_ConcatD_ConcatD",
+          "sum_duration_us": 3205.4946718749998,
+          "count": 1060,
+          "mean_duration_us": 3.0240515772405656
+        },
+        {
+          "name": "CausalConv1dV310",
+          "sum_duration_us": 3022.0310722656236,
+          "count": 576,
+          "mean_duration_us": 5.246581722683374
+        },
+        {
+          "name": "aclnnSubs_SubAiCore_Sub",
+          "sum_duration_us": 2885.1300488281286,
+          "count": 912,
+          "mean_duration_us": 3.16351979038172
+        }
+      ]
+    }
+  ]
+}

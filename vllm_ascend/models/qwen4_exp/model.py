@@ -2998,7 +2998,9 @@ class AscendQwen4ExpForCausalLM(
                 )
             if getattr(vllm_config.parallel_config, "pipeline_parallel_size", 1) != 1:
                 raise ValueError("padded GDN currently requires PP1")
-            if getattr(getattr(vllm_config, "speculative_config", None), "method", None) == "mtp":
+            if getattr(getattr(vllm_config, "speculative_config", None), "method", None) == "mtp" and not w4_config(
+                config
+            ).get("mtp_uneven_sharding", False):
                 raise ValueError(
                     "padded GDN candidate requires MTP disabled until uneven drafter sharding is qualified"
                 )

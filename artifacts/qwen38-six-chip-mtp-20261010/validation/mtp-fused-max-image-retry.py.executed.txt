@@ -1,0 +1,17 @@
+import base64,json,time,urllib.request
+from pathlib import Path
+r=Path('/srv/ai/src/qwen-performance-evidence-20261010')
+image='data:image/png;base64,'+base64.b64encode((r/'vision-fixture-1024.png').read_bytes()).decode()
+body={'model':'qwen38-flash-next','messages':[{'role':'user','content':[{'type':'text','text':'In one sentence, name the color and shape of both objects and transcribe the text exactly.'},{'type':'image_url','image_url':{'url':image}}]}],'max_tokens':256,'temperature':0,'seed':42,'chat_template_kwargs':{'enable_thinking':False}}
+records=[]
+reset=urllib.request.Request('http://127.0.0.1:8001/reset_mm_cache',data=b'',method='POST')
+with urllib.request.urlopen(reset,timeout=30) as response:assert response.status==200
+for attempt in ['cold','cached']:
+ q=urllib.request.Request('http://127.0.0.1:8001/v1/chat/completions',data=json.dumps(body).encode(),headers={'Content-Type':'application/json'})
+ start=time.monotonic()
+ with urllib.request.urlopen(q,timeout=600) as response:v=json.load(response)
+ answer=v['choices'][0]['message'].get('content') or ''
+ records.append({'attempt':attempt,'elapsed_s':time.monotonic()-start,'response':v,'passed':all(w in answer.lower() for w in ['red','square','blue','circle','full image'])})
+ print(json.dumps({'attempt':attempt,'answer':answer,'passed':records[-1]['passed'],'elapsed_s':records[-1]['elapsed_s']}),flush=True)
+(r/'mtp-v2-fused-max-image-retry.json').write_text(json.dumps({'image_pixels':1048576,'passed':all(v['passed'] for v in records),'records':records},indent=2))
+assert all(v['passed'] for v in records)
