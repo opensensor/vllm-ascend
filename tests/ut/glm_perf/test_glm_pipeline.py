@@ -2,6 +2,7 @@
 """Execute actual GLM pipeline forward/factory without importing NPU plugins."""
 
 import ast
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -131,8 +132,33 @@ def test_profiles_preserve_w2_and_use_w3_for_three_cards():
         command = candidate.launch_args("/models/test")
         assert "--enable-prompt-tokens-details" in command
         assert command[command.index("--max-num-batched-tokens") + 1] == "640"
-    assert "--enforce-eager" in three.launch_args("/models/test")
+    assert "--enforce-eager" not in three.launch_args("/models/test")
+    assert "--enforce-eager" in three.launch_args("/models/test", enforce_eager=True)
     assert "--speculative-config" not in three.launch_args("/models/test")
+
+
+def test_three_card_decode_graph_candidate_preserves_topology_and_prefill():
+    candidate = profile(3)
+    command = candidate.launch_args("/models/test", decode_graph_sizes=(1, 4))
+    assert "--enforce-eager" not in command and "--speculative-config" not in command
+    graph = json.loads(command[command.index("--compilation-config") + 1])
+    assert graph == {"cudagraph_mode": "FULL_DECODE_ONLY", "cudagraph_capture_sizes": [1, 4]}
+    assert command[command.index("--tensor-parallel-size") + 1] == "2"
+    assert command[command.index("--pipeline-parallel-size") + 1] == "3"
+    assert command[command.index("--max-num-batched-tokens") + 1] == "640"
+    assert candidate.launch_args("/models/test") == command
+
+
+@pytest.mark.parametrize("eager,sizes", [(1, None), (True, (1, 4))])
+def test_eager_mode_rejects_ambiguous_graph_config(eager, sizes):
+    with pytest.raises(ValueError, match="eager mode"):
+        profile(3).launch_args("/models/test", enforce_eager=eager, decode_graph_sizes=sizes)
+
+
+@pytest.mark.parametrize("sizes", [(), (0,), (True,), (5,), (1, 1), (4, 1)])
+def test_three_card_decode_graph_candidate_rejects_invalid_rows(sizes):
+    with pytest.raises(ValueError, match="decode graph sizes"):
+        profile(3).launch_args("/models/test", decode_graph_sizes=sizes)
 
 
 @pytest.mark.parametrize("cards", [1, 4, True, "3"])

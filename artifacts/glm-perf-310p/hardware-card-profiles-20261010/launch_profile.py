@@ -16,20 +16,35 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--cards", type=int, choices=(2, 3), required=True)
     parser.add_argument("--attempt", type=int, default=1)
+    parser.add_argument("--decode-graphs", help="Explicit comma-separated graph rows for a qualification candidate")
+    parser.add_argument("--debug-rpc", action="store_true", help="Enable private worker diagnostics on loopback")
+    parser.add_argument("--model", type=Path, help="Separate prepared checkpoint variant on the 4 TB model drive")
+    parser.add_argument("--storage-receipt", type=Path, help="Full verification receipt for the explicit variant")
     args = parser.parse_args()
     selected = profile(args.cards)
     root = Path("/srv/ai/storage/artifacts/glm-card-profiles-20261010")
     name = "two" if args.cards == 2 else "three"
     model = Path(f"/srv/ai/storage/models/GLM-5.3-Flash-{name}-card-native-candidate")
-    receipt = json.loads((root / f"{name}-card-storage-check.json").read_text())
+    if args.model is not None:
+        if args.storage_receipt is None:
+            parser.error("an explicit model variant requires its own storage receipt")
+        model = args.model.resolve()
+        if not model.is_relative_to(Path("/srv/ai/storage/models")):
+            parser.error("model variants must use the host's 4 TB model drive")
+    receipt = json.loads((args.storage_receipt or root / f"{name}-card-storage-check.json").read_text())
     assert receipt["shard_checksums_verified"] and receipt["profile"] == selected.name
+    if args.model is not None:
+        assert Path(receipt["model_folder"]).resolve() == model, "storage receipt belongs to another variant"
     source = Path("/srv/ai/src/glm-card-profiles-20261010-5652e3a81")
     saved = json.loads(Path("/home/matteius/experiments/glm-decode-flags-20261006/candidate-config.json").read_text())
     command = [
         "/srv/ai/venvs/qwen38-w4-test-ce1862/bin/python",
         "-m",
         "vllm.entrypoints.cli.main",
-        *selected.launch_args(model)[1:],
+        *selected.launch_args(
+            model,
+            decode_graph_sizes=tuple(map(int, args.decode_graphs.split(","))) if args.decode_graphs else None,
+        )[1:],
         "--host",
         "127.0.0.1",
         "--gpu-memory-utilization",
@@ -59,6 +74,8 @@ def main():
         [str(Path(path) / "op_api/lib") for path in saved["host_stack"]] + [environment.get("LD_LIBRARY_PATH", "")]
     )
     environment.pop("ASCEND_LAUNCH_BLOCKING", None)
+    if args.debug_rpc:
+        environment["VLLM_SERVER_DEV_MODE"] = "1"
     # Fail on missing auxiliary/ATB registrations before allocating model weights.
     subprocess.run(
         [
@@ -89,6 +106,7 @@ def main():
                 "vllm_ascend/distributed/device_communicators/npu_communicator.py",
                 "vllm_ascend/patch/worker/patch_distributed.py",
                 "vllm_ascend/patch/platform/patch_distributed.py",
+                "tools/glm_perf/deployment_profiles.py",
             )
         }
         with logfile.open("xb") as output:
@@ -111,6 +129,7 @@ def main():
             "opp_stack": saved["opp_stack"],
             "host_stack": saved["host_stack"],
             "scope": "New real-weight profile: automatic memory profiling, no fixed-cache bypass",
+            "debug_rpc": args.debug_rpc,
         }
         (root / f"{name}-card-server-process.json").write_text(json.dumps(record, indent=2) + "\n")
         print(json.dumps(record), flush=True)

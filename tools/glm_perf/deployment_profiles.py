@@ -30,9 +30,29 @@ class GlmDeploymentProfile:
         # Experts use the stage's TP group; total workers is NOT this field.
         return self.tensor_parallel_size
 
-    def launch_args(self, model_path, *, max_model_len=QUALIFICATION_CONTEXT, port=8001):
+    def launch_args(
+        self,
+        model_path,
+        *,
+        max_model_len=QUALIFICATION_CONTEXT,
+        port=8001,
+        decode_graph_sizes=None,
+        enforce_eager=False,
+    ):
         if type(max_model_len) is not int or max_model_len < 1:
             raise ValueError("context limit must be a positive integer")
+        if type(enforce_eager) is not bool or (enforce_eager and decode_graph_sizes is not None):
+            raise ValueError("eager mode must be boolean and cannot specify decode graphs")
+        if decode_graph_sizes is not None:
+            sizes = tuple(decode_graph_sizes)
+            max_decode_rows = 4 * (self.mtp_tokens + 1)
+            if (
+                not sizes
+                or any(type(size) is not int or not 1 <= size <= max_decode_rows for size in sizes)
+                or tuple(sorted(set(sizes))) != sizes
+            ):
+                raise ValueError("decode graph sizes must be distinct ascending supported row counts")
+            decode_graph_sizes = sizes
         args = [
             "vllm",
             "serve",
@@ -92,11 +112,17 @@ class GlmDeploymentProfile:
                         "draft_load_config": {"load_format": "glm_native_int4"},
                     }
                 ),
+            ]
+        if decode_graph_sizes is None and not enforce_eager:
+            # Both real-weight profiles passed stage-local replay qualification.
+            decode_graph_sizes = (2, 8) if self.mtp_tokens else (1, 4)
+        if decode_graph_sizes is not None:
+            args += [
                 "--compilation-config",
-                json.dumps({"cudagraph_mode": "FULL_DECODE_ONLY", "cudagraph_capture_sizes": [2, 8]}),
+                json.dumps({"cudagraph_mode": "FULL_DECODE_ONLY", "cudagraph_capture_sizes": decode_graph_sizes}),
             ]
         else:
-            # First PP qualification must exercise correctness before graph replay.
+            # Explicit eager mode remains available for qualification isolation.
             args += ["--enforce-eager"]
         args += ["--hf-overrides", json.dumps(overrides)]
         return args
@@ -164,12 +190,15 @@ def main():
         default=QUALIFICATION_CONTEXT,
         help="Start short for qualification; raise only after memory admission",
     )
+    parser.add_argument("--enforce-eager", action="store_true", help="Explicit graph qualification fallback")
     args = parser.parse_args()
     selected = profile(args.cards)
     result = dict(
         asdict(selected),
         expert_partition_size=selected.expert_partition_size,
-        launch_args=selected.launch_args(args.model, max_model_len=args.max_model_len),
+        launch_args=selected.launch_args(
+            args.model, max_model_len=args.max_model_len, enforce_eager=args.enforce_eager
+        ),
         hardware_validation="pending",
     )
     if args.source:

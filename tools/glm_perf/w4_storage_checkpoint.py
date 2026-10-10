@@ -8,6 +8,7 @@ import os
 import shutil
 import struct
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -15,6 +16,7 @@ import torch
 from safetensors import safe_open
 from safetensors.torch import save_file
 
+from .deployment_profiles import profile
 from .fused_weight_layout import NZ_K, OUTPUT_TILE, _byte_fields, _byte_planes, _geometry, tensor_digest
 from .native_checkpoint import (
     CODE_NAME,
@@ -30,6 +32,7 @@ from .native_checkpoint import (
 )
 
 MAX_HEADER_BYTES = 32 * 1024**2
+MAX_EXPORT_WORKERS = 8
 
 
 def header(path):
@@ -80,6 +83,17 @@ def plan(source, banks=(), *, extra_bytes_per_rank, source_bits=3):
     if type(world) is not int or world <= 0 or experts % world:
         raise ValueError("invalid resident expert partition")
     text = config.get("text_config", config)
+    pipeline_stages = 1
+    deployment = manifest.get("deployment_profile")
+    if deployment is not None:
+        selected = next((profile(cards) for cards in (2, 3) if profile(cards).name == deployment), None)
+        if selected is None or selected.tensor_parallel_size != world:
+            raise ValueError("storage plan deployment and expert partition disagree")
+        pipeline_stages = selected.pipeline_parallel_size
+    layer_count = text.get("num_hidden_layers")
+    if pipeline_stages > 1 and (type(layer_count) is not int or layer_count <= 0 or layer_count % pipeline_stages):
+        raise ValueError("storage planning requires the qualified equal pipeline layer partition")
+    resident_world = world * pipeline_stages
     hidden, inter = text["hidden_size"], text["moe_intermediate_size"]
     grouped, headers = defaultdict(list), {}
     native_files = {row["file"] for row in manifest["native_shards"]}
@@ -110,7 +124,7 @@ def plan(source, banks=(), *, extra_bytes_per_rank, source_bits=3):
     selected = set(banks)
     if selected - grouped.keys():
         raise ValueError("unknown whole bank: " + ", ".join(sorted(selected - grouped.keys())))
-    records, added = [], [0] * world
+    records, added = [], [0] * resident_world
     for bank, tensors in sorted(grouped.items()):
         widths = {row["bits"] for row in tensors}
         required = experts * (1 if bank.endswith(".down") else 2)
@@ -118,20 +132,28 @@ def plan(source, banks=(), *, extra_bytes_per_rank, source_bits=3):
             raise ValueError("resident bank has mixed widths or incomplete expert coverage")
         bits = widths.pop()
         enabled = bank in selected
+        layer = int(bank.split(".")[1])
+        resident = pipeline_stages == 1 or layer < layer_count
+        stage = layer // (layer_count // pipeline_stages) if pipeline_stages > 1 and resident else 0
+        if enabled and not resident:
+            raise ValueError("selected bank is not loaded by this pipeline profile")
         if enabled and bits != source_bits:
             raise ValueError("selected bank does not use the requested source width")
         delta = sum(row["expanded_bytes"] - row["bytes"] for row in tensors)
-        per_rank = [0] * world
+        per_rank = [0] * resident_world
         for row in tensors:
-            rank = int(CODE_NAME.fullmatch(row["name"])[2]) // (experts // world)
-            per_rank[rank] += row["expanded_bytes"] - row["bytes"]
+            rank = stage * world + int(CODE_NAME.fullmatch(row["name"])[2]) // (experts // world)
+            if resident:
+                per_rank[rank] += row["expanded_bytes"] - row["bytes"]
         if enabled:
             added = [left + right for left, right in zip(added, per_rank)]
         records.append(
             dict(
                 bank=bank,
                 source_bits=bits,
-                eligible=bits == source_bits,
+                eligible=bits == source_bits and resident,
+                resident=resident,
+                pipeline_stage=stage if resident else None,
                 selected=enabled,
                 tensor_count=required,
                 source_code_bytes=sum(row["bytes"] for row in tensors),
@@ -146,6 +168,8 @@ def plan(source, banks=(), *, extra_bytes_per_rank, source_bits=3):
         source=str(source),
         source_index_sha256=file_digest(source / INDEX),
         world_size=world,
+        resident_world_size=resident_world,
+        pipeline_parallel_size=pipeline_stages,
         num_experts=experts,
         layers=layers,
         source_bits=source_bits,
@@ -184,11 +208,102 @@ def promote(packed, k):
     return torch.from_numpy(widened.view(np.int8 if packed.dtype == torch.int8 else np.uint8))
 
 
-def export(source, output, banks, *, extra_bytes_per_rank, source_bits=3):
+def compact_promotion(source, output, index, proposal, parent, workers):
+    """Rewrite touched shards so the variant contains no superseded tensors."""
+    changes = defaultdict(dict)
+    for bank in proposal["banks"]:
+        for row in bank["tensors"]:
+            changes[index["weight_map"][row["name"]]][row["name"]] = row
+    indexed = defaultdict(list)
+    for name, filename in index["weight_map"].items():
+        indexed[filename].append(name)
+    original_records = {
+        row["file"]: row for field in ("native_shards", "scale_shards", "dense_shards") for row in parent.get(field, [])
+    }
+
+    def rewrite_shard(entry):
+        filename, selected = entry
+        tensors = {}
+        hashes = dict(original_records[filename].get("source_tensor_sha256", {}))
+        with safe_open(str(source / filename), framework="pt", device="cpu") as handle:
+            metadata = dict(handle.metadata() or {})
+            for name in sorted(indexed[filename]):
+                value = handle.get_tensor(name)
+                if name in selected:
+                    hashes[name] = tensor_digest(value)
+                    value = promote(value[None], selected[name]["k"])[0]
+                tensors[name] = value
+        metadata["storage_promotion"] = "lossless_w4_v1"
+        target_name = "w4-storage-" + filename
+        path = output / target_name
+        temporary = path.with_suffix(".tmp")
+        reusable = False
+        if path.exists():
+            with safe_open(str(path), framework="pt", device="cpu") as handle:
+                reusable = (
+                    handle.metadata() == metadata
+                    and set(handle.keys()) == tensors.keys()
+                    and all(torch.equal(handle.get_tensor(name), value) for name, value in tensors.items())
+                )
+        if not reusable:
+            save_file(tensors, str(temporary), metadata=metadata)
+            with temporary.open("rb") as handle:
+                os.fsync(handle.fileno())
+            temporary.replace(path)
+        with safe_open(str(path), framework="pt", device="cpu") as handle:
+            for name, expected in tensors.items():
+                if not torch.equal(handle.get_tensor(name), expected):
+                    raise ValueError("compact promoted shard readback changed bytes")
+        record = dict(
+            original_records[filename],
+            file=target_name,
+            sha256=file_digest(path),
+            bytes=path.stat().st_size,
+            source_tensor_sha256=hashes,
+        )
+        return filename, record, tuple(tensors), reusable
+
+    replacements = {}
+    # Each worker owns one shard. Only this coordinator mutates the index.
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for filename, record, names, reusable in pool.map(rewrite_shard, sorted(changes.items())):
+            replacements[filename] = record
+            for name in names:
+                index["weight_map"][name] = record["file"]
+            print(
+                json.dumps(
+                    {"compact_storage_shard": record["file"], "completed": len(replacements), "reused": reusable}
+                ),
+                flush=True,
+            )
+    used = set(index["weight_map"].values())
+    updated = {}
+    for field in ("native_shards", "scale_shards", "dense_shards"):
+        if field in parent:
+            updated[field] = [
+                replacements.get(row["file"], row)
+                for row in parent[field]
+                if row["file"] in replacements or row["file"] in used
+            ]
+    updated["storage_promotion_shards"] = [
+        row for row in parent.get("storage_promotion_shards", []) if row["file"] in used
+    ] + list(replacements.values())
+    # Unlink only this variant's aliases; the source inode remains untouched.
+    for path in output.glob("*.safetensors"):
+        if path.name not in used:
+            path.unlink()
+    return updated
+
+
+def export(
+    source, output, banks, *, extra_bytes_per_rank, source_bits=3, self_contained=False, workers=1, resume=False
+):
     """Append a budgeted checkpoint variant; keep scales and kernels unchanged."""
     source, output = Path(source).resolve(), Path(output).resolve()
     banks = sorted(set(banks))
-    if output.exists():
+    if type(workers) is not int or not 1 <= workers <= MAX_EXPORT_WORKERS:
+        raise ValueError("export worker count must be an integer from 1 through 8")
+    if output.exists() and not resume:
         raise FileExistsError(output)
     proposal = plan(source, banks, extra_bytes_per_rank=extra_bytes_per_rank, source_bits=source_bits)
     if not banks or not proposal["fits_allowance"]:
@@ -196,9 +311,19 @@ def export(source, output, banks, *, extra_bytes_per_rank, source_bits=3):
     if source.stat().st_dev != output.parent.stat().st_dev:
         raise ValueError("unchanged shards require the source filesystem")
     parent = json.loads((source / MANIFEST).read_text())
+    if output.exists():
+        previous = json.loads((output / MANIFEST).read_text())
+        if (
+            not self_contained
+            or previous.get("complete") is not False
+            or previous.get("source_index_sha256") != proposal["source_index_sha256"]
+            or previous.get("parent_native_manifest_sha256") != file_digest(source / MANIFEST)
+            or previous.get("storage_promotion") != proposal
+        ):
+            raise ValueError("resume requires the same incomplete compact storage export")
     index = json.loads((source / INDEX).read_text())
     bundles = {}
-    for key in ("kernel_bundle", "indexer_kernel_bundle"):
+    for key in ("kernel_bundle", "decode_kernel_bundle", "indexer_kernel_bundle"):
         if key in parent:
             relative = Path(parent[key])
             if relative.is_absolute() or ".." in relative.parts or relative == Path("."):
@@ -221,7 +346,7 @@ def export(source, output, banks, *, extra_bytes_per_rank, source_bits=3):
     if any(filename in index["weight_map"].values() for filename in filenames.values()):
         raise ValueError("storage promotion shard already exists in the parent index")
     # Publish failure state before copying; only the final write admits loading.
-    output.mkdir()
+    output.mkdir(exist_ok=resume)
     manifest = dict(
         parent,
         complete=False,
@@ -234,15 +359,37 @@ def export(source, output, banks, *, extra_bytes_per_rank, source_bits=3):
     )
     write_json(output / MANIFEST, manifest)
     for filename in sorted(set(index["weight_map"].values())):
-        os.link(source / filename, output / filename)
+        destination = output / filename
+        if destination.exists():
+            if not os.path.samefile(source / filename, destination):
+                raise ValueError("resume source alias differs")
+        else:
+            os.link(source / filename, destination)
     for path in source.iterdir():
         if path.is_file() and path.suffix != ".safetensors" and path.name not in (INDEX, MANIFEST):
             shutil.copy2(path, output / path.name)
     for key, relative in bundles.items():
-        if key == "kernel_bundle":
+        if (output / relative).exists() and resume:
+            for file in (source / relative).rglob("*"):
+                if "__pycache__" in file.parts or file.suffix == ".pyc":
+                    continue
+                if file.is_file() and file_digest(file) != file_digest(
+                    output / relative / file.relative_to(source / relative)
+                ):
+                    raise ValueError("resumed kernel bundle differs")
+            continue
+        if key in ("kernel_bundle", "decode_kernel_bundle"):
             copy_kernel_bundle(source / relative, output / relative)
         else:
             shutil.copytree(source / relative, output / relative)
+    if self_contained:
+        updated = compact_promotion(source, output, index, proposal, parent, workers)
+        previous_banks = index["metadata"].get("lossless_w4_storage_banks", [])
+        index["metadata"]["lossless_w4_storage_banks"] = sorted(set(previous_banks) | set(banks))
+        write_json(output / INDEX, index)
+        manifest.update(updated, complete=True, self_contained_storage=True)
+        write_json(output / MANIFEST, manifest)
+        return manifest
     records = []
     for (layer, rank), rows in sorted(partitions.items()):
         tensors, hashes = {}, {}
@@ -300,6 +447,11 @@ def main():
     parser.add_argument("--bank", action="append", default=[])
     parser.add_argument("--extra-bytes-per-rank", type=int, required=True)
     parser.add_argument("--source-bits", type=int, choices=(2, 3), default=3)
+    parser.add_argument(
+        "--self-contained", action="store_true", help="Rewrite complete touched shards; omit stale bytes"
+    )
+    parser.add_argument("--workers", type=int, default=1, help="Independent compact shard workers, from 1 through 8")
+    parser.add_argument("--resume", action="store_true", help="Verify and resume the same incomplete compact export")
     args = parser.parse_args()
     if args.action == "export":
         if args.output is None:
@@ -310,6 +462,9 @@ def main():
             args.bank,
             extra_bytes_per_rank=args.extra_bytes_per_rank,
             source_bits=args.source_bits,
+            self_contained=args.self_contained,
+            workers=args.workers,
+            resume=args.resume,
         )
     else:
         result = plan(

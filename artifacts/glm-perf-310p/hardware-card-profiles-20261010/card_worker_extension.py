@@ -3,6 +3,7 @@
 
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import torch
@@ -23,4 +24,38 @@ for record in manifest:
 
 
 class CardWorkerExtension:
-    pass
+    def card_start_replay_count(self):
+        """Count actual stage graph replays without synchronizing the NPU."""
+        if getattr(self, "_card_replay_count", None) is not None:
+            return self.card_replay_status()
+        model = self.model_runner.model
+        original = getattr(model, "_replay", None)
+        if original is None:
+            return {"rank": self.rank, "error": "model has no stage graph replay method"}
+        state = {"count": 0, "original": original}
+
+        def counted(*args, **kwargs):
+            result = original(*args, **kwargs)
+            state["count"] += 1
+            return result
+
+        model._replay = counted
+        self._card_replay_count = state
+        return self.card_replay_status()
+
+    def card_replay_status(self):
+        state = getattr(self, "_card_replay_count", None)
+        return {
+            "rank": self.rank,
+            "pid": os.getpid(),
+            "replays": state["count"] if state is not None else None,
+            "wrapper": type(self.model_runner.model).__name__,
+        }
+
+    def card_stop_replay_count(self):
+        result = self.card_replay_status()
+        state = getattr(self, "_card_replay_count", None)
+        if state is not None:
+            self.model_runner.model._replay = state["original"]
+            self._card_replay_count = None
+        return result

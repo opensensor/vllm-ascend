@@ -3,8 +3,10 @@
 
 import ast
 import json
+import runpy
 import shutil
 import struct
+import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -134,6 +136,37 @@ def test_plan_uses_headers_only_and_exact_whole_bank_memory(source, monkeypatch)
     assert storage.plan(source, ["layers.4.down"], extra_bytes_per_rank=16384, source_bits=2)["fits_allowance"]
 
 
+def test_pipeline_plan_accounts_only_the_owning_stage(source):
+    config = json.loads((source / "config.json").read_text())
+    config["text_config"]["num_hidden_layers"] = 6
+    checkpoint.write_json(source / "config.json", config)
+    manifest = json.loads((source / checkpoint.MANIFEST).read_text())
+    manifest["deployment_profile"] = "three-card-w3"
+    checkpoint.write_json(source / checkpoint.MANIFEST, manifest)
+    proposal = storage.plan(source, ["layers.3.gate_up", "layers.3.down"], extra_bytes_per_rank=24576)
+    assert proposal["world_size"] == 2 and proposal["resident_world_size"] == 6
+    assert proposal["additional_bytes_per_rank"] == [0, 0, 24576, 24576, 0, 0]
+    assert proposal["fits_allowance"]
+    config["text_config"]["num_hidden_layers"] = 3
+    checkpoint.write_json(source / "config.json", config)
+    inventory = storage.plan(source, extra_bytes_per_rank=0)
+    assert all(not bank["eligible"] and not bank["resident"] for bank in inventory["banks"])
+    with pytest.raises(ValueError, match="not loaded"):
+        storage.plan(source, ["layers.3.gate_up"], extra_bytes_per_rank=24576)
+
+
+@pytest.mark.parametrize("layer_count", [None, 0, 5, True])
+def test_pipeline_plan_rejects_unqualified_layer_partition(source, layer_count):
+    config = json.loads((source / "config.json").read_text())
+    config["text_config"]["num_hidden_layers"] = layer_count
+    checkpoint.write_json(source / "config.json", config)
+    manifest = json.loads((source / checkpoint.MANIFEST).read_text())
+    manifest["deployment_profile"] = "three-card-w3"
+    checkpoint.write_json(source / checkpoint.MANIFEST, manifest)
+    with pytest.raises(ValueError, match="pipeline layer partition"):
+        storage.plan(source, extra_bytes_per_rank=0)
+
+
 @pytest.mark.parametrize(
     "banks,budget,bits",
     [([], 99999, 3), (["layers.3.gate_up"], 16383, 3), (["layers.3.gate"], 99999, 3), (["layers.4.down"], 99999, 3)],
@@ -179,6 +212,84 @@ def test_export_preserves_source_scales_indexer_and_kernel_contract(source, tmp_
             assert checkpoint.file_digest(output / relative) == sha
     with pytest.raises(FileExistsError):
         storage.export(source, output, ["layers.3.gate_up"], extra_bytes_per_rank=16384)
+
+
+def test_compact_export_contains_only_authoritative_tensors_and_keeps_decode_bundle(source, tmp_path):
+    shutil.copytree(source / "native-kernels", source / "native-decode-kernels")
+    parent = json.loads((source / checkpoint.MANIFEST).read_text())
+    parent["decode_kernel_bundle"] = "native-decode-kernels"
+    checkpoint.write_json(source / checkpoint.MANIFEST, parent)
+    old_sha = checkpoint.file_digest(source / "codes.safetensors")
+    output = tmp_path / "compact"
+    manifest = storage.export(
+        source,
+        output,
+        ["layers.3.gate_up", "layers.3.down"],
+        extra_bytes_per_rank=24576,
+        self_contained=True,
+        workers=2,
+    )
+    assert manifest["complete"] and manifest["self_contained_storage"]
+    assert not (output / "codes.safetensors").exists()
+    index = json.loads((output / checkpoint.INDEX).read_text())["weight_map"]
+    assert {path.name for path in output.glob("*.safetensors")} == set(index.values())
+    for filename in set(index.values()):
+        with safe_open(str(output / filename), framework="pt", device="cpu") as handle:
+            assert set(handle.keys()) == {name for name, owner in index.items() if owner == filename}
+    for row in manifest["native_shards"]:
+        assert checkpoint.file_digest(output / row["file"]) == row["sha256"]
+    assert checkpoint.file_digest(source / "codes.safetensors") == old_sha
+    assert (output / "dense.safetensors").stat().st_ino == (source / "dense.safetensors").stat().st_ino
+    assert checkpoint.file_digest(output / "native-decode-kernels/provenance.json") == checkpoint.file_digest(
+        source / "native-decode-kernels/provenance.json"
+    )
+    with (
+        safe_open(str(output / "w4-storage-codes.safetensors"), framework="pt", device="cpu") as result,
+        safe_open(str(source / "codes.safetensors"), framework="pt", device="cpu") as original,
+    ):
+        for name in list(result.keys()):
+            actual = result.get_tensor(name)
+            previous = original.get_tensor(name)
+            if ".layers.3." in name:
+                assert torch.equal(unpack_cube(actual[None], 256), unpack_cube(previous[None], 256))
+            else:
+                assert torch.equal(actual, previous)
+
+
+def test_compact_resume_verifies_completed_shards_without_rewriting(source, tmp_path, monkeypatch):
+    output = tmp_path / "resume"
+    original = storage.compact_promotion
+
+    def interrupted(*args):
+        original(*args)
+        raise RuntimeError("interrupted before publication")
+
+    monkeypatch.setattr(storage, "compact_promotion", interrupted)
+    with pytest.raises(RuntimeError, match="interrupted"):
+        storage.export(source, output, ["layers.3.down"], extra_bytes_per_rank=8192, self_contained=True)
+    assert json.loads((output / checkpoint.MANIFEST).read_text())["complete"] is False
+    completed = output / "w4-storage-codes.safetensors"
+    inode, sha = completed.stat().st_ino, checkpoint.file_digest(completed)
+    parent = json.loads((source / checkpoint.MANIFEST).read_text())
+    bytecode = source / parent["kernel_bundle"] / "__pycache__" / "runtime.cpython-312.pyc"
+    bytecode.parent.mkdir()
+    bytecode.write_bytes(b"generated after the initial export")
+    monkeypatch.setattr(storage, "compact_promotion", original)
+    result = storage.export(
+        source, output, ["layers.3.down"], extra_bytes_per_rank=8192, self_contained=True, workers=2, resume=True
+    )
+    assert result["complete"] and completed.stat().st_ino == inode
+    assert checkpoint.file_digest(completed) == sha
+    with pytest.raises(ValueError, match="same incomplete"):
+        storage.export(source, output, ["layers.3.down"], extra_bytes_per_rank=8192, self_contained=True, resume=True)
+
+
+@pytest.mark.parametrize("workers", [0, 9, True, -1])
+def test_invalid_export_workers_reject_before_creating_variant(source, tmp_path, workers):
+    output = tmp_path / "invalid-workers"
+    with pytest.raises(ValueError, match="worker count"):
+        storage.export(source, output, ["layers.3.down"], extra_bytes_per_rank=8192, workers=workers)
+    assert not output.exists()
 
 
 def loader_iterator():
@@ -355,3 +466,54 @@ def test_incomplete_or_mismatching_manifest_rejected(source, change):
     checkpoint.write_json(path, manifest)
     with pytest.raises(ValueError):
         storage.plan(source, extra_bytes_per_rank=99999)
+
+
+def test_repair_rebuilds_values_from_verified_source(source, tmp_path, monkeypatch):
+    output = tmp_path / "repair"
+    parent = json.loads((source / checkpoint.MANIFEST).read_text())
+    for row in parent["native_shards"]:
+        row["sha256"] = checkpoint.file_digest(source / row["file"])
+    checkpoint.write_json(source / checkpoint.MANIFEST, parent)
+    storage.export(source, output, ["layers.3.down"], extra_bytes_per_rank=8192, self_contained=True)
+    target = output / "w4-storage-codes.safetensors"
+    data = target.read_bytes()
+    target.write_bytes(data[:-1] + bytes([data[-1] ^ 1]))
+    path = (
+        Path(__file__).resolve().parents[3]
+        / "artifacts/glm-perf-310p/three-card-performance-20261010/repair_storage_shard.py"
+    )
+    monkeypatch.setattr(sys, "argv", [str(path), str(source), str(output), target.name])
+    runpy.run_path(str(path))["main"]()
+    manifest = json.loads((output / checkpoint.MANIFEST).read_text())
+    row = next(row for row in manifest["native_shards"] if row["file"] == target.name)
+    assert manifest["complete"] and row["sha256"] == checkpoint.file_digest(target)
+    with safe_open(str(target), framework="pt", device="cpu") as handle:
+        original = safe_open(str(source / "codes.safetensors"), framework="pt", device="cpu")
+        with original:
+            names = handle.keys()
+            for name in names:
+                expected = original.get_tensor(name)
+                if "layers.3." in name and name.endswith("down_proj_codes"):
+                    expected = storage.promote(expected[None], 256)[0]
+                assert torch.equal(handle.get_tensor(name), expected)
+
+
+def test_repair_rejects_changed_source_before_publication(source, tmp_path, monkeypatch):
+    output = tmp_path / "repair-source"
+    parent = json.loads((source / checkpoint.MANIFEST).read_text())
+    for row in parent["native_shards"]:
+        row["sha256"] = checkpoint.file_digest(source / row["file"])
+    checkpoint.write_json(source / checkpoint.MANIFEST, parent)
+    storage.export(source, output, ["layers.3.down"], extra_bytes_per_rank=8192, self_contained=True)
+    before = (output / checkpoint.MANIFEST).read_bytes()
+    original = source / "codes.safetensors"
+    data = original.read_bytes()
+    original.write_bytes(data[:-1] + bytes([data[-1] ^ 1]))
+    path = (
+        Path(__file__).resolve().parents[3]
+        / "artifacts/glm-perf-310p/three-card-performance-20261010/repair_storage_shard.py"
+    )
+    monkeypatch.setattr(sys, "argv", [str(path), str(source), str(output), "w4-storage-codes.safetensors"])
+    with pytest.raises(AssertionError):
+        runpy.run_path(str(path))["main"]()
+    assert (output / checkpoint.MANIFEST).read_bytes() == before

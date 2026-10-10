@@ -1,0 +1,63 @@
+{
+  "elapsed_s": 23.965482314000838,
+  "response": {
+    "id": "chatcmpl-924e977c3ab11f9b",
+    "object": "chat.completion",
+    "created": 1791617990,
+    "model": "three-card-w3",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "```python\ndef is_prime(n: int) -> bool:\n    if n < 2:\n        return False\n    if n == 2:\n        return True\n    if n % 2 == 0:\n        return False\n    i = 3\n    while i * i <= n:\n        if n % i == 0:\n            return False\n        i += 2\n    return True\n```",
+          "refusal": null,
+          "annotations": null,
+          "audio": null,
+          "function_call": null,
+          "reasoning": null
+        },
+        "logprobs": null,
+        "finish_reason": "stop",
+        "stop_reason": 154827,
+        "token_ids": null,
+        "routed_experts": null
+      }
+    ],
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.1.dev1+g3ab5dda29-tp2-pp3-0be0b1bb",
+    "usage": {
+      "prompt_tokens": 53,
+      "total_tokens": 142,
+      "completion_tokens": 89,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "created_cache_tokens": 0,
+        "multimodal_tokens": null
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0
+      }
+    },
+    "prompt_logprobs": null,
+    "prompt_token_ids": null,
+    "prompt_text": null,
+    "kv_transfer_params": null,
+    "ec_transfer_params": null,
+    "metrics": null
+  },
+  "functional_cases": {
+    "-1": false,
+    "0": false,
+    "1": false,
+    "2": true,
+    "3": true,
+    "4": false,
+    "9": false,
+    "17": true,
+    "23": true,
+    "25": false,
+    "49": false,
+    "97": true
+  }
+}
