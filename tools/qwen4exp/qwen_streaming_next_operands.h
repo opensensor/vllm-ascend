@@ -59,11 +59,15 @@ class OperandProducer {
     auto metadata = metadata_[metadataSlot * ACTIVATION_METADATA_SLOT_BYTES / sizeof(float)];
     auto scale = metadata;
     auto sums = metadata[M * LANES];
-    // Pad both limbs and metadata. Do not inherit stale bytes from a larger tile.
-    Duplicate(packed.template ReinterpretCast<int16_t>(), static_cast<int16_t>(0), PACKED_ACTIVATION_SLOT_BYTES / 2);
-    Duplicate(metadata, 0.0f, ACTIVATION_METADATA_SLOT_BYTES / sizeof(float));
-    SetFlag<HardEvent::V_MTE2>(event);
-    WaitFlag<HardEvent::V_MTE2>(event);
+    // A full M tile overwrites both complete limbs and both metadata banks.
+    // Only tails need clearing; retain their V->MTE2 dependency before DMA.
+    // This skips redundant UB writes and one fence pair on bulk row tiles.
+    if (liveRows < M) {
+      Duplicate(packed.template ReinterpretCast<int16_t>(), static_cast<int16_t>(0), PACKED_ACTIVATION_SLOT_BYTES / 2);
+      Duplicate(metadata, 0.0f, ACTIVATION_METADATA_SLOT_BYTES / sizeof(float));
+      SetFlag<HardEvent::V_MTE2>(event);
+      WaitFlag<HardEvent::V_MTE2>(event);
+    }
     DataCopyParams rows{static_cast<uint16_t>(liveRows), 1, static_cast<uint16_t>(k_ / K0 - 1), 0};
     if (liveRows > 0)
       for (uint32_t kb = 0; kb < GROUP / K0; ++kb) {

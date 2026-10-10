@@ -176,7 +176,10 @@ struct BlockSchedulerGdnFwdH {
         headGroups = vNumHead / kNumHead;
         hasDummyHead = (taskNum % (PING_PONG_STAGES * cubeCoreNum) <= cubeCoreNum) && (taskNum % (PING_PONG_STAGES * cubeCoreNum) > 0);
         taskLoops = (taskNum + cubeCoreNum * PING_PONG_STAGES - 1) / (cubeCoreNum * PING_PONG_STAGES);
-        headInnerLoop = taskNum > cubeCoreNum ? PING_PONG_STAGES : 1;
+        // An odd value-head count cannot pair streams across batch boundaries.
+        // Keep one trained head per core and use the existing no-work second
+        // lane; this also prevents the final nine-head pair reading head nine.
+        headInnerLoop = (vNumHead % PING_PONG_STAGES == 0 && taskNum > cubeCoreNum) ? PING_PONG_STAGES : 1;
         taskIdx = cubeCoreIdx * headInnerLoop;
         isRunning = taskIdx < taskNum;
 
@@ -245,9 +248,31 @@ struct BlockSchedulerGdnFwdH {
             (taskNum % (PING_PONG_STAGES * cubeCoreNum) > 0);
         taskLoops = (taskNum + cubeCoreNum * PING_PONG_STAGES - 1) /
                     (cubeCoreNum * PING_PONG_STAGES);
-        headInnerLoop = taskNum > cubeCoreNum ? PING_PONG_STAGES : 1;
+        // An odd value-head count cannot pair streams across batch boundaries.
+        // Keep one trained head per core and use the existing no-work second
+        // lane; this also prevents the final nine-head pair reading head nine.
+        headInnerLoop = (vNumHead % PING_PONG_STAGES == 0 && taskNum > cubeCoreNum) ? PING_PONG_STAGES : 1;
         taskIdx = cubeCoreIdx * headInnerLoop;
         isRunning = taskIdx < taskNum;
+    }
+
+    // The 128-wide 310P state is consumed only by its scheduled head owner.
+    // Other geometries retain the legacy initialization until separately gated.
+    CATLASS_DEVICE
+    bool OwnsInitialState(uint32_t stateBatch, uint32_t valueHead) const {
+        if (vLoops != 1) {
+            return true;
+        }
+        const uint32_t task = stateBatch * vNumHead + valueHead;
+        uint32_t owner;
+        if (vNumHead % PING_PONG_STAGES != 0 || taskNum <= cubeCoreNum) {
+            owner = task % cubeCoreNum;
+        } else {
+            const uint32_t group = task / (PING_PONG_STAGES * cubeCoreNum);
+            const uint32_t withinGroup = task % (PING_PONG_STAGES * cubeCoreNum);
+            owner = (hasDummyHead && group + 1 == taskLoops) ? withinGroup : withinGroup / PING_PONG_STAGES;
+        }
+        return owner == cubeCoreIdx;
     }
 
     CATLASS_DEVICE
@@ -298,9 +323,13 @@ struct BlockSchedulerGdnFwdH {
 
         processNewTask = chunkIdx == batchChunks - 1 && headInnerIdx == PING_PONG_STAGES - 1;
         if (processNewTask) {
-            uint32_t currLoopIdx = taskIdx / (PING_PONG_STAGES * cubeCoreNum);
-            headInnerLoop = ((currLoopIdx + 2 == taskLoops) && hasDummyHead) ? 1 : PING_PONG_STAGES;
-            taskIdx = (currLoopIdx + 1) * PING_PONG_STAGES * cubeCoreNum + headInnerLoop * cubeCoreIdx;
+            if (vNumHead % PING_PONG_STAGES != 0) {
+                taskIdx += cubeCoreNum;
+            } else {
+                uint32_t currLoopIdx = taskIdx / (PING_PONG_STAGES * cubeCoreNum);
+                headInnerLoop = ((currLoopIdx + 2 == taskLoops) && hasDummyHead) ? 1 : PING_PONG_STAGES;
+                taskIdx = (currLoopIdx + 1) * PING_PONG_STAGES * cubeCoreNum + headInnerLoop * cubeCoreIdx;
+            }
         }
     }
 

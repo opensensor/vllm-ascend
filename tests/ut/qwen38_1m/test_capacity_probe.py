@@ -19,6 +19,13 @@ def test_asymmetric_session_lengths():
     assert prompt_lengths(256, 2, None) == [256, 256]
     assert prompt_lengths(256, 2, [256, 8192]) == [256, 8192]
     assert prompt_lengths(261632, 4, None) == [261632] * 4
+    assert prompt_lengths(256, 6, None) == [256] * 6
+
+
+@pytest.mark.parametrize("concurrency", [0, -1])
+def test_invalid_concurrency(concurrency):
+    with pytest.raises(ValueError, match="one positive prompt length"):
+        prompt_lengths(256, concurrency, None)
 
 
 @pytest.mark.parametrize("lengths", [[], [256], [256, 0], [-1, 8192], [256, 8192, 4096]])

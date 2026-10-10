@@ -76,7 +76,6 @@ struct BlockSchedulerGdnFwdO {
 
     uint32_t vIdx;
     uint32_t batchIdx;
-    uint32_t baseHeadIdx;
     uint32_t chunkIdx;
     uint32_t headInnerIdx;
     uint32_t vHeadIdx;
@@ -139,24 +138,33 @@ struct BlockSchedulerGdnFwdO {
     CATLASS_DEVICE
     void InitTask() {
         if (processNewTask) {
-            if (unlikely(taskIdx >= taskNum)) {
-                isRunning = false;
-            }
-            vIdx = taskIdx / (shapeBatch * numChunks * vNumHead);
-            shapeBatchIdx = (taskIdx - vIdx * shapeBatch * numChunks * vNumHead) / (numChunks * vNumHead);
-            chunkIdx = (taskIdx - vIdx * shapeBatch * numChunks * vNumHead - shapeBatchIdx * numChunks * vNumHead) / vNumHead;
-            baseHeadIdx = taskIdx % vNumHead;
-            tokenBatchIdx = isVariedLen ? gmChunkOffsets.GetValue(2 * chunkIdx) : 0;
-            batchChunkIdx = isVariedLen ? gmChunkOffsets.GetValue(2 * chunkIdx + 1) : chunkIdx;
-            batchChunkStartIdx = chunkIdx - batchChunkIdx;
-            tokenOffset = isVariedLen ? gmSeqlen.GetValue(tokenBatchIdx) : 0;
-            batchTokens = isVariedLen ? (gmSeqlen.GetValue(tokenBatchIdx + 1) - tokenOffset) : seqlen;
             headInnerIdx = 0;
         } else {
             headInnerIdx = (headInnerIdx + 1) % PING_PONG_STAGES;
         }
-        
-        vHeadIdx = baseHeadIdx + headInnerIdx;
+
+        // Decode each pipeline lane from its complete linear task. Adjacent
+        // lanes may cross a value-head, chunk, batch, or value-tile boundary.
+        // Adding the lane to a base head alone skipped head zero and accessed
+        // a nonexistent head when the value-head count was odd (TP6: nine).
+        const uint32_t currentTask = taskIdx + headInnerIdx;
+        if (unlikely(currentTask >= taskNum)) {
+            isRunning = false;
+            // Advance the ring so the kernel can drain the preceding valid
+            // task without issuing any reads or writes for this unused lane.
+            currStage = (currStage + 1) % PING_PONG_STAGES;
+            return;
+        }
+        vIdx = currentTask / (shapeBatch * numChunks * vNumHead);
+        const uint32_t taskWithinTile = currentTask % (shapeBatch * numChunks * vNumHead);
+        shapeBatchIdx = taskWithinTile / (numChunks * vNumHead);
+        chunkIdx = (taskWithinTile / vNumHead) % numChunks;
+        vHeadIdx = taskWithinTile % vNumHead;
+        tokenBatchIdx = isVariedLen ? gmChunkOffsets.GetValue(2 * chunkIdx) : 0;
+        batchChunkIdx = isVariedLen ? gmChunkOffsets.GetValue(2 * chunkIdx + 1) : chunkIdx;
+        batchChunkStartIdx = chunkIdx - batchChunkIdx;
+        tokenOffset = isVariedLen ? gmSeqlen.GetValue(tokenBatchIdx) : 0;
+        batchTokens = isVariedLen ? (gmSeqlen.GetValue(tokenBatchIdx + 1) - tokenOffset) : seqlen;
         kHeadIdx = vHeadIdx / headGroups;
         offsets[currStage].qkOffset = (shapeBatchIdx * kNumHead * seqlen + kHeadIdx * seqlen + tokenOffset + batchChunkIdx * chunkSize) * kHeadDim;
         offsets[currStage].ovOffset = (shapeBatchIdx * vNumHead * seqlen + vHeadIdx * seqlen + tokenOffset + batchChunkIdx * chunkSize) * vHeadDim;

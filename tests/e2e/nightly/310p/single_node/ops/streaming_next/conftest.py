@@ -53,3 +53,21 @@ def temperature_admission(request):
         temps = parse_temperatures(subprocess.check_output(["npu-smi", "info"], text=True, timeout=3), 6)
         if max(temps) >= STANDALONE_STOP_C:
             pytest.fail("standalone thermal limit reached")
+
+
+@pytest.fixture
+def gdn_operators(request):
+    bundle = request.config.getoption("--qwen-streaming-next-bundle")
+    if bundle is None or not request.config.getoption("--qwen-streaming-next-execute"):
+        pytest.skip("requires explicit isolated NPU execution and a verified bundle")
+    verify_bundle(bundle, require_compiled=True)
+    # The caller supplies the coherent FP32-state OPP and an isolated device.
+    import torch
+    import torch_npu
+
+    from vllm_ascend.utils import enable_custom_op
+
+    torch.npu.set_device(0)
+    torch_npu.npu.set_compile_mode(jit_compile=False)
+    enable_custom_op()
+    return torch

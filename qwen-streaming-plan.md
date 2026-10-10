@@ -2,8 +2,11 @@
 
 Date: 2026-10-09. Source baseline: `36ba88244`.
 Status: T1–T8 completed offline; T9 hardware gate rejected v5 on October 9.
-The image-enabled baseline is running for user testing. Further candidate work
-is offline; no further NPU diagnostics or service mutations are planned.
+Hardware access was renewed for the six-chip follow-up. Streaming v2 remains
+behind baseline projection performance; the six-chip GDN reference suite now
+passes after prefill scheduler and mask corrections. See the
+[six-chip hardware report](artifacts/qwen38-six-chip-hardware-20261009/README.md)
+for full-model gates, thermal limits, failed attempts, and final server state.
 Execution starts from clean commit `2a2a4e416`; unrelated workspace overlays are
 excluded from the frozen reference and implementation worktree.
 
@@ -93,8 +96,9 @@ only after their individual gates; their composition is not already qualified.
 ## Work packages and dependencies
 
 The user invoked `$parallel-task qwen-streaming-plan.md` on 2026-10-09,
-authorizing offline implementation and subagents. Dependencies describe order;
-server changes, NPU execution, and a new hardware lease remain deferred.
+authorizing offline implementation and subagents. Dependencies describe order.
+The later six-chip hardware lease authorized the follow-up live gates recorded
+in the hardware report; the original offline task records remain historical.
 Each package requires CPU regression tests and versioned evidence in
 `artifacts/qwen38-streaming-upgrade/Tn/`. The offline builder and composition APIs
 are implemented; live worker/scheduler adapter binding and qualification remain
@@ -381,7 +385,8 @@ unmeasured. Full model/graph/cache/EP/MTP/thermal gates remain incomplete.
 [October 9 hardware evidence and follow-up](artifacts/qwen38-streaming-upgrade/T9/hardware-20261009/REPORT.md).
 
 The original qualification procedure below remains required for a new candidate.
-Defer further hardware experiments while the user tests the baseline. Prove allocation headroom before
+The user subsequently authorized controlled live hardware tests and paused Kilo
+traffic. Prove allocation headroom before
 standalone tests with any loaded service. Serialize hardware work; do not unload
 or shrink the service to make required coverage fit without authorization.
 Run production-shape kernel parity and changed-input graph stress, then shadow
@@ -420,7 +425,8 @@ T1–T8 now implement the offline candidate, with execution evidence in the
 [streaming report](artifacts/qwen38-streaming-upgrade/REPORT.md). The deferred
 [qualification runbook](artifacts/qwen38-streaming-upgrade/T9/RUNBOOK.md)
 records remaining worker/scheduler binding, hardware gates and promotion limits.
-No candidate is installed in the live baseline workers. October 9 standalone
+No streaming candidate replaces the live baseline forward. Diagnostic native
+resources were later appended to the six-chip workers. October 9 standalone
 hardware results and the offline follow-up are linked above. Previously staged component candidates
 and their CPU/build evidence are described in the
 [transfer report](artifacts/qwen38-transfer-next-20261009/REPORT.en.md) and
@@ -450,13 +456,20 @@ unchanged baseline. Full receipts and limitations are in the execution report.
 The [follow-up report](artifacts/qwen38-streaming-followup-20261009/REPORT.md)
 records the new v2 projection schedule, bulk metadata cache, N160 two-window
 epilogue, WY trace diagnostics and opt-in six-chip GDN/vocabulary sharding.
-The faster image-enabled TP4 baseline remains the live control. WY remains
-unqualified. TP6 requests six sessions with images, with MTP disabled; fit,
-accuracy, throughput and sustained thermals still need hardware checks.
-T9 remains incomplete until those gates pass.
+The image-enabled TP4/MTP2 profile remains the rollback control. The corrected
+TP6 profile now serves six request slots with baseline projections and MTP
+disabled; short/long text, full-size images, cached branches, cancellation, and
+six-request overlap passed. Its planner reserves 1,374,660 tokens, about 5.24
+256K windows. Serial decode is slower than TP4; a single cold-prefill sample
+does not establish improvement. WY and sustained thermal qualification remain
+incomplete. T9 still requires higher decode throughput and lower cold TTFT.
 
 The subsequent [six-chip transfer fixes](artifacts/qwen38-six-chip-transfer-fixes-20261009/REPORT.md)
 replace shared replication with uneven trained-channel slices and omit dummy
 GDN heads from execution/state IO. Uniform cache reservation remains required
-by the framework. These changes have offline evidence only; cutover gates remain
-pending.
+by the framework. The subsequent six-chip hardware report records 42 passing native checks
+and production-shape GDN scheduler/mask corrections. The full-tile v11 producer
+passed parity but remained behind baseline on most ranks. Keep it experimental;
+measure routing, gate/up, activation/packing, down, and finalization separately
+before changing more barriers. Preserve the small routed decode path and assess
+its graph/HCCL/LM-head/MTP costs separately from grouped prefill.

@@ -160,3 +160,14 @@ def test_benchmark_requires_execution_before_any_device_library_or_sensor_access
     with pytest.raises(SystemExit) as error:
         benchmark.main()
     assert error.value.code == 2
+
+
+@pytest.mark.parametrize("ends", [[32, 33, 65, 66, 98], [1, 33, 34, 66, 98], [32, 64, 65, 97, 98]])
+def test_full_tiles_overwrite_reused_operands_and_tails_clear_padding(native_next, ends):
+    # Alternate full and partial tiles across experts and metadata-slot wraps.
+    args, expected, storage = fixture(98, 160, 640, ends, 811)
+    status, error = run(native_next, args)
+    assert status == 0, error
+    np.testing.assert_array_equal(args[9], expected)
+    np.testing.assert_array_equal(storage[:16], np.float16(123.5))
+    np.testing.assert_array_equal(storage[-16:], np.float16(123.5))

@@ -34,7 +34,7 @@ WARMUP_OUTPUT_TOKENS = 32
 
 def prompt_lengths(default: int, concurrency: int, per_session: list[int] | None) -> list[int]:
     lengths = per_session if per_session is not None else [default] * concurrency
-    if len(lengths) != concurrency or any(length <= 0 for length in lengths):
+    if concurrency <= 0 or len(lengths) != concurrency or any(length <= 0 for length in lengths):
         raise ValueError("provide one positive prompt length per concurrent session")
     return lengths
 
@@ -174,7 +174,7 @@ def main() -> None:
     )
     parser.add_argument("--output-tokens", type=int, default=512)
     parser.add_argument("--context-tokens", type=int, default=262144)
-    parser.add_argument("--concurrency", type=int, choices=(1, 2, 3, 4), default=2)
+    parser.add_argument("--concurrency", type=int, default=2, help="Positive number of independent sessions")
     parser.add_argument("--request-timeout-s", type=int, default=7200)
     parser.add_argument("--mode", choices=("throughput", "recall"), default="throughput")
     parser.add_argument(

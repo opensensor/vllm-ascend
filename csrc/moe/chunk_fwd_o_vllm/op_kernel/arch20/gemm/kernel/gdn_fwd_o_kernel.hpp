@@ -210,21 +210,14 @@ public:
 
     __aicore__ inline void InitCausalMask() {
         AscendC::LocalTensor<float> maskUbTensor = resource.ubBuf.template GetBufferByByte<float>(0);
-        // 310P: Duplicate count must be >= 8 (vector width = 8 floats).
-        // Build lower-triangular mask: row i has 1.0 in cols [0..i], 0.0 elsewhere.
-        // Fill all 1.0 first, then zero the upper triangle with count >= 8.
+        // Address each aligned row and mask individual lanes. A vector
+        // Duplicate starting at an unaligned diagonal rounded the address
+        // down and erased up to seven valid causal columns on 310P.
         AscendC::Duplicate<float>(maskUbTensor, (float)1.0, 64 * 64);
         AscendC::PipeBarrier<PIPE_V>();
-        for (uint32_t i = 0; i < 64; ++i) {
-            uint32_t zeroStart = i + 1;
-            uint32_t zeroLen = 64 - zeroStart;
-            if (zeroLen >= 8) {
-                AscendC::Duplicate<float>(maskUbTensor[i * 64 + zeroStart], (float)0.0, zeroLen);
-            } else {
-                for (uint32_t j = 0; j < zeroLen; ++j) {
-                    maskUbTensor.SetValue(i * 64 + zeroStart + j, (float)0.0);
-                }
-            }
+        for (uint32_t i = 0; i + 1 < 64; ++i) {
+            uint64_t tailMask[2] = {~uint64_t{0} << (i + 1), 0};
+            AscendC::Duplicate<float>(maskUbTensor[i * 64], (float)0.0, tailMask, 1, 1, 8);
         }
         AscendC::PipeBarrier<PIPE_V>();
     }

@@ -294,3 +294,23 @@ on port 8001 as `qwen38-w4-builtin-finalize-candidate`.
   full prefill as a prefix-cache measurement.
 - Validating chunked GDN only at one or two heads missed a production-shape
   gate-copy regression and allowed a numerically bad device object to ship.
+
+## Six-chip compact GDN qualification
+
+For the three-card TP6 candidate, read the
+[six-chip hardware report](../../../../artifacts/qwen38-six-chip-hardware-20261009/README.md).
+The image encoder uses data mode, MTP is disabled, and the baseline routed
+projection remains faster for short batches than streaming v2.
+
+Nine-head GDN shards require both corrected chunk schedulers and aligned
+causal-mask writes. A short decode smoke test does not exercise these paths;
+validate every prefill row and final state against reference math, then check
+coherent output on a cold prompt longer than one chunk. Use the matching
+stride-aware convolution binding and a coherent package containing the four
+convolution, recurrent, state-prefill, and output-prefill operators. An
+output-only package can shadow metadata for a convolution binary it does not
+contain. Preserve the qualified TP4 packages and launcher for rollback.
+
+Six slots do not imply six full 256K windows. Report planner token capacity,
+measured concurrent request overlap, and full-window validation separately.
+Logical copy accounting is not a measurement of physical bus traffic or heat.

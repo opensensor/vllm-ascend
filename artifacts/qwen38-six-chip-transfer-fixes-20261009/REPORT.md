@@ -1,5 +1,9 @@
 # Six-chip Qwen: eliminate duplicated shared and dummy-head execution
 
+Later hardware results, including the GDN prefill corrections required by TP6,
+are in the [six-chip qualification report](../qwen38-six-chip-hardware-20261009/README.md).
+The offline status and estimates below describe this earlier delivery.
+
 These are offline fixes on top of `b08df99ff`. The live image-enabled TP4 service
 has not been changed. The generated [TP6 profile](tp6/profile.json) supersedes
 the earlier replicated-shared/padded-execution candidate. Images remain enabled,
