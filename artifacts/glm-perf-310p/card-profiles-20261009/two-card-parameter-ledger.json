@@ -1,0 +1,26 @@
+{
+  "profile": "two-card-selective-w2",
+  "stages": [
+    {
+      "stage": 0,
+      "layers": [
+        0,
+        45
+      ],
+      "routed_codes_and_fp16_scales_bytes": 31408128000,
+      "dense_parameter_fp32_replicated_upper_bound_bytes": 36423359864,
+      "semantic_parameter_upper_bound_bytes": 67831487864,
+      "dense_tensor_count": 1271
+    }
+  ],
+  "hardware_admission": false,
+  "excludes": [
+    "allocator and parameter padding",
+    "HCCL",
+    "graph pools",
+    "KV and recurrent state",
+    "prefill/route scratch",
+    "temporary load and conversion buffers"
+  ],
+  "assumption": "Illustrative uniform PP layer partition; actual vLLM layer boundaries must match"
+}

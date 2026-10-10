@@ -1,0 +1,48 @@
+{
+  "profile": "three-card-w3",
+  "stages": [
+    {
+      "stage": 0,
+      "layers": [
+        0,
+        15
+      ],
+      "routed_codes_and_fp16_scales_bytes": 19110297600,
+      "dense_parameter_fp32_replicated_upper_bound_bytes": 13771893416,
+      "semantic_parameter_upper_bound_bytes": 32882191016,
+      "dense_tensor_count": 412
+    },
+    {
+      "stage": 1,
+      "layers": [
+        15,
+        30
+      ],
+      "routed_codes_and_fp16_scales_bytes": 26379288576,
+      "dense_parameter_fp32_replicated_upper_bound_bytes": 9687277864,
+      "semantic_parameter_upper_bound_bytes": 36066566440,
+      "dense_tensor_count": 416
+    },
+    {
+      "stage": 2,
+      "layers": [
+        30,
+        45
+      ],
+      "routed_codes_and_fp16_scales_bytes": 21849440256,
+      "dense_parameter_fp32_replicated_upper_bound_bytes": 12224848168,
+      "semantic_parameter_upper_bound_bytes": 34074288424,
+      "dense_tensor_count": 418
+    }
+  ],
+  "hardware_admission": false,
+  "excludes": [
+    "allocator and parameter padding",
+    "HCCL",
+    "graph pools",
+    "KV and recurrent state",
+    "prefill/route scratch",
+    "temporary load and conversion buffers"
+  ],
+  "assumption": "Illustrative uniform PP layer partition; actual vLLM layer boundaries must match"
+}

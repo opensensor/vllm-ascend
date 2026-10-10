@@ -1,0 +1,43 @@
+{
+  "validation": "CPU weight reconstruction proxy only; not inference, activation or language quality",
+  "selection": "layer33, expert0, gate/up/down; narrow sample, not representative of every bank",
+  "scale_contract": "FP16-round/promote matching native storage",
+  "matrices": [
+    {
+      "projection": "gate",
+      "parameters": 8388608,
+      "w2": {
+        "relative_squared_error": 0.4028390347957611,
+        "cosine": 0.8321852684020996
+      },
+      "w3": {
+        "relative_squared_error": 0.07789450883865356,
+        "cosine": 0.9637687802314758
+      }
+    },
+    {
+      "projection": "up",
+      "parameters": 8388608,
+      "w2": {
+        "relative_squared_error": 0.39405733346939087,
+        "cosine": 0.8369227647781372
+      },
+      "w3": {
+        "relative_squared_error": 0.0754767656326294,
+        "cosine": 0.964776873588562
+      }
+    },
+    {
+      "projection": "down",
+      "parameters": 8388608,
+      "w2": {
+        "relative_squared_error": 0.39342978596687317,
+        "cosine": 0.836634635925293
+      },
+      "w3": {
+        "relative_squared_error": 0.07532624155282974,
+        "cosine": 0.9647269248962402
+      }
+    }
+  ]
+}

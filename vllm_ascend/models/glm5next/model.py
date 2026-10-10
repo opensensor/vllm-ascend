@@ -637,9 +637,27 @@ class Glm5NextModel(nn.Module):
             self.norm = PPMissingLayer()
 
         self.is_sequence_parallel = vllm_config.parallel_config.use_sequence_parallel_moe
+        if self.is_sequence_parallel and vllm_config.parallel_config.pipeline_parallel_size > 1:
+            raise ValueError("GLM pipeline parallelism requires sequence_parallel_moe disabled")
 
         world_size = get_tensor_model_parallel_world_size()
         assert config.num_attention_heads % world_size == 0, "num_attention_heads must be divisible by world_size"
+
+    def make_empty_intermediate_tensors(self, batch_size, dtype, device):
+        """Allocate the complete deferred mHC handoff for pipeline receives."""
+        tensors = {"hidden_states": torch.zeros((batch_size, self.config.hidden_size), dtype=dtype, device=device)}
+        if self.config.mhc:
+            streams = self.config.mhc_num_residual_streams
+            tensors.update(
+                residual=torch.zeros(
+                    (batch_size, streams, self.config.hidden_size), dtype=torch.float32, device=device
+                ),
+                post=torch.zeros((batch_size, streams, 1), dtype=torch.float32, device=device),
+                comb=torch.zeros((batch_size, streams, streams), dtype=torch.float32, device=device),
+            )
+        else:
+            tensors["residual"] = torch.zeros_like(tensors["hidden_states"])
+        return IntermediateTensors(tensors)
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_tokens(input_ids)
@@ -664,10 +682,10 @@ class Glm5NextModel(nn.Module):
             assert intermediate_tensors is not None
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
-            # post/comb (deferred mHC hc_post state) are not propagated across
-            # PP ranks; the receiving rank's first mHC layer uses standalone pre.
-            post = None
-            comb = None
+            # Preserve the previous stage's deferred hc_post inputs. Dropping
+            # these would feed an FFN output into standalone hc_pre.
+            post = intermediate_tensors["post"] if self.config.mhc else None
+            comb = intermediate_tensors["comb"] if self.config.mhc else None
 
         full_num_tokens = positions.shape[0]
         if self.is_sequence_parallel:
@@ -677,12 +695,12 @@ class Glm5NextModel(nn.Module):
             hidden_states, residual, post, comb = layer(positions, hidden_states, residual, post, comb)
 
         if not get_pp_group().is_last_rank:
-            # PP is gated off for GLM-5.3-Flash (no make_empty_intermediate_tensors),
-            # so this branch is not exercised. post/comb are the deferred
-            # hc_post state of this rank's last mHC layer; a future PP path
-            # would need to propagate them, but for now they are dropped (the
-            # receiving rank's first layer would fall back to standalone pre).
-            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
+            tensors = {"hidden_states": hidden_states, "residual": residual}
+            if self.config.mhc:
+                if post is None or comb is None or residual is None:
+                    raise RuntimeError("GLM pipeline stage lost deferred mHC state")
+                tensors.update(post=post, comb=comb)
+            return IntermediateTensors(tensors)
 
         if self.is_sequence_parallel:
             hidden_states = sp_all_gather(hidden_states)[:full_num_tokens]
@@ -881,6 +899,7 @@ class Glm5NextForCausalLM(nn.Module, HasInnerState, SupportsPP, MixtureOfExperts
         else:
             self.lm_head = PPMissingLayer()
         self.logits_processor = LogitsProcessor(self.config.vocab_size, scale=self.config.logit_scale)
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.embed_input_ids(input_ids)
@@ -931,6 +950,8 @@ class Glm5NextForCausalLM(nn.Module, HasInnerState, SupportsPP, MixtureOfExperts
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        if not get_pp_group().is_last_rank:
+            return None
         logits = self.logits_processor(self.lm_head, hidden_states)
         return logits
 
@@ -1016,9 +1037,8 @@ class Glm5NextForConditionalGeneration(Glm4vForConditionalGeneration, HasInnerSt
                 architectures=["Glm5NextForCausalLM"],
             )
 
-        # Glm5NextForCausalLM does not implement make_empty_intermediate_tensors,
-        # so pipeline parallelism is gated off (consistent with the text-only
-        # model) and we intentionally do not alias it here.
+        # The native packed profile is text-only. Multimodal PP needs its own
+        # vision/input handoff validation before exposing the text allocator here.
 
     def get_encoder_cudagraph_config(self):
         # This vision tower does not produce the absolute position embedding

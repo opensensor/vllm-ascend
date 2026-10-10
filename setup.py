@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 # ``tools`` is a PEP 420 namespace rather than a regular package, so
 # ``find_packages`` does not discover its children.  A small subset is imported
 # by runtime model/quantization modules and must be present in built wheels.
-RUNTIME_TOOL_PACKAGES = ["tools.deepseek_w2"]
+RUNTIME_TOOL_PACKAGES = ["tools.deepseek_w2", "tools.glm_perf", "tools.glm_w2"]
 
 
 def check_or_set_default_env(cmake_args, env_name, env_variable, default_path=""):

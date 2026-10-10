@@ -639,7 +639,9 @@ def _place_streamed_expert(
 
 def _iter_model_layers(model: Any) -> list[Any]:
     """The backbone decoder layers (empty when the backbone is not built yet)."""
-    return list(getattr(getattr(model, "model", None), "layers", []) or [])
+    backbone = getattr(model, "model", None)
+    layers = list(getattr(backbone, "layers", []) or [])
+    return layers[getattr(backbone, "start_layer", 0) : getattr(backbone, "end_layer", len(layers))]
 
 
 def _is_kda_layer(layer: Any) -> bool:
@@ -1610,6 +1612,7 @@ class Glm5NextW2MTP(nn.Module):
         from .mtp_config import validate_packed_glm_mtp
 
         validate_packed_glm_mtp(vllm_config)
+        self.vllm_config = vllm_config
         if envs.VLLM_ASCEND_310P_GLM_HOST_KV:
             raise ValueError("Packed GLM MTP requires resident MLA caches")
         self.config = _resolve_glm_text_config(vllm_config)

@@ -46,9 +46,10 @@ def prepared(tmp_path, monkeypatch):
     verified = []
     monkeypatch.setattr(
         indexer_bundle,
-        "NativeManifest",
-        lambda data: SimpleNamespace(
-            verify_files=lambda: verified.append(True), value={"operators": ["native_test::launch"], "libraries": []}
+        "verified_manifest",
+        lambda root: (
+            verified.append(True) or SimpleNamespace(value={"operators": ["native_test::launch"], "libraries": []}),
+            {"namespace": "native_test"},
         ),
     )
     cast = object()
@@ -95,3 +96,49 @@ def test_composition_binds_each_instance_without_changing_class_methods(prepared
 def test_composition_rejects_model_without_indexers(prepared):
     with pytest.raises(ValueError, match="no GLM indexer"):
         indexer_bundle.install(torch.nn.Sequential(), prepared[0])
+
+
+def make_bundle(root):
+    from tools.glm_perf.native_checkpoint import file_digest, write_json
+
+    root.mkdir()
+    files = ("bridge.so", "bf16_cast.py", "candidate.py", "options.json")
+    for filename in files:
+        (root / filename).write_text(filename)
+    write_json(root / "options.json", {"namespace": "indexer_test"})
+    manifest = dict(
+        name="indexer_test_v1",
+        operators=["indexer_test::launch"],
+        validation_source='def validate(resources):\n    return {"passed": True}\n',
+        libraries=[],
+        assets=[],
+    )
+    for filename in files:
+        field = "libraries" if filename.endswith(".so") else "assets"
+        manifest[field].append({"path": str(root / filename), "sha256": file_digest(root / filename)})
+    write_json(root / "manifest.json", manifest)
+    return root
+
+
+def test_old_absolute_receipt_is_rebased_and_hashes_remain_enforced(tmp_path):
+    import shutil
+
+    source = make_bundle(tmp_path / "old-location")
+    moved = tmp_path / "downloaded-snapshot"
+    shutil.copytree(source, moved)
+    manifest, options = indexer_bundle.verified_manifest(moved)
+    assert options["namespace"] == "indexer_test"
+    assert all(entry["path"].startswith(str(moved)) for entry in manifest.value["libraries"] + manifest.value["assets"])
+    (moved / "candidate.py").write_text("changed")
+    with pytest.raises(ValueError, match="digest mismatch"):
+        indexer_bundle.verified_manifest(moved)
+
+
+def test_portable_receipt_cannot_read_outside_its_bundle(tmp_path):
+    source = make_bundle(tmp_path / "bundle")
+    path = source / "manifest.json"
+    manifest = json.loads(path.read_text())
+    manifest["assets"][0]["path"] = "../outside.py"
+    path.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="escapes"):
+        indexer_bundle.verified_manifest(source)

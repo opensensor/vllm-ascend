@@ -531,11 +531,27 @@ def run(
     ``progress.json`` resumability and ``POSIX_FADV_DONTNEED`` page-cache release.
     ``resume=False`` reconverts every shard.
     """
+    if default_expert_bits not in (W2_BITS, W3_BITS, W4_BITS):
+        raise ValueError("expert precision must be W2, W3 or W4")
     source_dir = Path(source_dir)
     out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
+    if source_dir.resolve() == out_dir.resolve():
+        raise ValueError("conversion must not overwrite its source")
     weight_map = json.loads((source_dir / INDEX_FILE).read_text())["weight_map"]
+    if any(name.endswith("_proj_codes") for name in weight_map):
+        raise ValueError("conversion requires higher-precision source weights, not packed codes")
+    contract = dict(
+        source_index_sha256=_sha256_file(source_dir / INDEX_FILE),
+        default_expert_bits=default_expert_bits,
+        w4_layers=sorted(w4_layers),
+        w3_layers=sorted(w3_layers),
+        chunk_rows=chunk_rows,
+        shard_target_bytes=shard_target_bytes,
+    )
+    previous = _load_progress(out_dir) if out_dir.exists() else {}
+    if previous and previous.get("conversion_contract") != contract:
+        raise ValueError("existing conversion recipe differs; use a separate output directory")
+    out_dir.mkdir(parents=True, exist_ok=True)
     headers = _load_headers(source_dir, weight_map)
     items, excluded = plan_items(weight_map, headers, shard_target_bytes, default_expert_bits, w4_layers, w3_layers)
     shards = bin_shards(items, shard_target_bytes)
@@ -591,7 +607,11 @@ def run(
         peak_rss = max(peak_rss, current_rss_bytes())
         _write_json_atomic(
             out_dir / PROGRESS_FILE,
-            {"plan": {shard_names[i]: shards[i] for i in range(n_shards)}, "shards": progress_shards},
+            {
+                "conversion_contract": contract,
+                "plan": {shard_names[i]: shards[i] for i in range(n_shards)},
+                "shards": progress_shards,
+            },
         )
 
     result.total_output_bytes = sum(s.get("bytes", 0) for s in progress_shards.values())
@@ -660,8 +680,8 @@ def _cli(argv=None) -> int:
         "--expert-bits",
         type=int,
         default=W2_BITS,
-        choices=(W2_BITS, W4_BITS),
-        help="default routed-expert code width (2=W2, 4=W4). 4 makes ALL experts W4.",
+        choices=(W2_BITS, W3_BITS, W4_BITS),
+        help="default routed-expert code width (2=W2, 3=W3, 4=W4). Selected layer overrides remain explicit.",
     )
     parser.add_argument(
         "--w4-layers",

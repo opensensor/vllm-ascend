@@ -1,0 +1,70 @@
+{
+  "execution": "Offline only; Qwen owns the NPUs",
+  "hardware_validation": "not_run",
+  "inference_quality_validation": "not_run",
+  "performance_validation": "not_run",
+  "huggingface_upload": "not_run",
+  "tests": {
+    "supported_offline_suite": {
+      "passed": 443,
+      "log": "offline-suite-log.txt",
+      "excluded_environment_dependent_files": [
+        "tests/ut/glm_w2/test_glm5next_w2_assembly.py",
+        "tests/ut/glm_w2/test_grouped_gate_up.py",
+        "tests/ut/glm_w2/test_kpool_ops.py"
+      ]
+    },
+    "package_imports_outside_checkout": {
+      "passed": 2,
+      "log": "packaging-tests-log.txt"
+    },
+    "final_export_attribution_regressions": {
+      "passed": 24,
+      "overlaps_supported_suite": true,
+      "log": "export-tests-log.txt"
+    },
+    "final_loader_pipeline_regressions": {
+      "passed": 28,
+      "overlaps_supported_suite": true,
+      "log": "loader-pipeline-tests-log.txt"
+    },
+    "opt_in_real_serving_gates": {
+      "skipped": 2,
+      "reason": "No dedicated GLM endpoint supplied; hardware reserved for Qwen",
+      "log": "hardware-gate-skipped-log.txt"
+    }
+  },
+  "remaining_gates": [
+    "startup and per-stage memory admission",
+    "HCCL pipeline transport",
+    "real model coding and reasoning quality",
+    "KDA/DSA cache reset, reuse and request isolation",
+    "cancellation and prefix cache accounting",
+    "cold/warm prefill and c1/c4 decode performance",
+    "larger context qualification"
+  ],
+  "storage_verification": {
+    "two": {
+      "profile": "two-card-selective-w2",
+      "world_size": 4,
+      "shard_count": 190,
+      "tensor_count": 75575,
+      "code_tensors": 37152,
+      "scale_tensors": 37152,
+      "tensor_bytes": 143854197644,
+      "shard_checksums_verified": true,
+      "validation": "Offline storage checks only; hardware, quality and performance remain unqualified"
+    },
+    "three": {
+      "profile": "three-card-w3",
+      "world_size": 2,
+      "shard_count": 104,
+      "tensor_count": 75575,
+      "code_tensors": 37152,
+      "scale_tensors": 37152,
+      "tensor_bytes": 155631839996,
+      "shard_checksums_verified": true,
+      "validation": "Offline storage checks only; hardware, quality and performance remain unqualified"
+    }
+  }
+}

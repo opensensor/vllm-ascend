@@ -27,11 +27,25 @@ EXPERT_NAME = re.compile(
 SHA_CHUNK_BYTES = 8 * 1024**2
 
 
-def selected_weights(index, local_range, layer_keys, draft=False):
+def selected_weights(index, local_range, layer_keys, draft=False, pipeline_partition=None):
     """Authoritative local tensors, excluding peer and superseded source codes."""
     first, stop = local_range
+    if pipeline_partition is not None:
+        layer_first, layer_stop, is_first, is_last = pipeline_partition
+        if not 0 <= layer_first < layer_stop:
+            raise ValueError("invalid pipeline layer partition")
     prefixes = tuple("model.language_model." + key + "." for key in layer_keys)
     for name in index:
+        if pipeline_partition is not None:
+            layer_match = re.search(r"(?:^|\.)layers\.(\d+)(?:\.|$)", name)
+            if layer_match is not None and not layer_first <= int(layer_match[1]) < layer_stop:
+                continue
+            if ".embed_tokens." in name and not is_first:
+                continue
+            if ("lm_head." in name or name.startswith("model.language_model.norm.")) and not is_last:
+                continue
+            if name.startswith("model.visual."):
+                continue
         match = EXPERT_NAME.fullmatch(name)
         if match is not None:
             if match[1] not in layer_keys or not first <= int(match[2]) < stop:
@@ -71,6 +85,26 @@ class NativeInt4MoEMethod:
         if shared_expert is not None:
             result += shared_expert.forward(x).float()
         return result
+
+
+class SplitNativeMoE:
+    """Keep qualified decode scheduling separate from bulk prefill kernels."""
+
+    DECODE_TOKEN_LIMIT = 16
+
+    def __init__(self, prefill, decode):
+        if prefill.required_weight_scale_layout != decode.required_weight_scale_layout:
+            raise ValueError("prefill and decode scale contracts differ")
+        self.prefill = prefill
+        self.decode = decode
+
+    @property
+    def required_weight_scale_layout(self):
+        return self.prefill.required_weight_scale_layout
+
+    def __call__(self, x, *args, **kwargs):
+        backend = self.decode if x.shape[0] <= self.DECODE_TOKEN_LIMIT else self.prefill
+        return backend(x, *args, **kwargs)
 
 
 def file_digest(path):

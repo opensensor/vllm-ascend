@@ -21,11 +21,13 @@ def loader_module(monkeypatch):
     class LoadConfig:
         load_format: str = "glm_native_int4"
         safetensors_load_strategy: str = "lazy"
+        download_dir: str | None = None
         model_loader_extra_config: dict = dataclasses.field(default_factory=dict)
 
     class Default:
         def __init__(self, config):
             self.counter_before_loading_weights = 0.0
+            self.load_config = config
 
         def load_weights(self, model, config):
             assert not model.bank.nz_packed_codes
@@ -36,6 +38,7 @@ def loader_module(monkeypatch):
     stubs = {
         "vllm.config.load": {"LoadConfig": LoadConfig},
         "vllm.logger": {"logger": SimpleNamespace(info=lambda *args: None)},
+        "vllm.distributed": {"get_pp_group": lambda: SimpleNamespace(is_first_rank=True, is_last_rank=True)},
         "vllm.model_executor.model_loader": {"register_model_loader": lambda name: lambda cls: cls},
         "vllm.model_executor.model_loader.default_loader": {"DefaultModelLoader": Default},
     }
@@ -85,8 +88,17 @@ def checkpoint(tmp_path):
         local_expert_offset=1, num_local_experts=1, offload_to_cpu=False, layer_key="layers.0", nz_packed_codes=True
     )
     owner = SimpleNamespace(w2_experts=bank, routed_experts_forward=lambda: None)
-    model = SimpleNamespace(bank=bank, named_modules=lambda: [("model.layers.3.mlp_w2", owner)])
-    config = SimpleNamespace(model=str(tmp_path), hf_config=SimpleNamespace(ascend_glm_expert_layout=LAYOUT))
+    model = SimpleNamespace(
+        bank=bank,
+        named_modules=lambda: [("model.layers.3.mlp_w2", owner)],
+        vllm_config=SimpleNamespace(
+            parallel_config=SimpleNamespace(pipeline_parallel_size=1),
+            scheduler_config=SimpleNamespace(max_num_batched_tokens=640),
+        ),
+    )
+    config = SimpleNamespace(
+        model=str(tmp_path), revision=None, hf_config=SimpleNamespace(ascend_glm_expert_layout=LAYOUT)
+    )
     return model, config, owner
 
 
@@ -122,7 +134,12 @@ def test_direct_loader_uses_compiled_route_workspace_dtype(tmp_path, loader_modu
         ),
     )
     module.GlmNativeInt4Loader(config_type()).load_weights(model, config)
-    expected = {"namespace": "test_native", "activation_bits": 4, "prepared_weight_layout": True}
+    expected = {
+        "namespace": "test_native",
+        "activation_bits": 4,
+        "prepared_weight_layout": True,
+        "shared_prefill_max_tokens": 640,
+    }
     if half_routes:
         expected["fp16_route_workspace"] = True
     assert calls == [expected] and owner._method.native is instance
@@ -187,3 +204,72 @@ def test_direct_loader_composes_optional_permanent_indexer_bundle(tmp_path, load
     assert calls == [tmp_path / "indexer-kernels-v5"]
     assert model._native_int4_load_report["aicore_bf16_indexers"] == 1
     assert model._native_int4_load_report["transformed_code_tensors"] == 0
+
+
+def test_pipeline_loader_skips_nonlocal_head_and_caps_prefill_scratch(tmp_path, loader_module, monkeypatch):
+    module, config_type = loader_module
+    model, config, owner = checkpoint(tmp_path)
+    model.vllm_config.parallel_config.pipeline_parallel_size = 3
+    model.model = SimpleNamespace(start_layer=3, end_layer=4)
+    monkeypatch.setattr(module, "get_pp_group", lambda: SimpleNamespace(is_first_rank=False, is_last_rank=False))
+    calls = []
+    monkeypatch.setattr(
+        module,
+        "frozen_helper",
+        lambda root: (
+            SimpleNamespace(NativeFusedMoE=lambda *args, **kwargs: calls.append(kwargs) or object()),
+            {"namespace": "test_native"},
+        ),
+    )
+    loader = module.GlmNativeInt4Loader(config_type())
+    loader.load_weights(model, config)
+    assert "lm_head.weight" not in model.loaded
+    assert loader.pipeline_partition == (3, 4, False, False)
+    assert calls[0]["shared_prefill_max_tokens"] == 640
+    assert owner._method.native is not None
+
+
+def test_decode_bundle_is_admitted_before_weight_read_and_dispatches_separately(tmp_path, loader_module, monkeypatch):
+    from tools.glm_perf.native_checkpoint import SplitNativeMoE, file_digest
+
+    module, config_type = loader_module
+    model, config, owner = checkpoint(tmp_path)
+    path = tmp_path / MANIFEST
+    manifest = json.loads(path.read_text())
+    decode_root = tmp_path / "decode"
+    decode_root.mkdir()
+    provenance = decode_root / "provenance.json"
+    provenance.write_text(json.dumps({"_build": {"namespace": "decode", "helper_package": "decode_helpers"}}))
+    manifest.update(decode_kernel_bundle="decode", decode_kernel_provenance_sha256="invalid")
+    path.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="decode kernel provenance"):
+        module.GlmNativeInt4Loader(config_type()).load_weights(model, config)
+    assert not hasattr(model, "loaded") and model.bank.nz_packed_codes
+    manifest["decode_kernel_provenance_sha256"] = file_digest(provenance)
+    path.write_text(json.dumps(manifest))
+    calls = []
+
+    class Backend:
+        required_weight_scale_layout = None
+
+        def __init__(self, root, **kwargs):
+            self.root = root
+            calls.append((root, kwargs))
+
+        def __call__(self, x):
+            return self.root.name
+
+    monkeypatch.setattr(
+        module,
+        "frozen_helper",
+        lambda root: (
+            SimpleNamespace(NativeFusedMoE=Backend),
+            json.loads((root / "provenance.json").read_text())["_build"],
+        ),
+    )
+    module.GlmNativeInt4Loader(config_type()).load_weights(model, config)
+    assert isinstance(owner._method.native, SplitNativeMoE)
+    assert owner._method.native(torch.zeros(2, 4)) == "decode"
+    assert owner._method.native(torch.zeros(640, 4)) == "bundle"
+    assert calls[0][1]["shared_prefill_max_tokens"] == 640
+    assert "shared_prefill_max_tokens" not in calls[1][1]

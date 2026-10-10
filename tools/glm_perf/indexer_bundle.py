@@ -18,16 +18,35 @@ def read_module(path, name):
     return module
 
 
+def verified_manifest(bundle):
+    """Resolve portable assets locally, including older absolute-path receipts."""
+    bundle = Path(bundle).resolve()
+    value = json.loads((bundle / "manifest.json").read_text())
+    for field in ("libraries", "assets"):
+        for entry in value[field]:
+            path = Path(entry["path"])
+            path = bundle / path.name if path.is_absolute() else bundle / path
+            path = path.resolve()
+            if not path.is_relative_to(bundle):
+                raise ValueError("indexer asset escapes its checkpoint bundle")
+            entry["path"] = str(path)
+    manifest = NativeManifest(value)
+    manifest.verify_files()
+    options = json.loads((bundle / "options.json").read_text())
+    if manifest.value["operators"] != [options["namespace"] + "::launch"]:
+        raise ValueError("indexer bundle namespace and manifest differ")
+    paths = {Path(entry["path"]).name for entry in manifest.value["libraries"] + manifest.value["assets"]}
+    if not {"bf16_cast.py", "candidate.py", "options.json"} <= paths:
+        raise ValueError("indexer bundle omits required helpers")
+    return manifest, options
+
+
 def install(model, bundle):
     from vllm_ascend.models.glm5next.attention import Indexer
     from vllm_ascend.models.glm5next.sparse_attn_indexer_kpool import SparseAttnIndexerKpool
 
-    manifest = NativeManifest(json.loads((bundle / "manifest.json").read_text()))
-    manifest.verify_files()
-    options = json.loads((bundle / "options.json").read_text())
+    manifest, options = verified_manifest(bundle)
     namespace = options["namespace"]
-    if manifest.value["operators"] != [namespace + "::launch"]:
-        raise ValueError("indexer bundle namespace and manifest differ")
     for entry in manifest.value["libraries"]:
         # Hot serving may already own the same binary from its build path.
         # Loading a copied .so registers its TORCH_LIBRARY twice. Check the

@@ -546,3 +546,18 @@ def test_real_experts_w2_minmax_roundtrip_and_bounded_rss(monkeypatch):
     # No per-expert accumulation across repeated conversions.
     warm = rss_samples[1:]
     assert max(warm) - min(warm) < 256 * (1 << 20)
+
+
+def test_w3_default_converts_from_higher_precision_without_replacing_w2(synthetic_source, tmp_path):
+    source = synthetic_source
+    w2, w3 = tmp_path / "w2", tmp_path / "w3"
+    convert_full.run(source, w2, default_expert_bits=2)
+    before = {p.name: convert_full._sha256_file(p) for p in w2.iterdir() if p.is_file()}
+    convert_full.run(source, w3, default_expert_bits=3)
+    manifest = json.loads((w3 / convert_full.MANIFEST_FILE).read_text())
+    assert manifest["default_expert_bits"] == 3
+    assert {p.name: convert_full._sha256_file(p) for p in w2.iterdir() if p.is_file()} == before
+    with pytest.raises(ValueError, match="recipe differs"):
+        convert_full.run(source, w2, default_expert_bits=3)
+    with pytest.raises(ValueError, match="higher-precision"):
+        convert_full.run(w2, tmp_path / "widened", default_expert_bits=3)
