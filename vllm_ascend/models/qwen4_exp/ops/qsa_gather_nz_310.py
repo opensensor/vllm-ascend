@@ -12,6 +12,26 @@ _NZ_INNER = 16
 _COMPRESS_RATIO = 4
 
 
+def prepare_qsa_gather_metadata(
+    selection: QSAGroupSelection, block_table: torch.Tensor
+) -> tuple[QSAGroupSelection, torch.Tensor]:
+    """Prepare shared K/V gather operands once on their producing stream.
+
+    Both NZ gather kernels require contiguous int32 metadata. Preparing it
+    before the consumer streams' readiness event avoids duplicate casts on
+    K and V streams and lets every query tile share the block table.
+    """
+    return (
+        QSAGroupSelection(
+            group_indices=selection.group_indices.to(dtype=torch.int32).contiguous(),
+            group_counts=selection.group_counts.to(dtype=torch.int32).contiguous(),
+            tail_starts=selection.tail_starts.to(dtype=torch.int32).contiguous(),
+            tail_counts=selection.tail_counts.to(dtype=torch.int32).contiguous(),
+        ),
+        block_table.to(dtype=torch.int32).contiguous(),
+    )
+
+
 def _qsa_gather_nz_310(
     cache: torch.Tensor,
     selection: QSAGroupSelection,
@@ -71,13 +91,14 @@ def _qsa_gather_nz_310(
     op = None if namespace is None else getattr(namespace, "qsa_gather_value_nz_310", None)
     if op is None:
         raise RuntimeError("vLLM Ascend was built without the 310P QSA NZ value gather operator")
+    selection, block_table = prepare_qsa_gather_metadata(selection, block_table)
     op(
         cache,
-        selection.group_indices.to(dtype=torch.int32).contiguous(),
-        selection.group_counts.to(dtype=torch.int32).contiguous(),
-        selection.tail_starts.to(dtype=torch.int32).contiguous(),
-        selection.tail_counts.to(dtype=torch.int32).contiguous(),
-        block_table.to(dtype=torch.int32).contiguous(),
+        selection.group_indices,
+        selection.group_counts,
+        selection.tail_starts,
+        selection.tail_counts,
+        block_table,
         output,
         num_kv_heads,
         head_dim,

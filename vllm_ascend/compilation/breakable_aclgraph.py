@@ -19,12 +19,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass, fields
 from typing import Any
 
 import torch
 from vllm.compilation.breakable_cudagraph import BreakableCUDAGraphWrapper
 from vllm.config import CUDAGraphMode, VllmConfig
-from vllm.forward_context import get_forward_context
+from vllm.forward_context import BatchDescriptor, get_forward_context, is_forward_context_available
 
 from vllm_ascend.ascend_forward_context import _EXTRA_CTX
 from vllm_ascend.compilation.acl_graph import (
@@ -33,6 +34,13 @@ from vllm_ascend.compilation.acl_graph import (
     get_graph_params,
     weak_ref_workspaces,
 )
+
+
+@dataclass(frozen=True)
+class _DraftStepBatchDescriptor(BatchDescriptor):
+    """Different draft steps bind different persistent attention buffers."""
+
+    draft_step: int = 0
 
 
 class BreakableACLGraphWrapper(BreakableCUDAGraphWrapper):
@@ -50,6 +58,31 @@ class BreakableACLGraphWrapper(BreakableCUDAGraphWrapper):
 
         self.use_eagle = use_eagle
         self.enable_enpu = enable_enpu
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        if not is_forward_context_available() or not _EXTRA_CTX.is_draft_model:
+            return super().__call__(*args, **kwargs)
+        context = get_forward_context()
+        if context.cudagraph_runtime_mode == CUDAGraphMode.NONE:
+            return super().__call__(*args, **kwargs)
+        descriptor = context.batch_descriptor
+        steps = getattr(context, "draft_attn_metadatas", None)
+        if descriptor is None or not steps:
+            return super().__call__(*args, **kwargs)
+        step = next((index for index, metadata in enumerate(steps) if metadata is context.attn_metadata), None)
+        if step is None:
+            return super().__call__(*args, **kwargs)
+        # Per-model capture encloses one proposal step, not the Python draft
+        # loop. Equal token buckets therefore do not imply equal slot-mapping
+        # or query-boundary addresses. Give each step its own graph entry.
+        context.batch_descriptor = _DraftStepBatchDescriptor(
+            **{field.name: getattr(descriptor, field.name) for field in fields(BatchDescriptor)},
+            draft_step=step,
+        )
+        try:
+            return super().__call__(*args, **kwargs)
+        finally:
+            context.batch_descriptor = descriptor
 
     def _capture(
         self,

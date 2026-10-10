@@ -9,7 +9,11 @@ from collections.abc import Sequence
 
 import torch
 
-from .qsa_gather_nz_310 import qsa_gather_key_transposed_nz_310, qsa_gather_value_nz_310
+from .qsa_gather_nz_310 import (
+    prepare_qsa_gather_metadata,
+    qsa_gather_key_transposed_nz_310,
+    qsa_gather_value_nz_310,
+)
 from .qsa_indexer import QSAGroupSelection
 from .qsa_sparse_attention_310 import _validate_contract
 
@@ -153,6 +157,10 @@ def qsa_batched_prefill_310(
     selected_keys_buffer = None
     selected_values_buffer = None
     if use_nz_gather:
+        # Metadata is produced on the main stream before any K/V readiness
+        # event. Contiguous row slices remain views and each gather's public
+        # adapter can reuse these operands without a conversion or allocation.
+        selection, block_table = prepare_qsa_gather_metadata(selection, block_table)
         max_tile_tokens = min(query_tile, num_tokens)
         selected_keys_buffer = torch_npu.empty_with_format(
             size=(max_tile_tokens, num_kv_heads, head_dim, padded_tokens),
@@ -176,7 +184,6 @@ def qsa_batched_prefill_310(
     for start in range(0, num_tokens, query_tile):
         end = min(start + query_tile, num_tokens)
         tile_tokens = end - start
-        groups = selection.group_indices[start:end].to(torch.int32)
         group_valid = group_ranks.unsqueeze(0) < selection.group_counts[start:end].unsqueeze(1)
         group_token_valid = (
             group_valid.unsqueeze(-1)
@@ -293,6 +300,7 @@ def qsa_batched_prefill_310(
                     )
         else:
             assert key_rows is not None and value_rows is not None and group_offsets is not None
+            groups = selection.group_indices[start:end].to(torch.int32)
             group_tokens = (groups.unsqueeze(-1) * compress_ratio + group_offsets).reshape(
                 tile_tokens, selected_width * compress_ratio
             )
