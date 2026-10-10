@@ -1,0 +1,36 @@
+import argparse
+import importlib.util
+import json
+import os
+from pathlib import Path
+import signal
+import subprocess
+import time
+
+p=argparse.ArgumentParser();p.add_argument('--output',type=Path,required=True);p.add_argument('--limit',type=float,default=90);p.add_argument('--timeout',type=float,default=300);p.add_argument('command',nargs=argparse.REMAINDER);a=p.parse_args()
+if not a.command or a.output.exists():raise SystemExit('new output directory and command required')
+a.output.mkdir()
+spec=importlib.util.spec_from_file_location('thermal','/srv/ai/src/qwen-six-chip-test-f25e70c09-20261009/tools/qwen4exp/thermal_controller.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+def temperatures():return module.parse_temperatures(subprocess.check_output(['npu-smi','info'],text=True,timeout=3),6)
+initial=temperatures()
+if max(initial)>=a.limit:raise SystemExit('temperature admission refused')
+with (a.output/'child.log').open('w') as log,(a.output/'thermal.jsonl').open('w') as samples:
+ child=subprocess.Popen(a.command,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+ (a.output/'pid').write_text(str(child.pid)+'\n')
+ start=time.monotonic();reason=None
+ while child.poll() is None:
+  try:
+   temps=temperatures();samples.write(json.dumps({'time':time.time(),'temperatures_c':temps})+'\n');samples.flush()
+   if max(temps)>=a.limit:reason='temperature limit'
+  except Exception as exc:reason=f'sensor failure: {exc}'
+  if time.monotonic()-start>a.timeout:reason='timeout'
+  if reason:
+   os.killpg(child.pid,signal.SIGTERM)
+   try:child.wait(timeout=10)
+   except subprocess.TimeoutExpired:os.killpg(child.pid,signal.SIGKILL);child.wait()
+   break
+  time.sleep(1)
+ result={'returncode':child.wait(),'abort_reason':reason,'duration_s':time.monotonic()-start,'initial_temperatures_c':initial,'command':a.command}
+ (a.output/'result.json').write_text(json.dumps(result,indent=2)+'\n')
+ print(json.dumps(result),flush=True)
+ raise SystemExit(0 if child.returncode==0 and reason is None else 1)

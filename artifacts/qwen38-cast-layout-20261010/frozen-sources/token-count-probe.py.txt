@@ -1,0 +1,59 @@
+import statistics
+import time
+
+import torch
+
+from tools.qwen4exp.resident_worker import QwenResidentExtension
+
+
+def validate():
+    assert torch.ops.qwen_stage_diagnostic_v24.marker() == 1
+    assert not hasattr(QwenResidentExtension, "resident_token_count_probe_v24")
+
+    def probe(self):
+        records = []
+        removed = 0
+        try:
+            torch.npu.synchronize()
+            for wrapper in self._resident_wrappers():
+                for module in wrapper.runnable.modules():
+                    if hasattr(module, "_qwen_hc_exact_injection_nz_cache"):
+                        delattr(module, "_qwen_hc_exact_injection_nz_cache")
+                        removed += 1
+            with torch.inference_mode():
+                for batch in (1, 6):
+                    for width in (3, 9):
+                        gen = torch.Generator().manual_seed(batch + width)
+                        valid = torch.randint(2, (batch, width), generator=gen).bool().npu()
+                        functions = {
+                            "original": lambda: valid.sum(1),
+                            "int32_sum": lambda: valid.sum(1, dtype=torch.int32).to(torch.int64),
+                            "float_via_int32": lambda: valid.sum(1, dtype=torch.float32).to(torch.int32).to(torch.int64),
+                        }
+                        expected = valid.cpu().sum(1)
+                        for fn in functions.values():
+                            torch.testing.assert_close(fn().cpu(), expected, rtol=0, atol=0)
+                        samples = {name: [] for name in functions}
+                        for trial in range(5):
+                            names = list(functions)
+                            if trial % 2:
+                                names.reverse()
+                            for name in names:
+                                for _ in range(2):
+                                    functions[name]()
+                                torch.npu.synchronize()
+                                start = time.perf_counter()
+                                for _ in range(20):
+                                    functions[name]()
+                                torch.npu.synchronize()
+                                samples[name].append((time.perf_counter() - start) * 1000 / 20)
+                        records.append({"batch": batch, "width": width, "exact": True, "samples_ms": samples,
+                                        "median_ms": {k: statistics.median(v) for k,v in samples.items()}})
+            return {"rank": torch.distributed.get_rank(), "passed": True, "records": records,
+                    "unused_diagnostic_caches_released": removed}
+        except Exception as error:
+            return {"rank": torch.distributed.get_rank(), "passed": False, "records": records,
+                    "error": f"{type(error).__name__}: {error}"}
+
+    setattr(QwenResidentExtension, "resident_token_count_probe_v24", probe)
+    return {"passed": True, "production_forward_changed": False}

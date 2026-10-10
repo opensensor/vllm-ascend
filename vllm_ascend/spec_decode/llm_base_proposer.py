@@ -44,6 +44,7 @@ from vllm.v1.worker.gpu_input_batch import CachedRequestState, InputBatch
 
 from vllm_ascend import utils as ascend_utils
 from vllm_ascend._310p.qwen4exp_mtp import qwen4exp_mtp_hidden_width
+from vllm_ascend._310p.spec_token_counts import count_valid_spec_tokens
 from vllm_ascend.ascend_config import get_ascend_config
 from vllm_ascend.ascend_forward_context import _EXTRA_CTX, set_ascend_forward_context
 from vllm_ascend.attention.attention_v1 import AscendAttentionState
@@ -2259,7 +2260,9 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
         valid_mask = (valid_sampled_token_ids_gpu != -1) & (valid_sampled_token_ids_gpu < gpu_input_batch.vocab_size)
 
         # Count the number of valid tokens in each request
-        valid_sampled_tokens_count = valid_mask.sum(dim=1)
+        valid_sampled_tokens_count = (
+            count_valid_spec_tokens(valid_mask) if ascend_utils.is_310p() else valid_mask.sum(dim=1)
+        )
 
         # Get the rightmost valid index per row
         last_valid_indices = valid_sampled_tokens_count - 1

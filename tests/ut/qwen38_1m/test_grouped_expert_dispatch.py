@@ -151,6 +151,35 @@ def test_histogram_falls_back_when_float32_cannot_represent_route_counts() -> No
     assert dispatch.counts.tolist() == [3, 3]
 
 
+def test_histogram_uses_exact_int32_intermediate_before_int64(monkeypatch) -> None:
+    # Catch accidental restoration of the slow 310P FLOAT -> INT64 cast.
+    # The largest legal histogram count is exactly representable in INT32.
+    conversions = []
+    values = torch.tensor([0, 25600, 1 << 24], dtype=torch.float32)
+
+    class HistogramSlice:
+        def to(self, dtype):
+            conversions.append(dtype)
+            return values.to(dtype)
+
+    class HistogramResult:
+        def __getitem__(self, key):
+            return HistogramSlice()
+
+    monkeypatch.setattr(torch, "histc", lambda *args, **kwargs: HistogramResult())
+    dispatch = build_grouped_expert_dispatch(
+        torch.ones((1, 1)),
+        torch.zeros((1, 1), dtype=torch.int64),
+        num_local_experts=3,
+        expert_offset=0,
+        weight_dtype=torch.float32,
+        count_mode="histogram",
+    )
+    assert conversions == [torch.int32]
+    assert dispatch.counts.dtype == torch.int64
+    assert dispatch.counts.tolist() == [0, 25600, 1 << 24]
+
+
 def test_route_count_mode_rejects_unknown_value() -> None:
     with pytest.raises(ValueError, match="unsupported route count mode"):
         build_grouped_expert_dispatch(

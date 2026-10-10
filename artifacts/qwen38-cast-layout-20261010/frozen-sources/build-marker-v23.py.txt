@@ -1,0 +1,11 @@
+import subprocess
+from pathlib import Path
+import torch
+from torch.utils.cpp_extension import include_paths, library_paths
+root=Path('/srv/ai/src/qwen-cast-layout-20261010')
+command=['c++','-std=c++17','-O2','-shared','-fPIC',f'-D_GLIBCXX_USE_CXX11_ABI={int(torch.compiled_with_cxx11_abi())}',str(root/'diagnostic-marker-v23.cpp'),'-o',str(root/'diagnostic-marker-v23.so')]
+command += [f'-I{p}' for p in include_paths()]
+command += [f'-L{p}' for p in library_paths()]
+command += ['-ltorch_cpu','-lc10','-ltorch']
+subprocess.run(command,check=True)
+print('Host-only diagnostic marker compiled; no device runtime initialized',flush=True)

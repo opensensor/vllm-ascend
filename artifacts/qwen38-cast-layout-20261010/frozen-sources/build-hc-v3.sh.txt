@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -eo pipefail
+source /srv/ai/src/qwen38-w4-hardware-20260927/qwen38-w4-hardware-env.sh
+set -u
+qwen_build=/srv/ai/src/qwen-cast-layout-20261010
+qwen_old=/home/matteius/experiments/qwen38-decode-next-20261005/native-hc-residual
+qwen_cann=/usr/local/Ascend/ascend-toolkit/latest
+cd "$qwen_build"
+c++ -std=c++17 -O2 /srv/ai/src/qwen-performance-paced-tp6-20261010/tools/glm_perf/compile_reconstruction.cpp -I"$qwen_cann/include" -L"$qwen_cann/lib64" -lacl_rtc -lascendcl -Wl,-rpath,"$qwen_cann/lib64" -o compile-hc-v3
+./compile-hc-v3 residual-v3.cpp residual-v3.bin --npu-arch=dav-2002 -I/srv/ai/src/qwen-performance-paced-tp6-20261010/csrc/gmm/qwen_w4_a8_int4_matmul_v310/op_kernel --sysroot="$qwen_cann/tools/hcc/sysroot" -isystem"$qwen_cann/tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0" -isystem"$qwen_cann/tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0/aarch64-target-linux-gnu"
+sed 's/qwen_native_hc_residual_v1/qwen_native_hc_residual_v3/g;s/QwenHcResidualDirectV1/QwenHcResidualDirectV3/g' "$qwen_old/bridge.cpp" > bridge-hc-v3.cpp
+sed "s/qwen_native_hc_residual_v1/qwen_native_hc_residual_v3/g;s|$qwen_old/bridge.cpp|$qwen_build/bridge-hc-v3.cpp|;s|build NPUBridge.o: compile|build $qwen_old/NPUBridge.o: compile|;s|build NPUStorageImpl.o: compile|build $qwen_old/NPUStorageImpl.o: compile|;s|bindings.o NPUBridge.o NPUStorageImpl.o|bindings-hc-v3.o $qwen_old/NPUBridge.o $qwen_old/NPUStorageImpl.o|;s|build bindings.o:|build bindings-hc-v3.o:|" "$qwen_old/build.ninja" > build-hc-v3.ninja
+ninja -f build-hc-v3.ninja -j2

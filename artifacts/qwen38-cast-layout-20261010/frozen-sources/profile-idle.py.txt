@@ -1,0 +1,19 @@
+import json,subprocess,time,urllib.request
+from pathlib import Path
+root=Path('/srv/ai/src/qwen-cast-layout-20261010')
+def call(path,body=None):
+ req=urllib.request.Request('http://127.0.0.1:8001'+path,data=None if body is None else json.dumps(body).encode(),headers={'Content-Type':'application/json'})
+ with urllib.request.urlopen(req,timeout=180) as r:return json.load(r)
+def rpc(action):return call('/collective_rpc',{'method':'resident_cast_layout_profile_v19','args':[action],'timeout':120})
+def sample():
+ m=urllib.request.urlopen('http://127.0.0.1:8001/metrics',timeout=10).read().decode()
+ assert all(float(x.rsplit(' ',1)[1])==0 for x in m.splitlines() if x.startswith(('vllm:num_requests_running{','vllm:num_requests_waiting{')))
+ return {'time':time.time(),'sensor':subprocess.check_output(['npu-smi','info'],text=True,timeout=5),'counts_zero':True}
+report={'before':sample(),'kind':'passive_rank_zero_idle_no_api_generation','start':rpc('start')}
+try:
+ time.sleep(10)
+ report['after']=sample()
+finally:
+ report['stop']=rpc('stop')
+ (root/'idle-profile.json').write_text(json.dumps(report,indent=2)+'\n')
+print('Idle capture stopped; no inference workload submitted',flush=True)

@@ -1,0 +1,21 @@
+import json,os,signal,subprocess,time,urllib.request
+from pathlib import Path
+r=Path('/srv/ai/src/qwen-cast-layout-20261010')
+def request(path,body=None):
+ req=urllib.request.Request('http://127.0.0.1:8001'+path,data=None if body is None else json.dumps(body).encode(),headers={'Content-Type':'application/json'})
+ with urllib.request.urlopen(req,timeout=60) as reply:return json.load(reply)
+metrics=urllib.request.urlopen('http://127.0.0.1:8001/metrics',timeout=10).read().decode()
+assert all(float(line.rsplit(' ',1)[1])==0 for line in metrics.splitlines() if line.startswith(('vllm:num_requests_running{','vllm:num_requests_waiting{')))
+command=Path('/proc/440842/cmdline').read_bytes().decode().replace('\x00',' ')
+assert 'vllm.entrypoints.cli.main serve' in command
+before={'time':time.time(),'server_pid':440842,'command':command,'metrics':metrics,'status':request('/collective_rpc',{'method':'resident_status'}),'sensors':subprocess.check_output(['npu-smi','info'],text=True)}
+(r/'stop-idle-audit-before.json').write_text(json.dumps(before,indent=2)+'\n')
+os.kill(440842,signal.SIGTERM)
+for _ in range(30):
+ if not Path('/proc/440842').exists():break
+ time.sleep(1)
+remaining=[pid for pid in (440842,443387,444210,444211,444212,444213,444214,444215) if Path(f'/proc/{pid}').exists()]
+after={'time':time.time(),'remaining_pids':remaining,'sensors':subprocess.check_output(['npu-smi','info'],text=True)}
+(r/'stop-idle-audit-after.json').write_text(json.dumps(after,indent=2)+'\n')
+print(json.dumps({'remaining':remaining,'stopped_for':'idle DDR and heat attribution; no workload during cool-down'}),flush=True)
+assert not remaining

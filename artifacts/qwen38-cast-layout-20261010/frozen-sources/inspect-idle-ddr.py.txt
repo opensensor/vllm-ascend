@@ -1,0 +1,8 @@
+import json,sqlite3
+from pathlib import Path
+p=next(Path('/srv/ai/src/qwen-cast-layout-20261010/transfer-profile-v19').glob('*20261010150047368*/ASCEND_PROFILER_OUTPUT/ascend_pytorch_profiler_0.db'))
+c=sqlite3.connect('file:'+str(p)+'?mode=ro',uri=True)
+for table in ('DDR','LLC','CANN_API','TASK'):
+ print(table,list(c.execute(f'PRAGMA table_info({table})')))
+ print('count',c.execute(f'SELECT COUNT(*) FROM {table}').fetchone())
+ print('sample',list(c.execute(f'SELECT * FROM {table} LIMIT 3')))

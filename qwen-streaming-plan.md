@@ -526,3 +526,36 @@ ranks 4–5 have invalid bandwidth counters. All ranks have similar copy counts,
 with payload attribution still incomplete. Cast/layout chains need attribution. The live six-window,
 image-enabled server now uses pacing. The +50% throughput and lower cold-TTFT
 target remains incomplete.
+
+## October 10 cast, layout, and barrier follow-up
+
+The [resident audit](artifacts/qwen38-cast-layout-20261010/README.md) now includes
+fixed-shape expert histogram counts, short INT32 speculative counts, and the
+GDN output RMS path at six-chip decode sizes. CPU and six-chip component gates
+passed. The original injection projection remains unchanged: joining or
+reformatting its four weight rows failed exact parity and was rejected.
+
+The residual kernel's ownership events replace whole-pipeline barriers without
+changing its tile sizes or arithmetic. It matched the old kernel and reference
+when given identical real-weight coefficients at all 98 HC layers on six chips.
+Repeated baseline projection calls sometimes vary in their last bits; independent
+projection reruns therefore cannot establish residual-kernel parity by themselves.
+Isolated 2560-row residual latency improved from about 1.66 to 0.85 ms. This is
+not a demonstrated whole-model throughput multiplier.
+
+The latest recorded historical-prompt median is 28.277 tok/s, about 46.8% above
+the older 19.262 tok/s control. The 50% target remains open. Previous prefill
+trials improved 4096-token cold TTFT from 10.370 to 9.470–9.729 seconds, without
+a reliable matched C1 improvement. Full six-by-256K stress and sustained thermal
+qualification remain open. Passive idle-transfer attribution and a clean-runtime
+speculative-depth comparison are the next gates; maintain the 94/85°C thermal
+controller and the separate 96°C cutoff.
+
+The passive idle trace reported roughly 43–44 GB/s DDR reads with no inference
+kernels or explicit copy submissions. DDR utilization briefly dropped to zero
+after all workers stopped, then returned to 47%; the third card reached 95°C
+without model processes. This prevents attribution to serving/HCCL alone. The
+server is stopped for cooling; a new load still requires all six chips to
+pass thermal admission even when CPU checks are complete. A model-free phase-isolation probe now enforces
+six-sensor admission at 72°C and a 90°C experiment abort. Its five CPU guards
+passed; device/allocator/PyHCCL/graph phases await hardware cooling.

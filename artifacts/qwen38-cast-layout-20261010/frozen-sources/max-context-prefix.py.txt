@@ -1,0 +1,41 @@
+import concurrent.futures,json,time,urllib.request,threading
+from pathlib import Path
+r=Path('/srv/ai/src/qwen-cast-layout-20261010')
+base='http://127.0.0.1:8001'
+def req(path,body=None):
+ q=urllib.request.Request(base+path,data=None if body is None else json.dumps(body).encode(),headers={'Content-Type':'application/json'})
+ with urllib.request.urlopen(q,timeout=240) as res:return json.load(res)
+common='These archive notes are background only. The blue project passed its review.\n'*256
+barrier=threading.Barrier(6)
+def payload(i):return {'model':'qwen38-flash-next','messages':[{'role':'user','content':common+f'\nCompute {90+i} plus 7. Return only the integer.'}],'max_tokens':24,'temperature':0,'seed':42,'chat_template_kwargs':{'enable_thinking':False}}
+warm=req('/v1/chat/completions',payload(-1))
+def branch(i):
+ barrier.wait();s=time.monotonic();v=req('/v1/chat/completions',payload(i));out=v['choices'][0]['message'].get('content') or ''
+ return {'branch':i,'passed':str(97+i) in out,'elapsed_s':time.monotonic()-s,'response':v}
+with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:results=list(pool.map(branch,range(6)))
+(r/'mtp-v2-ple-prefix-branches.json').write_text(json.dumps({'warm':warm,'results':results},indent=2))
+print(json.dumps({'branches_passed':all(v['passed'] for v in results),'cached_tokens':[v['response']['usage'].get('prompt_tokens_details',{}).get('cached_tokens',0) for v in results]}),flush=True)
+assert all(v['passed'] for v in results)
+assert all(v['response']['usage'].get('prompt_tokens_details',{}).get('cached_tokens',0)>0 for v in results)
+p=payload(10);p['messages']=[{'role':'user','content':'Write a long detailed guide to testing Python applications, including examples.'}];p['max_tokens']=2048;p['stream']=True
+q=urllib.request.Request(base+'/v1/chat/completions',data=json.dumps(p).encode(),headers={'Content-Type':'application/json'})
+chunks=0;started=time.monotonic()
+with urllib.request.urlopen(q,timeout=180) as res:
+ for line in res:
+  if line.startswith(b'data: ') and line[6:].strip()!=b'[DONE]':
+   event=json.loads(line[6:]);
+   if any(c.get('delta',{}).get('content') for c in event.get('choices',[])):chunks+=1
+   if chunks>=3:break
+for _ in range(30):
+ metrics=urllib.request.urlopen(base+'/metrics',timeout=10).read().decode()
+ live=[float(l.rsplit(' ',1)[1]) for l in metrics.splitlines() if l.startswith(('vllm:num_requests_running{','vllm:num_requests_waiting{'))]
+ if live and all(v==0 for v in live):break
+ time.sleep(1)
+else:raise AssertionError('cancelled request did not drain')
+(r/'mtp-v2-ple-cancel.json').write_text(json.dumps({'content_chunks_read':chunks,'elapsed_s':time.monotonic()-started,'running_waiting_after':live,'passed':True},indent=2))
+(r/'mtp-v2-ple-after-branches.json').write_text(json.dumps(req('/collective_rpc',{'method':'resident_status'}),indent=2))
+print('Prefix branches and cancellation passed',flush=True)
+
+status=json.loads((r/"mtp-v2-ple-after-branches.json").read_text())["results"]
+assert all(v["graphs_dirty"] is False for v in status)
+assert all(s["spill_count"] == 0 and s["restore_count"] == 0 for v in status for s in v["prefix_mamba"].values())

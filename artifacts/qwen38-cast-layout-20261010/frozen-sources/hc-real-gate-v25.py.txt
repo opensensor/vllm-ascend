@@ -1,0 +1,72 @@
+from tools.qwen4exp.direct_hc_residual import MAX_TOKENS, MAX_WIDTH, TILE_WIDTH
+from vllm_ascend.models.qwen4_exp.model import _linear
+def _supports_device(device):
+    return device.type == "npu"
+def make_combine(op):
+    def combine(self, block_output, residuals):
+        if not self.use_combine:
+            raise RuntimeError("combine disabled for this gated residual")
+        hyper, normalized = residuals
+        if (
+            torch.is_grad_enabled()
+            or not _supports_device(hyper.device)
+            or block_output.device != hyper.device
+            or hyper.dtype != torch.float16
+            or block_output.dtype != torch.float16
+            or self.params_dtype != torch.float16
+            or self.compute_dtype != torch.float32
+            or self.hc_count != 4
+            or not 0 < self.hidden_size <= MAX_WIDTH
+            or self.hidden_size % TILE_WIDTH
+            or not 0 < hyper.shape[0] <= MAX_TOKENS
+            or not hyper.is_contiguous()
+            or not block_output.is_contiguous()
+        ):
+            return fused_hc_projection.combine(self, block_output, residuals)
+        # Preserve the exact original GEMM, divide, sigmoid, and FP16 multiply.
+        injection = 2.0 * torch.sigmoid(_linear(normalized, self.block_inject_weight, self.compute_dtype) / self.hc_count)
+        return op(hyper, block_output, injection)
+
+    return combine
+import torch
+import torch_npu
+
+from tools.qwen4exp.resident_candidates import fused_hc_projection, fused_hc_residual, shared_hc_operand
+from tools.qwen4exp.resident_worker import QwenResidentExtension
+from vllm_ascend.models.qwen4_exp.model import _GatedResidual
+
+
+def validate():
+    assert torch.ops.qwen_stage_diagnostic_v25.marker() == 1
+    assert not hasattr(QwenResidentExtension, "resident_hc_gate_v25")
+
+    def gate(self):
+        count = 0
+        try:
+            combine = make_combine(self._resident_native_session().resources["hc_residual_v3"])
+            modules = [m for w in self._resident_wrappers() for m in w.runnable.modules()
+                       if isinstance(m, _GatedResidual) and m.use_combine]
+            with torch.inference_mode():
+                for index, module in enumerate(modules):
+                    rows_list = (3, 18, 128, 640, 2560) if index == 0 else (128,)
+                    for rows in rows_list:
+                        gen = torch.Generator().manual_seed(20261010 + index + rows)
+                        hyper = torch.randn(rows, module.hyper_hidden, generator=gen).half().npu()
+                        block = torch.randn(rows, module.hidden_size, generator=gen).half().npu()
+                        expected_mix, residual = shared_hc_operand.mix(module, hyper)
+                        expected = fused_hc_projection.combine(module, block, residual)
+                        actual_mix, actual_residual = shared_hc_operand.mix(module, hyper)
+                        assert isinstance(actual_residual, tuple)
+                        actual = combine(module, block, actual_residual)
+                        torch.testing.assert_close(actual_mix.cpu(), expected_mix.cpu(), rtol=0, atol=0)
+                        torch.testing.assert_close(actual.cpu(), expected.cpu(), rtol=0, atol=0)
+                        count += 1
+            return {"rank": torch.distributed.get_rank(), "passed": True, "cases": count,
+                    "modules": len(modules), "bitwise_equal": True,
+                    "reference": "shared HC operand, previously exact against baseline at all five row sizes"}
+        except Exception as error:
+            return {"rank": torch.distributed.get_rank(), "passed": False, "cases": count,
+                    "error": f"{type(error).__name__}: {error}"}
+
+    setattr(QwenResidentExtension, "resident_hc_gate_v25", gate)
+    return {"passed": True, "production_forward_changed": False}

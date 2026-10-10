@@ -1,0 +1,273 @@
+# SPDX-License-Identifier: Apache-2.0
+# Frozen function from grouped_expert_dispatch.py plus reversible live selection.
+from typing import Literal
+import torch
+from vllm_ascend.models.qwen4_exp.grouped_expert_dispatch import GroupedExpertDispatch
+from tools.qwen4exp.resident_candidates.shared_hc_operand import mix
+_MAX_EXACT_FLOAT32_INTEGER = 1 << 24
+
+def build_grouped_expert_dispatch(
+    topk_weights: torch.Tensor,
+    topk_ids: torch.Tensor,
+    *,
+    num_local_experts: int,
+    expert_offset: int,
+    weight_dtype: torch.dtype,
+    count_mode: Literal["compare", "histogram"] = "compare",
+) -> GroupedExpertDispatch:
+    """Sort local expert routes without synchronizing with the host.
+
+    This accepts unequal contiguous expert shards (for example 512 experts
+    distributed as 86/86/85/85/85/85 over six ranks). Global top-k ids never
+    change: peer-owned routes are placed after all local groups and can be
+    mapped to a zero row when reconstructing this rank's partial output.
+    """
+    if topk_ids.ndim != 2 or topk_weights.shape != topk_ids.shape:
+        raise ValueError("topk_ids and topk_weights must have the same [tokens, top_k] shape")
+    if topk_ids.dtype not in (torch.int32, torch.int64):
+        raise ValueError("topk_ids must contain int32 or int64 expert ids")
+    if topk_ids.device != topk_weights.device:
+        raise ValueError("topk_ids and topk_weights must be on the same device")
+    if num_local_experts <= 0 or expert_offset < 0:
+        raise ValueError("num_local_experts must be positive and expert_offset nonnegative")
+    if count_mode not in ("compare", "histogram"):
+        raise ValueError(f"unsupported route count mode: {count_mode}")
+
+    num_tokens, top_k = topk_ids.shape
+    num_routes = num_tokens * top_k
+    pair_expert = topk_ids.reshape(-1) - expert_offset
+    in_local = (pair_expert >= 0) & (pair_expert < num_local_experts)
+    pair_expert = torch.where(in_local, pair_expert, num_local_experts)
+    token_indices = torch.arange(num_tokens, device=topk_ids.device).unsqueeze(1).expand(-1, top_k).reshape(-1)
+    route_weights = topk_weights.to(weight_dtype).reshape(-1, 1)
+
+    # 310P sorts FP32 keys on AI Core, but direct INT64 -> FP32 uses a much
+    # slower AI-CPU cast. The bounded, nonnegative keys fit exactly in INT32
+    # and FP32, so taking the two AI-Core casts preserves every sort key.
+    expert_sort_key = (
+        pair_expert.to(torch.int32).to(torch.float32)
+        if num_local_experts <= _MAX_EXACT_FLOAT32_INTEGER
+        else pair_expert
+    )
+    order = torch.argsort(expert_sort_key, stable=True)
+    if count_mode == "histogram" and max(num_routes, num_local_experts) <= _MAX_EXACT_FLOAT32_INTEGER:
+        # The final bin holds peer-owned routes. histc has a fixed output
+        # shape, avoiding the route-by-expert comparison matrix during long
+        # prefills while keeping group boundaries on device.
+        # FP32 represents every key and count exactly under this bound.
+        counts = torch.histc(
+            expert_sort_key,
+            bins=num_local_experts + 1,
+            min=0,
+            max=num_local_experts,
+        )[:num_local_experts].to(torch.int32).to(torch.int64)
+        # Every count is bounded by num_routes <= 2**24, so INT32 is exact.
+        # On 310P, direct FP32 -> INT64 dispatches an AI-CPU cast; the two
+        # integer conversions avoid that slow path without host inspection.
+    else:
+        local_expert_ids = torch.arange(num_local_experts, device=topk_ids.device, dtype=pair_expert.dtype)
+        counts = (pair_expert.unsqueeze(1) == local_expert_ids).sum(dim=0)
+    # Inverting by scatter/index_copy is mathematically cheaper, but the 310P
+    # implementations are slower than AI-Core sorting for these route sizes.
+    # Avoid the INT64 -> FP32 AI-CPU cast here too; keep the unbounded integer
+    # path for permutations beyond FP32's exact integer range.
+    inverse_sort_key = order.to(torch.int32).to(torch.float32) if num_routes <= _MAX_EXACT_FLOAT32_INTEGER else order
+    inverse_order = torch.argsort(inverse_sort_key)
+    return GroupedExpertDispatch(order, inverse_order, token_indices, route_weights, counts)
+
+def histogram_dispatch(*args, **kwargs):
+    kwargs["count_mode"] = "histogram"
+    return build_grouped_expert_dispatch(*args, **kwargs)
+
+
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Fuse HC residual buffers while retaining the original injection projection.
+
+Padding or joining the four-row injection GEMM can change CANN's FP16 result.
+This candidate leaves its shape, layout, and sigmoid rounding unchanged. Only
+the following FP32 residual arithmetic uses the admitted native kernel.
+"""
+
+import torch
+
+from tools.qwen4exp.direct_hc_residual import MAX_TOKENS, MAX_WIDTH, TILE_WIDTH
+from tools.qwen4exp.resident_candidates import fused_hc_projection, release_hc_projection, shared_hc_operand
+from tools.qwen4exp.resident_candidates.native_hc_residual import RESOURCE_NAME
+from vllm_ascend.models.qwen4_exp.model import _linear
+
+MIN_FUSION_TOKENS = 128
+
+
+def _supports_device(device):
+    return device.type == "npu"
+
+
+def make_combine(op):
+    def combine(self, block_output, residuals):
+        if not self.use_combine:
+            raise RuntimeError("combine disabled for this gated residual")
+        hyper, normalized = residuals
+        if (
+            torch.is_grad_enabled()
+            or not _supports_device(hyper.device)
+            or block_output.device != hyper.device
+            or hyper.dtype != torch.float16
+            or block_output.dtype != torch.float16
+            or self.params_dtype != torch.float16
+            or self.compute_dtype != torch.float32
+            or self.hc_count != 4
+            or not 0 < self.hidden_size <= MAX_WIDTH
+            or self.hidden_size % TILE_WIDTH
+            or not MIN_FUSION_TOKENS <= hyper.shape[0] <= MAX_TOKENS
+            or not hyper.is_contiguous()
+            or not block_output.is_contiguous()
+        ):
+            return fused_hc_projection.combine(self, block_output, residuals)
+        # Preserve the exact original GEMM, divide, sigmoid, and FP16 multiply.
+        injection = 2.0 * torch.sigmoid(
+            _linear(normalized, self.block_inject_weight, self.compute_dtype) / self.hc_count
+        )
+        return op(hyper, block_output, injection)
+
+    return combine
+
+
+def mix(self, hyper_input):
+    # Old diagnostic joined caches are redundant here. The resident harness
+    # clears graphs before warmup, so release their storage before recapture.
+    # Real serving trials improved cold prefill but did not improve C1 decode.
+    # Preserve the original small-batch graph instead of extrapolating an
+    # isolated operation's improvement to whole-model throughput.
+    if hyper_input.shape[0] < MIN_FUSION_TOKENS:
+        return release_hc_projection.mix(self, hyper_input)
+    if hasattr(self, fused_hc_projection.CACHE_ATTRIBUTE):
+        if fused_hc_projection._is_capturing(hyper_input.device):
+            raise RuntimeError("release joined HC weights during warmup, after clearing old graphs")
+        fused_hc_projection.release_projection(self)
+    return shared_hc_operand.mix(self, hyper_input)
+
+
+def hc_replacements(native_resources):
+    return {
+        "vllm_ascend.models.qwen4_exp.model:_GatedResidual.mix": mix,
+        "vllm_ascend.models.qwen4_exp.model:_GatedResidual.combine": make_combine(native_resources[RESOURCE_NAME]),
+    }
+
+
+import torch
+from tools.qwen4exp.direct_gdn_output import HEAD_WIDTH, MAX_ROWS
+from tools.qwen4exp.resident_candidates.gdn_output_rms import prepare_norm_weight, _supports_device
+from vllm_ascend.models.qwen4_exp.model import _linear, _rms_norm
+MAX_DECODE_TOKENS = 18
+
+def _project_output(self, block_input, out, op=None, gate_probabilities=False):
+    seq_len = out.shape[0]
+    eligible = (
+        not torch.is_grad_enabled()
+        and _supports_device(out.device)
+        and 0 < seq_len <= MAX_DECODE_TOKENS
+        and out.dtype == self.compute_dtype == torch.float32
+        and out.is_contiguous()
+    )
+    if eligible and op is not None and out.shape[-1] == HEAD_WIDTH and seq_len * self.num_v_heads <= MAX_ROWS:
+        z = _linear(block_input, self.in_proj_z, self.compute_dtype).reshape(seq_len * self.num_v_heads, HEAD_WIDTH)
+        gated = op(
+            out.reshape(-1, HEAD_WIDTH),
+            prepare_norm_weight(self),
+            torch.sigmoid(z) if gate_probabilities else z,
+        ).reshape(seq_len, self.value_dim)
+        result = _linear(gated, self.out_proj, self.compute_dtype)
+        if self.tp_size > 1:
+            if self._tp_reduce is None:
+                raise RuntimeError("Qwen GDN TP requires all-reduce")
+            result = self._tp_reduce(result)
+        return result.to(self.params_dtype)
+    if eligible:
+        import torch_npu
+
+        normed, _ = torch_npu.npu_rms_norm(out, prepare_norm_weight(self), self.rms_norm_eps)
+    else:
+        normed = _rms_norm(out, self.norm_weight, self.rms_norm_eps, self.compute_dtype)
+    z = _linear(block_input, self.in_proj_z, self.compute_dtype).reshape(
+        seq_len, self.num_v_heads, self.params.head_v_dim
+    )
+    gated = (normed * torch.sigmoid(z)).reshape(seq_len, self.value_dim)
+    result = _linear(gated, self.out_proj, self.compute_dtype)
+    if self.tp_size > 1:
+        if self._tp_reduce is None:
+            raise RuntimeError("Qwen GDN TP requires all-reduce")
+        result = self._tp_reduce(result)
+    return result.to(self.params_dtype)
+
+def project_output(self, block_input, out):
+    return _project_output(self, block_input, out)
+
+
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Exact short speculative row counts without the 310P INT64 reduction path."""
+
+import torch
+
+MAX_FAST_COUNT_WIDTH = 9
+
+
+def _supports_device(device):
+    return device.type == "npu"
+
+
+def count_valid_spec_tokens(valid_mask: torch.Tensor) -> torch.Tensor:
+    # Wider reductions use the established implementation. The short 1/6-row
+    # MTP shapes were measured on all six chips; large INT32 reductions were
+    # slower, so do not generalize this path to arbitrary routing matrices.
+    if (
+        _supports_device(valid_mask.device)
+        and valid_mask.dtype == torch.bool
+        and valid_mask.ndim == 2
+        and 0 < valid_mask.shape[1] <= MAX_FAST_COUNT_WIDTH
+    ):
+        # Each count is at most nine: accumulation is exact in INT32. Keep the
+        # public INT64 result used by gather and the accepted-token accounting.
+        return valid_mask.sum(dim=1, dtype=torch.int32).to(torch.int64)
+    return valid_mask.sum(dim=1)
+
+import numpy as np
+from vllm_ascend import utils as ascend_utils
+from vllm_ascend.spec_decode.llm_base_proposer import DeviceOperator, CachedRequestState, InputBatch
+
+def prepare_next_token_ids_padded(self, sampled_token_ids: torch.Tensor, requests: dict[str, CachedRequestState], gpu_input_batch: InputBatch, discard_request_indices: torch.Tensor, num_discarded_requests: int) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+        This function is used to prepare the inputs for speculative decoding.
+        It calculates the next token ids and the number of valid sampled tokens
+        for each request, considering the "discarded" requests whose next token
+        is not sampled and comes from `request.get_token_id()` instead.
+        It also accounts for the rejected tokens in `sampled_token_ids`.
+        This function must use device functions to operate on the inputs, and
+        should not introduce any blocking CPU-GPU synchronization.
+        """
+    num_reqs = gpu_input_batch.num_reqs
+    seq_lens_list = (gpu_input_batch.num_tokens_no_spec[:num_reqs] - 1).tolist()
+    self.backup_next_token_ids.np[:num_reqs] = np.array([requests[gpu_input_batch.req_ids[i]].get_token_id(seq_lens_list[i]) for i in range(num_reqs)])
+    self.backup_next_token_ids.copy_to_gpu(num_reqs)
+    discard_sampled_tokens_req_indices = discard_request_indices[:num_discarded_requests]
+    valid_sampled_token_ids_gpu = sampled_token_ids.clone()
+    valid_sampled_token_ids_gpu = DeviceOperator.index_fill(valid_sampled_token_ids_gpu, 0, discard_sampled_tokens_req_indices, -1)
+    valid_mask = (valid_sampled_token_ids_gpu != -1) & (valid_sampled_token_ids_gpu < gpu_input_batch.vocab_size)
+    valid_sampled_tokens_count = count_valid_spec_tokens(valid_mask) if ascend_utils.is_310p() else valid_mask.sum(dim=1)
+    last_valid_indices = valid_sampled_tokens_count - 1
+    last_valid_indices_safe = torch.clamp(last_valid_indices, min=0)
+    selected_tokens = torch.gather(valid_sampled_token_ids_gpu, 1, last_valid_indices_safe.unsqueeze(1)).squeeze(1)
+    batch_size = valid_sampled_token_ids_gpu.shape[0]
+    next_token_ids = torch.where(last_valid_indices != -1, selected_tokens, self.backup_next_token_ids.gpu[:batch_size])
+    return (next_token_ids, valid_sampled_tokens_count)
+
+def replacements(native_resources):
+    result = hc_replacements(native_resources)
+    result.update({
+        "vllm_ascend.models.qwen4_exp.w4_moe:build_grouped_expert_dispatch": histogram_dispatch,
+        "vllm_ascend.models.qwen4_exp.moe:build_grouped_expert_dispatch": histogram_dispatch,
+    })
+    result["vllm_ascend.models.qwen4_exp.model:_GDNAttention._project_output"] = project_output
+    result["vllm_ascend.spec_decode.llm_base_proposer:AscendSpecDecodeBaseProposer.prepare_next_token_ids_padded"] = prepare_next_token_ids_padded
+    return result

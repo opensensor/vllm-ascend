@@ -89,12 +89,19 @@ def build_grouped_expert_dispatch(
         # shape, avoiding the route-by-expert comparison matrix during long
         # prefills while keeping group boundaries on device.
         # FP32 represents every key and count exactly under this bound.
-        counts = torch.histc(
-            expert_sort_key,
-            bins=num_local_experts + 1,
-            min=0,
-            max=num_local_experts,
-        )[:num_local_experts].to(torch.int64)
+        counts = (
+            torch.histc(
+                expert_sort_key,
+                bins=num_local_experts + 1,
+                min=0,
+                max=num_local_experts,
+            )[:num_local_experts]
+            .to(torch.int32)
+            .to(torch.int64)
+        )
+        # Every count is bounded by num_routes <= 2**24, so INT32 is exact.
+        # On 310P, direct FP32 -> INT64 dispatches an AI-CPU cast; the two
+        # integer conversions avoid that slow path without host inspection.
     else:
         local_expert_ids = torch.arange(num_local_experts, device=topk_ids.device, dtype=pair_expert.dtype)
         counts = (pair_expert.unsqueeze(1) == local_expert_ids).sum(dim=0)
