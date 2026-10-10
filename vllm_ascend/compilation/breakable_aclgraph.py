@@ -27,6 +27,10 @@ from vllm.compilation.breakable_cudagraph import BreakableCUDAGraphWrapper
 from vllm.config import CUDAGraphMode, VllmConfig
 from vllm.forward_context import BatchDescriptor, get_forward_context, is_forward_context_available
 
+from vllm_ascend._310p.qwen4exp_mtp import (
+    qwen4exp_draft_supports_stream_ordering,
+    qwen4exp_target_has_no_task_updates,
+)
 from vllm_ascend.ascend_forward_context import _EXTRA_CTX
 from vllm_ascend.compilation.acl_graph import (
     get_draft_graph_params,
@@ -34,6 +38,7 @@ from vllm_ascend.compilation.acl_graph import (
     get_graph_params,
     weak_ref_workspaces,
 )
+from vllm_ascend.utils import is_310p
 
 
 @dataclass(frozen=True)
@@ -118,7 +123,23 @@ class BreakableACLGraphWrapper(BreakableCUDAGraphWrapper):
             # Match ACLGraphWrapper's ordering between async attention
             # parameter updates and the previous/current FULL graph replay.
             is_draft_eagle = _EXTRA_CTX.is_draft_model and self.use_eagle
-            if not self.enable_enpu and not is_draft_eagle:
+            if (
+                not self.enable_enpu
+                and is_310p()
+                and (
+                    qwen4exp_draft_supports_stream_ordering(self.vllm_config, _EXTRA_CTX.is_draft_model)
+                    or qwen4exp_target_has_no_task_updates(
+                        self.vllm_config, _EXTRA_CTX.is_draft_model, get_graph_params()
+                    )
+                )
+            ):
+                # Device metadata writes and fixed QSA gather replay are
+                # ordered on this stream. An explicit producer event, when
+                # present, needs a stream dependency rather than a host wait.
+                ready_event = getattr(forward_context, "_ascend_replay_ready_event", None)
+                if ready_event is not None:
+                    torch.npu.current_stream().wait_event(ready_event)
+            elif not self.enable_enpu and not is_draft_eagle:
                 ready_event = getattr(forward_context, "_ascend_replay_ready_event", None)
                 if ready_event is not None:
                     # The owning 310P runner installed an exact completion

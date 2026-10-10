@@ -68,12 +68,14 @@ from vllm_ascend._310p.prefix_mamba_state import (
 )
 from vllm_ascend._310p.qwen4exp_mtp import (
     is_qwen4exp_mtp_config,
+    qwen4exp_target_has_no_task_updates,
     stage_ple_history,
     validate_mtp_ple_scheduling,
 )
 from vllm_ascend._310p.sample.rejection_sampler import AscendRejectionSampler310
 from vllm_ascend._310p.sample.sampler import AscendSampler310
 from vllm_ascend.attention.attention_v1 import AscendAttentionState
+from vllm_ascend.compilation.acl_graph import get_graph_params
 from vllm_ascend.distributed.utils import get_decode_context_model_parallel_world_size
 from vllm_ascend.spec_decode.utils import (
     update_num_computed_tokens_for_batch_change,
@@ -1158,6 +1160,17 @@ class NPUModelRunner310(NPUModelRunner):
             **model_kwargs,
         }
         run_model = partial(self.model, **model_inputs)
+        if (
+            self._qwen4exp_mtp_ple
+            and not self.enable_enpu
+            and forward_context.cudagraph_runtime_mode == CUDAGraphMode.FULL
+            and not forward_context.capturing
+            and qwen4exp_target_has_no_task_updates(self.vllm_config, False, get_graph_params())
+        ):
+            # Fixed QSA/GDN capture registered no mutable attention tasks.
+            # Input copies and replay are already ordered on the main stream;
+            # visiting an empty updater only adds cross-stream events.
+            return run_model()
         update_before_replay = (
             self.speculative_config is not None
             and not self.enable_enpu

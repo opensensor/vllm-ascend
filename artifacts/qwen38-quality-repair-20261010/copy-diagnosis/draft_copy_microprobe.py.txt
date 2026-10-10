@@ -1,0 +1,49 @@
+import json
+import os
+from pathlib import Path
+import sys
+import time
+import urllib.request
+
+# Wait until the serving memory profile is complete before adding a tiny
+# independent NPU context. This probe does not modify the server or its caches.
+deadline = time.monotonic() + 900
+while time.monotonic() < deadline:
+    try:
+        with urllib.request.urlopen('http://127.0.0.1:8001/v1/models', timeout=2):
+            break
+    except Exception:
+        time.sleep(1)
+else:
+    raise TimeoutError('server readiness deadline expired')
+
+import torch
+import torch_npu
+
+torch.npu.set_device(0)
+torch.set_num_threads(1)
+root = Path('/srv/ai/src/qwen-quality-mtp2-position-lifetime-20261010')
+packed = sys.argv[1] == 'packed'
+print(json.dumps({'pid': os.getpid(), 'packed': packed}), flush=True)
+for requests in [1, 2, 6]:
+    for repeat in range(4):
+        backing = torch.arange(2 * requests, dtype=torch.int64, device='npu').reshape(2, requests)
+        source = backing.swapaxes(0, 1)
+        if packed:
+            source = source.contiguous()
+        destination = torch.empty((6, 2), dtype=torch.int64, device='cpu', pin_memory=True)
+        stream = torch.npu.Stream()
+        event = torch.npu.Event()
+        print(json.dumps({'stage':'copy', 'requests': requests, 'repeat': repeat,
+                          'source':hex(source.data_ptr()), 'destination':hex(destination.data_ptr()),
+                          'strides':source.stride(), 'contiguous':source.is_contiguous()}), flush=True)
+        producer_stream = torch.npu.current_stream()
+        with torch.npu.stream(stream):
+            stream.wait_stream(producer_stream)
+            destination[:requests, :2].copy_(source, non_blocking=True)
+            event.record()
+        event.synchronize()
+        expected = [[i, i + requests] for i in range(requests)]
+        assert destination[:requests].tolist() == expected
+        print(json.dumps({'stage':'passed', 'requests': requests, 'repeat': repeat}), flush=True)
+print(json.dumps({'complete': True, 'packed':packed}), flush=True)

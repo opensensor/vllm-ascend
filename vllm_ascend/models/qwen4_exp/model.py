@@ -156,6 +156,7 @@ from .ops.qsa_indexer import (
     copy_group_selection_into,
     qsa_indexer_select_groups_310,
 )
+from .ops.qsa_metadata import packed_qsa_query_lens
 from .ops.qsa_sparse_attention_310 import qsa_sparse_attention_310
 from .ple_layer import AscendQwen4ExpPLELayer
 from .qsa import (
@@ -1941,8 +1942,7 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
                 def select_current_groups() -> None:
                     current_metadata = get_forward_context().attn_metadata[self.prefix]
                     current_seq_lens = getattr(current_metadata, "seq_lens_cpu", None)
-                    current_query_lens_cpu = getattr(current_metadata, "query_lens_cpu", None)
-                    current_query_lens = None if current_query_lens_cpu is None else current_query_lens_cpu.tolist()
+                    current_query_lens = packed_qsa_query_lens(current_metadata, seq_len)
                     current_max_groups = None
                     if (
                         current_seq_lens is not None
@@ -1971,8 +1971,7 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
 
                 capture.add_eager(select_current_groups)
             else:
-                query_lens_cpu = getattr(metadata, "query_lens_cpu", None)
-                query_lens = None if query_lens_cpu is None else query_lens_cpu.tolist()
+                query_lens = packed_qsa_query_lens(metadata, seq_len)
                 selection = qsa_indexer_select_groups_310(
                     index_q,
                     index_cache,
@@ -2011,7 +2010,7 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
             sparse_kwargs = {}
             if sparse_attention in (qsa_batched_prefill_310, qsa_group_major_prefill_310):
                 if query_lens_cpu is not None:
-                    sparse_kwargs["query_lens"] = query_lens_cpu.tolist()
+                    sparse_kwargs["query_lens"] = packed_qsa_query_lens(metadata, seq_len)
             if sparse_attention is qsa_group_major_prefill_310:
                 sparse_kwargs["query_tile"] = self.qsa_group_major_query_tile
                 sparse_kwargs["fixed_plan"] = self.qsa_prefill_backend == _QSA_PREFILL_FIXED_GROUP_MAJOR_UNION

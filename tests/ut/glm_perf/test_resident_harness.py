@@ -338,3 +338,95 @@ def test_native_load_is_sent_once_then_confirmed_from_registry():
     assert all(row["native_loaded"]["native_v1"]["validation"]["passed"] for row in rows)
     assert server.calls.count("resident_native_load") == 1
     assert server.calls.count("resident_status") == 1
+
+
+def test_mode_switch_preserves_caches_graphs_and_existing_pause():
+    server = Server(paused=True)
+    server.switch_mode(Control(uuid.uuid4().hex, "direct-draft"))
+    assert server.paused
+    assert server.calls == [
+        "resident_status",
+        "/is_paused",
+        "/pause?mode=wait&clear_cache=false",
+        "resident_status",
+        "resident_prepare",
+        "resident_apply",
+    ]
+
+
+def test_mode_switch_resumes_its_own_pause():
+    server = Server()
+    server.switch_mode(Control(uuid.uuid4().hex, "direct-both"))
+    assert not server.paused
+    assert server.calls[-1] == "/resume"
+    assert server.calls.count("resident_apply") == 1
+    assert "resident_reset" not in server.calls
+    assert "resident_capture" not in server.calls
+
+
+@pytest.mark.parametrize("failure", ["resident_apply", "disagree_apply", "checkpoint_change"])
+def test_mode_switch_uncertain_mutation_retains_pause(failure):
+    server = Server(fail="resident_apply" if failure == "resident_apply" else None)
+    original = server.request
+
+    def response(path, payload=None, method="POST"):
+        result = original(path, payload, method)
+        if payload and payload["method"] == "resident_apply":
+            if failure == "disagree_apply":
+                result["results"][1]["mode"] = "graph"
+            if failure == "checkpoint_change":
+                result["results"][1]["prefix_mamba"] = {"1": {"resident_checkpoints": 0}}
+        return result
+
+    server.request = response
+    with pytest.raises(RuntimeError, match="remains paused"):
+        server.switch_mode(Control(uuid.uuid4().hex, "direct-draft"))
+    assert server.paused
+    assert "/resume" not in server.calls
+    assert server.calls.count("resident_apply") == 1
+
+
+@pytest.mark.parametrize("kind", ["recapture", "source", "dirty", "failed_native", "duplicate_rank"])
+def test_mode_switch_rejects_unsafe_controls_before_pausing(kind):
+    server = Server()
+    original = server.request
+
+    def response(path, payload=None, method="POST"):
+        result = original(path, payload, method)
+        if payload and payload["method"] == "resident_status":
+            if kind == "dirty":
+                result["results"][0]["graphs_dirty"] = True
+            elif kind == "failed_native":
+                result["results"][0]["native_failed"] = True
+            elif kind == "duplicate_rank":
+                result["results"][1]["rank"] = 0
+        return result
+
+    server.request = response
+    control = Control(
+        uuid.uuid4().hex,
+        "direct-draft",
+        candidate="replacement" if kind == "source" else "baseline",
+        source="def replacements(): return {}" if kind == "source" else "",
+        recapture=kind == "recapture",
+    )
+    with pytest.raises((ValueError, RuntimeError)):
+        server.switch_mode(control)
+    assert not server.paused
+    assert "resident_prepare" not in server.calls
+
+
+def test_mode_switch_compares_checkpoints_after_requests_finish_draining():
+    server = Server()
+    original = server.request
+
+    def response(path, payload=None, method="POST"):
+        result = original(path, payload, method)
+        if path == "/collective_rpc" and payload["method"] in {"resident_status", "resident_apply"}:
+            for worker in result["results"]:
+                worker["prefix_mamba"] = {"1": {"resident_checkpoints": 32 if server.paused else 31}}
+        return result
+
+    server.request = response
+    server.switch_mode(Control(uuid.uuid4().hex, "direct-draft"))
+    assert not server.paused

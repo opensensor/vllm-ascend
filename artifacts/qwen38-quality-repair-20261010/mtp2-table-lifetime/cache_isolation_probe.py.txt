@@ -1,0 +1,30 @@
+import concurrent.futures, hashlib, json, pathlib, time, urllib.request, uuid
+ROOT=pathlib.Path('/srv/ai/src/qwen-quality-mtp2-table-lifetime-20261010')
+BASE='http://127.0.0.1:8001'
+nonce=uuid.uuid4().hex
+FACTORS=((17,19),(23,29),(31,37),(41,43),(47,53),(59,61))
+
+def run(index, prompt):
+ payload={'model':'qwen38-flash-next','messages':[{'role':'user','content':prompt}], 'temperature':0, 'max_tokens':64, 'chat_template_kwargs':{'enable_thinking':False}}
+ start=time.monotonic()
+ request=urllib.request.Request(BASE+'/v1/chat/completions',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
+ with urllib.request.urlopen(request,timeout=90) as response: result=json.load(response)
+ content=result['choices'][0]['message']['content'] or ''
+ expected=str(FACTORS[index][0]*FACTORS[index][1])
+ assert content.strip()==expected, (index,content,expected)
+ return {'request':index,'exact_match':True,'elapsed_s':time.monotonic()-start,'usage':result['usage'],'output_sha256':hashlib.sha256(content.encode()).hexdigest()}
+
+receipt=[]
+for round_number in range(3):
+ prompts=[]
+ for index in range(6):
+  expected=str(FACTORS[index][0]*FACTORS[index][1])
+  background=('Archive entry: neutral scheduling and cache test.\n'*256)
+  left,right=FACTORS[index]
+  prompt=f'Arithmetic worksheet {nonce}-{index}.\n'+background+f'Compute {left} times {right}. Return only the resulting integer in decimal digits. Worksheet revision {round_number}.'
+  prompts.append(prompt)
+ with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+  results=list(pool.map(run,range(6),prompts))
+ receipt.append({'round':round_number,'requests':results})
+ print(json.dumps({'round':round_number,'all_six_exact':True}),flush=True)
+(ROOT/'cache-isolation.json').write_text(json.dumps({'passed':True,'rounds':receipt},indent=2)+'\n')

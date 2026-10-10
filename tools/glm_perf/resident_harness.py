@@ -72,6 +72,85 @@ class ResidentClient:
             len({result.get("rank") for result in results}) == self.expected_workers
         )
 
+    def switch_mode(self, control: Control) -> list[dict[str, Any]]:
+        """Change execution mode without replacing code, graphs, or caches.
+
+        The supplied source must match the installed generation. A changed
+        candidate still requires the ordinary drain/recapture transaction.
+        Mutating RPCs are sent once; uncertain completion leaves the pause in
+        place rather than retrying a mutation or running with mixed modes.
+        """
+        Control.from_dict(dataclasses.asdict(control))
+        if control.recapture:
+            raise ValueError("a cache-preserving mode switch cannot recapture")
+        before = self.rpc("resident_status")
+        if not self._status_matches(before):
+            raise RuntimeError("workers did not report distinct complete status")
+        for worker in before:
+            initial_baseline = worker.get("generation") is None and control.candidate == "baseline"
+            if (
+                worker.get("native_failed")
+                or worker.get("graphs_dirty") is not False
+                or worker.get("candidate") != control.candidate
+                or (not initial_baseline and worker.get("digest") != control.digest)
+            ):
+                raise RuntimeError("mode switch requires the same healthy installed candidate")
+        was_paused = self.request("/is_paused", method="GET").get("is_paused")
+        if not isinstance(was_paused, bool):
+            raise RuntimeError("server did not report its pause state")
+        if self.request("/pause?mode=wait&clear_cache=false").get("status") != "paused":
+            raise RuntimeError("server did not finish draining requests")
+        mutating = False
+        try:
+            drained = self.rpc("resident_status")
+            if not self._status_matches(drained):
+                raise RuntimeError("workers did not report distinct complete drained status")
+            state_fields = ("rank", "pid", "weight_storage_digest", "generation", "digest", "mode", "candidate")
+            if {tuple(worker.get(field) for field in state_fields) for worker in drained} != {
+                tuple(worker.get(field) for field in state_fields) for worker in before
+            }:
+                raise RuntimeError("installed candidate changed while draining")
+            prepared = self.rpc("resident_prepare", json.dumps(dataclasses.asdict(control)))
+            if any(
+                worker.get("generation") != control.generation
+                or worker.get("digest") != control.digest
+                or worker.get("targets") != prepared[0].get("targets")
+                for worker in prepared
+            ):
+                raise RuntimeError("workers prepared different controls")
+            mutating = True
+            results = self.rpc("resident_apply", control.generation)
+            if not self._status_matches(results):
+                raise RuntimeError("workers did not report distinct complete status")
+            identity_fields = ("rank", "pid", "weight_storage_digest")
+            if {tuple(w.get(field) for field in identity_fields) for w in before} != {
+                tuple(w.get(field) for field in identity_fields) for w in results
+            }:
+                raise RuntimeError("resident workers or weight storage changed")
+            expected = {
+                "generation": control.generation,
+                "mode": control.mode,
+                "candidate": control.candidate,
+                "digest": control.digest,
+                "graphs_dirty": False,
+            }
+            if any(any(worker.get(key) != value for key, value in expected.items()) for worker in results):
+                raise RuntimeError("workers did not finish the same execution mode")
+            before_by_rank = {worker["rank"]: worker for worker in drained}
+            if any(
+                worker.get("prefix_mamba") != before_by_rank[worker["rank"]].get("prefix_mamba") for worker in results
+            ):
+                raise RuntimeError("prefix checkpoints changed during the mode switch")
+        except Exception as error:
+            if mutating:
+                raise RuntimeError("mode switch failed; server remains paused") from error
+            if not was_paused:
+                self.request("/resume")
+            raise
+        if not was_paused:
+            self.request("/resume")
+        return results
+
     def switch(self, control: Control) -> list[dict[str, Any]]:
         # Reject malformed controls before broadcasting: an uncaught worker
         # validation error can leave stale replies in the executor queues.
