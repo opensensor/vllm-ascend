@@ -66,6 +66,7 @@ from vllm.model_executor.layers.mamba.abstract import MambaBase
 from vllm.model_executor.layers.mamba.mamba_utils import MambaStateCopyFuncCalculator
 from vllm.model_executor.layers.quantization.base_config import QuantizeMethodBase
 from vllm.model_executor.layers.vocab_parallel_embedding import (
+    DEFAULT_VOCAB_PADDING_SIZE,
     ParallelLMHead,
     VocabParallelEmbedding,
 )
@@ -112,6 +113,7 @@ from .dtype_policy import (
     ASCEND_QWEN4EXP_DTYPE_POLICY,
     Qwen4ExpDtypePolicy,
 )
+from .head_partition import gdn_head_shard, gdn_partition_policy, place_padded_gdn_tensor, vocab_partition_padding
 from .indexer_qsa import AscendQwen4ExpQSAIndexer
 from .kv_cache import (
     DEFAULT_ATTENTION_BLOCK_SIZE,
@@ -751,14 +753,17 @@ class _GDNAttention(nn.Module, MambaBase):
             raise ValueError(f"expert_sharding={expert_sharding} out of range")
         hidden = int(config.hidden_size)
         p = self.params
-        # TP-shard the GDN heads evenly: the gated delta rule is independent per
-        # value head (q/k are expanded to the v heads via repeat_interleave), so
-        # splitting both num_k_heads and num_v_heads keeps the 3:1 group ratio
-        # and the recurrent state is sharded per rank. out_proj is row-parallel.
-        if p.num_k_heads % self.tp_size or p.num_v_heads % self.tp_size:
-            raise ValueError(f"GDN heads (k={p.num_k_heads}, v={p.num_v_heads}) not divisible by TP {self.tp_size}")
-        self.num_k_heads = p.num_k_heads // self.tp_size
-        self.num_v_heads = p.num_v_heads // self.tp_size
+        self.head_shard = gdn_head_shard(
+            p.num_k_heads,
+            p.num_v_heads,
+            p.head_k_dim,
+            p.head_v_dim,
+            self.tp_rank,
+            self.tp_size,
+            gdn_partition_policy(config),
+        )
+        self.num_k_heads = self.head_shard.key_heads
+        self.num_v_heads = self.head_shard.value_heads
         self.key_dim = p.head_k_dim * self.num_k_heads
         self.value_dim = p.head_v_dim * self.num_v_heads
         self.conv_dim = 2 * self.key_dim + self.value_dim
@@ -2764,6 +2769,9 @@ class AscendQwen4ExpModel(nn.Module):
             config.hidden_size,
             params_dtype=self.dtype_policy.embedding_dtype,
             quant_config=self.quant_config,
+            padding_size=vocab_partition_padding(
+                config, int(getattr(vllm_config.parallel_config, "tensor_parallel_size", 1)), DEFAULT_VOCAB_PADDING_SIZE
+            ),
             prefix=maybe_prefix(prefix, "embed_tokens"),
         )
 
@@ -2953,6 +2961,19 @@ class AscendQwen4ExpForCausalLM(
         self.model_config = vllm_config.model_config
         self.quant_config = getattr(vllm_config, "quant_config", None)
         self.config = config
+        if gdn_partition_policy(config) == "padded":
+            if w4_config(config) is None:
+                raise ValueError("padded GDN serving requires the explicit packed W4 checkpoint")
+            if getattr(vllm_config, "kv_transfer_config", None) is not None:
+                raise ValueError(
+                    "padded GDN does not support external KV transfer until padded state ownership is qualified"
+                )
+            if getattr(vllm_config.parallel_config, "pipeline_parallel_size", 1) != 1:
+                raise ValueError("padded GDN currently requires PP1")
+            if getattr(getattr(vllm_config, "speculative_config", None), "method", None) == "mtp":
+                raise ValueError(
+                    "padded GDN candidate requires MTP disabled until uneven drafter sharding is qualified"
+                )
         # Authoritative dtype policy (PRD §5.3 / R4): every submodule reads it.
         self.dtype_policy = Qwen4ExpDtypePolicy.from_vllm_config(vllm_config)
 
@@ -2968,6 +2989,9 @@ class AscendQwen4ExpForCausalLM(
             config.hidden_size,
             params_dtype=self.dtype_policy.lm_head_dtype,
             quant_config=self.quant_config,
+            padding_size=vocab_partition_padding(
+                config, int(getattr(vllm_config.parallel_config, "tensor_parallel_size", 1)), DEFAULT_VOCAB_PADDING_SIZE
+            ),
             prefix=maybe_prefix(prefix, "lm_head"),
         )
         if getattr(config, "tie_word_embeddings", False):
@@ -3013,12 +3037,21 @@ class AscendQwen4ExpForCausalLM(
         parallel_config = getattr(vllm_config, "parallel_config", None)
         tp_size = int(getattr(parallel_config, "tensor_parallel_size", 1) or 1)
         params = _gdn_params_from_config(config)
-        conv_dim = params.conv_dim // tp_size
+        shard = gdn_head_shard(
+            params.num_k_heads,
+            params.num_v_heads,
+            params.head_k_dim,
+            params.head_v_dim,
+            0,
+            tp_size,
+            gdn_partition_policy(config),
+        )
+        conv_dim = shard.conv_dim
         conv_state = (
             params.conv_kernel_size - 1 + getattr(vllm_config, "num_speculative_tokens", 0),
             conv_dim,
         )
-        recurrent_state = (params.num_v_heads // tp_size, params.head_v_dim, params.head_k_dim)
+        recurrent_state = (shard.value_heads, params.head_v_dim, params.head_k_dim)
         return (conv_state, recurrent_state)
 
     @classmethod
@@ -3349,6 +3382,11 @@ class AscendQwen4ExpForCausalLM(
         is row-parallel (split value_dim).
         """
         full = _gdn_params_from_config(self.model.config)
+        if gdn_partition_policy(self.model.config) == "padded":
+            shard = gdn_head_shard(
+                full.num_k_heads, full.num_v_heads, full.head_k_dim, full.head_v_dim, tp_rank, tp_size, "padded"
+            )
+            return place_padded_gdn_tensor(params, name, tensor, shard, full.num_k_heads, full.num_v_heads)
         fkd = full.key_dim
         fvd = full.value_dim
         fnum_v = full.num_v_heads
@@ -3764,6 +3802,8 @@ class AscendQwen4ExpForConditionalGeneration(
         self._tokenizer = cached_tokenizer_from_config(vllm_config.model_config)
         self.multimodal_config = multimodal_config
         self.use_data_parallel = multimodal_config.mm_encoder_tp_mode == "data"
+        if gdn_partition_policy(config.text_config) == "padded" and not self.use_data_parallel:
+            raise ValueError("padded GDN multimodal candidate requires mm_encoder_tp_mode=data")
         pruning_spec = multimodal_config.get_video_pruning_spec()
         if pruning_spec is None:
             self.video_pruning_method = None

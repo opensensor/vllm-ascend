@@ -327,3 +327,14 @@ def test_windowing_exposes_extra_launches_and_unchanged_down_payload():
     assert value["combined_window_store_read_write_bytes"] == 52428800
     assert value["finalizer_cast_write_bytes"] == 460800
     assert not value["measured_bus_bytes"] and value["predicted_speed_multiplier"] is None
+
+
+def test_v2_windows_bound_bulk_storage_with_two_finalizers():
+    from tools.qwen4exp.streaming_epilogue import WindowPlan, epilogue_logical_cost
+
+    plan = WindowPlan(tile_columns=160)
+    assert [(w.first_column, w.columns) for w in plan.windows] == [(0, 1280), (1280, 1280)]
+    cost = epilogue_logical_cost(25600, 2560, plan)
+    assert cost["projection_calls"] == cost["finalizer_calls"] == 2
+    assert cost["logical_buffer_bounds"]["routed_window_fp16"] == 25600 * 1280 * 2
+    assert not cost["measured_bus_bytes"] and not cost["hardware_validated"]

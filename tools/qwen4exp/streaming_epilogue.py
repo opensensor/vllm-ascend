@@ -15,20 +15,22 @@ from tools.qwen4exp.streaming_operands import MAX_EXPERTS, MAX_ROUTES, MAX_TOKEN
 
 PROJECTED_COLUMNS = 1280
 HIDDEN_COLUMNS = PROJECTED_COLUMNS // 2
+NEXT_TILE_COLUMNS = 160
 
 
 @dataclass(frozen=True)
 class ColumnWindow:
     first_tile: int
     tile_count: int
+    tile_columns: int = N
 
     @property
     def first_column(self):
-        return self.first_tile * N
+        return self.first_tile * self.tile_columns
 
     @property
     def columns(self):
-        return self.tile_count * N
+        return self.tile_count * self.tile_columns
 
 
 @dataclass(frozen=True)
@@ -37,12 +39,15 @@ class WindowPlan:
     tiles_per_window: int = BLOCKS
     activation_policy: str = "cann_builtin_fp16"
     finalizer_policy: str = "cann_v2"
+    tile_columns: int = N
 
     def __post_init__(self):
         if (
             type(self.output_columns) is not int
-            or not N <= self.output_columns <= MAX_K
-            or self.output_columns % N
+            or type(self.tile_columns) is not int
+            or self.tile_columns not in (N, NEXT_TILE_COLUMNS)
+            or not self.tile_columns <= self.output_columns <= MAX_K
+            or self.output_columns % self.tile_columns
             or type(self.tiles_per_window) is not int
             or not 1 <= self.tiles_per_window <= BLOCKS
             or self.activation_policy != "cann_builtin_fp16"
@@ -52,9 +57,9 @@ class WindowPlan:
 
     @property
     def windows(self):
-        tiles = self.output_columns // N
+        tiles = self.output_columns // self.tile_columns
         return tuple(
-            ColumnWindow(first, min(self.tiles_per_window, tiles - first))
+            ColumnWindow(first, min(self.tiles_per_window, tiles - first), self.tile_columns)
             for first in range(0, tiles, self.tiles_per_window)
         )
 
@@ -84,7 +89,7 @@ def epilogue_buffer_bounds(rows, tokens, plan):
         or not tokens <= rows <= tokens * MAX_TOP_K
     ):
         raise ValueError("invalid epilogue storage geometry")
-    width = min(plan.tiles_per_window * N, plan.output_columns)
+    width = min(plan.tiles_per_window * plan.tile_columns, plan.output_columns)
     values = (
         ("projected_gate_up_fp16", rows * PROJECTED_COLUMNS * 2),
         ("builtin_activation_fp16", rows * HIDDEN_COLUMNS * 2),
@@ -138,6 +143,9 @@ def run_streaming_epilogue(
         or not all(callable(fn) for fn in (activation, pack, columns, finalize, complete))
     ):
         raise ValueError("unsupported epilogue geometry/dtype/callback")
+    owner = getattr(columns, "__self__", None)
+    if owner is not None and getattr(owner, "tile_columns", plan.tile_columns) != plan.tile_columns:
+        raise ValueError("column window plan does not match native resource tile width")
     rows, tokens = projected.shape[0], weights.shape[0]
     bounds = epilogue_buffer_bounds(rows, tokens, plan)
     output = torch.empty((tokens, plan.output_columns), dtype=torch.float32, device=projected.device)

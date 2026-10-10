@@ -37,14 +37,16 @@ enum class HardEvent {
   V_M,
   MTE1_MTE2,
   MTE2_MTE1,
-  MTE3_V
+  MTE3_V,
+  S_MTE2,
+  MTE2_S
 };
 enum class TPosition { VECCALC, A1, B1, A2, B2, CO1 };
 enum class RoundMode { CAST_NONE };
 enum class BlockMode { BLOCK_MODE_MATRIX };
 constexpr int PIPE_V = 1;
 inline uint32_t blockIndex = 0;
-inline std::array<std::array<bool, 8>, 14> pending{};
+inline std::array<std::array<bool, 8>, 16> pending{};
 inline std::array<uint64_t, 6> used{};
 inline std::array<uint64_t, 6> peaks{};
 struct GlobalRange {
@@ -96,6 +98,11 @@ struct Tensor {
     auto found = std::find_if(globals.begin(), globals.end(), [&](auto range) { return range.begin == begin; });
     if (found == globals.end()) throw std::runtime_error("unregistered GM tensor");
     bytes = found->bytes;
+  }
+  void SetValue(int64_t offset, T value) {
+    auto view = (*this)[offset];
+    view.Check(1);
+    view.data[0] = value;
   }
   T GetValue(int64_t offset) const {
     auto view = (*this)[offset];
@@ -184,7 +191,7 @@ inline int Nibble(const int4b_t* p, uint32_t byte, uint32_t halfByte) {
   return value >= 8 ? value - 16 : value;
 }
 inline void Mmad(Tensor<int32_t> dst, Tensor<int4b_t> a, Tensor<int4b_t> b, MmadParams p) {
-  if (p.m != 32 || p.n != 128 || p.k != 128 || !p.cmatrixInitVal)
+  if (!((p.m == 32 && p.n == 128) || (p.m == 64 && p.n == 160)) || p.k != 128 || !p.cmatrixInitVal)
     throw std::runtime_error("unsupported CPU MMAD geometry");
   dst.Check(p.m * p.n);
   a.Check(p.m * p.k / 2);
@@ -193,12 +200,12 @@ inline void Mmad(Tensor<int32_t> dst, Tensor<int4b_t> a, Tensor<int4b_t> b, Mmad
     for (uint32_t col = 0; col < p.n; ++col) {
       int32_t dot = 0;
       for (uint32_t k = 0; k < p.k; ++k) {
-        uint32_t limb = row / 16, liveRow = row % 16, kb = k / 64, byte = (k % 64) / 2;
-        uint32_t ai = limb * 1024 + kb * 512 + liveRow * 32 + byte;
-        uint32_t bi = kb * 4096 + (col / 16) * 512 + (col % 16) * 32 + byte;
+        uint32_t kb = k / 64, byte = (k % 64) / 2;
+        uint32_t ai = (row / 16) * 1024 + kb * 512 + (row % 16) * 32 + byte;
+        uint32_t bi = kb * (p.n * 32) + (col / 16) * 512 + (col % 16) * 32 + byte;
         dot += Nibble(a.data, ai, k % 2) * Nibble(b.data, bi, k % 2);
       }
-      dst.data[(col / 16) * 32 * 16 + row * 16 + col % 16] = dot;
+      dst.data[(col / 16) * p.m * 16 + row * 16 + col % 16] = dot;
     }
 }
 template <class D, class S>

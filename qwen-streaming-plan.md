@@ -444,3 +444,13 @@ subsequently rejected v5, as recorded under T9. Repository-wide CI retains unrel
 unrelated files were restored in the isolated worktree. A broader regression
 group gives 179 passes and four GDN CPU-stub failures identically on the clean
 unchanged baseline. Full receipts and limitations are in the execution report.
+
+## October 9 follow-up and six-chip candidate
+
+The [follow-up report](artifacts/qwen38-streaming-followup-20261009/REPORT.md)
+records the new v2 projection schedule, bulk metadata cache, N160 two-window
+epilogue, WY trace diagnostics and opt-in six-chip GDN/vocabulary sharding.
+The faster image-enabled TP4 baseline remains the live control. WY remains
+unqualified. TP6 requests six sessions with images, with MTP disabled; fit,
+accuracy, throughput and sustained thermals still need hardware checks.
+T9 remains incomplete until those gates pass.

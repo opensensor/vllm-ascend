@@ -1,0 +1,147 @@
+{
+  "tensor_parallel_size": 6,
+  "pipeline_parallel_size": 1,
+  "expert_parallel_size": 6,
+  "mtp_enabled": false,
+  "requested_limits": {
+    "max_model_len": 262144,
+    "max_num_seqs": 6,
+    "max_num_batched_tokens": 2560,
+    "cudagraph_capture_sizes": [
+      1,
+      6
+    ]
+  },
+  "requested_limits_validated": false,
+  "mm_encoder_tp_mode": "data",
+  "images_enabled": true,
+  "projection_variant": "baseline",
+  "ranks": [
+    {
+      "rank": 0,
+      "experts": [
+        0,
+        86
+      ],
+      "expert_count": 86,
+      "gdn_live_key_heads": 3,
+      "gdn_allocated_key_heads": 3,
+      "gdn_allocated_value_heads": 9,
+      "gdn_conv_channels": 1920,
+      "qsa_query_heads": 4,
+      "qsa_kv_start": 0,
+      "qsa_kv_heads": 1,
+      "routed_backbone_codes_and_metadata_bytes": 11096064000,
+      "recurrent_bytes_per_gdn_state": 589824
+    },
+    {
+      "rank": 1,
+      "experts": [
+        86,
+        172
+      ],
+      "expert_count": 86,
+      "gdn_live_key_heads": 3,
+      "gdn_allocated_key_heads": 3,
+      "gdn_allocated_value_heads": 9,
+      "gdn_conv_channels": 1920,
+      "qsa_query_heads": 4,
+      "qsa_kv_start": 0,
+      "qsa_kv_heads": 1,
+      "routed_backbone_codes_and_metadata_bytes": 11096064000,
+      "recurrent_bytes_per_gdn_state": 589824
+    },
+    {
+      "rank": 2,
+      "experts": [
+        172,
+        257
+      ],
+      "expert_count": 85,
+      "gdn_live_key_heads": 3,
+      "gdn_allocated_key_heads": 3,
+      "gdn_allocated_value_heads": 9,
+      "gdn_conv_channels": 1920,
+      "qsa_query_heads": 4,
+      "qsa_kv_start": 0,
+      "qsa_kv_heads": 1,
+      "routed_backbone_codes_and_metadata_bytes": 10967040000,
+      "recurrent_bytes_per_gdn_state": 589824
+    },
+    {
+      "rank": 3,
+      "experts": [
+        257,
+        342
+      ],
+      "expert_count": 85,
+      "gdn_live_key_heads": 3,
+      "gdn_allocated_key_heads": 3,
+      "gdn_allocated_value_heads": 9,
+      "gdn_conv_channels": 1920,
+      "qsa_query_heads": 4,
+      "qsa_kv_start": 1,
+      "qsa_kv_heads": 1,
+      "routed_backbone_codes_and_metadata_bytes": 10967040000,
+      "recurrent_bytes_per_gdn_state": 589824
+    },
+    {
+      "rank": 4,
+      "experts": [
+        342,
+        427
+      ],
+      "expert_count": 85,
+      "gdn_live_key_heads": 3,
+      "gdn_allocated_key_heads": 3,
+      "gdn_allocated_value_heads": 9,
+      "gdn_conv_channels": 1920,
+      "qsa_query_heads": 4,
+      "qsa_kv_start": 1,
+      "qsa_kv_heads": 1,
+      "routed_backbone_codes_and_metadata_bytes": 10967040000,
+      "recurrent_bytes_per_gdn_state": 589824
+    },
+    {
+      "rank": 5,
+      "experts": [
+        427,
+        512
+      ],
+      "expert_count": 85,
+      "gdn_live_key_heads": 1,
+      "gdn_allocated_key_heads": 3,
+      "gdn_allocated_value_heads": 9,
+      "gdn_conv_channels": 1920,
+      "qsa_query_heads": 4,
+      "qsa_kv_start": 1,
+      "qsa_kv_heads": 1,
+      "routed_backbone_codes_and_metadata_bytes": 10967040000,
+      "recurrent_bytes_per_gdn_state": 589824
+    }
+  ],
+  "hardware_admission": false,
+  "total_installed_ram_is_not_context_capacity": true,
+  "excludes": [
+    "dense/router/PLE/vision/embedding weights",
+    "KV and convolution caches",
+    "prefix checkpoints",
+    "graphs/HCCL",
+    "prefill scratch/load peaks/allocator reserve"
+  ],
+  "required_gates": [
+    "six-rank startup and all-reduce",
+    "real-weight output/state parity",
+    "image data-parallel encoder",
+    "graphs/cache/CoW/cancellation",
+    "memory and thermals"
+  ],
+  "unsupported": [
+    "MTP",
+    "PP greater than one",
+    "external KV transfer"
+  ],
+  "vocabulary_padding_multiple": 192,
+  "padded_vocab_rows": 248448,
+  "config_sha256": "92ae98da48ba1f86a14ca3e6227390cc7582ffc38823b10501d32ebe08205de0"
+}

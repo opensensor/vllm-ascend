@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Explicit grouped streaming projection resource; no device access on import."""
+"""Unqualified v2 projection resource; no device access on import."""
 
 import torch
 
 from tools.qwen4exp.native_prefill import NativeResource, _tensors_on_one_device
-from tools.qwen4exp.streaming_memory import BLOCKS, GROUP, LANES, MAX_K, N
+from tools.qwen4exp.streaming_next_memory import BLOCKS, GROUP, LANES, MAX_K, N
 from tools.qwen4exp.streaming_operands import MAX_EXPERTS, MAX_ROUTES
 
 
-class NativeStreamingProjection(NativeResource):
+class NativeStreamingProjectionNext(NativeResource):
     """One paired G128 schedule for gate/up and down; routed decode is separate.
 
     The kernel trusts stable scheduler-generated group boundaries. Python only

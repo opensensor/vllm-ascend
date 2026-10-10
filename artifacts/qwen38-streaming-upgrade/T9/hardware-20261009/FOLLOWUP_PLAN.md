@@ -179,3 +179,12 @@ T9 service and quality criteria, retained capacity, and no repeatable decode or
 mixed-service regression. Keep the baseline if a defensible overall gain is not
 established. Do not predict a speed multiplier or thermal improvement from this
 static plan.
+
+## Execution update
+
+The October 9 follow-up implements steps 1–4 in a new v2 projection contract and
+adds step 5 snapshot/oracle diagnostics while retaining reference WY. The original
+hardware WY failure remains unresolved. Qwen six-chip padding, load/state and
+vocabulary alignment are staged separately. See the
+[implementation report](../../../qwen38-streaming-followup-20261009/REPORT.md)
+and its validation boundary. No candidate has been promoted or installed live.
