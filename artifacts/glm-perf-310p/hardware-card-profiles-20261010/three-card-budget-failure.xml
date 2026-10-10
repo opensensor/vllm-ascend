@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="2" time="72.103" timestamp="2026-10-10T02:14:01.530469-04:00" hostname="matteius-Ryzen9"><testcase classname="tests.e2e.nightly.310p.single_node.card_profiles.test_serving" name="test_text_answer_and_request_cache_accounting" time="50.012"><properties><property name="request_0_elapsed_s" value="49.988572051006486" /></properties><failure message="TypeError: argument of type 'NoneType' is not a container or iterable">glm_profile_server = (GlmDeploymentProfile(name='three-card-w3', cards=3, tensor_parallel_size=2, pipeline_parallel_size=3, default_expert_bits=3, w3_layers=(), mtp_tokens=0), &lt;function glm_profile_server.&lt;locals&gt;.call at 0x77d95954c0f0&gt;)
+record_property = &lt;function record_property.&lt;locals&gt;.append_property at 0x77d95954d6f0&gt;
+
+    def test_text_answer_and_request_cache_accounting(glm_profile_server, record_property):
+        selected, call = glm_profile_server
+        # Enough text for multiple aligned cache blocks; no cache reset or worker RPC.
+        context = "Static validation material for prefix cache reuse. " * 300
+        payload = {
+            "model": selected.name,
+            "messages": [{"role": "user", "content": context + "\nWhat is 17 multiplied by 23? Answer only the number."}],
+            "temperature": 0,
+            "max_tokens": 64,
+            "thinking_token_budget": 0,
+        }
+        results = []
+        for ordinal in range(2):
+            started = time.monotonic()
+            result = call("/v1/chat/completions", payload)
+            record_property(f"request_{ordinal}_elapsed_s", time.monotonic() - started)
+&gt;           assert "391" in result["choices"][0]["message"]["content"]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           TypeError: argument of type 'NoneType' is not a container or iterable
+
+tests/e2e/nightly/310p/single_node/card_profiles/test_serving.py:24: TypeError</failure></testcase><testcase classname="tests.e2e.nightly.310p.single_node.card_profiles.test_serving" name="test_coding_client_tool_call_arguments" time="22.077" /></testsuite></testsuites>

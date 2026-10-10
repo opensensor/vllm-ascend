@@ -10,9 +10,11 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 import torch
+from safetensors import safe_open
 from safetensors.torch import save_file
 
-from tools.glm_perf.native_checkpoint import INDEX, LAYOUT, MANIFEST
+from tools.glm_perf.fused_weight_layout import FP16_SCALE_LAYOUT
+from tools.glm_perf.native_checkpoint import INDEX, LAYOUT, MANIFEST, file_digest, write_json
 
 
 @pytest.fixture
@@ -167,9 +169,27 @@ def test_loader_rejects_raw_scales_with_prerounded_kernel_before_reading_weights
     assert not hasattr(model, "loaded") and model.bank.nz_packed_codes
 
 
-def test_direct_loader_stages_native_code_bytes_without_changing_layout(tmp_path, loader_module, monkeypatch):
+@pytest.mark.parametrize("fp16_scales", [False, True])
+def test_direct_loader_stages_all_checkpoint_tensors_without_changing_layout(
+    tmp_path, loader_module, monkeypatch, fp16_scales
+):
     module, config_type = loader_module
     model, config, _ = checkpoint(tmp_path)
+    if fp16_scales:
+        path = tmp_path / "original.safetensors"
+        with safe_open(str(path), framework="pt", device="cpu") as handle:
+            names = handle.keys()
+            tensors = {name: handle.get_tensor(name).clone() for name in names}
+        for name in tensors:
+            if name.endswith("_proj_scale"):
+                tensors[name] = tensors[name].half()
+        save_file(tensors, str(path), metadata={"weight_scale_layout": FP16_SCALE_LAYOUT})
+        manifest_path = tmp_path / MANIFEST
+        manifest = json.loads(manifest_path.read_text())
+        manifest["weight_scale_layout"] = FP16_SCALE_LAYOUT
+        manifest["scale_shards"] = [{"file": path.name, "sha256": file_digest(path)}]
+        write_json(manifest_path, manifest)
+        monkeypatch.setattr(module, "validate_scale_contract", lambda *args: FP16_SCALE_LAYOUT)
     original_clone = torch.Tensor.clone
     copied = []
 
@@ -180,7 +200,7 @@ def test_direct_loader_stages_native_code_bytes_without_changing_layout(tmp_path
 
     monkeypatch.setattr(torch.Tensor, "clone", record_clone)
     module.GlmNativeInt4Loader(config_type()).load_weights(model, config)
-    assert len(copied) == 3
+    assert len(copied) == 5  # Three code matrices, the expert scale, and the dense weight.
     assert all(source != staged and equal for source, staged, equal in copied)
 
 

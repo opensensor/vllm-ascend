@@ -317,6 +317,7 @@ class NPUModelRunner310(NPUModelRunner):
                 self.vllm_config.speculative_config.num_speculative_tokens if self.vllm_config.speculative_config else 0
             ),
             cp_kv_cache_interleave_size=self.parallel_config.cp_kv_cache_interleave_size,
+            reasoning_config=getattr(self.vllm_config, "reasoning_config", None),
         )
         if self._qwen4exp_mtp_ple:
             text_config = self.model_config.hf_text_config
@@ -1772,4 +1773,5 @@ class NPUModelRunner310(NPUModelRunner):
                 max_num_blocks_per_req=max_num_blocks,
                 kv_cache_groups=kv_cache_config.kv_cache_groups,
                 cp_kv_cache_interleave_size=self.parallel_config.cp_kv_cache_interleave_size,
+                reasoning_config=getattr(self.vllm_config, "reasoning_config", None),
             )

@@ -238,8 +238,12 @@ class GlmNativeInt4Loader(DefaultModelLoader):
         storage_records = {row["file"]: row for row in self.native_manifest.get("storage_promotion_shards", [])}
         marker = self.native_manifest.get("weight_scale_layout")
         for shard, names in sorted(by_shard.items()):
-            if shard in scale_records and file_digest(self.folder / shard) != scale_records[shard]["sha256"]:
-                raise ValueError("permanent weight scale shard differs from its checksum")
+            if shard in scale_records:
+                actual_digest = file_digest(self.folder / shard)
+                if actual_digest != scale_records[shard]["sha256"]:
+                    raise ValueError(
+                        f"permanent weight scale shard differs from its checksum: {shard}, actual={actual_digest}"
+                    )
             if shard in storage_records and file_digest(self.folder / shard) != storage_records[shard]["sha256"]:
                 raise ValueError("permanent W4 storage shard differs from its checksum")
             with safe_open(str(self.folder / shard), framework="pt", device="cpu") as handle:
@@ -258,10 +262,9 @@ class GlmNativeInt4Loader(DefaultModelLoader):
                         expected_dtype = torch.float16 if marker == FP16_SCALE_LAYOUT else torch.float32
                         if tensor.dtype != expected_dtype:
                             raise ValueError("expert scale tensor dtype differs from permanent storage marker")
-                    if name.endswith("_proj_codes"):
-                        # Ascend's long-term page pinning can repeatedly split
-                        # huge file-backed pages when copying a safetensors view.
-                        # Stage only this tensor in ordinary CPU storage. This
-                        # is a byte copy, never a decode or a layout transform.
-                        tensor = tensor.clone()
+                    # Ascend's long-term page pinning must not target mmap-backed
+                    # checkpoint storage. Dense parameters also reach CPU-to-NPU
+                    # copies through the upstream loader; stage them as well as
+                    # expert codes/scales. This preserves every byte and dtype.
+                    tensor = tensor.clone()
                     yield name, tensor

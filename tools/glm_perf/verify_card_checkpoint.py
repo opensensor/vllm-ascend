@@ -75,8 +75,10 @@ def verify(folder, *, verify_sha=True):
         path = folder / filename
         if not path.resolve().is_relative_to(folder) or path.stat().st_size != record["bytes"]:
             raise ValueError("shard path or byte count differs from manifest")
-        if verify_sha and file_digest(path) != record["sha256"]:
-            raise ValueError("shard checksum differs from manifest")
+        if verify_sha:
+            actual_digest = file_digest(path)
+            if actual_digest != record["sha256"]:
+                raise ValueError(f"shard checksum differs from manifest: {filename}, actual={actual_digest}")
         with safe_open(str(path), framework="pt", device="cpu") as handle:
             names = handle.keys()
             if set(names) != by_file[filename]:

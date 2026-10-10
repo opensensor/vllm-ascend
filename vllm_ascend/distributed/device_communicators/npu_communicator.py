@@ -19,6 +19,9 @@ import torch
 import torch.distributed as dist
 from vllm.distributed.device_communicators.base_device_communicator import DeviceCommunicatorBase
 
+from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_hardware_profile
+from vllm_ascend.distributed.device_communicators.pipeline_all_gather import PipelineAllGatherTransport
+
 
 class _NpuAll2AllManager:
     """No-op all2all_manager for NPU. Used by vLLM main's fault-tolerance
@@ -60,3 +63,30 @@ class NPUCommunicator(DeviceCommunicatorBase):
         # FlashInfer PCIe IPC backend on NPU.
         self.fi_pcie_ipc_ar_comm = None
         self.all2all_manager = _NpuAll2AllManager()
+        self.pipeline_transport = None
+        if unique_name.startswith("pp:") and get_current_hardware_profile().supports(
+            HardwareCapability.DISTRIBUTED_COMMUNICATION_ADAPTATION
+        ):
+            self.pipeline_transport = PipelineAllGatherTransport(
+                cpu_group, self.ranks, self.global_rank, torch.device("npu", self.device)
+            )
+            self.pipeline_transport.warmup(synchronize=torch.npu.synchronize)
+
+    @property
+    def supports_tensor_dict(self):
+        return self.pipeline_transport is not None
+
+    def send_tensor_dict(self, packet, dst=None):
+        if self.pipeline_transport is None:
+            raise RuntimeError("custom pipeline transport is unavailable for this communicator")
+        self.pipeline_transport.send_tensor_dict(packet, dst)
+
+    def recv_tensor_dict(self, src=None):
+        if self.pipeline_transport is None:
+            raise RuntimeError("custom pipeline transport is unavailable for this communicator")
+        return self.pipeline_transport.recv_tensor_dict(src)
+
+    def destroy(self):
+        if self.pipeline_transport is not None:
+            self.pipeline_transport.destroy()
+        super().destroy()

@@ -1,0 +1,47 @@
+{
+  "scope": "Basic real-weight hardware serving qualification, not golden-logit or broad model-quality evaluation",
+  "storage_drive": "/srv/ai/storage (4 TB Crucial T705)",
+  "profiles": {
+    "two-card": {
+      "cards": 2,
+      "tensor_parallel_size": 4,
+      "pipeline_parallel_size": 1,
+      "tests_passed": 2,
+      "zero_reasoning_tokens_verified": true,
+      "tool_arguments_verified": true,
+      "repeat_cached_tokens": 1920,
+      "cold_request_s": 28.42337792100443,
+      "cached_request_s": 8.57880387500336,
+      "tool_decode_tokens_per_s": 8.2,
+      "mtp_tokens": 1,
+      "decode_graph_sizes": [
+        2,
+        8
+      ],
+      "max_model_len": 8192,
+      "prefill_tokens": 640,
+      "source_sha_matches_local": true,
+      "log": "/srv/ai/storage/artifacts/glm-card-profiles-20261010/two-card-server-r5.log"
+    },
+    "three-card": {
+      "cards": 3,
+      "tensor_parallel_size": 2,
+      "pipeline_parallel_size": 3,
+      "tests_passed": 2,
+      "zero_reasoning_tokens_verified": true,
+      "tool_arguments_verified": true,
+      "repeat_cached_tokens": 2304,
+      "cold_request_s": 30.45902149999165,
+      "cached_request_s": 10.323510307993274,
+      "tool_decode_tokens_per_s": 3.2,
+      "mtp_tokens": 0,
+      "decode_graph_sizes": [],
+      "max_model_len": 8192,
+      "prefill_tokens": 640,
+      "source_sha_matches_local": true,
+      "log": "/srv/ai/storage/artifacts/glm-card-profiles-20261010/three-card-server-r8.log"
+    }
+  },
+  "running_profile": "two-card",
+  "running_api_pid": 2370886
+}

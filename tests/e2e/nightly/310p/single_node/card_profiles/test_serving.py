@@ -22,6 +22,7 @@ def test_text_answer_and_request_cache_accounting(glm_profile_server, record_pro
         result = call("/v1/chat/completions", payload)
         record_property(f"request_{ordinal}_elapsed_s", time.monotonic() - started)
         assert "391" in result["choices"][0]["message"]["content"]
+        assert result["usage"]["completion_tokens_details"]["reasoning_tokens"] == 0
         assert result["usage"]["completion_tokens"] > 0
         assert "cached_tokens" in result["usage"]["prompt_tokens_details"]
         results.append(result)

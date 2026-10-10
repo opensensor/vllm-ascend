@@ -190,6 +190,9 @@ class GroupCoordinatorPatch(GroupCoordinator):
                 device_group=self.device_group,
                 unique_name=self.unique_name,
             )
+            # 310P lacks HCCL point-to-point operations. Reuse upstream's
+            # synchronous tensor-dictionary seam with device AllGather packets.
+            self.use_cpu_custom_send_recv = getattr(self.device_communicator, "supports_tensor_dict", False)
 
     def _release_hccl_resources(self) -> bool:
         destroyed = False
