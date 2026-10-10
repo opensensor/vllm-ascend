@@ -454,3 +454,9 @@ The faster image-enabled TP4 baseline remains the live control. WY remains
 unqualified. TP6 requests six sessions with images, with MTP disabled; fit,
 accuracy, throughput and sustained thermals still need hardware checks.
 T9 remains incomplete until those gates pass.
+
+The subsequent [six-chip transfer fixes](artifacts/qwen38-six-chip-transfer-fixes-20261009/REPORT.md)
+replace shared replication with uneven trained-channel slices and omit dummy
+GDN heads from execution/state IO. Uniform cache reservation remains required
+by the framework. These changes have offline evidence only; cutover gates remain
+pending.

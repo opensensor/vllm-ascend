@@ -11,14 +11,14 @@ from dataclasses import dataclass
 
 import torch
 
-PARTITION_POLICIES = ("strict", "padded")
+PARTITION_POLICIES = ("strict", "padded", "padded_compact")
 
 
 def gdn_partition_policy(config):
     metadata = getattr(config, "ascend_expert_quantization", None) or {}
     policy = metadata.get("gdn_head_partition", "strict")
     if policy not in PARTITION_POLICIES:
-        raise ValueError("gdn_head_partition must be strict or padded")
+        raise ValueError("gdn_head_partition must be strict, padded or padded_compact")
     return policy
 
 
@@ -56,6 +56,12 @@ def gdn_head_shard(key_heads, value_heads, key_dim, value_dim, tp_rank, tp_size,
     per_rank = (key_heads + tp_size - 1) // tp_size
     first = tp_rank * per_rank
     live = max(0, min(per_rank, key_heads - first))
+    if policy == "padded_compact":
+        if tp_size > key_heads:
+            raise ValueError("compact GDN requires at least one trained key head per rank")
+        base, extra = divmod(key_heads, tp_size)
+        first = tp_rank * base + min(tp_rank, extra)
+        live = base + int(tp_rank < extra)
     ratio = value_heads // key_heads
     return GDNHeadShard(first, live, per_rank, per_rank * ratio, ratio, key_dim, value_dim)
 
@@ -145,4 +151,47 @@ def vocab_partition_padding(config, tp_size, base_padding):
     """Keep trained vocabulary size; pad both embedding and head to TP alignment."""
     if type(tp_size) is not int or tp_size <= 0 or type(base_padding) is not int or base_padding <= 0:
         raise ValueError("invalid vocabulary partition alignment")
-    return math.lcm(base_padding, tp_size) if gdn_partition_policy(config) == "padded" else base_padding
+    return math.lcm(base_padding, tp_size) if gdn_partition_policy(config) != "strict" else base_padding
+
+
+def gdn_execution_shard(shard):
+    """Keep allocated cache geometry separate from trained-head execution."""
+    return GDNHeadShard(
+        shard.key_start,
+        shard.live_key_heads,
+        shard.live_key_heads,
+        shard.live_value_heads,
+        shard.value_per_key,
+        shard.key_dim,
+        shard.value_dim,
+    )
+
+
+def gdn_execution_caches(caches, allocated, execution):
+    """Zero-copy live state views inside scheduler-compatible uniform pages.
+
+    Convolution history is packed densely at the start of each page, rather
+    than slicing channels with a gap between history rows. Recurrent state
+    preserves the original page stride. Prefix copies/CoW retain whole pages.
+    """
+    conv, state = caches
+    if (
+        conv.ndim != 3
+        or conv.shape[2] != allocated.conv_dim
+        or conv.stride(2) != 1
+        or conv.stride(1) != conv.shape[2]
+        or conv.stride(0) < conv.shape[1] * conv.shape[2]
+        or state.ndim != 4
+        or state.shape[1:] != (allocated.value_heads, allocated.value_dim, allocated.key_dim)
+        or state.stride(3) != 1
+        or state.stride(2) != allocated.key_dim
+        or state.stride(1) != allocated.value_dim * allocated.key_dim
+        or state.stride(0) < state.shape[1] * state.stride(1)
+        or conv.shape[0] != state.shape[0]
+    ):
+        raise ValueError("compact GDN requires dense inner cache dimensions and nonoverlapping uniform pages")
+    live_conv = conv.as_strided(
+        (conv.shape[0], conv.shape[1], execution.conv_dim),
+        (conv.stride(0), execution.conv_dim, 1),
+    )
+    return live_conv, state[:, : execution.value_heads]

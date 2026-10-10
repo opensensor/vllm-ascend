@@ -113,7 +113,14 @@ from .dtype_policy import (
     ASCEND_QWEN4EXP_DTYPE_POLICY,
     Qwen4ExpDtypePolicy,
 )
-from .head_partition import gdn_head_shard, gdn_partition_policy, place_padded_gdn_tensor, vocab_partition_padding
+from .head_partition import (
+    gdn_execution_caches,
+    gdn_execution_shard,
+    gdn_head_shard,
+    gdn_partition_policy,
+    place_padded_gdn_tensor,
+    vocab_partition_padding,
+)
 from .indexer_qsa import AscendQwen4ExpQSAIndexer
 from .kv_cache import (
     DEFAULT_ATTENTION_BLOCK_SIZE,
@@ -168,6 +175,7 @@ from .qwen4exp_gdn import (
     gdn_gating,
     gdn_short_conv,
 )
+from .shared_partition import place_uneven_shared_expert_tensor
 from .w4_backend_policy import configure_w4_backend
 from .w4_moe import (
     CUBE_DEVICE_ROUTED_BACKENDS,
@@ -762,8 +770,10 @@ class _GDNAttention(nn.Module, MambaBase):
             self.tp_size,
             gdn_partition_policy(config),
         )
-        self.num_k_heads = self.head_shard.key_heads
-        self.num_v_heads = self.head_shard.value_heads
+        self._compact_gdn = gdn_partition_policy(config) == "padded_compact"
+        self.execution_head_shard = gdn_execution_shard(self.head_shard) if self._compact_gdn else self.head_shard
+        self.num_k_heads = self.execution_head_shard.key_heads
+        self.num_v_heads = self.execution_head_shard.value_heads
         self.key_dim = p.head_k_dim * self.num_k_heads
         self.value_dim = p.head_v_dim * self.num_v_heads
         self.conv_dim = 2 * self.key_dim + self.value_dim
@@ -785,6 +795,16 @@ class _GDNAttention(nn.Module, MambaBase):
             except Exception:
                 self._tp_reduce = None
 
+    def _execution_caches(self):
+        if not getattr(self, "_compact_gdn", False):
+            return self.kv_cache
+        key = tuple((t.data_ptr(), tuple(t.shape), tuple(t.stride())) for t in self.kv_cache)
+        cached = getattr(self, "_execution_cache_views", None)
+        if cached is None or cached[0] != key:
+            cached = (key, gdn_execution_caches(self.kv_cache, self.head_shard, self.execution_head_shard))
+            self._execution_cache_views = cached
+        return cached[1]
+
     def prepare_native_conv_weight(self) -> None:
         """Materialize the native operator's static ``[K, C]`` filter once."""
         if self.conv_weight.device.type != "npu":
@@ -804,7 +824,7 @@ class _GDNAttention(nn.Module, MambaBase):
         metadata: GDNAttentionMetadata | None = None,
     ) -> torch.Tensor:
         """Run the 310P stateful op, or the torch fallback."""
-        cache = self.kv_cache[0]
+        cache = self._execution_caches()[0] if getattr(self, "_compact_gdn", False) else self.kv_cache[0]
         if metadata is None:
             metadata = get_forward_context().attn_metadata[self.prefix]
         spec_metadata = getattr(metadata, "spec_decode_metadata", None)
@@ -911,8 +931,8 @@ class _GDNAttention(nn.Module, MambaBase):
 
     def get_state_shape(self) -> tuple[tuple[int, ...], ...]:
         return (
-            (self.params.conv_kernel_size - 1 + self.num_speculative_tokens, self.conv_dim),
-            (self.num_v_heads, self.params.head_v_dim, self.params.head_k_dim),
+            (self.params.conv_kernel_size - 1 + self.num_speculative_tokens, self.head_shard.conv_dim),
+            (self.head_shard.value_heads, self.params.head_v_dim, self.params.head_k_dim),
         )
 
     def get_state_dtype(self) -> tuple[torch.dtype, ...]:
@@ -975,6 +995,7 @@ class _GDNAttention(nn.Module, MambaBase):
             npu_recurrent_gated_delta_rule_310,
         )
 
+        state_cache = self._execution_caches()[1] if getattr(self, "_compact_gdn", False) else self.kv_cache[1]
         q = q.unsqueeze(0)
         k = k.unsqueeze(0)
         v = v.unsqueeze(0)
@@ -987,7 +1008,7 @@ class _GDNAttention(nn.Module, MambaBase):
                 v=v,
                 g=g,
                 beta=beta,
-                state=self.kv_cache[1],
+                state=state_cache,
                 cu_seqlens=query_start_loc,
                 ssm_state_indices=state_indices,
                 num_accepted_tokens=spec_metadata.spec_causal_conv1d.num_accepted_tokens,
@@ -1004,11 +1025,17 @@ class _GDNAttention(nn.Module, MambaBase):
         if metadata.num_prefills > 0:
             assert has_initial_state is not None
             state_io = getattr(self, "_gdn_state_io", None)
+            if (
+                state_io is not None
+                and getattr(self, "_compact_gdn", False)
+                and self.num_v_heads != self.head_shard.value_heads
+            ):
+                raise ValueError("compact GDN requires a state IO resource qualified for strided live-head views")
             if state_io is None:
-                initial_state = self.kv_cache[1][state_indices].contiguous()
+                initial_state = state_cache[state_indices].contiguous()
                 initial_state = initial_state * has_initial_state[:, None, None, None].to(initial_state.dtype)
             else:
-                initial_state = state_io.gather(self.kv_cache[1], state_indices, has_initial_state)
+                initial_state = state_io.gather(state_cache, state_indices, has_initial_state)
             out, final_state = chunk_gated_delta_rule_310(
                 q=q,
                 k=k,
@@ -1026,9 +1053,9 @@ class _GDNAttention(nn.Module, MambaBase):
             )
             assert final_state is not None
             if state_io is None:
-                self.kv_cache[1][state_indices] = final_state.to(self.kv_cache[1].dtype)
+                state_cache[state_indices] = final_state.to(state_cache.dtype)
             else:
-                state_io.scatter(self.kv_cache[1], state_indices, has_initial_state, final_state)
+                state_io.scatter(state_cache, state_indices, has_initial_state, final_state)
             return out.squeeze(0)
 
         return npu_recurrent_gated_delta_rule_310(
@@ -1037,7 +1064,7 @@ class _GDNAttention(nn.Module, MambaBase):
             v=v,
             g=g,
             beta=beta,
-            state=self.kv_cache[1],
+            state=state_cache,
             cu_seqlens=query_start_loc,
             ssm_state_indices=state_indices,
             use_qk_l2norm_in_kernel=True,
@@ -1194,15 +1221,16 @@ class _GDNAttention(nn.Module, MambaBase):
                 dtype=self.compute_dtype,
                 device=block_input.device,
             )
+            state_cache = self._execution_caches()[1] if state_indices is not None else None
             for request_idx, (start, stop) in enumerate(ranges):
                 if stop <= start:
                     continue
                 initial_state = None
                 if state_indices is not None and has_initial_state is not None:
                     cache_idx = state_indices[request_idx].long()
-                    initial_state = self.kv_cache[1][cache_idx].to(self.compute_dtype) * has_initial_state[
-                        request_idx
-                    ].to(self.compute_dtype)
+                    initial_state = state_cache[cache_idx].to(self.compute_dtype) * has_initial_state[request_idx].to(
+                        self.compute_dtype
+                    )
                 segment, final_state = gdn_delta_rule(
                     q[start:stop],
                     k[start:stop],
@@ -1217,7 +1245,7 @@ class _GDNAttention(nn.Module, MambaBase):
                 )
                 out[start:stop] = segment
                 if state_indices is not None:
-                    self.kv_cache[1][cache_idx].copy_(final_state.to(self.kv_cache[1].dtype))
+                    state_cache[cache_idx].copy_(final_state.to(state_cache.dtype))
         return self._project_output(block_input, out)
 
     def _project_output(self, block_input: torch.Tensor, out: torch.Tensor) -> torch.Tensor:
@@ -2961,7 +2989,7 @@ class AscendQwen4ExpForCausalLM(
         self.model_config = vllm_config.model_config
         self.quant_config = getattr(vllm_config, "quant_config", None)
         self.config = config
-        if gdn_partition_policy(config) == "padded":
+        if gdn_partition_policy(config) != "strict":
             if w4_config(config) is None:
                 raise ValueError("padded GDN serving requires the explicit packed W4 checkpoint")
             if getattr(vllm_config, "kv_transfer_config", None) is not None:
@@ -3324,6 +3352,10 @@ class AscendQwen4ExpForCausalLM(
         """
         metadata = getattr(self.config, "ascend_expert_quantization", None)
         shared_execution = metadata.get("shared_expert_execution", "tp_sharded") if metadata else "tp_sharded"
+        if shared_execution == "tp_sharded_uneven":
+            return place_uneven_shared_expert_tensor(
+                params, name, tensor, int(self.config.shared_expert_intermediate_size), tp_rank, tp_size
+            )
         replicated = shared_execution.startswith("replicated")
         if name.endswith(".mlp.shared_expert.gate_proj.weight"):
             target_name = name[: -len(".mlp.shared_expert.gate_proj.weight")] + ".mlp.shared_gate_up"
@@ -3382,10 +3414,18 @@ class AscendQwen4ExpForCausalLM(
         is row-parallel (split value_dim).
         """
         full = _gdn_params_from_config(self.model.config)
-        if gdn_partition_policy(self.model.config) == "padded":
+        if gdn_partition_policy(self.model.config) != "strict":
             shard = gdn_head_shard(
-                full.num_k_heads, full.num_v_heads, full.head_k_dim, full.head_v_dim, tp_rank, tp_size, "padded"
+                full.num_k_heads,
+                full.num_v_heads,
+                full.head_k_dim,
+                full.head_v_dim,
+                tp_rank,
+                tp_size,
+                gdn_partition_policy(self.model.config),
             )
+            if gdn_partition_policy(self.model.config) == "padded_compact":
+                shard = gdn_execution_shard(shard)
             return place_padded_gdn_tensor(params, name, tensor, shard, full.num_k_heads, full.num_v_heads)
         fkd = full.key_dim
         fvd = full.value_dim
@@ -3802,7 +3842,7 @@ class AscendQwen4ExpForConditionalGeneration(
         self._tokenizer = cached_tokenizer_from_config(vllm_config.model_config)
         self.multimodal_config = multimodal_config
         self.use_data_parallel = multimodal_config.mm_encoder_tp_mode == "data"
-        if gdn_partition_policy(config.text_config) == "padded" and not self.use_data_parallel:
+        if gdn_partition_policy(config.text_config) != "strict" and not self.use_data_parallel:
             raise ValueError("padded GDN multimodal candidate requires mm_encoder_tp_mode=data")
         pruning_spec = multimodal_config.get_video_pruning_spec()
         if pruning_spec is None:

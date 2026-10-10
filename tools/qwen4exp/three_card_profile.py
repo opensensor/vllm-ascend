@@ -8,8 +8,9 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from vllm_ascend.models.qwen4_exp.head_partition import gdn_head_shard, vocab_partition_padding
+from vllm_ascend.models.qwen4_exp.head_partition import gdn_execution_shard, gdn_head_shard, vocab_partition_padding
 from vllm_ascend.models.qwen4_exp.qsa_head_sharding import qsa_head_shard
+from vllm_ascend.models.qwen4_exp.shared_partition import shared_expert_range
 from vllm_ascend.models.qwen4_exp.w4_moe import w4_config
 from vllm_ascend.models.qwen4_exp.weight_mapping import local_expert_range
 
@@ -36,6 +37,7 @@ def make_profile(config):
         "num_experts",
         "hidden_size",
         "moe_intermediate_size",
+        "shared_expert_intermediate_size",
         "num_hidden_layers",
         "layer_types",
         "vocab_size",
@@ -46,8 +48,8 @@ def make_profile(config):
     if not isinstance(metadata, dict) or metadata.get("bits") != 4 or metadata.get("group_size") != GROUP_SIZE:
         raise ValueError("six-chip profile requires the packed W4 G128 checkpoint")
     metadata.update(
-        gdn_head_partition="padded",
-        shared_expert_execution="replicated",
+        gdn_head_partition="padded_compact",
+        shared_expert_execution="tp_sharded_uneven",
         backend="cube_310_int4_a8",
         lm_head_execution="float16",
         activation_quantization="int8_per_group",
@@ -67,8 +69,10 @@ def make_profile(config):
             policy.linear_value_head_dim,
             rank,
             TP_SIZE,
-            "padded",
+            "padded_compact",
         )
+        live = gdn_execution_shard(gdn)
+        shared_start, shared_stop = shared_expert_range(policy.shared_expert_intermediate_size, rank, TP_SIZE)
         qsa = qsa_head_shard(policy.num_attention_heads, policy.num_key_value_heads, policy.head_dim, rank, TP_SIZE)
         first, stop = local_expert_range(policy.num_experts, TP_SIZE, rank)
         hidden, intermediate = policy.hidden_size, policy.moe_intermediate_size
@@ -85,11 +89,20 @@ def make_profile(config):
                 gdn_allocated_key_heads=gdn.key_heads,
                 gdn_allocated_value_heads=gdn.value_heads,
                 gdn_conv_channels=gdn.conv_dim,
+                gdn_execution_value_heads=live.value_heads,
+                gdn_execution_conv_channels=live.conv_dim,
+                shared_channels=[shared_start, shared_stop],
+                shared_channel_count=shared_stop - shared_start,
+                shared_projection_bytes=3 * hidden * (shared_stop - shared_start) * FP16_BYTES,
                 qsa_query_heads=qsa.num_query_heads,
                 qsa_kv_start=qsa.kv_start,
                 qsa_kv_heads=qsa.num_kv_heads,
                 routed_backbone_codes_and_metadata_bytes=(stop - first) * policy.num_hidden_layers * (weights + meta),
                 recurrent_bytes_per_gdn_state=gdn.value_heads * gdn.value_dim * gdn.key_dim * GDN_STATE_DTYPE_BYTES,
+                recurrent_live_bytes_per_gdn_state=live.value_heads
+                * live.value_dim
+                * live.key_dim
+                * GDN_STATE_DTYPE_BYTES,
             )
         )
     receipt = dict(
@@ -124,6 +137,9 @@ def make_profile(config):
             "graphs/cache/CoW/cancellation",
             "memory and thermals",
         ],
+        gdn_uniform_cache_reserve_retained=True,
+        gdn_dummy_heads_executed=False,
+        shared_expert_execution="tp_sharded_uneven",
         unsupported=["MTP", "PP greater than one", "external KV transfer"],
         vocabulary_padding_multiple=padding,
         padded_vocab_rows=(policy.vocab_size + padding - 1) // padding * padding,

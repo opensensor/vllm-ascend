@@ -12,6 +12,7 @@ import torch
 from tests.ut.qwen38_1m.reference.gdn_reference import gdn_delta_rule_recurrent
 from tools.qwen4exp.three_card_profile import checkpoint_overlay, make_profile
 from vllm_ascend.models.qwen4_exp.head_partition import (
+    gdn_execution_shard,
     gdn_head_shard,
     gdn_partition_policy,
     place_padded_gdn_tensor,
@@ -166,6 +167,10 @@ def test_saved_checkpoint_profile_keeps_vision_and_trained_heads_and_reports_no_
     assert receipt["mm_encoder_tp_mode"] == "data" and receipt["images_enabled"]
     assert {r["gdn_allocated_value_heads"] for r in receipt["ranks"]} == {9}
     assert {r["gdn_conv_channels"] for r in receipt["ranks"]} == {1920}
+    assert [r["gdn_execution_value_heads"] for r in receipt["ranks"]] == [9, 9, 9, 9, 6, 6]
+    assert [r["shared_channel_count"] for r in receipt["ranks"]] == [107, 107, 107, 107, 106, 106]
+    assert receipt["shared_expert_execution"] == "tp_sharded_uneven"
+    assert receipt["gdn_uniform_cache_reserve_retained"] and not receipt["gdn_dummy_heads_executed"]
 
 
 @pytest.fixture
@@ -198,6 +203,7 @@ def actual_model_methods():
         nn=torch.nn,
         Qwen4ExpGDNParams=Qwen4ExpGDNParams,
         gdn_head_shard=gdn_head_shard,
+        gdn_execution_shard=gdn_execution_shard,
         gdn_partition_policy=gdn_partition_policy,
         place_padded_gdn_tensor=place_padded_gdn_tensor,
         _register_in_static_forward_context=lambda *_: None,
@@ -269,7 +275,7 @@ def test_canonical_checkpoint_overlay_is_separate_append_only_and_preserves_weig
         json.loads((target / "config.json").read_text())["text_config"]["ascend_expert_quantization"][
             "gdn_head_partition"
         ]
-        == "padded"
+        == "padded_compact"
     )
     with pytest.raises(FileExistsError):
         checkpoint_overlay(source, target)

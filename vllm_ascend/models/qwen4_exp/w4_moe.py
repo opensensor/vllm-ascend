@@ -19,6 +19,7 @@ from .dtype_policy import ASCEND_QWEN4EXP_DTYPE_POLICY, Qwen4ExpDtypePolicy
 from .grouped_expert_dispatch import GroupedExpertDispatch, build_grouped_expert_dispatch
 from .moe import route_topk
 from .route_workspace import grouped_route_chunk_tokens
+from .shared_partition import shared_expert_range
 from .w4a8_int4 import (
     NATIVE_INT4_BACKEND,
     pack_activation_device,
@@ -72,6 +73,7 @@ MAX_GROUPED_NATIVE_ROUTES = 25600
 MAX_SHARED_EXPERT_OVERLAP_TOKENS = 1
 SHARED_EXPERT_EXECUTIONS = (
     "tp_sharded",
+    "tp_sharded_uneven",
     "tp_sharded_overlap",
     "replicated",
     "replicated_overlap",
@@ -467,9 +469,14 @@ class W4SparseMoE(nn.Module):
         )
         shared = int(getattr(config, "shared_expert_intermediate_size", 0) or 0)
         self.has_shared_expert = shared > 0
-        if not self.shared_expert_replicated and shared % self.expert_tp_size:
+        uneven_shared = self.shared_expert_execution == "tp_sharded_uneven"
+        if not self.shared_expert_replicated and not uneven_shared and shared % self.expert_tp_size:
             raise ValueError("shared expert intermediate dimension must divide TP")
-        self.local_shared_inter = shared if self.shared_expert_replicated else shared // self.expert_tp_size
+        if uneven_shared and shared:
+            first, stop = shared_expert_range(shared, self.expert_tp_rank, self.expert_tp_size)
+            self.local_shared_inter = stop - first
+        else:
+            self.local_shared_inter = shared if self.shared_expert_replicated else shared // self.expert_tp_size
         if self.has_shared_expert:
             self.shared_gate_up = nn.Parameter(
                 torch.zeros(2 * self.local_shared_inter, hidden, dtype=self.params_dtype)
