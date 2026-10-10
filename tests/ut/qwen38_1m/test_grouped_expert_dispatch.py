@@ -117,11 +117,11 @@ def test_dispatch_skew_and_all_peer_owned_routes() -> None:
     torch.testing.assert_close(peer.order, torch.arange(8))
 
 
-@pytest.mark.parametrize("tokens,local_experts", [(0, 1), (1, 1), (7, 8), (640, 72)])
+@pytest.mark.parametrize("tokens,local_experts", [(0, 1), (1, 1), (7, 8), (640, 72), (2560, 85), (2560, 86)])
 def test_fixed_histogram_counts_match_comparison_counts(tokens: int, local_experts: int) -> None:
     generator = torch.Generator().manual_seed(310)
-    ids = torch.randint(0, local_experts * 3, (tokens, 8), generator=generator)
-    weights = torch.rand((tokens, 8), generator=generator)
+    ids = torch.randint(0, local_experts * 3, (tokens, 10), generator=generator)
+    weights = torch.rand((tokens, 10), generator=generator)
     # The global expert range starts at local_experts; the other two thirds
     # become the peer-owned sentinel. Include zero-weight local routes too.
     weights[:, 0] = 0

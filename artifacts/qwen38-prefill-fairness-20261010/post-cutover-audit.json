@@ -1,0 +1,101 @@
+{
+  "collected_utc": "2026-10-10T13:07:33.805928+00:00",
+  "runtime": "/srv/ai/src/qwen-performance-paced-tp6-20261010",
+  "cutover": {
+    "old_api_pid": 39853,
+    "new_api_pid": 440842,
+    "started_at": 1791637005.1102931,
+    "runtime": "/srv/ai/src/qwen-performance-paced-tp6-20261010",
+    "scheduler": "QwenPrefillPacedScheduler",
+    "active_requests_before_stop": [
+      0.0,
+      0.0
+    ],
+    "cache_cleared_before_stop": false,
+    "initial_configuration_failure_api_pid": 436297,
+    "retried_at": 1791637093.9982467
+  },
+  "source_sha256": {
+    "vllm_ascend/ascend_config.py": "f8276cb0c2a0866963420ca1f80059749086583240d2ea5b9ba5066c2a99ab05",
+    "vllm_ascend/core/qwen_prefill_pacing.py": "404f573efa7ec915901348412b3a3b32e9c14131b304e6d9de63c9d0c6ba8199",
+    "vllm_ascend/core/qwen_prefill_scheduler.py": "3adba6081605ada1dff7571d3c67092e1d6c6c98f5bb11a86591f83b71eba784",
+    "vllm_ascend/_310p/prefix_mamba_state.py": "dabc9fab934cb6f117e9b98a3dafdc20ea14a0f9ad1b481a7fab9469cedaa9bb"
+  },
+  "model_geometry": {
+    "hidden_size": 2560,
+    "ple_embed_dim": 2560,
+    "ple_layer_ids": [
+      2
+    ],
+    "num_experts_per_tok": 10,
+    "ascend_expert_quantization": {
+      "backend": "cube_310_int4_a8",
+      "bits": 4,
+      "format": "qwen4exp_w4a16_group_v1",
+      "group_size": 128,
+      "offset_dtype": "int8",
+      "packing": "signed_int4_low_nibble_first_in_axis",
+      "scale_dtype": "float16",
+      "symmetric": false,
+      "gdn_head_partition": "padded_compact",
+      "shared_expert_execution": "tp_sharded_uneven",
+      "lm_head_execution": "w8a8_dynamic",
+      "activation_quantization": "int8_per_group",
+      "grouped_activation": "cann_builtin_fp16",
+      "grouped_finalize": "cann_v2",
+      "grouped_prefill_chunk_tokens": 2560,
+      "mtp_uneven_sharding": true,
+      "mtp_expert_execution": "w8a8_grouped",
+      "mtp_grouped_graph": true
+    }
+  },
+  "state": {
+    "/is_paused": "{\"is_paused\":false}",
+    "/metrics": [
+      "vllm:num_requests_running{engine=\"0\",model_name=\"qwen38-flash-next\"} 0.0",
+      "vllm:num_requests_waiting{engine=\"0\",model_name=\"qwen38-flash-next\"} 0.0",
+      "vllm:kv_cache_usage_perc{engine=\"0\",model_name=\"qwen38-flash-next\"} 0.0",
+      "vllm:num_preemptions_total{engine=\"0\",model_name=\"qwen38-flash-next\"} 0.0"
+    ]
+  },
+  "thermal_peak_c": 71.0,
+  "thermal_actions": [
+    {
+      "time": 1791637009.7068052,
+      "temperatures_c": null,
+      "sensor_error": "Command '['npu-smi', 'info']' timed out after 2 seconds",
+      "action": "control_error",
+      "error": "<urlopen error [Errno 111] Connection refused>",
+      "owns_pause": false
+    }
+  ],
+  "log_lines": [
+    "(EngineCore pid=443387) INFO 10-10 13:02:00 [kv_cache_utils.py:2395] NPU KV cache size: 1,607,731 tokens, Maximum concurrency for 262,144 tokens per request: 6.13x",
+    "(Worker_TP0_EP0 pid=444210) INFO 10-10 13:02:04 [model_runner_310p.py:1401] Prefix Mamba device archive: primary_slots=104, archive_slots=83, checkpoint_bytes=21924864, archive_bytes=1.69 GiB, post_capture_free=5.70 GiB, reserve=4.00 GiB. Host spill starts only after both device tiers fill.",
+    "(EngineCore pid=443387) INFO 10-10 13:02:14 [prefix_mamba_scheduler.py:118] Bounded prefix Mamba retention: 32 cached checkpoints per group; request-owned and pending CoW states are preserved separately.",
+    "(APIServer pid=440842) INFO 10-10 13:03:06 [request_timing.py:50] Engine 000 request chatcmpl-b5476d7e8fae089a (stop): prompt 26 computed + 0 cached in 544.9 ms (21.0 ms/tok, 47.7 effective tok/s); decode 2 tokens, 1 gaps in 91.8 ms (91.8 ms/tok, 10.9 tok/s); queue 0.1 ms; total 656.7 ms",
+    "(APIServer pid=440842) INFO 10-10 13:03:07 [request_timing.py:50] Engine 000 request chatcmpl-aafbfbbdcb494962 (stop): prompt 24 computed + 0 cached in 465.8 ms (19.4 ms/tok, 51.5 effective tok/s); decode 2 tokens, 1 gaps in 87.3 ms (87.3 ms/tok, 11.5 tok/s); queue 0.0 ms; total 556.5 ms",
+    "(APIServer pid=440842) INFO 10-10 13:03:07 [request_timing.py:50] Engine 000 request chatcmpl-8edc3e2c84dee987 (stop): prompt 35 computed + 0 cached in 458.6 ms (13.1 ms/tok, 76.3 effective tok/s); decode 8 tokens, 7 gaps in 267.5 ms (38.2 ms/tok, 26.2 tok/s); queue 0.0 ms; total 729.3 ms",
+    "(APIServer pid=440842) INFO 10-10 13:03:10 [request_timing.py:50] Engine 000 request chatcmpl-b6b48bafddbcb08b (stop): prompt 284 computed + 0 cached in 1348.8 ms (4.7 ms/tok, 210.6 effective tok/s); decode 47 tokens, 46 gaps in 1401.4 ms (30.5 ms/tok, 32.8 tok/s); queue 0.0 ms; total 2777.1 ms",
+    "(APIServer pid=440842) INFO 10-10 13:03:13 [request_timing.py:50] Engine 000 request chatcmpl-93311739baa959de (stop): prompt 28 computed + 256 cached in 501.0 ms (17.9 ms/tok, 55.9 effective tok/s); decode 75 tokens, 74 gaps in 2315.0 ms (31.3 ms/tok, 32.0 tok/s); queue 0.0 ms; total 2823.2 ms",
+    "(APIServer pid=440842) INFO 10-10 13:03:46 [request_timing.py:50] Engine 000 request chatcmpl-bbd4b8b8afa74c25 (stop): prompt 1057 computed + 0 cached in 3285.6 ms (3.1 ms/tok, 321.7 effective tok/s); decode 22 tokens, 21 gaps in 619.6 ms (29.5 ms/tok, 33.9 tok/s); queue 0.0 ms; total 3963.4 ms",
+    "(APIServer pid=440842) INFO 10-10 13:03:47 [request_timing.py:50] Engine 000 request chatcmpl-8e39a5c5b52edc8b (stop): prompt 33 computed + 1024 cached in 457.2 ms (13.9 ms/tok, 72.2 effective tok/s); decode 22 tokens, 21 gaps in 592.2 ms (28.2 ms/tok, 35.5 tok/s); queue 0.1 ms; total 1065.2 ms",
+    "......(APIServer pid=440842) INFO 10-10 13:04:37 [request_timing.py:50] Engine 000 request chatcmpl-ad0587e1b85e687b (stop): prompt 3865 computed + 0 cached in 10686.3 ms (2.8 ms/tok, 361.7 effective tok/s); decode 3 tokens, 2 gaps in 87.7 ms (43.9 ms/tok, 22.8 tok/s); queue 0.1 ms; total 10784.4 ms",
+    "(APIServer pid=440842) INFO 10-10 13:04:38 [request_timing.py:50] Engine 000 request chatcmpl-8ac6e0ea864af30e (stop): prompt 25 computed + 3840 cached in 544.9 ms (21.8 ms/tok, 45.9 effective tok/s); decode 3 tokens, 2 gaps in 89.3 ms (44.6 ms/tok, 22.4 tok/s); queue 0.0 ms; total 651.7 ms",
+    "(APIServer pid=440842) INFO 10-10 13:04:39 [request_timing.py:50] Engine 000 request chatcmpl-bc4c471de2f51d6d (stop): prompt 25 computed + 3840 cached in 887.8 ms (35.5 ms/tok, 28.2 effective tok/s); decode 4 tokens, 3 gaps in 203.4 ms (67.8 ms/tok, 14.8 tok/s); queue 89.4 ms; total 1744.0 ms",
+    "(APIServer pid=440842) INFO 10-10 13:04:39 [request_timing.py:50] Engine 000 request chatcmpl-bdf6ced100ac1939 (stop): prompt 25 computed + 3840 cached in 887.8 ms (35.5 ms/tok, 28.2 effective tok/s); decode 3 tokens, 2 gaps in 203.4 ms (101.7 ms/tok, 9.8 tok/s); queue 89.4 ms; total 1743.5 ms",
+    "(APIServer pid=440842) INFO 10-10 13:04:39 [request_timing.py:50] Engine 000 request chatcmpl-afad0dadf54ec428 (stop): prompt 25 computed + 3840 cached in 887.8 ms (35.5 ms/tok, 28.2 effective tok/s); decode 4 tokens, 3 gaps in 203.4 ms (67.8 ms/tok, 14.8 tok/s); queue 89.4 ms; total 1742.3 ms",
+    "(APIServer pid=440842) INFO 10-10 13:04:39 [request_timing.py:50] Engine 000 request chatcmpl-b53d5104a0b7f5f9 (stop): prompt 25 computed + 3840 cached in 887.8 ms (35.5 ms/tok, 28.2 effective tok/s); decode 4 tokens, 3 gaps in 203.4 ms (67.8 ms/tok, 14.8 tok/s); queue 89.3 ms; total 1739.9 ms",
+    "(APIServer pid=440842) INFO 10-10 13:04:39 [request_timing.py:50] Engine 000 request chatcmpl-af91d5431e051e53 (stop): prompt 25 computed + 3840 cached in 887.8 ms (35.5 ms/tok, 28.2 effective tok/s); decode 3 tokens, 2 gaps in 203.4 ms (101.7 ms/tok, 9.8 tok/s); queue 89.3 ms; total 1738.9 ms",
+    "(APIServer pid=440842) INFO 10-10 13:05:25 [request_timing.py:50] Engine 000 request cmpl-9b19c24953b88384-0 (length): prompt 32 computed + 0 cached in 491.3 ms (15.4 ms/tok, 65.1 effective tok/s); decode 384 tokens, 383 gaps in 22016.3 ms (57.5 ms/tok, 17.4 tok/s); queue 0.1 ms; total 22510.3 ms",
+    "(APIServer pid=440842) INFO 10-10 13:05:27 [request_timing.py:50] Engine 000 request cmpl-9630b9d19aa85e34-0 (length): prompt 2271 computed + 0 cached in 22701.3 ms (10.0 ms/tok, 100.0 effective tok/s); decode 16 tokens, 15 gaps in 638.9 ms (42.6 ms/tok, 23.5 tok/s); queue 436.1 ms; total 23859.3 ms",
+    "(APIServer pid=440842) INFO 10-10 13:05:50 [request_timing.py:50] Engine 000 request cmpl-82c897ff5b23023b-0 (length): prompt 456 computed + 0 cached in 1808.9 ms (4.0 ms/tok, 252.1 effective tok/s); decode 12 tokens, 11 gaps in 747.6 ms (68.0 ms/tok, 14.7 tok/s); queue 0.0 ms; total 2559.2 ms"
+  ],
+  "affinity_keys": [
+    "api_pid",
+    "engine_pid",
+    "identities",
+    "previous",
+    "verified"
+  ]
+}

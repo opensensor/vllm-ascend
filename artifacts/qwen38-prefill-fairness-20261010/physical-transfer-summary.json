@@ -1,0 +1,280 @@
+{
+  "rank": 0,
+  "capture_includes": "456-token cold text prefill and 12 generated tokens; mixed prefill/decode phases, not a pure-decode benchmark",
+  "physical_trace_root": "/srv/ai/src/qwen-prefill-fairness-20261010/transfer-profile-v16/matteius-threadripper_444210_20261010130548190_ascend_pt/ASCEND_PROFILER_OUTPUT",
+  "parsed_database_sha256": "57e74764b85964df269cf8582701c35d575cccec8bf6e4dbee0d66abe06b2ec2",
+  "compute_task_count": 88419,
+  "task_types": [
+    {
+      "type": "AI_CORE",
+      "calls": 6055,
+      "summed_duration_us": 17258.369
+    },
+    {
+      "type": "KERNEL_AICORE",
+      "calls": 84934,
+      "summed_duration_us": 1187580.202
+    },
+    {
+      "type": "MEMCPY_ASYNC",
+      "calls": 8787,
+      "summed_duration_us": 70280.452
+    },
+    {
+      "type": "EVENT_RECORD",
+      "calls": 4426,
+      "summed_duration_us": 31.258
+    },
+    {
+      "type": "KERNEL_AICPU",
+      "calls": 952,
+      "summed_duration_us": 134791.051
+    },
+    {
+      "type": "EVENT_WAIT",
+      "calls": 23825,
+      "summed_duration_us": 3182755.688
+    },
+    {
+      "type": "NOTIFY_RECORD",
+      "calls": 20710,
+      "summed_duration_us": 4195.015
+    },
+    {
+      "type": "EVENT_RESET",
+      "calls": 22873,
+      "summed_duration_us": 1119.16
+    },
+    {
+      "type": "REDUCE_ASYNC_V2",
+      "calls": 4649,
+      "summed_duration_us": 53843.124
+    },
+    {
+      "type": "KERNEL_MIX_AIC",
+      "calls": 2293,
+      "summed_duration_us": 53528.176
+    },
+    {
+      "type": "PLACE_HOLDER_SQE",
+      "calls": 264,
+      "summed_duration_us": 2.004
+    }
+  ],
+  "memcpy_tasks": {
+    "calls": 8787,
+    "summed_device_duration_ms": 70.28107700000001,
+    "p50_device_duration_us": 2.318,
+    "max_device_duration_us": 241.875,
+    "direction_and_payload_bytes_available": false
+  },
+  "copy_host_api": [
+    {
+      "name": "Memcpy",
+      "calls": 2055,
+      "summed_host_duration_ms": 29.358477
+    },
+    {
+      "name": "aclrtMemcpy",
+      "calls": 20,
+      "summed_host_duration_ms": 1.595733
+    },
+    {
+      "name": "aclrtMemcpyAsync",
+      "calls": 3328,
+      "summed_host_duration_ms": 886.009481
+    }
+  ],
+  "DDR_samples": {
+    "count": 133,
+    "span_seconds": 2.62497,
+    "read_mean_GB_s": 49.39247834522556,
+    "read_peak_GB_s": 94.973113455,
+    "write_mean_GB_s": 21.888623747007518,
+    "write_peak_GB_s": 58.370974374,
+    "units_evidence": "trace_view DDR/Read Read(MB/s) equals database read / 1048576; database uses bytes/s"
+  },
+  "top_compute_types": [
+    {
+      "type": "hcom_allReduce_",
+      "calls": 213,
+      "summed_device_duration_us": 500458.8499999996,
+      "peak_main_mem_read_bw_GB_s": 0.0,
+      "peak_main_mem_write_bw_GB_s": 0.0
+    },
+    {
+      "type": "QwenW4A8Int4MatmulV310",
+      "calls": 528,
+      "summed_device_duration_us": 315347.78599999956,
+      "peak_main_mem_read_bw_GB_s": 0.583,
+      "peak_main_mem_write_bw_GB_s": 0.606
+    },
+    {
+      "type": "MatMulV2",
+      "calls": 6751,
+      "summed_device_duration_us": 207176.93000000127,
+      "peak_main_mem_read_bw_GB_s": 2.233,
+      "peak_main_mem_write_bw_GB_s": 0.545
+    },
+    {
+      "type": "Cast",
+      "calls": 18423,
+      "summed_device_duration_us": 126188.28000000017,
+      "peak_main_mem_read_bw_GB_s": 1.476,
+      "peak_main_mem_write_bw_GB_s": 1.315
+    },
+    {
+      "type": "Mul",
+      "calls": 8811,
+      "summed_device_duration_us": 86694.30100000155,
+      "peak_main_mem_read_bw_GB_s": 1.276,
+      "peak_main_mem_write_bw_GB_s": 0.66
+    },
+    {
+      "type": "TransData",
+      "calls": 12248,
+      "summed_device_duration_us": 73914.37999999976,
+      "peak_main_mem_read_bw_GB_s": 1.177,
+      "peak_main_mem_write_bw_GB_s": 1.243
+    },
+    {
+      "type": "ViewCopy",
+      "calls": 1268,
+      "summed_device_duration_us": 61373.84399999994,
+      "peak_main_mem_read_bw_GB_s": 0.612,
+      "peak_main_mem_write_bw_GB_s": 0.583
+    },
+    {
+      "type": "IndexPut",
+      "calls": 144,
+      "summed_device_duration_us": 39815.62400000001,
+      "peak_main_mem_read_bw_GB_s": 0.0,
+      "peak_main_mem_write_bw_GB_s": 0.0
+    },
+    {
+      "type": "Add",
+      "calls": 3402,
+      "summed_device_duration_us": 37735.10899999988,
+      "peak_main_mem_read_bw_GB_s": 1.32,
+      "peak_main_mem_write_bw_GB_s": 0.728
+    },
+    {
+      "type": "QwenW4A8PackV310",
+      "calls": 528,
+      "summed_device_duration_us": 37364.9039999999,
+      "peak_main_mem_read_bw_GB_s": 0.122,
+      "peak_main_mem_write_bw_GB_s": 0.022
+    },
+    {
+      "type": "Sigmoid",
+      "calls": 920,
+      "summed_device_duration_us": 34566.72599999993,
+      "peak_main_mem_read_bw_GB_s": 0.137,
+      "peak_main_mem_write_bw_GB_s": 0.124
+    },
+    {
+      "type": "RmsNorm",
+      "calls": 1575,
+      "summed_device_duration_us": 34113.388999999974,
+      "peak_main_mem_read_bw_GB_s": 0.217,
+      "peak_main_mem_write_bw_GB_s": 0.19
+    },
+    {
+      "type": "ReduceMean",
+      "calls": 1645,
+      "summed_device_duration_us": 19428.81999999998,
+      "peak_main_mem_read_bw_GB_s": 0.666,
+      "peak_main_mem_write_bw_GB_s": 0.145
+    },
+    {
+      "type": "CausalConv1dV310",
+      "calls": 324,
+      "summed_device_duration_us": 18285.20800000001,
+      "peak_main_mem_read_bw_GB_s": 0.146,
+      "peak_main_mem_write_bw_GB_s": 0.033
+    },
+    {
+      "type": "Slice",
+      "calls": 5761,
+      "summed_device_duration_us": 16308.469000000327,
+      "peak_main_mem_read_bw_GB_s": 2.507,
+      "peak_main_mem_write_bw_GB_s": 1.478
+    },
+    {
+      "type": "Equal",
+      "calls": 113,
+      "summed_device_duration_us": 15860.178999999993,
+      "peak_main_mem_read_bw_GB_s": 0.205,
+      "peak_main_mem_write_bw_GB_s": 0.045
+    },
+    {
+      "type": "QuantBatchMatmulV3",
+      "calls": 27,
+      "summed_device_duration_us": 15118.095,
+      "peak_main_mem_read_bw_GB_s": 0.405,
+      "peak_main_mem_write_bw_GB_s": 0.005
+    },
+    {
+      "type": "ChunkFwdOVllm",
+      "calls": 72,
+      "summed_device_duration_us": 13900.699999999999,
+      "peak_main_mem_read_bw_GB_s": 0.504,
+      "peak_main_mem_write_bw_GB_s": 0.339
+    },
+    {
+      "type": "ChunkGatedDeltaRuleFwdH",
+      "calls": 72,
+      "summed_device_duration_us": 13639.741000000002,
+      "peak_main_mem_read_bw_GB_s": 0.54,
+      "peak_main_mem_write_bw_GB_s": 0.557
+    },
+    {
+      "type": "RecurrentGatedDeltaRuleV310",
+      "calls": 252,
+      "summed_device_duration_us": 13470.723000000004,
+      "peak_main_mem_read_bw_GB_s": 0.097,
+      "peak_main_mem_write_bw_GB_s": 0.115
+    },
+    {
+      "type": "TopKV2",
+      "calls": 198,
+      "summed_device_duration_us": 13447.185999999998,
+      "peak_main_mem_read_bw_GB_s": 0.049,
+      "peak_main_mem_write_bw_GB_s": 0.01
+    },
+    {
+      "type": "QwenW4A8Int4DownReduceV310",
+      "calls": 336,
+      "summed_device_duration_us": 12303.430999999999,
+      "peak_main_mem_read_bw_GB_s": 0.567,
+      "peak_main_mem_write_bw_GB_s": 0.014
+    },
+    {
+      "type": "MemSet",
+      "calls": 5548,
+      "summed_device_duration_us": 11851.394000000062,
+      "peak_main_mem_read_bw_GB_s": 0.316,
+      "peak_main_mem_write_bw_GB_s": 1.017
+    },
+    {
+      "type": "QsaGatherValueNzV310",
+      "calls": 196,
+      "summed_device_duration_us": 9819.815999999997,
+      "peak_main_mem_read_bw_GB_s": 1.926,
+      "peak_main_mem_write_bw_GB_s": 0.48
+    },
+    {
+      "type": "SwiGlu",
+      "calls": 114,
+      "summed_device_duration_us": 8988.311000000003,
+      "peak_main_mem_read_bw_GB_s": 0.161,
+      "peak_main_mem_write_bw_GB_s": 0.066
+    }
+  ],
+  "warnings": [
+    "40 incomplete memory records reported by parser",
+    "Summed host/device durations are not exclusive wall time; streams and ranks overlap",
+    "DDR sampling measures device memory traffic, not CPU-to-NPU link bytes or avoidable traffic",
+    "All six ranks parsed; ranks 4 and 5 have implausible DDR counters and are excluded from bandwidth summaries; see all-rank-transfer-summary.json"
+  ]
+}

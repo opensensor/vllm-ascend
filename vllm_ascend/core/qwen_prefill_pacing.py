@@ -5,6 +5,8 @@
 import math
 from dataclasses import dataclass
 
+MAX_DECODE_ONLY_STEPS = 64
+
 
 @dataclass(frozen=True)
 class PrefillPacingConfig:
@@ -14,6 +16,8 @@ class PrefillPacingConfig:
     max_tokens: int = 2560
     alignment: int = 128
     smoothing: float = 0.25
+    # Opt-in decode cadence between mixed steps; zero retains prior behavior.
+    decode_only_steps: int = 0
 
     def __post_init__(self):
         for name in ("min_tokens", "initial_tokens", "max_tokens", "alignment"):
@@ -27,6 +31,8 @@ class PrefillPacingConfig:
             raise ValueError("target_step_ms must be finite and positive")
         if not math.isfinite(self.smoothing) or not 0 < self.smoothing <= 1:
             raise ValueError("smoothing must be in (0, 1]")
+        if type(self.decode_only_steps) is not int or not 0 <= self.decode_only_steps <= MAX_DECODE_ONLY_STEPS:
+            raise ValueError(f"decode_only_steps must be an integer in [0, {MAX_DECODE_ONLY_STEPS}]")
 
 
 class PrefillPacingPolicy:

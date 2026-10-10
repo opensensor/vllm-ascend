@@ -1,0 +1,14 @@
+{
+  "name": "qwen_transfer_diagnostic_v16",
+  "libraries": [
+    {
+      "path": "/srv/ai/src/qwen-performance-evidence-20261010/diagnostic-marker-v14.so",
+      "sha256": "918214f0d50003b493c8efcd884657412762402e75ff0eec0671931cb5e1cb9f"
+    }
+  ],
+  "assets": [],
+  "operators": [
+    "qwen_stage_diagnostic_v14::marker"
+  ],
+  "validation_source": "from pathlib import Path\nimport torch\nimport torch_npu\nfrom tools.qwen4exp.resident_worker import QwenResidentExtension\nROOT=Path('/srv/ai/src/qwen-prefill-fairness-20261010')\nMETHOD='resident_transfer_profile_v16'\ndef validate():\n assert torch.ops.qwen_stage_diagnostic_v14.marker()==1\n assert not hasattr(QwenResidentExtension,METHOD)\n def profile(self,action):\n  rank=torch.distributed.get_rank()\n  try:\n   if action=='start':\n    assert not hasattr(self,'_qwen_transfer_profiler_v16')\n    self._qwen_transfer_profiler_v16=torch_npu.profiler.profile(activities=[torch_npu.profiler.ProfilerActivity.CPU,torch_npu.profiler.ProfilerActivity.NPU],on_trace_ready=torch_npu.profiler.tensorboard_trace_handler(str(ROOT/'transfer-profile-v16')),record_shapes=True,profile_memory=True,with_stack=False,experimental_config=torch_npu.profiler._ExperimentalConfig(profiler_level=torch_npu.profiler.ProfilerLevel.Level1,aic_metrics=torch_npu.profiler.AiCMetrics.Memory,export_type=[torch_npu.profiler.ExportType.Text,torch_npu.profiler.ExportType.Db],op_attr=True))\n    self._qwen_transfer_profiler_v16.start()\n    return {'rank':rank,'passed':True,'action':action}\n   if action=='stop':\n    profiler=self._qwen_transfer_profiler_v16\n    profiler.stop()\n    del self._qwen_transfer_profiler_v16\n    return {'rank':rank,'passed':True,'action':action,'raw_directory':str(ROOT/'transfer-profile-v16')}\n   raise ValueError('unknown action')\n  except Exception as error:return {'rank':rank,'passed':False,'error':f'{type(error).__name__}: {error}'}\n setattr(QwenResidentExtension,METHOD,profile)\n return {'passed':True,'diagnostic_method':METHOD,'production_forward_changed':False}\n"
+}

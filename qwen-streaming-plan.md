@@ -505,3 +505,24 @@ scheduler string lookup remains CPU-tested only. No tests run automatically.
 Resume [queued tests](artifacts/qwen38-six-chip-mtp-20261010/queued-tests.json)
 only after renewed access. Draft graph sizing must account for its first pass;
 archive reclamation needs a proven scheduler-ownership bound.
+
+## Live max-context transfer audit and fairness follow-up
+
+The [October 10 audit](artifacts/qwen38-prefill-fairness-20261010/README.md)
+found zero checkpoint spills/restores on all six ranks. Active ledger coverage
+does not include PLE rows, most runner metadata, device kernel memory access,
+or graph/HCCL physical traffic. An 87-second thermal hold inflated the pasted
+decode timings; long synchronous mixed-prefill steps also delayed generation
+after resumption. A pause RPC timeout is recorded separately.
+
+The paced scheduler now has an opt-in decode-only cadence and image-span-aware
+budgets and registered strict configuration options. Its 105 CPU tests passed.
+After explicit cutover authorization it passed real-weight text, 1024×1024
+images, six cached branches/cancellation, and a mixed-request probe. Generation
+reached 17.4 tok/s during the 2,271-token concurrent prefill, with a 674-ms
+maximum SSE content-event gap and 71°C peak. A bounded physical capture on all
+six ranks is stopped and parsed. Ranks 0–3 show substantial DDR traffic;
+ranks 4–5 have invalid bandwidth counters. All ranks have similar copy counts,
+with payload attribution still incomplete. Cast/layout chains need attribution. The live six-window,
+image-enabled server now uses pacing. The +50% throughput and lower cold-TTFT
+target remains incomplete.
