@@ -1,0 +1,119 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Explicit lossless local activation and small-route dispatch experiment."""
+
+import hashlib
+import json
+from pathlib import Path
+from types import SimpleNamespace
+
+import torch
+
+MAX_FIXED_TOKENS = 6
+SMALL_DECODE_TOKENS = 3
+OWNED_GATHER_MIN_TOKENS = 640
+
+
+def make_replacements(build):
+    from tools.qwen4exp.channel_int8_server import ServingConfiguration, ServingProjection
+    from vllm_ascend._310p.model_runner_310p import NPUModelRunner310
+    from vllm_ascend.models.qwen4_exp import w4_moe
+
+    build = Path(build)
+    manifest = json.loads((build / "provenance.json").read_text())
+    for entry in manifest["assets"]:
+        if hashlib.sha256(Path(entry["path"]).read_bytes()).hexdigest() != entry["sha256"]:
+            raise ValueError("local math asset changed")
+    qualifier_scope = {"__name__": "qwen_local_math_qualifier"}
+    qualifier_path = Path(manifest["qualification_helper"])
+    exec(compile(qualifier_path.read_text(), str(qualifier_path), "exec"), qualifier_scope)
+    qualify_real_layer = qualifier_scope["qualify_real_layer"]
+    activation_scope, dispatch_scope = {"__name__": "qwen_local_activation"}, {"__name__": "qwen_local_dispatch"}
+    for name, scope in (("native_channel_int8.py", activation_scope), ("native_route_control.py", dispatch_scope)):
+        path = build / name
+        exec(compile(path.read_text(), str(path), "exec"), scope)
+
+    class Activation(ServingConfiguration, activation_scope["NativeLocalChannelSwiGLU"]):
+        pass
+
+    class Dispatch(ServingConfiguration, dispatch_scope["NativeFixedRouteDispatch"]):
+        pass
+
+    class Gather(ServingConfiguration, activation_scope["NativeLocalChannelGather"]):
+        pass
+
+    Kernel, launch = torch.classes.qwen_prefill_v27.Kernel, torch.ops.qwen_prefill_v27.launch
+    activation = Activation(Kernel(manifest["activation_binary"], "qwen_local_channel_swiglu_v1"), launch)
+    dispatch_native = Dispatch(Kernel(manifest["dispatch_binary"], "qwen_fixed_route_dispatch_v1"), launch)
+    gather = Gather(Kernel(manifest["gather_binary"], "qwen_local_channel_gather_v1"), launch)
+    small = ServingProjection(Kernel(manifest["small_binary"], "qwen_channel_int8_projection_m16_v1"), launch)
+    old_forward = getattr(
+        w4_moe.W4SparseMoE._forward_grouped_chunk, "_channel_math_original", w4_moe.W4SparseMoE._forward_grouped_chunk
+    )
+
+    def forward(self, inputs, weights, ids):
+        projection, quantize = self._channel_int8_resources
+        if inputs.shape[0] <= SMALL_DECODE_TOKENS:
+            projection = small
+        if inputs.shape[0] <= MAX_FIXED_TOKENS and ids.dtype == torch.int64 and self.grouped_finalize == "cann_v2":
+            order, inverse, ends = dispatch_native(
+                ids, num_local_experts=self.num_local_experts, expert_offset=self.expert_offset
+            )
+            dispatch = SimpleNamespace(inverse_order=inverse)
+        else:
+            dispatch = w4_moe.build_grouped_expert_dispatch(
+                weights,
+                ids,
+                num_local_experts=self.num_local_experts,
+                expert_offset=self.expert_offset,
+                weight_dtype=self.compute_dtype,
+                count_mode=self.grouped_route_count_mode,
+            )
+            order = dispatch.token_indices.index_select(0, dispatch.order.to(torch.int32)).to(torch.int32).contiguous()
+            ends = dispatch.group_list.contiguous()
+        codes, scales = quantize(inputs)
+        if inputs.shape[0] >= OWNED_GATHER_MIN_TOKENS:
+            routed_codes, routed_scales = gather(codes, scales, order, ends)
+        else:
+            routed_codes, routed_scales = (
+                codes.index_select(0, order).contiguous(),
+                scales.index_select(0, order).contiguous(),
+            )
+        gate = self.projections["gate_up_proj"]
+        projected = projection(routed_codes, gate.weight, gate.weight_scale, routed_scales, ends)
+        hidden_codes, hidden_scales = activation(projected, ends)
+        down = self.projections["down_proj"]
+        output = projection(hidden_codes, down.weight, down.weight_scale, hidden_scales, ends)
+        return w4_moe.finalize_grouped_routes(output, dispatch, weights, self.compute_dtype, self.grouped_finalize)
+
+    forward._channel_math_original = old_forward
+    previous_capture = getattr(
+        NPUModelRunner310.capture_model, "_channel_math_original", NPUModelRunner310.capture_model
+    )
+
+    def capture(self, *args, **kwargs):
+        from vllm.distributed import get_tp_group
+
+        layer = next(module for module in self.model.runnable.modules() if isinstance(module, w4_moe.W4SparseMoE))
+        error, result = None, None
+        try:
+            result = qualify_real_layer(layer, old_forward, forward)
+        except Exception as failure:
+            error = f"{type(failure).__name__}: {failure}"
+        # A local rejection must reach every rank before any surviving rank
+        # enters graph capture and its collectives. The CPU group is diagnostic
+        # only and does not add a serving-path host synchronization.
+        group = get_tp_group()
+        errors = [None] * group.world_size
+        torch.distributed.all_gather_object(errors, error, group=group.cpu_group)
+        record = result if error is None else {"passed": False, "error": error}
+        (build / f"real-layer-rank-{torch.distributed.get_rank()}.json").write_text(json.dumps(record, indent=2) + "\n")
+        if any(item is not None for item in errors):
+            raise RuntimeError(f"local math qualification failed before graph capture: {errors}")
+        return previous_capture(self, *args, **kwargs)
+
+    capture._channel_math_original = previous_capture
+    return {
+        "vllm_ascend.models.qwen4_exp.w4_moe:W4SparseMoE._forward_routed": forward,
+        "vllm_ascend.models.qwen4_exp.w4_moe:W4SparseMoE._forward_grouped_chunk": forward,
+        "vllm_ascend._310p.model_runner_310p:NPUModelRunner310.capture_model": capture,
+    }

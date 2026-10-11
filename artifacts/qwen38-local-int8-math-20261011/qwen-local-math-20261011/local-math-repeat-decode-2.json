@@ -1,0 +1,23 @@
+{
+  "name": "decode-2",
+  "label": "local-math-repeat",
+  "passed": true,
+  "elapsed_s": 16.40447362499981,
+  "first_s": 0.5234962719987379,
+  "decode_tps": 32.176860947631475,
+  "content": "```python\n\"\"\"\nStable Merge Sort Implementation with Type Hints\n\nMerge sort is a divide-and-conquer algorithm that splits the list into halves,\nrecursively sorts each half, and then merges them back together. It is stable,\nmeaning that equal elements retain their original relative order.\n\nStability is preserved during the merge step by choosing the element from the\nleft half when elements are equal (i.e., using <= instead of <).\n\nTime Complexity: O(n log n) in all cases\nSpace Complexity: O(n) for the temporary arrays used during merging\n\"\"\"\n\nfrom typing import TypeVar, List, Callable, Optional\n\nT = TypeVar('T')\n\n\ndef merge_sort(arr: List[T], key: Optional[Callable[[T], any]] = None) -> List[T]:\n    \"\"\"\n    Perform a stable merge sort on a list.\n    \n    Args:\n        arr: The list to sort.\n        key: An optional function that extracts a comparison key from each element.\n             If None, elements are compared directly.\n    \n    Returns:\n        A new sorted list (the original list is not modified).\n    \n    Examples:\n        >>> merge_sort([3, 1, 4, 1, 5, 9, 2, 6])\n        [1, 1, 2, 3, 4, 5, 6, 9]\n        \n        >>> merge_sort([3, 1, 4, 1, 5, 9, 2, 6], key=lambda x: -x)\n        [9, 6, 5, 4, 3, 2, 1, 1]\n    \"\"\"\n    if key is None:\n        key = lambda x: x\n    \n    if len(arr) <= 1:\n        return arr.copy()\n    \n    mid = len(arr) // 2\n    left = merge_sort(arr[:mid], key)\n    right = merge_sort(arr[mid:], key)\n    \n    return _merge(left, right, key)\n\n\ndef _merge(left: List[T], right: List[T], key: Callable[[T], any]) -> List[T]:\n    \"\"\"\n    Merge two sorted lists into one sorted list, preserving stability.\n    \n    Stability is ensured by taking elements from the left list first when\n    keys are equal (using <= comparison).\n    \n",
+  "reasoning": "",
+  "usage": {
+    "prompt_tokens": 31,
+    "total_tokens": 543,
+    "completion_tokens": 512,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "created_cache_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    }
+  },
+  "finish": "length"
+}

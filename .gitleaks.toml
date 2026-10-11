@@ -106,3 +106,13 @@ minEntropy = 3.0
 redact = true
 maxMatchLength = 2048
 scanGitHistory = false
+
+# Exact deterministic resource identifiers in immutable runtime source receipts.
+# These are cache dictionary names, not credentials; preserve source hashes.
+[[allowlists]]
+description = "QSA resource names in frozen hardware receipts"
+condition = "AND"
+paths = ["^artifacts/qwen38-local-int8-math-20261011/qwen-qsa-owner-prefill-20261011/qsa_owner_prefill(_v2)?\\.py\\.txt$"]
+rules = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ["^qwen_qsa_owner_prefill_v[12]$"]

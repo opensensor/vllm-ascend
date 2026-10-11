@@ -1,0 +1,24 @@
+import hashlib,json,shutil
+from pathlib import Path
+ROOT=Path('/srv/ai/storage/artifacts/qwen-local-finalize-20261011')
+ROOT.mkdir(exist_ok=True)
+ACT=Path('/srv/ai/storage/artifacts/qwen-local-math-20261011')
+ROUTE=Path('/srv/ai/storage/artifacts/qwen-owned-route-control-20261011')
+for src,name in [(ROUTE/'channel_local_math_finalize.py','channel_local_math.py'),(ACT/'native_channel_int8.py','native_channel_int8.py'),(ACT/'native_route_control.py','native_route_control.py')]:shutil.copy2(src,ROOT/name)
+m=json.loads((ACT/'provenance.json').read_text());m['finalize_binary']=str(ROUTE/'route-control-v2.bin')
+paths=[m[k] for k in ['activation_binary','dispatch_binary','gather_binary','small_binary','qualification_helper','finalize_binary']]+[str(ROOT/n) for n in ['channel_local_math.py','native_channel_int8.py','native_route_control.py']]
+m['assets']=[{'path':p,'sha256':hashlib.sha256(Path(p).read_bytes()).hexdigest()} for p in paths]
+(ROOT/'provenance.json').write_text(json.dumps(m,indent=2)+'\n')
+def prepare_and_qualify(native_resources):
+ import torch
+ from vllm_ascend.models.qwen4_exp import w4_moe
+ scope={'__name__':'qwen_local_finalize_trial'};helper=ROOT/'channel_local_math.py'
+ exec(compile(helper.read_text(),str(helper),'exec'),scope)
+ candidate=scope['make_replacements'](ROOT,finalize_max_tokens=6)['vllm_ascend.models.qwen4_exp.w4_moe:W4SparseMoE._forward_grouped_chunk']
+ qualifier={};path=Path(m['qualification_helper']);exec(compile(path.read_text(),str(path),'exec'),qualifier)
+ import gc
+ layer=next(module for module in gc.get_objects() if isinstance(module,w4_moe.W4SparseMoE) and hasattr(module,'_channel_int8_resources'))
+ try: result=qualifier['qualify_real_layer'](layer,w4_moe.W4SparseMoE._forward_grouped_chunk,candidate)
+ except Exception as failure:result={'passed':False,'error':repr(failure)}
+ (ROOT/f"real-layer-rank-{torch.distributed.get_rank()}.json").write_text(json.dumps(result,indent=2)+'\n')
+ return result

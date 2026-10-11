@@ -1,0 +1,71 @@
+import dataclasses,hashlib,json,sys,uuid
+from pathlib import Path
+sys.path.insert(0,'/srv/ai/src/qwen-channel-int8-runtime-20261011-v3')
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+ROOT=Path('/srv/ai/storage/artifacts/qwen-qsa-owner-prefill-20261011')
+PROFILE=Path('/srv/ai/src/qwen-channel-int8-tp6-20261011-v3')
+base=json.loads((PROFILE/'control.json').read_text())['control']
+source=base['source']+'''
+qsa_previous_factory = replacements
+
+def replacements(native_resources):
+    import json
+    from pathlib import Path
+    from types import SimpleNamespace
+    import torch
+    from tools.qwen4exp.resident_candidates import qsa_owner_prefill
+    from tools.qwen4exp.qsa_owner_overlap import OwnerSelectionPolicy, QSAOwnerOverlap
+    from vllm_ascend.models.qwen4_exp.ops.qsa_indexer import QSAGroupSelection
+    result=qsa_previous_factory(native_resources)
+    import importlib
+    qsa_owner_prefill=importlib.reload(qsa_owner_prefill)
+    extra=qsa_owner_prefill.replacements(native_resources,shadow=True)
+    state=extra['vllm_ascend.models.qwen4_exp.model:_QSAAttention.forward']._qsa_owner_state
+    device=torch.device('npu',torch.npu.current_device())
+    record={'rank':torch.distributed.get_rank(),'passed':True,'owners':[],'serving_modified':False}
+    with torch.inference_mode():
+        for owner in range(state.communicator.world_size):
+            policy=OwnerSelectionPolicy(state.communicator.rank,state.communicator.world_size,owner)
+            resource=QSAOwnerOverlap(policy,state.broadcast,npu=torch.npu)
+            indices=torch.arange(128*8,dtype=torch.int32,device=device).reshape(128,8)+owner*2048
+            count=torch.full((128,),8,dtype=torch.int32,device=device)
+            starts=torch.arange(128,dtype=torch.int32,device=device)+owner*1024
+            tails=torch.arange(128,dtype=torch.int32,device=device).remainder(4)
+            selection=QSAGroupSelection(indices,count,starts,tails)
+            x=torch.ones(128,128,dtype=torch.float16,device=device)
+            calls=[]
+            def select():
+                calls.append(owner)
+                return selection
+            local,actual=resource.run(tokens=128,groups=8,device=device,captured=False,pure_prefill=True,
+                indexer_inputs=(indices,count,starts,tails),select=select,prepare_local=lambda:x@x.T)
+            torch.npu.synchronize()
+            assert len(calls)==int(policy.rank==owner)
+            for name in ('group_indices','group_counts','tail_starts','tail_counts'):
+                torch.testing.assert_close(getattr(actual,name).cpu(),getattr(selection,name).cpu(),rtol=0,atol=0)
+            assert bool((local.cpu()==128).all())
+            record['owners'].append(owner)
+    Path('/srv/ai/storage/artifacts/qwen-qsa-owner-prefill-20261011/transport-rank-%d.json'%record['rank']).write_text(json.dumps(record,indent=2)+'\\n')
+    result.update(extra)
+    return result
+'''
+control=Control(uuid.uuid4().hex,'graph','qwen_qsa_owner_transport_probe',source,False)
+(ROOT/'transport-control.json').write_text(json.dumps(dataclasses.asdict(control),indent=2)+'\n')
+client=ResidentClient('http://127.0.0.1:8001',expected_workers=6,timeout=900)
+paused=client.request('/is_paused',method='GET')['is_paused']
+print('Draining for QSA HCCL qualification; caches retained',flush=True)
+client.request('/pause?mode=wait&clear_cache=false')
+before=client.rpc('resident_status');(ROOT/'transport-before.json').write_text(json.dumps(before,indent=2)+'\n')
+try:
+    prepared=client.rpc('resident_prepare',json.dumps(dataclasses.asdict(control)))
+    assert all(row.get('generation')==control.generation and row.get('digest')==control.digest for row in prepared)
+    (ROOT/'transport-prepared.json').write_text(json.dumps(prepared,indent=2)+'\n')
+    after=client.rpc('resident_status')
+    for a,b in zip(sorted(before,key=lambda r:r['rank']), sorted(after,key=lambda r:r['rank'])):
+        for k in ('rank','pid','weight_storage_digest','generation','digest','candidate','graphs_dirty','native_failed','prefix_mamba'):
+            assert a.get(k)==b.get(k),k
+    (ROOT/'transport-after.json').write_text(json.dumps(after,indent=2)+'\n')
+    print('All six owner transport cases passed on all six chips; serving unchanged',flush=True)
+finally:
+    if not paused:client.request('/resume');print('Server resumed',flush=True)

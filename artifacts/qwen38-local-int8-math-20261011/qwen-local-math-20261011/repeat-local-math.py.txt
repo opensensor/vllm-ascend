@@ -1,0 +1,14 @@
+import json,sys,urllib.request
+from pathlib import Path
+root=Path('/srv/ai/src/qwen-channel-int8-tp6-20261011-v3')
+sys.argv=['repeat-local-math.py','local-math-repeat']
+scope={'__name__':'local_math_repeat'}
+source=(root/'smoke_perf.py').read_text()
+exec(compile(source[:source.index("request('/resident/maintenance',{})")],str(root/'smoke_perf.py'),'exec'),scope)
+scope['request']('/resident/maintenance',{})
+try:
+ for i in range(3):
+  result=scope['probe']('decode-'+str(i),{'messages':[{'role':'user','content':'Write a Python stable merge sort with type hints, explanation, and tests for stability and duplicates.'}],'max_tokens':512,'chat_template_kwargs':{'enable_thinking':False}},lambda t,r:'def ' in t and 'sort' in t)
+  print(json.dumps({'sample':i,'tok_s':result['decode_tps']}),flush=True)
+finally:
+ with urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8001/resident/maintenance',method='DELETE'),timeout=10) as response:print(response.read().decode(),flush=True)

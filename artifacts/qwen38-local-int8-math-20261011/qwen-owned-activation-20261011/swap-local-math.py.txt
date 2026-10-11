@@ -1,0 +1,46 @@
+import dataclasses, hashlib, json, shutil, sys, uuid
+from pathlib import Path
+PROFILE=Path('/srv/ai/src/qwen-channel-int8-tp6-20261011-v3')
+ROOT=Path('/srv/ai/storage/artifacts/qwen-local-math-20261011')
+ACT=Path('/srv/ai/storage/artifacts/qwen-owned-activation-20261011')
+ROOT.mkdir(exist_ok=True)
+for src,name in [(ACT/'channel_local_math_v2.py','channel_local_math.py'),(ACT/'native_channel_int8.py','native_channel_int8.py'),(ACT/'native_route_control.py','native_route_control.py')]: shutil.copy2(src,ROOT/name)
+manifest=json.loads((ACT/'provenance.json').read_text())
+paths=[manifest[key] for key in ['activation_binary','dispatch_binary','gather_binary','small_binary','qualification_helper']]+[str(ROOT/name) for name in ['channel_local_math.py','native_channel_int8.py','native_route_control.py']]
+manifest['assets']=[{'path':path,'sha256':hashlib.sha256(Path(path).read_bytes()).hexdigest()} for path in paths]
+(ROOT/'provenance.json').write_text(json.dumps(manifest,indent=2)+'\n')
+sys.path.insert(0,'/srv/ai/src/qwen-channel-int8-runtime-20261011-v3')
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+client=ResidentClient('http://127.0.0.1:8001',expected_workers=6,timeout=900)
+old=Control.from_dict(json.loads((PROFILE/'control.json').read_text())['control'])
+(ROOT/'previous-control.json').write_text(json.dumps({'control':dataclasses.asdict(old)},indent=2)+'\n')
+helper=ROOT/'channel_local_math.py';digest=hashlib.sha256(helper.read_bytes()).hexdigest()
+source=old.source+f'''
+local_math_previous_replacements = replacements
+
+def replacements(native_resources):
+    import hashlib
+    from pathlib import Path
+    path=Path({str(helper)!r})
+    if hashlib.sha256(path.read_bytes()).hexdigest()!={digest!r}:
+        raise ValueError('local math helper changed')
+    scope={{'__name__':'qwen_local_math_v2'}}
+    exec(compile(path.read_text(),str(path),'exec'),scope)
+    result=local_math_previous_replacements(native_resources)
+    result.update(scope['make_replacements']({str(ROOT)!r}))
+    return result
+'''
+control=Control(uuid.uuid4().hex,'graph','qwen_qsa_owner_local_int8_math',source,True)
+(ROOT/'control.json').write_text(json.dumps({'control':dataclasses.asdict(control)},indent=2)+'\n')
+print('Switching local math; real layer gates before recapture',flush=True)
+try:
+ after=client.switch(control)
+ (ROOT/'switch-after.json').write_text(json.dumps(after,indent=2)+'\n')
+ print('Local math installed on six ranks',flush=True)
+except BaseException as failure:
+ print('Restoring previous candidate:',repr(failure),flush=True)
+ rollback=dataclasses.replace(old,generation=uuid.uuid4().hex,recapture=True)
+ after=client.switch(rollback);client.resume()
+ (ROOT/'rollback.json').write_text(json.dumps({'reason':repr(failure),'status':after},indent=2)+'\n')
+ raise

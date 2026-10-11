@@ -1,0 +1,44 @@
+import dataclasses,hashlib,json,sys,uuid
+from pathlib import Path
+PROFILE=Path('/srv/ai/src/qwen-channel-int8-tp6-20261011-v3')
+ROOT=Path('/srv/ai/storage/artifacts/qwen-qsa-owner-prefill-20261011')
+sys.path.insert(0,'/srv/ai/src/qwen-channel-int8-runtime-20261011-v3')
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+mode=sys.argv[1]
+client=ResidentClient('http://127.0.0.1:8001',expected_workers=6,timeout=900)
+old=Control.from_dict(json.loads((PROFILE/'control.json').read_text())['control'])
+if not (ROOT/'previous-control.json').exists():(ROOT/'previous-control.json').write_text(json.dumps({'control':dataclasses.asdict(old)},indent=2)+'\n')
+helper=ROOT/'qsa_owner_prefill.py';digest=hashlib.sha256(helper.read_bytes()).hexdigest()
+source=old.source+f'''
+qsa_owner_previous_factory = replacements
+
+def replacements(native_resources):
+    import hashlib
+    from pathlib import Path
+    from vllm_ascend._310p.model_runner_310p import NPUModelRunner310
+    path=Path({str(helper)!r})
+    if hashlib.sha256(path.read_bytes()).hexdigest()!={digest!r}:
+        raise ValueError('QSA owner frontend changed')
+    scope={{'__name__':'qwen_qsa_owner_prefill_v1'}}
+    exec(compile(path.read_text(),str(path),'exec'),scope)
+    result=qsa_owner_previous_factory(native_resources)
+    # Retain the already-installed INT8 capture qualifier without nesting
+    # another copy of it each time this candidate is prepared.
+    result['vllm_ascend._310p.model_runner_310p:NPUModelRunner310.capture_model']=NPUModelRunner310.capture_model
+    result.update(scope['replacements'](native_resources,shadow={mode=='shadow'!r}))
+    return result
+'''
+control=Control(uuid.uuid4().hex,'graph','qwen_qsa_owner_'+mode,source,True)
+(ROOT/(mode+'-control.json')).write_text(json.dumps({'control':dataclasses.asdict(control)},indent=2)+'\n')
+print('Switching QSA owner '+mode+'; retained weights, graph recapture resets prefixes',flush=True)
+try:
+ after=client.switch(control)
+ (ROOT/(mode+'-switch-after.json')).write_text(json.dumps(after,indent=2)+'\n')
+ print('All-six '+mode+' cutover complete',flush=True)
+except BaseException as e:
+ print('Restoring previous INT8 candidate:',repr(e),flush=True)
+ rollback=dataclasses.replace(old,generation=uuid.uuid4().hex,recapture=True)
+ after=client.switch(rollback);client.resume()
+ (ROOT/'rollback.json').write_text(json.dumps({'reason':repr(e),'status':after},indent=2)+'\n')
+ raise

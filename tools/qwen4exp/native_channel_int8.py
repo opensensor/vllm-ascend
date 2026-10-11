@@ -43,6 +43,30 @@ class NativeLocalChannelGather(NativeResource):
         return output, output_scales
 
 
+class NativeLocalChannelSwiGLU(NativeResource):
+    """Experimental local SwiGLU/quantization, with an explicit FP16 boundary."""
+
+    def __call__(self, inputs, ends):
+        if (
+            inputs.ndim != 2
+            or inputs.dtype != torch.float16
+            or not 0 < inputs.shape[0] <= MAX_ROWS
+            or inputs.shape[1] % (2 * GROUP_SIZE)
+            or not 0 < inputs.shape[1] // 2 <= MAX_K
+            or ends.ndim != 1
+            or not 0 < ends.numel() <= 128
+            or ends.dtype != torch.int64
+        ):
+            raise ValueError("unsupported local channel SwiGLU geometry/dtype")
+        _tensors_on_one_device((inputs, ends), inputs.device)
+        rows, width = inputs.shape[0], inputs.shape[1] // 2
+        output = torch.empty((rows, width), dtype=torch.int8, device=inputs.device)
+        scales = torch.empty((rows, 8), dtype=torch.float32, device=inputs.device)
+        config = self.config((rows, width, ends.numel()), inputs.device)
+        self.launch(self.kernel, [inputs, ends, output, scales, config], 8)
+        return output, scales
+
+
 def tile_channel_weights(weight):
     """Pack raw [E,N,K] INT8 codes into the Cube's N16/K32 strips."""
     if weight.ndim != 3 or weight.dtype != torch.int8:

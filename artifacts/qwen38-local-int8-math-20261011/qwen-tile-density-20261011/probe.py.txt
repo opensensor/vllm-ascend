@@ -1,0 +1,33 @@
+import gc,json,statistics,time,types
+from pathlib import Path
+import torch
+ROOT=Path('/srv/ai/storage/artifacts/qwen-tile-density-20261011')
+ROOT.mkdir(exist_ok=True)
+@torch.inference_mode()
+def prepare_and_qualify(native_resources):
+ from vllm_ascend.models.qwen4_exp import w4_moe
+ from vllm_ascend.models.qwen4_exp.moe import route_topk
+ layer=next(module for module in gc.get_objects() if isinstance(module,w4_moe.W4SparseMoE) and hasattr(module,'_channel_int8_resources'))
+ original=w4_moe.W4SparseMoE._forward_grouped_chunk
+ globals_copy=dict(original.__globals__);globals_copy['SMALL_DECODE_TOKENS']=1280
+ candidate=types.FunctionType(original.__code__,globals_copy,original.__name__,original.__defaults__,original.__closure__)
+ generator=torch.Generator().manual_seed(7401)
+ result={'rank':torch.distributed.get_rank(),'passed':True,'installed':False,'cases':[]}
+ for tokens in (128,640,1280):
+  inputs=(torch.randn(tokens,layer.gate.shape[1],generator=generator)*0.1).half().to(layer.gate.device)
+  weights,ids=route_topk(torch.nn.functional.linear(inputs,layer.gate),layer.top_k,renormalize=layer.renormalize,routed_scaling_factor=layer.routed_scaling_factor)
+  expected=original(layer,inputs,weights,ids);actual=candidate(layer,inputs,weights,ids)
+  torch.npu.synchronize();torch.testing.assert_close(actual.cpu(),expected.cpu(),rtol=0,atol=0)
+  local=ids.cpu().flatten()-layer.expert_offset
+  local=local[(local>=0)&(local<layer.num_local_experts)]
+  counts=torch.bincount(local,minlength=layer.num_local_experts)
+  timing={'m32':[],'m16':[]}
+  for repeat in range(4):
+   for name in ('m32','m16') if repeat%2==0 else ('m16','m32'):
+    operation=original if name=='m32' else candidate
+    torch.npu.synchronize();started=time.perf_counter()
+    for _ in range(10):operation(layer,inputs,weights,ids)
+    torch.npu.synchronize();timing[name].append((time.perf_counter()-started)*1000/10)
+  result['cases'].append({'tokens':tokens,'exact':True,'local_route_counts':counts.tolist(),'median_ms':{k:statistics.median(v) for k,v in timing.items()},'samples_ms':timing})
+ (ROOT/f"validation-rank-{result['rank']}.json").write_text(json.dumps(result,indent=2)+'\n')
+ return result

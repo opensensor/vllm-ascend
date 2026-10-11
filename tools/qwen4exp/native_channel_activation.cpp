@@ -8,9 +8,10 @@ constexpr uint32_t UB_BYTES = 64 * 1024;
 // Reciprocal of the smallest nonzero FP16 value: distinguish zero maxima
 // without device-to-host inspection or division by zero.
 constexpr float FP16_MIN_SUBNORMAL_RECIPROCAL = 16777216.0f;
-template <bool PACKED_INPUT = true, bool LOCAL_ROWS = false>
+template <bool PACKED_INPUT = true, bool LOCAL_ROWS = false, bool FUSED_SWIGLU = false>
 class ChannelActivation {
  public:
+  static_assert(!FUSED_SWIGLU || (!PACKED_INPUT && LOCAL_ROWS), "fused SwiGLU requires local direct inputs");
   __aicore__ inline void Run(GM_ADDR lo, GM_ADDR hi, GM_ADDR sx, GM_ADDR lut, GM_ADDR y, GM_ADDR sy, GM_ADDR config,
                              GM_ADDR ends = nullptr) {
     auto td = reinterpret_cast<__gm__ int64_t*>(config);
@@ -111,11 +112,39 @@ class ChannelActivation {
         input.SetGlobalBuffer(reinterpret_cast<__gm__ half*>(lo));
         SetFlag<HardEvent::V_MTE2>(EVENT_ID0);
         WaitFlag<HardEvent::V_MTE2>(EVENT_ID0);
-        DataCopy(l, input[row * k], k);
+        if constexpr (FUSED_SWIGLU) {
+          DataCopy(l, input[row * 2 * k], k);
+          DataCopy(h, input[row * 2 * k + k], k);
+        } else {
+          DataCopy(l, input[row * k], k);
+        }
         SetFlag<HardEvent::MTE2_V>(EVENT_ID0);
         WaitFlag<HardEvent::MTE2_V>(EVENT_ID0);
         Cast(f, l, RoundMode::CAST_NONE, k);
         PipeBarrier<PIPE_V>();
+        if constexpr (FUSED_SWIGLU) {
+          Cast(scratch, h, RoundMode::CAST_NONE, k);
+          PipeBarrier<PIPE_V>();
+          // Once both input halves are widened, the decode-offset region
+          // may overlap l. Its full MAX_K FP32 extent stops before h.
+          auto denominator = offsets.ReinterpretCast<float>();
+          Muls(denominator, f, -1.0f, k);
+          PipeBarrier<PIPE_V>();
+          Exp(denominator, denominator, k);
+          PipeBarrier<PIPE_V>();
+          Adds(denominator, denominator, 1.0f, k);
+          PipeBarrier<PIPE_V>();
+          Div(f, f, denominator, k);
+          PipeBarrier<PIPE_V>();
+          Mul(f, f, scratch, k);
+          PipeBarrier<PIPE_V>();
+          // Match the existing FP16 hidden-state boundary before row max,
+          // scale calculation and nearest-even INT8 requantization.
+          Cast(l, f, RoundMode::CAST_NONE, k);
+          PipeBarrier<PIPE_V>();
+          Cast(f, l, RoundMode::CAST_NONE, k);
+          PipeBarrier<PIPE_V>();
+        }
       }
       Abs(scratch, f, k);
       PipeBarrier<PIPE_V>();
@@ -187,5 +216,13 @@ extern "C" __global__ __aicore__ void qwen_direct_local_channel_activation_v1(GM
   KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AICORE);
   AscendC::InitSocState();
   channel_activation::ChannelActivation<false, true> operation;
+  operation.Run(input, nullptr, nullptr, nullptr, output, outputScale, descriptor, ends);
+}
+
+extern "C" __global__ __aicore__ void qwen_local_channel_swiglu_v1(GM_ADDR input, GM_ADDR ends, GM_ADDR output,
+                                                                   GM_ADDR outputScale, GM_ADDR descriptor) {
+  KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AICORE);
+  AscendC::InitSocState();
+  channel_activation::ChannelActivation<false, true, true> operation;
   operation.Run(input, nullptr, nullptr, nullptr, output, outputScale, descriptor, ends);
 }

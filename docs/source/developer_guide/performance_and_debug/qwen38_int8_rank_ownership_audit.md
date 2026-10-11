@@ -77,7 +77,7 @@ an ownership proof, not simply deleting initialization.
 
 The live server remains on INT8 for user testing. The owned gather and a
 small-row projection tile are now hardware-qualified and deployed as described
-below. The remaining ownership redesigns are implementation targets.
+below. Subsequent QSA owner and local activation/dispatch qualification is recorded below.
 
 ## Prepared owned-route gather candidate
 
@@ -117,7 +117,7 @@ initial INT8 run. Coding/thinking text differed between those runs; these
 observations are not a matched-output or statistical attribution of the
 entire improvement to these two kernel changes.
 
-The running candidate is `qwen_channel_owned_int8_tp6`. Worker PIDs and resident
+That phase deployed `qwen_channel_owned_int8_tp6`, superseded by the local-math candidate below. Worker PIDs and resident
 weight storage survived the cutover. The graph recapture transaction reset
 reusable prefix caches; the earlier isolated kernel probes preserved them.
 The restart profile retains this candidate. Hardware and cutover receipts are
@@ -127,7 +127,7 @@ in `artifacts/qwen38-owned-int8-gather-20261011/`.
 
 The GLM frontend observation transfers as a dependency pattern, not as an
 already available Qwen overlap point. The active Qwen `_QSAAttention.forward`
-currently projects local Q/K/V/gate, normalizes and rotates Q/K, writes local
+originally projects local Q/K/V/gate, normalizes and rotates Q/K, writes local
 KV, updates the index cache, and then scores/selects sparse groups. Moving the
 owner indexer earlier is necessary before peer Q/K work can hide its latency.
 The indexer depends on index Q/K, logical positions, and the index cache;
@@ -166,4 +166,113 @@ the collective uses the intended group-relative owner and never silently skips
 a disabled communicator. Once a collective is submitted, a rank must not
 fall back independently. Measure synchronous owner broadcast against overlap
 and against replicated selection, including per-rank imbalance and HCCL time.
-The live server has not been changed for this prototype.
+The prototype is now bound through the guarded frontend described below.
+
+## Live QSA owner frontend
+
+`resident_candidates/qsa_owner_prefill.py` transforms only the recognized
+frontend schedule, preserving its existing projection, normalization, RoPE,
+index-cache update, and attention formulas. Unknown schedules fail preparation.
+Small decode, captured calls, mixed batches, and the initial dense context use
+the original frontend. Eligible pure sparse prefill uses owner selection and
+local attention preprocessing on separate streams, joined before attention.
+
+Sparse layers occur every four layers. Owner assignment divides the layer
+index by this interval before taking modulo six; using raw layer index modulo
+six would exclude all odd owners. The six-owner transport probe passed on all
+six ranks. The shadow cold request passed 52 selection comparisons per rank,
+312 in total, with all six owners represented and no differences. This checks
+real-weight transferred selections against each rank's replicated selection.
+Index Q/K projections and cache updates remain replicated to preserve the
+unchanged decode and mixed-batch fallbacks.
+
+Allocating another native HCCL communicator exceeded free device memory.
+The deployed transport instead reuses the existing TP process group and calls
+its asynchronous broadcast on the selection stream. Backend `work.wait()`
+completes before the event join; it may block the host in this build. Do not
+claim measured hardware overlap or a QSA latency gain from the shadow parity
+checks. The owner-only normal cold run measured 19.149 seconds TTFT; the prior
+owned INT8 run measured 18.865 seconds. These single runs are neutral within
+ordinary variation. Adversarial near-cutoff ties and full 1M multimodal parity
+remain unqualified.
+
+## Live local activation and small dispatch
+
+The current candidate is `qwen_qsa_owner_local_int8_math`. It adds:
+
+- Native stable route dispatch for at most six tokens and 60 routes, replacing
+  grouped sorting, counting, and inverse construction. Changing IDs, repeated
+  experts, all-peer ranks, and captured replay pass exact comparisons.
+- Fused local-prefix SwiGLU and INT8 requantization. It preserves the existing
+  FP16 hidden-state rounding boundary before calculating row scales and codes.
+  Inactive peer rows are skipped; projected peer output clearing is retained.
+- The previously qualified M16 projection at at most three tokens and owned
+  route gather at 640 tokens or above. Global routing is unchanged.
+
+On all six chips, fused activation produced identical codes and scales to the
+separate operations in synthetic and changing-boundary graph probes. Its
+measured execution cost decreased from 0.027–0.029 to 0.020–0.021 ms for the
+30-row capacity probe, and from 0.427–0.436 to 0.205–0.206 ms at 6,400 rows.
+Native small dispatch took 0.019–0.031 ms, versus 0.111–0.122 ms for the old
+sequence at one, three, and six tokens.
+
+Every rank then passed exact real-weight MoE partial and changing-route replay
+checks before model graph recapture. Across the six ranks, this partial's
+three-token execution time decreased 28.6–61.4%; six-token time decreased
+23.0–31.6%; and 640-token time decreased 2.5–4.3%. These timings exclude shared
+expert computation and HCCL and must not be presented as whole-server gains.
+Qualification failures are exchanged on the diagnostic CPU group before any
+rank enters graph capture, preventing a local rejection from stranding peers.
+
+Full-model marker, math, code, fresh/cached image, cold prefill, and thinking
+gates passed. The retained 512-token coding probe measured 31.596 tokens/s,
+compared with 29.681 immediately before this swap. Cold TTFT was 19.028 seconds
+for 10,322 uncached prompt tokens; the pre-swap owner run was 19.149 seconds.
+Three additional identical-prompt coding runs measured 32.377, 31.463, and
+32.177 tokens/s, with a 32.177 tokens/s median and no cached prompt tokens.
+Only the latest candidate was repeated; earlier baselines were single runs.
+Output and speculative acceptance can vary.
+The initial paired W4 coding observation was 32.200 tokens/s, so the larger
+50% throughput target has not been achieved. Full 1M quality qualification
+also remains outstanding.
+
+The API and worker PIDs and resident weight-storage digests survived. Actual
+cutovers recaptured graphs and reset reusable prefix caches; isolated probes
+retained them. The restart profile now retains this candidate. Hardware
+receipts and immutable source snapshots are under
+`artifacts/qwen38-local-int8-math-20261011/`.
+
+## Ordered native reduction held outside serving
+
+The three initial reducers used FP32 accumulation, rounded products, or fully
+FP32 weights and accumulation. They did not reproduce CANN. A fourth kernel
+uses FP16 products and sequential FP16 additions, then widens the result.
+This variant matched CANN exactly on every chip at three, six, and 128 tokens,
+including poisoned peer rows. A subsequent real-weight partial and replay
+comparison passed on all six ranks.
+
+The real-weight small-token timings were neutral or slightly slower on the
+busiest ranks. CANN finalization therefore remains live, and peer projection
+output clearing is still necessary. The native reducer remains an explicit
+opt-in experiment, with no serving binding by default. FP32 weighting remains
+a separate numerical change, not a lossless optimization. The next useful
+traffic reduction requires qualifying this consumer together with projection
+output ownership; deleting peer initialization by itself is unsafe.
+
+## Sparse tile-density follow-up
+
+An isolated resident real-weight probe compared M16 with M32 at 128, 640,
+and 1,280 tokens on all six ranks. Outputs were exact. M16 was approximately
+neutral at 128 tokens, 8.2–11.8% slower at 640, and 13.6–18.1% slower at 1,280.
+Route distributions were concentrated: at 640 tokens, the busiest local
+experts had 78–197 rows, despite the small global average. Using the global
+average to choose M16 would split these batches and increase their work.
+The live projection admission therefore remains unchanged.
+
+A source audit identified a more direct whole-K target: the projection
+retains a zeroed FP32 accumulator and an add from its earlier per-group scaled
+recipe even though the whole-K variant scales only the completed INT32 dot.
+It also initializes scale scratch before groups that never consume it.
+Removing these operations must preserve the existing integer accumulation,
+scale order, FP16 boundary, and buffer ownership events. This is the next
+unqualified candidate, not a deployed or measured gain.

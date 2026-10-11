@@ -1,0 +1,238 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Explicit large-prefill QSA owner experiment over the current frontend.
+
+Transform only the recognized frontend schedule, preserving its arithmetic
+and sparse-attention backend. Refuse unknown schedules rather than guessing.
+Decode and graph capture call the untouched original function.
+"""
+
+import ast
+import copy
+import inspect
+import textwrap
+
+import torch
+
+from tools.qwen4exp.qsa_owner_overlap import OwnerSelectionPolicy, QSAOwnerOverlap, selection_packet
+from vllm_ascend.models.qwen4_exp.ops.qsa_indexer import copy_group_selection_into
+
+RESOURCE_KEY = "qwen_qsa_owner_prefill_v2"
+TRANSPORT_KEY = "qwen_qsa_owner_transport_v1"
+
+
+class ExistingHcclBroadcast:
+    """Reuse TP's process group; wait orders the current selection stream."""
+
+    def __init__(self, group):
+        self.group = group
+        self.rank, self.world_size = group.rank_in_group, group.world_size
+        self.available, self.disabled = True, False
+
+    def broadcast(self, packet, owner, stream):
+        if stream.npu_stream != torch.npu.current_stream().npu_stream:
+            raise RuntimeError("HCCL broadcast must be submitted on the selection stream")
+        work = torch.distributed.broadcast(
+            packet, src=self.group.ranks[owner], group=self.group.device_group, async_op=True
+        )
+        # The backend completion must be joined before recording done. This
+        # preserves correctness even if this build implements a host wait;
+        # the hardware timing gate determines whether overlap is worthwhile.
+        work.wait()
+
+
+def assigned_names(statement):
+    if not isinstance(statement, ast.Assign):
+        return set()
+    return {node.id for target in statement.targets for node in ast.walk(target) if isinstance(node, ast.Name)}
+
+
+def is_cache_write(statement):
+    return (
+        isinstance(statement, ast.Expr)
+        and isinstance(statement.value, ast.Call)
+        and isinstance(statement.value.func, ast.Attribute)
+        and statement.value.func.attr == "reshape_and_cache"
+    )
+
+
+def transform_frontend(source):
+    """Move independent Q/K work into a callback without rewriting formulas."""
+    tree = ast.parse(textwrap.dedent(source))
+    if len(tree.body) != 1 or not isinstance(tree.body[0], ast.FunctionDef):
+        raise ValueError("QSA frontend must be one ordinary function")
+    function = tree.body[0]
+    function.decorator_list = []
+    local, outer = [], []
+    projections = {"q", "k", "v", "gate"}
+    for statement in function.body:
+        names = assigned_names(statement)
+        if (names and names <= projections) or is_cache_write(statement):
+            local.append(statement)
+        else:
+            outer.append(statement)
+    if len(local) != 10 or not is_cache_write(local[-1]):
+        raise ValueError("unrecognized QSA local projection/cache schedule")
+    branch = next(
+        (
+            node
+            for node in outer
+            if isinstance(node, ast.If) and ast.unparse(node.test).startswith("not needs_sparse_index_query")
+        ),
+        None,
+    )
+    if branch is None or len(branch.orelse) != 1 or not isinstance(branch.orelse[0], ast.If):
+        raise ValueError("unrecognized QSA sparse branch")
+    sparse = branch.orelse[0].orelse
+    selection_branch = next(
+        (node for node in sparse if isinstance(node, ast.If) and "capture._capturing" in ast.unparse(node.test)), None
+    )
+    if selection_branch is None or len(selection_branch.orelse) != 2:
+        raise ValueError("unrecognized QSA eager selection schedule")
+    if assigned_names(selection_branch.orelse[-1]) != {"selection"}:
+        raise ValueError("QSA selection assignment changed")
+    local_function = ast.parse("def prepare_owner_local():\n    return q, k, v, gate\n").body[0]
+    local_function.body = local + local_function.body
+    selection_function = ast.parse("def select_owner_groups():\n    return selection\n").body[0]
+    selection_function.body = copy.deepcopy(selection_branch.orelse) + selection_function.body
+    scheduled = ast.parse(
+        "(q, k, v, gate), selection = _owner_state.for_layer(self).run("
+        "tokens=seq_len, groups=self.indexer.token_topk // self.indexer.compress_ratio, "
+        "device=block_input.device, captured=False, pure_prefill=True, "
+        "indexer_inputs=(index_q, index_cache, metadata.block_tables, metadata.query_start_loc, logical_positions), "
+        "select=select_owner_groups, prepare_local=prepare_owner_local)"
+    ).body[0]
+    index = sparse.index(selection_branch)
+    sparse[index : index + 1] = [selection_function, scheduled]
+    outer.insert(outer.index(branch), local_function)
+    function.body = outer
+    function.name = "owner_prefill_forward"
+    return ast.fix_missing_locations(tree)
+
+
+class ShadowOwnerOverlap(QSAOwnerOverlap):
+    """Diagnostic only: compare the transfer, then consume local selection."""
+
+    def __init__(self, *args, report, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.report = report
+
+    def run(self, **kwargs):
+        local, actual = super().run(**kwargs)
+        expected = kwargs["select"]()
+        _, padded = selection_packet(kwargs["tokens"], kwargs["groups"], kwargs["device"])
+        copy_group_selection_into(padded, expected)
+        matches = all(
+            torch.equal(getattr(actual, name).cpu(), getattr(padded, name).cpu())
+            for name in ("group_indices", "group_counts", "tail_starts", "tail_counts")
+        )
+        self.report["checks"] += 1
+        self.report["failures"] += int(not matches)
+        self.report["owners"].add(self.policy.owner)
+        # This comparison and host synchronization are restricted to the
+        # explicit diagnostic generation; normal serving never runs them.
+        return local, expected
+
+
+class OwnerPrefillState:
+    """Own a checked native HCCL communicator and one stream per owner rank."""
+
+    def __init__(self, communicator, *, min_tokens=128, shadow=False):
+        if not communicator.available or communicator.disabled:
+            raise ValueError("QSA owner experiment requires an enabled native HCCL communicator")
+        self.communicator = communicator
+        self.min_tokens = min_tokens
+        self.shadow = shadow
+        self.report = {"checks": 0, "failures": 0, "owners": set()}
+        self.schedules = {}
+
+    def broadcast(self, packet, owner, stream):
+        if not self.communicator.available or self.communicator.disabled:
+            raise RuntimeError("QSA owner communicator became unavailable")
+        self.communicator.broadcast(packet, owner, stream)
+
+    def for_layer(self, layer):
+        interval = int(getattr(layer.indexer.config, "full_attention_interval", 1))
+        if interval <= 0:
+            raise ValueError("positive full-attention interval required")
+        owner = (layer.indexer.layer_idx // interval) % self.communicator.world_size
+        if owner not in self.schedules:
+            policy = OwnerSelectionPolicy(
+                self.communicator.rank, self.communicator.world_size, owner, min_tokens=self.min_tokens
+            )
+            self.schedules[owner] = (
+                ShadowOwnerOverlap(policy, self.broadcast, npu=torch.npu, report=self.report)
+                if self.shadow
+                else QSAOwnerOverlap(policy, self.broadcast, npu=torch.npu)
+            )
+        return self.schedules[owner]
+
+
+def make_forward(original, state):
+    original = getattr(original, "_qsa_owner_original", original)
+    namespace = dict(original.__globals__)
+    namespace["_owner_state"] = state
+    tree = transform_frontend(inspect.getsource(original))
+    exec(compile(tree, "<qwen-qsa-owner-prefill>", "exec"), namespace)
+    candidate = namespace["owner_prefill_forward"]
+
+    def forward(self, block_input, positions, qsa_rope_cache=None):
+        model = original.__globals__
+        context = model["get_forward_context"]() if model["is_forward_context_available"]() else None
+        by_layer = getattr(context, "attn_metadata", None)
+        metadata = by_layer.get(self.prefix) if isinstance(by_layer, dict) else None
+        capture = model["BreakableCUDAGraphCapture"].current()
+        # Admission is host metadata only; no device scalar controls whether
+        # a rank enters the collective. All ranks must take the same branch.
+        eligible = (
+            metadata is not None
+            and block_input.device.type == "npu"
+            and self.tp_size == state.communicator.world_size
+            and metadata.num_actual_tokens >= state.min_tokens
+            and metadata.num_prefills > 0
+            and metadata.num_decodes == 0
+            and not (capture is not None and capture._capturing)
+            and not torch.npu.is_current_stream_capturing()
+            and self._needs_sparse_index_query(metadata, self.indexer.token_topk)
+        )
+        if not eligible:
+            return original(self, block_input, positions, qsa_rope_cache)
+        return candidate(self, block_input, positions, qsa_rope_cache)
+
+    forward._qsa_owner_original = original
+    forward._qsa_owner_state = state
+    return forward
+
+
+def replacements(native_resources, *, shadow=False):
+    from vllm.distributed import get_tp_group
+
+    from vllm_ascend._310p.worker_310p import NPUWorker310
+    from vllm_ascend.models.qwen4_exp.model import _QSAAttention
+
+    if TRANSPORT_KEY not in native_resources:
+        group = get_tp_group()
+        communicator = ExistingHcclBroadcast(group)
+        if not communicator.available or communicator.disabled:
+            raise ValueError("native HCCL unavailable for QSA owner candidate")
+        native_resources[TRANSPORT_KEY] = communicator
+    key = RESOURCE_KEY + ("_shadow" if shadow else "_normal")
+    if key not in native_resources:
+        native_resources[key] = OwnerPrefillState(native_resources[TRANSPORT_KEY], shadow=shadow)
+    state = native_resources[key]
+    previous_status = getattr(NPUWorker310.resident_status, "_qsa_owner_original", NPUWorker310.resident_status)
+
+    def status(self):
+        result = previous_status(self)
+        result["qsa_owner"] = {
+            "shadow": state.shadow,
+            "checks": state.report["checks"],
+            "failures": state.report["failures"],
+            "owners": sorted(state.report["owners"]),
+        }
+        return result
+
+    status._qsa_owner_original = previous_status
+    return {
+        "vllm_ascend.models.qwen4_exp.model:_QSAAttention.forward": make_forward(_QSAAttention.forward, state),
+        "vllm_ascend._310p.worker_310p:NPUWorker310.resident_status": status,
+    }

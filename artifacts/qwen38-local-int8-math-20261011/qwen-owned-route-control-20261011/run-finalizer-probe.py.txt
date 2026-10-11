@@ -1,0 +1,51 @@
+import hashlib,json,sys,urllib.request,uuid,time
+from pathlib import Path
+ROOT=Path('/srv/ai/storage/artifacts/qwen-owned-route-control-20261011')
+PROFILE=Path('/srv/ai/src/qwen-channel-int8-tp6-20261011-v3')
+
+def request(path,payload=None,method='POST'):
+ r=urllib.request.Request('http://127.0.0.1:8001'+path,data=json.dumps(payload).encode() if payload is not None else None,headers={'Content-Type':'application/json'},method=method)
+ with urllib.request.urlopen(r,timeout=300) as response:
+  return json.load(response)
+
+def rpc(method,*args):
+ result=request('/collective_rpc',{'method':method,'args':list(args),'timeout':300})['results']
+ if len(result)!=6 or any('error' in row for row in result):raise RuntimeError(str(result))
+ return result
+
+source=(PROFILE/'candidate.py').read_text()+'''
+from pathlib import Path
+finalize_real_previous_replacements = replacements
+
+def replacements(native_resources):
+    scope = {'__name__': 'qwen_owned_int8_probe'}
+    path = Path('/srv/ai/storage/artifacts/qwen-owned-route-control-20261011/qwen-finalizer-probe.py')
+    exec(compile(path.read_text(),str(path),'exec'),scope)
+    scope['prepare_and_qualify'](native_resources)
+    return finalize_real_previous_replacements(native_resources)
+'''
+control={'generation':uuid.uuid4().hex,'mode':'graph','candidate':'qwen_owned_activation_probe','source':source,'recapture':False}
+(ROOT/'finalize-real-probe-control.json').write_text(json.dumps(control,indent=2)+'\n')
+was_paused=request('/is_paused',method='GET')['is_paused']
+print('Draining for isolated worker probe; prefix caches retained',flush=True)
+request('/pause?mode=wait&clear_cache=false')
+before=rpc('resident_status')
+(ROOT/'finalize-real-before.json').write_text(json.dumps(before,indent=2)+'\n')
+try:
+ prepared=None
+ for attempt in range(3):
+  rows=request('/collective_rpc',{'method':'resident_prepare','args':[json.dumps(control)],'timeout':300})['results']
+  if len(rows)==6 and all('error' not in row and row.get('generation')==control['generation'] for row in rows):
+   prepared=rows;break
+ if prepared is None:raise RuntimeError('No complete six-worker preparation receipt')
+ (ROOT/'finalize-real-prepared.json').write_text(json.dumps(prepared,indent=2)+'\n')
+ after=rpc('resident_status')
+ for old,new in zip(sorted(before,key=lambda x:x['rank']),sorted(after,key=lambda x:x['rank'])):
+  for key in ('rank','pid','weight_storage_digest','generation','mode','candidate','digest','graphs_dirty','native_failed','prefix_mamba'):
+   if old.get(key)!=new.get(key):raise RuntimeError('probe changed '+key)
+ (ROOT/'finalize-real-after.json').write_text(json.dumps(after,indent=2)+'\n')
+ print('All-six qualification passed; installed candidate and prefix caches unchanged',flush=True)
+finally:
+ if not was_paused:
+  request('/resume')
+  print('Server resumed',flush=True)

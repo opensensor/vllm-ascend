@@ -1,0 +1,23 @@
+{
+  "name": "decode",
+  "label": "qsa-owner-normal-gates",
+  "passed": true,
+  "elapsed_s": 17.755530096001166,
+  "first_s": 0.5392902460007463,
+  "decode_tps": 29.68127793595926,
+  "content": "```python\n\"\"\"\nStable Merge Sort Implementation with Type Hints\n\nMerge sort is a divide-and-conquer algorithm that splits the list into halves,\nrecursively sorts each half, and then merges them back together.\n\nStability means that elements with equal keys maintain their relative order\nfrom the original input. This is achieved in the merge step by preferring\nelements from the left half when there's a tie (i.e., using <= instead of <).\n\nTime Complexity: O(n log n) in all cases\nSpace Complexity: O(n) for the temporary arrays during merging\n\"\"\"\n\nfrom typing import TypeVar, List, Callable, Optional\n\nT = TypeVar('T')\n\n\ndef merge_sort(arr: List[T], key: Optional[Callable[[T], any]] = None) -> List[T]:\n    \"\"\"\n    Perform a stable merge sort on the input list.\n    \n    Args:\n        arr: The list to sort.\n        key: An optional function that extracts a comparison key from each element.\n             If None, elements are compared directly.\n    \n    Returns:\n        A new sorted list (the original list is not modified).\n    \n    The sort is stable: elements with equal keys retain their original relative order.\n    \"\"\"\n    if key is None:\n        key = lambda x: x\n    \n    # Base case: a list of 0 or 1 elements is already sorted\n    if len(arr) <= 1:\n        return arr[:]\n    \n    # Divide: split the list into two halves\n    mid = len(arr) // 2\n    left_half = merge_sort(arr[:mid], key)\n    right_half = merge_sort(arr[mid:], key)\n    \n    # Conquer: merge the two sorted halves\n    return _merge(left_half, right_half, key)\n\n\ndef _merge(left: List[T], right: List[T], key: Callable[[T], any]) -> List[T]:\n    \"\"\"\n    Merge two sorted lists into a single sorted list.\n    \n    This merge is stable: when elements from left and right have equal keys,\n    the element from the left list is placed first, preserving original order.\n    \n    Args:\n        left: The first sorted list.\n        right: The second sorted list.\n        key: The key function for comparison.\n    \n    Returns:\n        A new merged and sorted list.\n    \"\"\"\n    result: List",
+  "reasoning": "",
+  "usage": {
+    "prompt_tokens": 31,
+    "total_tokens": 543,
+    "completion_tokens": 512,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "created_cache_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    }
+  },
+  "finish": "length"
+}
