@@ -1,5 +1,9 @@
 # GLM rank ownership: offline candidate
 
+The ordered [next experiment queue](NEXT.md) records remaining operand,
+router, prefill-combine, and indexer-head opportunities with memory and validation
+gates.
+
 The sparse indexer is fully replicated within each TP group. The candidate
 executes it on one fixed local TP rank and shares its INT32 token indices with
 the group's attention shards. Both `glm_native_int4` and
