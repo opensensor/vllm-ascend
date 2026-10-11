@@ -55,7 +55,7 @@ CUDA expert parity, weighted combination and full-model quality remain pending.
 MTP and graph capture were not tested by these probes.
 
 The first arithmetic launch failed because its added Python path replaced
-CANN's sourced path, leaving `tbe` unavailable. The corrected launch preserved
+CANN's sourced path, leaving its tensor-build module unavailable. The corrected launch preserved
 that path and passed. The failed and successful logs are retained with the
 other probe logs for reproducibility:
 [initial launch](native-expert-probe.log),

@@ -8,9 +8,10 @@ payload checksum validation, native layout export, or runtime memory admission.
 import hashlib
 import json
 import math
-import re
 import struct
 from pathlib import Path
+
+import regex as re
 
 from .placement import (
     CUDA_OWNER,

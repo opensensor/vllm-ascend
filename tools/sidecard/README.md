@@ -57,8 +57,9 @@ does not configure a five-rank mixed tensor-parallel group.
 
 ## Commands
 
-Run from the repository root. These tools use Python's standard library and
-do not import vLLM, torch, torch-npu, or initialize accelerator contexts.
+Run from the repository root. Planning tools use Python's standard library
+and the project's `regex` dependency. They do not import vLLM, torch,
+torch-npu, or initialize accelerator contexts.
 
 ```bash
 python3 -m tools.sidecard inventory --ssh matteius@192.168.53.187
