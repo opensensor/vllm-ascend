@@ -144,3 +144,35 @@ def test_indexer_manifest_is_admitted_before_native_stage_allocation(tmp_path, m
     monkeypatch.setattr(loaded, "prepare_stage", forbidden)
     with pytest.raises(ValueError, match="indexer bundle"):
         loaded.GlmChannelScaleLoader(config()).load_weights(model, SimpleNamespace(model=str(tmp_path)))
+
+
+@pytest.mark.parametrize(
+    "plan_name,options",
+    [
+        ("plan_router_owner", dict(router_owner_rank=0, router_exchange_budget_bytes=1)),
+        ("plan_indexer_heads", dict(indexer_head_sharding=True, indexer_head_budget_bytes=1, indexer_score_elements=1)),
+    ],
+)
+def test_new_rank_math_admission_precedes_expert_preparation(module, tmp_path, monkeypatch, plan_name, options):
+    loaded, config = module
+    cfg = config()
+    cfg.model_loader_extra_config.update(options)
+    (tmp_path / "model.safetensors.index.json").write_text("{}")
+    model = SimpleNamespace(
+        _glm_text_config=SimpleNamespace(num_experts_per_token=8),
+        vllm_config=SimpleNamespace(
+            parallel_config=SimpleNamespace(),
+            speculative_config=None,
+            scheduler_config=SimpleNamespace(max_num_batched_tokens=640),
+        ),
+    )
+
+    def reject(*args, **kwargs):
+        raise ValueError("offline reservation rejected")
+
+    monkeypatch.setattr(loaded, plan_name, reject)
+    monkeypatch.setattr(
+        loaded, "prepare_stage", lambda *args, **kwargs: pytest.fail("allocated experts before admission")
+    )
+    with pytest.raises(ValueError, match="reservation"):
+        loaded.GlmChannelScaleLoader(cfg).load_weights(model, SimpleNamespace(model=str(tmp_path)))

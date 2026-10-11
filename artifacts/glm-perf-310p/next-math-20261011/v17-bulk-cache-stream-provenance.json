@@ -1,0 +1,139 @@
+{
+  "cube_rows": 64,
+  "fused_gate_up": true,
+  "fused_decode": true,
+  "fused_prefill": true,
+  "abi_version": 3,
+  "identity_smoothing": true,
+  "reciprocal_quant": false,
+  "integer_reconstruct": true,
+  "cache_source_rows": true,
+  "stream_weights": true,
+  "token_prefill": false,
+  "cache_prefill_routes": true,
+  "kernel_sources": {
+    "glm_channel_quantize": "glm_channel_quantize.cpp",
+    "glm_channel_projection": "glm_channel_projection.cpp",
+    "glm_channel_combine": "glm_channel_combine.cpp",
+    "glm_channel_gate_up": "glm_channel_gate_up.cpp",
+    "glm_channel_down_decode": "glm_channel_down_decode.cpp",
+    "glm_channel_down_prefill": "glm_channel_down_prefill.cpp"
+  },
+  "complete": true,
+  "layout": "glm_channel_w4_int32_accum_v1",
+  "namespace": "glm_channel_scale_v17",
+  "files": {
+    "glm_channel_quantize.bin": "6931e1a2006069c165cbec76f0aff094b5271688e3831c8c9569767d6bd28fa3",
+    "glm_channel_projection.bin": "8cfc4adff0edf6c0dde10b84917e9bc3d0cb8efa326fa09263cec0488f8780a3",
+    "glm_channel_combine.bin": "7f83dabefa8dab513d102abe6065a623318055da552ee7739125a4b8c6c89e78",
+    "glm_channel_gate_up.bin": "8b18d07319f7c260f76d8b1dd11fdc52a30fc83e5c579f62c539a26c353e76b2",
+    "glm_channel_down_decode.bin": "0e46fcdbcb17014728dfb4b85fd680553cc57890bd05f1246241ef4b7d6f418f",
+    "glm_channel_down_prefill.bin": "8a790ed0c7a522c0b758337e6c6fe2e243c552e456be41ae7202f93c2e4a9e7e",
+    "bridge.so": "ef808275152abd69f51285f453d6d7ea8ce1d5345478d81e0f7abc4ef6f2305a"
+  },
+  "sources": [
+    {
+      "path": "compile_reconstruction.cpp",
+      "sha256": "e7df352d8e98426001f43dd17116443c72ce9eafa9d7a07930329278d0c3447e"
+    },
+    {
+      "path": "channel_scale_bridge.cpp",
+      "sha256": "21cb44459521b91439e94f2bfa1f79e87563971d222206404dba00c5cfd01e2b"
+    },
+    {
+      "path": "glm_channel_broadcast.h",
+      "sha256": "45769a5dcd69d8f5de63bb297de50a84034890a6aca5c6cf59e5b583a0c0e956"
+    },
+    {
+      "path": "glm_channel_integer.h",
+      "sha256": "8c04dcfad6125c3509158a1f45cbcc2dde6f6603f97cf5154a5e2900ca11857c"
+    },
+    {
+      "path": "glm_channel_row_cache.h",
+      "sha256": "1f8a8b63b4b95b7865ab16f4b10c78de437f5202682c02448c3b3b7b3af75679"
+    },
+    {
+      "path": "glm_channel_down_token.cpp",
+      "sha256": "aee00bb449611fa526d969e3e3d46b54ac7254050cb8071b929000eb2c893f08"
+    },
+    {
+      "path": "glm_channel_quantize.cpp",
+      "sha256": "a104ce80f3de92682a42f560770030bf197c479d5a394f9bad9d674de60ce764"
+    },
+    {
+      "path": "glm_channel_projection.cpp",
+      "sha256": "df1938be3bb12f0148d358a94bcd7a22d3e210ffd361cee12ae4856eec76bfe6"
+    },
+    {
+      "path": "glm_channel_combine.cpp",
+      "sha256": "dacd05b219a30e25f39f33e157d64674a9e2d63d5d6312bc9c7dae680308a46c"
+    },
+    {
+      "path": "glm_channel_gate_up.cpp",
+      "sha256": "38d66c061154d35540ebd7cd14b94307dbfb1cb199a35f4ae45216309ea0c7c8"
+    },
+    {
+      "path": "glm_channel_down_decode.cpp",
+      "sha256": "d7448180c09ca6f91c0c622da9bc5bc735dcc816ac94a6be6a9e128fcdf5669f"
+    },
+    {
+      "path": "glm_channel_down_prefill.cpp",
+      "sha256": "6c319c2389c8ecf41cb31ec13dcaee804b683fa0423f39834ce51aa1148e2007"
+    },
+    {
+      "path": "channel_scale_math.py",
+      "sha256": "1e554aab12eda3c9ec1dcba7d13e61777ec92ad22800544cd5b7894376e22f2c"
+    },
+    {
+      "path": "channel_scale_layout.py",
+      "sha256": "7ccb04f0f78219da964079e16c119a677031010b195ef0934e8340d18364f7c3"
+    },
+    {
+      "path": "channel_scale_runtime.py",
+      "sha256": "b83d2bfb94bab8556036729991194adb06502f889f6b1fdea45cebf03e0aa092"
+    },
+    {
+      "path": "fused_weight_layout.py",
+      "sha256": "dde6829b0be8238d91ee7bdd89246874bb13ab4379e29cfc057faaebd98ca6f0"
+    },
+    {
+      "path": "fused_offset_tables.py",
+      "sha256": "6039185853aa42c9630a9b991048021e9e0962dc7c5baded05912bcc3b0513ea"
+    },
+    {
+      "path": "glm_int4.py",
+      "sha256": "be71985a4fd66c3f99d950abb5da4f8383ad607c421c8b3bfbe1ec3564e0a843"
+    },
+    {
+      "path": "glm_fused_moe.py",
+      "sha256": "111026618b61834ed6f57d7f743e3d6ef339a18244356881eaac7f652241b7fd"
+    }
+  ],
+  "helpers": {
+    "channel_scale_math.py": "1e554aab12eda3c9ec1dcba7d13e61777ec92ad22800544cd5b7894376e22f2c",
+    "channel_scale_layout.py": "7ccb04f0f78219da964079e16c119a677031010b195ef0934e8340d18364f7c3",
+    "channel_scale_runtime.py": "b83d2bfb94bab8556036729991194adb06502f889f6b1fdea45cebf03e0aa092",
+    "fused_weight_layout.py": "dde6829b0be8238d91ee7bdd89246874bb13ab4379e29cfc057faaebd98ca6f0",
+    "fused_offset_tables.py": "6039185853aa42c9630a9b991048021e9e0962dc7c5baded05912bcc3b0513ea",
+    "glm_int4.py": "be71985a4fd66c3f99d950abb5da4f8383ad607c421c8b3bfbe1ec3564e0a843",
+    "glm_fused_moe.py": "111026618b61834ed6f57d7f743e3d6ef339a18244356881eaac7f652241b7fd",
+    "__init__.py": "6c6ec57de9f82ef42d82760f144a4571cb16b3cd6de33aaa7aa9fd65e8ab1fa1"
+  },
+  "compiler_options": [
+    "--npu-arch=dav-2002",
+    "--sysroot=/usr/local/Ascend/cann-9.1.0/tools/hcc/sysroot",
+    "-isystem/usr/local/Ascend/cann-9.1.0/tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0",
+    "-isystem/usr/local/Ascend/cann-9.1.0/tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0/aarch64-target-linux-gnu",
+    "-DGLM_CHANNEL_ROWS=64",
+    "-I/srv/ai/storage/artifacts/glm-offline-next-math-20261011/v17-bulk-cache-stream/sources",
+    "-DGLM_CHANNEL_IDENTITY_SMOOTHING",
+    "-DGLM_CHANNEL_INTEGER_RECONSTRUCT",
+    "-DGLM_CHANNEL_CACHE_SOURCE_ROWS",
+    "-DGLM_CHANNEL_STREAM_WEIGHTS",
+    "-DGLM_CHANNEL_CACHE_PREFILL_ROUTES"
+  ],
+  "cann_root": "/usr/local/Ascend/cann-9.1.0",
+  "torch": "2.13.0+cpu",
+  "validation": "CPU compilation only; no device opened or kernels executed",
+  "original_provenance_sha256": "ce59de0817e7ee6e4aa5dd4ff49d7856a9a2ae2ad676e95ce5a5a073dced32b6"
+}

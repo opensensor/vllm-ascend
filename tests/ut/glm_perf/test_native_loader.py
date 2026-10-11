@@ -342,3 +342,24 @@ def test_decode_bundle_is_admitted_before_weight_read_and_dispatches_separately(
     assert owner._method.native(torch.zeros(640, 4)) == "bundle"
     assert calls[0][1]["shared_prefill_max_tokens"] == 640
     assert "shared_prefill_max_tokens" not in calls[1][1]
+
+
+@pytest.mark.parametrize(
+    "plan_name,options",
+    [
+        ("plan_router_owner", dict(router_owner_rank=0, router_exchange_budget_bytes=1)),
+        ("plan_indexer_heads", dict(indexer_head_sharding=True, indexer_head_budget_bytes=1, indexer_score_elements=1)),
+    ],
+)
+def test_new_rank_math_admission_precedes_checkpoint_resolution(loader_module, monkeypatch, plan_name, options):
+    module, config = loader_module
+    loader = module.GlmNativeInt4Loader(config(model_loader_extra_config=options))
+    assert loader.load_config.model_loader_extra_config == {}
+
+    def reject(*args, **kwargs):
+        raise ValueError("offline reservation rejected")
+
+    monkeypatch.setattr(module, plan_name, reject)
+    monkeypatch.setattr(module, "resolve_native_folder", lambda *args: pytest.fail("resolved weights before admission"))
+    with pytest.raises(ValueError, match="reservation"):
+        loader.load_weights(SimpleNamespace(), SimpleNamespace())

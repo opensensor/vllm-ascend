@@ -27,7 +27,7 @@ from tools.glm_perf.channel_scale_runtime import (
 from tools.glm_perf.fused_weight_layout import unpack_cube
 
 
-def bundle(tmp_path, fused=False, decode=False, identity=False, prefill=False, reciprocal=False):
+def bundle(tmp_path, fused=False, decode=False, identity=False, prefill=False, reciprocal=False, token=False):
     files = {}
     kernels = (*KERNEL_NAMES, "glm_channel_gate_up") if fused else KERNEL_NAMES
     if decode:
@@ -41,10 +41,12 @@ def bundle(tmp_path, fused=False, decode=False, identity=False, prefill=False, r
     (tmp_path / "provenance.json").write_text(
         json.dumps(
             {
+                "token_prefill": token,
+                "kernel_sources": {"glm_channel_down_prefill": "glm_channel_down_token.cpp"} if token else {},
                 "reciprocal_quant": reciprocal,
                 "fused_prefill": prefill,
                 "identity_smoothing": identity,
-                "abi_version": 3,
+                "abi_version": 4 if token else 3,
                 "fused_decode": decode,
                 "fused_gate_up": fused,
                 "cube_rows": 32,
@@ -75,10 +77,11 @@ def pack_rows(values):
 class CpuLaunch:
     """Interpret explicit buffers, not the runtime's Python reference bank."""
 
-    def __init__(self, identity=False, reciprocal=False):
+    def __init__(self, identity=False, reciprocal=False, token=False):
         self.names = []
         self.identity = identity
         self.reciprocal = reciprocal
+        self.token = token
 
     def __call__(self, kernel, arguments, blocks):
         assert blocks == 8
@@ -143,6 +146,15 @@ class CpuLaunch:
                 descriptor,
             ) = arguments
             tokens, top_k, experts, hidden = descriptor[:4].tolist()
+            if self.token:
+                token_inverse = torch.empty(tokens * top_k, dtype=torch.int32)
+                for window in range(order.shape[0]):
+                    for i in range(order.shape[1]):
+                        position = window * 128 + int(inverse[window, i])
+                        if position < token_inverse.numel():
+                            token_inverse[position] = order[window, i]
+                inverse = token_inverse
+                order = torch.argsort(inverse)
             temporary = torch.empty(tokens * top_k, hidden, dtype=torch.float16)
             original_count = len(self.names)
             self(
@@ -444,3 +456,48 @@ def test_source_row_cache_marker_requires_actual_compiler_flag(tmp_path):
     manifest["compiler_options"].append("-DGLM_CHANNEL_CACHE_SOURCE_ROWS")
     path.write_text(json.dumps(manifest))
     assert verify_bundle(tmp_path)["cache_source_rows"]
+
+
+@pytest.mark.parametrize("tokens", [17, 37])
+def test_complete_token_owned_prefill_no_global_route_slab(tmp_path, tokens):
+    torch.manual_seed(191)
+    gate = quantize_weights(torch.randn(2, 512, 256) / 64, 256)
+    down = quantize_weights(torch.randn(2, 256, 256) / 64, 256)
+    arena = ScratchArena()
+    simulator = CpuLaunch(identity=True, token=True)
+    native = NativeChannelScaleMoE(
+        bundle(tmp_path, fused=True, decode=True, identity=True, prefill=True, token=True),
+        gate,
+        down,
+        device="cpu",
+        arena=arena,
+        max_tokens=37,
+        kernel_factory=lambda path, name: name,
+        launch=simulator,
+    )
+    x = torch.randn(tokens, 256).half()
+    ids = torch.tensor([1, 0, 0, 1, 0, 1, 99, 99]).expand(tokens, 8).clone()
+    weights = torch.full((tokens, 8), 0.125)
+    result = native(x, weights, ids)
+    expected = fused_moe_reference(x, gate, down, weights, ids)
+    torch.testing.assert_close(result, expected, rtol=0, atol=0)
+    scratch = arena.get(tokens, 8, native.geometry, 8, "cpu")
+    assert scratch["route_tiles"].numel() == 1
+    assert "routed" not in scratch
+    assert len(simulator.names) == 3
+    assert scratch["token_rows"].dtype == torch.float32
+    assert scratch["token_sorted_rows"].dtype == torch.int32
+
+
+def test_token_metadata_cannot_be_loaded_as_bulk_abi(tmp_path):
+    bundle(tmp_path, fused=True, prefill=True, token=True)
+    path = tmp_path / "provenance.json"
+    manifest = json.loads(path.read_text())
+    manifest["token_prefill"] = False
+    path.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="distinct"):
+        verify_bundle(tmp_path)
+    manifest["abi_version"] = 3
+    path.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="bulk prefill"):
+        verify_bundle(tmp_path)

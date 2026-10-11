@@ -20,6 +20,10 @@ from tools.glm_perf.deployment_profiles import validate_profile
 from tools.glm_perf.fused_moe_profile import frozen_helper
 from tools.glm_perf.fused_weight_layout import FP16_SCALE_LAYOUT
 from tools.glm_perf.indexer_bundle import install as install_indexer_bundle
+from tools.glm_perf.indexer_heads import HEAD_OPTIONS
+from tools.glm_perf.indexer_heads import install as install_indexer_heads
+from tools.glm_perf.indexer_heads import plan_install as plan_indexer_heads
+from tools.glm_perf.indexer_heads import read_options as read_head_options
 from tools.glm_perf.indexer_owner import OWNER_OPTIONS, plan_install, read_options
 from tools.glm_perf.indexer_owner import install as install_indexer_owner
 from tools.glm_perf.native_checkpoint import (
@@ -32,6 +36,10 @@ from tools.glm_perf.native_checkpoint import (
     selected_weights,
     validate_scale_contract,
 )
+from tools.glm_perf.router_owner import ROUTER_OPTIONS
+from tools.glm_perf.router_owner import install as install_router_owner
+from tools.glm_perf.router_owner import plan_install as plan_router_owner
+from tools.glm_perf.router_owner import read_options as read_router_options
 
 LOAD_FORMAT = "glm_native_int4"
 LAYER_PATH = re.compile(r"(?:^|\.)layers\.(\d+)(?:\.|$)")
@@ -83,8 +91,12 @@ class GlmNativeInt4Loader(DefaultModelLoader):
         if load_config.model_loader_extra_config.get("enable_multithread_load"):
             raise ValueError("native GLM loader owns its authoritative shard selection")
         self.indexer_owner_options = read_options(load_config.model_loader_extra_config)
+        self.router_owner_options = read_router_options(load_config.model_loader_extra_config)
+        self.indexer_head_options = read_head_options(load_config.model_loader_extra_config)
         base_options = {
-            key: value for key, value in load_config.model_loader_extra_config.items() if key not in OWNER_OPTIONS
+            key: value
+            for key, value in load_config.model_loader_extra_config.items()
+            if key not in (*OWNER_OPTIONS, *ROUTER_OPTIONS, *HEAD_OPTIONS)
         }
         super().__init__(
             dataclasses.replace(load_config, load_format="safetensors", model_loader_extra_config=base_options)
@@ -100,6 +112,10 @@ class GlmNativeInt4Loader(DefaultModelLoader):
     def load_weights(self, model, model_config):
         if self.indexer_owner_options is not None:
             plan_install(model, **self.indexer_owner_options)
+        if self.router_owner_options is not None:
+            plan_router_owner(model, **self.router_owner_options)
+        if self.indexer_head_options is not None:
+            plan_indexer_heads(model, **self.indexer_head_options)
         self.folder = resolve_native_folder(model_config.model, model_config.revision, self.load_config.download_dir)
         self.resolved_model_source = model_config.model
         manifest = json.loads((self.folder / MANIFEST).read_text())
@@ -212,7 +228,15 @@ class GlmNativeInt4Loader(DefaultModelLoader):
         owner_report = None
         if self.indexer_owner_options is not None:
             owner_report = install_indexer_owner(model, **self.indexer_owner_options)
+        router_report = None
+        if self.router_owner_options is not None:
+            router_report = install_router_owner(model, **self.router_owner_options)
+        heads_report = None
+        if self.indexer_head_options is not None:
+            heads_report = install_indexer_heads(model, **self.indexer_head_options)
         model._native_int4_load_report = {
+            "indexer_heads": heads_report,
+            "router_owner": router_report,
             "layout": LAYOUT,
             "activation_bits": manifest["activation_bits"],
             "banks": 2 * len(banks),

@@ -8,7 +8,8 @@ from pathlib import Path
 import pytest
 
 
-def test_production_prefill_tile_protocol_and_guard_bytes(tmp_path):
+@pytest.mark.parametrize("cached", [False, True])
+def test_production_prefill_tile_protocol_and_guard_bytes(tmp_path, cached):
     compiler = shutil.which("c++")
     if compiler is None:
         pytest.skip("C++ compiler unavailable")
@@ -24,6 +25,7 @@ def test_production_prefill_tile_protocol_and_guard_bytes(tmp_path):
             "-std=c++17",
             "-O2",
             "-ffp-contract=off",
+            *(["-DGLM_CHANNEL_CACHE_PREFILL_ROUTES"] if cached else []),
             f"-I{tmp_path}",
             f"-I{stubs}",
             str(stubs / "check_prefill.cpp"),

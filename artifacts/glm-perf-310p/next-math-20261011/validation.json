@@ -1,0 +1,144 @@
+{
+  "hardware_qualified": false,
+  "npu_devices_opened": 0,
+  "live_service_changed": false,
+  "cpu_tests": {
+    "passed": 218,
+    "log": "cpu-gates.txt"
+  },
+  "nightly_cpu_transport": {
+    "passed": 2,
+    "log": "nightly-cpu-transport.txt"
+  },
+  "process_gates": {
+    "ranks": 10,
+    "groups": "three TP2 stages and one TP4 stage",
+    "cases_per_rank": 8,
+    "max_score_abs_error": 3.0517578125e-05,
+    "argmax_agreement": 1.0
+  },
+  "compiled_bundles": [
+    "v14-stream-weights",
+    "v17-bulk-cache-stream",
+    "v18-token-prefill-abi4",
+    "v19-token-stream-abi4"
+  ],
+  "abi_note": "Token-window metadata requires ABI 4; old ABI-3 token prototypes rejected.",
+  "manual_hooks": "all owned files pass; see manual-hooks.txt",
+  "full_repository_format": {
+    "result": "failed",
+    "log": "/tmp/glm-next-full-format.txt",
+    "unrelated_autoformat_edits_restored": 144,
+    "resolved_owned_issue": "Source SHA receipt filename triggered generic-key scan; report receipts now use source path/SHA lists. Runtime bundle manifests were not modified."
+  },
+  "sources": [
+    {
+      "path": "tests/e2e/nightly/glm_channel_scale/conftest.py",
+      "sha256": "72ea3661610326e7f76d04d49a36c35e45531e04edb586fe628027a1068f9095"
+    },
+    {
+      "path": "tests/e2e/nightly/glm_channel_scale/test_next_math_transport.py",
+      "sha256": "77adec2ea89dc681caa63f17226eee5b58f404d551f105b6204169fa1f484f5f"
+    },
+    {
+      "path": "tests/ut/glm_perf/channel_scale_cpu_stubs/check_prefill.cpp",
+      "sha256": "96fe3c37a626f28b8f54c47e9da87e109e3c8b24db4362d77ca1f6e8c4e4332f"
+    },
+    {
+      "path": "tests/ut/glm_perf/channel_scale_cpu_stubs/check_token_prefill.cpp",
+      "sha256": "3fc3cbe80a7b98aa17dd4237ba92f122f573a94b9cd2f52d0da4b3c1823f2b53"
+    },
+    {
+      "path": "tests/ut/glm_perf/channel_scale_cpu_stubs/kernel_operator.h",
+      "sha256": "ee06687c3324608f922b67082a865cadace349534ed6c57e4116d27a0cb2ab0c"
+    },
+    {
+      "path": "tests/ut/glm_perf/channel_scale_cpu_stubs/projection_stub.h",
+      "sha256": "d3079144c3dc05902ecb1f6e2181f65a8823822fea83343824679fb4a0a1b2b3"
+    },
+    {
+      "path": "tests/ut/glm_perf/test_channel_prefill_protocol_cpp.py",
+      "sha256": "86558f8b9889bbfd91be8782d9ba86a29cafb307bfc97a54cf476ecacc3ad625"
+    },
+    {
+      "path": "tests/ut/glm_perf/test_channel_scale_loader.py",
+      "sha256": "1b767ff49712af9b18db682ab2b642a5798f8eec2e4a3f33bb19e3d2dad1006e"
+    },
+    {
+      "path": "tests/ut/glm_perf/test_channel_scale_runtime.py",
+      "sha256": "48f07085f675530b8386bfa977ff2e9de01b387bcb2a3b461eb863365ac9df35"
+    },
+    {
+      "path": "tests/ut/glm_perf/test_channel_token_prefill_cpp.py",
+      "sha256": "6dbc51203aa8d37df4b7bcd9aea80d62b18513794d81c43565b24c494fcba999"
+    },
+    {
+      "path": "tests/ut/glm_perf/test_channel_weight_pipeline.py",
+      "sha256": "cc70e54c313c8bdae4ced860d1943059e782cbcfcf27102e703fc7b3390b9a33"
+    },
+    {
+      "path": "tests/ut/glm_perf/test_indexer_heads.py",
+      "sha256": "f113fbdd3bf07141b8538f8e57e350eb7950233dc494f9f4c6a02373b5f073e9"
+    },
+    {
+      "path": "tests/ut/glm_perf/test_native_loader.py",
+      "sha256": "61348eaa568ae9807ddd8f257b61a48dcac53e0a3d2bc643bb172c8c9afc14a4"
+    },
+    {
+      "path": "tests/ut/glm_perf/test_router_owner.py",
+      "sha256": "3f87566cc070697a60f9927e9d131d48cd9efe6a5abb8d58ee8eac2c30e42fe5"
+    },
+    {
+      "path": "tools/glm_perf/build_channel_scale.py",
+      "sha256": "d64eb5cb8eb01829e789434767efdf16a9bece35335d1bc290634d8a5a44a95e"
+    },
+    {
+      "path": "tools/glm_perf/channel_scale_runtime.py",
+      "sha256": "b4227bdbe9e1dc06122ce9ebca4ae09e47f4fbeb2e0985784c288420206636bf"
+    },
+    {
+      "path": "tools/glm_perf/channel_scale_stage.py",
+      "sha256": "747ef8b626ba840a54e4f5df93625dbafd2959793cf550a07f2203b501043f31"
+    },
+    {
+      "path": "tools/glm_perf/glm_channel_down_prefill.cpp",
+      "sha256": "6c319c2389c8ecf41cb31ec13dcaee804b683fa0423f39834ce51aa1148e2007"
+    },
+    {
+      "path": "tools/glm_perf/glm_channel_down_token.cpp",
+      "sha256": "aee00bb449611fa526d969e3e3d46b54ac7254050cb8071b929000eb2c893f08"
+    },
+    {
+      "path": "tools/glm_perf/glm_channel_projection.cpp",
+      "sha256": "df1938be3bb12f0148d358a94bcd7a22d3e210ffd361cee12ae4856eec76bfe6"
+    },
+    {
+      "path": "tools/glm_perf/indexer_heads.py",
+      "sha256": "e1b8955d3960101d155b2a59712baaa76eaec2a9257c818720cb6125827c23f0"
+    },
+    {
+      "path": "tools/glm_perf/next_math_audit.py",
+      "sha256": "70a39b261c17ed16f51e8612825d3e6e041bca17663781fee6c6506e3d0c41c3"
+    },
+    {
+      "path": "tools/glm_perf/probe_channel_scale.py",
+      "sha256": "1aea193e801183b01c371af816d9c5680aa9abf2eaea57b4833688f1a09f6854"
+    },
+    {
+      "path": "tools/glm_perf/probe_rank_math.py",
+      "sha256": "cb4f9ffa70e33ab342bab2fd8cb87fa7c1ed32b34a51bb14841f265389cf5b05"
+    },
+    {
+      "path": "tools/glm_perf/router_owner.py",
+      "sha256": "a1789267777ee454b7c67d19796e1f2a955c2792ec4e36a09a3773f8be1b8f8f"
+    },
+    {
+      "path": "vllm_ascend/model_loader/glm_channel_scale.py",
+      "sha256": "c92c08f43946d278a0d519b2c651867bbc6039e68ea4cb99b7cf598668084089"
+    },
+    {
+      "path": "vllm_ascend/model_loader/glm_native_int4.py",
+      "sha256": "a8763e6f7e35fe2027726addce7b4bd852513d7d4a9d26e9042b9b3bc0dff8fc"
+    }
+  ]
+}

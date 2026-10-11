@@ -72,8 +72,13 @@ class Projection {
     pipe_.InitBuffer(aUb_, A_BYTES);
     pipe_.InitBuffer(a1_, A_BYTES);
     pipe_.InitBuffer(a2_, A_BYTES);
+#ifdef GLM_CHANNEL_STREAM_WEIGHTS
+    pipe_.InitBuffer(b1_, 2 * B_BYTES);
+    pipe_.InitBuffer(b2_, 2 * B_BYTES);
+#else
     pipe_.InitBuffer(b1_, B_BYTES);
     pipe_.InitBuffer(b2_, B_BYTES);
+#endif
     pipe_.InitBuffer(c_, ELEMENTS * sizeof(int32_t));
     pipe_.InitBuffer(raw_, ELEMENTS * sizeof(int32_t));
     pipe_.InitBuffer(indices_, ELEMENTS * sizeof(uint32_t));
@@ -98,31 +103,70 @@ class Projection {
     const uint32_t groups = k_ / group_;
     Duplicate(accum_.Get<float>(), 0.0f, count * N);
     PipeBarrier<PIPE_V>();
+#ifdef GLM_CHANNEL_STREAM_WEIGHTS
+    // Independent two-slot B pipeline. A/readback storage remains single.
+    for (uint32_t buffer = 0; buffer < 2; ++buffer) {
+      SetFlag<HardEvent::MTE1_MTE2>(buffer);
+      SetFlag<HardEvent::M_MTE1>(buffer);
+    }
+    SetFlag<HardEvent::M_MTE1>(EVENT_ID2);
+    PrefetchWeight(expert, tile, 0, 0);
+#endif
     for (uint32_t group = 0; group < groups; ++group) {
       for (uint32_t k0 = group * group_; k0 < (group + 1) * group_; k0 += K) {
         LoadActivation(row, count, productRows, k0);
+#ifdef GLM_CHANNEL_STREAM_WEIGHTS
+        const uint32_t buffer = (k0 / K) % 2;
+        WaitFlag<HardEvent::MTE2_MTE1>(buffer);
+        WaitFlag<HardEvent::M_MTE1>(buffer);
+#else
         const int64_t codeOffset = ((expert * (n_ / N) + tile) * (k_ / K) + k0 / K) * B_BYTES;
         DataCopy(b1_.Get<int8_t>(), codes_[codeOffset], B_BYTES);
         PipeBarrier<PIPE_ALL>();
+#endif
         LoadData2DParams load;
         load.repeatTimes = (K / K_FRAGMENT) * N / NZ_N;
         load.srcStride = 1;
         load.ifTranspose = false;
+#ifdef GLM_CHANNEL_STREAM_WEIGHTS
+        LoadData(b2_.Get<int8_t>()[buffer * B_BYTES].ReinterpretCast<int4b_t>(),
+                 b1_.Get<int8_t>()[buffer * B_BYTES].ReinterpretCast<int4b_t>(), load);
+        SetFlag<HardEvent::MTE1_MTE2>(buffer);
+        SetFlag<HardEvent::MTE1_M>(EVENT_ID0);
+        WaitFlag<HardEvent::MTE1_M>(EVENT_ID0);
+#else
         LoadData(b2_.Get<int8_t>().ReinterpretCast<int4b_t>(), b1_.Get<int8_t>().ReinterpretCast<int4b_t>(), load);
         PipeBarrier<PIPE_ALL>();
+#endif
         MmadParams mm;
         mm.m = productRows;
         mm.n = N;
         mm.k = K;
         mm.cmatrixInitVal = k0 == group * group_;
+#ifdef GLM_CHANNEL_STREAM_WEIGHTS
+        Mmad(c_.Get<int32_t>(), a2_.Get<int8_t>().ReinterpretCast<int4b_t>(),
+             b2_.Get<int8_t>()[buffer * B_BYTES].ReinterpretCast<int4b_t>(), mm);
+        SetFlag<HardEvent::M_MTE1>(buffer);
+        SetFlag<HardEvent::M_MTE1>(EVENT_ID2);
+        // Submit next GM -> L1 weight movement while this Cube consumes B2.
+        if (k0 + K < k_) PrefetchWeight(expert, tile, k0 + K, 1 - buffer);
+#else
         Mmad(c_.Get<int32_t>(), a2_.Get<int8_t>().ReinterpretCast<int4b_t>(),
              b2_.Get<int8_t>().ReinterpretCast<int4b_t>(), mm);
         // Conservative operand lifetime fence. No cast, scale, FP32 sum,
         // or CO1 readback is performed in this K loop.
         PipeBarrier<PIPE_ALL>();
+#endif
       }
       Readback(row, count, productRows, expert, tile, group);
     }
+#ifdef GLM_CHANNEL_STREAM_WEIGHTS
+    WaitFlag<HardEvent::M_MTE1>(EVENT_ID2);
+    for (uint32_t buffer = 0; buffer < 2; ++buffer) {
+      WaitFlag<HardEvent::MTE1_MTE2>(buffer);
+      WaitFlag<HardEvent::M_MTE1>(buffer);
+    }
+#endif
     Cast(outputUb_.Get<half>(), accum_.Get<float>(), RoundMode::CAST_NONE, count * N);
     PipeBarrier<PIPE_ALL>();
   }
@@ -137,6 +181,9 @@ class Projection {
     return position / topK_;
   }
   __aicore__ inline int64_t RowAddress(int64_t row, uint32_t m) {
+#ifdef GLM_CHANNEL_TOKEN_PREFILL
+    if (indirectRows_) return tokenRowsUb_.Get<int32_t>().GetValue(indirectStart_ + m);
+#endif
 #ifdef GLM_CHANNEL_CACHE_SOURCE_ROWS
     return originalTokens_ ? sourceRows_.Get<int32_t>().GetValue(m) : row + m;
 #else
@@ -146,7 +193,12 @@ class Projection {
   __aicore__ inline void LoadActivation(int64_t row, uint32_t count, uint32_t productRows, uint32_t k0) {
     auto packed = aUb_.Get<int8_t>();
     Duplicate(packed.ReinterpretCast<int16_t>(), static_cast<int16_t>(0), productRows * K / 4);
+#ifdef GLM_CHANNEL_STREAM_WEIGHTS
+    SetFlag<HardEvent::V_MTE2>(EVENT_ID0);
+    WaitFlag<HardEvent::V_MTE2>(EVENT_ID0);
+#else
     PipeBarrier<PIPE_ALL>();
+#endif
     for (uint32_t m = 0; m < count; ++m) {
       const int64_t sourceRow = RowAddress(row, m) * (k_ / 2) + k0 / 2;
       for (uint32_t part = 0; part < K / K_FRAGMENT; ++part) {
@@ -156,21 +208,50 @@ class Projection {
         if (bits_ == 8) DataCopy(packed[target + K_FRAGMENT / 2], high_[source], K_FRAGMENT / 2);
       }
     }
+#ifdef GLM_CHANNEL_STREAM_WEIGHTS
+    SetFlag<HardEvent::MTE2_MTE3>(EVENT_ID0);
+    WaitFlag<HardEvent::MTE2_MTE3>(EVENT_ID0);
+#else
     PipeBarrier<PIPE_ALL>();
+#endif
     DataCopy(a1_.Get<int8_t>(), packed, productRows * K / 2);
+#ifdef GLM_CHANNEL_STREAM_WEIGHTS
+    SetFlag<HardEvent::MTE3_MTE1>(EVENT_ID0);
+    WaitFlag<HardEvent::MTE3_MTE1>(EVENT_ID0);
+    WaitFlag<HardEvent::M_MTE1>(EVENT_ID2);
+#else
     PipeBarrier<PIPE_ALL>();
+#endif
     LoadData2DParams load;
     load.repeatTimes = (K / K_FRAGMENT) * productRows / NZ_N;
     load.srcStride = 1;
     load.ifTranspose = false;
     LoadData(a2_.Get<int8_t>().ReinterpretCast<int4b_t>(), a1_.Get<int8_t>().ReinterpretCast<int4b_t>(), load);
+#ifdef GLM_CHANNEL_STREAM_WEIGHTS
+    // A1 and UB must be free before a later call overwrites them.
+    SetFlag<HardEvent::MTE1_V>(EVENT_ID0);
+    WaitFlag<HardEvent::MTE1_V>(EVENT_ID0);
+#else
     PipeBarrier<PIPE_ALL>();
+#endif
   }
+#ifdef GLM_CHANNEL_STREAM_WEIGHTS
+  __aicore__ inline void PrefetchWeight(int64_t expert, int64_t tile, uint32_t k0, uint32_t buffer) {
+    WaitFlag<HardEvent::MTE1_MTE2>(buffer);
+    const int64_t offset = ((expert * (n_ / N) + tile) * (k_ / K) + k0 / K) * B_BYTES;
+    DataCopy(b1_.Get<int8_t>()[buffer * B_BYTES], codes_[offset], B_BYTES);
+    SetFlag<HardEvent::MTE2_MTE1>(buffer);
+  }
+#endif
   __aicore__ inline void Readback(int64_t row, uint32_t count, uint32_t productRows, int64_t expert, int64_t tile,
                                   uint32_t group) {
     const DataCopyParams copy{N / NZ_N, static_cast<uint16_t>(productRows / NZ_N), 0, 0};
     DataCopyEnhancedParams enhanced;
     enhanced.blockMode = BlockMode::BLOCK_MODE_MATRIX;
+#ifdef GLM_CHANNEL_STREAM_WEIGHTS
+    SetFlag<HardEvent::M_V>(EVENT_ID0);
+    WaitFlag<HardEvent::M_V>(EVENT_ID0);
+#endif
     DataCopy(raw_.Get<int32_t>(), c_.Get<int32_t>(), copy, enhanced);
     PipeBarrier<PIPE_ALL>();
     auto low = products_.Get<float>();
@@ -223,6 +304,11 @@ class Projection {
     PipeBarrier<PIPE_V>();
   }
   TPipe pipe_;
+#ifdef GLM_CHANNEL_TOKEN_PREFILL
+  TBuf<TPosition::VECCALC> tokenRowsUb_;
+  bool indirectRows_ = false;
+  uint32_t indirectStart_ = 0;
+#endif
   TBuf<TPosition::VECCALC> aUb_, raw_, indices_, products_, accum_, weights_, sx_, outputUb_;
 #ifdef GLM_CHANNEL_CACHE_SOURCE_ROWS
   TBuf<TPosition::VECCALC> sourceRows_;

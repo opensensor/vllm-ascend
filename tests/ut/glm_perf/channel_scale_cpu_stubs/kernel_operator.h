@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <vector>
 #include <cstring>
+#include <type_traits>
 #define __aicore__
 namespace AscendC {
 using half = float;
@@ -20,8 +21,14 @@ void PipeBarrier() {}
 template <class T>
 struct LocalTensor {
   T* data;
+  T GetValue(unsigned n) const { return data[n]; }
+  void SetValue(unsigned n, T value) { data[n] = value; }
   LocalTensor operator[](unsigned n) const { return {data + n}; }
 };
+template <class T>
+void Adds(LocalTensor<T> dst, LocalTensor<T> src, T value, unsigned count) {
+  for (unsigned i = 0; i < count; ++i) dst.data[i] = src.data[i] + value;
+}
 struct BinaryRepeatParams {
   unsigned d, a, b, dr, ar, br;
 };
@@ -50,12 +57,18 @@ inline void Mul(LocalTensor<float> d, LocalTensor<float> a, LocalTensor<float> b
                 BinaryRepeatParams p) {
   Binary<true>(d, a, b, mask, count, p);
 }
+inline const int32_t* auditRanks = nullptr;
+inline unsigned long gmRankReads = 0;
 template <class T>
 struct GlobalTensor {
   T* data = nullptr;
   void SetGlobalBuffer(T* pointer) { data = pointer; }
   GlobalTensor operator[](unsigned long n) const { return {data + n}; }
-  T GetValue(unsigned long n) const { return data[n]; }
+  T GetValue(unsigned long n) const {
+    if constexpr (std::is_same_v<T, int32_t>)
+      if (data == auditRanks) ++gmRankReads;
+    return data[n];
+  }
 };
 enum class TPosition { VECCALC };
 template <TPosition>

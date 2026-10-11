@@ -44,6 +44,9 @@ def build(
     fused_prefill=False,
     integer_reconstruct=False,
     cache_source_rows=False,
+    stream_weights=False,
+    token_prefill=False,
+    cache_prefill_routes=False,
 ):
     """Snapshot the admitted contract, compile kernels/bridge, and seal SHA provenance."""
     if reciprocal_quant and not identity_smoothing:
@@ -52,6 +55,10 @@ def build(
         raise ValueError("fused prefill requires UB gate/up fusion")
     if fused_decode and not fused_gate_up:
         raise ValueError("fused decode requires UB gate/up fusion")
+    if cache_prefill_routes and (not fused_prefill or token_prefill):
+        raise ValueError("prefill route cache requires bulk fused prefill")
+    if token_prefill and not fused_prefill:
+        raise ValueError("token prefill requires fused prefill")
     if cube_rows not in (32, 64):
         raise ValueError("native product rows must be 32 or 64")
     if type(version) is not int or version < 1:
@@ -75,6 +82,7 @@ def build(
         "glm_channel_broadcast.h",
         "glm_channel_integer.h",
         "glm_channel_row_cache.h",
+        "glm_channel_down_token.cpp",
         *[n + ".cpp" for n in names],
     )
     for name in (*sources, *HELPERS):
@@ -113,9 +121,15 @@ def build(
         options.append("-DGLM_CHANNEL_INTEGER_RECONSTRUCT")
     if cache_source_rows:
         options.append("-DGLM_CHANNEL_CACHE_SOURCE_ROWS")
+    if stream_weights:
+        options.append("-DGLM_CHANNEL_STREAM_WEIGHTS")
+    if cache_prefill_routes:
+        options.append("-DGLM_CHANNEL_CACHE_PREFILL_ROUTES")
     for name in names:
+        source_name = "glm_channel_down_token" if token_prefill and name == "glm_channel_down_prefill" else name
         subprocess.run(
-            [str(compiler), str(snapshot / (name + ".cpp")), str(destination / (name + ".bin")), *options], check=True
+            [str(compiler), str(snapshot / (source_name + ".cpp")), str(destination / (name + ".bin")), *options],
+            check=True,
         )
     npu_root = Path(spec.origin).parent
     includes = [*include_paths(), str(npu_root / "include"), str(cann_root / "include"), sysconfig.get_path("include")]
@@ -155,11 +169,18 @@ def build(
         "fused_gate_up": fused_gate_up,
         "fused_decode": fused_decode,
         "fused_prefill": fused_prefill,
-        "abi_version": 3,
+        "abi_version": 4 if token_prefill else 3,
         "identity_smoothing": identity_smoothing,
         "reciprocal_quant": reciprocal_quant,
         "integer_reconstruct": integer_reconstruct,
         "cache_source_rows": cache_source_rows,
+        "stream_weights": stream_weights,
+        "token_prefill": token_prefill,
+        "cache_prefill_routes": cache_prefill_routes,
+        "kernel_sources": {
+            n: ("glm_channel_down_token.cpp" if token_prefill and n == "glm_channel_down_prefill" else n + ".cpp")
+            for n in names
+        },
         "complete": True,
         "layout": LAYOUT,
         "namespace": namespace,
@@ -188,6 +209,9 @@ def main():
     parser.add_argument("--fused-prefill", action="store_true")
     parser.add_argument("--integer-reconstruct", action="store_true")
     parser.add_argument("--cache-source-rows", action="store_true")
+    parser.add_argument("--stream-weights", action="store_true")
+    parser.add_argument("--token-prefill", action="store_true")
+    parser.add_argument("--cache-prefill-routes", action="store_true")
     args = parser.parse_args()
     print(
         json.dumps(
@@ -203,6 +227,9 @@ def main():
                 args.fused_prefill,
                 args.integer_reconstruct,
                 args.cache_source_rows,
+                args.stream_weights,
+                args.token_prefill,
+                args.cache_prefill_routes,
             ),
             indent=2,
         )

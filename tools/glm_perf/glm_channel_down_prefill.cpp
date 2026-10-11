@@ -17,6 +17,17 @@ class FusedDownPrefill : public Projection {
     outputFloat_.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(output));
     pipe_.InitBuffer(combine_, 2 * N * sizeof(float));
     pipe_.InitBuffer(factors_, (LANES + LANES * LANES) * sizeof(float));
+#ifdef GLM_CHANNEL_CACHE_PREFILL_ROUTES
+    constexpr uint32_t CACHE_TOKENS = 640;
+    pipe_.InitBuffer(rankCache_, CACHE_TOKENS * LANES * sizeof(int32_t));
+    pipe_.InitBuffer(weightCache_, CACHE_TOKENS * LANES * sizeof(float));
+    const bool cachedRoutes = tokens_ <= CACHE_TOKENS && topK_ == LANES;
+    if (cachedRoutes) {
+      DataCopy(rankCache_.Get<int32_t>(), ranks_, tokens_ * LANES);
+      DataCopy(weightCache_.Get<float>(), routeWeights_, tokens_ * LANES);
+      PipeBarrier<PIPE_ALL>();
+    }
+#endif
     const uint32_t maxRows = bits_ == 8 ? ROWS / 2 : ROWS;
     const int64_t valid = ends_.GetValue(experts_ - 1);
     const int64_t tileBase = GetBlockIdx() * tokens_ * topK_ * N;
@@ -40,12 +51,25 @@ class FusedDownPrefill : public Projection {
         auto value = combine_.Get<float>();
         auto accum = value[N];
         Duplicate(accum, 0.0f, N);
-        DataCopy(factors_.Get<float>(), routeWeights_[token * LANES], LANES);
-        PipeBarrier<PIPE_ALL>();
-        Brcb(factors_.Get<float>()[LANES], factors_.Get<float>(), 1, {1, LANES});
+#ifdef GLM_CHANNEL_CACHE_PREFILL_ROUTES
+        if (cachedRoutes) {
+          Brcb(factors_.Get<float>()[LANES], weightCache_.Get<float>()[token * LANES], 1, {1, LANES});
+        } else {
+#endif
+          DataCopy(factors_.Get<float>(), routeWeights_[token * LANES], LANES);
+          PipeBarrier<PIPE_ALL>();
+          Brcb(factors_.Get<float>()[LANES], factors_.Get<float>(), 1, {1, LANES});
+#ifdef GLM_CHANNEL_CACHE_PREFILL_ROUTES
+        }
+#endif
         PipeBarrier<PIPE_V>();
         for (int64_t slot = 0; slot < topK_; ++slot) {
+#ifdef GLM_CHANNEL_CACHE_PREFILL_ROUTES
+          const int64_t row = cachedRoutes ? rankCache_.Get<int32_t>().GetValue(token * LANES + slot)
+                                           : ranks_.GetValue(token * topK_ + slot);
+#else
           const int64_t row = ranks_.GetValue(token * topK_ + slot);
+#endif
           if (row < 0 || row >= valid) continue;
           DataCopy(outputUb_.Get<half>(), tiles_[tileBase + row * N], N);
           PipeBarrier<PIPE_ALL>();
@@ -65,6 +89,9 @@ class FusedDownPrefill : public Projection {
 
  private:
   TBuf<TPosition::VECCALC> combine_, factors_;
+#ifdef GLM_CHANNEL_CACHE_PREFILL_ROUTES
+  TBuf<TPosition::VECCALC> rankCache_, weightCache_;
+#endif
   GlobalTensor<half> tiles_;
   GlobalTensor<int32_t> ranks_;
   GlobalTensor<float> routeWeights_, outputFloat_;

@@ -26,9 +26,19 @@ class Projection {
   void ProjectBlock(long row, unsigned count, long expert, long tile) {
     for (unsigned m = 0; m < count; ++m)
       for (unsigned c = 0; c < N; ++c)
-        outputUb_.Get<half>().data[m * N + c] = projection_value(row + m, expert, tile, c);
+        outputUb_.Get<half>().data[m * N + c] = projection_value(
+#ifdef GLM_CHANNEL_TOKEN_PREFILL
+            indirectRows_ ? tokenRowsUb_.Get<int32_t>().GetValue(indirectStart_ + m) :
+#endif
+                          row + m,
+            expert, tile, c);
   }
   TPipe pipe_;
+#ifdef GLM_CHANNEL_TOKEN_PREFILL
+  TBuf<TPosition::VECCALC> tokenRowsUb_;
+  bool indirectRows_ = false;
+  unsigned indirectStart_ = 0;
+#endif
   TBuf<TPosition::VECCALC> outputUb_;
   GlobalTensor<int32_t> ends_, sortedKeys_;
   GlobalTensor<int64_t> order_;

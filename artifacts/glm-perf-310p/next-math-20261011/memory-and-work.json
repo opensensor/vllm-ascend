@@ -1,0 +1,85 @@
+{
+  "qualification": "offline counts and reservations; no NPU execution or latency measurement",
+  "on_chip_bytes": {
+    "stream_extra_ub": 0,
+    "stream_l1": 40960,
+    "stream_l0b": 32768,
+    "bulk_route_cache_ub": 200992,
+    "token_down_ub": 195328,
+    "optional_source_row_cache_extra": 256
+  },
+  "routes": {
+    "uniform": {
+      "valid_routes": 2573,
+      "bulk_projection_blocks": 144,
+      "token_projection_blocks": 2090,
+      "bulk_packed_weight_bytes": 603979776,
+      "token_packed_weight_bytes": 8766095360,
+      "weight_reload_ratio": 14.51388888888889,
+      "removed_route_write_read_bytes": 42156032
+    },
+    "skewed": {
+      "valid_routes": 5120,
+      "bulk_projection_blocks": 160,
+      "token_projection_blocks": 320,
+      "bulk_packed_weight_bytes": 671088640,
+      "token_packed_weight_bytes": 1342177280,
+      "weight_reload_ratio": 2.0,
+      "removed_route_write_read_bytes": 83886080
+    }
+  },
+  "profiles": {
+    "tp2": {
+      "router_payload_bytes": 61440,
+      "router_total_storage_bytes": 184320,
+      "indexer_head_stages": [
+        {
+          "local_heads": 16,
+          "score_rows": 640,
+          "prepared_weight_bytes": 32243712,
+          "score_scratch_bound_bytes": 144080896,
+          "required_bytes": 176324608,
+          "numerical_contract": "FP32 partial sums then TP reduction; not bitwise full-head sum"
+        },
+        {
+          "local_heads": 16,
+          "score_rows": 640,
+          "prepared_weight_bytes": 42991616,
+          "score_scratch_bound_bytes": 144080896,
+          "required_bytes": 187072512,
+          "numerical_contract": "FP32 partial sums then TP reduction; not bitwise full-head sum"
+        },
+        {
+          "local_heads": 16,
+          "score_rows": 640,
+          "prepared_weight_bytes": 42991616,
+          "score_scratch_bound_bytes": 144080896,
+          "required_bytes": 187072512,
+          "numerical_contract": "FP32 partial sums then TP reduction; not bitwise full-head sum"
+        }
+      ]
+    },
+    "tp4": {
+      "router_payload_bytes": 61440,
+      "router_total_storage_bytes": 307200,
+      "indexer_head_stages": [
+        {
+          "local_heads": 8,
+          "score_rows": 640,
+          "prepared_weight_bytes": 82182144,
+          "score_scratch_bound_bytes": 81084416,
+          "required_bytes": 163266560,
+          "numerical_contract": "FP32 partial sums then TP reduction; not bitwise full-head sum"
+        }
+      ]
+    }
+  },
+  "prefill_scratch_bytes": {
+    "rows17-bulk": 670208,
+    "rows17-token": 395778,
+    "rows640-bulk": 25231360,
+    "rows640-token": 14827522,
+    "rows1280-bulk": 50462720,
+    "rows1280-token": 29655042
+  }
+}

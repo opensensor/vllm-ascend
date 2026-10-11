@@ -14,3 +14,4 @@ def pytest_addoption(parser):
     owner.addoption("--glm-indexer-owner-tp-size", type=int, choices=(2, 4), default=2)
     owner.addoption("--glm-indexer-owner-rank", type=int, default=1)
     owner.addoption("--glm-indexer-overlap-prefill", action="store_true")
+    group.addoption("--glm-next-math-cpu-transport", action="store_true", help="Run synthetic Gloo TP2/TP4 gates")

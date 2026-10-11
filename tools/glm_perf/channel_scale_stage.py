@@ -67,6 +67,7 @@ def plan_stage(
     fused_decode=False,
     identity_smoothing=False,
     fused_prefill=False,
+    token_prefill=False,
 ):
     """Fail before native allocation if coverage, topology or geometry is incomplete."""
     if decode_sizes is None:
@@ -114,6 +115,7 @@ def plan_stage(
             fused_gate_up,
             fused_decode,
             fused_prefill,
+            token_prefill,
         )
         h, i = current.hidden, current.intermediate
         expected_bytes = (
@@ -178,6 +180,7 @@ def prepare_stage(
         fused_decode=manifest.get("fused_decode", False),
         identity_smoothing=manifest.get("identity_smoothing", False),
         fused_prefill=manifest.get("fused_prefill", False),
+        token_prefill=manifest.get("token_prefill", False),
     )
     if type(device_budget_bytes) is not int or ledger["candidate_peak_bytes"] > device_budget_bytes:
         raise ValueError("new MoE stage exceeds explicit device reservation before allocation")

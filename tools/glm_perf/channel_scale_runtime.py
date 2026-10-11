@@ -39,17 +39,21 @@ class Geometry:
     fused_gate_up: bool = False
     fused_decode: bool = False
     fused_prefill: bool = False
+    token_prefill: bool = False
 
     def __post_init__(self):
         if (
             any(
                 type(v) is not int
                 for k, v in self.__dict__.items()
-                if k not in ("fused_gate_up", "fused_decode", "fused_prefill")
+                if k not in ("fused_gate_up", "fused_decode", "fused_prefill", "token_prefill")
             )
             or type(self.fused_gate_up) is not bool
             or type(self.fused_decode) is not bool
             or type(self.fused_prefill) is not bool
+            or type(self.token_prefill) is not bool
+            or self.token_prefill
+            and not self.fused_prefill
         ):
             raise ValueError("channel-scale geometry requires integers")
         if not 1 <= self.experts <= 288 or any(
@@ -66,6 +70,8 @@ class Geometry:
 def scratch_shapes(tokens, top_k, geometry, bits):
     if type(tokens) is not int or tokens < 1 or type(top_k) is not int or not 1 <= top_k <= LANES or bits not in (4, 8):
         raise ValueError("invalid channel-scale scratch geometry")
+    if geometry.token_prefill and top_k != LANES:
+        raise ValueError("token prefill requires eight route slots")
     rows, h, i = tokens * top_k, geometry.hidden, geometry.intermediate
     shapes = {
         "input_low": ((tokens, h // 2), torch.int8),
@@ -84,7 +90,14 @@ def scratch_shapes(tokens, top_k, geometry, bits):
         del shapes["gate_up"]
     if geometry.fused_prefill and tokens > DECODE_ROWS:
         del shapes["routed"]
-        shapes["route_tiles"] = ((min(CORES, h // 128), rows, 128), torch.float16)
+        if geometry.token_prefill:
+            windows = (tokens + DECODE_ROWS - 1) // DECODE_ROWS
+            shapes["token_rows"] = ((windows, DECODE_ROWS * LANES), torch.float32)
+            shapes["token_sorted_rows"] = ((windows, DECODE_ROWS * LANES), torch.int32)
+            shapes["token_positions"] = ((windows, DECODE_ROWS * LANES), torch.int64)
+            shapes["route_tiles"] = ((1,), torch.float16)
+        else:
+            shapes["route_tiles"] = ((min(CORES, h // 128), rows, 128), torch.float16)
     if geometry.fused_decode and tokens <= DECODE_ROWS:
         del shapes["routed"]
     return shapes
@@ -141,8 +154,8 @@ class ScratchArena:
 def verify_bundle(root):
     root = Path(root)
     manifest = json.loads((root / "provenance.json").read_text())
-    if manifest.get("abi_version") != 3:
-        raise ValueError("requires sorted-key channel-scale ABI version 3")
+    if manifest.get("abi_version") not in (3, 4):
+        raise ValueError("requires channel-scale ABI 3 or token-window ABI 4")
     if manifest.get("complete") is not True or manifest.get("layout") != LAYOUT:
         raise ValueError("requires a complete new channel-scale kernel bundle")
     namespace = manifest.get("namespace")
@@ -178,6 +191,32 @@ def verify_bundle(root):
         "-DGLM_CHANNEL_CACHE_SOURCE_ROWS" in manifest.get("compiler_options", [])
     ):
         raise ValueError("source row cache marker differs from compiled contract")
+    stream = manifest.get("stream_weights", False)
+    if type(stream) is not bool or stream != ("-DGLM_CHANNEL_STREAM_WEIGHTS" in manifest.get("compiler_options", [])):
+        raise ValueError("streamed weight marker differs from compiled contract")
+    cached = manifest.get("cache_prefill_routes", False)
+    if (
+        type(cached) is not bool
+        or cached != ("-DGLM_CHANNEL_CACHE_PREFILL_ROUTES" in manifest.get("compiler_options", []))
+        or cached
+        and (not manifest.get("fused_prefill") or manifest.get("token_prefill"))
+    ):
+        raise ValueError("prefill route cache marker differs from compiled contract")
+    token = manifest.get("token_prefill", False)
+    if token != (manifest.get("abi_version") == 4):
+        raise ValueError("token prefill requires its distinct routing-metadata ABI 4")
+    mapped = manifest.get("kernel_sources", {}).get("glm_channel_down_prefill")
+    if not token and mapped not in (None, "glm_channel_down_prefill.cpp"):
+        raise ValueError("bulk prefill cannot use the token-window kernel source")
+    if (
+        type(token) is not bool
+        or token
+        and (
+            not manifest.get("fused_prefill")
+            or manifest.get("kernel_sources", {}).get("glm_channel_down_prefill") != "glm_channel_down_token.cpp"
+        )
+    ):
+        raise ValueError("token prefill marker lacks its compiled source")
     kernels = (*KERNEL_NAMES, "glm_channel_gate_up") if manifest.get("fused_gate_up") else KERNEL_NAMES
     if manifest.get("fused_decode"):
         kernels = (*kernels, "glm_channel_down_decode")
@@ -241,6 +280,9 @@ class NativeChannelScaleMoE:
             raise ValueError("identity kernel requires exactly unit stored diagonals")
         self.device = torch.device(device)
         self.fused_prefill = manifest.get("fused_prefill", False)
+        self.token_prefill = manifest.get("token_prefill", False)
+        if self.token_prefill and top_k != LANES:
+            raise ValueError("token prefill currently requires eight route slots")
         self.fused_decode = manifest.get("fused_decode", False)
         self.fused_gate_up = manifest.get("fused_gate_up", False)
         if self.fused_gate_up and down.group_size != 256:
@@ -254,6 +296,7 @@ class NativeChannelScaleMoE:
             self.fused_gate_up,
             self.fused_decode,
             self.fused_prefill,
+            self.token_prefill,
         )
         self.offset, self.top_k, self.max_tokens = expert_offset, top_k, max_tokens
         self.decode_bits, self.prefill_bits, self.arena = decode_bits, prefill_bits, arena
@@ -311,9 +354,23 @@ class NativeChannelScaleMoE:
         if not self.fused_decode or tokens > DECODE_ROWS:
             inverse = torch.empty_like(self.positions[: ids.numel()]).scatter_(0, order, self.positions[: ids.numel()])
             # Preserve original top-k order. The old sorted-rank helper reorders slots.
-            inverse = inverse.to(torch.int32).contiguous()
+            if not (self.token_prefill and tokens > DECODE_ROWS):
+                inverse = inverse.to(torch.int32).contiguous()
         bits = self.decode_bits if tokens <= DECODE_ROWS else self.prefill_bits
         scratch = self.arena.get(tokens, self.top_k, self.geometry, bits, self.device)
+        token_order, token_positions = order, None
+        if self.token_prefill and tokens > DECODE_ROWS:
+            padded = torch.nn.functional.pad(
+                inverse, (0, scratch["token_rows"].numel() - inverse.numel()), value=tokens * self.top_k
+            )
+            torch.sort(
+                padded.reshape_as(scratch["token_rows"]),
+                dim=1,
+                stable=True,
+                out=(scratch["token_rows"], scratch["token_positions"]),
+            )
+            scratch["token_sorted_rows"].copy_(scratch["token_rows"])
+            token_order, token_positions = scratch["token_sorted_rows"], scratch["token_positions"]
         headers = self.headers[tokens - 1]
         quant = self.kernels["glm_channel_quantize"]
         projection = self.kernels["glm_channel_projection"]
@@ -421,11 +478,11 @@ class NativeChannelScaleMoE:
                     scratch["hidden_scales"],
                     *self.down[:3],
                     ends,
-                    order,
+                    token_order,
                     sorted_keys,
                     self.product_offsets,
                     scratch["route_tiles"],
-                    inverse,
+                    token_positions if self.token_prefill else inverse,
                     weight_lanes,
                     output,
                     headers[3],

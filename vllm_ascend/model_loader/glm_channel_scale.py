@@ -15,13 +15,21 @@ from vllm.model_executor.model_loader.default_loader import DefaultModelLoader
 from tools.glm_perf.channel_scale_checkpoint import file_sha256
 from tools.glm_perf.channel_scale_stage import prepare_stage
 from tools.glm_perf.indexer_bundle import install as install_indexer_bundle
+from tools.glm_perf.indexer_heads import HEAD_OPTIONS
+from tools.glm_perf.indexer_heads import install as install_indexer_heads
+from tools.glm_perf.indexer_heads import plan_install as plan_indexer_heads
+from tools.glm_perf.indexer_heads import read_options as read_head_options
 from tools.glm_perf.indexer_owner import OWNER_OPTIONS, plan_install, read_options
 from tools.glm_perf.indexer_owner import install as install_indexer_owner
 from tools.glm_perf.native_checkpoint import INDEX, MANIFEST, selected_weights
+from tools.glm_perf.router_owner import ROUTER_OPTIONS
+from tools.glm_perf.router_owner import install as install_router_owner
+from tools.glm_perf.router_owner import plan_install as plan_router_owner
+from tools.glm_perf.router_owner import read_options as read_router_options
 
 LOAD_FORMAT = "glm_channel_scale_candidate"
 REQUIRED_OPTIONS = ("channel_overlay", "channel_bundle", "channel_host_budget_bytes", "channel_device_budget_bytes")
-OPTIONAL_OPTIONS = ("channel_decode_bits", "channel_prefill_bits", *OWNER_OPTIONS)
+OPTIONAL_OPTIONS = ("channel_decode_bits", "channel_prefill_bits", *OWNER_OPTIONS, *ROUTER_OPTIONS, *HEAD_OPTIONS)
 
 
 @register_model_loader(LOAD_FORMAT)
@@ -40,6 +48,8 @@ class GlmChannelScaleLoader(DefaultModelLoader):
         if any(key not in extra for key in REQUIRED_OPTIONS) or set(extra) - set(REQUIRED_OPTIONS + OPTIONAL_OPTIONS):
             raise ValueError("channel-scale loader requires explicit overlay, bundle and CPU/device reservations")
         self.indexer_owner_options = read_options(extra)
+        self.router_owner_options = read_router_options(extra)
+        self.indexer_head_options = read_head_options(extra)
         self.channel_options = extra
         self.folder = None
         super().__init__(dataclasses.replace(load_config, load_format="safetensors", model_loader_extra_config={}))
@@ -56,6 +66,10 @@ class GlmChannelScaleLoader(DefaultModelLoader):
             raise ValueError("candidate requires the existing composed GLM text adapter")
         if self.indexer_owner_options is not None:
             plan_install(model, **self.indexer_owner_options)
+        if self.router_owner_options is not None:
+            plan_router_owner(model, **self.router_owner_options)
+        if self.indexer_head_options is not None:
+            plan_indexer_heads(model, **self.indexer_head_options)
         indexer_root = None
         base_manifest_path = self.folder / MANIFEST
         if base_manifest_path.exists():
@@ -95,6 +109,10 @@ class GlmChannelScaleLoader(DefaultModelLoader):
             report["aicore_bf16_indexers"] = install_indexer_bundle(model, indexer_root)
         if self.indexer_owner_options is not None:
             report["indexer_owner"] = install_indexer_owner(model, **self.indexer_owner_options)
+        if self.router_owner_options is not None:
+            report["router_owner"] = install_router_owner(model, **self.router_owner_options)
+        if self.indexer_head_options is not None:
+            report["indexer_heads"] = install_indexer_heads(model, **self.indexer_head_options)
         logger.info("GLM channel-scale OFFLINE CANDIDATE loaded: %s", report)
 
     def _get_weights_iterator(self, source):

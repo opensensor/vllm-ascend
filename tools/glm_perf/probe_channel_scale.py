@@ -40,6 +40,7 @@ def plan(overlay, bundle, layer, first, stop, tokens, decode_bits=8, prefill_bit
         manifest.get("fused_gate_up", False),
         manifest.get("fused_decode", False),
         manifest.get("fused_prefill", False),
+        manifest.get("token_prefill", False),
     )
     return (
         gate,
@@ -59,6 +60,9 @@ def plan(overlay, bundle, layer, first, stop, tokens, decode_bits=8, prefill_bit
             "reciprocal_quant": manifest.get("reciprocal_quant", False),
             "integer_reconstruct": manifest.get("integer_reconstruct", False),
             "cache_source_rows": manifest.get("cache_source_rows", False),
+            "stream_weights": manifest.get("stream_weights", False),
+            "cache_prefill_routes": manifest.get("cache_prefill_routes", False),
+            "token_prefill": manifest.get("token_prefill", False),
             "status": "CPU admission only",
         },
     )
