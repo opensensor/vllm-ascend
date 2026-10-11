@@ -3,6 +3,10 @@
 October 11, 2026. See the [research review](../../docs/source/developer_guide/Design_Documents/glm_sidecard_research.md)
 and [tooling runbook](../../tools/sidecard/README.md).
 
+The current service uses one Ascend card plus the RTX. See the
+[one-card hardware qualification](one-card/README.md); the earlier TP4
+deployments in this directory are historical.
+
 | Artifact | Scope |
 | --- | --- |
 | [inventory.json](inventory.json) | Read-only hardware/host commands over SSH; device discovery, not inference validation |

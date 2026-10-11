@@ -130,7 +130,7 @@ def launch(
         receipt["config_sha256"] != digest_file(root / "cuda-worker.json")
         or receipt["checkpoint_sha256"] != config["checkpoint_sha256"]
         or receipt["resident_layers"] != 42
-        or receipt["resident_experts"] != 3024
+        or receipt["resident_experts"] != (6048 if config.get("one_card", False) else 3024)
     ):
         raise ValueError("CUDA preparation does not match service admission")
     validate_glm_config(json.loads((Path(config["checkpoint_root"]) / "config.json").read_bytes()))
@@ -140,6 +140,12 @@ def launch(
     saved = json.loads((root / "previous-service.json").read_bytes())
     environment = dict(os.environ)
     environment.update(json.loads((root / "runtime-environment.json").read_bytes()))
+    if config.get("one_card", False):
+        from .one_card import validate_device_pair
+
+        devices = validate_device_pair(tuple(config.get("npu_devices", (0, 1))))
+        if environment.get("ASCEND_RT_VISIBLE_DEVICES") != ",".join(map(str, devices)):
+            raise ValueError("one-card runtime visibility differs from the admitted physical NPU pair")
     environment["PYTHONPATH"] = str(source) + ":" + environment.get("PYTHONPATH", "")
     command = serving_command(
         saved["command"],

@@ -20,6 +20,7 @@ class GlmDeploymentProfile:
     default_expert_bits: int
     w3_layers: tuple[int, ...]
     mtp_tokens: int
+    native_expert_partitions: int | None = None
 
     @property
     def chips(self):
@@ -27,6 +28,8 @@ class GlmDeploymentProfile:
 
     @property
     def expert_partition_size(self):
+        if self.native_expert_partitions is not None:
+            return self.native_expert_partitions
         # Experts use the stage's TP group; total workers is NOT this field.
         return self.tensor_parallel_size
 
@@ -156,7 +159,8 @@ def profile(cards):
 
 
 def validate_profile(name, *, tensor_parallel_size, pipeline_parallel_size, mtp_tokens, layer_bits=None):
-    selected = next((profile(cards) for cards in (2, 3) if profile(cards).name == name), None)
+    candidates = (profile(2), profile(3), one_card_sidecard_profile())
+    selected = next((candidate for candidate in candidates if candidate.name == name), None)
     if selected is None:
         raise ValueError("unknown GLM deployment profile")
     if (tensor_parallel_size, pipeline_parallel_size, mtp_tokens) != (
@@ -177,6 +181,12 @@ def validate_profile(name, *, tensor_parallel_size, pipeline_parallel_size, mtp_
             if bits != expected:
                 raise ValueError("checkpoint precision differs from deployment profile")
     return selected
+
+
+def one_card_sidecard_profile():
+    # Four native 72-expert partitions are split between two NPU banks and
+    # two CUDA banks. The explicit sidecard loader hook owns that placement.
+    return GlmDeploymentProfile("one-card-sidecard-w2", 1, 2, 1, 2, SELECTIVE_W3_LAYERS, 0, 4)
 
 
 def main():

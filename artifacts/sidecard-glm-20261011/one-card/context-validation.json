@@ -1,0 +1,79 @@
+{
+  "passed": true,
+  "full_context_prefill_completed": false,
+  "long_context_quality_validated": false,
+  "limits": {
+    "context": 260352,
+    "input": 228352,
+    "output": 32000
+  },
+  "kilo_output_budget_generation": {
+    "elapsed_seconds": 2.84857264799939,
+    "status": 200,
+    "response": {
+      "id": "chatcmpl-85afa17aba8219a0",
+      "object": "chat.completion",
+      "created": 1791755433,
+      "model": "glm-sidecard",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "4",
+            "refusal": null,
+            "annotations": null,
+            "audio": null,
+            "function_call": null,
+            "reasoning": null
+          },
+          "logprobs": null,
+          "finish_reason": "stop",
+          "stop_reason": 154827,
+          "token_ids": null,
+          "routed_experts": null
+        }
+      ],
+      "service_tier": null,
+      "system_fingerprint": "vllm-0.1.dev1+g3ab5dda29-tp2-97fe98d4",
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "prompt_logprobs": null,
+      "prompt_token_ids": null,
+      "prompt_text": null,
+      "kv_transfer_params": null,
+      "ec_transfer_params": null,
+      "metrics": null
+    }
+  },
+  "near_capacity_admission": {
+    "status": 200,
+    "prompt_tokens": 260351,
+    "max_tokens": 1,
+    "elapsed_seconds": 0.05735187800019048,
+    "disconnected_after_headers": true,
+    "generation_completed": false
+  },
+  "over_context_rejected": {
+    "status": 400,
+    "response": {
+      "error": {
+        "message": "max_tokens=260353 cannot be greater than max_model_len=max_total_tokens=260352. Please request fewer output tokens. (parameter=max_tokens, value=260353)",
+        "type": "BadRequestError",
+        "param": "max_tokens",
+        "code": 400
+      }
+    }
+  }
+}

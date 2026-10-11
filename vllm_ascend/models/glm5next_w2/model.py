@@ -592,19 +592,12 @@ def _place_streamed_expert(
             return mapping.block
         raise KeyError(f"{name}: no W2 MoE bank for block {mapping.block!r} (dense/non-MoE layer?)")
     attr = _SLOT_KIND_TO_ATTR[(mapping.slot, mapping.kind)]
-    # Expert-parallel: the 288 2-bit experts do not fit replicated on every 310P
-    # chip, so each rank owns only a contiguous slice [lo, hi) (same tiling the
-    # routed forward masks to -- see moe.ep_expert_range). Non-local experts are
-    # neither moved to NPU nor stored: their bank slot stays the None-initialised
-    # placeholder and is never indexed (the router selection is masked to local
-    # ids), so they cost no HBM.
-    from .moe import _ep_rank_size, ep_expert_range
-
-    ep_rank, ep_size = _ep_rank_size()
-    if ep_size > 1:
-        lo, hi = ep_expert_range(ep_rank, ep_size, geometry["n_routed_experts"])
-        if not (lo <= mapping.expert_id < hi):
-            return mapping.block
+    # The bank is the authoritative resident range. Its default range follows
+    # TP, while an explicitly admitted sidecard can assign a smaller range.
+    lo = bank.local_expert_offset
+    hi = lo + bank.num_local_experts
+    if not (lo <= mapping.expert_id < hi):
+        return mapping.block
     expert = bank[mapping.expert_id]
     if expert.offload_to_cpu:
         # Keep the packed bank on host and stage only router-selected experts at

@@ -9,10 +9,11 @@ Only one layer of packed CPU weights is staged at a time.
 import ctypes
 import json
 import time
+from contextlib import ExitStack
 from pathlib import Path
 
 from .checkpoint import read_header
-from .device_backend import CudaOracle, compact_routes, owned_keys
+from .device_backend import CUDA_NIBBLE_PLANES, CUDA_ROW_MAJOR, CUDA_WORD_PLANES, CudaOracle, compact_routes, owned_keys
 from .native_expert_probe import NATIVE_LAYOUT, SCALE_LAYOUT, contained, digest_file
 from .placement import validate_glm_config
 from .reference import ExpertReply
@@ -22,9 +23,12 @@ WIDTH = 4096
 INTERMEDIATE = 2048
 MAIN_LAYERS = range(3, 45)
 MAX_RESIDENT_EXPERTS = 72
-MAX_RESIDENT_ROUTES = 256
+MAX_PACKED_RESIDENT_EXPERTS = 144
+MAX_RESIDENT_ROUTES = 5120
+MAX_RESIDENT_TOKENS = 640
 CUDA_RESERVE_BYTES = 4 * 1024**3
-SCRATCH_ALLOWANCE_BYTES = 16 * 1024**2
+SCRATCH_ALLOWANCE_BYTES = 256 * 1024**2
+PACKED_STAGING_ALLOWANCE_BYTES = MAX_PACKED_RESIDENT_EXPERTS * 2 * INTERMEDIATE * WIDTH // 2
 EXPERT_UNPACKED_BYTES = 3 * WIDTH * INTERMEDIATE
 EXPERT_SCALE_BYTES = 3 * (WIDTH // 32) * (INTERMEDIATE // 32) * 2
 RESIDENT_PREPARE_THREADS = 8
@@ -133,24 +137,30 @@ class NativeResidentPlan:
         torch.set_num_threads(RESIDENT_PREPARE_THREADS)
         for layer, experts in self.by_layer.items():
             parts = []
-            for expert in experts:
-                values = {}
-                for projection in ("gate", "up", "down"):
-                    for kind in ("codes", "scale"):
-                        short = f"{projection}_proj_{kind}"
-                        name = f"model.language_model.layers.{layer}.mlp.experts.{expert}.{short}"
-                        with safe_open(
-                            str(contained(self.root, self.index[name])), framework="pt", device="cpu"
-                        ) as handle:
-                            values[short] = handle.get_tensor(name).clone()
-                parts.append(
-                    (
-                        torch.cat((values["gate_proj_codes"], values["up_proj_codes"]), 0),
-                        torch.cat((values["gate_proj_scale"], values["up_proj_scale"]), 0),
-                        values["down_proj_codes"],
-                        values["down_proj_scale"],
+            # Large scale-shard headers contain thousands of tensors. Parse
+            # each file once per layer rather than once per expert tensor.
+            with ExitStack() as stack:
+                handles = {}
+                for expert in experts:
+                    values = {}
+                    for projection in ("gate", "up", "down"):
+                        for kind in ("codes", "scale"):
+                            short = f"{projection}_proj_{kind}"
+                            name = f"model.language_model.layers.{layer}.mlp.experts.{expert}.{short}"
+                            filename = self.index[name]
+                            if filename not in handles:
+                                handles[filename] = stack.enter_context(
+                                    safe_open(str(contained(self.root, filename)), framework="pt", device="cpu")
+                                )
+                            values[short] = handles[filename].get_tensor(name).clone()
+                    parts.append(
+                        (
+                            torch.cat((values["gate_proj_codes"], values["up_proj_codes"]), 0),
+                            torch.cat((values["gate_proj_scale"], values["up_proj_scale"]), 0),
+                            values["down_proj_codes"],
+                            values["down_proj_scale"],
+                        )
                     )
-                )
             tensors = tuple(torch.stack(rows).contiguous() for rows in zip(*parts, strict=True))
             del parts, values
             self.check_unchanged()
@@ -162,31 +172,47 @@ class CudaResidentBackend:
     def __init__(self, specification, owner, placement, identity, limits):
         fields = {"checkpoint_root", "library", "library_sha256", "cuda_runtime", "cuda_memory_budget_bytes"}
         if (
-            set(specification) != fields
+            not fields
+            <= set(specification)
+            <= fields | {"weight_layout", "cache_root", "cache_manifest_sha256", "reply_fp16", "partial_reduce"}
+            or specification.get("weight_layout", CUDA_ROW_MAJOR)
+            not in (CUDA_ROW_MAJOR, CUDA_WORD_PLANES, CUDA_NIBBLE_PLANES)
+            or ("cache_root" in specification) != ("cache_manifest_sha256" in specification)
+            or type(specification.get("reply_fp16", False)) is not bool
+            or type(specification.get("partial_reduce", False)) is not bool
+            or (specification.get("partial_reduce", False) and specification.get("reply_fp16", False))
             or owner != "cuda:0"
             or limits.hidden_width != WIDTH
             or limits.max_routes > MAX_RESIDENT_ROUTES
-            or limits.max_tokens > 32
+            or limits.max_tokens > MAX_RESIDENT_TOKENS
             or type(specification["cuda_memory_budget_bytes"]) is not int
             or specification["cuda_memory_budget_bytes"] <= 0
         ):
             raise ValueError("invalid resident CUDA specification")
         keys = owned_keys(placement, owner)
+        max_experts = (
+            MAX_PACKED_RESIDENT_EXPERTS
+            if specification.get("weight_layout") == CUDA_NIBBLE_PLANES
+            else MAX_RESIDENT_EXPERTS
+        )
         if not keys or any(
-            sum(key_layer == layer for key_layer, _ in keys) > MAX_RESIDENT_EXPERTS
-            for layer in {layer for layer, _ in keys}
+            sum(key_layer == layer for key_layer, _ in keys) > max_experts for layer in {layer for layer, _ in keys}
         ):
-            raise ValueError("resident CUDA partition exceeds 72 experts per main layer")
+            raise ValueError("resident CUDA partition exceeds the admitted experts per main layer")
         self.keys, self.specification, self.identity, self.limits = keys, dict(specification), identity, limits
         self.cuda, self.plan = None, None
         self.metrics = {"owner": owner, "requests": 0, "routes": 0, "compute_total_ms": 0.0, "compute_max_ms": 0.0}
 
     def prepare(self):
         self.close()
+        started = time.perf_counter()
         self.plan = NativeResidentPlan(
             self.specification["checkpoint_root"], self.keys, self.identity.checkpoint_sha256
         )
         required = self.plan.required_cuda_bytes + SCRATCH_ALLOWANCE_BYTES
+        if self.specification.get("weight_layout") == CUDA_NIBBLE_PLANES:
+            required -= len(self.keys) * EXPERT_UNPACKED_BYTES // 2
+            required += PACKED_STAGING_ALLOWANCE_BYTES
         budget = self.specification["cuda_memory_budget_bytes"]
         if required > budget:
             raise ValueError("resident CUDA plan exceeds configured byte budget")
@@ -203,9 +229,24 @@ class CudaResidentBackend:
         print(
             json.dumps({"kind": "resident_admission", "required_bytes": required, "free_bytes": free.value}), flush=True
         )
-        self.plan.authenticate()
-        self.cuda = CudaOracle(self.plan, self.specification, self.limits.max_routes)
+        if "cache_root" in self.specification:
+            from .cuda_bank_cache import CachedCudaBanks
+
+            banks = CachedCudaBanks(
+                self.specification["cache_root"],
+                self.specification["cache_manifest_sha256"],
+                self.identity.checkpoint_sha256,
+                self.keys,
+                self.specification.get("weight_layout", CUDA_ROW_MAJOR),
+            )
+            banks.authenticate()
+        else:
+            self.plan.authenticate()
+            banks = self.plan
+        self.cuda = CudaOracle(banks, self.specification, self.limits.max_routes)
+        banks.check_unchanged()
         self.plan.check_unchanged()
+        self.metrics["prepare_total_ms"] = (time.perf_counter() - started) * 1000
         print(
             json.dumps(
                 {
@@ -251,14 +292,48 @@ class CudaResidentBackend:
         started = time.perf_counter()
         tokens, experts = compact_routes(request, self.plan.by_layer[request.layer_id])
         inputs = np.frombuffer(packet.tensor, dtype="<f2").reshape(len(request.token_ids), WIDTH)
-        body = inputs[np.asarray(tokens, dtype=np.int64)].tobytes()
-        output = self.cuda.compute_bytes(request.layer_id, body, experts, self.plan.manifest["activation_bits"])
-        encoded = np.frombuffer(output, dtype="<f2").astype("<f4").tobytes()
+        # Group equal experts for weight-cache reuse, then restore exact wire order.
+        order = np.argsort(np.asarray(experts), kind="stable")
+        body = inputs[np.asarray(tokens, dtype=np.int64)[order]].tobytes()
+        sorted_experts = tuple(experts[index] for index in order)
+        if packet.partial_reduce:
+            output_tokens = tuple(sorted(request.token_ids))
+            token_map = {token: index for index, token in enumerate(output_tokens)}
+            inverse = np.empty_like(order)
+            inverse[order] = np.arange(len(order))
+            row_map = np.full((len(output_tokens), 8), -1, dtype="<i4")
+            weights = np.zeros((len(output_tokens), 8), dtype="<f4")
+            raw_weights = np.frombuffer(packet.route_weights, dtype="<f4")
+            for index, route in enumerate(request.routes):
+                row_map[token_map[route.token], route.slot] = inverse[index]
+                weights[token_map[route.token], route.slot] = raw_weights[index]
+            encoded = self.cuda.compute_partial_bytes(
+                request.layer_id,
+                body,
+                sorted_experts,
+                self.plan.manifest["activation_bits"],
+                row_map.tobytes(),
+                weights.tobytes(),
+                len(output_tokens),
+            )
+        else:
+            output = self.cuda.compute_bytes(
+                request.layer_id, body, sorted_experts, self.plan.manifest["activation_bits"]
+            )
+            sorted_rows = np.frombuffer(output, dtype="<f2").reshape(len(tokens), WIDTH)
+            original_rows = np.empty_like(sorted_rows)
+            original_rows[order] = sorted_rows
+        reply_fp16 = getattr(self, "specification", {}).get("reply_fp16", False)
+        if not packet.partial_reduce:
+            encoded = original_rows.tobytes() if reply_fp16 else original_rows.astype("<f4").tobytes()
         elapsed = (time.perf_counter() - started) * 1000
         self.metrics["requests"] += 1
         self.metrics["routes"] += len(tokens)
         self.metrics["compute_total_ms"] += elapsed
         self.metrics["compute_max_ms"] = max(self.metrics["compute_max_ms"], elapsed)
         return TensorPacket(
-            ExpertReply(request.execution_id, request.layer_id, request.owner, request.routes, ()), encoded
+            ExpertReply(request.execution_id, request.layer_id, request.owner, request.routes, ()),
+            encoded,
+            reply_fp16=reply_fp16,
+            partial_reduce=packet.partial_reduce,
         )

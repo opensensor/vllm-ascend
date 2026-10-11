@@ -106,8 +106,8 @@ def test_resident_raw_routes_gather_by_token_map_and_arbitrary_global_experts():
     control = ExpertRequest("raw", 3, "cuda:0", (Route(4, 2, 71), Route(1, 7, 0), Route(4, 0, 0)), (4, 1), ())
     hidden = np.asarray([[0.5] * 4096, [-1.0] * 4096], dtype="<f2")
     actual = backend.compute_tensor(TensorPacket(control, hidden.tobytes()))
-    assert received == [(3, hidden[[0, 1, 0]].tobytes(), (1, 0, 0), 4)]
+    assert received == [(3, hidden[[1, 0, 0]].tobytes(), (0, 0, 1), 4)]
     assert actual.control.routes == control.routes
-    assert actual.tensor == np.frombuffer(output, dtype="<f2").astype("<f4").tobytes()
+    assert actual.tensor == np.frombuffer(output, dtype="<f2").reshape(3, 4096)[[2, 0, 1]].astype("<f4").tobytes()
     assert backend.metrics["requests"] == 1
     assert backend.metrics["routes"] == 3

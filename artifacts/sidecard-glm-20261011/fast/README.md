@@ -1,4 +1,7 @@
-# Prefill performance correction
+# Historical TP4 prefill performance correction
+
+This service has been retired. The current deployment uses one Ascend card
+and the RTX; see [one-card measurements](../one-card/README.md).
 
 The previous capacity profile logged approximately 25 seconds per 128-token
 prefill chunk for a 25,456-token coding prompt. The replacement profile uses
