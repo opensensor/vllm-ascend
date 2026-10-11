@@ -97,6 +97,35 @@ def compact_routes(request, experts):
         raise ValueError("native gate received a foreign expert or token") from error
 
 
+CUDA_ROW_MAJOR = "row_major_v1"
+CUDA_WORD_PLANES = "k32_words_n_v1"
+CUDA_NIBBLE_PLANES = "k32_nibbles_n_v1"
+
+
+def encode_cuda_weights(values, layout):
+    if layout == CUDA_ROW_MAJOR:
+        return values.tobytes()
+    if (
+        layout not in (CUDA_WORD_PLANES, CUDA_NIBBLE_PLANES)
+        or values.ndim != 3
+        or values.dtype.name != "int8"
+        or min(values.shape) < 1
+        or values.shape[-1] % 32
+        or values.shape[-2] % 32
+    ):
+        raise ValueError("invalid CUDA weight layout or signed block32 geometry")
+    experts, channels, width = values.shape
+    planes = values.reshape(experts, channels, width // 32, 8, 4).transpose(0, 2, 3, 1, 4)
+    if layout == CUDA_WORD_PLANES:
+        return planes.tobytes()
+    if values.min() < -8 or values.max() > 7:
+        raise ValueError("packed CUDA weights require signed four-bit codes")
+    # Keep W2/W3 codes exact too: storage compression, not requantization.
+    codes = (planes.astype("int16") + 8).astype("uint16")
+    packed = codes[..., 0] | (codes[..., 1] << 4) | (codes[..., 2] << 8) | (codes[..., 3] << 12)
+    return packed.astype("<u2").tobytes()
+
+
 class CudaOracle:
     def __init__(self, banks, specification, routes):
         from tools.glm_perf.fused_weight_layout import unpack_cube
@@ -109,21 +138,89 @@ class CudaOracle:
         self.allocation_budget = specification.get("cuda_memory_budget_bytes")
         self.allocated_bytes = 0
         self.max_routes = routes
+        self.max_tokens = min(routes, 640)
+        self.reduce = None
         self.library = ctypes.CDLL(str(library_path))
-        self.launch = self.library.sidecard_oracle_forward
+        layout = specification.get("weight_layout", CUDA_ROW_MAJOR)
+        if layout not in (CUDA_ROW_MAJOR, CUDA_WORD_PLANES, CUDA_NIBBLE_PLANES):
+            raise ValueError("unsupported CUDA weight layout")
+        self.launch = getattr(
+            self.library,
+            {
+                CUDA_ROW_MAJOR: "sidecard_oracle_forward",
+                CUDA_WORD_PLANES: "sidecard_oracle_forward_transposed",
+                CUDA_NIBBLE_PLANES: "sidecard_oracle_forward_packed",
+            }[layout],
+        )
         self.launch.argtypes = [ctypes.c_void_p] * 13 + [ctypes.c_int] * 4
         self.launch.restype = ctypes.c_int
+        pack = getattr(self.library, "sidecard_oracle_pack_cube", None) if layout == CUDA_NIBBLE_PLANES else None
+        staging_size = 0
+        prepared_at = time.perf_counter()
+        if pack is not None:
+            pack.argtypes, pack.restype = [ctypes.c_void_p] * 2 + [ctypes.c_int] * 4, ctypes.c_int
         try:
+            if specification.get("partial_reduce", False):
+                self.reduce = self.library.sidecard_oracle_reduce_local
+                self.reduce.argtypes = [ctypes.c_void_p] * 4 + [ctypes.c_int] * 3
+                self.reduce.restype = ctypes.c_int
             for layer, bank in banks.items():
-                gate, gs, down, ds = bank["tensors"]
-                tensors = (unpack_cube(gate, 4096), gs, unpack_cube(down, 2048), ds)
+                if "encoded" in bank:
+                    tensors = bank["encoded"]
+                else:
+                    gate, gs, down, ds = bank["tensors"]
+                    tensors = (
+                        (gate, gs, down, ds)
+                        if pack is not None
+                        else (unpack_cube(gate, 4096), gs, unpack_cube(down, 2048), ds)
+                    )
                 pointers = []
                 for index, tensor in enumerate(tensors):
-                    data = tensor.numpy().tobytes()
+                    if pack is not None and "encoded" not in bank and index in (0, 2):
+                        experts, channels, packed_width = tensor.shape
+                        width = 4096 if index == 0 else 2048
+                        bits = packed_width * 8 // width
+                        data = tensor.numpy().tobytes()
+                        if len(data) > staging_size:
+                            if staging_size:
+                                self.cuda.check(self.cuda.library.cudaFree(self.buffers["cube_staging"]))
+                                self.buffers["cube_staging"].value = None
+                                self.allocated_bytes -= staging_size
+                            self.allocate("cube_staging", len(data))
+                            staging_size = len(data)
+                        self.upload(self.buffers["cube_staging"], data)
+                        pointer = self.allocate(f"layer-{layer}-{index}", experts * channels * width // 2)
+                        self.cuda.check(pack(self.buffers["cube_staging"], pointer, experts, channels, width, bits))
+                        self.cuda.check(self.cuda.library.cudaDeviceSynchronize())
+                        pointers.append(pointer)
+                        continue
+                    data = (
+                        tensor
+                        if "encoded" in bank
+                        else encode_cuda_weights(tensor.numpy(), layout)
+                        if index in (0, 2)
+                        else tensor.numpy().tobytes()
+                    )
                     pointer = self.allocate(f"layer-{layer}-{index}", len(data))
                     self.upload(pointer, data)
                     pointers.append(pointer)
                 self.bank_pointers[layer] = tuple(pointers)
+                print(
+                    json.dumps(
+                        {
+                            "kind": "cuda_layer_loaded",
+                            "layer": layer,
+                            "cuda_allocated_bytes": self.allocated_bytes,
+                            "native_cube_prepare": pack is not None,
+                            "elapsed_seconds": time.perf_counter() - prepared_at,
+                        }
+                    ),
+                    flush=True,
+                )
+            if staging_size:
+                self.cuda.check(self.cuda.library.cudaFree(self.buffers["cube_staging"]))
+                self.buffers["cube_staging"].value = None
+                self.allocated_bytes -= staging_size
             sizes = {
                 "input": routes * 4096 * 2,
                 "ids": routes * 4,
@@ -135,6 +232,12 @@ class CudaOracle:
                 "hidden_scales": routes * 64 * 4,
                 "output": routes * 4096 * 2,
             }
+            if self.reduce is not None:
+                sizes.update(
+                    row_map=self.max_tokens * 8 * 4,
+                    weights=self.max_tokens * 8 * 4,
+                    partial_output=self.max_tokens * 4096 * 4,
+                )
             for name, size in sizes.items():
                 self.allocate(name, size)
             self.cuda.check(self.cuda.library.cudaDeviceSynchronize())
@@ -163,6 +266,10 @@ class CudaOracle:
         return tuple(struct.unpack_from("<4096e", output, row * 4096 * 2) for row in range(rows))
 
     def compute_bytes(self, layer, body, experts, bits):
+        self.project_bytes(layer, body, experts, bits)
+        return self.read_output("output", len(experts) * 4096 * 2)
+
+    def project_bytes(self, layer, body, experts, bits):
         rows = len(experts)
         if not 1 <= rows <= self.max_routes or len(body) != rows * 4096 * 2 or bits not in (4, 8):
             raise ValueError("CUDA raw input differs from admitted route geometry")
@@ -185,11 +292,37 @@ class CudaOracle:
                 bits,
             )
         )
+
+    def read_output(self, name, size):
         self.cuda.check(self.cuda.library.cudaDeviceSynchronize())
-        output = ctypes.create_string_buffer(rows * 4096 * 2)
-        self.cuda.check(self.cuda.library.cudaMemcpy(output, self.buffers["output"], len(output), DEVICE_TO_HOST))
+        output = ctypes.create_string_buffer(size)
+        self.cuda.check(self.cuda.library.cudaMemcpy(output, self.buffers[name], len(output), DEVICE_TO_HOST))
         self.cuda.check(self.cuda.library.cudaDeviceSynchronize())
         return output.raw
+
+    def compute_partial_bytes(self, layer, body, experts, bits, row_map, weights, token_rows):
+        if (
+            self.reduce is None
+            or not 1 <= token_rows <= self.max_tokens
+            or len(row_map) != token_rows * 8 * 4
+            or len(weights) != token_rows * 8 * 4
+        ):
+            raise ValueError("CUDA partial combination differs from admitted geometry")
+        self.upload(self.buffers["row_map"], row_map)
+        self.upload(self.buffers["weights"], weights)
+        self.project_bytes(layer, body, experts, bits)
+        self.cuda.check(
+            self.reduce(
+                self.buffers["output"],
+                self.buffers["row_map"],
+                self.buffers["weights"],
+                self.buffers["partial_output"],
+                token_rows,
+                4096,
+                len(experts),
+            )
+        )
+        return self.read_output("partial_output", token_rows * 4096 * 4)
 
     def close(self):
         self.cuda.check(self.cuda.library.cudaDeviceSynchronize())

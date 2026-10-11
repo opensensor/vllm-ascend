@@ -1,17 +1,29 @@
 # GLM CUDA/Ascend sidecard
 
-Start with GLM-5.3-Flash on one RTX PRO 6000 Blackwell and two Atlas 300I Duo
-cards, exposing four Ascend 310P3 chips. The product goal is useful inference
+Development now targets GLM-5.3-Flash on one RTX PRO 6000 Blackwell and one
+Atlas 300I Duo card, exposing two Ascend 310P3 chips. The product goal is useful inference
 for models larger than NVIDIA VRAM, improving on RTX plus CPU/weight offload.
 Keep expert weights resident where they execute and exchange activations.
 
-**Status: initial joined GLM service running.** The OpenAI-compatible endpoint is
+**Status: one-card joined GLM service running.** The replacement
+uses only physical NPU devices 2 and 3 plus the RTX, with 144 CUDA experts and
+72 experts on each NPU. The Qwen service on devices 0 and 1 is preserved.
+See the [one-card runbook](ONE_CARD.md) for placement and qualification.
+
+The endpoint is `http://192.168.53.187:8001/v1`, model `glm-sidecard`, with
+260,352 context tokens. Cold 8K prefill measured 57.2 tokens/s, cached repeat
+first text took 2.73 seconds, and decode is approximately 2.6–2.8 tokens/s.
+All seven operational API checks and 168 real-input serialized/overlap checks
+passed; greedy repeat variation remains unresolved. See
+[current measurements](../../artifacts/sidecard-glm-20261011/one-card/README.md).
+
+The previous OpenAI-compatible endpoint was
 `http://192.168.53.187:8001/v1`, model `glm-sidecard`. CUDA owns experts 0–71
 in all 42 routed layers; the qualified Ascend backbone and other expert ranks
 use both Ascend cards. Chat, streaming, concurrency and chunked prefill passed
 operational checks. Greedy repeat variation remains unresolved, so full
 numerical/quality qualification has not passed. See the [service runbook](SERVICE.md).
-The current prefix-enabled profile advertises 645,120 context tokens and
+The previous prefix-enabled profile advertised 645,120 context tokens and
 measured approximately 56 uncached prompt tokens/s and 2.6–3.0 decode tokens/s.
 The 8,192-token repeat reused 7,680 cached tokens, reaching first text in 9.16
 seconds. See [measured performance](../../artifacts/sidecard-glm-20261011/fast/README.md)

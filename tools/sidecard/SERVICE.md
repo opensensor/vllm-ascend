@@ -1,7 +1,35 @@
 # GLM sidecard service
 
-**Running:** `http://192.168.53.187:8001/v1`, model `glm-sidecard`.
-The current prefix-enabled profile advertises 645,120 context tokens and uses
+**Running on one Ascend card and the RTX:**
+`http://192.168.53.187:8001/v1`, model `glm-sidecard`.
+Development now reserves only Ascend card 16409 (physical devices 2 and 3,
+PCIe 49:00.0) and the RTX. The Qwen service on Ascend card 8217 (devices 0 and
+1, PCIe 21:00.0) is preserved.
+The prefix-enabled TP2 profile advertises **260,352 context tokens**, with
+3.5 GiB KV per NPU and 512-token prefill batches. Cold 8K prefill measured
+57.2 tokens/s; the 8K repeat reused 8,064 tokens and reached first text in
+2.73 seconds. Decode gaps were approximately 0.36–0.40 seconds per token.
+The matched 449-token prompt fell from 8.14 seconds on the serialized one-card
+candidate to 6.54 seconds on the overlap profile. Cache allocation also changed
+from 4 to 3.5 GiB to leave operating headroom.
+
+CUDA owns experts 0–143; NPU ranks 0 and 1 own 144–215 and 216–287. Packed CUDA
+storage preserves the source W2/W3/W4 codes and scales. All seven operational
+API checks passed. All 168 serialized-versus-overlapped real-input comparisons
+passed with zero error across all 42 MoE layers, covering decode and prefill.
+Greedy repeated completions still vary; whole-model quality remains unqualified.
+
+The deployment is `/srv/ai/storage/artifacts/sidecard-glm-service-20261011-one-card-v10`.
+Its API is PID 1375281, NPU workers are 1376294/1376632 on physical devices 2/3,
+and CUDA daemon 1300754 retains its admitted banks from the v8 preparation.
+Kilo has matching 260,352 context / 228,352 input / 32,000 output limits.
+Near-capacity admission was checked; full 260K generation was not completed.
+See the [one-card runbook](ONE_CARD.md) and
+[current hardware evidence](../../artifacts/sidecard-glm-20261011/one-card/README.md).
+
+## Historical TP4 profile
+
+The previous prefix-enabled profile advertised 645,120 context tokens and used
 512-token prefill batches. Measured uncached prefill is approximately 56
 tokens/s; an 8,192-token repeat reused 7,680 tokens and reached first text in
 9.16 seconds. Cold large prompts still take minutes. See the
@@ -11,15 +39,15 @@ requests and passed 126 real-input expert shadow checks. Greedy repeated
 completions varied; the full validation flag remains false. The cause of that
 variation is not isolated. Model quality and determinism remain unqualified.
 
-The first serving profile uses the qualified GLM-5.3-Flash native mixed
+The first serving profile used the qualified GLM-5.3-Flash native mixed
 W2/W3/W4 checkpoint, its Ascend backbone and four Ascend TP ranks. CUDA owns
 experts 0–71 in every main-model routed layer, 3–44. Ascend ranks 1–3 own
 72–143, 144–215 and 216–287. Rank 0 keeps its attention, shared MLP and other
 backbone work on Ascend. Both physical Ascend cards participate.
 
-This is an initial joined service. CUDA attention/state, the planned
+The initial joined service kept CUDA attention/state, the planned
 72-CUDA/54-per-chip ownership, optimized packed CUDA kernels, graph capture
-and MTP are follow-up work. The CUDA correctness kernel stores unpacked INT8
+and MTP as follow-up work. Its CUDA correctness kernel stored unpacked INT8
 weights, preserving the source integer codes and FP16 scales. The original
 rank-zero NPU expert banks remain resident for shadow checks. The measured
 serving improvement does not establish whole-model quality or completion of

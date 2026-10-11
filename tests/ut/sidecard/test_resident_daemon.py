@@ -2,7 +2,10 @@
 """Resident banks survive orderly reconnects and close on malformed packets."""
 
 import json
+import signal
 import socket
+import subprocess
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
@@ -20,6 +23,52 @@ from tools.sidecard.wire import PREFIX, PacketLimits, WireIdentity, decode_packe
 from tools.sidecard.worker import DenseExpert, DenseExpertBank, ExpertWorker
 
 
+@pytest.mark.parametrize("stop_signal", [signal.SIGINT, signal.SIGTERM])
+def test_detached_daemon_stop_releases_backend_and_removes_socket(tmp_path, stop_signal):
+    config, address, ready, closed = (
+        tmp_path / name for name in ("config.json", "worker.sock", "ready.json", "closed")
+    )
+    config.write_text(json.dumps({"backend": {"kind": "cuda_resident"}}))
+    script = """
+import signal, sys
+from pathlib import Path
+from types import SimpleNamespace
+from tools.sidecard import resident_daemon as daemon
+closed = Path(sys.argv[4])
+backend = SimpleNamespace(cuda=SimpleNamespace(allocated_bytes=1), keys=((3, 0),),
+                          plan=SimpleNamespace(by_layer={3: (0,)}), metrics={}, specification={},
+                          close=lambda: closed.write_text('closed'))
+worker = SimpleNamespace(backend=backend, prepare=lambda: None,
+                         limits=SimpleNamespace(max_tokens=1, max_routes=1))
+identity = SimpleNamespace(checkpoint_sha256='a'*64, placement_sha256='b'*64)
+daemon.worker_from_config = lambda value: (worker, identity)
+signal.signal(signal.SIGINT, signal.SIG_IGN)
+sys.argv = ['resident_daemon', '--config', sys.argv[1], '--socket', sys.argv[2], '--ready', sys.argv[3]]
+daemon.main()
+"""
+    process = subprocess.Popen(
+        [sys.executable, "-c", script, str(config), str(address), str(ready), str(closed)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    try:
+        deadline = time.monotonic() + 10
+        while not ready.exists():
+            assert process.poll() is None, process.communicate()[0].decode()
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        process.send_signal(stop_signal)
+        output = process.communicate(timeout=10)[0].decode()
+        assert process.returncode == 0, output
+        assert closed.read_text() == "closed"
+        assert not address.exists()
+        assert "resident_stopped" in output
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+
+
 @pytest.mark.parametrize("malformed", [False, True])
 @pytest.mark.parametrize("tensor_transport", [False, True])
 def test_sequential_sessions_prepare_once_and_fail_closed(tmp_path, monkeypatch, malformed, tensor_transport):
@@ -29,6 +78,7 @@ def test_sequential_sessions_prepare_once_and_fail_closed(tmp_path, monkeypatch,
     expert = DenseExpert(((1.0,),), ((1.0,),), ((1.0,),))
     bank = DenseExpertBank(((3, 0, expert),))
     backend = Mock()
+    backend.specification = {}
     backend.prepare.return_value = bank.prepare()
     backend.compute.side_effect = bank.compute
     backend.cuda.allocated_bytes = 123

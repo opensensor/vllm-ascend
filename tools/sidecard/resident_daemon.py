@@ -4,6 +4,7 @@
 import argparse
 import json
 import os
+import signal
 import socket
 from pathlib import Path
 
@@ -47,6 +48,11 @@ def run(config_path, socket_path, ready_path, *, max_sessions=1, tensor_transpor
                 "resident_layers": len(worker.backend.plan.by_layer),
                 "max_sessions": max_sessions,
                 "tensor_transport": tensor_transport,
+                "max_tokens": worker.limits.max_tokens,
+                "max_routes": worker.limits.max_routes,
+                "reply_fp16": getattr(worker.backend, "specification", {}).get("reply_fp16", False),
+                "partial_reduce": getattr(worker.backend, "specification", {}).get("partial_reduce", False),
+                "preparation_seconds": worker.backend.metrics.get("prepare_total_ms", 0) / 1000,
             }
             temporary = ready_path.with_suffix(".tmp")
             temporary.write_text(json.dumps(receipt, indent=2) + "\n")
@@ -69,6 +75,10 @@ def run(config_path, socket_path, ready_path, *, max_sessions=1, tensor_transpor
 
 
 def main():
+    # Detached launchers can inherit SIGINT ignored. Both stop signals must
+    # unwind the backend's finally block and release all resident allocations.
+    signal.signal(signal.SIGINT, signal.default_int_handler)
+    signal.signal(signal.SIGTERM, signal.default_int_handler)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--socket", type=Path, required=True)
@@ -76,7 +86,12 @@ def main():
     parser.add_argument("--max-sessions", type=int, default=1)
     parser.add_argument("--tensor-transport", action="store_true")
     args = parser.parse_args()
-    run(args.config, args.socket, args.ready, max_sessions=args.max_sessions, tensor_transport=args.tensor_transport)
+    try:
+        run(
+            args.config, args.socket, args.ready, max_sessions=args.max_sessions, tensor_transport=args.tensor_transport
+        )
+    except KeyboardInterrupt:
+        print(json.dumps({"kind": "resident_stopped"}), flush=True)
 
 
 if __name__ == "__main__":

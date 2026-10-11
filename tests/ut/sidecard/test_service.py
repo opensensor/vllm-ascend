@@ -58,6 +58,30 @@ def test_resident_plan_rejects_metadata_mutation_and_wrong_identity(tmp_path):
         plan.authenticate()
 
 
+def test_resident_payload_opens_each_shard_once_and_preserves_tensor_geometry(tmp_path, monkeypatch):
+    import safetensors
+
+    digest = authenticated_fixture(tmp_path)
+    plan = NativeResidentPlan(tmp_path, ((3, 72),), digest)
+    plan.authenticate()
+    original = safetensors.safe_open
+    opened = []
+
+    def counted(*args, **kwargs):
+        opened.append(args[0])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(safetensors, "safe_open", counted)
+    layers = list(plan.items())
+    assert len(opened) == 1
+    assert layers[0][0] == 3
+    gate, scales, down, down_scales = layers[0][1]["tensors"]
+    assert tuple(gate.shape) == (1, 4096, 2048)
+    assert tuple(down.shape) == (1, 4096, 1024)
+    assert tuple(scales.shape) == (1, 128, 128)
+    assert tuple(down_scales.shape) == (1, 128, 64)
+
+
 @pytest.mark.parametrize("keys", [(), ((45, 72),), ((3, 288),), ((3, 72), (3, 72))])
 def test_resident_plan_excludes_draft_foreign_and_duplicate_keys(tmp_path, keys):
     with pytest.raises(ValueError, match="keys"):
@@ -114,7 +138,9 @@ def test_resident_backend_rejects_geometry_before_device_initialization():
         cuda_memory_budget_bytes=82 * 1024**3,
     )
     with pytest.raises(ValueError, match="specification"):
-        CudaResidentBackend(specification, "cuda:0", placement, identity, PacketLimits(4096, 33, 264, 288, 8))
+        CudaResidentBackend(specification, "cuda:0", placement, identity, PacketLimits(4096, 641, 5128, 288, 8))
+    candidate = CudaResidentBackend(specification, "cuda:0", placement, identity, PacketLimits(4096, 640, 5120, 288, 8))
+    assert candidate.limits.max_tokens == 640
 
 
 def test_serving_command_preserves_qualified_model_and_requires_eager_target_only():
@@ -207,7 +233,9 @@ def test_invalid_context_launch_bounds_fail_before_process_creation(length, budg
         serving_command(["python", "serve", "/model"], max_model_len=length, kv_cache_memory_bytes=budget)
 
 
-def test_deployment_preparation_preserves_venv_interpreter_symlink(tmp_path, monkeypatch):
+@pytest.mark.parametrize("packet_tokens", [32, 640])
+@pytest.mark.parametrize("stage_only", [False, True])
+def test_deployment_preparation_preserves_venv_interpreter_symlink(tmp_path, monkeypatch, packet_tokens, stage_only):
     qualified = tmp_path / "qualified"
     qualified.mkdir()
     (qualified / "qualified-marker").write_text("unchanged")
@@ -227,17 +255,34 @@ def test_deployment_preparation_preserves_venv_interpreter_symlink(tmp_path, mon
     popen = Mock(return_value=Mock(pid=123))
     monkeypatch.setattr("tools.sidecard.service_prepare.subprocess.Popen", popen)
     output = tmp_path / "deployment"
-    result = prepare(qualified, baseline, environment, checkpoint, library, venv_python, output)
+    result = prepare(
+        qualified,
+        baseline,
+        environment,
+        checkpoint,
+        library,
+        venv_python,
+        output,
+        packet_tokens=packet_tokens,
+        tensor_transport=packet_tokens != 32,
+        stage_only=stage_only,
+    )
     assert result["command"][0] == str(venv_python)
-    assert result["pid"] == 123
+    if stage_only:
+        assert result["staged"]
+        assert not (output / "cuda-process.json").exists()
+        assert not (output / "cuda-worker.log").exists()
+    else:
+        assert result["pid"] == 123
     assert (qualified / "qualified-marker").read_text() == "unchanged"
     worker = json.loads((output / "cuda-worker.json").read_text())
     assert worker["backend"]["library_sha256"] == digest_file(library)
-    assert worker["limits"]["max_routes"] == 256
+    assert worker["limits"]["max_routes"] == packet_tokens * 8
+    assert json.loads((output / "service.json").read_text())["packet_tokens"] == packet_tokens
     assert len(worker["placement"]["layers"]) == 42
     with pytest.raises(ValueError, match="fresh"):
         prepare(qualified, baseline, environment, checkpoint, library, venv_python, output)
-    assert popen.call_count == 1
+    assert popen.call_count == (0 if stage_only else 1)
 
 
 def test_service_validation_rejects_startup_only_or_missing_layer_evidence():

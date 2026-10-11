@@ -37,7 +37,26 @@ def check_metrics(value):
     layers = value["layers"]
     if set(layers) != {str(layer) for layer in range(3, 45)}:
         raise AssertionError("service did not install every main-model routed layer")
-    if any(row["real_calls"] < 1 or row["real_cuda_routes"] < 1 or row["shadow_checks"] < 3 for row in layers.values()):
+    required_shadows = 3
+    if value.get("one_card", False):
+        gate = value.get("packed_cuda_gate", {})
+        if (
+            value["retains_npu_shadow_banks"] is not False
+            or gate.get("passed") is not True
+            or gate.get("cases") != 27
+            or gate.get("cuda_experts_per_layer") != 144
+        ):
+            raise AssertionError("one-card service lacks packed CUDA correctness qualification")
+        required_shadows = 0
+        if value.get("overlaps_native_cuda", False) and any(
+            row.get("overlap_decode_shadow_checks", 0) < 3 or row.get("overlap_prefill_shadow_checks", 0) < 1
+            for row in layers.values()
+        ):
+            raise AssertionError("one-card overlap lacks real-input serialized decode/prefill shadow checks")
+    if any(
+        row["real_calls"] < 1 or row["real_cuda_routes"] < 1 or row["shadow_checks"] < required_shadows
+        for row in layers.values()
+    ):
         raise AssertionError("service lacks real CUDA routes or real-input shadow validation in a routed layer")
     return {
         "validated_layers": len(layers),
@@ -49,6 +68,15 @@ def check_metrics(value):
         "profile": value["profile"],
         "cuda_attention": value["cuda_attention"],
         "retains_npu_shadow_banks": value["retains_npu_shadow_banks"],
+        "packed_cuda_gate": value.get("packed_cuda_gate"),
+        "serial_overlap_shadow_checks": sum(
+            row.get("overlap_decode_shadow_checks", 0) + row.get("overlap_prefill_shadow_checks", 0)
+            for row in layers.values()
+        ),
+        "serial_overlap_shadow_max_absolute_error": max(
+            row.get("overlap_shadow_max_absolute_error", 0) for row in layers.values()
+        ),
+        "serial_overlap_shadow_max_nrmse": max(row.get("overlap_shadow_max_nrmse", 0) for row in layers.values()),
     }
 
 
