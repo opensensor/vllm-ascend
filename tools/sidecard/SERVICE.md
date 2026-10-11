@@ -7,11 +7,11 @@ PCIe 49:00.0) and the RTX. The Qwen service on Ascend card 8217 (devices 0 and
 1, PCIe 21:00.0) is preserved.
 The prefix-enabled TP2 profile advertises **260,352 context tokens**, with
 3.5 GiB KV per NPU and 512-token prefill batches. Cold 8K prefill measured
-57.2 tokens/s; the 8K repeat reused 8,064 tokens and reached first text in
-2.73 seconds. Decode gaps were approximately 0.36–0.40 seconds per token.
-The matched 449-token prompt fell from 8.14 seconds on the serialized one-card
-candidate to 6.54 seconds on the overlap profile. Cache allocation also changed
-from 4 to 3.5 GiB to leave operating headroom.
+57.7 tokens/s; the 8K repeat reused 8,064 tokens and reached first text in
+2.64 seconds. A completed 64-token decode measured 3.46 tokens/s after enabling
+the existing Ascend mHC Sinkhorn kernel, versus approximately 2.6 tokens/s
+before. Cold prefill remains essentially unchanged. A 640-token prefill
+candidate exhausted NPU memory on 8K input and was retired.
 
 CUDA owns experts 0–143; NPU ranks 0 and 1 own 144–215 and 216–287. Packed CUDA
 storage preserves the source W2/W3/W4 codes and scales. All seven operational
@@ -19,13 +19,13 @@ API checks passed. All 168 serialized-versus-overlapped real-input comparisons
 passed with zero error across all 42 MoE layers, covering decode and prefill.
 Greedy repeated completions still vary; whole-model quality remains unqualified.
 
-The deployment is `/srv/ai/storage/artifacts/sidecard-glm-service-20261011-one-card-v10`.
-Its API is PID 1375281, NPU workers are 1376294/1376632 on physical devices 2/3,
+The deployment is `/srv/ai/storage/artifacts/sidecard-glm-service-20261011-one-card-v12`.
+Its API is PID 1521124, NPU workers are 1522253/1522573 on physical devices 2/3,
 and CUDA daemon 1300754 retains its admitted banks from the v8 preparation.
 Kilo has matching 260,352 context / 228,352 input / 32,000 output limits.
 Near-capacity admission was checked; full 260K generation was not completed.
 See the [one-card runbook](ONE_CARD.md) and
-[current hardware evidence](../../artifacts/sidecard-glm-20261011/one-card/README.md).
+[current hardware evidence](../../artifacts/sidecard-glm-20261011/optimization/README.md).
 
 ## Historical TP4 profile
 

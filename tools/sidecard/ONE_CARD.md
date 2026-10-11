@@ -2,7 +2,7 @@
 
 The previous TP4 service was stopped at the user's request. The replacement
 is running at `http://192.168.53.187:8001/v1`, model `glm-sidecard`, using this
-allocation. See the [hardware receipts](../../artifacts/sidecard-glm-20261011/one-card/README.md).
+allocation. See the [hardware receipts](../../artifacts/sidecard-glm-20261011/optimization/README.md).
 
 | Hardware | Assignment |
 | --- | --- |
@@ -82,6 +82,38 @@ admitted capacity and memory before increasing the cache budget. The previous
 645,120-token limit is historical and does not apply to this allocation.
 Use the qualified virtual environment for preparation and launch; the system
 interpreter does not have the required project dependencies.
+
+### Ascend mHC tuning
+
+`service_launch --fused-sinkhorn` adds the existing
+`ascend_glm_fused_sinkhorn` model override while preserving other overrides.
+The default preserves the previous selection. Run the Sinkhorn and native
+mHC post hardware tests with `sidecard_worker` imported first: that import
+loads the same auxiliary bindings as serving. Importing only the stock
+extension omits the auxiliary mHC post operator.
+
+The native mHC post dispatcher requires at least 640 tokens. A 512-token
+prefill budget bypasses it even when `ascend_glm_native_mhc_post` is enabled.
+The 640-token serving candidate passed short operational tests but exhausted
+NPU memory during cold 8K prefill after a 2K/64-token request. It was retired;
+the serving profile retains 512-token prefill. Its retained 512-token CUDA
+packet limit had split each 640-token prefill into two expert packets.
+
+### CUDA projection experiments
+
+`batch_projection_gate --experimental-projection` enables grouped INT8 Tensor
+Core projections and a bounded split-K decode projection in the new CUDA
+library. Both preserve each K32 integer dot product and the original ordered
+FP32 additions. The gate adds paired timings against the scalar packed path
+with identical resident weights, plus 42 short-batch/tile-boundary checks.
+These kernels remain disabled by default: correctness parity does not
+establish a serving speedup, and sparse expert groups can lose performance.
+The service retains its qualified scalar packed kernel.
+
+`decode_benchmark` completes a fixed 64-token output, excludes prefill and
+the first output token from its reported decode rate, and records actual
+prefix-cache usage. Run it and `prefill_benchmark` sequentially after the
+operational checks; concurrent requests distort latency comparisons.
 
 The smaller placement omits the resident CUDA-expert NPU shadow copies. The
 validator identifies the pinned GPU correctness gate separately from the

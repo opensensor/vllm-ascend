@@ -1,0 +1,26 @@
+INFO 10-11 22:34:52 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-11 22:34:52 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-11 22:34:52 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 10-11 22:34:52 [__init__.py:272] Platform plugin ascend is activated
+INFO 10-11 22:34:52 [platform.py:72] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=1.
+INFO 10-11 22:34:56 [importing.py:98] Triton not installed or not compatible; certain GPU-related functions will not be available.
+W1011 22:34:58.791000 1501500 torch/_library/triton.py:53] Triton not available, find_triton_kernels = []
+INFO 10-11 22:34:58 [__init__.py:112] Registered model loader `<class 'vllm_ascend.model_loader.glm_native_int4.GlmNativeInt4Loader'>` with load format `glm_native_int4`
+WARNING 10-11 22:34:59 [indexer_topk.py:29] Failed to import the DeepSelect extension (vllm._deepselect_C): No module named 'vllm._deepselect_C'
+INFO 10-11 22:34:59 [patch_indexer_kv_dtype.py:102] Patched AttentionConfig.indexer_kv_dtype to accept 'int8' (DeepSeek V4 Ascend indexer K cache dtype).
+INFO 10-11 22:34:59 [patch_kv_cache_dtype.py:115] Patched CacheConfig.cache_dtype to accept 'int8' (DeepSeek V4 Ascend MLA KV cache dtype).
+[W1011 22:35:04.346287752 NPUCachingAllocator.cpp:177] Warning: The current CANN and Soc versions require processing for 32 padding size, with memory allocation. (function operator())
+.......mHC sinkhorn rows=1 fused=0.0597 ms eager=1.5651 ms
+.mHC sinkhorn rows=512 fused=0.3628 ms eager=1.4645 ms
+................
+=============================== warnings summary ===============================
+../../../../venvs/qwen38-w4-test-ce1862/lib/python3.12/site-packages/_pytest/config/__init__.py:1345
+  /srv/ai/venvs/qwen38-w4-test-ce1862/lib/python3.12/site-packages/_pytest/config/__init__.py:1345: PytestAssertRewriteWarning: Module already imported so cannot be rewritten; anyio
+    self._mark_plugins_for_rewrite(hook, disable_autoload)
+
+test_mhc_sinkhorn_v310.py::test_mhc_sinkhorn_matches_torch[1-0.2-20]
+  /usr/local/python3.12.13/lib/python3.12/multiprocessing/popen_fork.py:66: DeprecationWarning: This process (pid=1501500) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    self.pid = os.fork()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+24 passed, 2 warnings in 10.52s

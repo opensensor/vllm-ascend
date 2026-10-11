@@ -43,6 +43,7 @@ def serving_command(
     prefill_tokens=128,
     prefix_caching=None,
     max_num_seqs=None,
+    fused_sinkhorn=None,
 ):
     if type(prefill_tokens) is not int or not 1 <= prefill_tokens <= MAX_QUALIFIED_PREFILL_TOKENS:
         raise ValueError("prefill_tokens must be within the qualified 1–640 token budget")
@@ -55,6 +56,14 @@ def serving_command(
     if kv_cache_memory_bytes is not None and (type(kv_cache_memory_bytes) is not int or kv_cache_memory_bytes <= 0):
         raise ValueError("kv_cache_memory_bytes must be positive")
     command = list(previous)
+    if fused_sinkhorn is not None:
+        if type(fused_sinkhorn) is not bool:
+            raise ValueError("fused Sinkhorn selection must be boolean")
+        overrides = json.loads(command[command.index("--hf-overrides") + 1]) if "--hf-overrides" in command else {}
+        if not isinstance(overrides, dict):
+            raise ValueError("HF overrides must be an object")
+        overrides["ascend_glm_fused_sinkhorn"] = fused_sinkhorn
+        command = argument(command, "--hf-overrides", json.dumps(overrides))
     if capacity_first:
         prefix_caching = False
         max_num_seqs = 1
@@ -119,6 +128,7 @@ def launch(
     prefill_tokens=128,
     prefix_caching=None,
     max_num_seqs=None,
+    fused_sinkhorn=None,
 ):
     root = Path(root).resolve()
     if (root / "service.log").exists() or (root / "service-process.json").exists():
@@ -157,6 +167,7 @@ def launch(
         prefill_tokens=prefill_tokens,
         prefix_caching=prefix_caching,
         max_num_seqs=max_num_seqs,
+        fused_sinkhorn=fused_sinkhorn,
     )
     # Compile/import preflight before stopping a working service. The worker
     # extension loads the same auxiliary bindings as the qualified baseline.
@@ -208,6 +219,7 @@ def main():
     parser.add_argument("--max-num-batched-tokens", type=int, default=128)
     parser.add_argument("--max-num-seqs", type=int)
     parser.add_argument("--enable-prefix-caching", action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument("--fused-sinkhorn", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument(
         "--capacity-first",
         action="store_true",
@@ -224,6 +236,7 @@ def main():
         capacity_first=args.capacity_first,
         prefill_tokens=args.max_num_batched_tokens,
         max_num_seqs=args.max_num_seqs,
+        fused_sinkhorn=args.fused_sinkhorn,
         prefix_caching=args.enable_prefix_caching,
     )
 
