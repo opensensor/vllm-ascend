@@ -1,0 +1,24 @@
+{
+  "source_sha256": {
+    "tools/sidecard/__init__.py": "23c9d826bd920c796588be2cd3227658c3c2eecb8e1a2fbea84ec6a724c47b2c",
+    "tools/sidecard/__main__.py": "eb6fd8ef127d95f33afff58d12148eb42efd98e20e142323079afd816fec2c66",
+    "tools/sidecard/bundle.py": "cc3a2d01e2a24efe74273cb485f7280bbaa6d08682b77715e7e91a694746a144",
+    "tools/sidecard/canonical_cpu.py": "26b775e82b92a31b8b5614765021015b33b44c96754a511e0f21d547cb162018",
+    "tools/sidecard/checkpoint.py": "a440a653f46dab9e992540cb659e59b76a3d20d8346392bde1693c2072d8bd1a",
+    "tools/sidecard/hardware_probe.py": "9fd6f9e8e70493a0a4d9bbf6f05792eb0285de8ca365c78fb15438a30617ec9e",
+    "tools/sidecard/native_expert_probe.py": "bffe830595117fabe79d8551b3e31e0ce7919dcb244e57f0de9143017db95a47",
+    "tools/sidecard/partition_smoke.py": "05f4e9a3e6b8305da033a2da5b5314221ba5f993dc019e3f1009bc1728a84768",
+    "tools/sidecard/placement.py": "42782c57acd88b2b9fd15f3e16f039f3afc3ccf18956d17137f4d1045a5f86c1",
+    "tools/sidecard/readiness.py": "fb535e0f084fe9e72b5afc1899ab53c6b6a946ea33ea133b00d489b67694d5a3",
+    "tools/sidecard/reference.py": "66565b1fa97fc8b6a05a15db846f7e2063276cee8a9a2dd3a6ef13e64358ef58",
+    "tools/sidecard/runtime.py": "054312404b98f90a5c9cb99801803678f45b9855f2ffa284f73e01bde627cc5f",
+    "tools/sidecard/smoke.py": "664e721f11644a5e9a76b1909f0343a6eeedb2c98f4283302adc9029659bf3e0",
+    "tools/sidecard/wire.py": "07450e5f3bc50b690ea712e43cd5a66ef938814f720c974ce4840aea5194d0e2",
+    "tools/sidecard/worker.py": "fcc11ccdce4e5ea520d35d70799fff93ae59f2f7f6975723f04b60797fcaec75"
+  },
+  "server": "    PID    PPID                  STARTED COMMAND\n 276072       1 Sun Oct 11 13:17:34 2026 /srv/ai/venvs/qwen38-w4-test-ce1862/bin/python -m vllm.entrypoints.cli.main serve /srv/ai/storage/models/GLM-5.3-Flash-two-card-native-candidate --served-model-name glm-next-math-tp4 --load-format glm_native_int4 --dtype float16 --tensor-parallel-size 4 --pipeline-parallel-size 1 --max-model-len 8192 --max-num-batched-tokens 640 --max-num-seqs 4 --enable-chunked-prefill --enable-prefix-caching --enable-prompt-tokens-details --no-async-scheduling --mamba-cache-mode align --disable-custom-all-reduce --reasoning-parser glm47 --enable-auto-tool-choice --tool-call-parser poolside_v1 --port 8001 --compilation-config {\"cudagraph_mode\": \"FULL_DECODE_ONLY\", \"cudagraph_capture_sizes\": [1, 4]} --hf-overrides {\"ascend_glm_nz_packed_codes\": true, \"ascend_glm_mhc_batched_round\": true, \"ascend_glm_mhc_fp16_state\": true, \"ascend_glm_mhc_ai_core_round\": true, \"ascend_glm_kda_nz_grouped\": true, \"ascend_glm_prefill_route_histogram\": true, \"ascend_glm_native_mhc_post\": true, \"ascend_glm_live_kpool_score\": true, \"ascend_glm_decode_swiglu\": true, \"ascend_glm_decode_combine\": true, \"ascend_glm_kpool_state_block_size\": 32} --host 127.0.0.1 --gpu-memory-utilization 0.90 --trust-remote-code --enable-logging-iteration-details --worker-extension-cls card_worker_extension.CardWorkerExtension --model-loader-extra-config {\"router_owner_rank\": 3, \"router_exchange_budget_bytes\": 393216, \"router_overlap_prefill\": true}\n",
+  "cuda_processes": "pid, process_name, used_gpu_memory [MiB]\n",
+  "recorded_at": "2026-10-11T16:38:16.415263+00:00",
+  "remote_artifact_root": "/srv/ai/storage/artifacts/sidecard-glm-hardware-20261011-v1",
+  "local_source_matches": true
+}

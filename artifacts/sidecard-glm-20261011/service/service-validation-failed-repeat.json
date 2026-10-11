@@ -1,0 +1,216 @@
+{
+  "schema_version": 1,
+  "base_url": "http://127.0.0.1:8001",
+  "model": "glm-sidecard",
+  "passed": false,
+  "cases": [
+    {
+      "name": "completion",
+      "elapsed_seconds": 9.431849520999094,
+      "status": 200,
+      "response": {
+        "id": "cmpl-8e4477beefccfda7",
+        "object": "text_completion",
+        "created": 1791741302,
+        "model": "glm-sidecard",
+        "choices": [
+          {
+            "index": 0,
+            "text": " a city of many facets. It is a city of history",
+            "logprobs": {
+              "text_offset": [
+                0,
+                2,
+                7,
+                10,
+                15,
+                22,
+                23,
+                26,
+                29,
+                31,
+                36,
+                39
+              ],
+              "token_logprobs": [
+                -1.5918431282043457,
+                -1.8228446245193481,
+                -1.1457477807998657,
+                -1.7304980754852295,
+                -1.063517451286316,
+                -0.5334005355834961,
+                -2.0901083946228027,
+                -0.7473497986793518,
+                -1.392429232597351,
+                -1.4540642499923706,
+                -0.345571905374527,
+                -1.3356595039367676
+              ],
+              "tokens": [
+                " a",
+                " city",
+                " of",
+                " many",
+                " facets",
+                ".",
+                " It",
+                " is",
+                " a",
+                " city",
+                " of",
+                " history"
+              ],
+              "top_logprobs": [
+                {
+                  " a": -1.5918431282043457
+                },
+                {
+                  " city": -1.8228446245193481
+                },
+                {
+                  " of": -1.1457477807998657
+                },
+                {
+                  " many": -1.7304980754852295
+                },
+                {
+                  " facets": -1.063517451286316
+                },
+                {
+                  ".": -0.5334005355834961
+                },
+                {
+                  " It": -2.0901083946228027
+                },
+                {
+                  " is": -0.7473497986793518
+                },
+                {
+                  " a": -1.392429232597351
+                },
+                {
+                  " city": -1.4540642499923706
+                },
+                {
+                  " of": -0.345571905374527
+                },
+                {
+                  " history": -1.3356595039367676
+                }
+              ]
+            },
+            "finish_reason": "length",
+            "stop_reason": null,
+            "token_ids": null,
+            "prompt_logprobs": null,
+            "prompt_token_ids": null,
+            "routed_experts": null
+          }
+        ],
+        "service_tier": null,
+        "system_fingerprint": "vllm-0.1.dev1+g3ab5dda29-tp4-b0cf8ba4",
+        "usage": {
+          "prompt_tokens": 5,
+          "total_tokens": 17,
+          "completion_tokens": 12,
+          "prompt_tokens_details": {
+            "cached_tokens": 0,
+            "created_cache_tokens": null,
+            "multimodal_tokens": null
+          },
+          "completion_tokens_details": null
+        },
+        "kv_transfer_params": null,
+        "ec_transfer_params": null,
+        "metrics": null
+      }
+    },
+    {
+      "name": "chat",
+      "elapsed_seconds": 16.72718117900149,
+      "status": 200,
+      "response": {
+        "id": "chatcmpl-b68b3a9054b9fb22",
+        "object": "chat.completion",
+        "created": 1791741311,
+        "model": "glm-sidecard",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "4",
+              "refusal": null,
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "reasoning": "A simple math question. The answer is 4. The user wants a brief answer."
+            },
+            "logprobs": null,
+            "finish_reason": "stop",
+            "stop_reason": 154827,
+            "token_ids": null,
+            "routed_experts": null
+          }
+        ],
+        "service_tier": null,
+        "system_fingerprint": "vllm-0.1.dev1+g3ab5dda29-tp4-b0cf8ba4",
+        "usage": {
+          "prompt_tokens": 23,
+          "total_tokens": 44,
+          "completion_tokens": 21,
+          "prompt_tokens_details": {
+            "cached_tokens": 0,
+            "created_cache_tokens": 0,
+            "multimodal_tokens": null
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 18
+          }
+        },
+        "prompt_logprobs": null,
+        "prompt_token_ids": null,
+        "prompt_text": null,
+        "kv_transfer_params": null,
+        "ec_transfer_params": null,
+        "metrics": null
+      }
+    }
+  ],
+  "models": {
+    "elapsed_seconds": 0.009050038999703247,
+    "status": 200,
+    "response": {
+      "object": "list",
+      "data": [
+        {
+          "id": "glm-sidecard",
+          "object": "model",
+          "created": 1791741302,
+          "owned_by": "vllm",
+          "root": "/srv/ai/storage/models/GLM-5.3-Flash-two-card-native-candidate",
+          "parent": null,
+          "max_model_len": 8192,
+          "permission": [
+            {
+              "id": "modelperm-bfac150addcccd7a",
+              "object": "model_permission",
+              "created": 1791741302,
+              "allow_create_engine": false,
+              "allow_sampling": true,
+              "allow_logprobs": true,
+              "allow_search_indices": false,
+              "allow_view": true,
+              "allow_fine_tuning": false,
+              "organization": "*",
+              "group": null,
+              "is_blocking": false
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "baseline_text_equal": false,
+  "deterministic_repeat_equal": false
+}

@@ -1,0 +1,197 @@
+{
+  "source_sha256": {
+    "tools/sidecard/__init__.py": "23c9d826bd920c796588be2cd3227658c3c2eecb8e1a2fbea84ec6a724c47b2c",
+    "tools/sidecard/__main__.py": "eb6fd8ef127d95f33afff58d12148eb42efd98e20e142323079afd816fec2c66",
+    "tools/sidecard/bundle.py": "cc3a2d01e2a24efe74273cb485f7280bbaa6d08682b77715e7e91a694746a144",
+    "tools/sidecard/canonical_cpu.py": "26b775e82b92a31b8b5614765021015b33b44c96754a511e0f21d547cb162018",
+    "tools/sidecard/checkpoint.py": "a440a653f46dab9e992540cb659e59b76a3d20d8346392bde1693c2072d8bd1a",
+    "tools/sidecard/cuda_combine.py": "372975aa09d9a1fa03f2eca6803e00e0d7b1a20c29795615ffe87243196337d5",
+    "tools/sidecard/device_backend.py": "926a32502bcc0d66a80ab51acd4f6ef3b03760f7234addca36b6da01fe88ae1a",
+    "tools/sidecard/external_runtime.py": "b64b2e1946ba5be925b45a9dbe00a06eb7eec6d996120a32fff0b05bb0716f50",
+    "tools/sidecard/external_worker.py": "7861691ad24b5f41685ef2fa6faaaf04473962f1d354fb1e394c6166a5ff04cc",
+    "tools/sidecard/hardware_probe.py": "531b082b2bae97dcb2cfe091e882c315ad679c2271fdd591dc637e4238415692",
+    "tools/sidecard/native_expert_probe.py": "bffe830595117fabe79d8551b3e31e0ce7919dcb244e57f0de9143017db95a47",
+    "tools/sidecard/partition_smoke.py": "05f4e9a3e6b8305da033a2da5b5314221ba5f993dc019e3f1009bc1728a84768",
+    "tools/sidecard/placement.py": "42782c57acd88b2b9fd15f3e16f039f3afc3ccf18956d17137f4d1045a5f86c1",
+    "tools/sidecard/readiness.py": "fb535e0f084fe9e72b5afc1899ab53c6b6a946ea33ea133b00d489b67694d5a3",
+    "tools/sidecard/reference.py": "b4b7cdda552228c55badb73ddd131a1a82373ff0df9579b070a918af6e164ea4",
+    "tools/sidecard/runtime.py": "b8d7c2da57cd7ee055fc9aeb1523ee6947c95869fcde603433048e99f2007971",
+    "tools/sidecard/smoke.py": "664e721f11644a5e9a76b1909f0343a6eeedb2c98f4283302adc9029659bf3e0",
+    "tools/sidecard/split_gate.py": "d27c71283e513a7bca9ed7b45e7d6cb45349180d010ae3792c5f27f4cc4416d1",
+    "tools/sidecard/wire.py": "07450e5f3bc50b690ea712e43cd5a66ef938814f720c974ce4840aea5194d0e2",
+    "tools/sidecard/worker.py": "fcc11ccdce4e5ea520d35d70799fff93ae59f2f7f6975723f04b60797fcaec75",
+    "tools/sidecard/cuda_oracle.cu": "18527b3aa8b2b3222b7b456ac279056559e465ae97ef831263873a0dc04bcd30"
+  },
+  "cuda_library_sha256": "2a6fcd54899ccc3b4dae9a48beec710eab483e0dba3eb9d16500f450f82af3b8",
+  "cuda_build_command": [
+    "/usr/local/cuda/bin/nvcc",
+    "-std=c++17",
+    "-O2",
+    "--fmad=false",
+    "-arch=sm_120",
+    "-shared",
+    "-Xcompiler",
+    "-fPIC",
+    "source/tools/sidecard/cuda_oracle.cu",
+    "-o",
+    "cuda_oracle.so"
+  ],
+  "cuda_compiler": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Tue_Sep_01_08:45:21_PDT_2026\nCuda compilation tools, release 13.4, V13.4.92\nBuild cuda_13.4.r13.4/compiler.38855100_0\n",
+  "backend_metrics": [
+    {
+      "layer": 3,
+      "log": "run-v3/layer-3/worker-0000.log",
+      "kind": "backend_service_totals",
+      "owner": "cuda:0",
+      "requests": 18,
+      "routes": 264,
+      "compute_total_ms": 66.90524099394679,
+      "compute_max_ms": 9.116945999267045
+    },
+    {
+      "layer": 3,
+      "log": "run-v3/layer-3/worker-0001.log",
+      "kind": "backend_service_totals",
+      "owner": "npu:0",
+      "requests": 18,
+      "routes": 264,
+      "compute_total_ms": 638.2727360069111,
+      "compute_max_ms": 489.90430499907234
+    },
+    {
+      "layer": 3,
+      "log": "run-v3/layer-3/worker-0002.log",
+      "kind": "backend_service_totals",
+      "owner": "npu:1",
+      "requests": 18,
+      "routes": 132,
+      "compute_total_ms": 538.7404159992002,
+      "compute_max_ms": 408.3751590005704
+    },
+    {
+      "layer": 3,
+      "log": "run-v3/layer-3/worker-0003.log",
+      "kind": "backend_service_totals",
+      "owner": "npu:2",
+      "requests": 18,
+      "routes": 132,
+      "compute_total_ms": 446.15596700896276,
+      "compute_max_ms": 324.00954900003853
+    },
+    {
+      "layer": 3,
+      "log": "run-v3/layer-3/worker-0004.log",
+      "kind": "backend_service_totals",
+      "owner": "npu:3",
+      "requests": 18,
+      "routes": 264,
+      "compute_total_ms": 383.09047300572274,
+      "compute_max_ms": 237.81417999998666
+    },
+    {
+      "layer": 33,
+      "log": "run-v3/layer-33/worker-0000.log",
+      "kind": "backend_service_totals",
+      "owner": "cuda:0",
+      "requests": 18,
+      "routes": 264,
+      "compute_total_ms": 64.7929119913897,
+      "compute_max_ms": 8.714108997082803
+    },
+    {
+      "layer": 33,
+      "log": "run-v3/layer-33/worker-0001.log",
+      "kind": "backend_service_totals",
+      "owner": "npu:0",
+      "requests": 18,
+      "routes": 264,
+      "compute_total_ms": 597.8191849899304,
+      "compute_max_ms": 440.7252319979307
+    },
+    {
+      "layer": 33,
+      "log": "run-v3/layer-33/worker-0002.log",
+      "kind": "backend_service_totals",
+      "owner": "npu:1",
+      "requests": 18,
+      "routes": 132,
+      "compute_total_ms": 661.9739400048275,
+      "compute_max_ms": 534.5010549972358
+    },
+    {
+      "layer": 33,
+      "log": "run-v3/layer-33/worker-0003.log",
+      "kind": "backend_service_totals",
+      "owner": "npu:2",
+      "requests": 18,
+      "routes": 132,
+      "compute_total_ms": 411.67739899174194,
+      "compute_max_ms": 285.2354300011939
+    },
+    {
+      "layer": 33,
+      "log": "run-v3/layer-33/worker-0004.log",
+      "kind": "backend_service_totals",
+      "owner": "npu:3",
+      "requests": 18,
+      "routes": 264,
+      "compute_total_ms": 371.6846839961363,
+      "compute_max_ms": 217.7399100000912
+    },
+    {
+      "layer": 8,
+      "log": "run-v3/layer-8/worker-0000.log",
+      "kind": "backend_service_totals",
+      "owner": "cuda:0",
+      "requests": 18,
+      "routes": 264,
+      "compute_total_ms": 64.64729900108068,
+      "compute_max_ms": 8.620402000815375
+    },
+    {
+      "layer": 8,
+      "log": "run-v3/layer-8/worker-0001.log",
+      "kind": "backend_service_totals",
+      "owner": "npu:0",
+      "requests": 18,
+      "routes": 264,
+      "compute_total_ms": 574.5560290051799,
+      "compute_max_ms": 411.9191980025789
+    },
+    {
+      "layer": 8,
+      "log": "run-v3/layer-8/worker-0002.log",
+      "kind": "backend_service_totals",
+      "owner": "npu:1",
+      "requests": 18,
+      "routes": 132,
+      "compute_total_ms": 568.6372669988486,
+      "compute_max_ms": 439.124748998438
+    },
+    {
+      "layer": 8,
+      "log": "run-v3/layer-8/worker-0003.log",
+      "kind": "backend_service_totals",
+      "owner": "npu:2",
+      "requests": 18,
+      "routes": 132,
+      "compute_total_ms": 481.17477499909,
+      "compute_max_ms": 352.5508099992294
+    },
+    {
+      "layer": 8,
+      "log": "run-v3/layer-8/worker-0004.log",
+      "kind": "backend_service_totals",
+      "owner": "npu:3",
+      "requests": 18,
+      "routes": 264,
+      "compute_total_ms": 393.23360600610613,
+      "compute_max_ms": 230.27401299987105
+    }
+  ],
+  "server": "    PID    PPID                  STARTED COMMAND\n 276072       1 Sun Oct 11 13:17:34 2026 /srv/ai/venvs/qwen38-w4-test-ce1862/bin/python -m vllm.entrypoints.cli.main serve /srv/ai/storage/models/GLM-5.3-Flash-two-card-native-candidate --served-model-name glm-next-math-tp4 --load-format glm_native_int4 --dtype float16 --tensor-parallel-size 4 --pipeline-parallel-size 1 --max-model-len 8192 --max-num-batched-tokens 640 --max-num-seqs 4 --enable-chunked-prefill --enable-prefix-caching --enable-prompt-tokens-details --no-async-scheduling --mamba-cache-mode align --disable-custom-all-reduce --reasoning-parser glm47 --enable-auto-tool-choice --tool-call-parser poolside_v1 --port 8001 --compilation-config {\"cudagraph_mode\": \"FULL_DECODE_ONLY\", \"cudagraph_capture_sizes\": [1, 4]} --hf-overrides {\"ascend_glm_nz_packed_codes\": true, \"ascend_glm_mhc_batched_round\": true, \"ascend_glm_mhc_fp16_state\": true, \"ascend_glm_mhc_ai_core_round\": true, \"ascend_glm_kda_nz_grouped\": true, \"ascend_glm_prefill_route_histogram\": true, \"ascend_glm_native_mhc_post\": true, \"ascend_glm_live_kpool_score\": true, \"ascend_glm_decode_swiglu\": true, \"ascend_glm_decode_combine\": true, \"ascend_glm_kpool_state_block_size\": 32} --host 127.0.0.1 --gpu-memory-utilization 0.90 --trust-remote-code --enable-logging-iteration-details --worker-extension-cls card_worker_extension.CardWorkerExtension --model-loader-extra-config {\"router_owner_rank\": 3, \"router_exchange_budget_bytes\": 393216, \"router_overlap_prefill\": true}\n",
+  "cuda_processes": "pid, process_name, used_gpu_memory [MiB]\n",
+  "recorded_at": "2026-10-11T17:13:21.438849+00:00",
+  "remote_artifact_root": "/srv/ai/storage/artifacts/sidecard-glm-split-20261011-v3",
+  "local_source_matches": true
+}
