@@ -13,14 +13,17 @@ SMALL_DECODE_TOKENS = 3
 OWNED_GATHER_MIN_TOKENS = 640
 
 
-def make_replacements(build, *, finalize_max_tokens=0):
+def make_replacements(build, *, finalize_max_tokens=0, lean_projection=False):
+    if finalize_max_tokens not in (0, MAX_FIXED_TOKENS):
+        raise ValueError("owned finalizer requires explicit small-token admission")
+    if not isinstance(lean_projection, bool):
+        raise ValueError("lean projection admission must be boolean")
+
     from tools.qwen4exp.channel_int8_server import ServingConfiguration, ServingProjection
     from vllm_ascend._310p.model_runner_310p import NPUModelRunner310
     from vllm_ascend.models.qwen4_exp import w4_moe
 
     build = Path(build)
-    if finalize_max_tokens not in (0, MAX_FIXED_TOKENS):
-        raise ValueError("owned finalizer requires explicit small-token admission")
     manifest = json.loads((build / "provenance.json").read_text())
     for entry in manifest["assets"]:
         if hashlib.sha256(Path(entry["path"]).read_bytes()).hexdigest() != entry["sha256"]:
@@ -50,7 +53,17 @@ def make_replacements(build, *, finalize_max_tokens=0):
     activation = Activation(Kernel(manifest["activation_binary"], "qwen_local_channel_swiglu_v1"), launch)
     dispatch_native = Dispatch(Kernel(manifest["dispatch_binary"], "qwen_fixed_route_dispatch_v1"), launch)
     gather = Gather(Kernel(manifest["gather_binary"], "qwen_local_channel_gather_v1"), launch)
-    small = ServingProjection(Kernel(manifest["small_binary"], "qwen_channel_int8_projection_m16_v1"), launch)
+    small = ServingProjection(
+        Kernel(manifest["lean_binary"], "qwen_channel_int8_lean_m16_v1")
+        if lean_projection
+        else Kernel(manifest["small_binary"], "qwen_channel_int8_projection_m16_v1"),
+        launch,
+    )
+    lean = (
+        ServingProjection(Kernel(manifest["lean_binary"], "qwen_channel_int8_lean_m32_v1"), launch)
+        if lean_projection
+        else None
+    )
     finalize_native = (
         Finalize(Kernel(manifest["finalize_binary"], "qwen_owned_finalize_half_accumulate_v1"), launch)
         if finalize_max_tokens
@@ -60,11 +73,15 @@ def make_replacements(build, *, finalize_max_tokens=0):
     old_forward = getattr(current_forward, "_channel_math_original", current_forward)
     # Compare a reducer trial with the live fused path, not the earlier path
     # whose dispatch gain could hide a reducer regression.
-    if finalize_max_tokens and not getattr(current_forward, "_channel_math_finalize_max_tokens", 0):
+    if (finalize_max_tokens and not getattr(current_forward, "_channel_math_finalize_max_tokens", 0)) or (
+        lean_projection and not getattr(current_forward, "_channel_math_lean_projection", False)
+    ):
         old_forward = current_forward
 
     def forward(self, inputs, weights, ids):
         projection, quantize = self._channel_int8_resources
+        if lean is not None:
+            projection = lean
         if inputs.shape[0] <= SMALL_DECODE_TOKENS:
             projection = small
         if inputs.shape[0] <= MAX_FIXED_TOKENS and ids.dtype == torch.int64 and self.grouped_finalize == "cann_v2":
@@ -108,6 +125,7 @@ def make_replacements(build, *, finalize_max_tokens=0):
 
     forward._channel_math_original = old_forward
     forward._channel_math_finalize_max_tokens = finalize_max_tokens
+    forward._channel_math_lean_projection = lean_projection
     previous_capture = getattr(
         NPUModelRunner310.capture_model, "_channel_math_original", NPUModelRunner310.capture_model
     )

@@ -9,7 +9,7 @@ using namespace AscendC;
 constexpr uint32_t N = 160, GROUP = 128, BLOCK = 16, K0 = 32, LANES = 8, MAX_K = 2560;
 template <bool EXPAND_PACKED_WEIGHTS = false, uint32_t ROW_TILE = 16, bool LOOKUP_DECODE = false,
           bool GROUPED_EXPERTS = false, bool PACKED_ACTIVATIONS = true, bool WHOLE_K_INT8 = false,
-          uint32_t COLUMN_TILE = 160, bool DEBUG_INTEGER = false>
+          uint32_t COLUMN_TILE = 160, bool DEBUG_INTEGER = false, bool LEAN_WHOLE_K = false>
 class Int8ProjectionProbe {
   static constexpr uint32_t M = ROW_TILE;
   static constexpr uint32_t N = COLUMN_TILE;
@@ -19,6 +19,8 @@ class Int8ProjectionProbe {
                 "packed whole-K expansion uses bounded M32/N160 UB regions");
   static_assert(M == BLOCK || M == 2 * BLOCK || (WHOLE_K_INT8 && M == 4 * BLOCK),
                 "whole-K allows 64 rows; packed-weight probes require 16 or 32");
+  static_assert(!LEAN_WHOLE_K || (WHOLE_K_INT8 && !EXPAND_PACKED_WEIGHTS && !PACKED_ACTIVATIONS && !DEBUG_INTEGER),
+                "lean vector work requires raw whole-K integer operands");
 
  public:
   __aicore__ inline void Run(GM_ADDR x, GM_ADDR weight, GM_ADDR scale, GM_ADDR inputScale, GM_ADDR output,
@@ -62,7 +64,9 @@ class Int8ProjectionProbe {
     pipe_.InitBuffer(result_, ELEMENTS * sizeof(half));
     auto packed = packed_.Get<int8_t>();
     auto product = product_.Get<float>();
-    auto accumulator = product[ELEMENTS];
+    // Whole-K produces one completed, scaled dot. It needs no second
+    // floating accumulator or addition into zero. Group-scaled paths keep it.
+    auto accumulator = LEAN_WHOLE_K ? product : product[ELEMENTS];
     auto scales = metadata_.Get<half>();
     auto weightScale = metadata_.Get<float>()[N / 2];
     auto activationScale = weightScale[N];
@@ -116,12 +120,17 @@ class Int8ProjectionProbe {
         WaitFlag<HardEvent::MTE2_MTE1>(EVENT_ID0);
         for (int64_t first = begin; first < end; first += M) {
           const uint32_t count = end - first < M ? end - first : M;
-          Duplicate(accumulator, 0.0f, ELEMENTS);
-          PipeBarrier<PIPE_V>();
+          if constexpr (!LEAN_WHOLE_K) {
+            Duplicate(accumulator, 0.0f, ELEMENTS);
+            PipeBarrier<PIPE_V>();
+          }
           for (int64_t group = 0; group < groups; ++group) {
             const uint32_t actualK = k - group * DOT_K < DOT_K ? k - group * DOT_K : DOT_K;
-            Duplicate(packed.ReinterpretCast<int16_t>(), static_cast<int16_t>(0), M * DOT_K / 2);
-            Duplicate(activationScale, 0.0f, M * LANES);
+            // A full raw tile overwrites every operand byte. Partial tiles
+            // retain padding initialization; ownership events are unchanged.
+            if (!LEAN_WHOLE_K || count < M || actualK < DOT_K)
+              Duplicate(packed.ReinterpretCast<int16_t>(), static_cast<int16_t>(0), M * DOT_K / 2);
+            if constexpr (!LEAN_WHOLE_K) Duplicate(activationScale, 0.0f, M * LANES);
             SetFlag<HardEvent::V_MTE2>(EVENT_ID0);
             WaitFlag<HardEvent::V_MTE2>(EVENT_ID0);
             if constexpr (GROUPED_EXPERTS && PACKED_ACTIVATIONS) {
@@ -240,8 +249,10 @@ class Int8ProjectionProbe {
                     {1, 1, 0, M * BLOCK / LANES, M * BLOCK / LANES, 0});
             }
             PipeBarrier<PIPE_V>();
-            Add(accumulator, accumulator, product, ELEMENTS);
-            PipeBarrier<PIPE_V>();
+            if constexpr (!LEAN_WHOLE_K) {
+              Add(accumulator, accumulator, product, ELEMENTS);
+              PipeBarrier<PIPE_V>();
+            }
             SetFlag<HardEvent::M_MTE1>(EVENT_ID0);
             WaitFlag<HardEvent::M_MTE1>(EVENT_ID0);
             SetFlag<HardEvent::MTE3_V>(EVENT_ID0);

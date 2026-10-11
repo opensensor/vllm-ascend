@@ -276,3 +276,40 @@ It also initializes scale scratch before groups that never consume it.
 Removing these operations must preserve the existing integer accumulation,
 scale order, FP16 boundary, and buffer ownership events. This is the next
 unqualified candidate, not a deployed or measured gain.
+
+## Qualified lean whole-K projection
+
+The next candidate, `qwen_qsa_owner_lean_int8_math`, is now live and retained in
+the restart profile. Its opt-in whole-K template aliases the completed scaled
+product as the output accumulator, removes the addition into zero and its
+initialization, and avoids scale scratch initialization before unused groups.
+A fully overwritten raw activation tile also skips padding initialization;
+partial row/K tiles retain it. Existing projection entries default to the
+previous recipe. All operand ownership events and peer output clears remain.
+
+All six ranks passed exact resident real-weight partials at 3, 6, 128, 640, and
+1,280 tokens. Three- and six-token captured replay passed with changing IDs.
+At 1,280 tokens, stage latency decreased approximately 0.5–2.0%; at small
+batches the differences were mostly neutral. These are isolated routed MoE
+measurements, not end-to-end throughput gains. The cutover separately passed
+the real-weight capture gate on every rank, and marker, math, code, thinking,
+and fresh/cached image request gates passed.
+
+The cold 10,322-token request had zero cached tokens and an 18.987-second TTFT.
+The coding gate measured 31.672 tokens/s and the thinking gate 30.882 tokens/s.
+These observations are effectively neutral relative to the preceding profile;
+only that preceding profile has the three-run 32.177 tokens/s median. Do not
+attribute a full-server speedup to this cleanup. No 50% baseline gain or full
+1M accuracy qualification is claimed.
+
+The focused CPU suite passed 73 tests, including the preserved hardware event
+sequence and explicit experimental admission checks. Compiled source, asset
+digests, partial timing samples, full-model gates, and cutover receipts are in
+`artifacts/qwen38-lean-whole-k-20261011/`. Worker PIDs and resident weights were
+retained; graph recapture reset reusable prefixes.
+
+The next contention target is the QSA transport's `work.wait()` before the
+local-preprocessing callback. If this backend blocks the host, that ordering
+prevents the callback from being submitted while broadcast is pending. A
+deferred join after local submission needs its own stream completion and
+six-rank shadow qualification. This has not yet been implemented or timed.

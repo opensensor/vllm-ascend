@@ -1,0 +1,45 @@
+import dataclasses,hashlib,json,shutil,sys,uuid
+from pathlib import Path
+PROFILE=Path('/srv/ai/src/qwen-channel-int8-tp6-20261011-v3')
+ROOT=Path('/srv/ai/storage/artifacts/qwen-lean-whole-k-20261011')
+BASE=Path('/srv/ai/storage/artifacts/qwen-local-math-20261011')
+for name in ('native_channel_int8.py','native_route_control.py'):shutil.copy2(BASE/name,ROOT/name)
+m=json.loads((BASE/'provenance.json').read_text());m['lean_binary']=str(ROOT/'lean-whole-k.bin')
+paths=[m[k] for k in ('activation_binary','dispatch_binary','gather_binary','small_binary','qualification_helper','lean_binary')]+[str(ROOT/n) for n in ('channel_local_math.py','native_channel_int8.py','native_route_control.py','native_channel_int8_lean.cpp','native_int8_projection_probe.cpp')]
+m['assets']=[{'path':p,'sha256':hashlib.sha256(Path(p).read_bytes()).hexdigest()} for p in paths]
+(ROOT/'provenance.json').write_text(json.dumps(m,indent=2)+'\n')
+sys.path.insert(0,'/srv/ai/src/qwen-channel-int8-runtime-20261011-v3')
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+client=ResidentClient('http://127.0.0.1:8001',expected_workers=6,timeout=900)
+old=Control.from_dict(json.loads((PROFILE/'control.json').read_text())['control'])
+(ROOT/'previous-control.json').write_text(json.dumps({'control':dataclasses.asdict(old)},indent=2)+'\n')
+helper=ROOT/'channel_local_math.py';digest=hashlib.sha256(helper.read_bytes()).hexdigest()
+source=old.source+f'''
+lean_whole_k_previous_replacements = replacements
+
+def replacements(native_resources):
+    import hashlib
+    from pathlib import Path
+    path=Path({str(helper)!r})
+    if hashlib.sha256(path.read_bytes()).hexdigest()!={digest!r}:
+        raise ValueError('lean whole-K helper changed')
+    scope={{'__name__':'qwen_lean_whole_k'}}
+    exec(compile(path.read_text(),str(path),'exec'),scope)
+    result=lean_whole_k_previous_replacements(native_resources)
+    result.update(scope['make_replacements']({str(ROOT)!r},lean_projection=True))
+    return result
+'''
+control=Control(uuid.uuid4().hex,'graph','qwen_qsa_owner_lean_int8_math',source,True)
+(ROOT/'control.json').write_text(json.dumps({'control':dataclasses.asdict(control)},indent=2)+'\n')
+print('Switching lean whole-K; exact resident gates before graph capture',flush=True)
+try:
+ after=client.switch(control)
+ (ROOT/'switch-after.json').write_text(json.dumps(after,indent=2)+'\n')
+ print('All-six lean cutover complete',flush=True)
+except BaseException as failure:
+ print('Restoring qualified local math:',repr(failure),flush=True)
+ rollback=dataclasses.replace(old,generation=uuid.uuid4().hex,recapture=True)
+ after=client.switch(rollback);client.resume()
+ (ROOT/'rollback.json').write_text(json.dumps({'reason':repr(failure),'status':after},indent=2)+'\n')
+ raise

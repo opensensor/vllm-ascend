@@ -12,6 +12,7 @@ import torch
 
 from tools.qwen4exp.native_channel_int8 import NativeLocalChannelSwiGLU
 from tools.qwen4exp.native_route_control import NativeFixedRouteDispatch, NativeOwnedFinalize
+from tools.qwen4exp.resident_candidates.channel_local_math import make_replacements
 
 
 @pytest.fixture
@@ -109,6 +110,12 @@ def test_finalize_passes_peer_ownership_without_count_read(native_cpu):
     args, blocks = calls[-1]
     assert args[:4] == [routed, weights, inverse, ends] and blocks == 8
     assert args[-1].tolist() == [3, 10, 2560, 85]
+
+
+@pytest.mark.parametrize("admission", [1, "yes", None])
+def test_lean_projection_rejects_ambiguous_control_before_worker_imports(admission):
+    with pytest.raises(ValueError, match="admission must be boolean"):
+        make_replacements("/nonexistent-build", lean_projection=admission)
 
 
 @pytest.mark.parametrize("failure", ["local", "peer", None])

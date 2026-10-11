@@ -1,0 +1,19 @@
+import json,sys
+from pathlib import Path
+root=Path('/srv/ai/src/qwen-channel-int8-tp6-20261011-v3')
+sys.argv=[str(root/'smoke_perf.py'),'lean-whole-k-long-gates']
+scope={'__name__':'cutover_long_gates'}
+text=(root/'smoke_perf.py').read_text()
+exec(compile(text[:text.index("request('/resident/maintenance',{})")],str(root/'smoke_perf.py'),'exec'),scope)
+request,probe=scope['request'],scope['probe']
+request('/resident/maintenance',{})
+try:
+ prompt='Cutover qualification 11 October paired W4.\n'+'\n'.join(f'# record {i}: preserve each input entry and its ordering.' for i in range(650))+'\nRespond with exactly PREFILL_OK.'
+ result=probe('cold-long',{'messages':[{'role':'user','content':prompt}],'max_tokens':32,'chat_template_kwargs':{'enable_thinking':False}},lambda t,r:'PREFILL_OK' in t)
+ assert result['usage']['prompt_tokens']>2560 and result['usage']['prompt_tokens_details']['cached_tokens']<128
+ probe('decode',{'messages':[{'role':'user','content':'Write a Python stable merge sort with type hints, explanation, and tests for stability and duplicates.'}],'max_tokens':512,'chat_template_kwargs':{'enable_thinking':False}},lambda t,r:'def ' in t and 'sort' in t)
+ probe('thinking',{'messages':[{'role':'user','content':'Find the sum of the integers from 1 through 100. Explain briefly.'}],'max_tokens':256,'chat_template_kwargs':{'enable_thinking':True}},lambda t,r:'5050' in t.replace(',','') and bool(r))
+finally:
+ import urllib.request
+ with urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8001/resident/maintenance',method='DELETE'),timeout=10) as response:
+  print(response.read().decode(),flush=True)
