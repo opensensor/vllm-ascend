@@ -1,0 +1,22 @@
+import argparse, json, subprocess, uuid
+from pathlib import Path
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.qwen4exp.thermal_controller import parse_temperatures
+p = argparse.ArgumentParser()
+p.add_argument('arm', choices=['fp16', 'w8'])
+p.add_argument('receipt')
+a = p.parse_args()
+root = Path('/srv/ai/src/qwen-performance-evidence-20261010')
+runtime = Path('/srv/ai/src/qwen-performance-mtp-tp6-v2-20261010-8fce905')
+client = ResidentClient('http://127.0.0.1:8001', 6, 300)
+temperatures = parse_temperatures(subprocess.check_output(['npu-smi', 'info'], text=True, timeout=5), 6)
+assert max(temperatures) < 85
+assert client.request('/is_paused', method='GET')['is_paused'] is False
+path = root / 'fused-hc-ple-candidate-v15.py' if a.arm == 'w8' else runtime / 'tools/qwen4exp/resident_candidates/fused_hc_residual.py'
+source = path.read_text()
+name = 'fused_native_hc_ple_w8' if a.arm == 'w8' else 'fused_native_hc'
+result = client.switch(Control(uuid.uuid4().hex, candidate=name, source=source, recapture=True))
+(root / a.receipt).write_text(json.dumps(result, indent=2))
+print(json.dumps({'candidate': name, 'graphs_dirty': [v['graphs_dirty'] for v in result],
+                  'temperatures_before': temperatures}), flush=True)

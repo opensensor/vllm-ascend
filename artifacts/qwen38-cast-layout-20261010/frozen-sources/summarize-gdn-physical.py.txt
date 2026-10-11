@@ -1,0 +1,17 @@
+import collections,csv,hashlib,json,sqlite3
+from pathlib import Path
+root=Path('/srv/ai/src/qwen-cast-layout-20261010')
+p=next((root/'transfer-profile-v19').glob('*20261010141249668*/ASCEND_PROFILER_OUTPUT'))
+csv_path=p/'kernel_details.csv'; db=p/'ascend_pytorch_profiler_0.db'
+calls=collections.defaultdict(lambda:{'calls':0,'summed_us':0.0})
+casts=collections.defaultdict(lambda:{'calls':0,'summed_us':0.0})
+for r in csv.DictReader(csv_path.open()):
+ key=r['Type'];calls[key]['calls']+=1;calls[key]['summed_us']+=float(r['Duration(us)'])
+ if key=='Cast':
+  key=' | '.join(r.get(k,'') for k in ('Input Shapes','Input Data Types','Output Data Types'))
+  casts[key]['calls']+=1;casts[key]['summed_us']+=float(r['Duration(us)'])
+con=sqlite3.connect('file:'+str(db)+'?mode=ro',uri=True)
+copy=con.execute("SELECT COUNT(*), SUM(endNs-startNs)/1e6 FROM TASK JOIN STRING_IDS ON TASK.taskType=STRING_IDS.id WHERE STRING_IDS.value='MEMCPY_ASYNC'").fetchone()
+result={'variant':'histogram_prefill_gdn','scope':'rank 0; 456-token cold prefill + 12 output; before narrow speculative counts and HC v3; durations overlap and profiler perturbs timings','kernel_csv_sha256':hashlib.sha256(csv_path.read_bytes()).hexdigest(),'database_sha256':hashlib.sha256(db.read_bytes()).hexdigest(),'compute_types':dict(calls),'casts':dict(casts),'explicit_memcpy_calls':copy[0],'explicit_memcpy_summed_ms':copy[1]}
+(root/'gdn-physical-summary.json').write_text(json.dumps(result,indent=2)+'\n')
+print(json.dumps({k:v for k,v in calls.items() if k in ('Cast','TransData','ViewCopy','Equal','RmsNorm','HistogramV2')},indent=2))

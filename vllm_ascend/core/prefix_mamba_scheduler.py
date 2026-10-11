@@ -9,10 +9,7 @@ from vllm.v1.core.kv_cache_utils import get_group_id
 from vllm.v1.core.sched.scheduler import Scheduler
 from vllm.v1.core.single_type_kv_cache_manager import MambaManager
 
-from vllm_ascend._310p.prefix_mamba_state import prefix_mamba_slot_count
-
-# Reserve both live windows, a CoW source window and a checkpoint-write window.
-PREFIX_MAMBA_WORKING_WINDOWS = 4
+from vllm_ascend._310p.prefix_mamba_state import PREFIX_MAMBA_WORKING_WINDOWS, prefix_mamba_slot_count
 
 
 def _is_310p() -> bool:
@@ -24,7 +21,7 @@ def _is_310p() -> bool:
 
 
 def prefix_mamba_checkpoint_limit(max_requests: int, speculative_tokens: int) -> int:
-    primary_slots = prefix_mamba_slot_count(max_requests, speculative_tokens) - 1
+    primary_slots = prefix_mamba_slot_count(max_requests, speculative_tokens, bounded_checkpoints=True) - 1
     limit = primary_slots - max_requests * PREFIX_MAMBA_WORKING_WINDOWS * (1 + speculative_tokens)
     if limit < 1:
         raise ValueError("Bounded Mamba checkpoints need more compact slots or fewer requests/speculative tokens")

@@ -1,0 +1,68 @@
+import torch
+from types import SimpleNamespace
+from tools.qwen4exp.resident_worker import QwenResidentExtension
+from tools.qwen4exp.resident_candidates import cached_ple_w8a8 as candidate
+from vllm_ascend.models.qwen4_exp.ple_layer import AscendQwen4ExpPLELayer
+
+METHOD = 'resident_ple_gate_v15'
+
+def validate():
+    assert torch.ops.qwen_stage_diagnostic_v15.marker() == 1
+    assert not hasattr(QwenResidentExtension, METHOD)
+    def gate(self):
+        cases = 0
+        records = []
+        try:
+            with torch.no_grad():
+                seen = set()
+                for wrapper in self._resident_wrappers():
+                    for module in wrapper.runnable.modules():
+                        if not isinstance(module, AscendQwen4ExpPLELayer) or id(module) in seen:
+                            continue
+                        seen.add(id(module))
+                        weight = module.kv_proj_weight
+                        pointer, version = weight.data_ptr(), weight._version
+                        packed, scales = candidate.prepare_weight(module)
+                        reference = SimpleNamespace(
+                            kv_proj_weight=torch.nn.Parameter(weight.detach(), requires_grad=False),
+                            kv_proj_weight_scale=None,
+                            projection_execution='w8a8_dynamic',
+                        )
+                        AscendQwen4ExpPLELayer.prepare_projection_weight(reference)
+                        torch.testing.assert_close(packed.cpu(), reference.kv_proj_weight.cpu(), rtol=0, atol=0)
+                        torch.testing.assert_close(scales.cpu(), reference.kv_proj_weight_scale.cpu(), rtol=0, atol=0)
+                        for rows in (3, 18):
+                            x = torch.randn(rows, weight.shape[1], device=weight.device, dtype=weight.dtype) * 0.05
+                            expected = AscendQwen4ExpPLELayer.project_merged(reference, x)
+                            actual = candidate.project(module, x, fallback=AscendQwen4ExpPLELayer.project_merged)
+                            torch.testing.assert_close(actual.cpu(), expected.cpu(), rtol=0, atol=0)
+                            cases += 1
+                            graph = torch.npu.NPUGraph()
+                            with torch.npu.graph(graph):
+                                output = candidate.project(module, x, fallback=AscendQwen4ExpPLELayer.project_merged)
+                            graph.replay()
+                            torch.npu.synchronize()
+                            torch.testing.assert_close(output.cpu(), expected.cpu(), rtol=0, atol=0)
+                            x.mul_(0.73)
+                            graph.replay()
+                            torch.npu.synchronize()
+                            expected = AscendQwen4ExpPLELayer.project_merged(reference, x)
+                            torch.testing.assert_close(output.cpu(), expected.cpu(), rtol=0, atol=0)
+                            graph.reset()
+                            del graph, output
+                            cases += 2
+                        assert weight.data_ptr() == pointer and weight._version == version
+                        assert candidate.prepare_weight(module)[0] is packed
+                        records.append({'shape': list(weight.shape), 'original_weight_pointer_preserved': True,
+                                        'cached_packed_bytes': packed.numel() * packed.element_size()})
+                        del reference, expected, actual, x
+                torch.npu.synchronize()
+            assert cases > 0
+            return {'rank': torch.distributed.get_rank(), 'passed': True, 'cases': cases,
+                    'projections': records, 'bitwise_matches_existing_w8': True,
+                    'changed_input_graph_replay': True, 'not_fp16_parity_or_model_quality': True}
+        except Exception as error:
+            return {'rank': torch.distributed.get_rank(), 'passed': False, 'cases': cases,
+                    'error': f'{type(error).__name__}: {error}'}
+    setattr(QwenResidentExtension, METHOD, gate)
+    return {'passed': True, 'diagnostic_method': METHOD, 'production_forward_changed': False}

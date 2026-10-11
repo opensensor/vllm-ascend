@@ -15,7 +15,11 @@ import torch
 from torch import nn
 from vllm.compilation.breakable_cudagraph import BreakableCUDAGraphCapture
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
-from vllm.model_executor.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
+from vllm.model_executor.layers.vocab_parallel_embedding import (
+    DEFAULT_VOCAB_PADDING_SIZE,
+    ParallelLMHead,
+    VocabParallelEmbedding,
+)
 from vllm.model_executor.models.interfaces import MixtureOfExperts, SupportsPP
 from vllm.model_executor.models.utils import make_empty_intermediate_tensors_factory, maybe_prefix
 from vllm.sequence import IntermediateTensors
@@ -23,6 +27,7 @@ from vllm.sequence import IntermediateTensors
 from vllm_ascend.utils import maybe_trans_nz
 
 from .dtype_policy import Qwen4ExpDtypePolicy
+from .head_partition import vocab_partition_padding
 from .lm_head_w8a8 import enable_dynamic_w8a8_lm_head
 from .model import (
     AscendQwen4ExpDecoderLayer,
@@ -43,7 +48,9 @@ from .moe import (
     route_topk,
     swiglu_gate_up,
 )
+from .shared_partition import place_uneven_shared_expert_tensor, shared_expert_range
 from .w4_moe import w4_config
+from .weight_mapping import local_expert_range
 
 
 def _select_local_mtp_routes(
@@ -79,17 +86,20 @@ class _MTPFP16MoE(nn.Module):
         self.num_experts = int(config.num_experts)
         self.top_k = min(int(config.num_experts_per_tok), self.num_experts)
         self.expert_rank, self.expert_tp_size = sharding
-        if self.num_experts % self.expert_tp_size:
+        metadata = getattr(config, "ascend_expert_quantization", None) or {}
+        self.uneven_sharding = metadata.get("mtp_uneven_sharding", False)
+        if type(self.uneven_sharding) is not bool:
+            raise ValueError("mtp_uneven_sharding must be a boolean")
+        if not self.uneven_sharding and self.num_experts % self.expert_tp_size:
             raise ValueError("MTP expert count must be divisible by tensor parallel size")
-        self.num_local_experts = self.num_experts // self.expert_tp_size
-        self.expert_offset = self.expert_rank * self.num_local_experts
+        self.expert_offset, expert_stop = local_expert_range(self.num_experts, self.expert_tp_size, self.expert_rank)
+        self.num_local_experts = expert_stop - self.expert_offset
         hidden = int(config.hidden_size)
         intermediate = int(config.moe_intermediate_size)
         self.hidden_size = hidden
         self.intermediate_size = intermediate
         self.quantized_experts = quantize_experts
         self.grouped_experts = grouped_experts
-        metadata = getattr(config, "ascend_expert_quantization", None) or {}
         self.grouped_graph = metadata.get("mtp_grouped_graph", False)
         if type(self.grouped_graph) is not bool:
             raise ValueError("mtp_grouped_graph must be a boolean")
@@ -151,9 +161,16 @@ class _MTPFP16MoE(nn.Module):
                 for _ in range(self.num_local_experts)
             )
         shared_intermediate = int(getattr(config, "shared_expert_intermediate_size", 0) or 0)
-        if shared_intermediate % self.expert_tp_size:
+        if not self.uneven_sharding and shared_intermediate % self.expert_tp_size:
             raise ValueError("MTP shared expert size must be divisible by tensor parallel size")
-        self.local_shared_intermediate = shared_intermediate // self.expert_tp_size
+        if self.uneven_sharding and shared_intermediate:
+            self.shared_start, self.shared_stop = shared_expert_range(
+                shared_intermediate, self.expert_rank, self.expert_tp_size
+            )
+        else:
+            self.shared_start = self.expert_rank * (shared_intermediate // self.expert_tp_size)
+            self.shared_stop = self.shared_start + shared_intermediate // self.expert_tp_size
+        self.local_shared_intermediate = self.shared_stop - self.shared_start
         if self.local_shared_intermediate:
             self.shared_gate_up = nn.Parameter(
                 torch.zeros(2 * self.local_shared_intermediate, hidden, dtype=policy.main_dtype)
@@ -316,6 +333,9 @@ class _MTPPredictor(nn.Module):
             config.hidden_size,
             params_dtype=policy.embedding_dtype,
             quant_config=None,
+            padding_size=vocab_partition_padding(
+                config, int(vllm_config.parallel_config.tensor_parallel_size), DEFAULT_VOCAB_PADDING_SIZE
+            ),
             prefix=maybe_prefix(prefix, "embed_tokens"),
         )
         self.fc_embedding = nn.Parameter(torch.zeros(self.hidden_size, self.hidden_size, dtype=policy.main_dtype))
@@ -459,6 +479,9 @@ class AscendQwen4ExpMTP(nn.Module, SupportsPP, MixtureOfExperts):
             config.hidden_size,
             params_dtype=self.dtype_policy.lm_head_dtype,
             quant_config=None,
+            padding_size=vocab_partition_padding(
+                config, int(vllm_config.parallel_config.tensor_parallel_size), DEFAULT_VOCAB_PADDING_SIZE
+            ),
             prefix=maybe_prefix(prefix, "lm_head"),
         )
         if getattr(config, "tie_word_embeddings", False):
@@ -561,7 +584,7 @@ class AscendQwen4ExpMTP(nn.Module, SupportsPP, MixtureOfExperts):
                     )
                 for index in range(local):
                     projection = "gate_up_proj" if name.endswith(".gate_up_proj") else "down_proj"
-                    bank.load_expert_weight(projection, index, tensor[tp_rank * local + index])
+                    bank.load_expert_weight(projection, index, tensor[bank.expert_offset + index])
                     if not bank.grouped_experts:
                         loaded.add(f"{target_base}.{index}")
                         if bank.quantized_experts:
@@ -575,6 +598,21 @@ class AscendQwen4ExpMTP(nn.Module, SupportsPP, MixtureOfExperts):
                     target.copy_(tensor.to(target.dtype))
                 loaded.add(name)
                 continue
+            if name.endswith(
+                (
+                    ".mlp.shared_expert.gate_proj.weight",
+                    ".mlp.shared_expert.up_proj.weight",
+                    ".mlp.shared_expert.down_proj.weight",
+                )
+            ):
+                bank = self.model.layers[int(name.split(".")[2])].mlp
+                if bank.uneven_sharding:
+                    placed = place_uneven_shared_expert_tensor(
+                        params, name, tensor, int(self.config.shared_expert_intermediate_size), tp_rank, tp_size
+                    )
+                    if placed is not None:
+                        loaded.add(placed)
+                    continue
             if name.endswith((".mlp.shared_expert.gate_proj.weight", ".mlp.shared_expert.up_proj.weight")):
                 base = name.rsplit(".mlp.shared_expert.", 1)[0] + ".mlp.shared_gate_up"
                 target = params.get(base)

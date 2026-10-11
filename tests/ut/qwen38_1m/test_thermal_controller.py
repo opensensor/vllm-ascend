@@ -134,6 +134,25 @@ def test_monitor_exit_on_pid_reuse_leaves_owned_hold(monkeypatch):
     assert engine.paused and engine.calls == ["pause"]
 
 
+def test_log_write_failure_cannot_disable_thermal_hold_or_cool_resume(monkeypatch):
+    engine = Engine()
+    controller = ThermalController(engine)
+    identities = iter(["original"] * 5 + [None])
+    samples = iter([[94] * 4, [90] * 4, [85] * 4, [94] * 4])
+    monkeypatch.setattr(thermal_controller, "process_identity", lambda pid: next(identities))
+    monkeypatch.setattr(thermal_controller.subprocess, "check_output", lambda *args, **kwargs: "ignored")
+    monkeypatch.setattr(thermal_controller, "parse_temperatures", lambda *args: next(samples))
+    monkeypatch.setattr(thermal_controller.time, "sleep", lambda seconds: None)
+
+    def full_disk(*args, **kwargs):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr("builtins.print", full_disk)
+    thermal_controller.run(controller, 100, 1, 2)
+    assert engine.calls == ["pause", "resume", "pause"]
+    assert engine.paused and controller.owns_pause
+
+
 def test_monitor_retries_incomplete_http_response_without_resuming(monkeypatch, capsys):
     engine = Engine()
     controller = ThermalController(engine)

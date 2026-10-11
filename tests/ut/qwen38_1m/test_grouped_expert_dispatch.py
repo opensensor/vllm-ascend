@@ -117,11 +117,11 @@ def test_dispatch_skew_and_all_peer_owned_routes() -> None:
     torch.testing.assert_close(peer.order, torch.arange(8))
 
 
-@pytest.mark.parametrize("tokens,local_experts", [(0, 1), (1, 1), (7, 8), (640, 72)])
+@pytest.mark.parametrize("tokens,local_experts", [(0, 1), (1, 1), (7, 8), (640, 72), (2560, 85), (2560, 86)])
 def test_fixed_histogram_counts_match_comparison_counts(tokens: int, local_experts: int) -> None:
     generator = torch.Generator().manual_seed(310)
-    ids = torch.randint(0, local_experts * 3, (tokens, 8), generator=generator)
-    weights = torch.rand((tokens, 8), generator=generator)
+    ids = torch.randint(0, local_experts * 3, (tokens, 10), generator=generator)
+    weights = torch.rand((tokens, 10), generator=generator)
     # The global expert range starts at local_experts; the other two thirds
     # become the peer-owned sentinel. Include zero-weight local routes too.
     weights[:, 0] = 0
@@ -149,6 +149,35 @@ def test_histogram_falls_back_when_float32_cannot_represent_route_counts() -> No
             count_mode="histogram",
         )
     assert dispatch.counts.tolist() == [3, 3]
+
+
+def test_histogram_uses_exact_int32_intermediate_before_int64(monkeypatch) -> None:
+    # Catch accidental restoration of the slow 310P FLOAT -> INT64 cast.
+    # The largest legal histogram count is exactly representable in INT32.
+    conversions = []
+    values = torch.tensor([0, 25600, 1 << 24], dtype=torch.float32)
+
+    class HistogramSlice:
+        def to(self, dtype):
+            conversions.append(dtype)
+            return values.to(dtype)
+
+    class HistogramResult:
+        def __getitem__(self, key):
+            return HistogramSlice()
+
+    monkeypatch.setattr(torch, "histc", lambda *args, **kwargs: HistogramResult())
+    dispatch = build_grouped_expert_dispatch(
+        torch.ones((1, 1)),
+        torch.zeros((1, 1), dtype=torch.int64),
+        num_local_experts=3,
+        expert_offset=0,
+        weight_dtype=torch.float32,
+        count_mode="histogram",
+    )
+    assert conversions == [torch.int32]
+    assert dispatch.counts.dtype == torch.int64
+    assert dispatch.counts.tolist() == [0, 25600, 1 << 24]
 
 
 def test_route_count_mode_rejects_unknown_value() -> None:

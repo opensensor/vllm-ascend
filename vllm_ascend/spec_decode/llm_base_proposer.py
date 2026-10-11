@@ -43,7 +43,12 @@ from vllm.v1.spec_decode.utils import (
 from vllm.v1.worker.gpu_input_batch import CachedRequestState, InputBatch
 
 from vllm_ascend import utils as ascend_utils
-from vllm_ascend._310p.qwen4exp_mtp import qwen4exp_mtp_hidden_width
+from vllm_ascend._310p.qwen4exp_mtp import (
+    qwen4exp_mtp_hidden_width,
+    stage_qwen_later_draft_block_table,
+    try_qwen4exp_draft_argmax,
+)
+from vllm_ascend._310p.spec_token_counts import count_valid_spec_tokens
 from vllm_ascend.ascend_config import get_ascend_config
 from vllm_ascend.ascend_forward_context import _EXTRA_CTX, set_ascend_forward_context
 from vllm_ascend.attention.attention_v1 import AscendAttentionState
@@ -754,6 +759,37 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
     def _build_multi_group_graph_capture_metadata(self, common_attn_metadata, draft_index):
         return None
 
+    def _prepare_draft_graph_capture_step(self, common_attn_metadata, draft_index):
+        """Match Qwen's later one-row-per-request draft capture geometry."""
+        architectures = getattr(getattr(self.draft_model_config, "hf_config", None), "architectures", ()) or ()
+        if self.method != "mtp" or draft_index == 0 or "Qwen4ExpMTP" not in architectures:
+            return common_attn_metadata
+        # First proposals consume the target verify layout; later proposals
+        # consume one row per request, padded to the same *token* bucket.
+        # Capture every row so partially occupied real batches can replay it.
+        common = self.shallow_copy_metadata(common_attn_metadata)
+        rows = common.num_input_tokens
+        common.num_reqs = rows
+        common.num_actual_tokens = rows
+        common.max_query_len = 1
+        common.decode_token_per_req = 1
+        common.query_start_loc = self.arange[: rows + 1]
+        common.query_start_loc_cpu = torch.from_numpy(self.token_arange_np[: rows + 1]).clone()
+        self.seq_lens_group[draft_index][:rows].fill_(1)
+        common.seq_lens = self.seq_lens_group[draft_index][:rows]
+        common.seq_lens_cpu = torch.ones(rows, dtype=torch.int32)
+        common._seq_lens_cpu = common.seq_lens_cpu.clone()
+        common.seq_lens_cpu_upper_bound = common.seq_lens_cpu
+        common.num_computed_tokens_cpu = torch.zeros(rows, dtype=torch.int32)
+        common.actual_seq_lengths_q = list(range(1, rows + 1))
+        # The owned later-step table pads its tail directly; a temporary
+        # expanded table here would add an allocation and device copy.
+        common.is_prefilling = torch.zeros(rows, dtype=torch.bool)
+        # Warmup/capture must not write dummy proposals into active KV pages.
+        self.slot_mapping_group[draft_index].fill_(PADDING_SLOT_ID)
+        common.slot_mapping = self.slot_mapping_group[draft_index]
+        return stage_qwen_later_draft_block_table(self, common, draft_index)
+
     def _common_attn_metadata_for_draft_group(
         self,
         common_attn_metadata,
@@ -762,7 +798,7 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
         draft_index=0,
     ):
         """Return the common metadata view consumed by one draft group."""
-        return common_attn_metadata
+        return stage_qwen_later_draft_block_table(self, common_attn_metadata, draft_index)
 
     def _build_cache_only_group_next_step_attn_metadata(
         self,
@@ -900,6 +936,8 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
                 # update the tensor's address for each step.
                 for draft_index in range(self.num_speculative_tokens):
                     common_attn_metadata = self.shallow_copy_metadata(common_attn_metadata)
+                    common_attn_metadata = self._prepare_draft_graph_capture_step(common_attn_metadata, draft_index)
+                    capture_step_reqs = common_attn_metadata.num_reqs
                     common_attn_metadata.copy_sfa_draft_index = draft_index
                     common_attn_metadata.copy_sfa_restore_tails = False
                     extra_attn_metadata_args: dict = {}
@@ -909,18 +947,26 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
                         )
                     # Set the real slot_mapping.
                     slot_mapping_lens = common_attn_metadata.slot_mapping.shape[0]
-                    self.slot_mapping_group[draft_index][:slot_mapping_lens].copy_(common_attn_metadata.slot_mapping)
+                    if self.slot_mapping_group[draft_index].data_ptr() != common_attn_metadata.slot_mapping.data_ptr():
+                        self.slot_mapping_group[draft_index][:slot_mapping_lens].copy_(
+                            common_attn_metadata.slot_mapping
+                        )
                     self.slot_mapping_group[draft_index][slot_mapping_lens:].fill_(PADDING_SLOT_ID)
                     common_attn_metadata.slot_mapping = self.slot_mapping_group[draft_index]
-                    self.seq_lens_group[draft_index][:num_reqs].copy_(common_attn_metadata.seq_lens)
-                    self.seq_lens_group[draft_index][num_reqs:].fill_(0)
-                    common_attn_metadata.seq_lens = self.seq_lens_group[draft_index][:num_reqs]
-                    self.query_start_loc_group[draft_index][: num_reqs + 1].copy_(common_attn_metadata.query_start_loc)
-                    self.query_start_loc_group[draft_index][num_reqs + 1 :].fill_(0)
-                    common_attn_metadata.query_start_loc = self.query_start_loc_group[draft_index][: num_reqs + 1]
+                    if self.seq_lens_group[draft_index].data_ptr() != common_attn_metadata.seq_lens.data_ptr():
+                        self.seq_lens_group[draft_index][:capture_step_reqs].copy_(common_attn_metadata.seq_lens)
+                    self.seq_lens_group[draft_index][capture_step_reqs:].fill_(0)
+                    common_attn_metadata.seq_lens = self.seq_lens_group[draft_index][:capture_step_reqs]
+                    self.query_start_loc_group[draft_index][: capture_step_reqs + 1].copy_(
+                        common_attn_metadata.query_start_loc
+                    )
+                    self.query_start_loc_group[draft_index][capture_step_reqs + 1 :].fill_(0)
+                    common_attn_metadata.query_start_loc = self.query_start_loc_group[draft_index][
+                        : capture_step_reqs + 1
+                    ]
                     if self.dcp_size > 1 and draft_index > 0:
                         assert self.block_table_tensor_clone is not None, "block_table_tensor_clone is not init"
-                        common_attn_metadata.block_table_tensor = self.block_table_tensor_clone[:num_reqs]
+                        common_attn_metadata.block_table_tensor = self.block_table_tensor_clone[:capture_step_reqs]
                     if dcp_manager is not None:
                         dcp_manager.prepare_common_attn_metadata(common_attn_metadata)
                     per_layer_attn_metadata = self._build_multi_group_graph_capture_metadata(
@@ -1267,7 +1313,7 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
             common_attn_metadata.block_table_tensor = self.block_table_tensor_clone[
                 : common_attn_metadata.block_table_tensor.shape[0]
             ]
-        else:
+        elif not getattr(self, "_qwen_draft_block_table_buffers", None):
             common_attn_metadata.block_table_tensor = common_attn_metadata.block_table_tensor.clone()
 
         metadata_has_prefill = bool(getattr(attn_metadata_i, "num_prefills", 0))
@@ -1627,16 +1673,22 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
                         num_reqs=num_blk,
                     )
             else:
-                logits = self.model.compute_logits(sample_hidden_states)
-                if lmhead_tp_enable():
-                    logits, token_indices_to_sample = self._align_tensor_and_indices(
-                        logits,
-                        num_indices,
-                        token_indices_to_sample,
-                        ori_token_indices_to_sample,
-                        is_logits=True,
-                    )
-                draft_token_ids, draft_probs_step0 = self._sample_draft_from_logits(logits, sampling_metadata)
+                local_argmax = try_qwen4exp_draft_argmax(
+                    self, sample_hidden_states, lmhead_tp_enabled=lmhead_tp_enable()
+                )
+                if local_argmax is not None:
+                    draft_token_ids = local_argmax
+                else:
+                    logits = self.model.compute_logits(sample_hidden_states)
+                    if lmhead_tp_enable():
+                        logits, token_indices_to_sample = self._align_tensor_and_indices(
+                            logits,
+                            num_indices,
+                            token_indices_to_sample,
+                            ori_token_indices_to_sample,
+                            is_logits=True,
+                        )
+                    draft_token_ids, draft_probs_step0 = self._sample_draft_from_logits(logits, sampling_metadata)
 
                 # Dynamic verify-length path for head-free DFlash only.
                 if hasattr(self, "dynamic_spec") and self.dynamic_spec is not None:
@@ -1775,11 +1827,15 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
 
             sample_hidden_states = last_hidden_states[token_indices_to_sample]
             draft_probs_step: torch.Tensor | None = None
-            logits = self.model.compute_logits(sample_hidden_states)
-            if lmhead_tp_enable() and num_indices < logits.shape[0]:
-                logits = logits[:num_indices]
-                token_indices_to_sample = token_indices_to_sample[:num_indices]
-            draft_token_ids, draft_probs_step = self._sample_draft_from_logits(logits, sampling_metadata)
+            local_argmax = try_qwen4exp_draft_argmax(self, sample_hidden_states, lmhead_tp_enabled=lmhead_tp_enable())
+            if local_argmax is not None:
+                draft_token_ids = local_argmax
+            else:
+                logits = self.model.compute_logits(sample_hidden_states)
+                if lmhead_tp_enable() and num_indices < logits.shape[0]:
+                    logits = logits[:num_indices]
+                    token_indices_to_sample = token_indices_to_sample[:num_indices]
+                draft_token_ids, draft_probs_step = self._sample_draft_from_logits(logits, sampling_metadata)
 
             # TODO(wenlong): get more than one token for tree attention
             hidden_states = hidden_states[:batch_size]
@@ -1790,8 +1846,12 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
                 else:
                     draft_probs_list = None
 
-        # [batch_size, num_speculative_tokens]
-        draft_token_ids = draft_token_ids_tensor.swapaxes(0, 1)
+        # [batch_size, num_speculative_tokens]. The runner asynchronously
+        # copies these rows to pinned host memory on a separate stream. A
+        # transposed view forces the NPU copy path to create temporary staging
+        # storage; pack on the producer stream so the returned tensor owns the
+        # row-major source until the copy's completion event is consumed.
+        draft_token_ids = draft_token_ids_tensor.swapaxes(0, 1).contiguous()
         if draft_probs_list is not None:
             self._last_draft_probs = torch.stack(draft_probs_list, dim=1).contiguous()
         return draft_token_ids
@@ -2004,9 +2064,10 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
         if draft_index == 1:
             if aclgraph_runtime_mode == CUDAGraphMode.FULL:
                 common_attn_metadata.num_reqs = input_batch_size
-                common_attn_metadata.block_table_tensor = self._adjust_tensor(
-                    common_attn_metadata.block_table_tensor, input_batch_size
-                )
+                if not getattr(self, "_qwen_draft_block_table_buffers", None):
+                    common_attn_metadata.block_table_tensor = self._adjust_tensor(
+                        common_attn_metadata.block_table_tensor, input_batch_size
+                    )
                 common_attn_metadata.seq_lens = self._adjust_tensor(common_attn_metadata.seq_lens, input_batch_size)
                 # seq_lens_cpu may be None here: the multi-KV-cache-group MTP
                 # proposer invalidates stale CPU lengths at the draft_index==1
@@ -2259,7 +2320,9 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
         valid_mask = (valid_sampled_token_ids_gpu != -1) & (valid_sampled_token_ids_gpu < gpu_input_batch.vocab_size)
 
         # Count the number of valid tokens in each request
-        valid_sampled_tokens_count = valid_mask.sum(dim=1)
+        valid_sampled_tokens_count = (
+            count_valid_spec_tokens(valid_mask) if ascend_utils.is_310p() else valid_mask.sum(dim=1)
+        )
 
         # Get the rightmost valid index per row
         last_valid_indices = valid_sampled_tokens_count - 1

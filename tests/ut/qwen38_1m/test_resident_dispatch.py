@@ -59,7 +59,7 @@ def test_reset_clears_mamba_metadata_after_base_reset(monkeypatch, has_tiers):
             return self.resident_status()
 
         def resident_status(self):
-            return {"pid": 101, "graphs_dirty": False}
+            return {"pid": 101, "rank": 0, "graphs_dirty": False}
 
     extension, _ = load_extension(monkeypatch, Base)
     worker = extension.QwenResidentExtension()
@@ -67,14 +67,15 @@ def test_reset_clears_mamba_metadata_after_base_reset(monkeypatch, has_tiers):
     for group_id, tier in tiers.items():
         tier.reset.side_effect = lambda group_id=group_id: events.append(group_id)
         tier.cache_status.return_value = {"host_checkpoints": 0}
-    worker.model_runner = SimpleNamespace(_prefix_mamba_tiers=tiers) if has_tiers else SimpleNamespace()
+    model = SimpleNamespace(named_modules=lambda: ())
+    worker.model_runner = (
+        SimpleNamespace(_prefix_mamba_tiers=tiers, model=model) if has_tiers else SimpleNamespace(model=model)
+    )
     result = worker.resident_reset()
     assert events == ["base_reset", *tiers]
-    assert result == {
-        "pid": 101,
-        "graphs_dirty": False,
-        "prefix_mamba": {str(group_id): {"host_checkpoints": 0} for group_id in tiers},
-    }
+    assert result["pid"] == 101 and result["rank"] == 0
+    assert result["graphs_dirty"] is False
+    assert result["prefix_mamba"] == {str(group_id): {"host_checkpoints": 0} for group_id in tiers}
 
 
 def test_pending_execution_prevents_mamba_reset(monkeypatch):

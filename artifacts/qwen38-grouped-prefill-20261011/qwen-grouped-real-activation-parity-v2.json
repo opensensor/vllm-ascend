@@ -1,0 +1,4160 @@
+[
+  {
+    "pid": 3027388,
+    "rank": 0,
+    "generation": "bbdc2dab503d4e3ebc539f89517c3ba1",
+    "mode": "graph",
+    "candidate": "qwen_grouped_diagnostic_v2_tp6",
+    "digest": "23f5024285083f80d949a867388d3e98b32e1c4aabaa32c68bb052905e3f9087",
+    "graphs_dirty": false,
+    "weight_storage_digest": "965ac442c190e393452c12cec7cb5cc1c0124a2b09bf74c2c62ed52490034379",
+    "native_failed": false,
+    "native_loaded": {
+      "hc_residual_v3": {
+        "native_name": "hc_residual_v3",
+        "native_digest": "af160bbc21a9901542c48c962e4e949d04418496433633619f7a199e5c8ca5ab",
+        "validation": {
+          "passed": true,
+          "cases": 70,
+          "exact_bytes": true
+        }
+      },
+      "qwen_prefill_v5": {
+        "native_name": "qwen_prefill_v5",
+        "native_digest": "f25ad439bb93d984aee671a6c57fde7d00fffc5a5d368a13bf752cd2057b1df0",
+        "validation": {
+          "passed": true,
+          "cases": 12,
+          "exact_bytes": true,
+          "real_weight_serving_gate": false
+        }
+      }
+    },
+    "prefix_mamba": {
+      "1": {
+        "resident_checkpoints": 1,
+        "archive_checkpoints": 0,
+        "host_checkpoints": 0,
+        "primary_slots": 63,
+        "archive_slots": 66,
+        "spill_count": 0,
+        "restore_count": 0,
+        "device_archive_hit_count": 0,
+        "retirement_count": 546
+      },
+      "2": {
+        "resident_checkpoints": 1,
+        "archive_checkpoints": 0,
+        "host_checkpoints": 0,
+        "primary_slots": 63,
+        "archive_slots": 66,
+        "spill_count": 0,
+        "restore_count": 0,
+        "device_archive_hit_count": 0,
+        "retirement_count": 527
+      },
+      "3": {
+        "resident_checkpoints": 1,
+        "archive_checkpoints": 0,
+        "host_checkpoints": 0,
+        "primary_slots": 63,
+        "archive_slots": 66,
+        "spill_count": 0,
+        "restore_count": 0,
+        "device_archive_hit_count": 0,
+        "retirement_count": 546
+      }
+    },
+    "transfer_audit": {
+      "rank": 0,
+      "pid": 3027388,
+      "prefix_mamba": {
+        "1": {
+          "counts": {
+            "barrier_calls": 618,
+            "barrier_bytes": 0,
+            "barrier_host_ns": 1787818944,
+            "reason:reset:calls": 8,
+            "reason:runner_layout_change:calls": 114,
+            "reason:invalidation:calls": 144,
+            "reason:batch_retirement:calls": 352
+          },
+          "events": [],
+          "sequence": 618,
+          "dropped_events": 0,
+          "measured_bus_bytes": false
+        },
+        "2": {
+          "counts": {
+            "barrier_calls": 172,
+            "barrier_bytes": 0,
+            "barrier_host_ns": 47278544,
+            "reason:reset:calls": 8,
+            "reason:invalidation:calls": 164
+          },
+          "events": [],
+          "sequence": 172,
+          "dropped_events": 0,
+          "measured_bus_bytes": false
+        },
+        "3": {
+          "counts": {
+            "barrier_calls": 153,
+            "barrier_bytes": 0,
+            "barrier_host_ns": 36360443,
+            "reason:reset:calls": 8,
+            "reason:invalidation:calls": 145
+          },
+          "events": [],
+          "sequence": 153,
+          "dropped_events": 0,
+          "measured_bus_bytes": false
+        }
+      },
+      "runner": null,
+      "modules": {
+        "language_model.model.layers.0.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.0.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.1.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.1.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.2.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.2.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.3.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.3.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.4.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.4.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.5.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.5.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.6.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.6.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.7.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.7.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.8.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.8.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.9.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.9.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.10.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.10.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.11.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.11.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.12.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.12.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.13.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.13.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.14.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.14.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.15.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.15.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.16.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.16.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.17.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.17.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.18.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.18.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.19.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.19.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.20.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.20.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.21.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.21.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.22.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.22.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.23.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.23.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.24.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.24.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.25.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.25.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.26.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.26.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.27.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.27.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.28.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.28.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.29.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.29.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.30.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.30.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.31.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.31.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.32.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.32.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.33.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.33.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.34.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.34.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.35.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.35.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.36.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.36.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.37.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.37.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.38.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.38.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.39.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.39.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.40.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.40.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.41.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.41.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.42.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.42.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.43.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.43.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.44.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.44.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.45.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.45.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.46.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.46.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.47.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.47.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        }
+      }
+    }
+  },
+  {
+    "pid": 3027389,
+    "rank": 1,
+    "generation": "bbdc2dab503d4e3ebc539f89517c3ba1",
+    "mode": "graph",
+    "candidate": "qwen_grouped_diagnostic_v2_tp6",
+    "digest": "23f5024285083f80d949a867388d3e98b32e1c4aabaa32c68bb052905e3f9087",
+    "graphs_dirty": false,
+    "weight_storage_digest": "d2b67b544b95132eb2a79d3612601176d58fe7ed279d976a0947de5b17164d98",
+    "native_failed": false,
+    "native_loaded": {
+      "hc_residual_v3": {
+        "native_name": "hc_residual_v3",
+        "native_digest": "af160bbc21a9901542c48c962e4e949d04418496433633619f7a199e5c8ca5ab",
+        "validation": {
+          "passed": true,
+          "cases": 70,
+          "exact_bytes": true
+        }
+      },
+      "qwen_prefill_v5": {
+        "native_name": "qwen_prefill_v5",
+        "native_digest": "f25ad439bb93d984aee671a6c57fde7d00fffc5a5d368a13bf752cd2057b1df0",
+        "validation": {
+          "passed": true,
+          "cases": 12,
+          "exact_bytes": true,
+          "real_weight_serving_gate": false
+        }
+      }
+    },
+    "prefix_mamba": {
+      "1": {
+        "resident_checkpoints": 1,
+        "archive_checkpoints": 0,
+        "host_checkpoints": 0,
+        "primary_slots": 63,
+        "archive_slots": 64,
+        "spill_count": 0,
+        "restore_count": 0,
+        "device_archive_hit_count": 0,
+        "retirement_count": 546
+      },
+      "2": {
+        "resident_checkpoints": 1,
+        "archive_checkpoints": 0,
+        "host_checkpoints": 0,
+        "primary_slots": 63,
+        "archive_slots": 64,
+        "spill_count": 0,
+        "restore_count": 0,
+        "device_archive_hit_count": 0,
+        "retirement_count": 527
+      },
+      "3": {
+        "resident_checkpoints": 1,
+        "archive_checkpoints": 0,
+        "host_checkpoints": 0,
+        "primary_slots": 63,
+        "archive_slots": 64,
+        "spill_count": 0,
+        "restore_count": 0,
+        "device_archive_hit_count": 0,
+        "retirement_count": 546
+      }
+    },
+    "transfer_audit": {
+      "rank": 1,
+      "pid": 3027389,
+      "prefix_mamba": {
+        "1": {
+          "counts": {
+            "barrier_calls": 618,
+            "barrier_bytes": 0,
+            "barrier_host_ns": 1787804895,
+            "reason:reset:calls": 8,
+            "reason:runner_layout_change:calls": 114,
+            "reason:invalidation:calls": 144,
+            "reason:batch_retirement:calls": 352
+          },
+          "events": [],
+          "sequence": 618,
+          "dropped_events": 0,
+          "measured_bus_bytes": false
+        },
+        "2": {
+          "counts": {
+            "barrier_calls": 172,
+            "barrier_bytes": 0,
+            "barrier_host_ns": 42680869,
+            "reason:reset:calls": 8,
+            "reason:invalidation:calls": 164
+          },
+          "events": [],
+          "sequence": 172,
+          "dropped_events": 0,
+          "measured_bus_bytes": false
+        },
+        "3": {
+          "counts": {
+            "barrier_calls": 153,
+            "barrier_bytes": 0,
+            "barrier_host_ns": 38596210,
+            "reason:reset:calls": 8,
+            "reason:invalidation:calls": 145
+          },
+          "events": [],
+          "sequence": 153,
+          "dropped_events": 0,
+          "measured_bus_bytes": false
+        }
+      },
+      "runner": null,
+      "modules": {
+        "language_model.model.layers.0.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.0.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.1.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.1.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.2.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.2.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.3.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.3.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.4.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.4.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.5.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.5.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.6.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.6.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.7.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.7.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.8.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.8.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.9.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.9.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.10.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.10.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.11.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.11.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.12.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.12.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.13.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.13.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.14.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.14.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.15.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.15.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.16.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.16.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.17.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.17.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.18.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.18.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.19.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.19.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.20.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.20.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.21.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.21.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.22.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.22.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.23.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.23.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.24.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.24.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.25.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.25.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.26.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.26.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.27.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.27.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.28.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.28.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.29.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.29.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.30.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.30.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.31.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.31.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.32.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.32.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.33.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.33.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.34.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.34.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.35.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.35.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.36.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.36.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.37.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.37.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.38.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.38.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.39.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.39.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.40.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.40.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.41.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.41.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.42.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.42.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.43.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.43.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.44.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.44.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.45.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.45.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.46.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.46.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.47.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.47.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        }
+      }
+    }
+  },
+  {
+    "pid": 3027390,
+    "rank": 2,
+    "generation": "bbdc2dab503d4e3ebc539f89517c3ba1",
+    "mode": "graph",
+    "candidate": "qwen_grouped_diagnostic_v2_tp6",
+    "digest": "23f5024285083f80d949a867388d3e98b32e1c4aabaa32c68bb052905e3f9087",
+    "graphs_dirty": false,
+    "weight_storage_digest": "48035760857df5299eb6515984b7f26a3b00aaa5a78f2d674150f6b57d7d556b",
+    "native_failed": false,
+    "native_loaded": {
+      "hc_residual_v3": {
+        "native_name": "hc_residual_v3",
+        "native_digest": "af160bbc21a9901542c48c962e4e949d04418496433633619f7a199e5c8ca5ab",
+        "validation": {
+          "passed": true,
+          "cases": 70,
+          "exact_bytes": true
+        }
+      },
+      "qwen_prefill_v5": {
+        "native_name": "qwen_prefill_v5",
+        "native_digest": "f25ad439bb93d984aee671a6c57fde7d00fffc5a5d368a13bf752cd2057b1df0",
+        "validation": {
+          "passed": true,
+          "cases": 12,
+          "exact_bytes": true,
+          "real_weight_serving_gate": false
+        }
+      }
+    },
+    "prefix_mamba": {
+      "1": {
+        "resident_checkpoints": 1,
+        "archive_checkpoints": 0,
+        "host_checkpoints": 0,
+        "primary_slots": 63,
+        "archive_slots": 78,
+        "spill_count": 0,
+        "restore_count": 0,
+        "device_archive_hit_count": 0,
+        "retirement_count": 546
+      },
+      "2": {
+        "resident_checkpoints": 1,
+        "archive_checkpoints": 0,
+        "host_checkpoints": 0,
+        "primary_slots": 63,
+        "archive_slots": 78,
+        "spill_count": 0,
+        "restore_count": 0,
+        "device_archive_hit_count": 0,
+        "retirement_count": 527
+      },
+      "3": {
+        "resident_checkpoints": 1,
+        "archive_checkpoints": 0,
+        "host_checkpoints": 0,
+        "primary_slots": 63,
+        "archive_slots": 78,
+        "spill_count": 0,
+        "restore_count": 0,
+        "device_archive_hit_count": 0,
+        "retirement_count": 546
+      }
+    },
+    "transfer_audit": {
+      "rank": 2,
+      "pid": 3027390,
+      "prefix_mamba": {
+        "1": {
+          "counts": {
+            "barrier_calls": 618,
+            "barrier_bytes": 0,
+            "barrier_host_ns": 1960657931,
+            "reason:reset:calls": 8,
+            "reason:runner_layout_change:calls": 114,
+            "reason:invalidation:calls": 144,
+            "reason:batch_retirement:calls": 352
+          },
+          "events": [],
+          "sequence": 618,
+          "dropped_events": 0,
+          "measured_bus_bytes": false
+        },
+        "2": {
+          "counts": {
+            "barrier_calls": 172,
+            "barrier_bytes": 0,
+            "barrier_host_ns": 35751889,
+            "reason:reset:calls": 8,
+            "reason:invalidation:calls": 164
+          },
+          "events": [],
+          "sequence": 172,
+          "dropped_events": 0,
+          "measured_bus_bytes": false
+        },
+        "3": {
+          "counts": {
+            "barrier_calls": 153,
+            "barrier_bytes": 0,
+            "barrier_host_ns": 30557967,
+            "reason:reset:calls": 8,
+            "reason:invalidation:calls": 145
+          },
+          "events": [],
+          "sequence": 153,
+          "dropped_events": 0,
+          "measured_bus_bytes": false
+        }
+      },
+      "runner": null,
+      "modules": {
+        "language_model.model.layers.0.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.0.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.1.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.1.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.2.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.2.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.3.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.3.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.4.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.4.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.5.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.5.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.6.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.6.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.7.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.7.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.8.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.8.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.9.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.9.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.10.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.10.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.11.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.11.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.12.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.12.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.13.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.13.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.14.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.14.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.15.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.15.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.16.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.16.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.17.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.17.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.18.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.18.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.19.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.19.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.20.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.20.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.21.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.21.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.22.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.22.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.23.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.23.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.24.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.24.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.25.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.25.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.26.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.26.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.27.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.27.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.28.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.28.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.29.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.29.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.30.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.30.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.31.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.31.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.32.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.32.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.33.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.33.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.34.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.34.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.35.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.35.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.36.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.36.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.37.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.37.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.38.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.38.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.39.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.39.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.40.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.40.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.41.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.41.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.42.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.42.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.43.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.43.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.44.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.44.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.45.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.45.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.46.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.46.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.47.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.47.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        }
+      }
+    }
+  },
+  {
+    "pid": 3027391,
+    "rank": 3,
+    "generation": "bbdc2dab503d4e3ebc539f89517c3ba1",
+    "mode": "graph",
+    "candidate": "qwen_grouped_diagnostic_v2_tp6",
+    "digest": "23f5024285083f80d949a867388d3e98b32e1c4aabaa32c68bb052905e3f9087",
+    "graphs_dirty": false,
+    "weight_storage_digest": "374b295a9dad270cb394bbfb57e0f955c4530b6f136ee76bde92e4b6f8927e66",
+    "native_failed": false,
+    "native_loaded": {
+      "hc_residual_v3": {
+        "native_name": "hc_residual_v3",
+        "native_digest": "af160bbc21a9901542c48c962e4e949d04418496433633619f7a199e5c8ca5ab",
+        "validation": {
+          "passed": true,
+          "cases": 70,
+          "exact_bytes": true
+        }
+      },
+      "qwen_prefill_v5": {
+        "native_name": "qwen_prefill_v5",
+        "native_digest": "f25ad439bb93d984aee671a6c57fde7d00fffc5a5d368a13bf752cd2057b1df0",
+        "validation": {
+          "passed": true,
+          "cases": 12,
+          "exact_bytes": true,
+          "real_weight_serving_gate": false
+        }
+      }
+    },
+    "prefix_mamba": {
+      "1": {
+        "resident_checkpoints": 1,
+        "archive_checkpoints": 0,
+        "host_checkpoints": 0,
+        "primary_slots": 63,
+        "archive_slots": 65,
+        "spill_count": 0,
+        "restore_count": 0,
+        "device_archive_hit_count": 0,
+        "retirement_count": 546
+      },
+      "2": {
+        "resident_checkpoints": 1,
+        "archive_checkpoints": 0,
+        "host_checkpoints": 0,
+        "primary_slots": 63,
+        "archive_slots": 65,
+        "spill_count": 0,
+        "restore_count": 0,
+        "device_archive_hit_count": 0,
+        "retirement_count": 527
+      },
+      "3": {
+        "resident_checkpoints": 1,
+        "archive_checkpoints": 0,
+        "host_checkpoints": 0,
+        "primary_slots": 63,
+        "archive_slots": 65,
+        "spill_count": 0,
+        "restore_count": 0,
+        "device_archive_hit_count": 0,
+        "retirement_count": 546
+      }
+    },
+    "transfer_audit": {
+      "rank": 3,
+      "pid": 3027391,
+      "prefix_mamba": {
+        "1": {
+          "counts": {
+            "barrier_calls": 618,
+            "barrier_bytes": 0,
+            "barrier_host_ns": 1940771380,
+            "reason:reset:calls": 8,
+            "reason:runner_layout_change:calls": 114,
+            "reason:invalidation:calls": 144,
+            "reason:batch_retirement:calls": 352
+          },
+          "events": [],
+          "sequence": 618,
+          "dropped_events": 0,
+          "measured_bus_bytes": false
+        },
+        "2": {
+          "counts": {
+            "barrier_calls": 172,
+            "barrier_bytes": 0,
+            "barrier_host_ns": 35420981,
+            "reason:reset:calls": 8,
+            "reason:invalidation:calls": 164
+          },
+          "events": [],
+          "sequence": 172,
+          "dropped_events": 0,
+          "measured_bus_bytes": false
+        },
+        "3": {
+          "counts": {
+            "barrier_calls": 153,
+            "barrier_bytes": 0,
+            "barrier_host_ns": 30848954,
+            "reason:reset:calls": 8,
+            "reason:invalidation:calls": 145
+          },
+          "events": [],
+          "sequence": 153,
+          "dropped_events": 0,
+          "measured_bus_bytes": false
+        }
+      },
+      "runner": null,
+      "modules": {
+        "language_model.model.layers.0.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.0.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.1.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.1.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.2.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.2.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.3.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.3.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.4.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.4.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.5.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.5.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.6.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.6.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.7.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.7.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.8.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.8.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.9.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.9.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.10.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.10.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.11.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.11.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.12.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.12.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.13.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.13.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.14.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.14.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.15.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.15.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.16.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.16.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.17.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.17.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.18.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.18.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.19.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.19.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.20.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.20.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.21.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.21.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.22.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.22.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.23.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.23.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.24.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.24.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.25.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.25.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.26.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.26.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.27.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.27.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.28.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.28.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.29.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.29.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.30.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.30.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.31.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.31.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.32.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.32.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.33.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.33.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.34.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.34.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.35.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.35.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.36.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.36.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.37.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.37.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.38.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.38.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.39.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.39.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.40.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.40.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.41.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.41.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.42.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.42.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.43.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.43.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.44.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.44.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.45.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.45.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.46.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.46.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.47.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.47.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        }
+      }
+    }
+  },
+  {
+    "pid": 3027392,
+    "rank": 4,
+    "generation": "bbdc2dab503d4e3ebc539f89517c3ba1",
+    "mode": "graph",
+    "candidate": "qwen_grouped_diagnostic_v2_tp6",
+    "digest": "23f5024285083f80d949a867388d3e98b32e1c4aabaa32c68bb052905e3f9087",
+    "graphs_dirty": false,
+    "weight_storage_digest": "ac83c60f6d14e8c973a0a15d47d28b7e0f61d57a5406ca1a8f4e8faf7baaffdb",
+    "native_failed": false,
+    "native_loaded": {
+      "hc_residual_v3": {
+        "native_name": "hc_residual_v3",
+        "native_digest": "af160bbc21a9901542c48c962e4e949d04418496433633619f7a199e5c8ca5ab",
+        "validation": {
+          "passed": true,
+          "cases": 70,
+          "exact_bytes": true
+        }
+      },
+      "qwen_prefill_v5": {
+        "native_name": "qwen_prefill_v5",
+        "native_digest": "f25ad439bb93d984aee671a6c57fde7d00fffc5a5d368a13bf752cd2057b1df0",
+        "validation": {
+          "passed": true,
+          "cases": 12,
+          "exact_bytes": true,
+          "real_weight_serving_gate": false
+        }
+      }
+    },
+    "prefix_mamba": {
+      "1": {
+        "resident_checkpoints": 1,
+        "archive_checkpoints": 0,
+        "host_checkpoints": 0,
+        "primary_slots": 63,
+        "archive_slots": 78,
+        "spill_count": 0,
+        "restore_count": 0,
+        "device_archive_hit_count": 0,
+        "retirement_count": 546
+      },
+      "2": {
+        "resident_checkpoints": 1,
+        "archive_checkpoints": 0,
+        "host_checkpoints": 0,
+        "primary_slots": 63,
+        "archive_slots": 78,
+        "spill_count": 0,
+        "restore_count": 0,
+        "device_archive_hit_count": 0,
+        "retirement_count": 527
+      },
+      "3": {
+        "resident_checkpoints": 1,
+        "archive_checkpoints": 0,
+        "host_checkpoints": 0,
+        "primary_slots": 63,
+        "archive_slots": 78,
+        "spill_count": 0,
+        "restore_count": 0,
+        "device_archive_hit_count": 0,
+        "retirement_count": 546
+      }
+    },
+    "transfer_audit": {
+      "rank": 4,
+      "pid": 3027392,
+      "prefix_mamba": {
+        "1": {
+          "counts": {
+            "barrier_calls": 618,
+            "barrier_bytes": 0,
+            "barrier_host_ns": 1887391274,
+            "reason:reset:calls": 8,
+            "reason:runner_layout_change:calls": 114,
+            "reason:invalidation:calls": 144,
+            "reason:batch_retirement:calls": 352
+          },
+          "events": [],
+          "sequence": 618,
+          "dropped_events": 0,
+          "measured_bus_bytes": false
+        },
+        "2": {
+          "counts": {
+            "barrier_calls": 172,
+            "barrier_bytes": 0,
+            "barrier_host_ns": 40932260,
+            "reason:reset:calls": 8,
+            "reason:invalidation:calls": 164
+          },
+          "events": [],
+          "sequence": 172,
+          "dropped_events": 0,
+          "measured_bus_bytes": false
+        },
+        "3": {
+          "counts": {
+            "barrier_calls": 153,
+            "barrier_bytes": 0,
+            "barrier_host_ns": 34289020,
+            "reason:reset:calls": 8,
+            "reason:invalidation:calls": 145
+          },
+          "events": [],
+          "sequence": 153,
+          "dropped_events": 0,
+          "measured_bus_bytes": false
+        }
+      },
+      "runner": null,
+      "modules": {
+        "language_model.model.layers.0.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.0.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.1.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.1.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.2.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.2.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.3.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.3.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.4.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.4.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.5.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.5.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.6.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.6.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.7.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.7.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.8.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.8.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.9.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.9.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.10.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.10.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.11.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.11.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.12.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.12.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.13.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.13.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.14.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.14.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.15.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.15.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.16.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.16.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.17.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.17.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.18.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.18.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.19.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.19.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.20.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.20.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.21.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.21.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.22.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.22.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.23.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.23.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.24.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.24.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.25.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.25.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.26.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.26.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.27.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.27.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.28.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.28.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.29.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.29.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.30.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.30.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.31.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.31.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.32.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.32.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.33.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.33.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.34.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.34.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.35.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.35.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.36.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.36.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.37.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.37.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.38.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.38.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.39.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.39.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.40.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.40.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.41.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.41.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.42.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.42.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.43.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.43.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.44.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.44.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.45.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.45.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.46.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.46.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.47.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.47.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        }
+      }
+    }
+  },
+  {
+    "pid": 3027393,
+    "rank": 5,
+    "generation": "bbdc2dab503d4e3ebc539f89517c3ba1",
+    "mode": "graph",
+    "candidate": "qwen_grouped_diagnostic_v2_tp6",
+    "digest": "23f5024285083f80d949a867388d3e98b32e1c4aabaa32c68bb052905e3f9087",
+    "graphs_dirty": false,
+    "weight_storage_digest": "9902e4315fcb7dd3af2969ded212354f343839bdc27a5c224e561ef49fedd984",
+    "native_failed": false,
+    "native_loaded": {
+      "hc_residual_v3": {
+        "native_name": "hc_residual_v3",
+        "native_digest": "af160bbc21a9901542c48c962e4e949d04418496433633619f7a199e5c8ca5ab",
+        "validation": {
+          "passed": true,
+          "cases": 70,
+          "exact_bytes": true
+        }
+      },
+      "qwen_prefill_v5": {
+        "native_name": "qwen_prefill_v5",
+        "native_digest": "f25ad439bb93d984aee671a6c57fde7d00fffc5a5d368a13bf752cd2057b1df0",
+        "validation": {
+          "passed": true,
+          "cases": 12,
+          "exact_bytes": true,
+          "real_weight_serving_gate": false
+        }
+      }
+    },
+    "prefix_mamba": {
+      "1": {
+        "resident_checkpoints": 1,
+        "archive_checkpoints": 0,
+        "host_checkpoints": 0,
+        "primary_slots": 63,
+        "archive_slots": 86,
+        "spill_count": 0,
+        "restore_count": 0,
+        "device_archive_hit_count": 0,
+        "retirement_count": 546
+      },
+      "2": {
+        "resident_checkpoints": 1,
+        "archive_checkpoints": 0,
+        "host_checkpoints": 0,
+        "primary_slots": 63,
+        "archive_slots": 86,
+        "spill_count": 0,
+        "restore_count": 0,
+        "device_archive_hit_count": 0,
+        "retirement_count": 527
+      },
+      "3": {
+        "resident_checkpoints": 1,
+        "archive_checkpoints": 0,
+        "host_checkpoints": 0,
+        "primary_slots": 63,
+        "archive_slots": 86,
+        "spill_count": 0,
+        "restore_count": 0,
+        "device_archive_hit_count": 0,
+        "retirement_count": 546
+      }
+    },
+    "transfer_audit": {
+      "rank": 5,
+      "pid": 3027393,
+      "prefix_mamba": {
+        "1": {
+          "counts": {
+            "barrier_calls": 618,
+            "barrier_bytes": 0,
+            "barrier_host_ns": 1886014433,
+            "reason:reset:calls": 8,
+            "reason:runner_layout_change:calls": 114,
+            "reason:invalidation:calls": 144,
+            "reason:batch_retirement:calls": 352
+          },
+          "events": [],
+          "sequence": 618,
+          "dropped_events": 0,
+          "measured_bus_bytes": false
+        },
+        "2": {
+          "counts": {
+            "barrier_calls": 172,
+            "barrier_bytes": 0,
+            "barrier_host_ns": 43687063,
+            "reason:reset:calls": 8,
+            "reason:invalidation:calls": 164
+          },
+          "events": [],
+          "sequence": 172,
+          "dropped_events": 0,
+          "measured_bus_bytes": false
+        },
+        "3": {
+          "counts": {
+            "barrier_calls": 153,
+            "barrier_bytes": 0,
+            "barrier_host_ns": 40580014,
+            "reason:reset:calls": 8,
+            "reason:invalidation:calls": 145
+          },
+          "events": [],
+          "sequence": 153,
+          "dropped_events": 0,
+          "measured_bus_bytes": false
+        }
+      },
+      "runner": null,
+      "modules": {
+        "language_model.model.layers.0.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.0.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.1.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.1.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.2.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.2.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.3.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.3.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.4.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.4.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.5.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.5.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.6.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.6.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.7.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.7.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.8.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.8.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.9.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.9.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.10.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.10.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.11.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.11.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.12.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.12.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.13.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.13.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.14.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.14.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.15.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.15.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.16.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.16.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.17.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.17.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.18.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.18.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.19.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.19.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.20.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.20.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.21.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.21.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.22.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.22.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.23.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.23.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.24.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.24.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.25.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.25.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.26.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.26.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.27.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.27.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.28.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.28.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.29.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.29.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.30.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.30.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.31.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.31.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.32.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.32.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.33.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.33.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.34.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.34.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.35.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.35.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.36.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.36.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.37.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.37.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.38.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.38.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.39.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.39.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.40.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.40.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.41.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.41.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.42.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.42.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.43.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.43.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.44.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.44.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.45.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.45.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.46.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.46.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.47.mlp.projections.gate_up_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        },
+        "language_model.model.layers.47.mlp.projections.down_proj": {
+          "diagnostic_projection_checks": 3,
+          "different_elements": 0,
+          "measured_bus_bytes": false,
+          "diagnostic_only": true
+        }
+      }
+    }
+  }
+]

@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Restore an admitted resident candidate after a fresh server start."""
+
+import argparse
+import dataclasses
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import time
+import urllib.request
+import uuid
+
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_native import NativeManifest
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--profile-root', type=Path, required=True)
+    parser.add_argument('--api-pid', type=int, required=True)
+    parser.add_argument('--port', type=int, default=8001)
+    args = parser.parse_args()
+    root = args.profile_root
+    api = f'http://127.0.0.1:{args.port}'
+    deadline = time.monotonic() + 900
+    while time.monotonic() < deadline:
+        os.kill(args.api_pid, 0)
+        try:
+            with urllib.request.urlopen(api + '/v1/models', timeout=3) as response:
+                models = json.load(response)
+            assert any(model['id'] == 'qwen38-flash-next' for model in models['data'])
+            break
+        except (OSError, ValueError):
+            time.sleep(2)
+    else:
+        raise TimeoutError('server did not become ready for resident bootstrap')
+
+    client = ResidentClient(api, 6, 180)
+    client.request('/resident/maintenance')
+    manifest = NativeManifest(json.loads((root / 'native-manifest.json').read_text()))
+    native = client.load_native(manifest)
+    saved = json.loads((root / 'control.json').read_text())['control']
+    source = (root / 'candidate.py').read_text()
+    assert source == saved['source'], 'candidate source differs from the qualified receipt'
+    control = Control(uuid.uuid4().hex, mode=saved['mode'], candidate=saved['candidate'], source=source, recapture=True)
+    workers = client.switch(control)
+    assert len(workers) == 6 and all(not worker['graphs_dirty'] for worker in workers)
+    subprocess.run([os.sys.executable, str(root / 'smoke_perf.py'), 'bootstrap-smoke'], check=True, timeout=180)
+    assert client.request('/is_paused', method='GET')['is_paused'] is False
+    released = client.request('/resident/maintenance', method='DELETE')
+    assert released['maintenance'] is False
+    receipt = {
+        'time': time.time(), 'api_pid': args.api_pid,
+        'candidate_sha256': hashlib.sha256(source.encode()).hexdigest(),
+        'control': {key: value for key, value in dataclasses.asdict(control).items() if key != 'source'},
+        'workers': workers, 'native': native, 'maintenance': released,
+    }
+    (root / 'bootstrap-ready.json').write_text(json.dumps(receipt, indent=2) + '\n')
+    print(json.dumps({'ready': True, 'api_pid': args.api_pid, 'candidate': control.candidate}), flush=True)
+
+
+if __name__ == '__main__':
+    main()

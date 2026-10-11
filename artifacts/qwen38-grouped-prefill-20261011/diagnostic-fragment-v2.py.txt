@@ -1,0 +1,37 @@
+# Controlled correctness diagnostic only: deliberate scalar synchronization.
+# Always return the original projection; these timings are not speed evidence.
+previous_diagnostic_replacements = replacements
+
+def replacements(native_resources):
+    from vllm_ascend.models.qwen4_exp.w4_moe import PackedExpertBank
+    from vllm_ascend.models.qwen4_exp.w4a8_int4 import NATIVE_INT4_BACKEND
+    from vllm.logger import init_logger
+    logger = init_logger('vllm.qwen_grouped_prefill_diagnostic')
+    class ParityCounts:
+        def __init__(self):
+            self.checks = 0
+            self.differences = 0
+        def record(self, differences):
+            self.checks += 1
+            self.differences += differences
+        def snapshot(self):
+            return {'diagnostic_projection_checks': self.checks, 'different_elements': self.differences,
+                    'measured_bus_bytes': False, 'diagnostic_only': True}
+    result = previous_diagnostic_replacements(native_resources)
+    baseline = PackedExpertBank.native_linear
+    baseline = getattr(baseline, '_qwen_grouped_prefill_base', baseline)
+    resource = native_resources['qwen_prefill_v5']['projection']
+    def check(self, prepared, ends):
+        expected = baseline(self, prepared, ends)
+        experts, outputs, packed_inputs = self.weight.shape
+        if self.backend == NATIVE_INT4_BACKEND and ends.dtype == torch.int64 and prepared[0].shape[0] > experts * 256 and (outputs, packed_inputs * 2) in ((1280,2560),(2560,640)):
+            actual = resource(self, prepared, ends)
+            differences = int((actual != expected).sum(dtype=torch.int32).item())
+            if not hasattr(self, '_transfer_ledger'):
+                self._transfer_ledger = ParityCounts()
+            self._transfer_ledger.record(differences)
+            logger.info('QWEN_GROUPED_REAL_ACTIVATION_PARITY rows=%d outputs=%d inputs=%d differences=%d',prepared[0].shape[0],outputs,packed_inputs*2,differences)
+        return expected
+    check._qwen_grouped_prefill_base = baseline
+    result['vllm_ascend.models.qwen4_exp.w4_moe:PackedExpertBank.native_linear'] = check
+    return result

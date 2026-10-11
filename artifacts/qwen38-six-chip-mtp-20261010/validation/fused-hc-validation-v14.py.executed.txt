@@ -1,0 +1,41 @@
+import torch
+from tools.qwen4exp.resident_worker import QwenResidentExtension
+from tools.qwen4exp.resident_candidates import fused_hc_projection, fused_hc_residual
+from vllm_ascend.models.qwen4_exp.model import _GatedResidual
+
+METHOD='resident_fused_hc_gate_v14'
+
+def validate():
+    assert torch.ops.qwen_stage_diagnostic_v14.marker()==1
+    assert not hasattr(QwenResidentExtension,METHOD)
+    def gate(self):
+        count=0
+        try:
+            op=self._resident_native_session().resources['hc_residual_v1']
+            combine=fused_hc_residual.make_combine(op)
+            with torch.inference_mode():
+                for wrapper in self._resident_wrappers():
+                    for module in wrapper.runnable.modules():
+                        if not isinstance(module,_GatedResidual) or not module.use_combine:
+                            continue
+                        for rows in (3,18):
+                            generator=torch.Generator().manual_seed(1055+count)
+                            hyper=torch.randn(rows,module.hyper_hidden,generator=generator).half().npu()
+                            block=torch.randn(rows,module.hidden_size,generator=generator).half().npu()
+                            expected_mix,expected_residual=_GatedResidual.mix(module,hyper)
+                            expected=fused_hc_projection.combine(module,block,expected_residual)
+                            actual_mix,actual_residual=fused_hc_projection.mix(module,hyper)
+                            if not isinstance(actual_residual,fused_hc_projection.ProjectionResidual):
+                                raise RuntimeError('Joined projection was not eligible on loaded weights')
+                            actual=combine(module,block,actual_residual)
+                            torch.testing.assert_close(actual_mix.cpu(),expected_mix.cpu(),rtol=0,atol=0)
+                            torch.testing.assert_close(actual.cpu(),expected.cpu(),rtol=0,atol=0)
+                            count+=1
+            assert count>0
+            return {'rank':torch.distributed.get_rank(),'passed':True,'cases':count,'rows':[3,18],
+                    'scope':'real_HC_weights_synthetic_inputs_not_full_model_quality','bitwise_equal':True}
+        except Exception as error:
+            return {'rank':torch.distributed.get_rank(),'passed':False,'cases':count,
+                    'error':f'{type(error).__name__}: {error}'}
+    setattr(QwenResidentExtension,METHOD,gate)
+    return {'passed':True,'diagnostic_method':METHOD,'production_forward_changed':False}

@@ -1,0 +1,14 @@
+import hashlib,json,tarfile
+from pathlib import Path
+root=Path('/srv/ai/src/qwen-cast-layout-20261010')
+files=[]
+for p in root.iterdir():
+ if p.name == 'export-SHA256.json': continue
+ if p.is_file() and p.suffix in ('.py','.cpp','.sh','.json','.jsonl','.log'):files.append(p)
+ elif p.is_dir() and (p.name.endswith('-gate') or p.name.startswith('quality-') or p.name.endswith('-admission')):
+  files.extend(q for q in p.iterdir() if q.is_file() and q.suffix in ('.json','.jsonl','.log'))
+manifest={str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
+(root/'export-SHA256.json').write_text(json.dumps(manifest,indent=2)+'\n');files.append(root/'export-SHA256.json')
+with tarfile.open('/srv/ai/src/qwen-cast-layout-export.tar','w') as tar:
+ for p in files:tar.add(p,arcname=str(p.relative_to(root)))
+print(len(files))

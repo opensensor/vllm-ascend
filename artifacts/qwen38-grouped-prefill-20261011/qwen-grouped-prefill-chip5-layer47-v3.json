@@ -1,0 +1,138 @@
+{
+  "scope": "one real-weight TP6 partial, fixed router; no shared expert or collective",
+  "device": 5,
+  "rank": 5,
+  "layer": 47,
+  "grouped_activation": "cann_builtin_fp16",
+  "grouped_finalize": "cann_v2",
+  "cases": [
+    {
+      "tokens": 640,
+      "local_routes": 1005,
+      "active_expert_visits": 73,
+      "max_expert_rows": 64,
+      "modes": {
+        "installed": {
+          "exact_bytes": true,
+          "median_ms": 10.517585998362241,
+          "samples_ms": [
+            10.187501335167326,
+            10.517585998362241,
+            10.659165333587831,
+            10.544921334561272,
+            10.502056664942453
+          ]
+        },
+        "global_schedule": {
+          "exact_bytes": true,
+          "median_ms": 10.727084333969591,
+          "samples_ms": [
+            10.445902999587512,
+            10.76734433445381,
+            10.727084333969591,
+            10.749259665317368,
+            10.647466333466582
+          ]
+        },
+        "local_schedule": {
+          "exact_bytes": true,
+          "median_ms": 10.724993665159369,
+          "samples_ms": [
+            10.5226719994486,
+            10.724783331776658,
+            10.739725000651864,
+            10.724993665159369,
+            10.790655333645796
+          ]
+        },
+        "local_gather": {
+          "exact_bytes": true,
+          "median_ms": 10.465303334058262,
+          "samples_ms": [
+            10.094752001653736,
+            10.602253666244602,
+            10.465303334058262,
+            10.42474600156614,
+            10.546417332079727
+          ]
+        },
+        "both": {
+          "exact_bytes": true,
+          "median_ms": 10.561736666810853,
+          "samples_ms": [
+            10.588664665798811,
+            10.218209999341829,
+            10.561736666810853,
+            10.54115099880922,
+            10.735146332687387
+          ]
+        }
+      }
+    },
+    {
+      "tokens": 2560,
+      "local_routes": 4121,
+      "active_expert_visits": 79,
+      "max_expert_rows": 226,
+      "modes": {
+        "installed": {
+          "exact_bytes": true,
+          "median_ms": 38.93250066660888,
+          "samples_ms": [
+            38.93250066660888,
+            38.89129233478646,
+            38.954896665624496,
+            38.90044299866228,
+            38.981026334416434
+          ]
+        },
+        "global_schedule": {
+          "exact_bytes": true,
+          "median_ms": 38.49917633245544,
+          "samples_ms": [
+            38.49917633245544,
+            38.395656668096,
+            38.44920133269625,
+            38.51650599972345,
+            38.52419066727938
+          ]
+        },
+        "local_schedule": {
+          "exact_bytes": true,
+          "median_ms": 31.93064999989777,
+          "samples_ms": [
+            31.93064999989777,
+            32.35040433355607,
+            31.916663334413897,
+            31.889127666848555,
+            31.966137333559647
+          ]
+        },
+        "local_gather": {
+          "exact_bytes": true,
+          "median_ms": 38.49503899982665,
+          "samples_ms": [
+            38.49503899982665,
+            38.637796666686576,
+            38.44318999957371,
+            38.54179766494781,
+            38.49223999956545
+          ]
+        },
+        "both": {
+          "exact_bytes": true,
+          "median_ms": 31.572021000708144,
+          "samples_ms": [
+            31.608273333404213,
+            31.684805665766664,
+            31.53947933363573,
+            31.572021000708144,
+            31.5093953346756
+          ]
+        }
+      }
+    }
+  ],
+  "build": "/srv/ai/src/qwen-grouped-prefill-20261011-v3",
+  "server_modified": false
+}

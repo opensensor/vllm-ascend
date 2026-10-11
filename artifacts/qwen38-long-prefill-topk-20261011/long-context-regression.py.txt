@@ -1,0 +1,25 @@
+import hashlib,json,time,urllib.request
+from pathlib import Path
+from tokenizers import Tokenizer
+root=Path('/srv/ai/src/qwen-long-prefill-topk-tp6-20261011')
+tokenizer=Tokenizer.from_file('/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-TP6-MTP-20261010/tokenizer.json')
+background='Archive entry: this is neutral background. Each request owns its buffers and keeps only bounded selection tiles.\n'
+ids=tokenizer.encode(background*20000,add_special_tokens=False).ids[:223872]
+# Chat headers add a few tokens, while 2560 is the production prefill chunk.
+base=tokenizer.decode(ids)
+extra=tokenizer.decode(tokenizer.encode('Additional neutral archive record.\n'*1000,add_special_tokens=False).ids[:3548])
+results=[]
+for phase,text in [('cold',base),('cached-extension',base+extra),('cached-repeat',base+extra)]:
+ prompt=text+'\nCompute 41 times 43. Return only the decimal integer.\n'
+ body={'model':'qwen38-flash-next','messages':[{'role':'user','content':prompt}],'temperature':0,'max_tokens':32,'chat_template_kwargs':{'enable_thinking':False}}
+ print(json.dumps({'start':phase,'background_tokens':len(tokenizer.encode(text,add_special_tokens=False).ids)}),flush=True)
+ started=time.monotonic()
+ req=urllib.request.Request('http://127.0.0.1:8001/v1/chat/completions',data=json.dumps(body).encode(),headers={'Content-Type':'application/json'})
+ with urllib.request.urlopen(req,timeout=2400) as response:value=json.load(response)
+ content=value['choices'][0]['message']['content'] or ''
+ assert content.strip()=='1763',(phase,content)
+ receipt={'phase':phase,'elapsed_s':time.monotonic()-started,'usage':value['usage'],'exact_arithmetic':True,'output_sha256':hashlib.sha256(content.encode()).hexdigest()}
+ if phase!='cold':assert receipt['usage']['prompt_tokens_details']['cached_tokens']>=223744,receipt
+ results.append(receipt)
+ (root/'long-context-regression.json').write_text(json.dumps({'passed':len(results)==3,'requests':results},indent=2)+'\n')
+ print(json.dumps(receipt),flush=True)

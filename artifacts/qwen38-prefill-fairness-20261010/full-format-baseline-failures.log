@@ -1,0 +1,62 @@
+Summary of full-repository format.sh ci failure. Changed-file hooks pass separately.
+Raw log: /tmp/qwen-performance-live-20261010/prefill-fairness-format-ci-final.log
+Raw SHA256: 4281ed64695e2c64ce6a49c69ea954fc70c906f4773429ecc6cadb398bb36541
+
+ruff check..................................................................Failed
+- hook id: ruff-check
+- exit code: 1
+ruff format.................................................................Failed
+- hook id: ruff-format
+codespell...................................................................Failed
+- hook id: codespell
+- exit code: 65
+typos.......................................................................Failed
+- hook id: typos
+- exit code: 2
+clang-format................................................................Failed
+- hook id: clang-format
+markdownlint................................................................Failed
+- hook id: markdownlint
+- exit code: 1
+Lint GitHub Actions workflow files..........................................Passed
+Gitleaks Secret Scan(Local Binary)..........................................Passed
+Lint shell scripts..........................................................Passed
+Lint PNG exports from excalidraw............................................Passed
+Check for spaces in all filenames...........................................Passed
+Enforce __init__.py in Python packages......................................Passed
+Forbid init_logger(__name__) in vllm_ascend modules.........................Passed
+Check for forbidden imports.................................................Failed
+- hook id: check-forbidden-imports
+- exit code: 1
+Check for boolean ops in with-statements....................................Passed
+Check that new functions over 100 lines have comments.......................Passed
+Check symbolic shapes in meta kernels.......................................Passed
+Suggestion..................................................................Passed
+- hook id: suggestion
+
+First 25 diagnostics:
+::error title=Ruff (E501),file=/tmp/qwen-performance-50-20261010/artifacts/glm-perf-310p/decode-flags-20261006/test_actual_slot_cases.py,line=44,col=121,endLine=44,endColumn=375::artifacts/glm-perf-310p/decode-flags-20261006/test_actual_slot_cases.py:44:121: E501 Line too long (374 > 120)
+::error title=Ruff (E501),file=/tmp/qwen-performance-50-20261010/artifacts/glm-perf-310p/decode-trace-20261006/analyze.py,line=92,col=121,endLine=92,endColumn=125::artifacts/glm-perf-310p/decode-trace-20261006/analyze.py:92:121: E501 Line too long (124 > 120)
+::error title=Ruff (E501),file=/tmp/qwen-performance-50-20261010/artifacts/glm-perf-310p/decode-trace-20261006/plot.py,line=74,col=121,endLine=74,endColumn=132::artifacts/glm-perf-310p/decode-trace-20261006/plot.py:74:121: E501 Line too long (131 > 120)
+::error title=Ruff (E501),file=/tmp/qwen-performance-50-20261010/artifacts/glm-perf-310p/decode-trace-20261006/plot.py,line=95,col=121,endLine=95,endColumn=129::artifacts/glm-perf-310p/decode-trace-20261006/plot.py:95:121: E501 Line too long (128 > 120)
+::error title=Ruff (E501),file=/tmp/qwen-performance-50-20261010/artifacts/glm-perf-310p/eager-fusion-20261006/drift.py,line=24,col=121,endLine=24,endColumn=148::artifacts/glm-perf-310p/eager-fusion-20261006/drift.py:24:121: E501 Line too long (147 > 120)
+::error title=Ruff (B023),file=/tmp/qwen-performance-50-20261010/artifacts/glm-perf-310p/eager-fusion-20261006/isolate.py,line=109,col=46,endLine=109,endColumn=51::artifacts/glm-perf-310p/eager-fusion-20261006/isolate.py:109:46: B023 Function definition does not bind loop variable `label`
+::error title=Ruff (B023),file=/tmp/qwen-performance-50-20261010/artifacts/glm-perf-310p/eager-fusion-20261006/isolate.py,line=116,col=42,endLine=116,endColumn=47::artifacts/glm-perf-310p/eager-fusion-20261006/isolate.py:116:42: B023 Function definition does not bind loop variable `label`
+::error title=Ruff (E501),file=/tmp/qwen-performance-50-20261010/artifacts/glm-perf-310p/kpool-live-score-20261005/compare-resident.py,line=31,col=121,endLine=31,endColumn=133::artifacts/glm-perf-310p/kpool-live-score-20261005/compare-resident.py:31:121: E501 Line too long (132 > 120)
+::error title=Ruff (E501),file=/tmp/qwen-performance-50-20261010/artifacts/glm-perf-310p/kpool-live-score-20261005/compare-resident.py,line=46,col=121,endLine=46,endColumn=130::artifacts/glm-perf-310p/kpool-live-score-20261005/compare-resident.py:46:121: E501 Line too long (129 > 120)
+::error title=Ruff (E702),file=/tmp/qwen-performance-50-20261010/artifacts/glm-perf-310p/kpool-live-score-20261005/compare-resident.py,line=62,col=44,endLine=62,endColumn=45::artifacts/glm-perf-310p/kpool-live-score-20261005/compare-resident.py:62:44: E702 Multiple statements on one line (semicolon)
+::error title=Ruff (E501),file=/tmp/qwen-performance-50-20261010/artifacts/glm-perf-310p/kpool-live-score-20261005/compare-resident.py,line=63,col=121,endLine=63,endColumn=149::artifacts/glm-perf-310p/kpool-live-score-20261005/compare-resident.py:63:121: E501 Line too long (148 > 120)
+::error title=Ruff (E701),file=/tmp/qwen-performance-50-20261010/artifacts/glm-perf-310p/kpool-live-score-20261005/compare-resident.py,line=65,col=45,endLine=65,endColumn=46::artifacts/glm-perf-310p/kpool-live-score-20261005/compare-resident.py:65:45: E701 Multiple statements on one line (colon)
+::error title=Ruff (E701),file=/tmp/qwen-performance-50-20261010/artifacts/glm-perf-310p/kpool-live-score-20261005/finalize-public.py,line=18,col=34,endLine=18,endColumn=35::artifacts/glm-perf-310p/kpool-live-score-20261005/finalize-public.py:18:34: E701 Multiple statements on one line (colon)
+::error title=Ruff (E701),file=/tmp/qwen-performance-50-20261010/artifacts/glm-perf-310p/kpool-live-score-20261005/finalize-public.py,line=21,col=36,endLine=21,endColumn=37::artifacts/glm-perf-310p/kpool-live-score-20261005/finalize-public.py:21:36: E701 Multiple statements on one line (colon)
+::error title=Ruff (E701),file=/tmp/qwen-performance-50-20261010/artifacts/glm-perf-310p/kpool-live-score-20261005/finalize-public.py,line=22,col=19,endLine=22,endColumn=20::artifacts/glm-perf-310p/kpool-live-score-20261005/finalize-public.py:22:19: E701 Multiple statements on one line (colon)
+::error title=Ruff (E701),file=/tmp/qwen-performance-50-20261010/artifacts/glm-perf-310p/kpool-live-score-20261005/finalize-public.py,line=24,col=5,endLine=24,endColumn=6::artifacts/glm-perf-310p/kpool-live-score-20261005/finalize-public.py:24:5: E701 Multiple statements on one line (colon)
+::error title=Ruff (E501),file=/tmp/qwen-performance-50-20261010/artifacts/glm-perf-310p/kpool-live-score-20261005/finalize-public.py,line=25,col=121,endLine=25,endColumn=123::artifacts/glm-perf-310p/kpool-live-score-20261005/finalize-public.py:25:121: E501 Line too long (122 > 120)
+::error title=Ruff (E701),file=/tmp/qwen-performance-50-20261010/artifacts/glm-perf-310p/kpool-live-score-20261005/finalize-public.py,line=26,col=19,endLine=26,endColumn=20::artifacts/glm-perf-310p/kpool-live-score-20261005/finalize-public.py:26:19: E701 Multiple statements on one line (colon)
+::error title=Ruff (E701),file=/tmp/qwen-performance-50-20261010/artifacts/glm-perf-310p/kpool-live-score-20261005/finalize-public.py,line=31,col=70,endLine=31,endColumn=71::artifacts/glm-perf-310p/kpool-live-score-20261005/finalize-public.py:31:70: E701 Multiple statements on one line (colon)
+::error title=Ruff (E701),file=/tmp/qwen-performance-50-20261010/artifacts/glm-perf-310p/kpool-live-score-20261005/finalize-public.py,line=37,col=21,endLine=37,endColumn=22::artifacts/glm-perf-310p/kpool-live-score-20261005/finalize-public.py:37:21: E701 Multiple statements on one line (colon)
+::error title=Ruff (E701),file=/tmp/qwen-performance-50-20261010/artifacts/glm-perf-310p/kpool-live-score-20261005/finalize-public.py,line=38,col=5,endLine=38,endColumn=6::artifacts/glm-perf-310p/kpool-live-score-20261005/finalize-public.py:38:5: E701 Multiple statements on one line (colon)
+::error title=Ruff (E701),file=/tmp/qwen-performance-50-20261010/artifacts/glm-perf-310p/kpool-live-score-20261005/finalize-public.py,line=42,col=61,endLine=42,endColumn=62::artifacts/glm-perf-310p/kpool-live-score-20261005/finalize-public.py:42:61: E701 Multiple statements on one line (colon)
+::error title=Ruff (E501),file=/tmp/qwen-performance-50-20261010/artifacts/glm-perf-310p/kpool-live-score-20261005/probe-padding.py,line=18,col=121,endLine=18,endColumn=132::artifacts/glm-perf-310p/kpool-live-score-20261005/probe-padding.py:18:121: E501 Line too long (131 > 120)
+::error title=Ruff (E501),file=/tmp/qwen-performance-50-20261010/artifacts/glm-perf-310p/kpool-live-score-20261005/resident_candidate.py,line=23,col=121,endLine=23,endColumn=141::artifacts/glm-perf-310p/kpool-live-score-20261005/resident_candidate.py:23:121: E501 Line too long (140 > 120)
+::error title=Ruff (E501),file=/tmp/qwen-performance-50-20261010/artifacts/glm-perf-310p/kpool-live-score-20261005/resident_candidate.py,line=26,col=121,endLine=26,endColumn=135::artifacts/glm-perf-310p/kpool-live-score-20261005/resident_candidate.py:26:121: E501 Line too long (134 > 120)

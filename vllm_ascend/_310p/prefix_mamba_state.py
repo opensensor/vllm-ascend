@@ -21,6 +21,10 @@ from vllm.logger import logger
 from vllm_ascend._310p.transfer_audit import TransferLedger, copy_direction
 
 PREFIX_MAMBA_MIN_SLOTS = 64
+PREFIX_MAMBA_WORKING_WINDOWS = 4
+PREFIX_MAMBA_MIN_RETAINED_CHECKPOINTS = 32
+BOUNDED_PREFIX_MAMBA_SCHEDULER = "vllm_ascend.core.prefix_mamba_scheduler.PrefixMambaBoundedScheduler"
+PACED_PREFIX_MAMBA_SCHEDULER = "vllm_ascend.core.qwen_prefill_scheduler.QwenPrefillPacedScheduler"
 
 
 def supports_compact_live_mamba_state(max_num_reqs: int, model_type: str | None) -> bool:
@@ -28,11 +32,32 @@ def supports_compact_live_mamba_state(max_num_reqs: int, model_type: str | None)
     return max_num_reqs == 1 or model_type in {"qwen4_exp_text", "glm5_next_text"}
 
 
-def prefix_mamba_slot_count(max_num_reqs: int, num_speculative_tokens: int) -> int:
-    """One shared pool: null slot plus both live windows of every request."""
+def uses_bounded_prefix_mamba_scheduler(scheduler_cls: object) -> bool:
+    """Recognize the scheduler's explicit state-retention allocation contract."""
+    if isinstance(scheduler_cls, str):
+        return scheduler_cls in {BOUNDED_PREFIX_MAMBA_SCHEDULER, PACED_PREFIX_MAMBA_SCHEDULER}
+    return isinstance(scheduler_cls, type) and any(
+        f"{owner.__module__}.{owner.__name__}" == BOUNDED_PREFIX_MAMBA_SCHEDULER for owner in scheduler_cls.__mro__
+    )
+
+
+def prefix_mamba_slot_count(
+    max_num_reqs: int, num_speculative_tokens: int, *, bounded_checkpoints: bool = False
+) -> int:
+    """Size the shared null/live pool, including bounded scheduler ownership.
+
+    Bounded retention also protects CoW sources and checkpoint-write windows,
+    and keeps a minimum retained history. Both worker allocation and scheduler
+    retention must select this policy; changing only the hash limit is unsafe.
+    Other schedulers retain the existing two-window allocation.
+    """
     if max_num_reqs < 1 or num_speculative_tokens < 0:
         raise ValueError("Invalid compact Mamba request or speculation limit")
-    return max(PREFIX_MAMBA_MIN_SLOTS, 1 + max_num_reqs * 2 * (1 + num_speculative_tokens))
+    if type(bounded_checkpoints) is not bool:
+        raise ValueError("Bounded checkpoint allocation must be a boolean")
+    windows = PREFIX_MAMBA_WORKING_WINDOWS if bounded_checkpoints else 2
+    retained = PREFIX_MAMBA_MIN_RETAINED_CHECKPOINTS if bounded_checkpoints else 0
+    return max(PREFIX_MAMBA_MIN_SLOTS, 1 + max_num_reqs * windows * (1 + num_speculative_tokens) + retained)
 
 
 def prefix_mamba_state_bytes_per_slot(layer_states: Sequence[Sequence[torch.Tensor]]) -> int:

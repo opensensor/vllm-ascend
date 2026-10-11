@@ -1,0 +1,113 @@
+{
+  "scope": "Cold full-serving A/B/A; synthetic exact-token prompts, 32 output tokens; not a model quality benchmark",
+  "cases": [
+    {
+      "prompt_tokens": 8192,
+      "initial_baseline_median_ttft_s": 18.33110549149569,
+      "candidate_median_ttft_s": 17.596484190999035,
+      "baseline_return_ttft_s": 18.428701226002886,
+      "latency_reduction_percent": 4.007512262899072,
+      "all_cold": true,
+      "output_hash_matches": 1,
+      "pairs": 2
+    },
+    {
+      "prompt_tokens": 32768,
+      "initial_baseline_median_ttft_s": 75.4603857080001,
+      "candidate_median_ttft_s": 72.43695845399998,
+      "baseline_return_ttft_s": 75.61762740999984,
+      "latency_reduction_percent": 4.006641664541066,
+      "all_cold": true,
+      "output_hash_matches": 2,
+      "pairs": 2
+    }
+  ],
+  "real_activation_parity": [
+    {
+      "rank": 0,
+      "checks": 288,
+      "different_elements": 0
+    },
+    {
+      "rank": 1,
+      "checks": 288,
+      "different_elements": 0
+    },
+    {
+      "rank": 2,
+      "checks": 288,
+      "different_elements": 0
+    },
+    {
+      "rank": 3,
+      "checks": 288,
+      "different_elements": 0
+    },
+    {
+      "rank": 4,
+      "checks": 288,
+      "different_elements": 0
+    },
+    {
+      "rank": 5,
+      "checks": 288,
+      "different_elements": 0
+    }
+  ],
+  "final_decode": {
+    "prompt_count": 3,
+    "max_output_tokens": 256,
+    "median_decode_tokens_per_s": 27.981740675549005,
+    "rates": [
+      30.953993601380777,
+      27.73566732135895,
+      27.981740675549005
+    ],
+    "older_two_card_historical_baseline_tokens_per_s": 19.2620816,
+    "historical_50_percent_target_tokens_per_s": 28.893122399999996
+  },
+  "smoke": [
+    {
+      "name": "math",
+      "passed": true
+    },
+    {
+      "name": "marker",
+      "passed": true
+    },
+    {
+      "name": "image-fresh",
+      "passed": true
+    },
+    {
+      "name": "image-cached",
+      "passed": true
+    },
+    {
+      "name": "code",
+      "passed": true
+    }
+  ],
+  "mixed_probe": {
+    "serial_decode_tokens_per_s": 29.728826894372492,
+    "mixed_decode_tokens_per_s": 16.96373621358415,
+    "max_chunk_gap_after_long_s": 0.7145802529994398,
+    "long_request_ttft_s": [
+      65.33116243000404
+    ],
+    "long_cached_tokens": [
+      0
+    ],
+    "mixed_improvement_established": false
+  },
+  "final_server": {
+    "healthy": true,
+    "unpaused": true,
+    "running": 0,
+    "waiting": 0,
+    "weight_storage_unchanged": true,
+    "worker_pids_unchanged": true,
+    "max_model_len": 1048576,
+    "candidate": "qwen_grouped_prefill_tp6"
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "mode": "offline_cpu_only",
+  "live_server_changed": false,
+  "base_commit": "f060a08a87f31917a3b42ec79276f8d1d5ab2c7d",
+  "test_command": [
+    "pytest",
+    "-q",
+    "--noconftest",
+    "tests/ut/qwen38_1m/test_draft_step_graph_identity.py",
+    "tests/ut/qwen38_1m/test_qsa_gather_metadata_reuse.py",
+    "tests/ut/qwen38_1m/test_qsa_mtp_dispatch.py",
+    "tests/ut/qwen38_1m/test_qsa_decoder_e2e.py",
+    "tests/ut/qwen38_1m/test_qsa_group_major_attention_310.py",
+    "tests/ut/qwen38_1m/test_qsa_indexer.py",
+    "tests/ut/qwen38_1m/test_qsa_sparse_attention_310.py",
+    "tests/ut/qwen38_1m/test_resident_dispatch.py",
+    "tests/ut/qwen38_1m/test_resident_reset.py",
+    "tests/ut/spec_decode/test_autoregressive_draft_metadata.py"
+  ],
+  "test_result": "188 passed, 20 warnings",
+  "log": "offline-cpu.log.gz",
+  "new_regressions": 34,
+  "hardware_qualified": false,
+  "cache_preserving_cutover": "specified; not implemented or qualified",
+  "remaining_gates": [
+    "per-step padded draft capture geometry",
+    "graph stream/resource capacity",
+    "MTP acceptance and real text/image quality",
+    "cache-preserving draft-only recapture",
+    "long prefill timing and concurrent decode fairness",
+    "sustained all-six thermal measurements"
+  ],
+  "scoped_manual_precommit": "passed",
+  "repo_wide_format_ci": "run; failed on existing unrelated issues; incidental edits restored"
+}

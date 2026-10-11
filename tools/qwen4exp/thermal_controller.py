@@ -13,6 +13,7 @@ import math
 import subprocess
 import time
 import urllib.request
+from contextlib import suppress
 from http.client import HTTPException
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -173,10 +174,15 @@ def run(controller, api_pid, poll_s, sample_timeout_s):
             result = controller.step(temperatures)
         except (OSError, ValueError, RuntimeError, HTTPException) as error:
             result = {"action": "control_error", "error": str(error), "owns_pause": controller.owns_pause}
-        print(
-            json.dumps({"time": time.time(), "temperatures_c": temperatures, "sensor_error": sensor_error, **result}),
-            flush=True,
-        )
+        # Full disks and broken log pipes must not disable temperature sampling
+        # or hold/resume enforcement. Retry logging on the next poll.
+        with suppress(OSError):
+            print(
+                json.dumps(
+                    {"time": time.time(), "temperatures_c": temperatures, "sensor_error": sensor_error, **result}
+                ),
+                flush=True,
+            )
         time.sleep(poll_s)
     # Exiting deliberately leaves an owned pause in place. Never resume a hot
     # server merely because its monitor was stopped or the API process died.

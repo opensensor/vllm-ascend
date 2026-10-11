@@ -1,0 +1,149 @@
+{
+  "abi_version": 2,
+  "constants": {
+    "M": 32,
+    "N": 160,
+    "GROUP": 128,
+    "K0": 64,
+    "BLOCK": 16,
+    "LANES": 8,
+    "MAX_K": 2560,
+    "MAX_GROUPS": 20,
+    "SLOTS": 2,
+    "METADATA_SLOTS": 3,
+    "BLOCKS": 8,
+    "ALIGNMENT": 32,
+    "CONTROL_EVENT": 3
+  },
+  "regions": [
+    {
+      "name": "packed_activation",
+      "space": "UB",
+      "offset": 0,
+      "nbytes": 8192,
+      "dtype": "int4",
+      "layout": "[slot,limb,kblock,M,32]",
+      "lifetime": "exclusive until consumer/event release"
+    },
+    {
+      "name": "raw_product",
+      "space": "UB",
+      "offset": 8192,
+      "nbytes": 81920,
+      "dtype": "int32",
+      "layout": "[slot,N16,2*M,16]",
+      "lifetime": "exclusive until consumer/event release"
+    },
+    {
+      "name": "float_product",
+      "space": "UB",
+      "offset": 90112,
+      "nbytes": 81920,
+      "dtype": "float32",
+      "layout": "[slot,N16,2*M,16]",
+      "lifetime": "exclusive until consumer/event release"
+    },
+    {
+      "name": "accumulator",
+      "space": "UB",
+      "offset": 172032,
+      "nbytes": 20480,
+      "dtype": "float32",
+      "layout": "[N16,M,16]",
+      "lifetime": "exclusive until consumer/event release"
+    },
+    {
+      "name": "weight_metadata",
+      "space": "UB",
+      "offset": 192512,
+      "nbytes": 38400,
+      "dtype": "float32",
+      "layout": "[bank,N16,groups,16]",
+      "lifetime": "exclusive until consumer/event release"
+    },
+    {
+      "name": "activation_metadata",
+      "space": "UB",
+      "offset": 230912,
+      "nbytes": 6144,
+      "dtype": "float32",
+      "layout": "[slot,bank,M,8]",
+      "lifetime": "exclusive until consumer/event release"
+    },
+    {
+      "name": "projected_output",
+      "space": "UB",
+      "offset": 237056,
+      "nbytes": 10240,
+      "dtype": "float16",
+      "layout": "[N16,M,16] or prepare-only FP16 metadata bank",
+      "lifetime": "exclusive until consumer/event release"
+    },
+    {
+      "name": "ends",
+      "space": "UB",
+      "offset": 247296,
+      "nbytes": 256,
+      "dtype": "int64",
+      "layout": "[32]",
+      "lifetime": "exclusive until consumer/event release"
+    },
+    {
+      "name": "route_ids",
+      "space": "UB",
+      "offset": 247552,
+      "nbytes": 512,
+      "dtype": "int32",
+      "layout": "reserved control rows",
+      "lifetime": "exclusive until consumer/event release"
+    },
+    {
+      "name": "activation_l1",
+      "space": "L1",
+      "offset": 0,
+      "nbytes": 8192,
+      "dtype": "int4",
+      "layout": "[slot,limb,kblock,M,32]",
+      "lifetime": "exclusive until consumer/event release"
+    },
+    {
+      "name": "resident_weight",
+      "space": "L1",
+      "offset": 8192,
+      "nbytes": 204800,
+      "dtype": "int4",
+      "layout": "[N16,group,kblock,16,32]",
+      "lifetime": "exclusive until consumer/event release"
+    },
+    {
+      "name": "activation_l0",
+      "space": "L0A",
+      "offset": 0,
+      "nbytes": 8192,
+      "dtype": "int4",
+      "layout": "[slot,limb,M16,kblock,16,32]",
+      "lifetime": "exclusive until consumer/event release"
+    },
+    {
+      "name": "weight_l0",
+      "space": "L0B",
+      "offset": 0,
+      "nbytes": 20480,
+      "dtype": "int4",
+      "layout": "[slot,kblock,N16,16,32]",
+      "lifetime": "exclusive until consumer/event release"
+    },
+    {
+      "name": "cube_product",
+      "space": "L0C",
+      "offset": 0,
+      "nbytes": 40960,
+      "dtype": "int32",
+      "layout": "[N16,2*M,16]",
+      "lifetime": "exclusive until consumer/event release"
+    }
+  ],
+  "scope": "standalone projection; reference WY; no runtime admission",
+  "hardware_validated": false,
+  "contract_sha256": "e40146a4c8b03598e7bd1555b573810ecd698676ea8feafa7fcf03919a94d23d"
+}

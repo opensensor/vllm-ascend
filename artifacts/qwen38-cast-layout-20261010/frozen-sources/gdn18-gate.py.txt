@@ -1,0 +1,93 @@
+import torch
+from tools.qwen4exp.direct_gdn_output import HEAD_WIDTH, MAX_ROWS
+from tools.qwen4exp.resident_candidates.gdn_output_rms import prepare_norm_weight, _supports_device
+from vllm_ascend.models.qwen4_exp.model import _linear, _rms_norm
+MAX_DECODE_TOKENS = 18
+
+def _project_output(self, block_input, out, op=None, gate_probabilities=False):
+    seq_len = out.shape[0]
+    eligible = (
+        not torch.is_grad_enabled()
+        and _supports_device(out.device)
+        and 0 < seq_len <= MAX_DECODE_TOKENS
+        and out.dtype == self.compute_dtype == torch.float32
+        and out.is_contiguous()
+    )
+    if eligible and op is not None and out.shape[-1] == HEAD_WIDTH and seq_len * self.num_v_heads <= MAX_ROWS:
+        z = _linear(block_input, self.in_proj_z, self.compute_dtype).reshape(seq_len * self.num_v_heads, HEAD_WIDTH)
+        gated = op(
+            out.reshape(-1, HEAD_WIDTH),
+            prepare_norm_weight(self),
+            torch.sigmoid(z) if gate_probabilities else z,
+        ).reshape(seq_len, self.value_dim)
+        result = _linear(gated, self.out_proj, self.compute_dtype)
+        if self.tp_size > 1:
+            if self._tp_reduce is None:
+                raise RuntimeError("Qwen GDN TP requires all-reduce")
+            result = self._tp_reduce(result)
+        return result.to(self.params_dtype)
+    if eligible:
+        import torch_npu
+
+        normed, _ = torch_npu.npu_rms_norm(out, prepare_norm_weight(self), self.rms_norm_eps)
+    else:
+        normed = _rms_norm(out, self.norm_weight, self.rms_norm_eps, self.compute_dtype)
+    z = _linear(block_input, self.in_proj_z, self.compute_dtype).reshape(
+        seq_len, self.num_v_heads, self.params.head_v_dim
+    )
+    gated = (normed * torch.sigmoid(z)).reshape(seq_len, self.value_dim)
+    result = _linear(gated, self.out_proj, self.compute_dtype)
+    if self.tp_size > 1:
+        if self._tp_reduce is None:
+            raise RuntimeError("Qwen GDN TP requires all-reduce")
+        result = self._tp_reduce(result)
+    return result.to(self.params_dtype)
+
+def project_output(self, block_input, out):
+    return _project_output(self, block_input, out)
+
+from types import SimpleNamespace
+
+import torch
+
+from tools.qwen4exp.resident_candidates import gdn_output_rms
+from tools.qwen4exp.resident_worker import QwenResidentExtension
+from vllm_ascend.models.qwen4_exp.model import _GDNAttention
+
+
+def validate():
+    assert torch.ops.qwen_stage_diagnostic_v21.marker() == 1
+    assert not hasattr(QwenResidentExtension, "resident_gdn_gate_v21")
+
+    def gate(self):
+        count = 0
+        records = []
+        try:
+            modules = [m for w in self._resident_wrappers() for m in w.runnable.modules() if isinstance(m, _GDNAttention)]
+            with torch.inference_mode():
+                for index, module in enumerate(modules):
+                    # Local projections only. Keep real parameters and uneven
+                    # rank geometry; never mutate a module or execute HCCL.
+                    local = SimpleNamespace(
+                        params=module.params, num_v_heads=module.num_v_heads, value_dim=module.value_dim,
+                        compute_dtype=module.compute_dtype, params_dtype=module.params_dtype,
+                        rms_norm_eps=module.rms_norm_eps, norm_weight=module.norm_weight,
+                        in_proj_z=module.in_proj_z, out_proj=module.out_proj, tp_size=1, _tp_reduce=None)
+                    for rows in (3, 6, 18):
+                        for pattern, scale in (("random", .1), ("large", 8), ("near_zero", 1e-7), ("zero", 0)):
+                            gen = torch.Generator().manual_seed(20261010 + index + rows)
+                            inputs = (torch.randn(rows, module.in_proj_z.shape[1], generator=gen) * scale).half().npu()
+                            out = (torch.randn(rows, module.num_v_heads, module.params.head_v_dim, generator=gen) * scale).npu()
+                            expected = _GDNAttention._project_output(local, inputs, out)
+                            actual = project_output(local, inputs, out)
+                            torch.testing.assert_close(actual.cpu(), expected.cpu(), rtol=0, atol=0)
+                            count += 1
+                        records.append({"module": index, "rows": rows, "heads": module.num_v_heads, "passed": True})
+            return {"rank": torch.distributed.get_rank(), "passed": True, "cases": count,
+                    "modules": len(modules), "bitwise_equal": True, "records": records}
+        except Exception as error:
+            return {"rank": torch.distributed.get_rank(), "passed": False, "cases": count, "records": records,
+                    "error": f"{type(error).__name__}: {error}"}
+
+    setattr(QwenResidentExtension, "resident_gdn_gate_v21", gate)
+    return {"passed": True, "production_forward_changed": False}

@@ -1,0 +1,16 @@
+import json,subprocess,time,urllib.request
+from pathlib import Path
+from tools.qwen4exp.thermal_controller import parse_temperatures
+root=Path('/srv/ai/src/qwen-cast-layout-20261010')
+start=time.monotonic()
+with (root/'hc-v3-cooling.jsonl').open('x') as log:
+ while time.monotonic()-start<600:
+  temps=parse_temperatures(subprocess.check_output(['npu-smi','info'],text=True,timeout=5),6)
+  with urllib.request.urlopen('http://127.0.0.1:8001/is_paused',timeout=5) as response:paused=json.load(response)['is_paused']
+  metrics=urllib.request.urlopen('http://127.0.0.1:8001/metrics',timeout=5).read().decode()
+  counts=[float(line.rsplit(' ',1)[1]) for line in metrics.splitlines() if line.startswith(('vllm:num_requests_running{','vllm:num_requests_waiting{'))]
+  record={'time':time.time(),'temperatures_c':temps,'paused':paused,'counts':counts}
+  log.write(json.dumps(record)+'\n');log.flush()
+  if not paused and max(temps)<=72 and counts and all(v==0 for v in counts):print(json.dumps(record),flush=True);break
+  time.sleep(5)
+ else:raise RuntimeError('No cool idle admission; no prefill submitted')

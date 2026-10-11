@@ -355,21 +355,16 @@ public:
                 AscendC::PipeBarrier<PIPE_V>();
                 AscendC::Exp(gbrcUpUbTensor, gbrcUpUbTensor, mActualThisStage * alignedNActual);
                 AscendC::PipeBarrier<PIPE_V>();
-                // Causal mask: zero upper triangle row by row
-                // Use Duplicate for count >= 8, skip for count < 8
-                // (near-diagonal positions have negligible impact on the causal gate)
+                // Zero exact upper-triangle lanes from an aligned row base.
+                // The count-based form at rowOff + validCols rounded its UB
+                // address and could erase valid diagonal-neighbor entries.
                 for (uint32_t row = 0; row < mActualThisStage; ++row) {
-                    uint32_t globalRow = gbrcStart + row;
-                    uint32_t validCols = globalRow + 1;
-                    if (validCols > alignedNActual) validCols = alignedNActual;
-                    uint32_t rowOff = row * alignedNActual;
-                    uint32_t zeroLen = alignedNActual - validCols;
-                    if (zeroLen >= 8) {
-                        AscendC::Duplicate<float>(gbrcUpUbTensor[rowOff + validCols], (float)0.0, zeroLen);
-                    } else if (zeroLen > 0) {
-                        for (uint32_t c = 0; c < zeroLen; ++c) {
-                            gbrcUpUbTensor.SetValue(rowOff + validCols + c, (float)0.0);
-                        }
+                    const uint32_t validCols = gbrcStart + row + 1;
+                    if (validCols < alignedNActual) {
+                        uint64_t tailMask[2] = {
+                            (~uint64_t{0} << validCols) & (~uint64_t{0} >> (64 - alignedNActual)), 0};
+                        AscendC::Duplicate<float>(gbrcUpUbTensor[row * alignedNActual], (float)0.0,
+                                                 tailMask, 1, 1, 8);
                     }
                 }
                 AscendC::PipeBarrier<PIPE_V>();

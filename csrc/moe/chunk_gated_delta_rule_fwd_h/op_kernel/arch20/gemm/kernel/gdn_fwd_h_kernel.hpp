@@ -287,6 +287,12 @@ public:
                 for (uint32_t vHeadIdx = 0; vHeadIdx < vNumHead; vHeadIdx++) {
                     for (uint32_t tokenBatchIdx = 0; tokenBatchIdx < cubeBlockScheduler.tokenBatch; tokenBatchIdx++) {
                         uint32_t batchIdx = isVariedLen ? tokenBatchIdx : shapeBatchIdx;
+                        // Each core formerly copied every head's initial
+                        // state. The scheduled owner can initialize its own
+                        // stream before consuming it, without a global fence.
+                        if (!cubeBlockScheduler.OwnsInitialState(batchIdx, vHeadIdx)) {
+                            continue;
+                        }
                         uint32_t chunkOffset = isVariedLen ? gmNumChunks.GetValue(tokenBatchIdx) : 0;
                         uint32_t initialStateOffset = (batchIdx * vNumHead + vHeadIdx) * stateBlockSize;
                         uint32_t hOffset = (shapeBatchIdx * vNumHead * totalChunks + vHeadIdx * totalChunks + chunkOffset) * stateBlockSize;

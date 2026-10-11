@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: Apache-2.0
+import statistics
+import time
+import torch
+from tools.qwen4exp.direct_hc_residual import DirectHCResidual
+from tools.qwen4exp.resident_worker import QwenResidentExtension
+
+def prepare():
+    path = '/srv/ai/src/qwen-cast-layout-20261010/residual-v3.bin'
+    kernel = torch.classes.qwen_native_hc_residual_v3.Kernel(path, 'qwen_hc_residual_v3')
+    return DirectHCResidual(path, kernel=kernel, launch=torch.ops.qwen_native_hc_residual_v3.launch)
+
+def validate(op):
+    def gate(self):
+        old = self._resident_native_session().resources['hc_residual_v1']
+        new = self._resident_native_session().resources['hc_residual_v3']
+        cases, timings = 0, []
+        try:
+            with torch.inference_mode():
+                for rows, width in ((1,512),(3,2560),(18,2560),(128,2560),(640,2560),(2560,2560),(7,3072)):
+                    gen = torch.Generator().manual_seed(rows+width)
+                    h = torch.empty(rows,4*width,dtype=torch.float16,device='npu')
+                    b = torch.empty(rows,width,dtype=torch.float16,device='npu')
+                    c = torch.empty(rows,4,dtype=torch.float32,device='npu')
+                    for pattern in ('random','zero','large','subnormal','signed_zero','nonfinite'):
+                        if pattern=='random':
+                            h.copy_(torch.randn(h.shape,generator=gen).half().to(h.device))
+                            b.copy_(torch.randn(b.shape,generator=gen).half().to(b.device))
+                            c.copy_((torch.rand(c.shape,generator=gen)*2).to(c.device))
+                        elif pattern=='zero': h.zero_(); b.zero_(); c.fill_(1)
+                        elif pattern=='large': h.fill_(60000); b.fill_(60000); c.fill_(2); h[:,::2].neg_(); b[:,::2].neg_()
+                        elif pattern=='subnormal': h.fill_(2**-24); b.fill_(-2**-24); c.fill_(0.5)
+                        elif pattern=='signed_zero': h.fill_(-0.0); b.fill_(-0.0); c.zero_(); c[:,::2].fill_(-0.0)
+                        else: h.fill_(float('nan')); b.fill_(float('inf')); c.fill_(1); h[:,::3].fill_(-float('inf'))
+                        expected=old(h,b,c)
+                        actual=new(h,b,c)
+                        assert torch.equal(expected.cpu().view(torch.uint8),actual.cpu().view(torch.uint8)), (rows,width,pattern)
+                        cases+=1
+                    if width==2560:
+                        h.fill_(0.125); b.fill_(-0.25); c.fill_(0.75)
+                        record={'rows':rows,'width':width}
+                        for name,func in (('old',old),('new',new)):
+                            for _ in range(3): func(h,b,c)
+                            torch.npu.synchronize()
+                            samples=[]
+                            for _ in range(5):
+                                started=time.perf_counter()
+                                for _ in range(10): func(h,b,c)
+                                torch.npu.synchronize()
+                                samples.append((time.perf_counter()-started)*1000/10)
+                            record[name+'_median_ms']=statistics.median(samples)
+                        timings.append(record)
+            return {'rank':torch.distributed.get_rank(),'passed':True,'cases':cases,'timings':timings,'exact_bytes':True,'native_v3_enabled':False}
+        except Exception as error:
+            return {'rank':torch.distributed.get_rank(),'passed':False,'cases':cases,'error':repr(error),'native_v3_enabled':False}
+    setattr(QwenResidentExtension,'resident_hc_barrier_gate_v3',gate)
+    return {'passed':True,'gate_required':True,'production_forward_changed':False}

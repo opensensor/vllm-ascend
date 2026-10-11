@@ -1,0 +1,31 @@
+{
+  "name": "hc_residual_v1",
+  "libraries": [
+    {
+      "path": "/home/matteius/experiments/qwen38-decode-next-20261005/native-hc-residual/qwen_native_hc_residual_v1.so",
+      "sha256": "1835ff49950568d94dd78713304fedf01311d14eada1c8502dca6541651838c2"
+    }
+  ],
+  "assets": [
+    {
+      "path": "/home/matteius/experiments/qwen38-decode-next-20261005/native-hc-residual/residual-v2.bin",
+      "sha256": "de937881ea10ab00f50a285e54ebbb58a3520951255c930f5220f6c8d5f40cd6"
+    },
+    {
+      "path": "/srv/ai/src/qwen-performance-paced-tp6-20261010/tools/qwen4exp/direct_hc_residual.py",
+      "sha256": "bf933e4298dbed7337e040221453e9a5fb82f8dbb43d12211f29441c195e98c9"
+    },
+    {
+      "path": "/srv/ai/src/qwen-performance-paced-tp6-20261010/tools/qwen4exp/resident_candidates/fused_hc_projection.py",
+      "sha256": "4baa604d3fac29d70b7a32c23e6710503714ebca8eff64e25bbcb29cc3aaa36d"
+    },
+    {
+      "path": "/srv/ai/src/qwen-performance-paced-tp6-20261010/tools/qwen4exp/resident_candidates/fused_hc_residual.py",
+      "sha256": "a8c27249f82bc92d4f15bfdfd402293885589b84c1d92663de1b854904bbcafe"
+    }
+  ],
+  "operators": [
+    "qwen_native_hc_residual_v1::launch"
+  ],
+  "validation_source": "# SPDX-License-Identifier: Apache-2.0\n\"\"\"Manifest probe; called on each drained worker before enabling dispatch.\"\"\"\n\n\ndef prepare():\n    from tools.qwen4exp.direct_hc_residual import DirectHCResidual\n\n    return DirectHCResidual(\"/home/matteius/experiments/qwen38-decode-next-20261005/native-hc-residual/residual-v2.bin\")\n\n\ndef validate(op):\n    import torch\n\n    with torch.no_grad():\n        hyper = torch.full((3, 2048), 0.25, dtype=torch.float16, device=\"npu\")\n        block = torch.full((3, 512), -0.5, dtype=torch.float16, device=\"npu\")\n        injection = torch.tensor([[0, 0.5, 1, 2]] * 3, dtype=torch.float16, device=\"npu\")\n        for pattern in (\"finite\", \"signed_zero\", \"overflow\", \"nan\"):\n            if pattern == \"signed_zero\":\n                hyper.fill_(-0.0)\n                block.fill_(-0.0)\n                injection.fill_(0.0)\n            elif pattern == \"overflow\":\n                hyper.fill_(60000)\n                block.fill_(60000)\n                injection.fill_(2)\n            elif pattern == \"nan\":\n                hyper.fill_(float(\"nan\"))\n            expected = (hyper.float().view(3, 4, 512) + block.float()[:, None] * injection[:, :, None]).flatten(1).half()\n            actual = op(hyper, block, injection)\n            assert torch.equal(expected.cpu().view(torch.uint8), actual.cpu().view(torch.uint8)), pattern\n    return {\"passed\": True, \"patterns\": 4, \"exact\": True, \"tokens\": 3, \"width\": 512}\n\noriginal_validate = validate\ndef validate(op):\n    import torch\n    report = original_validate(op)\n    with torch.inference_mode():\n        for rows in (3, 18, 128, 640, 2560):\n            gen = torch.Generator().manual_seed(20261010 + rows)\n            hyper = torch.randn(rows, 10240, generator=gen).half().npu()\n            block = torch.randn(rows, 2560, generator=gen).half().npu()\n            for dtype in (torch.float16, torch.float32):\n                injection = (torch.rand(rows, 4, generator=gen) * 2).to(dtype).npu()\n                expected = (hyper.float().view(rows, 4, 2560) + block.float()[:,None] * injection.float()[:,:,None]).flatten(1).half()\n                actual = op(hyper, block, injection)\n                torch.testing.assert_close(actual.cpu(), expected.cpu(), rtol=0, atol=0)\n    report[\"geometry_cases\"] = 10\n    report[\"rows\"] = [3, 18, 128, 640, 2560]\n    return report\n"
+}

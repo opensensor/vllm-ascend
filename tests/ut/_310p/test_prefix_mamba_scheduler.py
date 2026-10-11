@@ -15,7 +15,11 @@ from vllm.v1.core.block_pool import BlockPool
 from vllm.v1.core.kv_cache_utils import make_block_hash_with_group_id
 from vllm.v1.core.sched.output import SchedulerOutput
 
-from vllm_ascend._310p.prefix_mamba_state import PrefixMambaStateTier, retain_prefix_mamba_blocks
+from vllm_ascend._310p.prefix_mamba_state import (
+    PrefixMambaStateTier,
+    apply_prefix_mamba_updates,
+    retain_prefix_mamba_blocks,
+)
 from vllm_ascend.core import prefix_mamba_scheduler as mod
 
 pytestmark = pytest.mark.skipif(
@@ -82,12 +86,14 @@ def test_recycled_block_with_attention_hash_is_not_retained_as_mamba():
     assert pool.get_cached_block(attention_key[:-4], [0]) == blocks
 
 
-@pytest.mark.parametrize("requests,depth,limit", [(1, 2, 51), (3, 2, 27), (4, 2, 15), (4, 0, 47)])
+@pytest.mark.parametrize(
+    "requests,depth,limit", [(1, 2, 51), (3, 2, 32), (4, 2, 32), (4, 0, 47), (6, 2, 32), (8, 2, 32)]
+)
 def test_checkpoint_budget_reserves_live_speculative_and_cow_windows(requests, depth, limit):
     assert mod.prefix_mamba_checkpoint_limit(requests, depth) == limit
 
 
-@pytest.mark.parametrize("requests,depth", [(0, 2), (3, -1), (8, 2)])
+@pytest.mark.parametrize("requests,depth", [(0, 2), (3, -1)])
 def test_unworkable_checkpoint_budget_is_rejected(requests, depth):
     with pytest.raises(ValueError):
         mod.prefix_mamba_checkpoint_limit(requests, depth)
@@ -216,6 +222,7 @@ def runner_class():
         "MultiGroupBlockTable310": object,
         "cast": lambda cls, value: value,
         "retain_prefix_mamba_blocks": retain_prefix_mamba_blocks,
+        "apply_prefix_mamba_updates": apply_prefix_mamba_updates,
         "torch": SimpleNamespace(npu=SimpleNamespace(synchronize=Mock())),
     }
     extracted = ast.ClassDef(
@@ -235,7 +242,7 @@ def test_runner_consumes_authoritative_snapshot_before_recycled_ids(snapshot):
         _resident={},
         _device_archive_resident={},
         retain_blocks=Mock(side_effect=lambda ids, **kwargs: runner.events.append(("retain", ids))),
-        invalidate=Mock(side_effect=lambda ids: runner.events.append(("invalidate", ids))),
+        invalidate=Mock(side_effect=lambda ids, **kwargs: runner.events.append(("invalidate", ids))),
     )
     runner._prefix_mamba_tiers = {1: tier}
     runner._new_prefix_mamba_block_ids = lambda _: {1: {103}}
@@ -270,7 +277,7 @@ def valid_config():
     )
 
 
-@pytest.mark.parametrize("depth,expected", [(None, 51), (2, 27)])
+@pytest.mark.parametrize("depth,expected", [(None, 51), (2, 32)])
 def test_scheduler_constructor_preserves_parent_setup_and_tracks_mamba_groups(monkeypatch, depth, expected):
     config = valid_config()
     config.speculative_config = SimpleNamespace(num_speculative_tokens=depth) if depth is not None else None

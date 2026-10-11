@@ -1,0 +1,50 @@
+[ERROR] RUNTIME(1338844,):2026-10-10-21:54:26.469.532 [hwts_engine.cc:146]1338844 ReportExceptProc:Real task exception! device_id=4, stream_id=136, task_id=11, task_type=0 (KERNEL_AICORE)
+[ERROR] RUNTIME(1338844,):2026-10-10-21:54:26.469.541 [hwts_engine.cc:163]1338844 ReportExceptProc:Task exception! device_id=4, stream_id=142, task_id=32076, type=13(MODEL_EXECUTE), failure_mode =1, retCode=0x91, [the model stream execute failed]
+[ERROR] RUNTIME(1338844,):2026-10-10-21:54:26.473.965 [device_error_core_proc.cc:594]1338844 PrintCoreErrorInfo:The error from device(4), serial number is 6, there is an error of aicore, core id is 6, error code = 0x800000, dump info: pc start: 0x80012c0c03fd000, current: 0x12c0c03fd8c8, vec error info: 0xf8ef0ff, mte error info: 0x30000cf, ifu error info: 0x3f5ff37d7fd80, ccu error info: 0x2cc99fdd005fefb3, cube error info: 0x83, biu error info: 0, aic error mask: 0x65000200d00028c, para base: 0x12c100984c00, errorStr: MTE accesses an invalid GM address or the cross-device memory access times out.
+[ERROR] RUNTIME(1338844,):2026-10-10-21:54:26.473.992 [device_error_core_proc.cc:625]1338844 PrintCoreErrorInfo:The extend info from device(4), serial number is 6, there is aicore error, core id is 6, aicore int: 0x10, aicore error2: 0, axi clamp ctrl: 0, axi clamp state: 0x1717, biu status0: 0x101d14000000000, biu status1: 0x80000201020000, clk gate mask: 0, dbg addr: 0, ecc en: 0, mte ccu ecc 1bit error: 0x1680000000000000, vector cube ecc 1bit error: 0, run stall: 0x1, dbg data0: 0, dbg data1: 0, dbg data2: 0, dbg data3: 0, dfx data: 0x49
+[ERROR] RUNTIME(1338844,):2026-10-10-21:54:26.474.002 [device_error_core_proc.cc:726]1338844 ProcessCoreErrorInfo:The dha(mata) info comes from device(4), the dha id is 0, dha status 1 info: 0x40023.
+[ERROR] RUNTIME(1338844,):2026-10-10-21:54:26.474.011 [device_error_core_proc.cc:726]1338844 ProcessCoreErrorInfo:The dha(mata) info comes from device(4), the dha id is 1, dha status 1 info: 0x40003.
+[ERROR] RUNTIME(1338844,):2026-10-10-21:54:26.474.043 [stream.cc:1743]1338844 GetError:Stream Synchronize failed, stream_id=142, retCode=0x91, [the model stream execute failed].
+[ERROR] RUNTIME(1338844,):2026-10-10-21:54:26.474.046 [stream.cc:4183]1338844 EnterFailureAbort:stream_id=142 enter failure abort.
+[ERROR] RUNTIME(1338844,):2026-10-10-21:54:26.474.058 [stream.cc:1743]1338844 GetError:Stream Synchronize failed, stream_id=142, retCode=0x91, [the model stream execute failed].
+[ERROR] RUNTIME(1338844,):2026-10-10-21:54:26.474.061 [model_execute_task.cc:544]1338844 ReportErrorInfoForModelExecuteTask:model execute error, retCode=0x91, [the model stream execute failed].
+[ERROR] RUNTIME(1338844,):2026-10-10-21:54:26.474.065 [model_execute_task.cc:517]1338844 PrintErrorInfoForModelExecuteTask:model execute task failed, device_id=4, model stream_id=142, model task_id=32076, flip_num=29, model_id=15, first_task_id=4294967295
+[ERROR] RUNTIME(1338844,):2026-10-10-21:54:26.474.068 [model_execute_task.cc:560]1338844 ReportErrorInfoForModelExecuteTask:Real fault task, device_id=4, sub_model_id=4294967295, stream_id=136, task_id=11, type=0[KERNEL_AICORE].
+[ERROR] RUNTIME(1338844,):2026-10-10-21:54:26.474.121 [davinci_kernel_task.cc:1076]1338844 GetArgsInfo:[AIC_INFO] args(0 to 19) after execute:0x12d760db8000, 0x12f640044400, 0x12f640072800, 0x12f640072200, 0x12f640072400, 0x12e940023000, 0x130340000000, 0, 0x12c100984c58, 0x12c140200000, 0, 0x1, 0x1, 0x10, 0x10, 0x40, 0x200, 0x81, 0x1000, 0x1.
+[ERROR] RUNTIME(1338844,):2026-10-10-21:54:26.474.125 [davinci_kernel_task.cc:1076]1338844 GetArgsInfo:[AIC_INFO] args(20 to 25) after execute:0x1, 0x1, 0xa5a5a5a5260133cb, 0, 0, 0.
+[ERROR] RUNTIME(1338844,):2026-10-10-21:54:26.474.127 [davinci_kernel_task.cc:1080]1338844 GetArgsInfo:tilingKey = 0, print 2 Times totalLen=(26*8), argsSize=208, schemMode=0, blockDim=1
+[ERROR] RUNTIME(1338844,):2026-10-10-21:54:26.474.134 [davinci_kernel_task.cc:1180]1338844 PrintErrorInfoForDavinciTask:[AIC_INFO] after execute:args print end
+[ERROR] RUNTIME(1338844,):2026-10-10-21:54:26.474.431 [davinci_kernel_task.cc:1210]1338844 PrintErrorInfoForDavinciTask:[DFX_INFO]AI Core kernel execution failed, device_id=4, stream_id=136, report_stream_id=142, task_id=11, flip_num=0, fault kernel_name=QsaGatherValueNzV310_e5cdc1182f5f26d1a99bf9ab8f962057_0, fault kernel info ext=none, program id=353, hash=17207544608032714684.
+[ERROR] IDEDD(1338844,):2026-10-10-21:54:26.474.575 [exception_dumper.cpp:203][tid:1338844] [Dump][Exception] Begin to dump exception. dumpScene=aic_err_brief_dump, deviceId=4, streamId=136, taskId=11, exceptionType=2(aicore), kernelName=QsaGatherValueNzV310_e5cdc1182f5f26d1a99bf9ab8f962057_0.
+[ERROR] IDEDD(1338844,):2026-10-10-21:54:26.476.759 [dfx_args_parser.cpp:95][tid:1338844] [AIC_INFO] args(0 to 20) after execute:0x12d760db8000, 0x12f640044400, 0x12f640072800, 0x12f640072200, 0x12f640072400, 0x12e940023000, 0x130340000000, 0, 0x12c100984c58, 0x12c140200000, 0, 0x1, 0x1, 0x10, 0x10, 0x40, 0x200, 0x81, 0x1000, 0x1, 
+[ERROR] IDEDD(1338844,):2026-10-10-21:54:26.476.763 [dfx_args_parser.cpp:95][tid:1338844] [AIC_INFO] args(20 to 26) after execute:0x1, 0x1, 0xa5a5a5a5260133cb, 0, 0, 0, 
+[ERROR] IDEDD(1338844,):2026-10-10-21:54:26.476.765 [dfx_args_parser.cpp:90][tid:1338844] [AIC_INFO] after execute:args print end
+[ERROR] IDEDD(1338844,):2026-10-10-21:54:26.476.823 [dfx_args_parser.cpp:195][tid:1338844] GetShapeData failed, magic is invalid, atomicIndex=0xa5a5a5a5260133cb, magicAndSpace=0xa3c00, magic=0x0, magicMask=0xffffffff00000000.
+[ERROR] IDEDD(1338844,):2026-10-10-21:54:26.476.826 [dfx_args_parser.cpp:266][tid:1338844] Can not find shape info. tiling data addr=0x12c100984c58, size=96
+[ERROR] RUNTIME(1338844,):2026-10-10-21:54:26.478.113 [stream.cc:2916]1338844 WaitForTask:context is abort, status=0x7150050.
+[ERROR] RUNTIME(1338844,):2026-10-10-21:54:26.478.117 [api_error.cc:1101]1338844 StreamSynchronize:Stream synchronize failed, stream_id=142, timeout=-1ms.
+[ERROR] RUNTIME(1338844,):2026-10-10-21:54:26.478.123 [api_c_stream.cc:180]1338844 rtStreamSynchronizeWithTimeout:ErrCode=507011, desc=[the model stream execute failed], InnerCode=0x7150050
+[ERROR] RUNTIME(1338844,):2026-10-10-21:54:26.478.127 [error_message_manage.cc:69]1338844 FuncErrorReason:rtStreamSynchronizeWithTimeout execution failed, reason=the model stream execute failed
+[ERROR] RUNTIME(1338844,):2026-10-10-21:54:26.479.538 [device_msg_handler.cc:168]1338844 HandleMsgInHostBuf:
+DEVICE[4] PID[1338844]: 
+EXCEPTION STREAM:
+  Exception info:TGID=1338844, model id=15, stream id=136, stream phase=SCHEDULE
+  Message info[0]:RTS_HWTS: Aicore exception, slot_id=20, stream_id=136
+    Other info[0]:time=2026-10-10-21:54:26.207.225, function=process_hwts_error_exception, line=646, error code=0x26 
+EXCEPTION TASK:
+  Exception info:TGID=1338844, model id=65535, stream id=142, stream phase=3, task id=32076, task type=model execute, recently received task id=32169, recently sent task id=32075, task phase=RUN
+  Message info[0]:modelId=15 streamId=136 taskId=11 taskType=0
+    Other info[0]:time=2026-10-10-21:54:26.232.970, function=set_model_exec_fail, line=808, error code=0x91
+[ERROR] RUNTIME(1338844,):2026-10-10-21:54:26.720.673 [api_impl.cc:2150]1340352 EventQueryStatus:context is abort, status=0x7150050.
+[ERROR] RUNTIME(1338844,):2026-10-10-21:54:26.720.683 [api_c.cc:794]1340352 rtEventQueryStatus:ErrCode=507011, desc=[the model stream execute failed], InnerCode=0x7150050
+[ERROR] RUNTIME(1338844,):2026-10-10-21:54:26.720.687 [error_message_manage.cc:69]1340352 FuncErrorReason:rtEventQueryStatus execution failed, reason=the model stream execute failed
+[ERROR] APP(1338844,):2026-10-10-21:54:26.726.583 1340352 ProcessGroupHCCL.cpp:finishedNPUExecutionInternal:857: "[PTA]:Find exception when finishedNPUExecutionInternal, query:../torch_npu/csrc/core/npu/NPUEvent.cpp:94 NPU function error: acl::AclQueryEventRecordedStatus(event_, &currStatus), error code is 507011
+[ERROR] 2026-10-10-21:54:26 (PID:1338844, Device:4, RankID:-1) ERR00100 PTA call acl api failed
+[Error]: Model execution failed. 
+        Rectify the fault based on the error information in the ascend log.
+EE9999: Inner Error!
+EE9999[PID: 1338844] 2026-10-10-21:54:26.720.693 (EE9999):  rtEventQueryStatus execution failed, reason=the model stream execute failed[FUNC:FuncErrorReason][FILE:error_message_manage.cc][LINE:69]
+TraceBack (most recent call last):
+
+Exception raised from query at ../torch_npu/csrc/core/npu/NPUEvent.cpp:94 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x78adf57
