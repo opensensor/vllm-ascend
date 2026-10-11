@@ -169,6 +169,22 @@ def test_serving_command_preserves_qualified_model_and_requires_eager_target_onl
         serving_command(previous + ["--speculative-config", "{}"])
 
 
+@pytest.mark.parametrize("selected", [False, True])
+def test_fused_sinkhorn_is_explicit_and_preserves_other_model_overrides(selected):
+    previous = ["python", "serve", "/model", "--hf-overrides", json.dumps({"ascend_glm_mhc_fp16_state": True})]
+    command = serving_command(previous, fused_sinkhorn=selected)
+    overrides = json.loads(command[command.index("--hf-overrides") + 1])
+    assert overrides == {"ascend_glm_mhc_fp16_state": True, "ascend_glm_fused_sinkhorn": selected}
+    unchanged = serving_command(previous)
+    assert unchanged[unchanged.index("--hf-overrides") + 1] == previous[-1]
+
+
+@pytest.mark.parametrize("selected", [0, 1, "true"])
+def test_fused_sinkhorn_rejects_ambiguous_selection(selected):
+    with pytest.raises(ValueError, match="boolean"):
+        serving_command(["python", "serve", "/model"], fused_sinkhorn=selected)
+
+
 def test_launcher_rejects_unidentified_replacement_pid_before_signalling():
     with pytest.raises(ValueError, match="PID differs"):
         stop_previous(42, {"pid": 43, "command": []})

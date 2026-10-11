@@ -11,11 +11,12 @@ uses only physical NPU devices 2 and 3 plus the RTX, with 144 CUDA experts and
 See the [one-card runbook](ONE_CARD.md) for placement and qualification.
 
 The endpoint is `http://192.168.53.187:8001/v1`, model `glm-sidecard`, with
-260,352 context tokens. Cold 8K prefill measured 57.2 tokens/s, cached repeat
-first text took 2.73 seconds, and decode is approximately 2.6–2.8 tokens/s.
+260,352 context tokens. Fused Ascend mHC Sinkhorn raised completed 64-token
+decode to 3.46 tokens/s. Cold 8K prefill measured 57.7 tokens/s; cached repeat
+first text took 2.64 seconds. Cold prefill remains the principal limitation.
 All seven operational API checks and 168 real-input serialized/overlap checks
 passed; greedy repeat variation remains unresolved. See
-[current measurements](../../artifacts/sidecard-glm-20261011/one-card/README.md).
+[current measurements](../../artifacts/sidecard-glm-20261011/optimization/README.md).
 
 The previous OpenAI-compatible endpoint was
 `http://192.168.53.187:8001/v1`, model `glm-sidecard`. CUDA owns experts 0–71

@@ -3,6 +3,7 @@
 // INT8 and lossless four-bit word planes share the same arithmetic contract.
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
+#include <mma.h>
 
 #include <cmath>
 
@@ -16,6 +17,69 @@ constexpr int kCubeN = 128;
 constexpr int kCubeK = 256;
 constexpr int kCubeInnerK = 64;
 constexpr int kMaxPackedExperts = 144;
+constexpr int kTensorTile = 16;
+
+// One warp computes sixteen routed rows of one expert. Each K32 dot is
+// accumulated as INT32 by two Tensor Core instructions, then scaled and
+// added in the original FP32 group order. No cross-group reassociation.
+__global__ void project_grouped(const signed char* q, const float* xs, const signed char* weights, const __half* ws,
+                                const int* expert_ids, const int2* tiles, __half* out, int n, int k) {
+  using namespace nvcuda;
+  const int lane = threadIdx.x;
+  const int2 tile = tiles[blockIdx.x];
+  const int channel = blockIdx.y * kTensorTile;
+  const int expert = expert_ids[tile.x];
+  const auto* words = reinterpret_cast<const unsigned short*>(weights);
+  __shared__ __align__(32) signed char a[kTensorTile * kBlock];
+  __shared__ __align__(32) signed char b[kBlock * kTensorTile];
+  __shared__ __align__(32) int dots[kTensorTile * kTensorTile];
+  float results[kTensorTile * kTensorTile / 32] = {};
+  for (int group = 0; group < k / kBlock; ++group) {
+    for (int index = lane; index < kTensorTile * kBlock; index += 32) {
+      const int row = (index % (kTensorTile * kTensorTile)) / kTensorTile;
+      const int inner_a = index / (kTensorTile * kTensorTile) * kTensorTile + index % kTensorTile;
+      a[index] = row < tile.y ? q[(tile.x + row) * k + group * kBlock + inner_a] : 0;
+      const int column = index % kTensorTile;
+      const int inner = index / kTensorTile;
+      const unsigned int packed =
+          words[((expert * (k / kBlock) + group) * (kBlock / kDotValuesPerLane) + inner / kDotValuesPerLane) * n +
+                channel + column];
+      b[index] = static_cast<signed char>(static_cast<int>((packed >> (4 * (inner % kDotValuesPerLane))) & 15U) - 8);
+    }
+    __syncwarp();
+    wmma::fragment<wmma::matrix_a, kTensorTile, kTensorTile, kTensorTile, signed char, wmma::row_major> af;
+    wmma::fragment<wmma::matrix_b, kTensorTile, kTensorTile, kTensorTile, signed char, wmma::row_major> bf;
+    wmma::fragment<wmma::accumulator, kTensorTile, kTensorTile, kTensorTile, int> cf;
+    wmma::fill_fragment(cf, 0);
+#pragma unroll
+    for (int half = 0; half < 2; ++half) {
+      wmma::load_matrix_sync(af, a + half * kTensorTile * kTensorTile, kTensorTile);
+      wmma::load_matrix_sync(bf, b + half * kTensorTile * kTensorTile, kTensorTile);
+      wmma::mma_sync(cf, af, bf, cf);
+    }
+    wmma::store_matrix_sync(dots, cf, kTensorTile, wmma::mem_row_major);
+    __syncwarp();
+#pragma unroll
+    for (int position = 0; position < kTensorTile * kTensorTile / 32; ++position) {
+      const int index = lane + position * 32;
+      const int row = index / kTensorTile;
+      if (row < tile.y) {
+        const float factor = __fmul_rn(
+            xs[(tile.x + row) * (k / kBlock) + group],
+            __half2float(
+                ws[(expert * (n / kBlock) + (channel + index % kTensorTile) / kBlock) * (k / kBlock) + group]));
+        results[position] = __fadd_rn(results[position], __fmul_rn(static_cast<float>(dots[index]), factor));
+      }
+    }
+    __syncwarp();
+  }
+#pragma unroll
+  for (int position = 0; position < kTensorTile * kTensorTile / 32; ++position) {
+    const int index = lane + position * 32;
+    if (index / kTensorTile < tile.y)
+      out[(tile.x + index / kTensorTile) * n + channel + index % kTensorTile] = __float2half_rn(results[position]);
+  }
+}
 
 // Translate the authenticated native Cube bytes directly into CUDA word
 // planes. Signed integer codes and FP16 scales are never requantized.
@@ -194,6 +258,73 @@ __global__ void project_nibbles(const signed char* q, const float* xs, const sig
   out[index] = __float2half_rn(result);
 }
 
+// Decode has too few rows to fill the GPU. Compute independent K32 groups
+// in parallel, then retain the exact ascending FP32 additions in a second
+// kernel. The temporary is bounded to short batches, not the full prefill.
+__global__ void project_split_groups(const signed char* q, const float* xs, const signed char* weights,
+                                     const __half* ws, const int* expert_ids, float* groups, int rows, int n, int k) {
+  const int channel = blockIdx.x * blockDim.x + threadIdx.x;
+  const int group = blockIdx.y;
+  const int row = blockIdx.z;
+  if (channel >= n || row >= rows) return;
+  const int expert = expert_ids[row];
+  const auto* words = reinterpret_cast<const unsigned short*>(weights);
+  const auto* activations = reinterpret_cast<const int*>(q);
+  int dot = 0;
+#pragma unroll
+  for (int word = 0; word < kBlock / kDotValuesPerLane; ++word) {
+    const int activation = activations[(row * (k / kBlock) + group) * (kBlock / kDotValuesPerLane) + word];
+    const unsigned int packed =
+        words[((expert * (k / kBlock) + group) * (kBlock / kDotValuesPerLane) + word) * n + channel];
+    const unsigned int expanded =
+        (packed & 15U) | ((packed & 240U) << 4) | ((packed & 3840U) << 8) | ((packed & 61440U) << 12);
+    dot = __dp4a(activation, static_cast<int>(__vsub4(expanded, 0x08080808U)), dot);
+  }
+  const float factor = __fmul_rn(xs[row * (k / kBlock) + group],
+                                 __half2float(ws[(expert * (n / kBlock) + channel / kBlock) * (k / kBlock) + group]));
+  groups[(row * (k / kBlock) + group) * n + channel] = __fmul_rn(static_cast<float>(dot), factor);
+}
+
+__global__ void project_sum_groups(const float* groups, __half* out, int rows, int n, int k) {
+  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  if (index >= rows * n) return;
+  const int row = index / n, channel = index % n;
+  float result = 0.0F;
+  for (int group = 0; group < k / kBlock; ++group)
+    result = __fadd_rn(result, groups[(row * (k / kBlock) + group) * n + channel]);
+  out[index] = __float2half_rn(result);
+}
+
+extern "C" int sidecard_oracle_forward_splitk(const void* input, const void* ids, const void* gate, const void* gs,
+                                              const void* down, const void* ds, void* input_q, void* input_scales,
+                                              void* gate_up, void* hidden, void* hidden_q, void* hidden_scales,
+                                              void* output, void* groups, int rows, int width, int intermediate,
+                                              int bits) {
+  if (rows < 1 || rows >= 32 || width != 4096 || intermediate != 2048 || (bits != 4 && bits != 8) || groups == nullptr)
+    return static_cast<int>(cudaErrorInvalidValue);
+  quantize<<<(rows * width / kBlock + kThreads - 1) / kThreads, kThreads>>>(
+      static_cast<const __half*>(input), static_cast<signed char*>(input_q), static_cast<float*>(input_scales), rows,
+      width, bits);
+  project_split_groups<<<dim3(2 * intermediate / kThreads, width / kBlock, rows), kThreads>>>(
+      static_cast<const signed char*>(input_q), static_cast<const float*>(input_scales),
+      static_cast<const signed char*>(gate), static_cast<const __half*>(gs), static_cast<const int*>(ids),
+      static_cast<float*>(groups), rows, 2 * intermediate, width);
+  project_sum_groups<<<(rows * 2 * intermediate + kThreads - 1) / kThreads, kThreads>>>(
+      static_cast<const float*>(groups), static_cast<__half*>(gate_up), rows, 2 * intermediate, width);
+  swiglu<<<(rows * intermediate + kThreads - 1) / kThreads, kThreads>>>(
+      static_cast<const __half*>(gate_up), static_cast<__half*>(hidden), rows, intermediate);
+  quantize<<<(rows * intermediate / kBlock + kThreads - 1) / kThreads, kThreads>>>(
+      static_cast<const __half*>(hidden), static_cast<signed char*>(hidden_q), static_cast<float*>(hidden_scales), rows,
+      intermediate, bits);
+  project_split_groups<<<dim3(width / kThreads, intermediate / kBlock, rows), kThreads>>>(
+      static_cast<const signed char*>(hidden_q), static_cast<const float*>(hidden_scales),
+      static_cast<const signed char*>(down), static_cast<const __half*>(ds), static_cast<const int*>(ids),
+      static_cast<float*>(groups), rows, width, intermediate);
+  project_sum_groups<<<(rows * width + kThreads - 1) / kThreads, kThreads>>>(
+      static_cast<const float*>(groups), static_cast<__half*>(output), rows, width, intermediate);
+  return static_cast<int>(cudaGetLastError());
+}
+
 extern "C" int sidecard_oracle_forward_packed(const void* input, const void* ids, const void* gate, const void* gs,
                                               const void* down, const void* ds, void* input_q, void* input_scales,
                                               void* gate_up, void* hidden, void* hidden_q, void* hidden_scales,
@@ -216,6 +347,33 @@ extern "C" int sidecard_oracle_forward_packed(const void* input, const void* ids
       static_cast<const signed char*>(hidden_q), static_cast<const float*>(hidden_scales),
       static_cast<const signed char*>(down), static_cast<const __half*>(ds), static_cast<const int*>(ids),
       static_cast<__half*>(output), rows, width, intermediate);
+  return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int sidecard_oracle_forward_grouped(const void* input, const void* ids, const void* gate, const void* gs,
+                                               const void* down, const void* ds, void* input_q, void* input_scales,
+                                               void* gate_up, void* hidden, void* hidden_q, void* hidden_scales,
+                                               void* output, const void* tiles, int rows, int width, int intermediate,
+                                               int bits, int tile_count) {
+  if (rows < 1 || rows > kMaxRoutes || width != 4096 || intermediate != 2048 || (bits != 4 && bits != 8) ||
+      tile_count < 1 || tile_count > rows || tiles == nullptr)
+    return static_cast<int>(cudaErrorInvalidValue);
+  quantize<<<(rows * width / kBlock + kThreads - 1) / kThreads, kThreads>>>(
+      static_cast<const __half*>(input), static_cast<signed char*>(input_q), static_cast<float*>(input_scales), rows,
+      width, bits);
+  project_grouped<<<dim3(tile_count, 2 * intermediate / kTensorTile), 32>>>(
+      static_cast<const signed char*>(input_q), static_cast<const float*>(input_scales),
+      static_cast<const signed char*>(gate), static_cast<const __half*>(gs), static_cast<const int*>(ids),
+      static_cast<const int2*>(tiles), static_cast<__half*>(gate_up), 2 * intermediate, width);
+  swiglu<<<(rows * intermediate + kThreads - 1) / kThreads, kThreads>>>(
+      static_cast<const __half*>(gate_up), static_cast<__half*>(hidden), rows, intermediate);
+  quantize<<<(rows * intermediate / kBlock + kThreads - 1) / kThreads, kThreads>>>(
+      static_cast<const __half*>(hidden), static_cast<signed char*>(hidden_q), static_cast<float*>(hidden_scales), rows,
+      intermediate, bits);
+  project_grouped<<<dim3(tile_count, width / kTensorTile), 32>>>(
+      static_cast<const signed char*>(hidden_q), static_cast<const float*>(hidden_scales),
+      static_cast<const signed char*>(down), static_cast<const __half*>(ds), static_cast<const int*>(ids),
+      static_cast<const int2*>(tiles), static_cast<__half*>(output), width, intermediate);
   return static_cast<int>(cudaGetLastError());
 }
 

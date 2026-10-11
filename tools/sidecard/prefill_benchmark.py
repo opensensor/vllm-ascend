@@ -16,14 +16,17 @@ def exact_prompt(tokens, length):
     return (tokens * ((length + len(tokens) - 1) // len(tokens)))[:length]
 
 
-def stream_measure(base_url, prompt, *, timeout=600):
+def stream_measure(base_url, prompt, *, timeout=600, max_tokens=4, ignore_eos=False):
+    if type(max_tokens) is not int or max_tokens < 1 or type(ignore_eos) is not bool:
+        raise ValueError("positive output budget and boolean EOS selection required")
     query = urllib.request.Request(
         base_url.rstrip("/") + "/v1/completions",
         data=json.dumps(
             dict(
                 model=MODEL,
                 prompt=prompt,
-                max_tokens=4,
+                max_tokens=max_tokens,
+                ignore_eos=ignore_eos,
                 temperature=0,
                 stream=True,
                 stream_options=dict(include_usage=True),
@@ -57,13 +60,15 @@ def stream_measure(base_url, prompt, *, timeout=600):
     if usage["prompt_tokens"] != len(prompt):
         raise AssertionError("server prompt usage differs from requested token count")
     cached = (usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0)
+    elapsed = time.monotonic() - started
     return dict(
         prompt_tokens=len(prompt),
         cached_tokens=cached,
         usage=usage,
         text=text,
         time_to_first_text_seconds=first_text,
-        elapsed_seconds=time.monotonic() - started,
+        elapsed_seconds=elapsed,
+        decode_tokens_per_second=(usage["completion_tokens"] - 1) / (elapsed - first_text),
         uncached_prompt_tokens_per_second=(len(prompt) - cached) / first_text,
         generation_completed=True,
     )

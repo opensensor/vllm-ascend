@@ -100,6 +100,22 @@ def compact_routes(request, experts):
 CUDA_ROW_MAJOR = "row_major_v1"
 CUDA_WORD_PLANES = "k32_words_n_v1"
 CUDA_NIBBLE_PLANES = "k32_nibbles_n_v1"
+TENSOR_TILE_ROWS = 16
+MIN_GROUPED_ROUTES = 32
+MAX_TENSOR_TILE_PADDING = 4
+
+
+def expert_tiles(experts):
+    """Bounded contiguous tiles; never mix experts or assume IDs are sorted."""
+    tiles = []
+    start = 0
+    while start < len(experts):
+        stop = start + 1
+        while stop < min(start + TENSOR_TILE_ROWS, len(experts)) and experts[stop] == experts[start]:
+            stop += 1
+        tiles.append((start, stop - start))
+        start = stop
+    return tuple(tiles)
 
 
 def encode_cuda_weights(values, layout):
@@ -133,6 +149,12 @@ class CudaOracle:
         library_path = Path(specification["library"])
         if digest_file(library_path) != specification["library_sha256"]:
             raise ValueError("CUDA oracle library differs from pinned identity")
+        layout = specification.get("weight_layout", CUDA_ROW_MAJOR)
+        if layout not in (CUDA_ROW_MAJOR, CUDA_WORD_PLANES, CUDA_NIBBLE_PLANES):
+            raise ValueError("unsupported CUDA weight layout")
+        experimental = specification.get("experimental_projection", False)
+        if type(experimental) is not bool or (experimental and layout != CUDA_NIBBLE_PLANES):
+            raise ValueError("experimental CUDA projections require explicit packed selection")
         self.cuda = CudaCopies(Path(specification["cuda_runtime"]), 1, 1)
         self.buffers, self.bank_pointers = {}, {}
         self.allocation_budget = specification.get("cuda_memory_budget_bytes")
@@ -141,9 +163,6 @@ class CudaOracle:
         self.max_tokens = min(routes, 640)
         self.reduce = None
         self.library = ctypes.CDLL(str(library_path))
-        layout = specification.get("weight_layout", CUDA_ROW_MAJOR)
-        if layout not in (CUDA_ROW_MAJOR, CUDA_WORD_PLANES, CUDA_NIBBLE_PLANES):
-            raise ValueError("unsupported CUDA weight layout")
         self.launch = getattr(
             self.library,
             {
@@ -154,6 +173,17 @@ class CudaOracle:
         )
         self.launch.argtypes = [ctypes.c_void_p] * 13 + [ctypes.c_int] * 4
         self.launch.restype = ctypes.c_int
+        self.grouped_launch = getattr(self.library, "sidecard_oracle_forward_grouped", None) if experimental else None
+        if self.grouped_launch is not None:
+            self.grouped_launch.argtypes = [ctypes.c_void_p] * 14 + [ctypes.c_int] * 5
+            self.grouped_launch.restype = ctypes.c_int
+        self.split_launch = getattr(self.library, "sidecard_oracle_forward_splitk", None) if experimental else None
+        if experimental and (self.grouped_launch is None or self.split_launch is None):
+            self.cuda.close()
+            raise ValueError("experimental CUDA library lacks grouped or split-K projections")
+        if self.split_launch is not None:
+            self.split_launch.argtypes = [ctypes.c_void_p] * 14 + [ctypes.c_int] * 4
+            self.split_launch.restype = ctypes.c_int
         pack = getattr(self.library, "sidecard_oracle_pack_cube", None) if layout == CUDA_NIBBLE_PLANES else None
         staging_size = 0
         prepared_at = time.perf_counter()
@@ -232,6 +262,10 @@ class CudaOracle:
                 "hidden_scales": routes * 64 * 4,
                 "output": routes * 4096 * 2,
             }
+            if self.grouped_launch is not None:
+                sizes["expert_tiles"] = routes * 8
+            if self.split_launch is not None:
+                sizes["split_groups"] = min(routes, MIN_GROUPED_ROUTES - 1) * 4096 * 128 * 4
             if self.reduce is not None:
                 sizes.update(
                     row_map=self.max_tokens * 8 * 4,
@@ -277,15 +311,29 @@ class CudaOracle:
         self.upload(self.buffers["ids"], struct.pack(f"<{rows}i", *experts))
         gate, gs, down, ds = self.bank_pointers[layer]
         names = ("input_q", "input_scales", "gate_up", "hidden", "hidden_q", "hidden_scales", "output")
+        arguments = (
+            self.buffers["input"],
+            self.buffers["ids"],
+            gate,
+            gs,
+            down,
+            ds,
+            *(self.buffers[name] for name in names),
+        )
+        if self.split_launch is not None and rows < MIN_GROUPED_ROUTES:
+            self.cuda.check(self.split_launch(*arguments, self.buffers["split_groups"], rows, 4096, 2048, bits))
+            return
+        if self.grouped_launch is not None and rows >= MIN_GROUPED_ROUTES:
+            tiles = expert_tiles(experts)
+            if len(tiles) * TENSOR_TILE_ROWS <= rows * MAX_TENSOR_TILE_PADDING:
+                self.upload(self.buffers["expert_tiles"], b"".join(struct.pack("<2i", *tile) for tile in tiles))
+                self.cuda.check(
+                    self.grouped_launch(*arguments, self.buffers["expert_tiles"], rows, 4096, 2048, bits, len(tiles))
+                )
+                return
         self.cuda.check(
             self.launch(
-                self.buffers["input"],
-                self.buffers["ids"],
-                gate,
-                gs,
-                down,
-                ds,
-                *(self.buffers[name] for name in names),
+                *arguments,
                 rows,
                 4096,
                 2048,

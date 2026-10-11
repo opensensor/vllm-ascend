@@ -174,12 +174,25 @@ class CudaResidentBackend:
         if (
             not fields
             <= set(specification)
-            <= fields | {"weight_layout", "cache_root", "cache_manifest_sha256", "reply_fp16", "partial_reduce"}
+            <= fields
+            | {
+                "weight_layout",
+                "cache_root",
+                "cache_manifest_sha256",
+                "reply_fp16",
+                "partial_reduce",
+                "experimental_projection",
+            }
             or specification.get("weight_layout", CUDA_ROW_MAJOR)
             not in (CUDA_ROW_MAJOR, CUDA_WORD_PLANES, CUDA_NIBBLE_PLANES)
             or ("cache_root" in specification) != ("cache_manifest_sha256" in specification)
             or type(specification.get("reply_fp16", False)) is not bool
             or type(specification.get("partial_reduce", False)) is not bool
+            or type(specification.get("experimental_projection", False)) is not bool
+            or (
+                specification.get("experimental_projection", False)
+                and specification.get("weight_layout") != CUDA_NIBBLE_PLANES
+            )
             or (specification.get("partial_reduce", False) and specification.get("reply_fp16", False))
             or owner != "cuda:0"
             or limits.hidden_width != WIDTH

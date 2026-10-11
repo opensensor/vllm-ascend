@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import statistics
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,6 +23,45 @@ ROUTES_PER_TOKEN = (1, 2, 8)
 WIDTH = 4096
 REFERENCE_TOKENS = 32
 MAX_ROUTES = 5120
+SHORT_ROUTES = (1, 4, 8, 16, 31, 32, 33)
+
+
+def short_projection_cases(oracle, layer, generator):
+    """Paired decode/tile-boundary checks against the original packed kernel."""
+    cases = []
+    grouped, split = oracle.grouped_launch, oracle.split_launch
+    try:
+        for rows in SHORT_ROUTES:
+            hidden = (generator.standard_normal((rows, WIDTH)) * 0.1).astype("<f2").tobytes()
+            experts = tuple(sorted(generator.integers(0, 144, size=rows).tolist()))
+            for bits in (4, 8):
+                samples = {"candidate": [], "scalar": []}
+                expected = None
+                for iteration in range(3):
+                    labels = ("candidate", "scalar") if iteration % 2 else ("scalar", "candidate")
+                    for label in labels:
+                        oracle.grouped_launch = grouped if label == "candidate" else None
+                        oracle.split_launch = split if label == "candidate" else None
+                        started = time.perf_counter()
+                        actual = oracle.compute_bytes(layer, hidden, experts, bits)
+                        samples[label].append((time.perf_counter() - started) * 1000)
+                        if expected is None:
+                            expected = actual
+                        elif actual != expected:
+                            raise AssertionError("short-batch CUDA projections differ bitwise")
+                cases.append(
+                    dict(
+                        layer=layer,
+                        routes=rows,
+                        activation_bits=bits,
+                        bitwise_equal=True,
+                        candidate_ms=statistics.median(samples["candidate"]),
+                        scalar_ms=statistics.median(samples["scalar"]),
+                    )
+                )
+    finally:
+        oracle.grouped_launch, oracle.split_launch = grouped, split
+    return cases
 
 
 def round_trip(packet, identity, limits):
@@ -46,6 +86,7 @@ def run(
     partial_reduce=False,
     bank_cache=None,
     one_card=False,
+    experimental_projection=False,
 ):
     # CUDA-only process; CPU Torch unpacks authenticated native banks.
     import numpy as np
@@ -81,6 +122,7 @@ def run(
         candidate_reply_fp16=reply_fp16,
         candidate_partial_reduce=partial_reduce,
         cuda_experts_per_layer=cuda_experts,
+        candidate_experimental_projection=experimental_projection,
     )
     try:
         for label, library, routes in (("reference", reference, 256), ("candidate", candidate, MAX_ROUTES)):
@@ -93,6 +135,7 @@ def run(
             if label == "candidate":
                 specification["weight_layout"] = weight_layout
                 specification["partial_reduce"] = partial_reduce
+                specification["experimental_projection"] = experimental_projection
             bank_layout = specification.get("weight_layout", CUDA_ROW_MAJOR)
             banks = (
                 plan
@@ -107,6 +150,10 @@ def run(
         backend.metrics = dict(requests=0, routes=0, compute_total_ms=0.0, compute_max_ms=0.0)
         generator = np.random.default_rng(20261011)
         for layer in LAYERS:
+            if getattr(oracles["candidate"], "split_launch", None) is not None:
+                report.setdefault("short_cases", []).extend(
+                    short_projection_cases(oracles["candidate"], layer, generator)
+                )
             for count in BATCH_TOKENS:
                 hidden = (generator.standard_normal((count, WIDTH)) * 0.1).astype("<f2")
                 for top_k in ROUTES_PER_TOKEN:
@@ -172,6 +219,31 @@ def run(
                         speedup=reference_ms / elapsed,
                         reply_bytes=len(result.tensor),
                     )
+                    grouped_launch = getattr(oracles["candidate"], "grouped_launch", None)
+                    if grouped_launch is not None:
+                        # Compare the two paths with the same resident banks,
+                        # packet, arithmetic flags, and transfers. Alternate
+                        # their order to avoid attributing warm-up to WMMA.
+                        samples = {"grouped": [], "scalar": []}
+                        try:
+                            for iteration in range(3):
+                                labels = ("scalar", "grouped") if iteration % 2 else ("grouped", "scalar")
+                                for label in labels:
+                                    oracles["candidate"].grouped_launch = grouped_launch if label == "grouped" else None
+                                    started = time.perf_counter()
+                                    comparison = backend.compute_tensor(packet)
+                                    samples[label].append((time.perf_counter() - started) * 1000)
+                                    if comparison.tensor != result.tensor:
+                                        raise AssertionError("Tensor Core and scalar resident replies differ bitwise")
+                        finally:
+                            oracles["candidate"].grouped_launch = grouped_launch
+                        case.update(
+                            grouped_ms=statistics.median(samples["grouped"]),
+                            scalar_ms=statistics.median(samples["scalar"]),
+                            grouped_speedup=statistics.median(samples["scalar"])
+                            / statistics.median(samples["grouped"]),
+                            grouped_scalar_bitwise_equal=True,
+                        )
                     report["cases"].append(case)
                     Path(output).write_text(json.dumps(report, indent=2) + "\n")
                     print(json.dumps(case), flush=True)
@@ -197,6 +269,7 @@ def main():
         "--weight-layout", choices=(CUDA_ROW_MAJOR, CUDA_WORD_PLANES, CUDA_NIBBLE_PLANES), default=CUDA_ROW_MAJOR
     )
     parser.add_argument("--one-card", action="store_true")
+    parser.add_argument("--experimental-projection", action="store_true")
     parser.add_argument("--reply-fp16", action="store_true")
     parser.add_argument("--partial-reduce", action="store_true")
     parser.add_argument("--bank-cache", type=Path)
@@ -214,6 +287,7 @@ def main():
                 partial_reduce=args.partial_reduce,
                 bank_cache=args.bank_cache,
                 one_card=args.one_card,
+                experimental_projection=args.experimental_projection,
             )
         ),
         flush=True,

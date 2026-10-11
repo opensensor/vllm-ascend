@@ -1,7 +1,8 @@
 # One Ascend card plus RTX: hardware qualification
 
-October 11, 2026. GLM is running at `http://192.168.53.187:8001/v1`, model
-`glm-sidecard`, from `sidecard-glm-service-20261011-one-card-v10` on that host.
+October 11, 2026. These receipts describe the v10 overlap qualification at
+`http://192.168.53.187:8001/v1`, model `glm-sidecard`. The later
+[mHC optimization](../optimization/README.md) supersedes its API deployment.
 [allocation.json](allocation.json) and [service-process.json](service-process.json)
 identify the owned processes. GLM uses Ascend card 16409, PCIe 49:00.0,
 physical devices 2 and 3, plus the RTX. Card 8217, devices 0 and 1, remains
