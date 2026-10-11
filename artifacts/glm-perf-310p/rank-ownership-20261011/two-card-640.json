@@ -1,0 +1,38 @@
+{
+  "evidence": "static source and model geometry; no device timings or memory measurement",
+  "tp_size": 4,
+  "pp_size": 1,
+  "tokens": 640,
+  "selection_width": 2176,
+  "indexer_projection_weights": 7471104,
+  "projections": "wq_b, wk_weights_proj, index_kpool_compress_gate",
+  "stages": [
+    {
+      "stage": 0,
+      "sparse_layers": [
+        3,
+        7,
+        11,
+        15,
+        19,
+        23,
+        27,
+        31,
+        35,
+        39,
+        43
+      ],
+      "replicated_indexer_executions": 44,
+      "owner_indexer_executions": 11,
+      "avoided_projection_ops": 315579432960,
+      "exchange_bytes_per_rank": 22282240,
+      "owner_result_bytes_per_sparse_layer": 5570560
+    }
+  ],
+  "avoided_projection_ops": 315579432960,
+  "score_ops_excluded": true,
+  "peer_weights_and_caches_retained": true,
+  "numerical_contract_changed": false,
+  "latency_model": "benefit requires old replicated indexer time > owner indexer time + exchange + peer copy",
+  "sharding_admission": "counts alone do not establish support for this TP/PP geometry"
+}

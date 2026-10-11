@@ -20,6 +20,8 @@ from tools.glm_perf.deployment_profiles import validate_profile
 from tools.glm_perf.fused_moe_profile import frozen_helper
 from tools.glm_perf.fused_weight_layout import FP16_SCALE_LAYOUT
 from tools.glm_perf.indexer_bundle import install as install_indexer_bundle
+from tools.glm_perf.indexer_owner import OWNER_OPTIONS, plan_install, read_options
+from tools.glm_perf.indexer_owner import install as install_indexer_owner
 from tools.glm_perf.native_checkpoint import (
     INDEX,
     LAYOUT,
@@ -80,7 +82,13 @@ class GlmNativeInt4Loader(DefaultModelLoader):
             raise ValueError("native GLM checkpoint requires lazy safetensors loading")
         if load_config.model_loader_extra_config.get("enable_multithread_load"):
             raise ValueError("native GLM loader owns its authoritative shard selection")
-        super().__init__(dataclasses.replace(load_config, load_format="safetensors"))
+        self.indexer_owner_options = read_options(load_config.model_loader_extra_config)
+        base_options = {
+            key: value for key, value in load_config.model_loader_extra_config.items() if key not in OWNER_OPTIONS
+        }
+        super().__init__(
+            dataclasses.replace(load_config, load_format="safetensors", model_loader_extra_config=base_options)
+        )
         self.folder = None
         self.native_manifest = None
         self.local_range = None
@@ -90,6 +98,8 @@ class GlmNativeInt4Loader(DefaultModelLoader):
         self.native_code_tensors = 0
 
     def load_weights(self, model, model_config):
+        if self.indexer_owner_options is not None:
+            plan_install(model, **self.indexer_owner_options)
         self.folder = resolve_native_folder(model_config.model, model_config.revision, self.load_config.download_dir)
         self.resolved_model_source = model_config.model
         manifest = json.loads((self.folder / MANIFEST).read_text())
@@ -199,6 +209,9 @@ class GlmNativeInt4Loader(DefaultModelLoader):
             ):
                 raise ValueError("indexer manifest differs from checkpoint")
             indexers = install_indexer_bundle(model, indexer_root)
+        owner_report = None
+        if self.indexer_owner_options is not None:
+            owner_report = install_indexer_owner(model, **self.indexer_owner_options)
         model._native_int4_load_report = {
             "layout": LAYOUT,
             "activation_bits": manifest["activation_bits"],
@@ -208,6 +221,7 @@ class GlmNativeInt4Loader(DefaultModelLoader):
             "layout_backup_bytes": 0,
             "weight_scale_layout": scale_marker,
             "aicore_bf16_indexers": indexers,
+            "indexer_owner": owner_report,
         }
         logger.info("GLM native INT4 loaded directly: %s", model._native_int4_load_report)
 

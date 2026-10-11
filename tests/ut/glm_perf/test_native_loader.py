@@ -226,6 +226,55 @@ def test_direct_loader_composes_optional_permanent_indexer_bundle(tmp_path, load
     assert model._native_int4_load_report["transformed_code_tensors"] == 0
 
 
+@pytest.mark.parametrize("overlap", [None, False, True])
+def test_owner_option_is_separate_from_quantization_and_installed_after_arithmetic(
+    tmp_path, loader_module, monkeypatch, overlap
+):
+    module, config_type = loader_module
+    model, config, _ = checkpoint(tmp_path)
+    path = tmp_path / MANIFEST
+    data = json.loads(path.read_text())
+    data["indexer_kernel_bundle"] = "indexer-kernels-v5"
+    path.write_text(json.dumps(data))
+    calls = []
+    monkeypatch.setattr(module, "plan_install", lambda model, **options: calls.append(("admit", options["owner_rank"])))
+    monkeypatch.setattr(module, "install_indexer_bundle", lambda *args: calls.append(("arithmetic",)) or 1)
+
+    def install(loaded_model, **options):
+        assert loaded_model is model and "loaded" in vars(model)
+        assert calls[-1] == ("arithmetic",)
+        calls.append(("owner", options))
+        return {"hardware_qualified": False}
+
+    monkeypatch.setattr(module, "install_indexer_owner", install)
+    options = dict(indexer_owner_rank=1, indexer_exchange_budget_bytes=12 * 1024**2)
+    expected = dict(owner_rank=1, budget_bytes=12 * 1024**2)
+    if overlap is not None:
+        options["indexer_overlap_prefill"] = overlap
+        expected["overlap_prefill"] = overlap
+    loader = module.GlmNativeInt4Loader(config_type(model_loader_extra_config=options))
+    assert loader.load_config.model_loader_extra_config == {}
+    loader.load_weights(model, config)
+    assert calls == [("admit", 1), ("arithmetic",), ("owner", expected)]
+    assert model._native_int4_load_report["activation_bits"] == 4
+    assert model._native_int4_load_report["indexer_owner"] == {"hardware_qualified": False}
+
+
+def test_owner_config_rejected_before_any_checkpoint_or_weight_io(loader_module, monkeypatch):
+    module, config_type = loader_module
+    monkeypatch.setattr(module, "resolve_native_folder", lambda *args: pytest.fail("read before ownership admission"))
+
+    def reject(*args, **kwargs):
+        raise ValueError("incompatible ownership config")
+
+    monkeypatch.setattr(module, "plan_install", reject)
+    loader = module.GlmNativeInt4Loader(
+        config_type(model_loader_extra_config=dict(indexer_owner_rank=0, indexer_exchange_budget_bytes=1))
+    )
+    with pytest.raises(ValueError, match="ownership config"):
+        loader.load_weights(SimpleNamespace(vllm_config=object()), object())
+
+
 def test_pipeline_loader_skips_nonlocal_head_and_caps_prefill_scratch(tmp_path, loader_module, monkeypatch):
     module, config_type = loader_module
     model, config, owner = checkpoint(tmp_path)

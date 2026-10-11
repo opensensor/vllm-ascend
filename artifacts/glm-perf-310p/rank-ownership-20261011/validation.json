@@ -1,0 +1,102 @@
+{
+  "base_commit": "5ecd0101c1f63ba13fb59d99a24fc152b3bb1d80",
+  "delivery_source_sha256": {
+    "tools/glm_perf/indexer_owner.py": "f201ca4c68286e13c56d98b108029ba7a210962c41beb3d6c441ebf23ba76aa8",
+    "tools/glm_perf/probe_indexer_owner.py": "4df02556794310595b00950e378dca618ceab6f83517d0a8c8b3345ee5ebb690",
+    "tools/glm_perf/rank_work_audit.py": "51ce263d3f6a1ac800f43900e8c74b41a767bf1f513733d1f5d09f699b7eee27",
+    "vllm_ascend/model_loader/glm_native_int4.py": "a6165c3d2e042bb6dd427d61ea454bfb24ec9a5119f60f88e73c3472856234eb",
+    "vllm_ascend/model_loader/glm_channel_scale.py": "f29a65ddf8ac1228bed20db45525f687290255c60b8ea848853f35896f6b6494",
+    "vllm_ascend/_310p/attention/mla_v1_310.py": "8f94e3f8f2119db5517507f0709352a0826e0388285b71a44e2cb0102be76753",
+    "vllm_ascend/models/glm5next/attention.py": "7eea5aa0859897b2653b6fc68a4a5e953fdcfda65cc844257f626a7b54e88be9"
+  },
+  "source_config_sha256": "bb8f01c42cb92a52ca72e65afb4d5bd8d11aef083cd210e8de25dfb904f23e9f",
+  "cpu_tests": {
+    "passed": 188,
+    "seconds": 3.3,
+    "log": "/tmp/glm-rank-owner-final-gates.txt"
+  },
+  "cpu_process_protocols": {
+    "gloo-tp2-pp3": {
+      "processes": 6,
+      "rows": [
+        1,
+        4,
+        37,
+        640
+      ],
+      "passed": true,
+      "backend": "gloo",
+      "real_indexer": false,
+      "npu_used": false
+    },
+    "gloo-tp4": {
+      "processes": 4,
+      "rows": [
+        1,
+        4,
+        37,
+        640
+      ],
+      "passed": true,
+      "backend": "gloo",
+      "real_indexer": false,
+      "npu_used": false
+    },
+    "gloo-overlap-tp2-pp3": {
+      "processes": 6,
+      "rows": [
+        1,
+        4,
+        37,
+        640
+      ],
+      "passed": true,
+      "backend": "gloo",
+      "real_indexer": false,
+      "npu_used": false
+    },
+    "gloo-overlap-tp4": {
+      "processes": 4,
+      "rows": [
+        1,
+        4,
+        37,
+        640
+      ],
+      "passed": true,
+      "backend": "gloo",
+      "real_indexer": false,
+      "npu_used": false
+    }
+  },
+  "nightly_device_collection": {
+    "skipped": 2,
+    "seconds": 0.01,
+    "log": "/tmp/glm-rank-owner-nightly-collection.txt"
+  },
+  "changed_file_manual_hooks": {
+    "passed": true,
+    "log": "/tmp/glm-rank-owner-manual-hooks.txt"
+  },
+  "full_repository_format": {
+    "passed": false,
+    "log": "/tmp/glm-rank-owner-full-format.txt",
+    "reason": "existing unrelated lint, spelling, formatting and forbidden re imports",
+    "unrelated_automatic_changes_restored": 144,
+    "owned_files_in_reported_errors": false
+  },
+  "hardware": {
+    "npu_used": false,
+    "live_service_changed": false,
+    "hccl_qualified": false,
+    "real_indexer_parity": false,
+    "full_model_quality_qualified": false,
+    "speedup_measured": false
+  },
+  "delivery": {
+    "quantization_changed": false,
+    "peer_indexer_cache_allocations_retained": true,
+    "default_execution_changed": false,
+    "fresh_load_required_for_rollback": true
+  }
+}

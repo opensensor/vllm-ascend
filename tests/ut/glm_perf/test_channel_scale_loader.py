@@ -107,6 +107,18 @@ def test_loader_requires_explicit_reservations_and_rejects_unknown_options(modul
         loaded.GlmChannelScaleLoader(config(model_loader_extra_config=options))
 
 
+def test_owner_requires_separate_reservation_and_preserves_disabled_default(module):
+    loaded, config = module
+    assert loaded.GlmChannelScaleLoader(config()).indexer_owner_options is None
+    options = config().model_loader_extra_config
+    options["indexer_owner_rank"] = 0
+    with pytest.raises(ValueError, match="both"):
+        loaded.GlmChannelScaleLoader(config(model_loader_extra_config=options))
+    options["indexer_exchange_budget_bytes"] = 12 * 1024**2
+    loader = loaded.GlmChannelScaleLoader(config(model_loader_extra_config=options))
+    assert loader.indexer_owner_options == dict(owner_rank=0, budget_bytes=12 * 1024**2)
+
+
 @pytest.mark.parametrize("bundle_path", ["../escape", "indexer"])
 def test_indexer_manifest_is_admitted_before_native_stage_allocation(tmp_path, module, monkeypatch, bundle_path):
     loaded, config = module

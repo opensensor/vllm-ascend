@@ -7,3 +7,10 @@ def pytest_addoption(parser):
     group.addoption("--glm-channel-overlay", default=None)
     group.addoption("--glm-channel-bundle", default=None)
     group.addoption("--glm-channel-device", type=int, default=0)
+    owner = parser.getgroup("GLM owned indexer transport")
+    owner.addoption(
+        "--glm-indexer-owner-hccl", action="store_true", help="Requires exclusive reservation of all test chips"
+    )
+    owner.addoption("--glm-indexer-owner-tp-size", type=int, choices=(2, 4), default=2)
+    owner.addoption("--glm-indexer-owner-rank", type=int, default=1)
+    owner.addoption("--glm-indexer-overlap-prefill", action="store_true")

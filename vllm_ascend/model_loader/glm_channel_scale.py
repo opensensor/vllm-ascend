@@ -15,11 +15,13 @@ from vllm.model_executor.model_loader.default_loader import DefaultModelLoader
 from tools.glm_perf.channel_scale_checkpoint import file_sha256
 from tools.glm_perf.channel_scale_stage import prepare_stage
 from tools.glm_perf.indexer_bundle import install as install_indexer_bundle
+from tools.glm_perf.indexer_owner import OWNER_OPTIONS, plan_install, read_options
+from tools.glm_perf.indexer_owner import install as install_indexer_owner
 from tools.glm_perf.native_checkpoint import INDEX, MANIFEST, selected_weights
 
 LOAD_FORMAT = "glm_channel_scale_candidate"
 REQUIRED_OPTIONS = ("channel_overlay", "channel_bundle", "channel_host_budget_bytes", "channel_device_budget_bytes")
-OPTIONAL_OPTIONS = ("channel_decode_bits", "channel_prefill_bits")
+OPTIONAL_OPTIONS = ("channel_decode_bits", "channel_prefill_bits", *OWNER_OPTIONS)
 
 
 @register_model_loader(LOAD_FORMAT)
@@ -37,6 +39,7 @@ class GlmChannelScaleLoader(DefaultModelLoader):
         extra = dict(load_config.model_loader_extra_config)
         if any(key not in extra for key in REQUIRED_OPTIONS) or set(extra) - set(REQUIRED_OPTIONS + OPTIONAL_OPTIONS):
             raise ValueError("channel-scale loader requires explicit overlay, bundle and CPU/device reservations")
+        self.indexer_owner_options = read_options(extra)
         self.channel_options = extra
         self.folder = None
         super().__init__(dataclasses.replace(load_config, load_format="safetensors", model_loader_extra_config={}))
@@ -51,6 +54,8 @@ class GlmChannelScaleLoader(DefaultModelLoader):
         scheduler = model.vllm_config.scheduler_config
         if not hasattr(model, "_glm_text_config"):
             raise ValueError("candidate requires the existing composed GLM text adapter")
+        if self.indexer_owner_options is not None:
+            plan_install(model, **self.indexer_owner_options)
         indexer_root = None
         base_manifest_path = self.folder / MANIFEST
         if base_manifest_path.exists():
@@ -88,6 +93,8 @@ class GlmChannelScaleLoader(DefaultModelLoader):
         super().load_weights(model, model_config)
         if indexer_root is not None:
             report["aicore_bf16_indexers"] = install_indexer_bundle(model, indexer_root)
+        if self.indexer_owner_options is not None:
+            report["indexer_owner"] = install_indexer_owner(model, **self.indexer_owner_options)
         logger.info("GLM channel-scale OFFLINE CANDIDATE loaded: %s", report)
 
     def _get_weights_iterator(self, source):
