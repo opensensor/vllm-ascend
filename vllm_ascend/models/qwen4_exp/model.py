@@ -176,6 +176,7 @@ from .qwen4exp_gdn import (
     gdn_gating,
     gdn_short_conv,
 )
+from .rope_scaling import QSARopeScaling
 from .shared_partition import place_uneven_shared_expert_tensor
 from .w4_backend_policy import configure_w4_backend
 from .w4_moe import (
@@ -1360,6 +1361,8 @@ def _step_rope_cos_sin(
     frequency_axes: torch.Tensor | None = None,
     mrope_section: list[int] | None = None,
     mrope_interleaved: bool = False,
+    rope_scaling: QSARopeScaling | None = None,
+    inv_freq: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Share dynamic RoPE tables between QSA layers in one model forward.
 
@@ -1384,6 +1387,7 @@ def _step_rope_cos_sin(
         compute_dtype,
         tuple(mrope_section) if mrope_section is not None else None,
         mrope_interleaved,
+        rope_scaling,
     )
     if cache is not None and key in cache:
         return cache[key]
@@ -1396,6 +1400,8 @@ def _step_rope_cos_sin(
         frequency_axes=frequency_axes,
         mrope_section=mrope_section,
         mrope_interleaved=mrope_interleaved,
+        rope_scaling=rope_scaling,
+        inv_freq=inv_freq,
     )
     if cache is not None:
         cache[key] = tables
@@ -1490,6 +1496,9 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
         vllm_config = get_current_vllm_config_or_none()
         device_config = getattr(vllm_config, "device_config", None)
         device = getattr(device_config, "device", torch.device("cpu"))
+        if self.attn.rope_inv_freq is not None:
+            # Transfer the tiny immutable vector once, before any graph capture.
+            self.attn.rope_inv_freq = self.attn.rope_inv_freq.to(device)
         scheduler_config = getattr(vllm_config, "scheduler_config", None)
         max_num_seqs = max(1, int(getattr(scheduler_config, "max_num_seqs", 1)))
         # Share the constant axis map as well as per-forward query tables.
@@ -1671,11 +1680,22 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
             num_kv_heads=self.num_kv_heads,
             num_heads=self.num_heads,
             scale_value=self.head_dim**-0.5,
-            block_table=metadata.block_tables,
+            block_table=self._dense_block_tables(metadata.block_tables, key_cache.shape[2]),
             context_lens=context_lens,
             out=output,
         )
         return output
+
+    def _dense_block_tables(self, block_tables: torch.Tensor, block_size: int) -> torch.Tensor:
+        """Bound exact dense QSA tables by the selection's known token budget.
+
+        These callers run only while every visible token is selected. Passing
+        the 1M padded table to 310P paged attention exceeds its transfer tiling
+        even for a short image request. A fixed budget bound is graph safe and
+        needs no device readback. Multiple request rows need a compact copy.
+        """
+        max_blocks = (self.indexer.token_topk + block_size - 1) // block_size
+        return block_tables[:, :max_blocks].contiguous()
 
     def _dense_prefill_310(
         self,
@@ -1741,7 +1761,7 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
                 key_cache=key_cache,
                 value_cache=value_cache,
                 mask=AttentionMaskBuilder310.get_compressed_splitfuse_mask(query.device),
-                block_table=metadata.block_tables,
+                block_table=self._dense_block_tables(metadata.block_tables, key_cache.shape[2]),
                 seq_len=query_lens,
                 context_lens=metadata.seq_lens,
                 num_kv_heads=self.num_kv_heads,
@@ -1756,7 +1776,7 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
                 key_cache=key_cache,
                 value_cache=value_cache,
                 mask=AttentionMaskBuilder310.get_splitfuse_mask(metadata, query.device),
-                block_table=metadata.block_tables,
+                block_table=self._dense_block_tables(metadata.block_tables, key_cache.shape[2]),
                 seq_len=query_lens,
                 context_lens=metadata.seq_lens,
                 num_kv_heads=self.num_kv_heads,
@@ -1838,6 +1858,8 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
                 frequency_axes=self._query_rope_frequency_axes,
                 mrope_section=self.attn.mrope_section,
                 mrope_interleaved=self.attn.mrope_interleaved,
+                rope_scaling=self.attn.rope_scaling,
+                inv_freq=self.attn.rope_inv_freq,
             )
         q, k = self.attn.project_qk(q, k, positions, positions, accum_dtype=self.compute_dtype, cos_sin=query_cos_sin)
         q = q.to(self.params_dtype)
@@ -1860,6 +1882,8 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
                 mrope_section=self.attn.mrope_section,
                 mrope_interleaved=self.attn.mrope_interleaved,
                 cos_sin=query_cos_sin,
+                rope_scaling=self.attn.rope_scaling,
+                inv_freq=self.attn.rope_inv_freq,
             ).to(self.params_dtype)
         if positions.ndim == 1:
             index_key_positions = positions - torch.remainder(logical_positions, self.indexer.compress_ratio)
@@ -1879,6 +1903,8 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
             mrope_section=self.attn.mrope_section,
             mrope_interleaved=self.attn.mrope_interleaved,
             frequency_axes=self._query_rope_frequency_axes,
+            rope_scaling=self.attn.rope_scaling,
+            inv_freq=self.attn.rope_inv_freq,
         )
         from vllm_ascend.device.device_op import DeviceOperator
 

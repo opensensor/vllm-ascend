@@ -92,3 +92,17 @@ def test_production_256k_geometry_bounds_selection_to_64_rows():
     # The score tensor is <=16 MiB, versus about 552 MiB for the crashing
     # 2,560-row cached-prefix prefill. Backend workspace is measured on NPU.
     assert indexer._QSA_SELECTION_MAX_TILE_ELEMENTS * 4 == 16 * 1024 * 1024
+
+
+@pytest.mark.parametrize("dtype", [torch.int32, torch.int64])
+@pytest.mark.parametrize("policy", sorted(indexer.QSA_SELECTION_POLICIES))
+def test_tiled_selection_preserves_backend_index_dtype(monkeypatch, dtype, policy):
+    scores = torch.randn(19, 37, generator=torch.Generator().manual_seed(83))
+    name = "_stable_topk_indices" if policy == indexer.QSA_SELECTION_STABLE_ARGSORT else "_fast_topk_indices"
+    original = getattr(indexer, name)
+    expected = original(scores, 9).to(dtype)
+    monkeypatch.setattr(indexer, name, lambda tile, k: original(tile, k).to(dtype))
+    monkeypatch.setattr(indexer, "_QSA_SELECTION_MAX_TILE_ELEMENTS", 37 * 7)
+    actual = indexer._select_topk_indices(scores, 9, policy)
+    assert actual.dtype == dtype
+    assert torch.equal(actual, expected)

@@ -55,6 +55,7 @@ from .ops.qsa_attention import (
     qsa_sparse_gqa_attention,
     qsa_write_kv_to_cache,
 )
+from .rope_scaling import QSARopeScaling
 
 # QSA sparse-attention geometry defaults (plan T6.4), mirroring the T0.6
 # reference: 24 query heads, 2 KV heads, head dim 256.
@@ -65,6 +66,18 @@ _DEFAULT_HEAD_DIM = 256
 _DEFAULT_PARTIAL_ROTARY_FACTOR = 0.25
 _DEFAULT_ROPE_THETA = 10_000.0
 _DEFAULT_RMS_NORM_EPS = 1e-6
+# Three-part 2*pi reduction keeps the first two products exact in FP32
+# throughout the qualified 1M position range. 310P's large-angle trig loses
+# accuracy if handed the original million-radian phase directly.
+_ROTARY_TWO_PI_HIGH = 6.25
+_ROTARY_TWO_PI_MIDDLE = 0.033203125
+_ROTARY_TWO_PI_LOW = -0.000017817820413523074713233441
+_ROTARY_INV_TWO_PI = 0.159154943091895335768883763373
+
+
+def _reduce_rotary_angles(angles: torch.Tensor) -> torch.Tensor:
+    turns = torch.round(angles * _ROTARY_INV_TWO_PI)
+    return ((angles - turns * _ROTARY_TWO_PI_HIGH) - turns * _ROTARY_TWO_PI_MIDDLE) - turns * _ROTARY_TWO_PI_LOW
 
 
 def _mrope_interleaved_dims(section: list[int]) -> list[int]:
@@ -139,6 +152,8 @@ def apply_partial_rope(
     mrope_section: list[int] | None = None,
     mrope_interleaved: bool = False,
     cos_sin: tuple[torch.Tensor, torch.Tensor] | None = None,
+    rope_scaling: QSARopeScaling | None = None,
+    inv_freq: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Neox-style RoPE on the first ``rotary_dim`` dims; pass the rest through.
 
@@ -158,6 +173,18 @@ def apply_partial_rope(
         raise ValueError("rotary_dim must be even and <= head_dim")
     orig_dtype = x.dtype
     x = x.to(accum_dtype)
+    if cos_sin is None and rope_scaling is not None:
+        cos_sin = partial_rope_cos_sin(
+            positions,
+            rotary_dim=rotary_dim,
+            base=base,
+            dtype=accum_dtype,
+            compute_dtype=accum_dtype,
+            mrope_section=mrope_section,
+            mrope_interleaved=mrope_interleaved,
+            rope_scaling=rope_scaling,
+            inv_freq=inv_freq,
+        )
     if cos_sin is None:
         pos = _rope_frequency_positions(
             positions,
@@ -196,6 +223,8 @@ def partial_rope_cos_sin(
     mrope_interleaved: bool = False,
     compute_dtype: torch.dtype = torch.float32,
     frequency_axes: torch.Tensor | None = None,
+    rope_scaling: QSARopeScaling | None = None,
+    inv_freq: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Materialize current-position tables; default preserves the device-kernel policy.
 
@@ -211,12 +240,22 @@ def partial_rope_cos_sin(
         mrope_interleaved,
         frequency_axes,
     ).to(compute_dtype)
-    inv_freq = 1.0 / (
-        base ** (torch.arange(0, rotary_dim, 2, dtype=compute_dtype, device=positions.device) / rotary_dim)
-    )
+    if rope_scaling is None:
+        inv_freq = 1.0 / (
+            base ** (torch.arange(0, rotary_dim, 2, dtype=compute_dtype, device=positions.device) / rotary_dim)
+        )
+    else:
+        if inv_freq is None or inv_freq.shape != (rotary_dim // 2,) or inv_freq.device != positions.device:
+            raise ValueError("QSA YaRN inverse frequencies must be resident on the positions device before forward")
+        inv_freq = inv_freq.to(compute_dtype)
     angles = pos * inv_freq[None, :]
+    if rope_scaling is not None and angles.dtype == torch.float32 and angles.device.type == "npu":
+        angles = _reduce_rotary_angles(angles)
     cos = torch.cat((torch.cos(angles), torch.cos(angles)), dim=-1)
     sin = torch.cat((torch.sin(angles), torch.sin(angles)), dim=-1)
+    if rope_scaling is not None and rope_scaling.attention_factor != 1.0:
+        cos.mul_(rope_scaling.attention_factor)
+        sin.mul_(rope_scaling.attention_factor)
     return cos.to(dtype), sin.to(dtype)
 
 
@@ -268,20 +307,32 @@ class AscendQwen4ExpQSAAttention(nn.Module):
         self.group_size = self.num_query_heads // self.num_kv_heads
         self.scaling = self.head_dim**-0.5
 
-        partial_rotary_factor = float(getattr(config, "partial_rotary_factor", _DEFAULT_PARTIAL_ROTARY_FACTOR))
+        rope_parameters = getattr(config, "rope_parameters", None) or {}
+        partial_rotary_factor = float(
+            rope_parameters.get(
+                "partial_rotary_factor", getattr(config, "partial_rotary_factor", _DEFAULT_PARTIAL_ROTARY_FACTOR)
+            )
+        )
         self.rotary_dim = int(self.head_dim * partial_rotary_factor)
         if self.rotary_dim % 2:
             raise ValueError("partial rotary_dim must be even")
         # Real Qwen4Exp configs nest ``rope_theta`` under ``rope_parameters``
         # (checkpoint value 1e7); older/tiny configs carry a top-level key. Read
         # the top-level key first, then fall back to ``rope_parameters``.
-        rope_parameters = getattr(config, "rope_parameters", None) or {}
         self.rope_theta = float(
             getattr(config, "rope_theta", None) or rope_parameters.get("rope_theta") or _DEFAULT_ROPE_THETA
         )
         section = rope_parameters.get("mrope_section")
         self.mrope_section = list(section) if section is not None else None
         self.mrope_interleaved = bool(rope_parameters.get("mrope_interleaved", False))
+        self.rope_scaling = QSARopeScaling.from_parameters(rope_parameters)
+        self.register_buffer(
+            "rope_inv_freq",
+            None
+            if self.rope_scaling is None
+            else self.rope_scaling.inverse_frequencies(self.rotary_dim, self.rope_theta),
+            persistent=False,
+        )
         self.rms_norm_eps = float(getattr(config, "rms_norm_eps", _DEFAULT_RMS_NORM_EPS))
 
         # Per-head GemmaRMSNorm weights (applied as ``1 + weight``); zero-init is
@@ -316,6 +367,8 @@ class AscendQwen4ExpQSAAttention(nn.Module):
             mrope_section=self.mrope_section,
             mrope_interleaved=self.mrope_interleaved,
             cos_sin=cos_sin,
+            rope_scaling=self.rope_scaling,
+            inv_freq=self.rope_inv_freq,
         )
         k = apply_partial_rope(
             k,
@@ -326,6 +379,8 @@ class AscendQwen4ExpQSAAttention(nn.Module):
             mrope_section=self.mrope_section,
             mrope_interleaved=self.mrope_interleaved,
             cos_sin=cos_sin,
+            rope_scaling=self.rope_scaling,
+            inv_freq=self.rope_inv_freq,
         )
         return q, k
 

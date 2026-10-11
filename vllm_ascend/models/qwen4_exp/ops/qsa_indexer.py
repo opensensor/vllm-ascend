@@ -95,10 +95,20 @@ def _fast_topk_indices(scores: torch.Tensor, k: int) -> torch.Tensor:
     if k <= 0 or k > scores.shape[1]:
         raise ValueError("k must be in [1, scores.shape[1]]")
     selected = torch.topk(scores, k, dim=1, sorted=False).indices
+    # 310P supports INT32 gather indices and has a slower INT64 gather path.
+    # Cast only compact [rows, k] tensors; CPU gather still requires INT64.
+    compact_indices = scores.device.type == "npu" and scores.shape[1] <= torch.iinfo(torch.int32).max
+    if compact_indices:
+        selected = selected.to(torch.int32)
+    # The INT32 intermediate also avoids 310P's INT64 -> FP32 AiCPU cast.
     index_order = torch.argsort(selected.to(torch.float32), dim=1, stable=True)
+    if compact_indices:
+        index_order = index_order.to(torch.int32)
     selected = selected.gather(1, index_order)
     selected_values = scores.gather(1, selected)
     value_order = torch.argsort(selected_values, dim=1, descending=True, stable=True)
+    if compact_indices:
+        value_order = value_order.to(torch.int32)
     return selected.gather(1, value_order)
 
 
@@ -113,8 +123,11 @@ def _select_topk_indices(scores: torch.Tensor, k: int, policy: str) -> torch.Ten
     tile_rows = max(1, _QSA_SELECTION_MAX_TILE_ELEMENTS // max(1, scores.shape[1]))
     if scores.shape[0] <= tile_rows:
         return select(scores, k)
-    selected = torch.empty((scores.shape[0], k), dtype=torch.int64, device=scores.device)
-    for start in range(0, scores.shape[0], tile_rows):
+    # Preserve the backend's compact index dtype across row tiles.
+    first_tile = select(scores[:tile_rows], k)
+    selected = torch.empty((scores.shape[0], k), dtype=first_tile.dtype, device=scores.device)
+    selected[:tile_rows].copy_(first_tile)
+    for start in range(tile_rows, scores.shape[0], tile_rows):
         stop = min(start + tile_rows, scores.shape[0])
         selected[start:stop].copy_(select(scores[start:stop], k))
     return selected
