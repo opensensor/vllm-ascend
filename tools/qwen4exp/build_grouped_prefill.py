@@ -43,6 +43,7 @@ def build_grouped(directory, cann, root, version):
         ],
         check=True,
     )
+    provenance["features"] = {"cached_metadata": True}
     provenance["binaries"]["native_grouped_prefill"] = {"path": str(binary), "sha256": digest(binary)}
     (directory / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
     return provenance

@@ -168,7 +168,7 @@ class NativeGroupedPrefill(NativeResource):
     the final device group boundary, then uses the original arithmetic.
     """
 
-    def __call__(self, bank, prepared, group_ends):
+    def validate_inputs(self, bank, prepared, group_ends):
         if len(prepared) != 4 or bank.weight.ndim != 3:
             raise ValueError("grouped prefill requires a packed expert bank and four operands")
         low, high, scale, total = prepared
@@ -197,6 +197,11 @@ class NativeGroupedPrefill(NativeResource):
             raise ValueError("unsupported grouped prefill geometry/dtype; preserve the installed decode operator")
         operands = (*prepared, bank.weight, bank.weight_scale, bank.weight_offset, bank.weight_sum, group_ends)
         _tensors_on_one_device(operands, low.device)
+        return rows, experts, outputs, inputs, operands
+
+    def __call__(self, bank, prepared, group_ends):
+        rows, experts, outputs, inputs, operands = self.validate_inputs(bank, prepared, group_ends)
+        low = prepared[0]
         output = torch.empty((rows, outputs), dtype=torch.float16, device=low.device)
         descriptor = self.config((rows, experts, outputs, inputs, 8, 0, 1), low.device)
         self.launch(self.kernel, [*operands, output, descriptor], 8)
