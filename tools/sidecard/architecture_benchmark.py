@@ -1,0 +1,330 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Compare resident GLM arithmetic on CUDA and one explicitly selected NPU.
+
+Synthetic FP16 weights measure hardware primitives, not native packed MoE.
+Attention isolates a shared selected KV window; indexing/gathering is excluded.
+CUDA uses cuBLAS plus a fused post-mix kernel, NPU uses eager Torch operations.
+Every case checks sampled arithmetic against CPU before reporting timing.
+"""
+
+import argparse
+import ctypes
+import gc
+import json
+import os
+import statistics
+import time
+from pathlib import Path
+
+HIDDEN = 4096
+MOE_INTERMEDIATE = 2048
+DENSE_INTERMEDIATE = 12288
+VOCAB_SIZE = 154880
+KDA_HEADS = 64
+KDA_HEAD_DIM = 128
+KDA_GATE_DIM = 128
+MHC_PROJECTION_DIM = 24
+TENSOR_PARALLEL_SIZE = 2
+HEAD_DIM = 256
+LOCAL_HEADS = 32
+SELECTED_KV = 2048
+STREAMS = 4
+COPY_BYTES = 256 * 1024 * 1024
+SEED = 3106000
+WARMUPS = 5
+SAMPLES = 11
+
+
+def cases(rows):
+    """Both full-model and TP2 geometry are explicit in the case names."""
+    projections = (
+        ("expert_gate_up", HIDDEN, HIDDEN, "fp16"),
+        ("expert_down", HIDDEN, MOE_INTERMEDIATE, "fp16"),
+        ("dense_gate_up_tp2", 2 * DENSE_INTERMEDIATE // TENSOR_PARALLEL_SIZE, HIDDEN, "fp16"),
+        (
+            "kda_qkv_bfg_tp2",
+            (3 * KDA_HEADS * KDA_HEAD_DIM + KDA_HEADS) // TENSOR_PARALLEL_SIZE + 2 * KDA_GATE_DIM,
+            HIDDEN,
+            "fp16",
+        ),
+        ("kda_qkv_bfg_full", 3 * KDA_HEADS * KDA_HEAD_DIM + KDA_HEADS + 2 * KDA_GATE_DIM, HIDDEN, "fp16"),
+        ("kda_out_tp2", HIDDEN, HIDDEN, "fp16"),
+        ("kda_out_full", HIDDEN, KDA_HEADS * KDA_HEAD_DIM, "fp16"),
+        ("mhc_projection", MHC_PROJECTION_DIM, STREAMS * HIDDEN, "fp32"),
+    )
+    result = []
+    for m in rows:
+        if type(m) is not int or m not in (1, 4, 128, 512):
+            raise ValueError("rows must be selected from GLM decode/prefill shapes: 1,4,128,512")
+        for name, n, k, dtype in projections:
+            result.append({"name": name, "op": "gemm", "m": m, "n": n, "k": k, "dtype": dtype})
+        if m <= 4:
+            result.append(
+                {
+                    "name": "lm_head_tp2",
+                    "op": "gemm",
+                    "m": m,
+                    "n": VOCAB_SIZE // TENSOR_PARALLEL_SIZE,
+                    "k": HIDDEN,
+                    "dtype": "fp16",
+                }
+            )
+        result.append(
+            {
+                "name": "selected_attention_core_tp2",
+                "op": "attention",
+                "m": m,
+                "n": LOCAL_HEADS,
+                "k": SELECTED_KV,
+                "dtype": "fp16",
+            }
+        )
+        result.append({"name": "mhc_post", "op": "mhc", "m": m, "n": STREAMS, "k": HIDDEN, "dtype": "fp32"})
+    result.append({"name": "device_copy_256mib", "op": "copy", "m": COPY_BYTES, "n": 0, "k": 0, "dtype": "uint8"})
+    return result
+
+
+def summarize(samples):
+    if not samples or any(value <= 0 for value in samples):
+        raise ValueError("timings must be positive")
+    return {
+        "median_ms": statistics.median(samples),
+        "min_ms": min(samples),
+        "max_ms": max(samples),
+        "samples_ms": samples,
+    }
+
+
+def inputs_for(case, torch):
+    torch.manual_seed(SEED)
+    m, n, k = (case[key] for key in ("m", "n", "k"))
+    dtype = torch.float16 if case["dtype"] == "fp16" else torch.float32
+    if case["op"] == "gemm":
+        return (torch.randn(m, k, dtype=dtype) * 0.1, torch.randn(n, k, dtype=dtype) * 0.1)
+    if case["op"] == "attention":
+        return (
+            torch.randn(n, m, HEAD_DIM, dtype=torch.float16),
+            torch.randn(n, k, HEAD_DIM, dtype=torch.float16),
+            torch.randn(n, k, HEAD_DIM, dtype=torch.float16),
+        )
+    if case["op"] == "mhc":
+        # Serving carries FP16-rounded values in FP32 state tensors.
+        return (
+            torch.randn(m, k).half(),
+            torch.randn(m, n, k).half().float(),
+            torch.sigmoid(torch.randn(m, n, 1)).half().float(),
+            torch.softmax(torch.randn(m, n, n), dim=-1).half().float(),
+        )
+    return (torch.arange(256, dtype=torch.uint8).repeat(m // 256),)
+
+
+def output_for(case, torch):
+    m, n, k = (case[key] for key in ("m", "n", "k"))
+    if case["op"] == "gemm":
+        return torch.empty(m, n, dtype=torch.float16 if case["dtype"] == "fp16" else torch.float32)
+    if case["op"] == "attention":
+        return torch.empty(n, m, HEAD_DIM, dtype=torch.float16)
+    if case["op"] == "mhc":
+        return torch.empty(m, n, k)
+    return torch.empty(m, dtype=torch.uint8)
+
+
+def validate(case, inputs, actual, torch):
+    m, n = case["m"], case["n"]
+    rows = sorted({0, m // 2, m - 1})
+    if case["op"] == "gemm":
+        cols = sorted({0, n // 3, n // 2, n - 1})
+        expected = inputs[0][rows].float() @ inputs[1][cols].float().T
+        selected = actual[rows][:, cols].float()
+    elif case["op"] == "attention":
+        q, k, v = (value[0].float() for value in inputs)
+        probabilities = (q[rows] @ k.T / HEAD_DIM**0.5).softmax(-1).half().float()
+        expected = probabilities @ v
+        selected = actual[0, rows].float()
+    elif case["op"] == "mhc":
+        x, residual, post, comb = inputs
+        expected = torch.einsum("tij,tih->tjh", comb[rows], residual[rows]) + post[rows] * x[rows, None].float()
+        selected = actual[rows].float()
+    else:
+        if not torch.equal(actual, inputs[0]):
+            raise AssertionError("device copy differs from input")
+        return {"max_abs_error": 0.0, "relative_l2_error": 0.0, "passed": True}
+    difference = selected - expected
+    torch.testing.assert_close(selected, expected, atol=0.01, rtol=0.03)
+    return {
+        "max_abs_error": float(difference.abs().max()),
+        "relative_l2_error": float(difference.norm() / expected.norm().clamp_min(1e-12)),
+        "passed": True,
+        "scope": "sampled rows/columns for GEMM; sampled rows of head 0 for attention; sampled tokens for mHC",
+        "atol": 0.01,
+        "rtol": 0.03,
+    }
+
+
+class CudaProbe:
+    def __init__(self, library):
+        self.lib = ctypes.CDLL(str(library))
+        ptr = ctypes.c_void_p
+        self.lib.architecture_create.argtypes = [ctypes.c_int] * 5 + [ptr] * 4
+        self.lib.architecture_create.restype = ptr
+        self.lib.architecture_error.argtypes = [ptr]
+        self.lib.architecture_error.restype = ctypes.c_char_p
+        self.lib.architecture_run.argtypes = [ptr, ctypes.POINTER(ctypes.c_float)]
+        self.lib.architecture_run.restype = ctypes.c_int
+        self.lib.architecture_read.argtypes = [ptr, ptr]
+        self.lib.architecture_read.restype = ctypes.c_int
+        self.lib.architecture_destroy.argtypes = [ptr]
+        self.lib.architecture_destroy.restype = None
+
+    def measure(self, case, inputs, output, warmups, samples):
+        ops = {"gemm": 0, "attention": 1, "mhc": 2, "copy": 3}
+        pointers = [value.data_ptr() for value in inputs] + [None] * (4 - len(inputs))
+        handle = self.lib.architecture_create(
+            ops[case["op"]], case["m"], case["n"], case["k"], int(case["dtype"] == "fp32"), *pointers
+        )
+        device, wall = [], []
+        try:
+            error = self.lib.architecture_error(handle)
+            if error:
+                raise RuntimeError(error.decode())
+            for index in range(warmups + samples):
+                elapsed = ctypes.c_float()
+                start = time.perf_counter()
+                result = self.lib.architecture_run(handle, ctypes.byref(elapsed))
+                end = time.perf_counter()
+                if result:
+                    raise RuntimeError(self.lib.architecture_error(handle).decode())
+                if index >= warmups:
+                    device.append(elapsed.value)
+                    wall.append((end - start) * 1000)
+            if self.lib.architecture_read(handle, output.data_ptr()):
+                raise RuntimeError(self.lib.architecture_error(handle).decode())
+        finally:
+            self.lib.architecture_destroy(handle)
+        return output, device, wall
+
+
+def measure_npu(case, inputs, torch, warmups, samples, *, nz=False):
+    values = [value.npu() for value in inputs]
+    if nz:
+        # Runtime-specific lazy import; CUDA process never imports torch_npu.
+        import torch_npu
+
+        values[1] = torch_npu.npu_format_cast(values[1], 29)
+    if case["op"] == "gemm":
+        x, weight = values
+        operation = lambda: torch.mm(x, weight.T)
+    elif case["op"] == "attention":
+        q, k, v = values
+
+        def operation():
+            scores = torch.bmm(q.float(), k.float().transpose(1, 2)) / HEAD_DIM**0.5
+            probabilities = scores.softmax(-1).half()
+            return torch.bmm(probabilities, v)
+
+    elif case["op"] == "mhc":
+        x, residual, post, comb = values
+        operation = lambda: torch.einsum("tij,tih->tjh", comb, residual) + post * x[:, None].float()
+    else:
+        source = values[0]
+        target = torch.empty_like(source)
+        operation = lambda: target.copy_(source)
+    for _ in range(warmups):
+        output = operation()
+    torch.npu.synchronize()
+    device, wall = [], []
+    start_event, end_event = (torch.npu.Event(enable_timing=True) for _ in range(2))
+    for _ in range(samples):
+        torch.npu.synchronize()
+        start = time.perf_counter()
+        start_event.record()
+        output = operation()
+        end_event.record()
+        end_event.synchronize()
+        wall.append((time.perf_counter() - start) * 1000)
+        device.append(start_event.elapsed_time(end_event))
+    actual = output.cpu()
+    del values, output
+    return actual, device, wall
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--backend", choices=("cuda", "npu"), required=True)
+    parser.add_argument("--library", type=Path)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--rows", type=int, nargs="+", default=[1, 4, 128, 512])
+    parser.add_argument("--warmups", type=int, default=WARMUPS)
+    parser.add_argument("--samples", type=int, default=SAMPLES)
+    args = parser.parse_args()
+    if args.output.exists() or args.warmups < 1 or args.samples < 3:
+        parser.error("output must be new; warmups >= 1 and samples >= 3")
+    matrix = cases(args.rows)
+    if args.backend == "npu" and os.environ.get("ASCEND_RT_VISIBLE_DEVICES") != "2,3":
+        parser.error("this experiment requires explicit ownership of physical NPU devices 2,3")
+    if args.backend == "cuda" and args.library is None:
+        parser.error("CUDA requires the compiled cuBLAS probe library")
+    # Torch is CPU-only in the CUDA process; no CUDA Torch installation needed.
+    import torch
+
+    torch.set_num_threads(1)
+    backend = CudaProbe(args.library) if args.backend == "cuda" else None
+    if args.backend == "npu":
+        import torch_npu
+
+        torch.npu.set_device(0)
+        torch_npu.npu.set_compile_mode(jit_compile=False)
+    report = {
+        "completed": False,
+        "backend": args.backend,
+        "torch": torch.__version__,
+        "npu_visible_devices": os.environ.get("ASCEND_RT_VISIBLE_DEVICES") if args.backend == "npu" else None,
+        "seed": SEED,
+        "warmups": args.warmups,
+        "samples": args.samples,
+        "scope": (
+            "resident synthetic arithmetic; no weight decoding, routing, HCCL, KV gather, or PCIe inside timed calls"
+        ),
+        "timing": (
+            "event time includes stream idle/dispatch gaps; wall time includes launch, events and synchronization"
+        ),
+        "attention": "FP16 inputs, FP32 QK and softmax, FP16 probabilities/output; shared selected KV window",
+        "cases": [],
+    }
+    for case in matrix:
+        inputs = inputs_for(case, torch)
+        variants = (False, True) if args.backend == "npu" and case["op"] == "gemm" else (False,)
+        for nz in variants:
+            if backend:
+                actual, device, wall = backend.measure(
+                    case, inputs, output_for(case, torch), args.warmups, args.samples
+                )
+            else:
+                actual, device, wall = measure_npu(case, inputs, torch, args.warmups, args.samples, nz=nz)
+            result = {
+                **case,
+                "layout": "NZ" if nz else "ND",
+                "validation": validate(case, inputs, actual, torch),
+                "device": summarize(device),
+                "wall": summarize(wall),
+            }
+            if case["op"] == "gemm":
+                result["device_tflops"] = 2 * case["m"] * case["n"] * case["k"] / (result["device"]["median_ms"] * 1e9)
+            if case["op"] == "copy":
+                result["device_gbytes_per_second_read_plus_write"] = (
+                    2 * COPY_BYTES / (result["device"]["median_ms"] * 1e6)
+                )
+            report["cases"].append(result)
+            args.output.write_text(json.dumps(report, indent=2) + "\n")
+            print(json.dumps({key: result[key] for key in ("name", "m", "layout", "device", "wall")}), flush=True)
+            del actual
+        del inputs
+        gc.collect()
+        if args.backend == "npu":
+            torch.npu.empty_cache()
+    report["completed"] = True
+    args.output.write_text(json.dumps(report, indent=2) + "\n")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,200 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Measure matched GLM W4/W3/W2 expert pipelines with 72 resident experts.
+
+Two local routes per token approximate one TP2 rank's share of top-eight.
+CUDA uses the deployed packed scalar kernels; NPU uses the frozen native
+bundle. Both include activation quantization, SwiGLU and weighted reduction.
+Resident timing excludes upload, route sorting, RPC and output download.
+"""
+
+import argparse
+import ctypes
+import json
+import os
+import time
+from pathlib import Path
+
+from .architecture_benchmark import SAMPLES, WARMUPS, summarize
+from .device_backend import CUDA_NIBBLE_PLANES, CudaOracle
+from .native_expert_probe import contained, digest_file
+from .resident import NativeResidentPlan
+
+LAYERS = (3, 8, 33)
+FIRST_EXPERT = 144
+EXPERTS = 72
+WIDTH = 4096
+TOP_K = 8
+LOCAL_ROUTES = 2
+
+
+def route_fixture(tokens, torch):
+    torch.manual_seed(6000310 + tokens)
+    hidden = torch.randn(tokens, WIDTH).half()
+    ids = torch.full((tokens, TOP_K), -1, dtype=torch.int32)
+    weights = torch.zeros(tokens, TOP_K)
+    routes = []
+    for token in range(tokens):
+        for slot in range(LOCAL_ROUTES):
+            expert = (token * 13 + slot * 17) % EXPERTS
+            ids[token, slot] = FIRST_EXPERT + expert
+            weights[token, slot] = 1 / TOP_K
+            routes.append((expert, token, slot))
+    routes.sort()
+    row_map = torch.full((tokens, TOP_K), -1, dtype=torch.int32)
+    for index, (_, token, slot) in enumerate(routes):
+        row_map[token, slot] = index
+    return hidden, ids, weights, routes, row_map
+
+
+def cuda_measure(oracle, layer, fixture, torch):
+    hidden, _, weights, routes, row_map = fixture
+    tokens = hidden.shape[0]
+    oracle.upload(oracle.buffers["input"], hidden[[row[1] for row in routes]].numpy().tobytes())
+    local_ids = torch.tensor([row[0] for row in routes], dtype=torch.int32)
+    oracle.upload(oracle.buffers["ids"], local_ids.numpy().tobytes())
+    oracle.upload(oracle.buffers["row_map"], row_map.numpy().tobytes())
+    oracle.upload(oracle.buffers["weights"], weights.numpy().tobytes())
+    runtime, check = oracle.cuda.library, oracle.cuda.check
+    event_type = ctypes.c_void_p
+    for name, signature in {
+        "cudaEventCreate": [ctypes.POINTER(event_type)],
+        "cudaEventRecord": [event_type, event_type],
+        "cudaEventSynchronize": [event_type],
+        "cudaEventElapsedTime": [ctypes.POINTER(ctypes.c_float), event_type, event_type],
+        "cudaEventDestroy": [event_type],
+    }.items():
+        getattr(runtime, name).argtypes = signature
+        getattr(runtime, name).restype = ctypes.c_int
+    begin, end = event_type(), event_type()
+    check(runtime.cudaEventCreate(ctypes.byref(begin)))
+    check(runtime.cudaEventCreate(ctypes.byref(end)))
+    names = ("input_q", "input_scales", "gate_up", "hidden", "hidden_q", "hidden_scales", "output")
+    arguments = (oracle.buffers["input"], oracle.buffers["ids"], *oracle.bank_pointers[layer])
+    arguments += tuple(oracle.buffers[name] for name in names)
+    device, wall = [], []
+    try:
+        for iteration in range(WARMUPS + SAMPLES):
+            start = time.perf_counter()
+            check(runtime.cudaEventRecord(begin, None))
+            check(oracle.launch(*arguments, len(routes), WIDTH, 2048, 4))
+            check(
+                oracle.reduce(
+                    oracle.buffers["output"], oracle.buffers["row_map"], oracle.buffers["weights"],
+                    oracle.buffers["partial_output"], tokens, WIDTH, len(routes),
+                )
+            )
+            check(runtime.cudaEventRecord(end, None))
+            check(runtime.cudaEventSynchronize(end))
+            elapsed = ctypes.c_float()
+            check(runtime.cudaEventElapsedTime(ctypes.byref(elapsed), begin, end))
+            if iteration >= WARMUPS:
+                device.append(elapsed.value)
+                wall.append((time.perf_counter() - start) * 1000)
+        actual = torch.frombuffer(bytearray(oracle.read_output("partial_output", tokens * WIDTH * 4)), dtype=torch.float32).reshape(tokens, WIDTH).clone()
+    finally:
+        check(runtime.cudaEventDestroy(end))
+        check(runtime.cudaEventDestroy(begin))
+    return actual, device, wall
+
+
+def npu_measure(native, bank, fixture, torch):
+    hidden, ids, weights = (value.npu() for value in fixture[:3])
+    device_bank = tuple(value.npu() for value in bank["tensors"])
+    begin, end = (torch.npu.Event(enable_timing=True) for _ in range(2))
+    device, wall = [], []
+    for iteration in range(WARMUPS + SAMPLES):
+        torch.npu.synchronize()
+        start = time.perf_counter()
+        begin.record()
+        actual = native(hidden, *device_bank, weights, ids, FIRST_EXPERT)
+        end.record()
+        end.synchronize()
+        if iteration >= WARMUPS:
+            device.append(begin.elapsed_time(end))
+            wall.append((time.perf_counter() - start) * 1000)
+    return actual.cpu(), device, wall
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--backend", choices=("cuda", "npu"), required=True)
+    parser.add_argument("--checkpoint", type=Path, required=True)
+    parser.add_argument("--checkpoint-sha256", required=True)
+    parser.add_argument("--library", type=Path)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--comparison-dir", type=Path, required=True)
+    args = parser.parse_args()
+    if args.output.exists():
+        parser.error("output must be new")
+    if args.backend == "npu" and os.environ.get("ASCEND_RT_VISIBLE_DEVICES") != "2,3":
+        parser.error("NPU ownership must be explicitly devices 2,3")
+    import torch
+
+    plan = NativeResidentPlan(
+        args.checkpoint,
+        tuple((layer, expert) for layer in LAYERS for expert in range(FIRST_EXPERT, FIRST_EXPERT + EXPERTS)),
+        args.checkpoint_sha256,
+    )
+    plan.authenticate()
+    torch.set_num_threads(1)
+    native = None
+    if args.backend == "npu":
+        import torch_npu
+
+        from tools.glm_perf.fused_moe_profile import frozen_helper
+
+        torch.npu.set_device(0)
+        torch_npu.npu.set_compile_mode(jit_compile=False)
+        bundle = contained(plan.root, plan.manifest["kernel_bundle"])
+        helper, options = frozen_helper(bundle)
+        native = helper.NativeFusedMoE(
+            bundle, namespace=options["namespace"], activation_bits=4, prepared_weight_layout=True,
+            **({"fp16_route_workspace": True} if options.get("fp16_route_workspace") else {}),
+        )
+    args.comparison_dir.mkdir(exist_ok=True)
+    report = {
+        "backend": args.backend, "checkpoint_sha256": args.checkpoint_sha256,
+        "resident_experts_per_layer": EXPERTS, "local_routes_per_token": LOCAL_ROUTES,
+        "activation_bits": 4, "warmups": WARMUPS, "samples": SAMPLES,
+        "scope": "resident expert pipeline including weighted reduction, excluding host staging/RPC; NPU native host dispatch included",
+        "cases": [],
+    }
+    for layer, bank in plan.items():
+        oracle = None
+        try:
+            if args.backend == "cuda":
+                oracle = CudaOracle(
+                    {layer: bank},
+                    {"library": str(args.library), "library_sha256": digest_file(args.library),
+                     "cuda_runtime": "/usr/local/cuda/lib64/libcudart.so", "weight_layout": CUDA_NIBBLE_PLANES,
+                     "partial_reduce": True},
+                    1024,
+                )
+            for tokens in (1, 4, 128, 512):
+                fixture = route_fixture(tokens, torch)
+                actual, device, wall = (
+                    cuda_measure(oracle, layer, fixture, torch) if oracle else npu_measure(native, bank, fixture, torch)
+                )
+                comparison = args.comparison_dir / f"layer-{layer}-tokens-{tokens}.pt"
+                validation = {"finite": bool(torch.isfinite(actual).all()), "cross_architecture_passed": False}
+                if not validation["finite"]:
+                    raise AssertionError("nonfinite expert output")
+                if oracle:
+                    torch.save(actual, comparison)
+                else:
+                    expected = torch.load(comparison, weights_only=True)
+                    torch.testing.assert_close(actual, expected, rtol=0.002, atol=0.002)
+                    validation.update(cross_architecture_passed=True, max_abs_error=float((actual - expected).abs().max()))
+                result = {"layer": layer, "weight_bits": plan.manifest["layer_bits"][str(layer)],
+                          "tokens": tokens, "routes": tokens * LOCAL_ROUTES, "validation": validation,
+                          "device": summarize(device), "wall": summarize(wall)}
+                report["cases"].append(result)
+                args.output.write_text(json.dumps(report, indent=2) + "\n")
+                print(json.dumps(result), flush=True)
+        finally:
+            if oracle:
+                oracle.close()
+
+
+if __name__ == "__main__":
+    main()
