@@ -4,7 +4,48 @@
 import pytest
 import torch
 
-from tools.qwen4exp.native_channel_int8 import NativeChannelInt8, tile_channel_weights
+from tools.qwen4exp.native_channel_int8 import NativeChannelInt8, NativeLocalChannelGather, tile_channel_weights
+
+
+def test_owned_gather_keeps_counts_on_device_and_descriptor_stable(monkeypatch):
+    monkeypatch.setattr("tools.qwen4exp.native_prefill._on_npu", lambda device: True)
+    monkeypatch.setattr("tools.qwen4exp.native_prefill._capturing", lambda device: False)
+    launches = []
+    gather = NativeLocalChannelGather(None, lambda kernel, args, blocks: launches.append((args, blocks)))
+    codes, scales = torch.zeros(3, 2560, dtype=torch.int8), torch.ones(3, 8)
+    order = torch.tensor([2, 0, 2, 1, 0, 1], dtype=torch.int32)
+    ends = torch.tensor([0, 2], dtype=torch.int64)
+    monkeypatch.setattr(torch.Tensor, "item", lambda self: pytest.fail("host route-count inspection"))
+    output, output_scales = gather(codes, scales, order, ends)
+    args, blocks = launches[0]
+    assert args[:4] == [codes, scales, order, ends]
+    assert args[4] is output and args[5] is output_scales and blocks == 8
+    assert output.shape == (6, 2560) and output_scales.shape == (6, 8)
+    assert args[-1].tolist() == [3, 2560, 6, 2]
+    # Counts/IDs can change between replays; only shape descriptors are cached.
+    ends.zero_()
+    order.fill_(-1)  # Zero-local ranks must not inspect these inactive IDs.
+    gather(codes, scales, order, ends)
+    assert launches[-1][0][-1] is args[-1]
+
+
+@pytest.mark.parametrize("invalid", ["int64_ids", "int32_ends", "group_scales", "wide_codes", "empty_routes"])
+def test_owned_gather_rejects_incompatible_operands(invalid):
+    codes, scales = torch.zeros(3, 2560, dtype=torch.int8), torch.ones(3, 8)
+    order, ends = torch.zeros(6, dtype=torch.int32), torch.tensor([2], dtype=torch.int64)
+    if invalid == "int64_ids":
+        order = order.long()
+    elif invalid == "int32_ends":
+        ends = ends.int()
+    elif invalid == "group_scales":
+        scales = torch.ones(3, 20, 8)
+    elif invalid == "wide_codes":
+        codes = torch.zeros(3, 2688, dtype=torch.int8)
+    else:
+        order = order[:0]
+    gather = NativeLocalChannelGather(None, lambda *args: pytest.fail("invalid operands launched"))
+    with pytest.raises(ValueError, match="geometry/dtype"):
+        gather(codes, scales, order, ends)
 
 
 def test_cube_layout_preserves_known_channel_and_k_strips():

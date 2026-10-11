@@ -50,3 +50,53 @@ extern "C" __global__ __aicore__ void qwen_local_route_gather_v1(GM_ADDR low, GM
     WaitFlag<HardEvent::MTE3_MTE2>(EVENT_ID0);
   }
 }
+
+// INT8 channel operands need one byte row and one eight-lane FP32 scale bank,
+// rather than W4's two packed limbs and per-group scale/sum banks. This entry
+// is a standalone candidate: existing W4 exports and serving bindings stay
+// unchanged. Inactive output capacity is intentionally never initialized.
+extern "C" __global__ __aicore__ void qwen_local_channel_gather_v1(GM_ADDR codes, GM_ADDR scales, GM_ADDR token_rows,
+                                                                   GM_ADDR group_ends, GM_ADDR out_codes,
+                                                                   GM_ADDR out_scales, GM_ADDR config) {
+  AscendC::InitSocState();
+  using namespace AscendC;
+  constexpr int64_t MAX_WIDTH = 2560, GROUP_SIZE = 128, SCALE_LANES = 8, MAX_ROUTES = 25600;
+  auto c = reinterpret_cast<__gm__ int64_t*>(config);
+  const int64_t tokens = c[0], width = c[1], capacity = c[2], experts = c[3];
+  ASCENDC_ASSERT(tokens > 0 && tokens <= MAX_ROUTES && width > 0 && width <= MAX_WIDTH && width % GROUP_SIZE == 0 &&
+                     capacity > 0 && capacity <= MAX_ROUTES && experts > 0 && experts <= 128,
+                 { KERNEL_LOG(KERNEL_ERROR, "invalid local INT8 gather geometry"); });
+  GlobalTensor<int8_t> inputCodes, outputCodes;
+  GlobalTensor<float> inputScales, outputScales;
+  GlobalTensor<int32_t> rows;
+  GlobalTensor<int64_t> ends;
+  inputCodes.SetGlobalBuffer(reinterpret_cast<__gm__ int8_t*>(codes));
+  outputCodes.SetGlobalBuffer(reinterpret_cast<__gm__ int8_t*>(out_codes));
+  inputScales.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(scales));
+  outputScales.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(out_scales));
+  rows.SetGlobalBuffer(reinterpret_cast<__gm__ int32_t*>(token_rows));
+  ends.SetGlobalBuffer(reinterpret_cast<__gm__ int64_t*>(group_ends));
+  const int64_t activeRows = ends.GetValue(experts - 1);
+  ASCENDC_ASSERT(activeRows >= 0 && activeRows <= capacity,
+                 { KERNEL_LOG(KERNEL_ERROR, "invalid local INT8 gather boundary"); });
+  TPipe pipe;
+  TBuf<TPosition::VECCALC> bytes, floats;
+  pipe.InitBuffer(bytes, width);
+  pipe.InitBuffer(floats, SCALE_LANES * sizeof(float));
+  auto localBytes = bytes.Get<int8_t>();
+  auto localScales = floats.Get<float>();
+  for (int64_t row = GetBlockIdx(); row < activeRows; row += GetBlockNum()) {
+    const int64_t source = rows.GetValue(row);
+    ASCENDC_ASSERT(source >= 0 && source < tokens,
+                   { KERNEL_LOG(KERNEL_ERROR, "invalid local INT8 gather token index"); });
+    DataCopy(localBytes, inputCodes[source * width], width);
+    DataCopy(localScales, inputScales[source * SCALE_LANES], SCALE_LANES);
+    SetFlag<HardEvent::MTE2_MTE3>(EVENT_ID0);
+    WaitFlag<HardEvent::MTE2_MTE3>(EVENT_ID0);
+    DataCopy(outputCodes[row * width], localBytes, width);
+    DataCopy(outputScales[row * SCALE_LANES], localScales, SCALE_LANES);
+    SetFlag<HardEvent::MTE3_MTE2>(EVENT_ID0);
+    WaitFlag<HardEvent::MTE3_MTE2>(EVENT_ID0);
+  }
+  pipe.Destroy();
+}

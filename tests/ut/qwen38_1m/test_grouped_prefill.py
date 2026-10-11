@@ -2,6 +2,7 @@
 """Boundary and storage gates for the explicitly selected prefill resource."""
 
 import ctypes
+import json
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,7 +12,8 @@ import regex as re
 import torch
 
 from tools.qwen4exp.native_prefill import MAX_ROUTES, NativeGroupedPrefill
-from tools.qwen4exp.resident_candidates import grouped_prefill
+from tools.qwen4exp.prepare_grouped_prefill import prepare
+from tools.qwen4exp.resident_candidates import grouped_prefill, paired_prefill
 from vllm_ascend.models.qwen4_exp.w4_moe import PackedExpertBank
 from vllm_ascend.models.qwen4_exp.w4a8_int4 import NATIVE_INT4_BACKEND
 
@@ -86,11 +88,14 @@ def test_rejects_incompatible_native_layouts(kind):
         (513, torch.int64, "eager_dequant", False),
     ],
 )
-def test_resident_binding_preserves_decode_and_small_batches(monkeypatch, rows, dtype, backend, candidate):
+@pytest.mark.parametrize("binding_module", [grouped_prefill, paired_prefill])
+def test_resident_binding_preserves_decode_and_small_batches(
+    monkeypatch, rows, dtype, backend, candidate, binding_module
+):
     baseline, selected = object(), object()
     monkeypatch.setattr(PackedExpertBank, "native_linear", lambda *args: baseline)
-    resources = {grouped_prefill.RESOURCE_NAME: {"projection": lambda *args: selected}}
-    binding = grouped_prefill.replacements(resources)
+    resources = {binding_module.RESOURCE_NAME: {"projection": lambda *args: selected}}
+    binding = binding_module.replacements(resources)
     function = binding["vllm_ascend.models.qwen4_exp.w4_moe:PackedExpertBank.native_linear"]
     bank, prepared, ends = operands(rows)
     bank.backend = backend
@@ -107,6 +112,29 @@ def test_repeated_candidate_preparation_unwraps_the_original(monkeypatch):
     monkeypatch.setattr(PackedExpertBank, "native_linear", first)
     second = grouped_prefill.replacements(resources)[target]
     assert second._qwen_grouped_prefill_base is original
+
+
+@pytest.mark.parametrize("paired_limbs", [False, True])
+def test_manifest_preparation_selects_only_the_requested_projection(tmp_path, monkeypatch, paired_limbs):
+    namespace = "qwen_prefill_manifest_test"
+    monkeypatch.setattr(torch.classes, namespace, SimpleNamespace(Kernel=lambda path, symbol: (path, symbol)))
+    monkeypatch.setattr(torch.ops, namespace, SimpleNamespace(launch=lambda *args: None))
+    manifest = {
+        "namespace": namespace,
+        "binaries": {
+            "native_grouped_prefill": {"path": "projection.bin"},
+            "native_route_gather": {"path": "gather.bin"},
+        },
+    }
+    (tmp_path / "provenance.json").write_text(json.dumps(manifest))
+    source = tmp_path / "resource.py"
+    source.write_text(
+        "import torch\nfrom tools.qwen4exp.native_prefill import NativeGroupedPrefill, NativeLocalRouteGather\n"
+    )
+    resources = prepare(tmp_path, source, paired_limbs=paired_limbs)
+    expected = "qwen_grouped_paired_prefill_v1" if paired_limbs else "qwen_grouped_local_prefill_v1"
+    assert resources["projection"].kernel == ("projection.bin", expected)
+    assert resources["gather"].kernel == ("gather.bin", "qwen_local_route_gather_v1")
 
 
 @pytest.fixture(scope="module")

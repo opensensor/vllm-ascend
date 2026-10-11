@@ -105,6 +105,17 @@ extern "C" __global__ __aicore__ void qwen_channel_int8_projection_v1(GM_ADDR x,
   operation.Run(x, weight, scale, xs, y, descriptor, nullptr, nullptr, nullptr, nullptr, ends);
 }
 
+// Small decode expert batches rarely fill M32. Preserve whole-K INT32
+// accumulation and the FP16/scaling boundary while halving padded Cube rows.
+extern "C" __global__ __aicore__ void qwen_channel_int8_projection_m16_v1(GM_ADDR x, GM_ADDR weight, GM_ADDR scale,
+                                                                          GM_ADDR xs, GM_ADDR ends, GM_ADDR y,
+                                                                          GM_ADDR descriptor) {
+  KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AICORE);
+  AscendC::InitSocState();
+  Int8ProjectionProbe<false, 16, false, true, false, true> operation;
+  operation.Run(x, weight, scale, xs, y, descriptor, nullptr, nullptr, nullptr, nullptr, ends);
+}
+
 extern "C" __global__ __aicore__ void qwen_channel_int8_projection_m64_v1(GM_ADDR x, GM_ADDR weight, GM_ADDR scale,
                                                                           GM_ADDR xs, GM_ADDR ends, GM_ADDR y,
                                                                           GM_ADDR descriptor) {

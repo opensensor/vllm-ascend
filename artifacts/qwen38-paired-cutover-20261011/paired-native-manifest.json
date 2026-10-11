@@ -1,0 +1,83 @@
+{
+  "name": "qwen_prefill_v27",
+  "libraries": [
+    {
+      "path": "/srv/ai/src/qwen-hybrid-prefill-build-20261011-v22/qwen_prefill_v27.so",
+      "sha256": "60343b5d04913d1c5d67eb8269938666661b7787cab05a7cba79287134f67199"
+    }
+  ],
+  "assets": [
+    {
+      "path": "/srv/ai/src/qwen-hybrid-prefill-build-20261011-v22/provenance.json",
+      "sha256": "03ff7129303cf4d53a9de48780b9ff483f9e4ded7692b6fac11d9fd084673aae"
+    },
+    {
+      "path": "/srv/ai/src/qwen-hybrid-prefill-build-20261011-v22/native_grouped_prefill.bin",
+      "sha256": "8e32bc302b1a594dc7d55886628ba660a24dfb451041311be9015f991b43ac5b"
+    },
+    {
+      "path": "/srv/ai/src/qwen-hybrid-prefill-build-20261011-v22/native_route_gather.bin",
+      "sha256": "4e7b30766a1a3daaf9f41e38fc4500f8475a54ffd3161cf528284fc91d2a6a28"
+    },
+    {
+      "path": "/srv/ai/src/qwen-hybrid-prefill-build-20261011-v22/compile_reconstruction.cpp",
+      "sha256": "e7df352d8e98426001f43dd17116443c72ce9eafa9d7a07930329278d0c3447e"
+    },
+    {
+      "path": "/srv/ai/src/qwen-hybrid-prefill-build-20261011-v22/reconstruction_bridge.cpp",
+      "sha256": "08906a208fab23cc9a87e5a18e624d7a64e6458f84f022f7039acf6d6a5b57e2"
+    },
+    {
+      "path": "/srv/ai/src/qwen-hybrid-prefill-build-20261011-v22/native_wy.cpp",
+      "sha256": "f7351155019dfe77c9d6fbdea3466601a70e4e60c86d0eb69f9c66b0d7fd8605"
+    },
+    {
+      "path": "/srv/ai/src/qwen-hybrid-prefill-build-20261011-v22/native_route_gather.cpp",
+      "sha256": "25e9733ee15df4a019cb6997b7e6740fc4bd1d4934c3afa45a0ecdaa1e09d361"
+    },
+    {
+      "path": "/srv/ai/src/qwen-hybrid-prefill-build-20261011-v22/native_local_swiglu.cpp",
+      "sha256": "0607459747c8925e4d4ba2833c889db6adcd6585377f1264b51225de80ed2f56"
+    },
+    {
+      "path": "/srv/ai/src/qwen-hybrid-prefill-build-20261011-v22/native_grouped_prefill.cpp",
+      "sha256": "3d6eae807cefb92869e19199c5fca219f780353dc58d1113e995f027f3d985c7"
+    },
+    {
+      "path": "/srv/ai/src/qwen-hybrid-prefill-build-20261011-v22/native_int4_schedule.h",
+      "sha256": "77a9d9d58bac1a608da923b071cdb82dc89f6da66b4c49e69e0fbd4c2d8911c1"
+    },
+    {
+      "path": "/srv/ai/src/qwen-hybrid-prefill-build-20261011-v22/native_int4_route_groups.h",
+      "sha256": "1281fbe9a68f200931fdedfcc87bd24e3cc01cfc1bcc062116b5da431c535216"
+    },
+    {
+      "path": "/srv/ai/src/qwen-hybrid-prefill-build-20261011-v22/qwen_w4_a8_int4_matmul_v310_tiling_data.h",
+      "sha256": "75355de444258e0edbc53dc917d3338d646a827ec8aba441782654e383686e53"
+    },
+    {
+      "path": "/srv/ai/src/qwen-hybrid-prefill-build-20261011-v22/native_hybrid_prefill.cpp",
+      "sha256": "a57d5a317e3f492b6478c5c22fcd7dcceea99a11c443a468db9ccc9f7f743e3e"
+    },
+    {
+      "path": "/srv/ai/src/qwen-hybrid-prefill-build-20261011-v22/native_int8_projection_probe.cpp",
+      "sha256": "1339e5d72d6d205a9526c3e29d41576e71df8735f639a5a6686c816087ce37fd"
+    },
+    {
+      "path": "/srv/ai/src/qwen-hybrid-prefill-build-20261011-v22/native_channel_activation.cpp",
+      "sha256": "f12f6f06fe2858069d8f441bd574f0bc6e64b19932fb0750d4d941c5ef1a25d8"
+    },
+    {
+      "path": "/srv/ai/src/qwen-paired-cutover-20261011/native_prefill.py",
+      "sha256": "5ffd29be6fceda42d68959b5c71cd6285402e30e1b5291a7c18abc3a00e614e3"
+    },
+    {
+      "path": "/srv/ai/src/qwen-paired-cutover-20261011/prepare_grouped_prefill.py",
+      "sha256": "a083b7c3a1adb550084ca07d95d1c4f4c994e9c107e387413fa932d782089e9d"
+    }
+  ],
+  "operators": [
+    "qwen_prefill_v27::launch"
+  ],
+  "validation_source": "from pathlib import Path\ndef definitions():\n    scope = {'__name__': 'qwen_grouped_prefill_validation'}\n    exec(compile(Path('/srv/ai/src/qwen-paired-cutover-20261011/prepare_grouped_prefill.py').read_text(), '/srv/ai/src/qwen-paired-cutover-20261011/prepare_grouped_prefill.py', 'exec'), scope)\n    return scope\ndef prepare():\n    return definitions()['prepare']('/srv/ai/src/qwen-hybrid-prefill-build-20261011-v22', '/srv/ai/src/qwen-paired-cutover-20261011/native_prefill.py', True)\ndef validate(resources):\n    return definitions()['validate'](resources)\n"
+}

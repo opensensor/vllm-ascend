@@ -11,6 +11,38 @@ MAX_K = 2560
 MAX_ROWS = 25600
 
 
+class NativeLocalChannelGather(NativeResource):
+    """Gather only the owned prefix; inactive capacity must remain unread.
+
+    Experimental resource, deliberately not bound by the serving extension.
+    The following projection must use the same device expert boundaries.
+    """
+
+    def __call__(self, codes, scales, sorted_tokens, ends):
+        if (
+            codes.ndim != 2
+            or not 0 < codes.shape[0] <= MAX_ROWS
+            or not 0 < codes.shape[1] <= MAX_K
+            or codes.shape[1] % GROUP_SIZE
+            or codes.dtype != torch.int8
+            or scales.shape != (codes.shape[0], 8)
+            or scales.dtype != torch.float32
+            or sorted_tokens.ndim != 1
+            or not 0 < sorted_tokens.numel() <= MAX_ROWS
+            or sorted_tokens.dtype != torch.int32
+            or ends.ndim != 1
+            or not 0 < ends.numel() <= 128
+            or ends.dtype != torch.int64
+        ):
+            raise ValueError("unsupported local channel gather geometry/dtype")
+        _tensors_on_one_device((codes, scales, sorted_tokens, ends), codes.device)
+        output = codes.new_empty((sorted_tokens.numel(), codes.shape[1]))
+        output_scales = scales.new_empty((sorted_tokens.numel(), 8))
+        config = self.config((codes.shape[0], codes.shape[1], sorted_tokens.numel(), ends.numel()), codes.device)
+        self.launch(self.kernel, [codes, scales, sorted_tokens, ends, output, output_scales, config], 8)
+        return output, output_scales
+
+
 def tile_channel_weights(weight):
     """Pack raw [E,N,K] INT8 codes into the Cube's N16/K32 strips."""
     if weight.ndim != 3 or weight.dtype != torch.int8:

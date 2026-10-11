@@ -15,13 +15,13 @@ from pathlib import Path
 import torch
 
 from tools.qwen4exp.benchmark_int8_projection_probe_310 import server_activity
-from tools.qwen4exp.benchmark_int8_requant_projection_310 import requantize_weight
+from tools.qwen4exp.channel_weight_recipe import channel_bank
 from tools.qwen4exp.native_channel_int8 import (
     NativeChannelActivation,
     NativeChannelInt8,
     NativeDirectChannelActivation,
+    NativeLocalChannelGather,
     NativePackedChannelInt8,
-    tile_channel_weights,
 )
 from tools.qwen4exp.native_hybrid_prefill import signed_nibble_lookup
 from tools.qwen4exp.native_prefill import NativeGroupedPrefill
@@ -29,34 +29,16 @@ from tools.qwen4exp.native_prefill import NativeGroupedPrefill
 MAX_DIAGNOSTIC_RELATIVE_L2 = 0.1
 
 
-def channel_bank(bank):
-    experts, outputs, half_inputs = bank.weight.shape
-    groups = half_inputs // 64
-    packed = bank.weight.cpu().reshape(experts, outputs // 16, groups, 2, 16, 32)
-    packed = packed.permute(0, 1, 4, 2, 3, 5).contiguous().reshape(experts * outputs, half_inputs)
-    fields = []
-    for field in (bank.weight_scale, bank.weight_offset):
-        decoded = field.cpu().reshape(experts, outputs // 16, groups, 16)
-        fields.append(decoded.permute(0, 1, 3, 2).contiguous().reshape(experts * outputs, groups))
-    offsets = fields[1].to(torch.int8)
-    if not torch.equal(offsets.to(fields[1].dtype), fields[1]):
-        raise ValueError("packed channel recipe requires integer offsets in INT8 range")
-    dense, quantized, scales = requantize_weight(packed, fields[0], offsets)
-    relative_error = float((quantized.float() * scales.unsqueeze(1) - dense).norm() / dense.norm())
-    quantized = tile_channel_weights(quantized.reshape(experts, outputs, half_inputs * 2)).to(bank.weight.device)
-    scales = scales.reshape(experts, outputs).to(bank.weight.device)
-    return quantized, scales, relative_error
-
-
 @torch.inference_mode()
 def main():
     """Gate recipe variants before alternating complete routed-partial timings."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--local-activation", action="store_true")
+    parser.add_argument("--owned-route-gather", action="store_true")
     parser.add_argument("--packed-weight", action="store_true")
     parser.add_argument("--direct-activation", action="store_true")
     parser.add_argument("--column-tile", type=int, choices=(64, 160), default=160)
-    parser.add_argument("--row-tile", type=int, choices=(32, 64), default=32)
+    parser.add_argument("--row-tile", type=int, choices=(16, 32, 64), default=32)
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--build", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -76,6 +58,8 @@ def main():
         parser.error("packed expansion requires direct activation and M32/N160")
     if args.local_activation and not args.direct_activation:
         parser.error("local activation requires the direct activation comparison")
+    if args.owned_route_gather and not args.local_activation:
+        parser.error("owned route gather requires direct and local activation")
     before = server_activity("http://127.0.0.1:8001")
     if before[0]:
         raise RuntimeError("live traffic present")
@@ -108,6 +92,8 @@ def main():
             if args.column_tile == 64
             else "qwen_channel_int8_projection_m64_v1"
             if args.row_tile == 64
+            else "qwen_channel_int8_projection_m16_v1"
+            if args.row_tile == 16
             else "qwen_channel_int8_projection_v1",
         ),
         launch,
@@ -137,6 +123,13 @@ def main():
         if args.packed_weight
         else None
     )
+    owned_gather = (
+        NativeLocalChannelGather(
+            kernel(provenance["binaries"]["native_route_gather"]["path"], "qwen_local_channel_gather_v1"), launch
+        )
+        if args.owned_route_gather
+        else None
+    )
     banks = list(layer.projections.values())
     originals = [bank.native_linear for bank in banks]
     prepared_banks = [channel_bank(bank) for bank in banks]
@@ -154,7 +147,7 @@ def main():
         layer.grouped_chunk_tokens = tokens
 
         def run(mode, inputs=inputs, weights=weights, ids=ids, tokens=tokens):
-            if mode in ("direct_int8", "packed_int8", "direct_local_int8"):
+            if mode in ("direct_int8", "packed_int8", "direct_local_int8", "owned_route_int8"):
                 dispatch = build_grouped_expert_dispatch(
                     weights,
                     ids,
@@ -172,13 +165,19 @@ def main():
                         return packed_projection(codes, banks[index], prepared_banks[index][1], scales, ends)
                     return projection(codes, prepared_banks[index][0], prepared_banks[index][1], scales, ends)
 
-                projected = project(
-                    0,
-                    token_codes.index_select(0, order).contiguous(),
-                    token_scales.index_select(0, order).contiguous(),
+                routed_codes, routed_scales = (
+                    owned_gather(token_codes, token_scales, order.to(torch.int32).contiguous(), ends)
+                    if mode == "owned_route_int8"
+                    else (
+                        token_codes.index_select(0, order).contiguous(),
+                        token_scales.index_select(0, order).contiguous(),
+                    )
                 )
+                projected = project(0, routed_codes, routed_scales)
                 hidden = torch_npu.npu_swiglu(projected, dim=-1)
-                hidden_codes, hidden_scales = direct_activation(hidden, ends if mode == "direct_local_int8" else None)
+                hidden_codes, hidden_scales = direct_activation(
+                    hidden, ends if mode in ("direct_local_int8", "owned_route_int8") else None
+                )
                 output = project(1, hidden_codes, hidden_scales)
                 if layer.grouped_finalize == "torch":
                     output = output.to(layer.compute_dtype)
@@ -223,6 +222,10 @@ def main():
                 local_result = run("direct_local_int8").cpu().float()
                 torch.testing.assert_close(local_result, direct, rtol=0, atol=0)
                 modes += ("direct_local_int8",)
+            if owned_gather is not None:
+                owned_result = run("owned_route_int8").cpu().float()
+                torch.testing.assert_close(owned_result, direct, rtol=0, atol=0)
+                modes += ("owned_route_int8",)
             if packed_projection is not None:
                 packed_result = run("packed_int8").cpu()
                 torch.testing.assert_close(packed_result.float(), direct, rtol=0, atol=0)
@@ -257,6 +260,7 @@ def main():
     record = {
         "row_tile": args.row_tile,
         "column_tile": args.column_tile,
+        "owned_route_gather": args.owned_route_gather,
         "rank": args.rank,
         "layer": args.layer,
         "build": str(args.build),

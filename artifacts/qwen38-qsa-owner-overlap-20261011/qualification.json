@@ -1,0 +1,25 @@
+{
+  "state": "offline_unbound_prototype",
+  "serving_modified": false,
+  "hardware_qualified": false,
+  "sources": {
+    "tools/qwen4exp/qsa_owner_overlap.py": "ee9b6e5fd4ff8378cafc83113121dd01682133aa9491de4cff44597e117e9a2c",
+    "tests/ut/qwen38_1m/test_qsa_owner_overlap.py": "16606499141ca279e8e11e36fca651f453ba845b1c06344396119d27670f3454"
+  },
+  "admission": "uncaptured pure prefill >=128 tokens, world size >1",
+  "fallback": "all decode, mixed batches, captured calls, and single rank",
+  "retained_replication": "index-key projections and index cache updates on every rank",
+  "required_gates": [
+    "real-weight selection parity including cutoff ties",
+    "HCCL owner mapping and actual device completion",
+    "MRoPE image and prefix reuse parity",
+    "decode/prefill transition cache continuity",
+    "replicated versus synchronous-owner versus overlapped latency"
+  ],
+  "tests": {
+    "protocol": 14,
+    "focused_suite": 94,
+    "result": "passed",
+    "scope": "CPU only for owner overlap"
+  }
+}
