@@ -54,6 +54,7 @@ from vllm_ascend._310p.kv_block_zeroer import AscendKVBlockZeroer310
 from vllm_ascend._310p.npu_input_batch import NPUInputBatch310 as NPUInputBatch
 from vllm_ascend._310p.ops.rotary_embedding import prepare_mrope_cos_sin_slices_from_runner
 from vllm_ascend._310p.prefix_mamba_state import (
+    PREFIX_MAMBA_MIN_SLOTS,
     LiveMambaRequestSlots,
     PrefixMambaStateTier,
     apply_prefix_mamba_updates,
@@ -288,6 +289,9 @@ class NPUModelRunner310(NPUModelRunner):
             prefix_mamba_slot_count(
                 self.max_num_reqs,
                 self.speculative_config.num_speculative_tokens if self._qwen4exp_mtp_ple else 0,
+                minimum_slots=self.vllm_config.additional_config.get(
+                    "qwen_prefix_mamba_min_slots", PREFIX_MAMBA_MIN_SLOTS
+                ),
                 bounded_checkpoints=uses_bounded_prefix_mamba_scheduler(
                     getattr(self.scheduler_config, "scheduler_cls", None)
                 ),

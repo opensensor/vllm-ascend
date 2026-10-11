@@ -195,6 +195,17 @@ class TestAscendConfig(TestBase):
         self.assertFalse(config.scheduler_config.short_request_first_config.enabled)
         self.assertFalse(config.rl_config.enabled)
 
+    def test_qwen_resident_state_floor_defaults_and_explicit_value(self):
+        default = AscendConfig(sparse_kv_offload_config=SimpleNamespace(enabled=False))
+        explicit = AscendConfig(sparse_kv_offload_config=SimpleNamespace(enabled=False), qwen_prefix_mamba_min_slots=16)
+        self.assertEqual(default.qwen_prefix_mamba_min_slots, 64)
+        self.assertEqual(explicit.qwen_prefix_mamba_min_slots, 16)
+
+    def test_qwen_resident_state_floor_rejects_invalid_values(self):
+        for value in (0, -1, True, 16.0, "16", None):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, "positive integer"):
+                AscendConfig(sparse_kv_offload_config=SimpleNamespace(enabled=False), qwen_prefix_mamba_min_slots=value)
+
     def test_eplb_load_collection_phase_defaults_to_all(self):
         self.assertEqual(EplbConfig().load_collection_phase, "all")
 

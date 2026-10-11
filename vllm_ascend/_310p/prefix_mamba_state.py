@@ -42,7 +42,11 @@ def uses_bounded_prefix_mamba_scheduler(scheduler_cls: object) -> bool:
 
 
 def prefix_mamba_slot_count(
-    max_num_reqs: int, num_speculative_tokens: int, *, bounded_checkpoints: bool = False
+    max_num_reqs: int,
+    num_speculative_tokens: int,
+    *,
+    bounded_checkpoints: bool = False,
+    minimum_slots: int = PREFIX_MAMBA_MIN_SLOTS,
 ) -> int:
     """Size the shared null/live pool, including bounded scheduler ownership.
 
@@ -55,9 +59,11 @@ def prefix_mamba_slot_count(
         raise ValueError("Invalid compact Mamba request or speculation limit")
     if type(bounded_checkpoints) is not bool:
         raise ValueError("Bounded checkpoint allocation must be a boolean")
+    if type(minimum_slots) is not int or minimum_slots < 1:
+        raise ValueError("Compact Mamba minimum slots must be a positive integer")
     windows = PREFIX_MAMBA_WORKING_WINDOWS if bounded_checkpoints else 2
     retained = PREFIX_MAMBA_MIN_RETAINED_CHECKPOINTS if bounded_checkpoints else 0
-    return max(PREFIX_MAMBA_MIN_SLOTS, 1 + max_num_reqs * windows * (1 + num_speculative_tokens) + retained)
+    return max(minimum_slots, 1 + max_num_reqs * windows * (1 + num_speculative_tokens) + retained)
 
 
 def prefix_mamba_state_bytes_per_slot(layer_states: Sequence[Sequence[torch.Tensor]]) -> int:

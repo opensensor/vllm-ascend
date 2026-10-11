@@ -93,6 +93,15 @@ def test_checkpoint_budget_reserves_live_speculative_and_cow_windows(requests, d
     assert mod.prefix_mamba_checkpoint_limit(requests, depth) == limit
 
 
+def test_explicit_resident_floor_preserves_bounded_history_and_live_windows():
+    # Bounded scheduling reserves four live/CoW windows plus 32 checkpoints,
+    # even when the ordinary first-replay profile can use only seven slots.
+    assert mod.prefix_mamba_checkpoint_limit(1, 2, minimum_slots=16) == 32
+    assert mod.prefix_mamba_checkpoint_limit(1, 2, minimum_slots=7) == 32
+    with pytest.raises(ValueError, match="positive integer"):
+        mod.prefix_mamba_checkpoint_limit(1, 2, minimum_slots=0)
+
+
 @pytest.mark.parametrize("requests,depth", [(0, 2), (3, -1)])
 def test_unworkable_checkpoint_budget_is_rejected(requests, depth):
     with pytest.raises(ValueError):
@@ -269,6 +278,7 @@ def test_runner_rejects_incomplete_groups_before_retiring_any_state():
 
 def valid_config():
     return SimpleNamespace(
+        additional_config={},
         model_config=SimpleNamespace(hf_text_config=SimpleNamespace(model_type="qwen4_exp_text")),
         scheduler_config=SimpleNamespace(async_scheduling=False, max_num_seqs=3),
         kv_transfer_config=None,

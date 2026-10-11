@@ -9,7 +9,11 @@ from vllm.v1.core.kv_cache_utils import get_group_id
 from vllm.v1.core.sched.scheduler import Scheduler
 from vllm.v1.core.single_type_kv_cache_manager import MambaManager
 
-from vllm_ascend._310p.prefix_mamba_state import PREFIX_MAMBA_WORKING_WINDOWS, prefix_mamba_slot_count
+from vllm_ascend._310p.prefix_mamba_state import (
+    PREFIX_MAMBA_MIN_SLOTS,
+    PREFIX_MAMBA_WORKING_WINDOWS,
+    prefix_mamba_slot_count,
+)
 
 
 def _is_310p() -> bool:
@@ -20,8 +24,13 @@ def _is_310p() -> bool:
     return is_310p()
 
 
-def prefix_mamba_checkpoint_limit(max_requests: int, speculative_tokens: int) -> int:
-    primary_slots = prefix_mamba_slot_count(max_requests, speculative_tokens, bounded_checkpoints=True) - 1
+def prefix_mamba_checkpoint_limit(
+    max_requests: int, speculative_tokens: int, *, minimum_slots: int = PREFIX_MAMBA_MIN_SLOTS
+) -> int:
+    primary_slots = (
+        prefix_mamba_slot_count(max_requests, speculative_tokens, bounded_checkpoints=True, minimum_slots=minimum_slots)
+        - 1
+    )
     limit = primary_slots - max_requests * PREFIX_MAMBA_WORKING_WINDOWS * (1 + speculative_tokens)
     if limit < 1:
         raise ValueError("Bounded Mamba checkpoints need more compact slots or fewer requests/speculative tokens")
@@ -104,7 +113,9 @@ class PrefixMambaBoundedScheduler(Scheduler):
         speculative = vllm_config.speculative_config
         speculative_tokens = speculative.num_speculative_tokens if speculative is not None else 0
         self._prefix_mamba_checkpoint_limit = prefix_mamba_checkpoint_limit(
-            vllm_config.scheduler_config.max_num_seqs, speculative_tokens
+            vllm_config.scheduler_config.max_num_seqs,
+            speculative_tokens,
+            minimum_slots=vllm_config.additional_config.get("qwen_prefix_mamba_min_slots", PREFIX_MAMBA_MIN_SLOTS),
         )
         super().__init__(vllm_config, *args, **kwargs)
         self._prefix_mamba_managers = {

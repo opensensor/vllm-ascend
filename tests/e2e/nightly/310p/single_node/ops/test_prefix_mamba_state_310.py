@@ -9,24 +9,37 @@ import torch
 from vllm_ascend._310p.prefix_mamba_state import PrefixMambaStateTier
 
 NUM_SLOTS = 64
+SINGLE_CARD_NUM_SLOTS = 16
 NUM_STEPS = 96
 ID_STRIDE = 1000
 STREAM_DELAY_MATMUL_SIZE = 8192
 STREAM_DELAY_REPEATS = 5
 
 
-@pytest.mark.parametrize("num_windows", [2, 4])
+@pytest.mark.parametrize(
+    "num_slots, num_windows",
+    [
+        (7, 2),
+        (7, 3),
+        (8, 2),
+        (8, 3),
+        (SINGLE_CARD_NUM_SLOTS, 2),
+        (SINGLE_CARD_NUM_SLOTS, 4),
+        (NUM_SLOTS, 2),
+        (NUM_SLOTS, 4),
+    ],
+)
 @torch.inference_mode()
-def test_interleaved_npu_windows_spill_restore_cow_and_recycle(num_windows):
+def test_interleaved_npu_windows_spill_restore_cow_and_recycle(num_windows, num_slots):
     pytest.importorskip("torch_npu")
     if not torch.npu.is_available():
         pytest.skip("Ascend NPU required")
     torch.npu.set_device(0)
     states = (
-        torch.zeros((NUM_SLOTS, 4, 128), dtype=torch.float16, device="npu"),
-        torch.zeros((NUM_SLOTS, 2, 32, 32), dtype=torch.float32, device="npu"),
+        torch.zeros((num_slots, 4, 128), dtype=torch.float16, device="npu"),
+        torch.zeros((num_slots, 2, 32, 32), dtype=torch.float32, device="npu"),
     )
-    tier = PrefixMambaStateTier([states], NUM_SLOTS)
+    tier = PrefixMambaStateTier([states], num_slots)
     pointers = [state.data_ptr() for state in states]
     for step in range(1, NUM_STEPS + 1):
         raw = np.array(
@@ -41,7 +54,7 @@ def test_interleaved_npu_windows_spill_restore_cow_and_recycle(num_windows):
                 state[current].copy_(state[previous] + window + 1)
     torch.npu.synchronize()
     assert tier._host  # More historical checkpoints than resident slots.
-    assert len(tier._resident) == NUM_SLOTS - 1
+    assert len(tier._resident) == num_slots - 1
     assert [state.data_ptr() for state in states] == pointers
 
     # Alternate old and recent checkpoints, reversing request rows each time.

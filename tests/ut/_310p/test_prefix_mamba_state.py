@@ -304,6 +304,19 @@ def test_invalid_slot_count_fails(requests, drafts):
         prefix_mamba_slot_count(requests, drafts)
 
 
+@pytest.mark.parametrize(
+    "requests,drafts,floor,expected", [(1, 2, 16, 16), (1, 2, 7, 7), (1, 2, 8, 8), (2, 2, 1, 13), (1, 0, 1, 3)]
+)
+def test_smaller_resident_pool_preserves_all_live_windows(requests, drafts, floor, expected):
+    assert prefix_mamba_slot_count(requests, drafts, minimum_slots=floor) == expected
+
+
+@pytest.mark.parametrize("floor", [0, -1, True, 16.0, "16", None])
+def test_resident_pool_floor_rejects_invalid_configuration(floor):
+    with pytest.raises(ValueError, match="minimum slots"):
+        prefix_mamba_slot_count(1, 2, minimum_slots=floor)
+
+
 def test_active_windows_follow_each_requests_progress_and_speculation():
     assert prefix_mamba_active_columns([1026, 5], [130944, 256], [128, 3], 128, 2) == (
         (1022, 1023, 1024, 1025),

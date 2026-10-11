@@ -99,9 +99,7 @@ class NPUWorker310(NPUWorker):
             world_size = getattr(self.parallel_config, "world_size", 1)
             local_rank = getattr(self, "local_rank", None)
             runlog = RunLog(run_id=f"qwen4exp-rank{rank}", world_size=world_size, rank=rank)
-            runlog.set_rank_identity(
-                RankIdentity(rank=rank, world_size=world_size, local_rank=local_rank)
-            )
+            runlog.set_rank_identity(RankIdentity(rank=rank, world_size=world_size, local_rank=local_rank))
             max_model_len = getattr(self.model_config, "max_model_len", None)
             if max_model_len is not None:
                 runlog.set_token_limits(
@@ -205,9 +203,7 @@ class NPUWorker310(NPUWorker):
         # based on the already occupied space of the system memory.
         kv_cache_fraction = envs_ascend.VLLM_ASCEND_KV_CACHE_FRACTION
         if not 0.0 < kv_cache_fraction <= 1.0:
-            raise ValueError(
-                f"VLLM_ASCEND_KV_CACHE_FRACTION must be in (0, 1], got {kv_cache_fraction}"
-            )
+            raise ValueError(f"VLLM_ASCEND_KV_CACHE_FRACTION must be in (0, 1], got {kv_cache_fraction}")
 
         if is_rc_device():
             vm = psutil.virtual_memory()
@@ -217,6 +213,22 @@ class NPUWorker310(NPUWorker):
                 self.requested_memory - profile_result.non_kv_cache_memory - non_torch_memory_cleared_by_empty_cache
             )
         self.available_kv_cache_memory_bytes = int(profiled_headroom * kv_cache_fraction)
+
+        # Multi-group planning below can translate physical bytes into a much
+        # larger logical budget. Log the physical ledger first so a zero cache
+        # result can be traced to profiling or the recurrent-state reservation.
+        logger.info(
+            "310P physical cache profile: requested=%.2f GiB, weights=%.2f GiB, "
+            "peak_activation=%.2f GiB, non_torch_increase=%.2f GiB, "
+            "transient_non_torch=%.2f GiB, headroom=%.2f GiB, cache_before_layout=%.2f GiB.",
+            GiB(self.requested_memory),
+            GiB(self.model_runner.model_memory_usage),
+            GiB(self.peak_activation_memory),
+            GiB(self.non_torch_memory),
+            GiB(non_torch_memory_cleared_by_empty_cache),
+            GiB(profiled_headroom),
+            GiB(self.available_kv_cache_memory_bytes),
+        )
 
         self.available_kv_cache_memory_bytes = self._scale_kv_cache_memory_for_multi_group(
             self.available_kv_cache_memory_bytes,

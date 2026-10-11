@@ -446,6 +446,7 @@ class AscendConfig:
             "enable_transpose_kv_cache_by_block": true,
             "weight_nz_mode": 1,
             "qwen_prefill_pacing": {},
+            "qwen_prefix_mamba_min_slots": 64,
             "enable_shared_expert_dp": false,
             "enable_sparse_sfa_c8": false,
             "enable_sparse_li_c8": false,
@@ -609,6 +610,16 @@ class AscendConfig:
     msmonitor_use_daemon: bool = False
     enable_transpose_kv_cache_by_block: bool = True
     weight_nz_mode: int = 1
+    # Resident recurrent-state floor. Live windows always fit; excess prefix
+    # checkpoints can spill to host. Used only by Qwen's compact prefix tier.
+    qwen_prefix_mamba_min_slots: int = 64
+
+    @field_validator("qwen_prefix_mamba_min_slots", mode="before")
+    @classmethod
+    def _validate_qwen_prefix_mamba_min_slots(cls, value):
+        if type(value) is not int or value < 1:
+            raise ValueError("qwen_prefix_mamba_min_slots must be a positive integer")
+        return value
 
     # ---- sub-configs (no vllm_config dep): pydantic dict→dataclass coercion ----
     ascend_compilation_config: AscendCompilationConfig = dataclasses.field(default_factory=AscendCompilationConfig)
