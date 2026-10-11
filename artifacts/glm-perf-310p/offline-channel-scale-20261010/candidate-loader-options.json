@@ -1,0 +1,31 @@
+{
+  "qualification": "offline candidate; no NPU or full-model quality qualification",
+  "load_format": "glm_channel_scale_candidate",
+  "model_loader_extra_config": {
+    "channel_overlay": "/srv/ai/storage/models/GLM-5.3-Flash-channel-W4-G256-20261011-offline",
+    "channel_bundle": "/srv/ai/storage/artifacts/glm-offline-channel-scale-20261010/v11-integer-products",
+    "channel_host_budget_bytes": 8589934592,
+    "channel_device_budget_bytes": 33285996544,
+    "channel_decode_bits": 8,
+    "channel_prefill_bits": 8
+  },
+  "topology": {
+    "tensor_parallel_size": 2,
+    "pipeline_parallel_size": 3,
+    "enable_expert_parallel": true
+  },
+  "scheduler": {
+    "max_num_batched_tokens": 640,
+    "max_model_len": 8192,
+    "max_num_seqs": 4
+  },
+  "graph_trial": {
+    "cudagraph_mode": "FULL_DECODE_ONLY",
+    "cudagraph_capture_sizes": [
+      1,
+      4
+    ]
+  },
+  "speculative_config": null,
+  "deployment_note": "full overlay remains local until explicitly staged; dense/KV/PP/HCCL/graphs need separate memory admission"
+}

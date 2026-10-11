@@ -1,0 +1,61 @@
+{
+  "cube_rows": 64,
+  "fused_gate_up": true,
+  "fused_decode": true,
+  "fused_prefill": true,
+  "abi_version": 3,
+  "identity_smoothing": true,
+  "reciprocal_quant": false,
+  "complete": true,
+  "layout": "glm_channel_w4_int32_accum_v1",
+  "namespace": "glm_channel_scale_v8",
+  "files": {
+    "glm_channel_quantize.bin": "6931e1a2006069c165cbec76f0aff094b5271688e3831c8c9569767d6bd28fa3",
+    "glm_channel_projection.bin": "897f9f1cf22f8eff412916b07e6d8cb60f3a72e3c1588ca8191726f177235cd7",
+    "glm_channel_combine.bin": "7f83dabefa8dab513d102abe6065a623318055da552ee7739125a4b8c6c89e78",
+    "glm_channel_gate_up.bin": "e9e7d68c1fae3e3ef99badc51714903d3477f71153c4717dec0d0eeece879d28",
+    "glm_channel_down_decode.bin": "18809e5413bf721a65614f710d6110e9cce51983f1eafe8bd34f9d4b877882f7",
+    "glm_channel_down_prefill.bin": "0ff5cbaec6fc3c830ebc037f7ab0fca35f86e45c053d106b572f65fd1637bb1d",
+    "bridge.so": "ba14c183f0924e6d418e8f39e887b1a82b307604ca77f28e21152cba07fba3b5"
+  },
+  "sources": {
+    "compile_reconstruction.cpp": "e7df352d8e98426001f43dd17116443c72ce9eafa9d7a07930329278d0c3447e",
+    "channel_scale_bridge.cpp": "21cb44459521b91439e94f2bfa1f79e87563971d222206404dba00c5cfd01e2b",
+    "glm_channel_broadcast.h": "45769a5dcd69d8f5de63bb297de50a84034890a6aca5c6cf59e5b583a0c0e956",
+    "glm_channel_quantize.cpp": "a104ce80f3de92682a42f560770030bf197c479d5a394f9bad9d674de60ce764",
+    "glm_channel_projection.cpp": "1d42d1402be32e08dd9c3dd9866089285866182750eb9dacb69aad29506c367a",
+    "glm_channel_combine.cpp": "dacd05b219a30e25f39f33e157d64674a9e2d63d5d6312bc9c7dae680308a46c",
+    "glm_channel_gate_up.cpp": "38d66c061154d35540ebd7cd14b94307dbfb1cb199a35f4ae45216309ea0c7c8",
+    "glm_channel_down_decode.cpp": "d7448180c09ca6f91c0c622da9bc5bc735dcc816ac94a6be6a9e128fcdf5669f",
+    "glm_channel_down_prefill.cpp": "b2fb7f8f88dd586dd15088e143f58789090f3d38dcc85ec4207f02b51976f182",
+    "channel_scale_math.py": "1e554aab12eda3c9ec1dcba7d13e61777ec92ad22800544cd5b7894376e22f2c",
+    "channel_scale_layout.py": "7ccb04f0f78219da964079e16c119a677031010b195ef0934e8340d18364f7c3",
+    "channel_scale_runtime.py": "e82ebc3732aa379954ffa989e51eccbc3d08d21dab96c079d3b1ce59b8417fda",
+    "fused_weight_layout.py": "dde6829b0be8238d91ee7bdd89246874bb13ab4379e29cfc057faaebd98ca6f0",
+    "fused_offset_tables.py": "6039185853aa42c9630a9b991048021e9e0962dc7c5baded05912bcc3b0513ea",
+    "glm_int4.py": "be71985a4fd66c3f99d950abb5da4f8383ad607c421c8b3bfbe1ec3564e0a843",
+    "glm_fused_moe.py": "111026618b61834ed6f57d7f743e3d6ef339a18244356881eaac7f652241b7fd"
+  },
+  "helpers": {
+    "channel_scale_math.py": "1e554aab12eda3c9ec1dcba7d13e61777ec92ad22800544cd5b7894376e22f2c",
+    "channel_scale_layout.py": "7ccb04f0f78219da964079e16c119a677031010b195ef0934e8340d18364f7c3",
+    "channel_scale_runtime.py": "e82ebc3732aa379954ffa989e51eccbc3d08d21dab96c079d3b1ce59b8417fda",
+    "fused_weight_layout.py": "dde6829b0be8238d91ee7bdd89246874bb13ab4379e29cfc057faaebd98ca6f0",
+    "fused_offset_tables.py": "6039185853aa42c9630a9b991048021e9e0962dc7c5baded05912bcc3b0513ea",
+    "glm_int4.py": "be71985a4fd66c3f99d950abb5da4f8383ad607c421c8b3bfbe1ec3564e0a843",
+    "glm_fused_moe.py": "111026618b61834ed6f57d7f743e3d6ef339a18244356881eaac7f652241b7fd",
+    "__init__.py": "6c6ec57de9f82ef42d82760f144a4571cb16b3cd6de33aaa7aa9fd65e8ab1fa1"
+  },
+  "compiler_options": [
+    "--npu-arch=dav-2002",
+    "--sysroot=/usr/local/Ascend/cann-9.1.0/tools/hcc/sysroot",
+    "-isystem/usr/local/Ascend/cann-9.1.0/tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0",
+    "-isystem/usr/local/Ascend/cann-9.1.0/tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0/aarch64-target-linux-gnu",
+    "-DGLM_CHANNEL_ROWS=64",
+    "-I/srv/ai/storage/artifacts/glm-offline-channel-scale-20261010/v8-tiled-prefill/sources",
+    "-DGLM_CHANNEL_IDENTITY_SMOOTHING"
+  ],
+  "cann_root": "/usr/local/Ascend/cann-9.1.0",
+  "torch": "2.13.0+cpu",
+  "validation": "CPU compilation only; no device opened or kernels executed"
+}

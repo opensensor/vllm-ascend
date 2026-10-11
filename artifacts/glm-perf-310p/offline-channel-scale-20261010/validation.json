@@ -1,0 +1,30 @@
+{
+  "qualification": "offline CPU/compilation/storage evidence only; no NPU opened or executed",
+  "unit_gates": {
+    "passed": 127,
+    "seconds": 3.06,
+    "log": "/tmp/glm-offline-final-gates.txt"
+  },
+  "nightly_npu_gate": {
+    "skipped": 1,
+    "reason": "offline scope; no explicit device gate paths supplied"
+  },
+  "manual_repository_hooks": "all passed on the owned staged files",
+  "compiled_trial_variants": {
+    "glm_channel_scale_v11": "direct division, integer reconstruction",
+    "glm_channel_scale_v12": "reciprocal quantization, integer reconstruction",
+    "glm_channel_scale_v13": "direct division, integer reconstruction, route-address cache"
+  },
+  "full_overlay_shards_verified": 12096,
+  "full_overlay_tensor_bytes": 162012856320,
+  "source_index_still_matches": true,
+  "live_server_changed": false,
+  "untested": [
+    "native instruction execution",
+    "NPU graph replay",
+    "full-model quality",
+    "new tok/s and cold prefill latency",
+    "actual device memory peaks",
+    "packed HCCL transport latency"
+  ]
+}
