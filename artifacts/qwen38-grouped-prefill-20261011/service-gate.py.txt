@@ -1,0 +1,22 @@
+import argparse,json,sys
+from pathlib import Path
+from tokenizers import Tokenizer
+from tools.qwen38_decode_study.mixed_prefill_probe import prompt,stream
+from tools.qwen38_decode_study.benchmark import metrics
+p=argparse.ArgumentParser()
+p.add_argument('--output',required=True)
+p.add_argument('--run-id',default='grouped-prefill-20261011-gate1')
+p.add_argument('--lengths',nargs='+',type=int,default=[8192,32768])
+p.add_argument('--repeats',type=int,default=2)
+a=p.parse_args()
+base='http://127.0.0.1:8001'
+m=metrics(base)
+if m.get('vllm:num_requests_running',0) or m.get('vllm:num_requests_waiting',0): raise RuntimeError('User traffic present')
+t=Tokenizer.from_file('/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-TP6-MTP-20261010/tokenizer.json')
+with Path(a.output).open('x') as f:
+ for length in a.lengths:
+  for repeat in range(a.repeats):
+   result=stream(base,'qwen38-flash-next',prompt(t,length,f'{a.run_id}-{length}-{repeat}'),32,900)
+   result.update({'length':length,'repeat':repeat,'run_id':a.run_id})
+   f.write(json.dumps(result)+'\n');f.flush()
+   print(json.dumps({k:v for k,v in result.items() if k!='chunk_arrivals'}),flush=True)

@@ -18,9 +18,9 @@ constexpr int64_t MODEL_GATE_UP_INPUTS = 2560;
 constexpr int64_t MODEL_DOWN_OUTPUTS = 2560;
 constexpr int64_t MODEL_DOWN_INPUTS = 640;
 constexpr uint32_t MODEL_DECODE_COLUMNS = 320;
-// Candidate: extend the 32-row schedule past the measured 1,638/1,639-token
-// cliff. The selected 1,536-token chunk is unchanged until the larger shapes
-// pass real-weight and service gates on a matching OPP package.
+// Count only work owned by this rank when selecting the dense prefill tile.
+// The allocation includes peer routes; using that capacity wastes Cube rows
+// after expert sharding, even though Process() correctly skips peer experts.
 constexpr int64_t PREFILL_LARGE_TILE_ROWS_PER_EXPERT = 256;
 
 class NativeInt4 {
@@ -228,14 +228,21 @@ __aicore__ inline void RunSchedule(GM_ADDR low, GM_ADDR high, GM_ADDR xs, GM_ADD
       op.Init(low, high, xs, sums, codes, scale, offset, weight_sum, ends, nullptr, y, td);
       op.Process();
     }
-  } else if (td->numRows > td->numExperts * PREFILL_LARGE_TILE_ROWS_PER_EXPERT) {
-    native_int4::Schedule<128> op;
-    op.Init(low, high, xs, sums, codes, scale, offset, weight_sum, ends, nullptr, y, td);
-    op.Process();
   } else {
-    native_int4::Schedule<32, N> op;
-    op.Init(low, high, xs, sums, codes, scale, offset, weight_sum, ends, nullptr, y, td);
-    op.Process();
+    // Routed INT32 decode is capped above, so these are INT64 group ends.
+    // Read the final boundary on-device; never synchronize host-side counts.
+    GlobalTensor<int64_t> boundaries;
+    boundaries.SetGlobalBuffer(reinterpret_cast<__gm__ int64_t*>(ends));
+    const int64_t localRows = boundaries.GetValue(td->numExperts - 1);
+    if (localRows > td->numExperts * PREFILL_LARGE_TILE_ROWS_PER_EXPERT) {
+      native_int4::Schedule<128> op;
+      op.Init(low, high, xs, sums, codes, scale, offset, weight_sum, ends, nullptr, y, td);
+      op.Process();
+    } else {
+      native_int4::Schedule<32, N> op;
+      op.Init(low, high, xs, sums, codes, scale, offset, weight_sum, ends, nullptr, y, td);
+      op.Process();
+    }
   }
 }
 }  // namespace

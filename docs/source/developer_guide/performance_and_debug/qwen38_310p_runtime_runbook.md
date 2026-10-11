@@ -314,3 +314,24 @@ contain. Preserve the qualified TP4 packages and launcher for rollback.
 Six slots do not imply six full 256K windows. Report planner token capacity,
 measured concurrent request overlap, and full-window validation separately.
 Logical copy accounting is not a measurement of physical bus traffic or heat.
+
+## TP6 grouped prefill local-count schedule
+
+The [grouped prefill report](../../../../artifacts/qwen38-grouped-prefill-20261011/README.md)
+records the prefill-only resident candidate on the experimental 1M YaRN server.
+Cold 8K and 32K time to first token decreased by approximately 4% in matched
+baseline/candidate/return-to-baseline tests. This is separate from the earlier
+six-chip profile above; the newer deployment retains two-token MTP.
+
+Use device INT64 group ends to select the dense math tile. Allocated route
+capacity includes other ranks' experts and can select a needlessly large
+128-row tile after EP sharding. Preserve the existing routed INT32 decode
+operator and smaller prefill schedules. The native direct-kernel admission
+preserves packed banks and weight storage; it does not expand full INT8 banks
+or replace the coherent OPP stack. Production OPP rebuilding remains a
+separate gate for the source-level policy fix.
+
+The report distinguishes exact projection parity on actual serving activations
+from whole-generation reproducibility. Do not infer the latter from component
+parity, request success, or a few output hashes. Code replacement through the
+resident protocol still clears prefix caches and recaptures graphs.
