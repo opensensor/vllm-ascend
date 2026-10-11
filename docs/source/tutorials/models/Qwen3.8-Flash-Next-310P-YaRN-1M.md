@@ -128,6 +128,15 @@ The direct A8 packer plus projections also matched the native W4A8 operator
 exactly on chip 5 at rows 1, 3, and 17. No performance measurement accompanied
 those live-traffic correctness probes; the serving workers retain their W4 path.
 
+The subsequent controlled [INT8 speed gate](../../../../artifacts/qwen38-int8-speed-gate-20261011/README.md)
+measured the live 1M profile at 27.67 tok/s median over three 256-token coding
+outputs. Cold 8K prefill took 18.43 seconds alone and 63.49 seconds beside
+active generation; the latter continued at 17.64 tok/s. Packed-weight INT8
+lookup prototypes reduced 512-row gate/up and down projection latency by
+35.7% and 25.0%, respectively, with exact reference parity. Small decode
+batches regressed. These operator gains have not been admitted to serving or
+established as a whole-model improvement; per-expert dispatch is required.
+
 Kilo compaction follows its own model limits. Configure its matching model
 entry with context 1,048,576, input 1,000,000, and output 32,768, then reload
 the client. vLLM handles request limits and KV allocation; it does not summarize

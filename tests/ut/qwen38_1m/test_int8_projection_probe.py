@@ -11,8 +11,10 @@ from tools.qwen4exp.benchmark_int8_projection_probe_310 import (
     prepare_activation,
     prepare_weights,
     server_activity,
+    signed_nibble_lookup,
+    weight_interleave_offsets,
 )
-from vllm_ascend.models.qwen4_exp.w4a8_int4 import quantize_activation_limbs
+from vllm_ascend.models.qwen4_exp.w4a8_int4 import pack_native_weight, quantize_activation_limbs
 
 
 def unpack(packed):
@@ -101,3 +103,46 @@ def test_activity_guard_fails_closed_when_metrics_are_missing(monkeypatch):
     )
     with pytest.raises(RuntimeError, match="required timing guard"):
         server_activity("http://127.0.0.1:8001")
+
+
+def test_bounded_byte_decoder_preserves_all_signed_nibbles_and_layout():
+    packed = torch.arange(80 * 64).remainder(256).to(torch.int8).reshape(80, 64)
+    native, _ = pack_native_weight(packed)
+    unsigned = native.flatten().int() & 255
+    low = ((unsigned + 8) & 15) - 8
+    high = ((unsigned + 128) & 240) // 16 - 8
+    offsets = weight_interleave_offsets()
+    assert offsets.dtype == torch.int32
+    assert offsets.numel() == 80 * 128
+    decoded = torch.cat((low, high))[offsets.long() // 4]
+    restored = decoded.reshape(5, 1, 2, 16, 64).permute(0, 3, 1, 2, 4).reshape(80, 128)
+    assert torch.equal(restored, unpack(packed))
+
+
+def test_byte_lookup_preserves_every_nibble_without_float_arithmetic():
+    packed = torch.arange(80 * 64).remainder(256).to(torch.int8).reshape(80, 64)
+    native, _ = pack_native_weight(packed)
+    byte = native.flatten().int() & 255
+    table = signed_nibble_lookup()
+    assert table.dtype == torch.float16
+    assert table.shape == (256, 2)
+    # Model the hardware's 32-bit Gather, then reinterpret the copied pairs.
+    decoded = table.view(torch.float32).flatten()[byte.long()].view(torch.float16)
+    restored = decoded.reshape(5, 1, 2, 16, 64).permute(0, 3, 1, 2, 4).reshape(80, 128)
+    assert torch.equal(restored.int(), unpack(packed))
+
+
+@pytest.mark.parametrize("row_tile", [16, 32])
+def test_cube_input_tile_loads_each_row_block_and_k_block(row_tile):
+    values = torch.arange(row_tile * 128).reshape(row_tile, 128)
+    # MTE3 writes K32-major L1. LoadData must visit each M16 block with
+    # source stride row_tile/16; a single LoadData loses rows 16..31.
+    l1 = values.reshape(row_tile, 4, 32).permute(1, 0, 2).contiguous().flatten()
+    loaded = torch.cat(
+        [
+            torch.cat([l1[(kb * row_tile + mb * 16) * 32 : (kb * row_tile + mb * 16 + 16) * 32] for kb in range(4)])
+            for mb in range(row_tile // 16)
+        ]
+    )
+    restored = loaded.reshape(row_tile // 16, 4, 16, 32).permute(0, 2, 1, 3).reshape(row_tile, 128)
+    assert torch.equal(restored, values)

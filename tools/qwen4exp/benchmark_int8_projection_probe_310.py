@@ -2,8 +2,9 @@
 """Check prepared INT8 projections against real W4 weights and ordered G128 math.
 
 This isolated probe is not a serving backend. Run hardware validation only in
-a controlled idle window. Prepared operand timing excludes quantization,
-routing, and weight expansion, and cannot establish whole-model throughput.
+a controlled idle window. --fused-quant includes quantization, and
+--packed-weights includes on-core weight expansion. Routing and whole-model
+costs remain outside every operator measurement.
 """
 
 import argparse
@@ -21,6 +22,24 @@ CUBE_K_BLOCK = 32
 SCALE_LANES = 8
 MAX_INPUTS = 2560
 OUTPUT_TILE = 160
+PACKED_DECODE_COLUMNS = 80
+FP32_BYTES = 4
+
+
+def weight_interleave_offsets():
+    """Immutable byte offsets for interleaving low/high decoded W4 planes."""
+    elements = PACKED_DECODE_COLUMNS * GROUP_SIZE // 2
+    index = torch.arange(elements, dtype=torch.int32, device="cpu")
+    return torch.stack((index, index + elements), dim=1).flatten() * FP32_BYTES
+
+
+def signed_nibble_lookup():
+    """256 immutable pairs; Gather copies their bits as one 32-bit value."""
+    byte = torch.arange(256, dtype=torch.int32, device="cpu")
+    low, high = byte & 15, byte >> 4
+    low = torch.where(low >= 8, low - 16, low)
+    high = torch.where(high >= 8, high - 16, high)
+    return torch.stack((low, high), dim=1).half().contiguous()
 
 
 def server_activity(base_url):
@@ -104,14 +123,39 @@ def main():
     parser.add_argument("--tokens", type=int, nargs="+", default=[1, 3, 16, 17])
     parser.add_argument("--layer", type=int, default=0)
     parser.add_argument("--expert", type=int, default=0)
+    parser.add_argument(
+        "--projections",
+        nargs="+",
+        default=["gate_proj", "up_proj", "down_proj"],
+        choices=["gate_proj", "up_proj", "gate_up_proj", "down_proj"],
+    )
+    parser.add_argument("--graph-unroll", type=int, default=10, help="calls per graph to amortize replay dispatch")
+    parser.add_argument(
+        "--weight-rotations",
+        type=int,
+        choices=[1, 4, 16],
+        default=1,
+        help="cycle distinct copies of real weights to test sensitivity to hot-bank reuse",
+    )
+    parser.add_argument("--row-tile", type=int, choices=[16, 32], default=16)
+    parser.add_argument("--iterations", type=int, default=30)
+    parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--time", action="store_true")
     parser.add_argument("--base-url", default="http://127.0.0.1:8001", help="read-only traffic guard for timings")
     parser.add_argument("--fused-quant", action="store_true", help="run direct A8 quantization before projection")
+    parser.add_argument("--lookup-decode", action="store_true", help="decode each byte using an immutable pair table")
+    parser.add_argument("--packed-weights", action="store_true", help="expand W4 only in bounded on-core storage")
     parser.add_argument(
         "--compare-w4", action="store_true", help="also check/time the prepared native two-limb operator"
     )
     parser.add_argument("--cpu-only", action="store_true", help="inspect real weights without opening any NPU")
     args = parser.parse_args()
+    if min(args.graph_unroll, args.iterations, args.repeats, *args.tokens) <= 0:
+        parser.error("batch sizes and timing counts must be positive")
+    if args.lookup_decode and not args.packed_weights:
+        parser.error("lookup decoding requires packed weights")
+    if args.packed_weights and args.row_tile != 16 and not args.lookup_decode:
+        parser.error("packed decoder currently supports only row tile 16")
     if args.output.exists():
         parser.error("output exists; preserve earlier receipts")
     manifest = json.loads((args.build_dir / "provenance.json").read_text())
@@ -122,20 +166,28 @@ def main():
         # Lazy hardware imports keep the offline path independent of torch-npu.
         import torch_npu
 
-        from tools.qwen4exp.benchmark_w4_projection_310 import timed_ms
+        from tools.qwen4exp.profile_projection_dtypes_310 import timed
 
         torch.npu.set_device(args.device)
         torch_npu.npu.set_compile_mode(jit_compile=False)
         torch.ops.load_library(manifest["bridge"])
+        entry = "qwen_int8_projection_probe_m32_v1" if args.row_tile == 32 else "qwen_int8_projection_probe_v1"
+        if args.packed_weights:
+            entry = "qwen_w4_int8_projection_probe_v1"
+        if args.lookup_decode:
+            entry = "qwen_w4_int8_lookup_probe_m32_v1" if args.row_tile == 32 else "qwen_w4_int8_lookup_probe_v1"
         kernel = torch.classes.qwen_int8_group_probe_v1.Kernel(
-            manifest["projection_binary"], "qwen_int8_projection_probe_v1"
+            manifest["projection_binary"],
+            entry,
         )
+        interleave_indices = weight_interleave_offsets().npu() if args.packed_weights else None
+        lookup = signed_nibble_lookup().npu() if args.lookup_decode else None
         quantizer = None
         if args.fused_quant:
             quantizer = torch.classes.qwen_int8_group_probe_v1.Kernel(
                 manifest["activation_binary"], "qwen_int8_activation_probe_v1"
             )
-        if args.compare_w4:
+        if args.compare_w4 or args.packed_weights:
             from vllm_ascend.models.qwen4_exp.w4a8_int4 import (
                 pack_activation_device,
                 pack_native_metadata,
@@ -144,21 +196,25 @@ def main():
             )
             from vllm_ascend.utils import enable_custom_op
 
-            enable_custom_op()
+            if args.compare_w4:
+                enable_custom_op()
     index = json.loads((args.model / "model.safetensors.index.json").read_text())["weight_map"]
     generator = torch.Generator().manual_seed(314)
     records = []
-    for projection in ["gate_proj", "up_proj", "down_proj"]:
-        prefix = f"model.language_model.layers.{args.layer}.mlp.experts.{args.expert}.{projection}"
+    for projection in args.projections:
+        parts = ["gate_proj", "up_proj"] if projection == "gate_up_proj" else [projection]
         fields = []
         for kind in ["weight", "weight_scale", "weight_offset"]:
-            name = f"{prefix}.{kind}"
-            with safe_open(args.model / index[name], framework="pt", device="cpu") as shard:
-                fields.append(shard.get_tensor(name))
+            tensors = []
+            for part in parts:
+                name = f"model.language_model.layers.{args.layer}.mlp.experts.{args.expert}.{part}.{kind}"
+                with safe_open(args.model / index[name], framework="pt", device="cpu") as shard:
+                    tensors.append(shard.get_tensor(name))
+            fields.append(torch.cat(tensors) if len(tensors) > 1 else tensors[0])
         centered, tiled, scales = prepare_weights(*fields)
         if not args.cpu_only:
             weights, device_scales = tiled.npu(), scales.npu()
-            if args.compare_w4:
+            if args.compare_w4 or args.packed_weights:
                 native_weight, sums = pack_native_weight(fields[0])
                 native = tuple(
                     value.unsqueeze(0).npu()
@@ -169,6 +225,18 @@ def main():
                         sums,
                     )
                 )
+                if args.packed_weights:
+                    weights, device_scales = native[0][0], native[1][0]
+            # Equal-valued banks at distinct device addresses isolate the
+            # memory-reuse assumption without changing numerical comparisons.
+            weight_banks = [(weights, device_scales)] + [
+                (weights.clone(), device_scales.clone()) for _ in range(args.weight_rotations - 1)
+            ]
+            native_banks = (
+                [native] + [tuple(value.clone() for value in native) for _ in range(args.weight_rotations - 1)]
+                if args.compare_w4 or args.packed_weights
+                else []
+            )
         for rows in args.tokens:
             activation = (torch.randn(rows, centered.shape[1], generator=generator) * 0.1).half()
             quantized, activation_scales = prepare_activation(activation)
@@ -207,22 +275,43 @@ def main():
                 quant_blocks = min(8, (rows * centered.shape[1] // GROUP_SIZE + 7) // 8)
 
             blocks = min(8, centered.shape[0] // OUTPUT_TILE)
+            output_banks = [output] + [torch.empty_like(output) for _ in range(args.weight_rotations - 1)]
+            operand_banks = []
+            for bank_index, (bank_weight, bank_scale) in enumerate(weight_banks):
+                bank_operands = (x, bank_weight, bank_scale, sx, output_banks[bank_index], descriptor)
+                if args.packed_weights:
+                    bank_operands = (
+                        x,
+                        bank_weight,
+                        bank_scale,
+                        native_banks[bank_index][2][0],
+                        sx,
+                        output_banks[bank_index],
+                        descriptor,
+                        interleave_indices,
+                    )
+                    if args.lookup_decode:
+                        bank_operands += (lookup,)
+                operand_banks.append(bank_operands)
 
             def run(
                 kernel=kernel,
-                operands=(x, weights, device_scales, sx, output, descriptor),
+                operand_banks=operand_banks,
                 blocks=blocks,
                 quantizer=quantizer,
                 quant_operands=quant_operands,
                 quant_blocks=quant_blocks,
             ):
-                if quantizer is not None:
-                    torch.ops.qwen_int8_group_probe_v1.launch(quantizer, list(quant_operands), quant_blocks)
-                torch.ops.qwen_int8_group_probe_v1.launch(kernel, list(operands), blocks)
+                for bank_operands in operand_banks:
+                    if quantizer is not None:
+                        torch.ops.qwen_int8_group_probe_v1.launch(quantizer, list(quant_operands), quant_blocks)
+                    torch.ops.qwen_int8_group_probe_v1.launch(kernel, list(bank_operands), blocks)
 
             run()
             torch.npu.synchronize()
             actual = output.cpu()
+            for bank_output in output_banks[1:]:
+                torch.testing.assert_close(bank_output.cpu(), reference, rtol=0, atol=0)
             if args.fused_quant:
                 assert torch.equal(x.cpu(), quantized)
                 torch.testing.assert_close(sx.cpu(), activation_scales, rtol=0, atol=0)
@@ -234,10 +323,12 @@ def main():
             torch.npu.current_stream().wait_stream(stream)
             graph = torch.npu.NPUGraph()
             with torch.npu.graph(graph, stream=stream):
-                run()
+                for _ in range(args.graph_unroll):
+                    run()
             graph.replay()
             torch.npu.synchronize()
-            torch.testing.assert_close(output.cpu(), reference, rtol=0, atol=0)
+            for bank_output in output_banks:
+                torch.testing.assert_close(bank_output.cpu(), reference, rtol=0, atol=0)
             record = {
                 "projection": projection,
                 "rows": rows,
@@ -247,6 +338,13 @@ def main():
                 "weight_bytes": weights.numel(),
                 "packed_w4_bytes": fields[0].numel(),
                 "includes_direct_a8_quantization": args.fused_quant,
+                "expands_w4_only_on_core": args.packed_weights,
+                "calls_per_graph": args.graph_unroll * args.weight_rotations,
+                "weight_rotations": args.weight_rotations,
+                "distinct_output_per_rotated_bank": True,
+                "rotation_uses_equal_weights_at_distinct_addresses": args.weight_rotations > 1,
+                "row_tile": args.row_tile,
+                "lookup_decode": args.lookup_decode,
             }
             activity = server_activity(args.base_url) if args.time else None
             measure = args.time and activity[0] == 0
@@ -254,29 +352,39 @@ def main():
                 record["timings_deferred"] = "live_requests_active"
             if measure:
                 prefix = "quant_and_projection" if args.fused_quant else "prepared"
-                record[f"{prefix}_eager"] = timed_ms(run, 30, 3)
-                record[f"{prefix}_graph"] = timed_ms(graph.replay, 30, 3)
+                record[f"{prefix}_eager"] = timed(run, args.iterations, args.repeats, args.weight_rotations)
+                record[f"{prefix}_graph"] = timed(
+                    graph.replay, args.iterations, args.repeats, args.graph_unroll * args.weight_rotations
+                )
             if args.compare_w4:
                 limbs = tuple(value.npu() for value in quantize_activation_limbs(activation))
                 ends = torch.tensor([rows], dtype=torch.int64, device="npu")
 
                 def baseline(
-                    limbs=limbs, native=native, ends=ends, source=quant_operands[0] if quant_operands else None
+                    limbs=limbs,
+                    native_banks=native_banks,
+                    ends=ends,
+                    source=quant_operands[0] if quant_operands else None,
                 ):
-                    prepared = pack_activation_device(source) if source is not None else limbs
-                    return torch.ops._C_ascend.npu_qwen_w4_a8_int4_matmul_310(*prepared, *native, ends)
+                    for bank in native_banks:
+                        prepared = pack_activation_device(source) if source is not None else limbs
+                        result = torch.ops._C_ascend.npu_qwen_w4_a8_int4_matmul_310(*prepared, *bank, ends)
+                    return result
 
                 torch.testing.assert_close(baseline().cpu(), reference, rtol=0, atol=0)
                 record["native_w4_exact"] = True
                 if measure:
                     prefix = "native_w4_quant_and_projection" if args.fused_quant else "native_w4_prepared"
-                    record[f"{prefix}_eager"] = timed_ms(baseline, 30, 3)
+                    record[f"{prefix}_eager"] = timed(baseline, args.iterations, args.repeats, args.weight_rotations)
                     baseline_graph = torch.npu.NPUGraph()
                     with torch.npu.graph(baseline_graph, stream=stream):
-                        baseline_output = baseline()
+                        for _ in range(args.graph_unroll):
+                            baseline_output = baseline()
                     baseline_graph.replay()
                     torch.testing.assert_close(baseline_output.cpu(), reference, rtol=0, atol=0)
-                    record[f"{prefix}_graph"] = timed_ms(baseline_graph.replay, 30, 3)
+                    record[f"{prefix}_graph"] = timed(
+                        baseline_graph.replay, args.iterations, args.repeats, args.graph_unroll * args.weight_rotations
+                    )
                     del baseline_graph, baseline_output
             if measure:
                 after = server_activity(args.base_url)
@@ -296,6 +404,8 @@ def main():
                 "passed": True,
                 "hardware_validated": not args.cpu_only,
                 "serving_speedup_proven": False,
+                "args": {key: str(value) if isinstance(value, Path) else value for key, value in vars(args).items()},
+                "build_provenance": manifest,
                 "records": records,
             },
             indent=2,

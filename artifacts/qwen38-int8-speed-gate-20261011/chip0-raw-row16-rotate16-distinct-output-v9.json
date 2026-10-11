@@ -1,0 +1,524 @@
+{
+  "passed": true,
+  "hardware_validated": true,
+  "serving_speedup_proven": false,
+  "args": {
+    "build_dir": "/srv/ai/src/qwen-int8-projection-probe-20261011-v9",
+    "model": "/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-TP6-MTP-20261010",
+    "output": "/srv/ai/src/qwen-int8-speed-gate-20261011/chip0-raw-row16-rotate16-distinct-output-v9.json",
+    "device": 0,
+    "tokens": [
+      3,
+      128,
+      512
+    ],
+    "layer": 0,
+    "expert": 0,
+    "projections": [
+      "gate_up_proj",
+      "down_proj"
+    ],
+    "graph_unroll": 1,
+    "weight_rotations": 16,
+    "row_tile": 16,
+    "iterations": 20,
+    "repeats": 3,
+    "time": true,
+    "base_url": "http://127.0.0.1:8001",
+    "fused_quant": true,
+    "lookup_decode": false,
+    "packed_weights": false,
+    "compare_w4": true,
+    "cpu_only": false
+  },
+  "build_provenance": {
+    "namespace": "qwen_int8_group_probe_v1",
+    "binary": "/srv/ai/src/qwen-int8-projection-probe-20261011-v9/int8-group.bin",
+    "bridge": "/srv/ai/src/qwen-int8-projection-probe-20261011-v9/qwen_int8_group_probe_v1.so",
+    "projection_binary": "/srv/ai/src/qwen-int8-projection-probe-20261011-v9/int8-projection.bin",
+    "activation_binary": "/srv/ai/src/qwen-int8-projection-probe-20261011-v9/int8-activation.bin",
+    "sha256": {
+      "int8-group.bin": "194dfd75ff1bb834579d6afe6e7ed9d84f2a0900d75c7269afdf5a27f497d448",
+      "qwen_int8_group_probe_v1.so": "7b5a60c7629c5ed86a17279cc4724a64653375d8a5f7265354a978b9691f0425",
+      "int8-projection.bin": "fef48f5c72e741ed780202d93dc57f76fd49945577c3d78eeb2fe9bd792846a6",
+      "int8-activation.bin": "948ea4a13ab084af6701ca844abe3622c7ecdbbce09a771cc6b229a74805766a",
+      "compile_reconstruction.cpp": "e7df352d8e98426001f43dd17116443c72ce9eafa9d7a07930329278d0c3447e",
+      "reconstruction_bridge.cpp": "08906a208fab23cc9a87e5a18e624d7a64e6458f84f022f7039acf6d6a5b57e2",
+      "native_int8_group_probe.cpp": "7ddf093bc24fac49a75a68665f143b5dcda9609edf9bee2218b4baa4add5bf50",
+      "native_int8_projection_probe.cpp": "3380f4b8c1cafb2dde89202d28e041b5ebc3eec27802718a2c4dc6aebeb88d80",
+      "native_int8_activation_probe.cpp": "92e0f2e2ce8c3c1bf18245fade8346535326932c85fc58e83db8b8571a49f2ba"
+    },
+    "hardware_validated": false,
+    "server_modified": false
+  },
+  "records": [
+    {
+      "projection": "gate_up_proj",
+      "rows": 3,
+      "shape": [
+        1280,
+        2560
+      ],
+      "exact_ordered_fp16": true,
+      "graph_replay": true,
+      "weight_bytes": 3276800,
+      "packed_w4_bytes": 1638400,
+      "includes_direct_a8_quantization": true,
+      "expands_w4_only_on_core": false,
+      "calls_per_graph": 16,
+      "weight_rotations": 16,
+      "distinct_output_per_rotated_bank": true,
+      "rotation_uses_equal_weights_at_distinct_addresses": true,
+      "row_tile": 16,
+      "lookup_decode": false,
+      "quant_and_projection_eager": {
+        "wall_median_ms": 0.05218995625000389,
+        "event_median_ms": 0.05158569216728211,
+        "wall_trials_ms": [
+          0.05218995625000389,
+          0.051983812500111526,
+          0.053958850003255066
+        ],
+        "event_trials_ms": [
+          0.05111628770828247,
+          0.05158569216728211,
+          0.053389161825180054
+        ]
+      },
+      "quant_and_projection_graph": {
+        "wall_median_ms": 0.039959918740350986,
+        "event_median_ms": 0.03936816155910492,
+        "wall_trials_ms": [
+          0.03995262186435866,
+          0.039959918740350986,
+          0.040048118739832717
+        ],
+        "event_trials_ms": [
+          0.03943595290184021,
+          0.039349365234375,
+          0.03936816155910492
+        ]
+      },
+      "native_w4_exact": true,
+      "native_w4_quant_and_projection_eager": {
+        "wall_median_ms": 0.05754823750976357,
+        "event_median_ms": 0.056966716051101686,
+        "wall_trials_ms": [
+          0.05754823750976357,
+          0.05842863124598807,
+          0.05582831249739684
+        ],
+        "event_trials_ms": [
+          0.056966716051101686,
+          0.05797794461250305,
+          0.055384600162506105
+        ]
+      },
+      "native_w4_quant_and_projection_graph": {
+        "wall_median_ms": 0.054371793748941855,
+        "event_median_ms": 0.05404345393180847,
+        "wall_trials_ms": [
+          0.054371793748941855,
+          0.05433249687030184,
+          0.05442423437216348
+        ],
+        "event_trials_ms": [
+          0.05404345393180847,
+          0.054015052318572995,
+          0.054057782888412474
+        ]
+      },
+      "traffic_guard": "idle_before_and_after_no_completed_request"
+    },
+    {
+      "projection": "gate_up_proj",
+      "rows": 128,
+      "shape": [
+        1280,
+        2560
+      ],
+      "exact_ordered_fp16": true,
+      "graph_replay": true,
+      "weight_bytes": 3276800,
+      "packed_w4_bytes": 1638400,
+      "includes_direct_a8_quantization": true,
+      "expands_w4_only_on_core": false,
+      "calls_per_graph": 16,
+      "weight_rotations": 16,
+      "distinct_output_per_rotated_bank": true,
+      "rotation_uses_equal_weights_at_distinct_addresses": true,
+      "row_tile": 16,
+      "lookup_decode": false,
+      "quant_and_projection_eager": {
+        "wall_median_ms": 0.3164563843711221,
+        "event_median_ms": 0.31511189937591555,
+        "wall_trials_ms": [
+          0.31578213124703325,
+          0.3164563843711221,
+          0.316507637489849
+        ],
+        "event_trials_ms": [
+          0.31481950283050536,
+          0.31511189937591555,
+          0.31575398445129393
+        ]
+      },
+      "quant_and_projection_graph": {
+        "wall_median_ms": 0.3157444062480863,
+        "event_median_ms": 0.3149040460586548,
+        "wall_trials_ms": [
+          0.3155540093757736,
+          0.3157896781203817,
+          0.3157444062480863
+        ],
+        "event_trials_ms": [
+          0.31488890647888185,
+          0.31494228839874266,
+          0.3149040460586548
+        ]
+      },
+      "native_w4_exact": true,
+      "native_w4_quant_and_projection_eager": {
+        "wall_median_ms": 0.4647061187597501,
+        "event_median_ms": 0.46408977508544924,
+        "wall_trials_ms": [
+          0.46460100938929827,
+          0.4647061187597501,
+          0.4649629500136143
+        ],
+        "event_trials_ms": [
+          0.4638836860656738,
+          0.46408977508544924,
+          0.4641137599945068
+        ]
+      },
+      "native_w4_quant_and_projection_graph": {
+        "wall_median_ms": 0.4658414656205423,
+        "event_median_ms": 0.46507749557495115,
+        "wall_trials_ms": [
+          0.466280515638573,
+          0.46582314687384496,
+          0.4658414656205423
+        ],
+        "event_trials_ms": [
+          0.4650709629058838,
+          0.46507878303527833,
+          0.46507749557495115
+        ]
+      },
+      "traffic_guard": "idle_before_and_after_no_completed_request"
+    },
+    {
+      "projection": "gate_up_proj",
+      "rows": 512,
+      "shape": [
+        1280,
+        2560
+      ],
+      "exact_ordered_fp16": true,
+      "graph_replay": true,
+      "weight_bytes": 3276800,
+      "packed_w4_bytes": 1638400,
+      "includes_direct_a8_quantization": true,
+      "expands_w4_only_on_core": false,
+      "calls_per_graph": 16,
+      "weight_rotations": 16,
+      "distinct_output_per_rotated_bank": true,
+      "rotation_uses_equal_weights_at_distinct_addresses": true,
+      "row_tile": 16,
+      "lookup_decode": false,
+      "quant_and_projection_eager": {
+        "wall_median_ms": 1.1889218687656466,
+        "event_median_ms": 1.1876467704772948,
+        "wall_trials_ms": [
+          1.1888569624943557,
+          1.1892815843566495,
+          1.1889218687656466
+        ],
+        "event_trials_ms": [
+          1.1876467704772948,
+          1.1879125595092774,
+          1.1876192092895508
+        ]
+      },
+      "quant_and_projection_graph": {
+        "wall_median_ms": 1.1884371312362418,
+        "event_median_ms": 1.1876495361328125,
+        "wall_trials_ms": [
+          1.1882634593575858,
+          1.1886436812574175,
+          1.1884371312362418
+        ],
+        "event_trials_ms": [
+          1.1876205444335937,
+          1.1878293037414551,
+          1.1876495361328125
+        ]
+      },
+      "native_w4_exact": true,
+      "native_w4_quant_and_projection_eager": {
+        "wall_median_ms": 1.5814607937500114,
+        "event_median_ms": 1.5804144859313964,
+        "wall_trials_ms": [
+          1.5814607937500114,
+          1.580371912496048,
+          1.581935384388089
+        ],
+        "event_trials_ms": [
+          1.5804144859313964,
+          1.5791937828063964,
+          1.5810625076293945
+        ]
+      },
+      "native_w4_quant_and_projection_graph": {
+        "wall_median_ms": 1.5830928031164149,
+        "event_median_ms": 1.5822687149047852,
+        "wall_trials_ms": [
+          1.5823705218735995,
+          1.5830928031164149,
+          1.584105290635307
+        ],
+        "event_trials_ms": [
+          1.5815479278564453,
+          1.5822687149047852,
+          1.583286190032959
+        ]
+      },
+      "traffic_guard": "idle_before_and_after_no_completed_request"
+    },
+    {
+      "projection": "down_proj",
+      "rows": 3,
+      "shape": [
+        2560,
+        640
+      ],
+      "exact_ordered_fp16": true,
+      "graph_replay": true,
+      "weight_bytes": 1638400,
+      "packed_w4_bytes": 819200,
+      "includes_direct_a8_quantization": true,
+      "expands_w4_only_on_core": false,
+      "calls_per_graph": 16,
+      "weight_rotations": 16,
+      "distinct_output_per_rotated_bank": true,
+      "rotation_uses_equal_weights_at_distinct_addresses": true,
+      "row_tile": 16,
+      "lookup_decode": false,
+      "quant_and_projection_eager": {
+        "wall_median_ms": 0.05144535311956133,
+        "event_median_ms": 0.050941407680511475,
+        "wall_trials_ms": [
+          0.053744037495562225,
+          0.05144535311956133,
+          0.0498196687658492
+        ],
+        "event_trials_ms": [
+          0.05331485867500305,
+          0.050941407680511475,
+          0.04943514168262482
+        ]
+      },
+      "quant_and_projection_graph": {
+        "wall_median_ms": 0.022395018731913297,
+        "event_median_ms": 0.022084391117095946,
+        "wall_trials_ms": [
+          0.022395018731913297,
+          0.02229148126389191,
+          0.02249749688871816
+        ],
+        "event_trials_ms": [
+          0.022084391117095946,
+          0.021972900629043578,
+          0.022157715260982515
+        ]
+      },
+      "native_w4_exact": true,
+      "native_w4_quant_and_projection_eager": {
+        "wall_median_ms": 0.0473779625053794,
+        "event_median_ms": 0.04663403034210205,
+        "wall_trials_ms": [
+          0.04356329998245201,
+          0.0473779625053794,
+          0.04917444061902643
+        ],
+        "event_trials_ms": [
+          0.043168702721595766,
+          0.04663403034210205,
+          0.048749756813049314
+        ]
+      },
+      "native_w4_quant_and_projection_graph": {
+        "wall_median_ms": 0.01749520311022934,
+        "event_median_ms": 0.017183594405651093,
+        "wall_trials_ms": [
+          0.017476984362474468,
+          0.01749520311022934,
+          0.017647743766247004
+        ],
+        "event_trials_ms": [
+          0.017131268978118896,
+          0.017183594405651093,
+          0.017255453765392302
+        ]
+      },
+      "traffic_guard": "idle_before_and_after_no_completed_request"
+    },
+    {
+      "projection": "down_proj",
+      "rows": 128,
+      "shape": [
+        2560,
+        640
+      ],
+      "exact_ordered_fp16": true,
+      "graph_replay": true,
+      "weight_bytes": 1638400,
+      "packed_w4_bytes": 819200,
+      "includes_direct_a8_quantization": true,
+      "expands_w4_only_on_core": false,
+      "calls_per_graph": 16,
+      "weight_rotations": 16,
+      "distinct_output_per_rotated_bank": true,
+      "rotation_uses_equal_weights_at_distinct_addresses": true,
+      "row_tile": 16,
+      "lookup_decode": false,
+      "quant_and_projection_eager": {
+        "wall_median_ms": 0.16856323438787513,
+        "event_median_ms": 0.16773511171340943,
+        "wall_trials_ms": [
+          0.16856323438787513,
+          0.1707630124883508,
+          0.16625719063085853
+        ],
+        "event_trials_ms": [
+          0.1678514838218689,
+          0.16773511171340943,
+          0.16555224657058715
+        ]
+      },
+      "quant_and_projection_graph": {
+        "wall_median_ms": 0.16595940624029026,
+        "event_median_ms": 0.16522248983383178,
+        "wall_trials_ms": [
+          0.16569665938277467,
+          0.16595940624029026,
+          0.16598116562818177
+        ],
+        "event_trials_ms": [
+          0.16523633003234864,
+          0.16520003080368043,
+          0.16522248983383178
+        ]
+      },
+      "native_w4_exact": true,
+      "native_w4_quant_and_projection_eager": {
+        "wall_median_ms": 0.3290063999884296,
+        "event_median_ms": 0.32808561325073243,
+        "wall_trials_ms": [
+          0.32855385311449936,
+          0.3290063999884296,
+          0.3295907031315437
+        ],
+        "event_trials_ms": [
+          0.32769711017608644,
+          0.32808561325073243,
+          0.32824366092681884
+        ]
+      },
+      "native_w4_quant_and_projection_graph": {
+        "wall_median_ms": 0.331925171894909,
+        "event_median_ms": 0.3312547206878662,
+        "wall_trials_ms": [
+          0.331925171894909,
+          0.33205482188805036,
+          0.33188030624842213
+        ],
+        "event_trials_ms": [
+          0.3312462568283081,
+          0.3312547206878662,
+          0.3313016653060913
+        ]
+      },
+      "traffic_guard": "idle_before_and_after_no_completed_request"
+    },
+    {
+      "projection": "down_proj",
+      "rows": 512,
+      "shape": [
+        2560,
+        640
+      ],
+      "exact_ordered_fp16": true,
+      "graph_replay": true,
+      "weight_bytes": 1638400,
+      "packed_w4_bytes": 819200,
+      "includes_direct_a8_quantization": true,
+      "expands_w4_only_on_core": false,
+      "calls_per_graph": 16,
+      "weight_rotations": 16,
+      "distinct_output_per_rotated_bank": true,
+      "rotation_uses_equal_weights_at_distinct_addresses": true,
+      "row_tile": 16,
+      "lookup_decode": false,
+      "quant_and_projection_eager": {
+        "wall_median_ms": 0.6257379031239907,
+        "event_median_ms": 0.6250119686126709,
+        "wall_trials_ms": [
+          0.6254925624944008,
+          0.6267729656201482,
+          0.6257379031239907
+        ],
+        "event_trials_ms": [
+          0.6250119686126709,
+          0.6258202075958252,
+          0.6247862815856934
+        ]
+      },
+      "quant_and_projection_graph": {
+        "wall_median_ms": 0.6255712781239708,
+        "event_median_ms": 0.6250159263610839,
+        "wall_trials_ms": [
+          0.625621465610493,
+          0.6253101249967585,
+          0.6255712781239708
+        ],
+        "event_trials_ms": [
+          0.6250159263610839,
+          0.6247396469116211,
+          0.6250388145446777
+        ]
+      },
+      "native_w4_exact": true,
+      "native_w4_quant_and_projection_eager": {
+        "wall_median_ms": 0.6725931218625192,
+        "event_median_ms": 0.67142333984375,
+        "wall_trials_ms": [
+          0.6725931218625192,
+          0.6723912093775652,
+          0.6733897312415138
+        ],
+        "event_trials_ms": [
+          0.67142333984375,
+          0.6711607456207276,
+          0.6725364685058594
+        ]
+      },
+      "native_w4_quant_and_projection_graph": {
+        "wall_median_ms": 0.661229515640116,
+        "event_median_ms": 0.6604104042053223,
+        "wall_trials_ms": [
+          0.6606447468811893,
+          0.661229515640116,
+          0.6618281874807508
+        ],
+        "event_trials_ms": [
+          0.6599770545959472,
+          0.6604104042053223,
+          0.6609455585479737
+        ]
+      },
+      "traffic_guard": "idle_before_and_after_no_completed_request"
+    }
+  ]
+}
