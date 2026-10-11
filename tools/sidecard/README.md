@@ -18,6 +18,16 @@ All seven operational API checks and 168 real-input serialized/overlap checks
 passed; greedy repeat variation remains unresolved. See
 [current measurements](../../artifacts/sidecard-glm-20261011/optimization/README.md).
 
+The [architecture sweep](../../artifacts/sidecard-glm-20261011/architecture/README.md)
+compares actual GLM projection shapes, real W4/W3/W2 expert pipelines and
+host-staged transfers. CUDA experts are 11–17× faster for the measured
+one-token local workload after a cache sweep, and 21–34× faster with warm
+weights. Cold streaming is sensitive to weight precision and
+batch size; it is a benchmark candidate, not a deployed optimization. The
+restored service measured 3.57 decode tokens/s after an authenticated checkpoint
+shard repair. The next placement experiments target residency, lossless compact
+storage and a bounded cache, with separate native attention/state measurements.
+
 The previous OpenAI-compatible endpoint was
 `http://192.168.53.187:8001/v1`, model `glm-sidecard`. CUDA owns experts 0–71
 in all 42 routed layers; the qualified Ascend backbone and other expert ranks
