@@ -11,8 +11,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from tests.ut.sidecard.test_wire_runtime import changed_metadata
-from tests.ut.sidecard.test_wire_runtime import packet_context as packet_context
+from tests.ut.sidecard.test_wire_runtime import changed_metadata, wire_fixture
 from tools.sidecard.readiness import receive_ready
 from tools.sidecard.reference import ExpertReply, ExpertRequest, Route
 from tools.sidecard.resident import CudaResidentBackend
@@ -20,6 +19,11 @@ from tools.sidecard.runtime import serve_worker
 from tools.sidecard.tensor_wire import TensorPacket, TensorSocketPeer, decode_tensor, encode_tensor
 from tools.sidecard.wire import decode_packet, encode_packet
 from tools.sidecard.worker import DenseExpert, DenseExpertBank, ExpertWorker
+
+
+@pytest.fixture
+def packet_context():
+    return wire_fixture()
 
 
 @pytest.mark.parametrize("reply", [False, True])

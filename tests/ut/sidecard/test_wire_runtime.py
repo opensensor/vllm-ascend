@@ -30,13 +30,17 @@ from tools.sidecard.wire import (
 from tools.sidecard.worker import DenseExpert, DenseExpertBank, ExpertWorker
 
 
-@pytest.fixture
-def packet_context():
+def wire_fixture():
     placement = ExpertPlacement(("cuda:0", "npu:0"), (("cuda:0", "npu:0", "npu:0"),))
     limits = PacketLimits(hidden_width=2, max_tokens=2, max_routes=4, experts=3, top_k=2)
     identity = WireIdentity.for_placement(placement, hashlib.sha256(b"tiny-source-weights").hexdigest())
     request = ExpertRequest("pass:1", 3, "npu:0", (Route(1, 0, 2), Route(1, 1, 1)), (1,), ((0.1, -0.0),))
     return placement, limits, identity, request
+
+
+@pytest.fixture
+def packet_context():
+    return wire_fixture()
 
 
 def changed_metadata(frame, **updates):

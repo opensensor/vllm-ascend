@@ -30,7 +30,10 @@ PID 1027790; Ascend workers 1051734, 1052161, 1052534 and 1052962.
 [service-process.json](service-process.json) retains the complete command.
 [cuda-ready.json](cuda-ready.json) admits all 3,024 experts in 42 layers.
 [service-source-receipt.json](service-source-receipt.json) pins 32 source files;
-all match the corresponding local files. The actual compiled input is retained
+all matched the corresponding local files when captured. Subsequent repository
+lint cleanup replaced the checkpoint planner's standard `re` import with the
+project's `regex` dependency; the deployed header reader and numerical paths
+were not changed. The actual compiled input is retained
 as [cuda-compiled-source.cu](cuda-compiled-source.cu); the current source differs
 in comments and formatting only.
 
