@@ -100,9 +100,10 @@ _HIDDEN_STATE_DRAFTER_TYPES: tuple[type, ...] = (
     DSparkDeepseekV4ForCausalLM,
 )
 
-# DeepSeek V4.1 is skipped on Triton-less builds such as 310P (newer main's
-# sparse_mqa_logits calls tl.constexpr at module scope, crashing the import).
-if HAS_TRITON:
+# Installed Triton does not imply a usable backend on 310P. Its native model
+# adapter also lacks the standard V4.1 drafter classes; keep that unrelated
+# import out of Qwen/GLM startup even when another stack installed Triton.
+if HAS_TRITON and not ascend_utils.is_310p():
     from vllm_ascend.models.deepseek_v41.dspark import DSparkDeepseekV41ForCausalLM
 
     _HIDDEN_STATE_DRAFTER_TYPES += (DSparkDeepseekV41ForCausalLM,)

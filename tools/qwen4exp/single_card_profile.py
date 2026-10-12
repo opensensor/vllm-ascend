@@ -19,6 +19,36 @@ NATIVE_ROUTE_LIMIT = 25600
 TOP_K = 10
 MAX_BATCH_TOKENS = NATIVE_ROUTE_LIMIT // TOP_K
 SINGLE_CARD_PREFIX_SLOTS = 16
+PREVIEW_ENVIRONMENT_KEYS = (
+    "ASCEND_RT_VISIBLE_DEVICES",
+    "SOC_VERSION",
+    "VLLM_ASCEND_ENABLE_310P",
+    "VLLM_USE_V2_MODEL_RUNNER",
+    "VLLM_ASCEND_KV_CACHE_FRACTION",
+    "VLLM_SERVER_DEV_MODE",
+    "VLLM_USE_BREAKABLE_CUDAGRAPH",
+    "ASCEND_HOME_PATH",
+    "ASCEND_OPP_PATH",
+    "ASCEND_CUSTOM_OPP_PATH",
+    "ATB_HOME_PATH",
+    "HCCL_SOCKET_IFNAME",
+    "HCCL_IF_IP",
+    "HCCL_IF_BASE_PORT",
+    "LD_LIBRARY_PATH",
+    "LD_PRELOAD",
+    "PYTHONPATH",
+    "TE_PARALLEL_COMPILER",
+)
+
+
+def build_environment(profile: "SingleCardProfile", inherited):
+    environment = dict(inherited, ASCEND_RT_VISIBLE_DEVICES=",".join(map(str, profile.devices)))
+    # The launcher requests FULL_DECODE_ONLY, which the 310P v1 runner cannot
+    # capture. Select the runner explicitly instead of inheriting shell state.
+    environment["VLLM_USE_V2_MODEL_RUNNER"] = "1"
+    if profile.resident_experiments:
+        environment.update(VLLM_SERVER_DEV_MODE="1", VLLM_USE_BREAKABLE_CUDAGRAPH="1")
+    return environment
 
 
 @dataclass(frozen=True)
@@ -201,11 +231,15 @@ def main():
         command = build_command(profile)
     except (ValueError, OSError) as error:
         parser.error(str(error))
-    environment = dict(os.environ, ASCEND_RT_VISIBLE_DEVICES=",".join(map(str, devices)))
-    if profile.resident_experiments:
-        environment.update(VLLM_SERVER_DEV_MODE="1", VLLM_USE_BREAKABLE_CUDAGRAPH="1")
+    environment = build_environment(profile, os.environ)
     if args.show:
-        print(json.dumps({"devices": environment["ASCEND_RT_VISIBLE_DEVICES"], "command": command}, indent=2))
+        preview = {key: environment.get(key) for key in PREVIEW_ENVIRONMENT_KEYS}
+        print(
+            json.dumps(
+                {"devices": environment["ASCEND_RT_VISIBLE_DEVICES"], "command": command, "environment": preview},
+                indent=2,
+            )
+        )
     else:
         os.execvpe(command[0], command, environment)
 

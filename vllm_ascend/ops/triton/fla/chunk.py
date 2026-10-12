@@ -12,10 +12,11 @@ import warnings
 
 import torch
 from einops import rearrange
-from fla_npu.ops.ascendc import chunk_gated_delta_rule_fwd_h as fla_chunk_gated_delta_rule_fwd_h
 from vllm.distributed import get_pcp_group
 from vllm.forward_context import get_forward_context
 from vllm.third_party.flash_linear_attention.ops.utils import SUPPRESS_LEVEL
+
+from vllm_ascend.ops.fla_backend import load_fla_op
 
 from .chunk_delta_h import chunk_gated_delta_rule_fwd_h  # noqa: F401
 from .chunk_delta_hupdate import chunk_gated_delta_rule_fwd_hupdate
@@ -26,6 +27,8 @@ from .l2norm import l2norm_fwd
 from .solve_tril import solve_tril
 from .utils import input_guard, prepare_final_chunk_indices
 from .wy_fast import recompute_w_u_fwd
+
+fla_chunk_gated_delta_rule_fwd_h = load_fla_op("chunk_gated_delta_rule_fwd_h")
 
 
 def chunk_gated_delta_rule_fwd(

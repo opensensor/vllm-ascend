@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 
-from tools.qwen4exp.single_card_profile import SingleCardProfile, build_command
+from tools.qwen4exp.single_card_profile import SingleCardProfile, build_command, build_environment
 
 
 @pytest.fixture
@@ -32,6 +32,15 @@ def profile(tmp_path):
 
 def option(command, name):
     return command[command.index(name) + 1]
+
+
+def test_graph_runner_is_explicit_and_library_paths_are_preserved(profile):
+    inherited = {"VLLM_USE_V2_MODEL_RUNNER": "0", "LD_LIBRARY_PATH": "/matched/libraries"}
+    environment = build_environment(profile, inherited)
+    assert environment["VLLM_USE_V2_MODEL_RUNNER"] == "1"
+    assert environment["LD_LIBRARY_PATH"] == "/matched/libraries"
+    assert environment["ASCEND_RT_VISIBLE_DEVICES"] == "0,1"
+    assert inherited["VLLM_USE_V2_MODEL_RUNNER"] == "0"
 
 
 def test_single_card_command_keeps_real_weights_and_profiles_memory(profile):

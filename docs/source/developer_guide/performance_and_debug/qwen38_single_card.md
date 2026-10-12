@@ -27,8 +27,10 @@ and operator paths. The complete observed package inventory is included in
 the release. Package availability and installation on a clean OS have not
 been qualified; this recipe was validated against the existing environment.
 The host had 247 GiB RAM and the unchanged checkpoint occupies about 169 GiB
-on disk, including its large host-resident PLE table. This is not a 64 GB RAM
-recipe.
+on disk, including its large host-resident PLE table. Josh later reported
+working inference on 128 GB RAM with substantial cold-load pressure. This does
+not establish a minimum RAM requirement; monitor anonymous memory, page cache
+and swap during startup.
 
 ```bash
 git clone https://github.com/opensensor/vllm-ascend.git
@@ -65,9 +67,10 @@ tail -f qwen-single-card.log
 The log is in the current bundle directory. Leave the service running; pressing
 Ctrl-C in `tail` stops only the log viewer. Once automatic memory profiling,
 weight loading and graph capture complete, run the native gate from a second
-terminal in the same bundle directory:
+terminal in the same bundle directory. Define `qwen_python` there too:
 
 ```bash
+qwen_python=/path/to/existing/matched/venv/bin/python
 curl -f http://127.0.0.1:8002/health
 bash native.sh "$qwen_python"
 curl -s http://127.0.0.1:8002/v1/chat/completions \
@@ -152,6 +155,62 @@ Images are disabled in this text-performance profile. `--images` enables one
 image per prompt and requires a separate memory and image-quality test.
 `--quantize-dense-projections` explicitly changes LM-head and PLE projection
 arithmetic to W8A8; it is a separate candidate, not part of the W4 runtime A/B.
+
+## Fresh-environment checks from the external deployment
+
+Josh reported successful single-card inference on an i5-13400 with 128 GB RAM,
+with approximately 17–26 effective tokens/s and six functional checks passed.
+His SDK backfills and local patches are retained in the
+[external deployment handoff](../../../../artifacts/qwen38-single-card-20261012/EXTERNAL-DEPLOYMENT.md).
+Those measurements use a different test battery from our qualification.
+
+The original archive omits generated `_build_info.py`. It also relies on the
+host shell to select the v2 runner. On a pristine extraction, use the checker
+from current repository source before loading weights:
+
+```bash
+# Run from the root of the updated vllm-ascend clone.
+qwen_bundle=/path/to/single-card-runtime-bundle
+qwen_python=/path/to/existing/matched/venv/bin/python
+source "$qwen_bundle/environment.sh"
+export VLLM_USE_V2_MODEL_RUNNER=1
+PYTHONPATH="$PWD:$PYTHONPATH" "$qwen_python" \
+  -m tools.qwen4exp.single_card_preflight \
+  --bundle "$qwen_bundle" --prepare-build-info --output qwen-preflight.json
+```
+
+Preparation verifies the original manifest, writes only the missing `_310P`
+metadata and records its hash in `build-info-preparation.json`. It refuses to
+overwrite another hardware build. Retain both original and preparation hashes.
+A previously patched bundle must retain its separate patch provenance; the
+preparation step does not bypass failures in its original manifest.
+
+The checker initializes no NPU and imports neither Torch nor torch_npu. It
+checks core package versions, the observed auxiliary inventory, selected
+library paths, required HCCL exports, ATB/DVPP and critical compiler/TBE paths.
+It rejects HCCL in `LD_PRELOAD` and Triton in this frozen profile. Auxiliary
+version differences and harmless extra packages are warnings. This is a
+critical-component check, not verification of every CANN file or successful
+runtime allocator initialization. Keep the real inference gates.
+
+Use `<venv>/bin/python -m pip`; cloning a venv does not repair its script
+shebangs or editable-source paths. Keep separate environments for different
+model recipes. Do not repair resolver churn by silently accepting core ABI
+version changes. The plugin/core FastAPI pin conflict remains tracked.
+
+Prefer a complete, matching CANN + ATB installation. Record any recovered
+container image by immutable digest and hash the copied SDK files. Josh's
+library overlay is a recovery workaround. Do not add HCCL to `LD_PRELOAD`.
+For a single-host bootstrap whose ordinary interface cannot bind, the reported
+loopback settings are `HCCL_SOCKET_IFNAME=lo` and `HCCL_IF_IP=127.0.0.1`;
+validate them on that host. They are not a multi-host configuration.
+
+Current source explicitly selects the v2 runner and includes selected
+environment fields in `--show`. It also guards the unsupported V4.1 drafter
+import on 310P and makes missing optional FLA operators fail explicitly only
+when requested. These fixes have offline regression tests; fresh-container
+and NPU validation remain pending. The October 11 archive's other frozen
+Python files are unchanged by a repository update.
 
 ## Recurrent-state memory
 
