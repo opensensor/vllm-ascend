@@ -11,6 +11,7 @@ from .wire import unique_metadata
 MAGIC = b"SSTAGE01"
 PREFIX = struct.Struct("!8sII")
 MAX_HEADER_BYTES = 4096
+MAX_REQUEST_CONTEXT_TOKENS = 1 << 20
 MAX_BODY_BYTES = MAX_PACKET_ROWS * (GLM_HIDDEN * 2 + STREAMS * GLM_HIDDEN * 4 + (STREAMS + STREAMS**2) * 4 + 8)
 FIELDS = ("hidden_states", "residual", "post", "comb", "positions")
 
@@ -33,7 +34,7 @@ def descriptors(rows, residual_dtype="fp32"):
     return result, offset
 
 
-def metadata(rows, sequence, checkpoint_sha256, *, residual_dtype="fp32"):
+def metadata(rows, sequence, checkpoint_sha256, *, residual_dtype="fp32", request_context_limit=None):
     fields, size = descriptors(rows, residual_dtype)
     if (
         type(sequence) is not int
@@ -43,7 +44,7 @@ def metadata(rows, sequence, checkpoint_sha256, *, residual_dtype="fp32"):
         or any(c not in "0123456789abcdef" for c in checkpoint_sha256)
     ):
         raise ValueError("invalid stage sequence or checkpoint identity")
-    return dict(
+    result = dict(
         schema_version=1,
         sequence=sequence,
         checkpoint_sha256=checkpoint_sha256,
@@ -52,6 +53,12 @@ def metadata(rows, sequence, checkpoint_sha256, *, residual_dtype="fp32"):
         fields=fields,
         payload_bytes=size,
     )
+    if request_context_limit is not None:
+        if type(request_context_limit) is not int or not rows <= request_context_limit <= MAX_REQUEST_CONTEXT_TOKENS:
+            raise ValueError("invalid request context reservation")
+        result["schema_version"] = 2
+        result["request_context_limit"] = request_context_limit
+    return result
 
 
 def validate_metadata(value):
@@ -59,7 +66,11 @@ def validate_metadata(value):
         raise ValueError("stage metadata must be an object")
     try:
         expected = metadata(
-            value["rows"], value["sequence"], value["checkpoint_sha256"], residual_dtype=value["residual_dtype"]
+            value["rows"],
+            value["sequence"],
+            value["checkpoint_sha256"],
+            residual_dtype=value["residual_dtype"],
+            request_context_limit=value.get("request_context_limit"),
         )
     except KeyError as error:
         raise ValueError("incomplete stage metadata") from error

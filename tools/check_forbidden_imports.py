@@ -63,6 +63,11 @@ CHECK_IMPORTS = {
         allowed_pattern=re.compile(
             r"^\s*import\s+triton\.language\.extra\.cann\.extension\s+as\s+_extension_module(\s+#.*)?$"
         ),
+        allowed_files={
+            # Standalone CUDA actor has no vLLM install and must not load the
+            # Ascend plugin's platform into its isolated CUDA environment.
+            "tools/sidecard/cuda_layer_ops.py",
+        },
     ),
 }
 

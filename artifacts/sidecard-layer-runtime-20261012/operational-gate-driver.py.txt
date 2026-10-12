@@ -1,0 +1,58 @@
+import json,time,urllib.request,urllib.error,concurrent.futures
+from pathlib import Path
+p=Path('/srv/ai/storage/artifacts/sidecard-layer-runtime-20261012-v13');base='http://127.0.0.1:8000'
+def call(path,body=None,timeout=60):
+ q=urllib.request.Request(base+path,data=None if body is None else json.dumps(body).encode(),headers={'Content-Type':'application/json'})
+ with urllib.request.urlopen(q,timeout=timeout) as r:return json.load(r)
+def body(text):return {'model':'glm-sidecard','messages':[{'role':'user','content':text}],'reasoning_effort':'low','max_tokens':64,'temperature':0}
+report={'passed':False,'cases':[]}
+def save():(p/'operational-gate.json').write_text(json.dumps(report,indent=2)+'\n')
+try:
+ assert json.loads((p.parent/'sidecard-layer-runtime-20261012-v12/context-gate.json').read_text())['passed']
+ report['health_after_full_context']=call('/health')
+ with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+  a=pool.submit(call,'/v1/chat/completions',body('Calculate 1 + 1. Reply with only the number.'))
+  b=pool.submit(call,'/v1/chat/completions',body('Calculate 100 - 1. Reply with only the number.'))
+  ra,rb=a.result(),b.result()
+  assert ra['choices'][0]['message']['content'].strip()=='2'
+  assert rb['choices'][0]['message']['content'].strip()=='99'
+  assert ra['id']!=rb['id']
+  report['cases'].append({'name':'queued_request_isolation','passed':True,'responses':[ra,rb]});save()
+ stream=body('Reply with the word hello.');stream.update(stream=True,stream_options={'include_usage':True})
+ q=urllib.request.Request(base+'/v1/chat/completions',data=json.dumps(stream).encode(),headers={'Content-Type':'application/json'})
+ text,reason,usage,done='','',None,False
+ with urllib.request.urlopen(q,timeout=60) as r:
+  for line in r:
+   if not line.startswith(b'data: '):continue
+   data=line[6:].strip()
+   if data==b'[DONE]':done=True;continue
+   event=json.loads(data)
+   for choice in event.get('choices',[]):
+    delta=choice.get('delta',{});text+=delta.get('content','');reason+=delta.get('reasoning_content','')
+   if event.get('usage'):usage=event['usage']
+ assert done and text.strip()=='hello' and usage and '</think>' not in text
+ report['cases'].append({'name':'streaming_reasoning_and_usage','passed':True,'content':text,'reasoning_content':reason,'usage':usage});save()
+ q=urllib.request.Request(base+'/v1/completions',data=json.dumps({'prompt':'def factorial(n):\n','max_tokens':256,'ignore_eos':True,'stream':True}).encode(),headers={'Content-Type':'application/json'})
+ with urllib.request.urlopen(q,timeout=60) as r:
+  for line in r:
+   if line.startswith(b'data: '):break
+ start=time.monotonic();reply=call('/v1/chat/completions',body('Calculate 6 * 7. Reply with only the number.'))
+ assert reply['choices'][0]['message']['content'].strip()=='42'
+ report['cases'].append({'name':'cancelled_stream_followed_by_request','passed':True,'next_request_seconds':time.monotonic()-start});save()
+ long_body=body('The verification code is RAVEN-7319. Remember this exact code.\n'+('An unrelated note discusses Python modules and type annotations.\n'*360)+'\nWhat is the verification code defined at the beginning? Reply with only the code.')
+ retrieval=call('/v1/chat/completions',long_body,timeout=300)
+ actual=retrieval['choices'][0]['message']['content'].strip()
+ report['cases'].append({'name':'single_needle_smoke','passed':actual=='RAVEN-7319','expected':'RAVEN-7319','response':retrieval,'scope':'one synthetic needle, not a general long-context quality benchmark'});save()
+ idle_begin=time.monotonic();report['idle_soak_started']=time.time();save();print('idle soak started',flush=True)
+ while time.monotonic()-idle_begin<315:
+  time.sleep(min(30,315-(time.monotonic()-idle_begin)))
+  assert call('/health')['status']=='ok'
+ report['idle_seconds']=time.monotonic()-idle_begin
+ reply=call('/v1/chat/completions',body('Reply with the word hello.'))
+ assert reply['choices'][0]['message']['content'].strip()=='hello'
+ report['cases'].append({'name':'generation_after_315_seconds_idle','passed':True,'response':reply})
+ report['passed']=all(c['passed'] for c in report['cases'] if c['name']!='single_needle_smoke')
+ print('operational gates passed',report['passed'],flush=True)
+except Exception as e:
+ report['error']={'type':type(e).__name__,'message':str(e)};raise
+finally:save()

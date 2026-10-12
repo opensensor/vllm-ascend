@@ -1,0 +1,24 @@
+# Custom tools.sidecard.layer_validate configuration; not an lm-eval task.
+model_name: "/srv/ai/storage/models/GLM-5.3-Flash-one-card-sidecard-candidate"
+model_type: "sidecard-layer-runtime"
+hardware: "RTX PRO 6000 Blackwell + one Atlas 300I Duo (310P3 TP2/EP2)"
+
+serve:
+  base_url: "http://192.168.53.187:8000"
+  served_model_name: "glm-sidecard"
+  max_model_len: 65536
+  max_num_seqs: 1
+  tensor_parallel_size: 2
+  expert_parallel_size: 2
+  prefill_chunk_tokens: 32
+  prefill_overlap: true
+
+tasks:
+- name: "sidecard_arithmetic_smoke"
+  metrics:
+  - name: "exact_match"
+    value: 1.0
+
+num_fewshot: 0
+apply_chat_template: true
+batch_size: 1
