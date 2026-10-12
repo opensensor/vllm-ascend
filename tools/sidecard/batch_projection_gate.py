@@ -17,6 +17,7 @@ from .device_backend import (
     owned_keys,
 )
 from .native_expert_probe import digest_file
+from .one_card_partition import PARTITIONS, SEED_PARTITION, one_card_partition
 from .ordered_tensor import combine_compact
 from .reference import ExpertReply, ExpertRequest, Route
 from .resident import CudaResidentBackend, NativeResidentPlan
@@ -94,15 +95,22 @@ def run(
     bank_cache=None,
     one_card=False,
     experimental_projection=False,
+    cuda_partition=SEED_PARTITION,
 ):
     # CUDA-only process; CPU Torch unpacks authenticated native banks.
     import numpy as np
     import torch
 
     torch.set_num_threads(8)
-    cuda_experts = 144 if one_card else 72
+    partition = one_card_partition(cuda_partition)
+    if partition.name != SEED_PARTITION and (
+        not one_card or weight_layout != CUDA_COMPACT_PLANES or bank_cache is not None
+    ):
+        raise ValueError("precision gate requires uncached one-card compact CUDA")
+    cuda_ids = {layer: partition.cuda_ids(layer) if one_card else tuple(range(72)) for layer in LAYERS}
+    cuda_experts = 144 if one_card and partition.name == SEED_PARTITION else 72 if not one_card else None
     plan = NativeResidentPlan(
-        checkpoint, tuple((layer, expert) for layer in LAYERS for expert in range(cuda_experts)), checkpoint_sha
+        checkpoint, tuple((layer, expert) for layer in LAYERS for expert in cuda_ids[layer]), checkpoint_sha
     )
     if bank_cache is None:
         plan.authenticate()
@@ -117,7 +125,9 @@ def run(
             owned_keys(service_placement(), "cuda:0"),
             weight_layout,
         )
-    identity = WireIdentity.for_placement(service_placement(one_card=one_card), checkpoint_sha)
+    identity = WireIdentity.for_placement(
+        service_placement(one_card=one_card, cuda_partition=partition.name), checkpoint_sha
+    )
     old_limits, new_limits = PacketLimits(WIDTH, 32, 256), PacketLimits(WIDTH, 640, MAX_ROUTES)
     oracles = {}
     report = dict(
@@ -130,6 +140,8 @@ def run(
         candidate_partial_reduce=partial_reduce,
         cuda_experts_per_layer=cuda_experts,
         candidate_experimental_projection=experimental_projection,
+        candidate_cuda_partition=partition.name,
+        cuda_expert_ids_by_layer={str(layer): list(ids) for layer, ids in cuda_ids.items()},
     )
     try:
         for label, library, routes in (("reference", reference, 256), ("candidate", candidate, MAX_ROUTES)):
@@ -157,6 +169,7 @@ def run(
         backend.metrics = dict(requests=0, routes=0, compute_total_ms=0.0, compute_max_ms=0.0)
         generator = np.random.default_rng(20261011)
         for layer in LAYERS:
+            expert_index = {expert: index for index, expert in enumerate(cuda_ids[layer])}
             if getattr(oracles["candidate"], "split_launch", None) is not None:
                 report.setdefault("short_cases", []).extend(
                     short_projection_cases(oracles["candidate"], layer, generator)
@@ -164,7 +177,7 @@ def run(
             for count in BATCH_TOKENS:
                 hidden = (generator.standard_normal((count, WIDTH)) * 0.1).astype("<f2")
                 for top_k in ROUTES_PER_TOKEN:
-                    selected = [generator.choice(cuda_experts, top_k, replace=False).tolist() for _ in range(count)]
+                    selected = [generator.choice(cuda_ids[layer], top_k, replace=False).tolist() for _ in range(count)]
                     route_weights = generator.random((count, top_k), dtype=np.float32)
                     started = time.perf_counter()
                     pieces = []
@@ -179,7 +192,10 @@ def run(
                         packet = round_trip(TensorPacket(control, hidden[start:stop].tobytes()), identity, old_limits)
                         inputs = np.frombuffer(packet.tensor, dtype="<f2").reshape(stop - start, WIDTH)
                         raw = oracles["reference"].compute_bytes(
-                            layer, inputs[[r.token for r in routes]].tobytes(), tuple(r.expert for r in routes), 4
+                            layer,
+                            inputs[[r.token for r in routes]].tobytes(),
+                            tuple(expert_index[r.expert] for r in routes),
+                            4,
                         )
                         reply = ExpertReply(control.execution_id, layer, control.owner, routes, ())
                         encoded = np.frombuffer(raw, dtype="<f2").astype("<f4").tobytes()
@@ -278,6 +294,7 @@ def main():
         default=CUDA_ROW_MAJOR,
     )
     parser.add_argument("--one-card", action="store_true")
+    parser.add_argument("--cuda-partition", choices=PARTITIONS, default=SEED_PARTITION)
     parser.add_argument("--experimental-projection", action="store_true")
     parser.add_argument("--reply-fp16", action="store_true")
     parser.add_argument("--partial-reduce", action="store_true")
@@ -297,6 +314,7 @@ def main():
                 bank_cache=args.bank_cache,
                 one_card=args.one_card,
                 experimental_projection=args.experimental_projection,
+                cuda_partition=args.cuda_partition,
             )
         ),
         flush=True,

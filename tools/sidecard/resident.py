@@ -32,6 +32,8 @@ INTERMEDIATE = 2048
 MAIN_LAYERS = range(3, 45)
 MAX_RESIDENT_EXPERTS = 72
 MAX_PACKED_RESIDENT_EXPERTS = 144
+MAX_COMPACT_RESIDENT_EXPERTS = 288
+SECOND_NATIVE_BANK_START = 216
 MAX_RESIDENT_ROUTES = 5120
 MAX_RESIDENT_TOKENS = 640
 CUDA_RESERVE_BYTES = 4 * 1024**3
@@ -208,6 +210,7 @@ class CudaResidentBackend:
                 "reply_fp16",
                 "partial_reduce",
                 "experimental_projection",
+                "tp_rank_inputs",
             }
             or specification.get("weight_layout", CUDA_ROW_MAJOR)
             not in (CUDA_ROW_MAJOR, CUDA_WORD_PLANES, CUDA_NIBBLE_PLANES, CUDA_COMPACT_PLANES)
@@ -216,6 +219,12 @@ class CudaResidentBackend:
             or type(specification.get("reply_fp16", False)) is not bool
             or type(specification.get("partial_reduce", False)) is not bool
             or type(specification.get("experimental_projection", False)) is not bool
+            or type(specification.get("tp_rank_inputs", False)) is not bool
+            or specification.get("tp_rank_inputs", False)
+            and (
+                not specification.get("partial_reduce", False)
+                or specification.get("weight_layout") != CUDA_COMPACT_PLANES
+            )
             or (
                 specification.get("experimental_projection", False)
                 and specification.get("weight_layout") != CUDA_NIBBLE_PLANES
@@ -231,8 +240,10 @@ class CudaResidentBackend:
             raise ValueError("invalid resident CUDA specification")
         keys = owned_keys(placement, owner)
         max_experts = (
-            MAX_PACKED_RESIDENT_EXPERTS
-            if specification.get("weight_layout") in (CUDA_NIBBLE_PLANES, CUDA_COMPACT_PLANES)
+            MAX_COMPACT_RESIDENT_EXPERTS
+            if specification.get("weight_layout") == CUDA_COMPACT_PLANES
+            else MAX_PACKED_RESIDENT_EXPERTS
+            if specification.get("weight_layout") == CUDA_NIBBLE_PLANES
             else MAX_RESIDENT_EXPERTS
         )
         if not keys or any(
@@ -328,10 +339,18 @@ class CudaResidentBackend:
             raise RuntimeError("resident CUDA backend is not prepared for this layer")
         started = time.perf_counter()
         tokens, experts = compact_routes(request, self.plan.by_layer[request.layer_id])
-        inputs = np.frombuffer(packet.tensor, dtype="<f2").reshape(len(request.token_ids), WIDTH)
+        tp_inputs = getattr(self, "specification", {}).get("tp_rank_inputs", False)
+        if packet.tp_rank_inputs != tp_inputs:
+            raise ValueError("resident CUDA TP input mode differs from admission")
+        inputs = np.frombuffer(packet.tensor, dtype="<f2").reshape(
+            (2 if tp_inputs else 1), len(request.token_ids), WIDTH
+        )
         # Group equal experts for weight-cache reuse, then restore exact wire order.
         order = np.argsort(np.asarray(experts), kind="stable")
-        body = inputs[np.asarray(tokens, dtype=np.int64)[order]].tobytes()
+        input_ranks = np.asarray(
+            [int(route.expert >= SECOND_NATIVE_BANK_START) if tp_inputs else 0 for route in request.routes]
+        )
+        body = inputs[input_ranks[order], np.asarray(tokens, dtype=np.int64)[order]].tobytes()
         sorted_experts = tuple(experts[index] for index in order)
         if packet.partial_reduce:
             output_tokens = tuple(sorted(request.token_ids))

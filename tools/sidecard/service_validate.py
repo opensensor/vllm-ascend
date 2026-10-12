@@ -8,6 +8,8 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from .one_card_partition import SEED_PARTITION, one_card_partition
+
 MODEL = "glm-sidecard"
 
 
@@ -39,14 +41,31 @@ def check_metrics(value):
         raise AssertionError("service did not install every main-model routed layer")
     required_shadows = 3
     if value.get("one_card", False):
+        partition = one_card_partition(value.get("cuda_partition", SEED_PARTITION))
         gate = value.get("packed_cuda_gate", {})
         if (
-            value["retains_npu_shadow_banks"] is not False
+            value["retains_npu_shadow_banks"] is not (partition.name != SEED_PARTITION)
             or gate.get("passed") is not True
             or gate.get("cases") != 27
-            or gate.get("cuda_experts_per_layer") != 144
+            or gate.get("cuda_experts_per_layer") != (144 if partition.name == SEED_PARTITION else None)
         ):
             raise AssertionError("one-card service lacks packed CUDA correctness qualification")
+        if partition.name != SEED_PARTITION and (
+            value.get("preserves_tp_rank_inputs") is not True
+            or gate.get("cuda_partition") != partition.name
+            or gate.get("cuda_experts_by_layer") != {str(layer): len(partition.cuda_ids(layer)) for layer in (3, 8, 33)}
+            or value.get("cuda_experts_by_layer") != {layer: len(partition.cuda_ids(int(layer))) for layer in layers}
+            or any(
+                row.get("placement_decode_shadow_checks", 0) < 3 or row.get("placement_prefill_shadow_checks", 0) < 1
+                for row in layers.values()
+            )
+            or any(
+                row.get("native_bank_released") is not True
+                for layer, row in layers.items()
+                if not partition.native_enabled(int(layer))
+            )
+        ):
+            raise AssertionError("extended CUDA ownership lacks real-input baseline placement checks")
         required_shadows = 0
         if value.get("overlaps_native_cuda", False) and any(
             row.get("overlap_decode_shadow_checks", 0) < 3 or row.get("overlap_prefill_shadow_checks", 0) < 1
@@ -77,6 +96,15 @@ def check_metrics(value):
             row.get("overlap_shadow_max_absolute_error", 0) for row in layers.values()
         ),
         "serial_overlap_shadow_max_nrmse": max(row.get("overlap_shadow_max_nrmse", 0) for row in layers.values()),
+        "placement_shadow_checks": sum(
+            row.get("placement_decode_shadow_checks", 0) + row.get("placement_prefill_shadow_checks", 0)
+            for row in layers.values()
+        ),
+        "placement_shadow_max_absolute_error": max(
+            row.get("placement_shadow_max_absolute_error", 0) for row in layers.values()
+        ),
+        "native_banks_released": sum(row.get("native_bank_released", False) for row in layers.values()),
+        "native_bank_released_bytes": sum(row.get("native_bank_released_bytes", 0) for row in layers.values()),
     }
 
 

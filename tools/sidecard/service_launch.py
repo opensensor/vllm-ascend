@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 from .native_expert_probe import digest_file
+from .one_card_partition import SEED_PARTITION, one_card_partition
 from .placement import validate_glm_config
 
 SERVICE_NAME = "glm-sidecard"
@@ -140,7 +141,13 @@ def launch(
         receipt["config_sha256"] != digest_file(root / "cuda-worker.json")
         or receipt["checkpoint_sha256"] != config["checkpoint_sha256"]
         or receipt["resident_layers"] != 42
-        or receipt["resident_experts"] != (6048 if config.get("one_card", False) else 3024)
+        or receipt["resident_experts"]
+        != (
+            one_card_partition(config.get("cuda_partition", SEED_PARTITION)).resident_experts
+            if config.get("one_card", False)
+            else 3024
+        )
+        or receipt.get("tp_rank_inputs", False) != (config.get("cuda_partition", SEED_PARTITION) != SEED_PARTITION)
     ):
         raise ValueError("CUDA preparation does not match service admission")
     validate_glm_config(json.loads((Path(config["checkpoint_root"]) / "config.json").read_bytes()))

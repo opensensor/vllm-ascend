@@ -3,6 +3,7 @@
 #include "cuda_oracle.cu"
 
 constexpr int kCompactValues = 16;
+constexpr int kMaxCompactExperts = 288;
 
 template <int Bits>
 __global__ void pack_cube_compact(const unsigned char* input, unsigned short* output, int experts, int n, int k) {
@@ -42,10 +43,15 @@ __global__ void pack_cube_compact(const unsigned char* input, unsigned short* ou
 }
 
 extern "C" int sidecard_oracle_pack_cube_compact(const void* input, void* output, int experts, int n, int k, int bits) {
-  if (experts < 1 || experts > kMaxPackedExperts || n < kCubeN || n % kCubeN || k < kCubeK || k % kCubeK ||
+  if (experts < 1 || experts > kMaxCompactExperts || n < kCubeN || n % kCubeN || k < kCubeK || k % kCubeK ||
       (bits != 2 && bits != 3 && bits != 4))
     return static_cast<int>(cudaErrorInvalidValue);
-  if (bits == 4) return sidecard_oracle_pack_cube(input, output, experts, n, k, bits);
+  if (bits == 4) {
+    size_t words = static_cast<size_t>(experts) * n * k / kDotValuesPerLane;
+    pack_cube_nibbles<<<(words + kThreads - 1) / kThreads, kThreads>>>(
+        static_cast<const unsigned char*>(input), static_cast<unsigned short*>(output), experts, n, k, bits);
+    return static_cast<int>(cudaGetLastError());
+  }
   size_t octets = static_cast<size_t>(experts) * n * k / kCompactValues;
   if (bits == 2)
     pack_cube_compact<2><<<(octets + kThreads - 1) / kThreads, kThreads>>>(
