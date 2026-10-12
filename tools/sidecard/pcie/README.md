@@ -1,5 +1,10 @@
 # CUDA–Ascend PCIe bus library
 
+**Direct GPU/HBM DMA is now separately hardware-validated.** The
+[direct backend](DIRECT_DMA.md) uses an experimental kernel bridge with the
+Ascend DMA engine and NVIDIA DMA-BUF export. Its first API is blocking.
+The asynchronous host-staged backend below remains available independently.
+
 The first backend moves bytes between dedicated CUDA allocations and Ascend
 device allocations using native SDK streams and completion events. Each
 Ascend worker imports GPU buffers through **CUDA IPC**. Two bounded slots
