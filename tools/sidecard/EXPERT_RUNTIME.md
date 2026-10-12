@@ -4,6 +4,10 @@ This runtime serves GLM-5.3-Flash using one RTX PRO 6000 Blackwell and one
 Atlas 300I Duo. Its two assigned chips are physical devices **2 and 3**;
 physical 0 and 1 remain available for other work.
 
+The [asynchronous PCIe bus library](pcie/README.md) is separately hardware-tested.
+It uses CUDA IPC and native per-slot DMA events; the endpoint described here
+continues to use the qualified socket transport pending full-model integration.
+
 CUDA owns all 45 backbone layers, attention and indexer caches, recurrent
 state, mHC, routing, shared MLPs, embedding, head, and sampling. CUDA also
 retains all 288 experts in layers 3–17 and 33–44. In layers 18–32, it retains
@@ -90,3 +94,11 @@ The configured context limit and completed capacity tests are separate
 claims; consult the report before relying on the largest context.
 API details and scoped stop behavior remain in the
 [layer runbook](LAYER_RUNTIME.md).
+
+## Latency attribution
+
+Use the [complete-model profile report](../../artifacts/sidecard-expert-profile-20261012/README.md)
+for measured host/device delays, communication, and the bounded diagnostic
+procedure. Its opt-in `expert_worker_profile` specification flag defaults
+to false. Profiling preserves vocabulary bytes but adds observation cost;
+the exact uninstrumented serving snapshot is restored after the diagnostic.
