@@ -85,7 +85,9 @@ def main():
         print(configuration)
         return
     command = [
-        str(args.cuda_python.resolve()),
+        # Resolving a venv's python symlink selects the base interpreter and
+        # loses the CUDA-only package environment.
+        str(args.cuda_python.absolute()),
         "-m",
         "tools.sidecard.layer_server",
         "--config",

@@ -2,10 +2,36 @@
 """A cancelled stream must release the generator's serialized request lock."""
 
 import threading
+from types import SimpleNamespace
 
 import anyio
 
-from tools.sidecard.layer_server import managed_deltas
+from tools.sidecard.layer_server import engine_lifespan, managed_deltas
+
+
+def test_engine_lifespan_releases_ipc_owners_on_shutdown():
+    calls = []
+
+    async def run():
+        async with engine_lifespan(SimpleNamespace(close=lambda: calls.append("release"))):
+            calls.append("serving")
+        assert calls == ["serving", "release"]
+
+    anyio.run(run)
+
+
+def test_engine_lifespan_releases_ipc_owners_on_error():
+    calls = []
+
+    async def run():
+        try:
+            async with engine_lifespan(SimpleNamespace(close=lambda: calls.append("release"))):
+                raise RuntimeError("server stopped")
+        except RuntimeError:
+            pass
+        assert calls == ["release"]
+
+    anyio.run(run)
 
 
 def test_closing_suspended_stream_releases_request_lock():

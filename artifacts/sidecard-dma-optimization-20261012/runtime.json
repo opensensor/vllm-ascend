@@ -1,0 +1,39 @@
+{
+  "checkpoint": "/srv/ai/storage/models/GLM-5.3-Flash-one-card-sidecard-candidate",
+  "checkpoint_sha256": "a40e4312e4cd4162e7947aeb28c6fb80484a7500dc617f226eada1ed274d6a9f",
+  "npu_environment": "/srv/ai/storage/artifacts/sidecard-glm-service-20261011-one-card-v19/runtime-environment.json",
+  "npu_python": "/srv/ai/venvs/qwen38-w4-test-ce1862/bin/python",
+  "output": "/srv/ai/storage/artifacts/sidecard-glm-direct-runtime-v8",
+  "cuda_backend": {
+    "kind": "cuda_resident",
+    "checkpoint_root": "/srv/ai/storage/models/GLM-5.3-Flash-one-card-sidecard-candidate",
+    "library": "/srv/ai/storage/artifacts/sidecard-cuda-stream-joined-20261012/cuda-stream-clipped.so",
+    "library_sha256": "9b501033041acce69274b134bd70a3ffbd007973acefecaa411914f4b80b5397",
+    "cuda_runtime": "/usr/local/cuda/lib64/libcudart.so",
+    "cuda_memory_budget_bytes": 98784247808,
+    "weight_layout": "k32_words_native_n_v1",
+    "reply_fp16": false,
+    "partial_reduce": true,
+    "tp_rank_inputs": true,
+    "torch_stream_experts": true
+  },
+  "init_method": "tcp://127.0.0.1:29580",
+  "max_context": 65536,
+  "npu_ops_library": "/srv/ai/storage/artifacts/glm-next-math-hardware-20261011/qualified-source/vllm_ascend/vllm_ascend_C.cpython-312-x86_64-linux-gnu.so",
+  "native_gate_override": "/srv/ai/storage/artifacts/sidecard-cuda-stream-joined-20261012/build.json",
+  "routed_swiglu_limit": 10.0,
+  "cuda_environment": "/srv/ai/storage/artifacts/sidecard-layer-runtime-20261012-v12/cuda-environment.json",
+  "npu_decode_graphs": false,
+  "cuda_decode_graphs": true,
+  "architecture": "cuda-backbone-ascend-experts",
+  "expert_placement": "/srv/ai/storage/artifacts/sidecard-glm-direct-runtime-v8/placement.json",
+  "expert_placement_sha256": "aaa70408a6046e4e7fafaf62173d95476617ae9d3a9ed3e01c31f760872caad1",
+  "expert_transport": "direct-dma",
+  "transport_reference": "/srv/ai/storage/artifacts/sidecard-expert-runtime-20261012-v3/decode-repeat-gate.json",
+  "transport_reference_sha256": "c10236c3eb1aeb9b7e2e69273db040d48a745f7a1212fa7b9da30ef8867dfa66",
+  "direct_dma": {
+    "persistent_gpu_mappings": true,
+    "cuda_pack_graphs": true,
+    "npu_expert_graphs": true
+  }
+}

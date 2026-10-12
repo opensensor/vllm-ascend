@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .cold_expert_probe import receive
 from .cold_placement import load, lookup
+from .dma_pack_graph import DmaPackGraphs
 from .dma_protocol import (
     CAPACITY,
     CLOSE_TAG,
@@ -50,6 +51,7 @@ class DmaDispatch:
         self.nonce = secrets.token_hex(32)
         self.connections, self.processes, self.logs = [], [], []
         self.inputs, self.outputs, self.imports, self.events = [], [], [], []
+        self.pack_graphs = None
         self.sequences = [0, 0]
         self.failed = self.closed = False
         self.lock = threading.RLock()
@@ -102,6 +104,7 @@ class DmaDispatch:
             )
 
     def ready(self):
+        sync_memops = []
         for rank, listener in enumerate(self.connections):
             deadline = time.monotonic() + STARTUP_TIMEOUT
             while True:
@@ -128,6 +131,8 @@ class DmaDispatch:
                 validate_descriptor(hello[name])
                 allocation = self.runtime.import_memory(hello[name])
                 self.imports.append(allocation)
+                before = self.driver.ensure_sync_memops(allocation)
+                sync_memops.append({"rank": rank, "slot": name, "enabled_before_import_check": before})
                 view = CudaByteView(allocation)
                 tensor = self.torch.as_tensor(view, device="cuda:0")
                 if tensor.data_ptr() != allocation.pointer or tensor.numel() != CAPACITY:
@@ -140,6 +145,10 @@ class DmaDispatch:
             if acknowledgement != {"ready": True, "nonce": self.nonce}:
                 raise ValueError("direct DMA worker source-event readiness differs")
             connection.settimeout(ACTIVE_TIMEOUT)
+        if self.spec.get("direct_dma", {}).get("cuda_pack_graphs", False):
+            with self.torch.inference_mode():
+                self.pack_graphs = DmaPackGraphs(self.torch, self.lookups, self.inputs)
+        (self.output / "ipc-sync-memops.json").write_text(json.dumps(sync_memops, indent=2) + "\n")
         (self.output / "npu-processes.json").write_text(
             json.dumps(
                 {
@@ -178,24 +187,31 @@ class DmaDispatch:
             return self.cuda(layer, x, ids, weights), shared_call() if shared_call else None
         if not 1 <= rows <= MAX_CHUNK:
             raise ValueError("direct dispatch exceeds its private slot capacity")
-        local_ids = self.lookups[layer][ids.long()]
-        owned = local_ids >= 0
-        cold_weights = t.where(owned, 0, weights).float()
+        captured = self.pack_graphs is not None and rows == 1
+        if captured:
+            hot_ids, hot_weights, flags = self.pack_graphs.prepare(layer, x, ids, weights)
+        else:
+            local_ids = self.lookups[layer][ids.long()]
+            owned = local_ids >= 0
+            cold_weights = t.where(owned, 0, weights).float()
+            flags = t.stack(
+                [((ids >= rank * 144) & (ids < (rank + 1) * 144) & (cold_weights > 0)).any() for rank in range(2)]
+            )
+            hot_ids, hot_weights = t.where(owned, local_ids, 0), t.where(owned, weights, 0)
         # Only two admission flags reach the CPU; hidden rows and outputs remain on devices.
-        active = (
-            t.stack([((ids >= rank * 144) & (ids < (rank + 1) * 144) & (cold_weights > 0)).any() for rank in range(2)])
-            .cpu()
-            .tolist()
-        )
+        active = flags.cpu().tolist()
         x_bytes, id_bytes = rows * WIDTH * 2, rows * TOP_K * 4
         pending = []
         for rank in range(2):
             if not active[rank]:
                 continue
-            slot = self.inputs[rank]
-            slot[:x_bytes].view(t.float16).reshape(rows, WIDTH).copy_(x)
-            slot[x_bytes : x_bytes + id_bytes].view(t.int32).reshape(rows, TOP_K).copy_(ids)
-            slot[x_bytes + id_bytes : rows * INPUT_ROW_BYTES].view(t.float32).reshape(rows, TOP_K).copy_(cold_weights)
+            if not captured:
+                slot = self.inputs[rank]
+                slot[:x_bytes].view(t.float16).reshape(rows, WIDTH).copy_(x)
+                slot[x_bytes : x_bytes + id_bytes].view(t.int32).reshape(rows, TOP_K).copy_(ids)
+                slot[x_bytes + id_bytes : rows * INPUT_ROW_BYTES].view(t.float32).reshape(rows, TOP_K).copy_(
+                    cold_weights
+                )
             # Includes earlier reply consumers on this CUDA stream, preventing slot reuse races.
             self.events[rank].record(t.cuda.current_stream())
             tag = COMMAND.pack(self.sequences[rank], layer, rows)
@@ -203,7 +219,7 @@ class DmaDispatch:
         for rank, tag in pending:
             self.events[rank].wait()
             self.connections[rank].sendall(tag)
-        hot = self.cuda(layer, x, t.where(owned, local_ids, 0), t.where(owned, weights, 0))
+        hot = self.cuda(layer, x, hot_ids, hot_weights)
         shared = shared_call() if shared_call is not None else None
         for rank, tag in pending:
             actual = bytearray(COMMAND.size)
@@ -225,6 +241,9 @@ class DmaDispatch:
                 return
             self.closed = True
             self.torch.cuda.synchronize()
+            if self.pack_graphs is not None:
+                self.pack_graphs.close()
+                self.pack_graphs = None
             quiescent = []
             if len(self.inputs) == 2:
                 for rank, connection in enumerate(self.connections):

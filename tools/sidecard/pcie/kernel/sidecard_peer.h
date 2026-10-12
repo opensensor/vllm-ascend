@@ -5,7 +5,10 @@
 #include <linux/ioctl.h>
 #include <linux/types.h>
 
-#define SC_PEER_VERSION 4
+#define SC_PEER_VERSION 5
+#define SC_GPU_MAP_TRANSIENT 0
+#define SC_GPU_MAP_PERSISTENT 1
+#define SC_MAX_GPU_MAPPINGS 2
 #define SC_PEER_MAX_BYTES (8ULL * 1024 * 1024)
 #define SC_PEER_MAP_ONLY 0
 #define SC_PEER_PIN_ONLY 1
@@ -39,6 +42,8 @@ struct sc_peer_request {
   __u32 cache_id;
   __u32 retained;
   __u32 reserved;
+  __u32 gpu_mapping_mode;
+  __u32 gpu_mapping_reused;
 };
 
 #define SC_PEER_EXECUTE _IOWR('S', 0x40, struct sc_peer_request)

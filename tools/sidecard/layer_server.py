@@ -9,6 +9,7 @@ import os
 import threading
 import time
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from .expert_actor import ExpertCoordinator
@@ -32,6 +33,15 @@ async def managed_deltas(iterator):
     finally:
         with anyio.CancelScope(shield=True):
             await anyio.to_thread.run_sync(iterator.close)
+
+
+@asynccontextmanager
+async def engine_lifespan(engine):
+    """Release CUDA IPC owners before Uvicorn replays a termination signal."""
+    try:
+        yield
+    finally:
+        engine.close()
 
 
 def request_tokens(body, tokenizer, max_context, *, chat):
@@ -271,7 +281,7 @@ def main():
     if args.gate_only:
         engine.close()
         return
-    app = FastAPI()
+    app = FastAPI(lifespan=lambda app: engine_lifespan(engine))
 
     class ClosingStreamingResponse(StreamingResponse):
         def __init__(self, iterator, cancelled):

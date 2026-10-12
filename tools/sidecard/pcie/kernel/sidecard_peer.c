@@ -27,12 +27,15 @@ struct sc_retained {
   struct dma_buf_attachment* attachment;
   struct sg_table* table;
   struct svm_dma_desc_handle guard;
+  u32 physical_chip;
 };
 
 struct sc_context {
   struct mutex lock;
   pid_t owner;
   struct sc_retained* retained;
+  struct sc_retained* mappings[SC_MAX_GPU_MAPPINGS];
+  u32 mapping_count;
 };
 
 static void sc_npu_revoke(void* data) {
@@ -157,30 +160,34 @@ release:
   return result;
 }
 
+static void sc_unmap_gpu(struct sc_retained* mapping) {
+  dma_resv_lock(mapping->buffer->resv, NULL);
+  dma_buf_unmap_attachment(mapping->attachment, mapping->table, DMA_BIDIRECTIONAL);
+  dma_resv_unlock(mapping->buffer->resv);
+  dma_buf_detach(mapping->buffer, mapping->attachment);
+  dma_buf_put(mapping->buffer);
+  kfree(mapping);
+}
+
 static int sc_map_gpu(struct file* file, struct sc_peer_request* request) {
+  struct sc_context* context = file->private_data;
   struct dma_buf_attachment* attachment;
   struct dma_buf* buffer;
   struct sg_table* table;
   struct scatterlist* entry;
   struct device* device;
-  struct sc_retained* retained;
+  struct sc_retained* mapping = NULL;
+  bool persistent = request->gpu_mapping_mode == SC_GPU_MAP_PERSISTENT;
   unsigned int index;
   int result = 0;
 
   device = devdrv_get_pci_dev_by_devid(request->physical_chip);
   if (!device || !dev_is_pci(device)) return -ENODEV;
-  /* Restrict this host's experiment to the assigned Huawei PCI function. */
   if (to_pci_dev(device)->vendor != SC_ASCEND_VENDOR || to_pci_dev(device)->bus->number != SC_ASSIGNED_PCI_BUS ||
       to_pci_dev(device)->devfn != PCI_DEVFN(0, 0))
     return -EXDEV;
-  retained = kzalloc(sizeof(*retained), GFP_KERNEL);
-  if (!retained) return -ENOMEM;
-
   buffer = dma_buf_get(request->dmabuf_fd);
-  if (IS_ERR(buffer)) {
-    result = PTR_ERR(buffer);
-    goto free_retained;
-  }
+  if (IS_ERR(buffer)) return PTR_ERR(buffer);
   if (!buffer->exp_name || strcmp(buffer->exp_name, "nv_dmabuf")) {
     result = -EPROTOTYPE;
     goto put_buffer;
@@ -189,38 +196,61 @@ static int sc_map_gpu(struct file* file, struct sc_peer_request* request) {
     result = -ENOSPC;
     goto put_buffer;
   }
-  /* Static attachment: mappings are held until explicitly unmapped. */
+  if (persistent) {
+    for (index = 0; index < context->mapping_count; ++index) {
+      mapping = context->mappings[index];
+      /* Compare exporter objects, not numeric fds that can be reused. */
+      if (mapping->buffer == buffer && mapping->physical_chip == request->physical_chip) {
+        dma_buf_put(buffer);
+        request->gpu_mapping_reused = 1;
+        goto execute;
+      }
+    }
+    if (context->mapping_count == SC_MAX_GPU_MAPPINGS) {
+      result = -ENOSPC;
+      goto put_buffer;
+    }
+  }
+  mapping = kzalloc(sizeof(*mapping), GFP_KERNEL);
+  if (!mapping) {
+    result = -ENOMEM;
+    goto put_buffer;
+  }
+  /* Static attachments retain DMA addresses until clean device-fd close. */
   attachment = dma_buf_attach(buffer, device);
   if (IS_ERR(attachment)) {
     result = PTR_ERR(attachment);
-    goto put_buffer;
+    goto free_mapping;
   }
   dma_resv_lock(buffer->resv, NULL);
   table = dma_buf_map_attachment(attachment, DMA_BIDIRECTIONAL);
+  dma_resv_unlock(buffer->resv);
   if (IS_ERR(table)) {
     result = PTR_ERR(table);
-    goto unlock_buffer;
+    dma_buf_detach(buffer, attachment);
+    goto free_mapping;
   }
-  request->gpu_segments = table->nents;
-  for_each_sgtable_dma_sg(table, entry, index) request->gpu_mapped_bytes += sg_dma_len(entry);
+  mapping->buffer = buffer;
+  mapping->attachment = attachment;
+  mapping->table = table;
+  mapping->physical_chip = request->physical_chip;
+  if (persistent) context->mappings[context->mapping_count++] = mapping;
+execute:
+  request->gpu_segments = mapping->table->nents;
+  for_each_sgtable_dma_sg(mapping->table, entry, index) request->gpu_mapped_bytes += sg_dma_len(entry);
   if (request->operation == SC_PEER_PIN_ONLY) request->pin_status = sc_pin_npu(request);
-  if (request->operation >= SC_PEER_LOCAL_PIN_ONLY) request->pin_status = sc_pin_local(request, table, retained);
+  if (request->operation >= SC_PEER_LOCAL_PIN_ONLY)
+    request->pin_status = sc_pin_local(request, mapping->table, mapping);
   if (request->retained) {
-    retained->buffer = buffer;
-    retained->attachment = attachment;
-    retained->table = table;
-    ((struct sc_context*)file->private_data)->retained = retained;
-    dma_resv_unlock(buffer->resv);
+    context->retained = mapping;
     return 0;
   }
-  dma_buf_unmap_attachment(attachment, table, DMA_BIDIRECTIONAL);
-unlock_buffer:
-  dma_resv_unlock(buffer->resv);
-  dma_buf_detach(buffer, attachment);
+  if (!persistent) sc_unmap_gpu(mapping);
+  return 0;
+free_mapping:
+  kfree(mapping);
 put_buffer:
   dma_buf_put(buffer);
-free_retained:
-  kfree(retained);
   return result;
 }
 
@@ -241,7 +271,8 @@ static long sc_ioctl_locked(struct file* file, unsigned int command, unsigned lo
         request.length > request.pin_length || request.npu_va + request.pin_length < request.npu_va ||
         request.guard_va + request.pin_length < request.guard_va)) ||
       (request.operation >= SC_PEER_LOCAL_PIN_ONLY && !request.guard_va) || request.cache_id || request.retained ||
-      request.reserved || !request.length || request.length > SC_PEER_MAX_BYTES)
+      request.reserved || request.gpu_mapping_mode > SC_GPU_MAP_PERSISTENT || request.gpu_mapping_reused ||
+      !request.length || request.length > SC_PEER_MAX_BYTES)
     return -EINVAL;
   request.map_status = 0;
   request.pin_status = -EOPNOTSUPP;
@@ -278,7 +309,11 @@ static int sc_open(struct inode* inode, struct file* file) {
 
 static int sc_release(struct inode* inode, struct file* file) {
   struct sc_context* context = file->private_data;
-  if (!context->retained) kfree(context);
+  u32 index;
+  if (!context->retained) {
+    for (index = 0; index < context->mapping_count; ++index) sc_unmap_gpu(context->mappings[index]);
+    kfree(context);
+  }
   /* Failed DMA retains the context, native descriptors, and module reference. */
   return 0;
 }

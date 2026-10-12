@@ -10,7 +10,29 @@ from pathlib import Path
 
 import pytest
 
+from tools.sidecard import layer_runtime
 from tools.sidecard.layer_runtime import prepare, stop
+
+
+def test_launcher_keeps_venv_interpreter_symlink(tmp_path, monkeypatch):
+    python = tmp_path / "venv" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.symlink_to(sys.executable)
+    spec = tmp_path / "spec.json"
+    spec.write_text("{}")
+    output = tmp_path / "run"
+    monkeypatch.setattr(
+        sys, "argv", ["launcher", "--output", str(output), "--specification", str(spec), "--cuda-python", str(python)]
+    )
+    calls = []
+    monkeypatch.setattr(layer_runtime.os, "chdir", lambda path: None)
+    monkeypatch.setattr(
+        layer_runtime.os, "execve", lambda executable, args, environment: calls.append((executable, args, environment))
+    )
+    layer_runtime.main()
+    assert calls[0][0] == str(python) and calls[0][1][0] == str(python)
+    assert calls[0][0] != str(python.resolve())
+    assert json.loads((output / "process.json").read_text())["command"][0] == str(python)
 
 
 def test_snapshot_excludes_environment_and_dirty_glm_experiments(tmp_path):

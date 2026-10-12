@@ -24,7 +24,9 @@ and [design PNG](../../../artifacts/sidecard-direct-dma-20261012/design.png).
 4. The kernel queries local HBM addresses from the owner's Ascend page cache,
    constructs bounded physical DMA nodes, and calls
    `devdrv_dma_sync_link_copy_extend`. Both directions are driven by Ascend.
-5. Completed transfers release their mapping and lifetime descriptor.
+5. Completed transfers release their lifetime descriptor. The default mode
+   also releases its GPU mapping; optional static mappings remain until clean
+   device-fd close.
    The CUDA owner flushes GPUDirect writes before consuming a returned result.
 
 ```text
@@ -103,9 +105,14 @@ The call waits for the source event, performs the kernel request, checks the
 completion identity and mapping geometry, and releases local leases only
 after a trustworthy completion. The reverse direction flushes writes in
 the CUDA owner's context. There is no device-wide synchronization call.
-The native ioctl currently blocks for DMA completion; persistent mappings,
-asynchronous completion queues, and multiple in-flight slots are future
-extensions, not qualifications from this test.
+The native ioctl blocks for DMA completion. UAPI version 5 optionally retains
+two static GPU mappings per device fd; set `persistent_gpu_mappings=True` on
+`KernelPeer`. The peer holds original allocation leases until fd close. HBM
+pinning remains per copy. Cache identity uses the DMA-BUF object and physical
+chip, so duplicated or reused numeric fds cannot redirect a cached entry.
+Asynchronous completion queues and multiple in-flight slots remain future
+extensions. CUDA IPC consumers must also enable `SYNC_MEMOPS` on their imported
+aliases, complete source events, and flush returned writes before use.
 
 Every device fd belongs to its creating process, and requests serialize
 through a per-file mutex. The module bounds byte counts and DMA-node counts,
@@ -118,7 +125,8 @@ retains mappings, the HBM lifetime descriptor, and a module reference; Python
 quarantines allocation/event leases. The diagnostic remains alive. Do not kill
 that owner or force removal/reset as automatic cleanup. Recovery must first
 establish completion or stop DMA while preserving those allocations. This
-recovery path is not implemented, so the backend is not enabled in serving.
+recovery path is not implemented. The serving integration preserves original
+owners on this failure rather than attempting automatic recovery.
 
 ## Validation and integration boundary
 
@@ -129,10 +137,10 @@ remaining bytes in its 2 MiB allocation. An unrelated 2 MiB host guard stays
 poisoned throughout. Sixteen invalid-request cases are rejected across the
 two workers. CPU initialization and readback are outside the timed transfers.
 
-Before enabling this in GLM, pack inputs into dedicated GPU transfer buffers,
-connect buffer fds and source/completion control to the independent expert
-workers, and preserve per-request state, native scratch ownership, placement
-authentication, expert IDs/weights, and fixed reduction order. Repeat dispatch
-and full-vocabulary parity, decode, context, cancellation, and queue-isolation
-gates, then profile the model. Direct DMA qualification establishes a transport
-capability; it does not establish a GLM throughput improvement.
+The [GLM integration](../GLM_DIRECT_DMA.md) connects dedicated GPU buffers,
+source/completion control, and independent expert workers. It preserves
+per-request state, native scratch ownership, authenticated placement,
+expert IDs/weights, and fixed reduction order. Changed configurations must
+pass dispatch, full-vocabulary parity, decode, cancellation, and queue-isolation
+gates. Direct DMA qualification establishes a transport capability;
+completed model benchmarks establish its performance.

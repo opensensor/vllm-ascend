@@ -9,7 +9,7 @@ from matplotlib.figure import Figure
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 
 
-def draw(output):
+def draw(output, *, optimized=False, expert_graphs=False, persistent_gpu_mappings=False):
     """Show GPU aliases, physical DMA, CPU control, and clean release ordering."""
     figure = Figure(figsize=(18, 11), dpi=160, facecolor="#f4f7fb")
     FigureCanvasAgg(figure)
@@ -87,7 +87,7 @@ def draw(output):
             "Attention / routers / shared MLP",
             "Full CUDA banks outside layers 18–32",
             "Configured hot middle-layer experts",
-            "GPU packing + fixed rank-order merge",
+            "CUDA graph packing + fixed rank-order merge" if optimized else "GPU packing + fixed rank-order merge",
             "Serialized requests; CUDA graphs retained",
         ],
         "#26714d",
@@ -102,7 +102,8 @@ def draw(output):
             [
                 "Dedicated CUDA input / output buffers",
                 "Worker owns allocations + DMA-BUF",
-                "Coordinator borrows CUDA IPC views",
+                "CUDA IPC views + SYNC_MEMOPS" if optimized else "Coordinator borrows CUDA IPC views",
+                *(["GPU mappings retained until clean close"] if persistent_gpu_mappings else []),
             ],
             "#26714d",
         )
@@ -116,6 +117,7 @@ def draw(output):
                 "DMA directly into Torch HBM input",
                 "Resident cold expert banks",
                 "DMA directly from native FP32 output",
+                *(["One-row NPU graph; larger batches eager"] if expert_graphs else []),
             ],
             "#ac5327",
         )
@@ -139,7 +141,9 @@ def draw(output):
         [
             "No hidden-row or expert-output bounce through host DRAM",
             "One decode row: 8,256 bytes in; 16,384 bytes out per active worker",
-            "Only bounded routing metadata is read back for validation",
+            "Bounded routing metadata: scalar CPU validation"
+            if optimized
+            else "Only bounded routing metadata is read back for validation",
         ],
         "#2f55a2",
     )
@@ -173,7 +177,16 @@ def draw(output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
-    draw(parser.parse_args().output)
+    parser.add_argument("--optimized", action="store_true")
+    parser.add_argument("--expert-graphs", action="store_true")
+    parser.add_argument("--persistent-gpu-mappings", action="store_true")
+    args = parser.parse_args()
+    draw(
+        args.output,
+        optimized=args.optimized,
+        expert_graphs=args.expert_graphs,
+        persistent_gpu_mappings=args.persistent_gpu_mappings,
+    )
 
 
 if __name__ == "__main__":

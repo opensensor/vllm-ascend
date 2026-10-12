@@ -102,6 +102,48 @@ Streaming disconnects cancel between complete model chunks or decode steps;
 an in-flight expert invocation finishes before its slots can be reused. A new
 request resets model caches under the same serialized generation lock.
 
+## Reducing dispatch overhead
+
+The optional `direct_dma` specification selects three independent optimizations:
+
+```json
+{
+  "direct_dma": {
+    "cuda_pack_graphs": true,
+    "npu_expert_graphs": true,
+    "persistent_gpu_mappings": true
+  }
+}
+```
+
+Each flag defaults to `false`. CUDA packing graphs own one-row scratch per
+middle layer and pack both private input slots. Only active ranks receive
+commands. Ascend expert graphs capture the existing padded fixed-slot reducer
+for one-row decode; larger batches use the original eager path. External DMA,
+source events, metadata validation, and write flushes remain outside capture.
+Graph scratch is released after completed consumers and before its underlying
+slots or imported mappings are freed.
+
+Persistent GPU mappings use kernel UAPI version 5. Rebuild and load the matching
+module before launching this Python version. Each device fd retains at most
+two static DMA-BUF mappings, identified by exporter object and physical chip.
+The Python peer holds original GPU allocation leases until clean fd close.
+HBM lifetime descriptors and physical address queries remain per transfer;
+uncertain DMA retains all cached mappings and the descriptor.
+
+The coordinator checks and enables `SYNC_MEMOPS` on each imported CUDA alias
+before any payload use. Setting this attribute on the worker's original
+allocation did not enable it on the imported aliases on the tested host.
+The startup audit is `ipc-sync-memops.json`. This complements source completion
+and returned-write flushes; it does not replace either barrier. NVIDIA describes
+the required CUDA/RDMA ordering in its
+[GPUDirect RDMA guide](https://docs.nvidia.com/cuda/gpudirect-rdma/).
+
+Workers validate routing metadata with a bounded scalar CPU loop. Running
+receipts update every 1,024 completed calls, while final close and quarantine
+receipts are immediate. This avoids repeatedly serializing a full 4,096-record
+timing window in the critical path every 64 calls.
+
 ## Validation receipts
 
 `transport-parity.json`, `decode-repeat-gate.json`, `pipeline-parity.json`, and
