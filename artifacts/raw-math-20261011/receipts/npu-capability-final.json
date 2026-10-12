@@ -1,0 +1,53 @@
+{
+  "completed": true,
+  "backend": "npu",
+  "suite": "capability",
+  "seed": 6000310,
+  "started_utc": "2026-10-12T02:50:44.939308+00:00",
+  "torch": "2.13.0+cpu",
+  "python": "3.12.13",
+  "warmups": 3,
+  "samples": 15,
+  "reference_fp16_inputs": false,
+  "timing": "device events include stream idle/host enqueue gaps; wall includes enqueue/events/synchronization; initialization/layout conversion/upload/readback excluded for resident math",
+  "math": "CUDA FP32 pedantic; NPU HF32 disabled and precision validated independently; CUDA FP16/BF16 requests FP32 accumulation; INT8 dot products to FP16 with unit scales, no activation quantization; FP32 input rounding diagnostic is explicitly flagged",
+  "source_sha256": {
+    "benchmark.py": "1a3d78baf38169ee439f9b83fad37bb6409ec6aa143aec649c6a57ec33cab5fc",
+    "cases.py": "561f700dc3d3d6c0e916e30932e4b7326ed97df47e7c79a272c6f579abf9f06c",
+    "cuda_math.cu": "23c77ebcfcbccba275287e6294e56e28e2ada6fe33229b1752f6900fadbaea6f"
+  },
+  "cases": [
+    {
+      "name": "bf16_capability",
+      "op": "gemm",
+      "dtype": "bf16",
+      "m": 32,
+      "n": 32,
+      "k": 32,
+      "pinned": false,
+      "layout": "ND",
+      "status": "failed",
+      "weight_storage_format": 2,
+      "error": "RuntimeError: mm_out:../third_party/op-plugin/op_plugin/ops/opapi/MmKernelNpuOpApi.cpp:132 NPU function error: call aclnnMm failed, error code is 161002\n[ERROR] 2026-10-12-02:50:44 (PID:2059170, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\n[PID: 2059170] 2026-10-12-02:50:44.958.172 AclNN_Parameter_Error(EZ1001): Tensor matA not implemented for DT_BFLOAT16, should be in dtype support list [DT_FLOAT,DT_FLOAT16,].\nTraceBack (most recent call last):\n        Unsupported data types for Cube\n"
+    },
+    {
+      "name": "bf16_capability",
+      "op": "gemm",
+      "dtype": "bf16",
+      "m": 32,
+      "n": 32,
+      "k": 32,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "failed",
+      "error": "RuntimeError: The Inner error is reported as above. The process exits for this inner error, and the current working operator name is Identity.\nSince the operator is called asynchronously, the stacktrace may be inaccurate. If you want to get the accurate stacktrace, please set the environment variable ASCEND_LAUNCH_BLOCKING=1.\nNote: ASCEND_LAUNCH_BLOCKING=1 will force ops to run in synchronous mode, resulting in performance degradation. Please unset ASCEND_LAUNCH_BLOCKING in time after debugging.\n[ERROR] 2026-10-12-02:50:45 (PID:2059170, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\n[PID: 2059170] 2026-10-12-02:50:45.513.949 Unsupported_Operator(EZ3002): Optype [TransData] of Ops kernel [AIcoreEngine] is unsupported. Reason: [tbe-custom]:op type TransData is not found in this op store.[tbe-custom1]:op type TransData is not found in this op store.[tbe-custom2]:op type TransData is not found in this op store.[tbe-custom3]:op type TransData is not found in this op store.[tbe-custom4]:op type TransData is not found in this op store.[tbe-custom5]:op type TransData is not found in this op store.[tbe-custom6]:op type TransData is not found in this op store.[tbe-custom7]:op type TransData is not found in this op store.[tbe-custom8]:op type TransData is not found in this op store.[tbe-custom9]:op type TransData is not found in this op store.[tbe-custom10]:op type TransData is not found in this op store.[tbe-custom11]:op type TransData is not found in this op store.[tbe-custom12]:op type TransData is not found in this op store.[tbe-custom]:op type TransData is not found in this op store.[tbe-custom1]:op type TransData is not found in this op store.[tbe-custom2]:op type TransData is not found in this op store.[tbe-custom3]:op type TransData is not found in this op store.[tbe-custom4]:op type TransData is not found in this op store.[tbe-custom5]:op type TransData is not found in this op store.[tbe-custom6]:op type TransData is not found in this op store.[tbe-custom7]:op type TransData is not found in this op store.[tbe-custom8]:op type TransData is not found in this op store.[tbe-custom9]:op type TransData is not found in this op store.[tbe-custom10]:op type TransData is not found in this op store.[tbe-custom11]:op type TransData is not found in this op store.[tbe-custom12]:op type TransData is not found in this op store.[Dynamic shape check]: The format and dtype is not precisely equivalent to format and dtype in op information library..\n        Possible Cause: The operator type is unsupported in the operator information library due to specification mismatch.\n        Solution: Submit an issue to request for support at https://gitee.com/ascend, or remove this type of operators from your model.\nTraceBack (most recent call last):\n        Optype [TransData] of Ops kernel [DNN_VM_HOST_CPU_OP_STORE] is unsupported. Reason: Transdata op, groups should be greater than 1, but now is 1.\n        Optype [TransData] of Ops kernel [aicpu_ascend_kernel] is unsupported. Reason: Transdata op, groups should be greater than 1, but now is 1.\n        No supported Ops kernel and engine are found for [trans_TransData_0], optype [TransData].\n        Failed to select engine for [trans_TransData_0][TransData].[FUNC:operator()][FILE:engine_place.cc][LINE:152]\n        RunAllSubgraphs failed, graph=online.[FUNC:RunAllSubgraphs][FILE:engine_place.cc][LINE:125]\n        build graph failed, graph id:0, ret:4294967295[FUNC:BuildModelWithGraphId][FILE:ge_generator.cc][LINE:1629]\n        [Build][SingleOpModel]call ge interface generator.BuildSingleOpModel failed. ge result = 4294967295[FUNC:ReportCallError][FILE:log_inner.cpp][LINE:148]\n        [Build][Op]Fail to build op model[FUNC:ReportInnerError][FILE:log_inner.cpp][LINE:132]\n        build op model failed, result = 500002[FUNC:ReportInnerError][FILE:log_inner.cpp][LINE:132]\n"
+    }
+  ],
+  "torch_npu": "2.13.0.rc1",
+  "npu_visible_devices": "2,3",
+  "physical_device": 2,
+  "device_name": "Ascend310P3",
+  "allow_hf32": false,
+  "ended_utc": "2026-10-12T02:50:46.038345+00:00",
+  "passed_cases": 0
+}

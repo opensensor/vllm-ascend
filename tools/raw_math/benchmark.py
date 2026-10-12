@@ -1,0 +1,405 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Validated raw vendor arithmetic, with resident data and explicit timing modes.
+
+CUDA uses cuBLAS and standalone CUDA kernels through a CPU Python process.
+Ascend uses CANN through torch_npu, with ND and preformatted NZ GEMM weights.
+This measures these runnable stacks, rather than equal instruction sequences.
+"""
+
+import argparse
+import ctypes
+import gc
+import hashlib
+import json
+import os
+import platform
+import time
+from datetime import UTC, datetime
+from pathlib import Path
+
+from .cases import PRECISIONS, SEED, Case, copy_cases, matrix_cases, rates, summary, vector_cases
+
+OPERATIONS = ("gemm", "add", "exp", "softmax", "rmsnorm", "copy", "h2d", "d2h")
+DTYPES = ("fp16", "fp32", "bf16", "int8", "uint8")
+EPSILON = 1e-6
+
+
+def torch_dtype(name, torch):
+    return dict(fp16=torch.float16, fp32=torch.float32, bf16=torch.bfloat16, int8=torch.int8, uint8=torch.uint8)[name]
+
+
+def inputs(case, torch):
+    generator = torch.Generator().manual_seed(SEED)
+    dtype = torch_dtype(case.dtype, torch)
+    if case.op == "gemm":
+        shapes = ((case.m, case.k), (case.n, case.k))
+        return tuple(
+            torch.randint(-2, 3, shape, generator=generator, dtype=dtype)
+            if case.dtype == "int8"
+            else (torch.randn(shape, generator=generator) / 16).to(dtype)
+            for shape in shapes
+        )
+    if case.op in ("copy", "h2d", "d2h"):
+        return (torch.arange(256, dtype=torch.uint8).repeat((case.m + 255) // 256)[: case.m],)
+    shape = (case.m, case.n) if case.n else (case.m,)
+    return tuple(torch.randn(shape, generator=generator) / 4 for _ in range(2 if case.op == "add" else 1))
+
+
+def output_shape(case):
+    return (case.m, case.n) if case.op in ("gemm", "softmax", "rmsnorm") else (case.m,)
+
+
+def output(case, torch):
+    return torch.empty(output_shape(case), dtype=torch_dtype(case.output_dtype, torch))
+
+
+def changed_input(case, value):
+    return value.bitwise_xor(90) if case.dtype == "uint8" else -value
+
+
+def validate(case, source, actual, torch, *, reference_fp16_inputs=False):
+    if actual.shape != output_shape(case) or actual.dtype != torch_dtype(case.output_dtype, torch):
+        raise AssertionError("output shape or dtype differs from contract")
+    if case.op in ("copy", "h2d", "d2h"):
+        if not torch.equal(source[0], actual):
+            raise AssertionError("copy output differs from all source bytes")
+        return dict(passed=True, scope="all bytes", max_absolute_error=0.0)
+    if not torch.isfinite(actual).all():
+        raise AssertionError("nonfinite arithmetic output")
+    rows = sorted({0, case.m // 2, case.m - 1})
+    if case.op == "gemm":
+        columns = sorted({0, min(1, case.n - 1), case.n // 3, case.n // 2, case.n - 1})
+        expected = source[0][rows].double() @ source[1][columns].double().T
+        expected = expected.to(actual.dtype).double()
+        selected = actual[rows][:, columns].double()
+        scope = "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype"
+        strict_expected = expected
+        if reference_fp16_inputs:
+            if case.dtype != "fp32":
+                raise ValueError("the input rounding diagnostic requires FP32 GEMM")
+            expected = source[0][rows].half().double() @ source[1][columns].half().double().T
+            expected = expected.to(actual.dtype).double()
+            scope = "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output"
+    elif case.op in ("softmax", "rmsnorm"):
+        x = source[0][rows].double()
+        expected = x.softmax(-1) if case.op == "softmax" else x * (x.square().mean(-1, keepdim=True) + EPSILON).rsqrt()
+        selected = actual[rows].double()
+        scope = "all columns of sampled first/middle/last rows against CPU FP64"
+    else:
+        indices = torch.linspace(0, case.m - 1, min(1024, case.m), dtype=torch.float64).long()
+        x = source[0][indices].double()
+        expected = x + source[1][indices].double() if case.op == "add" else x.exp()
+        selected = actual[indices].double()
+        scope = "up to 1024 evenly spaced elements against CPU FP64"
+    atol, rtol = (
+        (0.01, 0.01)
+        if case.dtype == "bf16"
+        else (0.001, 0.003)
+        if case.dtype in ("fp16", "int8")
+        else (1e-5, 1e-4)
+        if case.op == "gemm"
+        else (2e-5, 2e-5)
+    )
+    torch.testing.assert_close(selected, expected, atol=atol, rtol=rtol)
+    difference = selected - expected
+    result = dict(
+        passed=True,
+        scope=scope,
+        max_absolute_error=float(difference.abs().max()),
+        relative_l2_error=float(difference.norm() / expected.norm().clamp_min(1e-12)),
+        atol=atol,
+        rtol=rtol,
+    )
+    if reference_fp16_inputs:
+        strict_difference = selected - strict_expected
+        result.update(
+            input_rounding_diagnostic=True,
+            strict_fp32_passed=bool(torch.allclose(selected, strict_expected, atol=atol, rtol=rtol)),
+            strict_fp32_max_absolute_error=float(strict_difference.abs().max()),
+            strict_fp32_relative_l2_error=float(strict_difference.norm() / strict_expected.norm().clamp_min(1e-12)),
+        )
+    return result
+
+
+class CudaCase:
+    def __init__(self, case, source, library, torch):
+        self.case, self.torch = case, torch
+        self.lib = ctypes.CDLL(str(library))
+        pointer = ctypes.c_void_p
+        self.lib.raw_math_create.argtypes = [ctypes.c_int] * 6 + [pointer] * 2
+        self.lib.raw_math_create.restype = pointer
+        self.lib.raw_math_error.argtypes, self.lib.raw_math_error.restype = [pointer], ctypes.c_char_p
+        self.lib.raw_math_run.argtypes = [pointer, ctypes.c_int, ctypes.POINTER(ctypes.c_float)]
+        self.lib.raw_math_read.argtypes = [pointer, pointer]
+        self.lib.raw_math_refresh.argtypes = [pointer, pointer]
+        for name in ("raw_math_run", "raw_math_read", "raw_math_refresh"):
+            getattr(self.lib, name).restype = ctypes.c_int
+        self.lib.raw_math_destroy.argtypes, self.lib.raw_math_destroy.restype = [pointer], None
+        self.handle = self.lib.raw_math_create(
+            OPERATIONS.index(case.op),
+            DTYPES.index(case.dtype),
+            case.m,
+            case.n,
+            case.k,
+            int(case.pinned),
+            source[0].data_ptr(),
+            source[1].data_ptr() if len(source) > 1 else None,
+        )
+        try:
+            self.check(0)
+        except BaseException:
+            self.close()
+            raise
+
+    def check(self, code):
+        error = self.lib.raw_math_error(self.handle)
+        if code or error:
+            raise RuntimeError(error.decode() if error else f"CUDA probe status {code}")
+
+    def refresh(self, value):
+        self.check(self.lib.raw_math_refresh(self.handle, value.data_ptr()))
+
+    def measure(self, repeats):
+        milliseconds = ctypes.c_float()
+        start = time.perf_counter()
+        code = self.lib.raw_math_run(self.handle, repeats, ctypes.byref(milliseconds))
+        elapsed = (time.perf_counter() - start) * 1000
+        self.check(code)
+        return milliseconds.value / repeats, elapsed / repeats
+
+    def read(self):
+        value = output(self.case, self.torch)
+        self.check(self.lib.raw_math_read(self.handle, value.data_ptr()))
+        return value
+
+    def close(self):
+        if self.handle:
+            self.lib.raw_math_destroy(self.handle)
+            self.handle = None
+
+
+class NpuCase:
+    def __init__(self, case, source, torch, npu, *, nz=False):
+        self.case, self.torch = case, torch
+        self.x = (
+            source[0].pin_memory()
+            if case.op == "h2d" and case.pinned
+            else source[0]
+            if case.op == "h2d"
+            else source[0].npu()
+        )
+        self.values = [self.x] + [value.npu() for value in source[1:]]
+        target = output(case, torch)
+        self.out = (
+            target.pin_memory() if case.op == "d2h" and case.pinned else target if case.op == "d2h" else target.npu()
+        )
+        if nz:
+            self.values[1] = npu.npu_format_cast(self.values[1], 29)
+            if npu.get_npu_format(self.values[1]) != 29:
+                raise RuntimeError("weight did not retain preformatted NZ storage")
+        self.weight_storage_format = npu.get_npu_format(self.values[1]) if case.op == "gemm" else None
+        if case.op == "gemm":
+            x, weight = self.values
+            if case.dtype == "int8":
+                scales = npu.npu_trans_quant_param(torch.ones(case.n, device=x.device), None)
+                self.operation = lambda: npu.npu_quant_matmul(x, weight.T, scales, output_dtype=torch.float16)
+            else:
+                self.operation = lambda: torch.mm(x, weight.T, out=self.out)
+        elif case.op == "add":
+            self.operation = lambda: torch.add(*self.values, out=self.out)
+        elif case.op == "exp":
+            self.operation = lambda: torch.exp(self.x, out=self.out)
+        elif case.op == "softmax":
+            self.operation = lambda: torch.softmax(self.x, -1, out=self.out)
+        elif case.op == "rmsnorm":
+            gamma = torch.ones(case.n, device=self.x.device)
+            self.operation = lambda: npu.npu_rms_norm(self.x, gamma, epsilon=EPSILON)[0]
+        else:
+            self.operation = lambda: self.out.copy_(self.x, non_blocking=case.pinned)
+        self.begin, self.end = (torch.npu.Event(enable_timing=True) for _ in range(2))
+        self.result = None
+        torch.npu.synchronize()
+
+    def refresh(self, value):
+        self.x.copy_(value)
+        self.torch.npu.synchronize()
+
+    def measure(self, repeats):
+        torch = self.torch
+        torch.npu.synchronize()
+        start = time.perf_counter()
+        self.begin.record()
+        for _ in range(repeats):
+            self.result = self.operation()
+        self.end.record()
+        self.end.synchronize()
+        elapsed = (time.perf_counter() - start) * 1000
+        return self.begin.elapsed_time(self.end) / repeats, elapsed / repeats
+
+    def read(self):
+        return self.result.cpu().clone()
+
+    def close(self):
+        self.result = self.operation = self.out = self.x = None
+        self.values = []
+
+
+def run_case(case, source, backend, torch, warmups, samples, *, reference_fp16_inputs=False):
+    for _ in range(warmups):
+        backend.measure(1)
+    initial = validate(case, source, backend.read(), torch, reference_fp16_inputs=reference_fp16_inputs)
+    changed = changed_input(case, source[0])
+    backend.refresh(changed)
+    backend.measure(1)
+    gate = validate(case, (changed, *source[1:]), backend.read(), torch, reference_fp16_inputs=reference_fp16_inputs)
+    record = dict(initial_validation=initial, changed_input_validation=gate, timings={})
+    for name, repeats in (("single", 1), ("queued", case.repeats)):
+        for _ in range(warmups):
+            backend.measure(repeats)
+        measured = [backend.measure(repeats) for _ in range(samples)]
+        device, wall = (summary([values[index] for values in measured]) for index in range(2))
+        record["timings"][name] = dict(
+            repeats_per_sample=repeats, device=device, wall=wall, rates=rates(case, device["median_ms"])
+        )
+    record["final_validation"] = validate(
+        case, (changed, *source[1:]), backend.read(), torch, reference_fp16_inputs=reference_fp16_inputs
+    )
+    return record
+
+
+def main():
+    """Guard device ownership, qualify each case, and preserve partial receipts."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--backend", choices=("cuda", "npu"), required=True)
+    parser.add_argument("--library", type=Path)
+    parser.add_argument("--suite", choices=("matrix", "vector", "copy", "capability"), required=True)
+    parser.add_argument("--precision", choices=PRECISIONS, nargs="+", default=["fp16", "fp32", "int8"])
+    parser.add_argument("--npu-device", type=int, choices=(0, 1), default=0)
+    parser.add_argument("--warmups", type=int, default=3)
+    parser.add_argument("--samples", type=int, default=15)
+    parser.add_argument("--reference-fp16-inputs", action="store_true", help="diagnose FP32 inputs rounded to FP16")
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    if args.output.exists() or args.warmups < 1 or args.samples < 3:
+        parser.error("fresh output, at least one warmup and three samples required")
+    if args.backend == "cuda" and (args.library is None or not args.library.is_file()):
+        parser.error("compiled CUDA library required")
+    if args.backend == "npu" and os.environ.get("ASCEND_RT_VISIBLE_DEVICES") != "2,3":
+        parser.error("this host experiment owns only physical NPU devices 2,3")
+    if args.reference_fp16_inputs and (args.backend != "npu" or args.suite != "matrix" or args.precision != ["fp32"]):
+        parser.error("input rounding diagnostic requires NPU matrix suite with only FP32 inputs")
+    import torch
+
+    torch.set_num_threads(1)
+    npu = None
+    if args.backend == "npu":
+        import torch_npu
+
+        npu = torch_npu
+        torch.npu.set_device(args.npu_device)
+        torch.npu.set_compile_mode(jit_compile=False)
+        torch.npu.matmul.allow_hf32 = False
+    matrix = (
+        matrix_cases(args.precision)
+        if args.suite == "matrix"
+        else vector_cases()
+        if args.suite == "vector"
+        else copy_cases()
+        if args.suite == "copy"
+        else [Case("bf16_capability", "gemm", "bf16", 32, 32, 32)]
+    )
+    report = dict(
+        completed=False,
+        backend=args.backend,
+        suite=args.suite,
+        seed=SEED,
+        started_utc=datetime.now(UTC).isoformat(),
+        torch=torch.__version__,
+        python=platform.python_version(),
+        warmups=args.warmups,
+        samples=args.samples,
+        reference_fp16_inputs=args.reference_fp16_inputs,
+        timing=(
+            "device events include stream idle/host enqueue gaps; wall includes enqueue/events/synchronization; "
+            "initialization/layout conversion/upload/readback excluded for resident math"
+        ),
+        math=(
+            "CUDA FP32 pedantic; NPU HF32 disabled and precision validated independently; "
+            "CUDA FP16/BF16 requests FP32 accumulation; INT8 dot products to FP16 with unit scales, "
+            "no activation quantization; FP32 input rounding diagnostic is explicitly flagged"
+        ),
+        source_sha256={
+            name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
+            for name in ("benchmark.py", "cases.py", "cuda_math.cu")
+        },
+        cases=[],
+    )
+    if npu:
+        report.update(
+            torch_npu=npu.__version__,
+            npu_visible_devices="2,3",
+            physical_device=2 + args.npu_device,
+            device_name=torch.npu.get_device_name(args.npu_device),
+            allow_hf32=torch.npu.matmul.allow_hf32,
+        )
+    else:
+        report.update(
+            library=str(args.library.resolve()),
+            library_sha256=hashlib.sha256(args.library.read_bytes()).hexdigest(),
+            implementation="cuBLAS GEMM; CUDA vector kernels; INT8 GEMM plus FP16 cast; CUDA memcpy",
+        )
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+
+    def save():
+        args.output.write_text(json.dumps(report, indent=2) + "\n")
+
+    save()
+    for case in matrix:
+        source = inputs(case, torch)
+        layouts = (False, True) if args.backend == "npu" and case.op == "gemm" else (False,)
+        for nz in layouts:
+            record = {**case.to_dict(), "layout": "NZ" if nz else "ND", "status": "pending"}
+            backend = None
+            try:
+                backend = (
+                    CudaCase(case, source, args.library, torch)
+                    if npu is None
+                    else NpuCase(case, source, torch, npu, nz=nz)
+                )
+                if npu:
+                    record["weight_storage_format"] = backend.weight_storage_format
+                record.update(
+                    run_case(
+                        case,
+                        source,
+                        backend,
+                        torch,
+                        args.warmups,
+                        args.samples,
+                        reference_fp16_inputs=args.reference_fp16_inputs,
+                    ),
+                    status="passed",
+                )
+            except (RuntimeError, ValueError, AssertionError) as error:
+                record.update(status="failed", error=f"{type(error).__name__}: {error}")
+            finally:
+                if backend:
+                    backend.close()
+                report["cases"].append(record)
+                save()
+            print(json.dumps({key: record[key] for key in ("name", "dtype", "layout", "status")}), flush=True)
+            gc.collect()
+            if npu:
+                torch.npu.empty_cache()
+        del source
+        gc.collect()
+    report.update(
+        completed=True,
+        ended_utc=datetime.now(UTC).isoformat(),
+        passed_cases=sum(row["status"] == "passed" for row in report["cases"]),
+    )
+    save()
+
+
+if __name__ == "__main__":
+    main()

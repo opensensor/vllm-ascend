@@ -1,0 +1,4159 @@
+{
+  "completed": true,
+  "backend": "npu",
+  "suite": "matrix",
+  "seed": 6000310,
+  "started_utc": "2026-10-12T02:52:47.387882+00:00",
+  "torch": "2.13.0+cpu",
+  "python": "3.12.13",
+  "warmups": 3,
+  "samples": 15,
+  "reference_fp16_inputs": false,
+  "timing": "device events include stream idle/host enqueue gaps; wall includes enqueue/events/synchronization; initialization/layout conversion/upload/readback excluded for resident math",
+  "math": "CUDA FP32 pedantic; NPU HF32 disabled and precision validated independently; CUDA FP16/BF16 requests FP32 accumulation; INT8 dot products to FP16 with unit scales, no activation quantization; FP32 input rounding diagnostic is explicitly flagged",
+  "source_sha256": {
+    "benchmark.py": "1a3d78baf38169ee439f9b83fad37bb6409ec6aa143aec649c6a57ec33cab5fc",
+    "cases.py": "561f700dc3d3d6c0e916e30932e4b7326ed97df47e7c79a272c6f579abf9f06c",
+    "cuda_math.cu": "23c77ebcfcbccba275287e6294e56e28e2ada6fe33229b1752f6900fadbaea6f"
+  },
+  "cases": [
+    {
+      "name": "narrow",
+      "op": "gemm",
+      "dtype": "fp16",
+      "m": 1,
+      "n": 128,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "passed",
+      "weight_storage_format": 2,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 0.0761450007557869,
+            "min_ms": 0.0519540011882782,
+            "max_ms": 0.10713600367307663,
+            "samples_ms": [
+              0.09434899687767029,
+              0.07596399635076523,
+              0.08179699629545212,
+              0.0716409981250763,
+              0.078125,
+              0.10713600367307663,
+              0.07413999736309052,
+              0.0751819983124733,
+              0.0761450007557869,
+              0.09919299930334091,
+              0.0755470022559166,
+              0.0519540011882782,
+              0.07921800017356873,
+              0.09791699796915054,
+              0.07575500011444092
+            ]
+          },
+          "wall": {
+            "median_ms": 0.15195900050457567,
+            "min_ms": 0.14598800044041127,
+            "max_ms": 0.20915799541398883,
+            "samples_ms": [
+              0.1665070012677461,
+              0.14770100096939132,
+              0.1524800027254969,
+              0.14598800044041127,
+              0.15195900050457567,
+              0.2037169979303144,
+              0.14801100041950122,
+              0.1463290027459152,
+              0.150266001583077,
+              0.19766599871218204,
+              0.14983500295784324,
+              0.1485620014136657,
+              0.15468399942619726,
+              0.20915799541398883,
+              0.15351200272561982
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.013770779297291029,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 32,
+          "device": {
+            "median_ms": 0.023000499233603477,
+            "min_ms": 0.021967781707644463,
+            "max_ms": 0.02396078035235405,
+            "samples_ms": [
+              0.023225905373692513,
+              0.02377440594136715,
+              0.023381343111395836,
+              0.022241218015551567,
+              0.023000499233603477,
+              0.02253987453877926,
+              0.023575061932206154,
+              0.023423686623573303,
+              0.023190937936306,
+              0.02270587533712387,
+              0.02396078035235405,
+              0.022915031760931015,
+              0.021967781707644463,
+              0.02259359322488308,
+              0.02246825024485588
+            ]
+          },
+          "wall": {
+            "median_ms": 0.025598687443562085,
+            "min_ms": 0.024873562551874784,
+            "max_ms": 0.02644184382916137,
+            "samples_ms": [
+              0.02585637503216276,
+              0.026331343860874767,
+              0.025971875174946035,
+              0.024873562551874784,
+              0.025598687443562085,
+              0.025538875206621015,
+              0.026302843707526335,
+              0.026065187512358534,
+              0.025800968842304428,
+              0.025220468842235277,
+              0.02644184382916137,
+              0.025322531428173534,
+              0.02531221866775013,
+              0.025536062366882106,
+              0.02544368749113346
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.04558927131755653,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "narrow",
+      "op": "gemm",
+      "dtype": "fp16",
+      "m": 1,
+      "n": 128,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 0.06953100115060806,
+            "min_ms": 0.06364600360393524,
+            "max_ms": 0.09432300180196762,
+            "samples_ms": [
+              0.06890600174665451,
+              0.06599000096321106,
+              0.06820300221443176,
+              0.07148399949073792,
+              0.06364600360393524,
+              0.06729099899530411,
+              0.0728909969329834,
+              0.06538999825716019,
+              0.09432300180196762,
+              0.07520800083875656,
+              0.06953100115060806,
+              0.07153599709272385,
+              0.07101599872112274,
+              0.0741410031914711,
+              0.06609400361776352
+            ]
+          },
+          "wall": {
+            "median_ms": 0.14815099711995572,
+            "min_ms": 0.14009600272402167,
+            "max_ms": 0.19056299788644537,
+            "samples_ms": [
+              0.17623500025365502,
+              0.14440499944612384,
+              0.14009600272402167,
+              0.15233000158332288,
+              0.14079800166655332,
+              0.15960300515871495,
+              0.14685899805044755,
+              0.14105800073593855,
+              0.19056299788644537,
+              0.14876299974275753,
+              0.15030599752208218,
+              0.14815099711995572,
+              0.1431420023436658,
+              0.15613700088579208,
+              0.14400399959413335
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.015080697568681994,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 32,
+          "device": {
+            "median_ms": 0.016429031267762184,
+            "min_ms": 0.014881187118589878,
+            "max_ms": 0.01780109293758869,
+            "samples_ms": [
+              0.01601562462747097,
+              0.014881187118589878,
+              0.01554118748754263,
+              0.015412594191730022,
+              0.016121406108140945,
+              0.014889312908053398,
+              0.016429031267762184,
+              0.016429031267762184,
+              0.016822906211018562,
+              0.016842437908053398,
+              0.015913093462586403,
+              0.01765706203877926,
+              0.016498219221830368,
+              0.01780109293758869,
+              0.016920562833547592
+            ]
+          },
+          "wall": {
+            "median_ms": 0.018869937548515736,
+            "min_ms": 0.017680500150163425,
+            "max_ms": 0.020355281321826624,
+            "samples_ms": [
+              0.018869937548515736,
+              0.017697093653623597,
+              0.018301687532584765,
+              0.018621968820298207,
+              0.0187159062079445,
+              0.017680500150163425,
+              0.019776687395278714,
+              0.018838937421605806,
+              0.019248781200076337,
+              0.01973975008695561,
+              0.018841468772734515,
+              0.0202234689368197,
+              0.018919093690783484,
+              0.020355281321826624,
+              0.02013862490457541
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.06382457875392598,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "vector",
+      "op": "gemm",
+      "dtype": "fp16",
+      "m": 1,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "passed",
+      "weight_storage_format": 2,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 0.7475000023841858,
+            "min_ms": 0.7365109920501709,
+            "max_ms": 0.856249988079071,
+            "samples_ms": [
+              0.7640359997749329,
+              0.7365109920501709,
+              0.7514839768409729,
+              0.7666919827461243,
+              0.7433069944381714,
+              0.7475000023841858,
+              0.7510939836502075,
+              0.7614060044288635,
+              0.7552090287208557,
+              0.7434369921684265,
+              0.7463020086288452,
+              0.7424219846725464,
+              0.7387499809265137,
+              0.856249988079071,
+              0.7444790005683899
+            ]
+          },
+          "wall": {
+            "median_ms": 0.8354490055353381,
+            "min_ms": 0.8181560042430647,
+            "max_ms": 0.9779489992070012,
+            "samples_ms": [
+              0.8523109936504625,
+              0.8181560042430647,
+              0.8295479929074645,
+              0.858753002830781,
+              0.8409090005443431,
+              0.8289660036098212,
+              0.8321819987031631,
+              0.8439349985565059,
+              0.8385449982597493,
+              0.8230149978771806,
+              0.8354490055353381,
+              0.821423003799282,
+              0.937091994273942,
+              0.9779489992070012,
+              0.8261019975179806
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.04488887209762754,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 32,
+          "device": {
+            "median_ms": 0.6871264576911926,
+            "min_ms": 0.6828840970993042,
+            "max_ms": 0.6930249333381653,
+            "samples_ms": [
+              0.688244640827179,
+              0.6857763528823853,
+              0.6871264576911926,
+              0.6869466304779053,
+              0.6860806941986084,
+              0.6885416507720947,
+              0.6862336993217468,
+              0.6828840970993042,
+              0.6830435991287231,
+              0.6847338676452637,
+              0.6881974339485168,
+              0.6930249333381653,
+              0.6895166039466858,
+              0.6907560229301453,
+              0.6896451711654663
+            ]
+          },
+          "wall": {
+            "median_ms": 0.6912609062510455,
+            "min_ms": 0.6859332811472996,
+            "max_ms": 0.6989286248426652,
+            "samples_ms": [
+              0.6917584375969454,
+              0.689356656266682,
+              0.6912609062510455,
+              0.6903444686940929,
+              0.6892811875331972,
+              0.6928304687789932,
+              0.6911895311532135,
+              0.6859332811472996,
+              0.6870832501135737,
+              0.6893256563671457,
+              0.6947184062937595,
+              0.6989286248426652,
+              0.6939068748579302,
+              0.6965713123463502,
+              0.6940546875284781
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.048832979176418184,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "vector",
+      "op": "gemm",
+      "dtype": "fp16",
+      "m": 1,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 0.2745319902896881,
+            "min_ms": 0.2357030063867569,
+            "max_ms": 0.28960999846458435,
+            "samples_ms": [
+              0.2753640115261078,
+              0.2738020122051239,
+              0.2785159945487976,
+              0.2357030063867569,
+              0.2758600115776062,
+              0.27398499846458435,
+              0.27132800221443176,
+              0.27184900641441345,
+              0.28960999846458435,
+              0.2808859944343567,
+              0.2742449939250946,
+              0.2824479937553406,
+              0.2745319902896881,
+              0.28697898983955383,
+              0.2711719870567322
+            ]
+          },
+          "wall": {
+            "median_ms": 0.3526310028973967,
+            "min_ms": 0.3467290007392876,
+            "max_ms": 0.3709349985001609,
+            "samples_ms": [
+              0.3489340015221387,
+              0.3497360012261197,
+              0.3526310028973967,
+              0.3541530022630468,
+              0.3503859988995828,
+              0.348011999449227,
+              0.3467290007392876,
+              0.3476409983704798,
+              0.3709349985001609,
+              0.3558970056474209,
+              0.34978600160684437,
+              0.3596640017349273,
+              0.3562179990694858,
+              0.36161800380796194,
+              0.35340199974598363
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.12222412391573428,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 32,
+          "device": {
+            "median_ms": 0.18763671815395355,
+            "min_ms": 0.18624268472194672,
+            "max_ms": 0.18895265460014343,
+            "samples_ms": [
+              0.18895265460014343,
+              0.18763671815395355,
+              0.1868579089641571,
+              0.1888199746608734,
+              0.18776121735572815,
+              0.18835121393203735,
+              0.1870320588350296,
+              0.1870279759168625,
+              0.18732096254825592,
+              0.18790853023529053,
+              0.1868448704481125,
+              0.1878214329481125,
+              0.18624268472194672,
+              0.18645510077476501,
+              0.18850424885749817
+            ]
+          },
+          "wall": {
+            "median_ms": 0.19065256265093922,
+            "min_ms": 0.18916443741545663,
+            "max_ms": 0.1918799375744129,
+            "samples_ms": [
+              0.1918799375744129,
+              0.19091996887254936,
+              0.18974490626533225,
+              0.1916548126246198,
+              0.190688593647792,
+              0.19182734376954613,
+              0.19033762509934604,
+              0.19028378119401168,
+              0.19034512479265686,
+              0.19065256265093922,
+              0.18968012500408804,
+              0.1916532498853485,
+              0.18916443741545663,
+              0.18935887487714353,
+              0.1918642813052429
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.17882657685618342,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "vector_large",
+      "op": "gemm",
+      "dtype": "fp16",
+      "m": 1,
+      "n": 8192,
+      "k": 8192,
+      "pinned": false,
+      "layout": "ND",
+      "status": "passed",
+      "weight_storage_format": 2,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 2.5284109115600586,
+            "min_ms": 2.487760066986084,
+            "max_ms": 2.569740056991577,
+            "samples_ms": [
+              2.569740056991577,
+              2.5284109115600586,
+              2.5440878868103027,
+              2.492422103881836,
+              2.49960994720459,
+              2.5048179626464844,
+              2.543281078338623,
+              2.5084640979766846,
+              2.535443067550659,
+              2.5284640789031982,
+              2.541563034057617,
+              2.5144529342651367,
+              2.487760066986084,
+              2.5309898853302,
+              2.488801956176758
+            ]
+          },
+          "wall": {
+            "median_ms": 2.606716996524483,
+            "min_ms": 2.5686660010251217,
+            "max_ms": 2.6671520026866347,
+            "samples_ms": [
+              2.6671520026866347,
+              2.606716996524483,
+              2.629692004120443,
+              2.5893139973049983,
+              2.5770220017875545,
+              2.59877200005576,
+              2.635030999954324,
+              2.6052549947053194,
+              2.6127189994440414,
+              2.6440190049470402,
+              2.62494199705543,
+              2.597129001514986,
+              2.5686660010251217,
+              2.6088719969266094,
+              2.5693669958855025
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.05308382723170029,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 32,
+          "device": {
+            "median_ms": 2.4444148540496826,
+            "min_ms": 2.4329867362976074,
+            "max_ms": 2.4572372436523438,
+            "samples_ms": [
+              2.442337989807129,
+              2.4372615814208984,
+              2.4366984367370605,
+              2.4460415840148926,
+              2.4492480754852295,
+              2.4567627906799316,
+              2.4329867362976074,
+              2.4572372436523438,
+              2.4389891624450684,
+              2.4485530853271484,
+              2.4444148540496826,
+              2.4449284076690674,
+              2.436448574066162,
+              2.4400439262390137,
+              2.4482152462005615
+            ]
+          },
+          "wall": {
+            "median_ms": 2.448584281182775,
+            "min_ms": 2.4420618749445566,
+            "max_ms": 2.464491718683348,
+            "samples_ms": [
+              2.448584281182775,
+              2.443195281102817,
+              2.4439949374936987,
+              2.453835218830136,
+              2.457609593648158,
+              2.464491718683348,
+              2.4420618749445566,
+              2.464445687337502,
+              2.447014124982161,
+              2.454605437378632,
+              2.4483714062171202,
+              2.4510595935680612,
+              2.442341468622544,
+              2.445084812507048,
+              2.454389718877792
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.054907917032839315,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "vector_large",
+      "op": "gemm",
+      "dtype": "fp16",
+      "m": 1,
+      "n": 8192,
+      "k": 8192,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 0.7702339887619019,
+            "min_ms": 0.7270830273628235,
+            "max_ms": 0.864766001701355,
+            "samples_ms": [
+              0.7748690247535706,
+              0.7565370202064514,
+              0.764922022819519,
+              0.7722659707069397,
+              0.7721610069274902,
+              0.7674480080604553,
+              0.7709109783172607,
+              0.7706769704818726,
+              0.7781509757041931,
+              0.7689849734306335,
+              0.7270830273628235,
+              0.7673180103302002,
+              0.7702339887619019,
+              0.864766001701355,
+              0.7674739956855774
+            ]
+          },
+          "wall": {
+            "median_ms": 0.8605269977124408,
+            "min_ms": 0.8431940004811622,
+            "max_ms": 0.9867570042842999,
+            "samples_ms": [
+              0.8869060038705356,
+              0.8568089979235083,
+              0.8547449979232624,
+              0.8620999942650087,
+              0.88593500549905,
+              0.8519999973941594,
+              0.8582919981563464,
+              0.8498669994878583,
+              0.8672190015204251,
+              0.8605269977124408,
+              0.8431940004811622,
+              0.8486430015182123,
+              0.8691129987710156,
+              0.9867570042842999,
+              0.8663370026624762
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.17425578455158253,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 32,
+          "device": {
+            "median_ms": 0.6881583333015442,
+            "min_ms": 0.6871874928474426,
+            "max_ms": 0.6914656758308411,
+            "samples_ms": [
+              0.6914656758308411,
+              0.6883723735809326,
+              0.6879467964172363,
+              0.6879354119300842,
+              0.6895491480827332,
+              0.6876847743988037,
+              0.6871874928474426,
+              0.6877465844154358,
+              0.6878719329833984,
+              0.6879305243492126,
+              0.6887679100036621,
+              0.6881583333015442,
+              0.6895760297775269,
+              0.68990558385849,
+              0.6913696527481079
+            ]
+          },
+          "wall": {
+            "median_ms": 0.6916773124885367,
+            "min_ms": 0.6905880936756148,
+            "max_ms": 0.6978866251756699,
+            "samples_ms": [
+              0.6978866251756699,
+              0.6916773124885367,
+              0.6915389374171355,
+              0.6917089685885003,
+              0.6938035623988981,
+              0.6909042811003019,
+              0.6905880936756148,
+              0.6911917187153449,
+              0.6911027812748216,
+              0.6909393750902382,
+              0.6917502812484599,
+              0.6916372499290446,
+              0.693966687322245,
+              0.6961790002151247,
+              0.6961085625789565
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.19503902155201702,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "batch8",
+      "op": "gemm",
+      "dtype": "fp16",
+      "m": 8,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "passed",
+      "weight_storage_format": 2,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 0.7681769728660583,
+            "min_ms": 0.7409639954566956,
+            "max_ms": 0.7808589935302734,
+            "samples_ms": [
+              0.7641929984092712,
+              0.778020977973938,
+              0.771926999092102,
+              0.7808589935302734,
+              0.7534109950065613,
+              0.7409639954566956,
+              0.7457290291786194,
+              0.7681769728660583,
+              0.757968008518219,
+              0.7715370059013367,
+              0.7631250023841858,
+              0.7673439979553223,
+              0.7765370011329651,
+              0.7711979746818542,
+              0.7736719846725464
+            ]
+          },
+          "wall": {
+            "median_ms": 0.847472001623828,
+            "min_ms": 0.8231750034610741,
+            "max_ms": 0.8923170025809668,
+            "samples_ms": [
+              0.8419520017923787,
+              0.8923170025809668,
+              0.8614879989181645,
+              0.862150001921691,
+              0.8364200039068237,
+              0.8381640000152402,
+              0.8231750034610741,
+              0.847472001623828,
+              0.8412590032094158,
+              0.85452500206884,
+              0.8456779978587292,
+              0.8492550041410141,
+              0.8694540010765195,
+              0.8499459945596755,
+              0.8463800040772185
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.3494448095709909,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 32,
+          "device": {
+            "median_ms": 0.7038061618804932,
+            "min_ms": 0.6991414427757263,
+            "max_ms": 0.7101522088050842,
+            "samples_ms": [
+              0.7101522088050842,
+              0.7090697884559631,
+              0.7009049654006958,
+              0.6991414427757263,
+              0.7059724926948547,
+              0.7030818462371826,
+              0.7027726173400879,
+              0.7098690271377563,
+              0.7070898413658142,
+              0.7094881534576416,
+              0.7038061618804932,
+              0.7007706761360168,
+              0.6998551487922668,
+              0.7033064961433411,
+              0.7074381709098816
+            ]
+          },
+          "wall": {
+            "median_ms": 0.7079191875618562,
+            "min_ms": 0.7020166874553979,
+            "max_ms": 0.714746187441051,
+            "samples_ms": [
+              0.714746187441051,
+              0.7124320939055906,
+              0.7044866877095046,
+              0.7020166874553979,
+              0.7094107500051905,
+              0.7065058437092375,
+              0.7065280624374282,
+              0.7146591563014226,
+              0.712070468807724,
+              0.713838531055444,
+              0.7079191875618562,
+              0.7040398750177701,
+              0.7034008749542409,
+              0.7061320000047999,
+              0.7109536875304912
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.38140537912139016,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "batch8",
+      "op": "gemm",
+      "dtype": "fp16",
+      "m": 8,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 0.27502599358558655,
+            "min_ms": 0.22283899784088135,
+            "max_ms": 0.2957029938697815,
+            "samples_ms": [
+              0.2715890109539032,
+              0.2673960030078888,
+              0.2738020122051239,
+              0.22283899784088135,
+              0.27598899602890015,
+              0.2778649926185608,
+              0.27591100335121155,
+              0.27140599489212036,
+              0.2957029938697815,
+              0.27739599347114563,
+              0.27252599596977234,
+              0.2755729854106903,
+              0.27502599358558655,
+              0.25143200159072876,
+              0.27856799960136414
+            ]
+          },
+          "wall": {
+            "median_ms": 0.3515379939926788,
+            "min_ms": 0.3443850000621751,
+            "max_ms": 0.3689320001285523,
+            "samples_ms": [
+              0.354914998752065,
+              0.353272000211291,
+              0.3547140004229732,
+              0.3443850000621751,
+              0.3503059997456148,
+              0.3484229964669794,
+              0.3557270028977655,
+              0.3445750044193119,
+              0.3689320001285523,
+              0.3496450008242391,
+              0.3463180037215352,
+              0.351297996530775,
+              0.3529210007400252,
+              0.3554560025804676,
+              0.3515379939926788
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.9760366738443012,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 32,
+          "device": {
+            "median_ms": 0.18995524942874908,
+            "min_ms": 0.18687252700328827,
+            "max_ms": 0.193255215883255,
+            "samples_ms": [
+              0.18687252700328827,
+              0.18775637447834015,
+              0.18789061903953552,
+              0.1871785670518875,
+              0.1883610039949417,
+              0.19048503041267395,
+              0.18995524942874908,
+              0.19126790761947632,
+              0.19010008871555328,
+              0.19167643785476685,
+              0.19100506603717804,
+              0.193255215883255,
+              0.19085693359375,
+              0.18946127593517303,
+              0.18689046800136566
+            ]
+          },
+          "wall": {
+            "median_ms": 0.19453496884125343,
+            "min_ms": 0.18989146860803885,
+            "max_ms": 0.19913809364879853,
+            "samples_ms": [
+              0.1903285312891967,
+              0.19048506237595575,
+              0.1906967499962775,
+              0.19059809392274474,
+              0.19253896880400134,
+              0.19836662499983504,
+              0.1954420001766266,
+              0.19564428134799527,
+              0.19511668756422296,
+              0.19650871877274767,
+              0.1965206563454558,
+              0.19913809364879853,
+              0.19453496884125343,
+              0.192217437643194,
+              0.18989146860803885
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 1.4131510279777149,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "batch128",
+      "op": "gemm",
+      "dtype": "fp16",
+      "m": 128,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "passed",
+      "weight_storage_format": 2,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 0.34739598631858826,
+            "min_ms": 0.33544299006462097,
+            "max_ms": 0.3529430031776428,
+            "samples_ms": [
+              0.3508070111274719,
+              0.3529430031776428,
+              0.34739598631858826,
+              0.3444010019302368,
+              0.3459109961986542,
+              0.33544299006462097,
+              0.3515619933605194,
+              0.3451560139656067,
+              0.3408080041408539,
+              0.3518489897251129,
+              0.3517960011959076,
+              0.35122400522232056,
+              0.3461199998855591,
+              0.3430210053920746,
+              0.3519270122051239
+            ]
+          },
+          "wall": {
+            "median_ms": 0.42704199586296454,
+            "min_ms": 0.4194879948045127,
+            "max_ms": 0.46605700481450185,
+            "samples_ms": [
+              0.43054900015704334,
+              0.4297779960324988,
+              0.4265409952495247,
+              0.42050000047311187,
+              0.42720200144685805,
+              0.42079999548150226,
+              0.43233200267422944,
+              0.423103992943652,
+              0.4201789997750893,
+              0.4358389996923506,
+              0.42704199586296454,
+              0.46605700481450185,
+              0.42266399395884946,
+              0.4194879948045127,
+              0.43254200136289
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 12.363318705879324,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 4,
+          "device": {
+            "median_ms": 0.3015429973602295,
+            "min_ms": 0.29738274216651917,
+            "max_ms": 0.3083137571811676,
+            "samples_ms": [
+              0.3008595108985901,
+              0.29738274216651917,
+              0.30091801285743713,
+              0.3083137571811676,
+              0.301536500453949,
+              0.30623048543930054,
+              0.2975260019302368,
+              0.30579423904418945,
+              0.30735674500465393,
+              0.30458974838256836,
+              0.3015429973602295,
+              0.30177098512649536,
+              0.3033140003681183,
+              0.3000650107860565,
+              0.2983267605304718
+            ]
+          },
+          "wall": {
+            "median_ms": 0.3237432501919102,
+            "min_ms": 0.31770424902788363,
+            "max_ms": 0.3288555017206818,
+            "samples_ms": [
+              0.32113575070980005,
+              0.31770424902788363,
+              0.3214462503819959,
+              0.3288555017206818,
+              0.32765574906079564,
+              0.3258772503613727,
+              0.32185450072574895,
+              0.3283595015091123,
+              0.32703949909773655,
+              0.326067500282079,
+              0.3237432501919102,
+              0.322541000059573,
+              0.32412124892289285,
+              0.3208027501386823,
+              0.32101549913932104
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 14.243299740332366,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "batch128",
+      "op": "gemm",
+      "dtype": "fp16",
+      "m": 128,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 0.29817700386047363,
+            "min_ms": 0.2755729854106903,
+            "max_ms": 0.3035680055618286,
+            "samples_ms": [
+              0.2980729937553406,
+              0.3005470037460327,
+              0.2994529902935028,
+              0.29817700386047363,
+              0.28835898637771606,
+              0.30031299591064453,
+              0.297995001077652,
+              0.29778599739074707,
+              0.29640600085258484,
+              0.2755729854106903,
+              0.2959890067577362,
+              0.3035680055618286,
+              0.3019790053367615,
+              0.3001309931278229,
+              0.3013019859790802
+            ]
+          },
+          "wall": {
+            "median_ms": 0.3716770006576553,
+            "min_ms": 0.3571289998944849,
+            "max_ms": 0.39907999598653987,
+            "samples_ms": [
+              0.37468299706233665,
+              0.3716770006576553,
+              0.37443199835252017,
+              0.37752799835288897,
+              0.3687409989652224,
+              0.3725179994944483,
+              0.368831999367103,
+              0.3709349985001609,
+              0.36947199987480417,
+              0.3571289998944849,
+              0.3695319974212907,
+              0.39907999598653987,
+              0.37523400533245876,
+              0.37034499837318435,
+              0.3738009982043877
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 14.404086299055274,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 4,
+          "device": {
+            "median_ms": 0.2528580129146576,
+            "min_ms": 0.2517252564430237,
+            "max_ms": 0.2549999952316284,
+            "samples_ms": [
+              0.25284498929977417,
+              0.25280600786209106,
+              0.2549999952316284,
+              0.25397148728370667,
+              0.2521679997444153,
+              0.2517252564430237,
+              0.2529297471046448,
+              0.252428263425827,
+              0.2531315088272095,
+              0.25436198711395264,
+              0.25195950269699097,
+              0.25264325737953186,
+              0.2531900107860565,
+              0.2528580129146576,
+              0.2528907358646393
+            ]
+          },
+          "wall": {
+            "median_ms": 0.2729167499637697,
+            "min_ms": 0.27156899886904284,
+            "max_ms": 0.2817207496264018,
+            "samples_ms": [
+              0.27217524984735064,
+              0.27205475089431275,
+              0.2747977505350718,
+              0.2744167486525839,
+              0.2817207496264018,
+              0.276573500741506,
+              0.27889275042980444,
+              0.27196974951948505,
+              0.27230524938204326,
+              0.2738032508204924,
+              0.27156899886904284,
+              0.2721875007409835,
+              0.2729167499637697,
+              0.2734400004555937,
+              0.2727487499214476
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 16.985687922215856,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "batch512",
+      "op": "gemm",
+      "dtype": "fp16",
+      "m": 512,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "passed",
+      "weight_storage_format": 2,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 0.6383600234985352,
+            "min_ms": 0.6177600026130676,
+            "max_ms": 0.6746349930763245,
+            "samples_ms": [
+              0.6177600026130676,
+              0.6364589929580688,
+              0.6461979746818542,
+              0.6383600234985352,
+              0.6567180156707764,
+              0.6338279843330383,
+              0.6265890002250671,
+              0.6422659754753113,
+              0.6746349930763245,
+              0.6330209970474243,
+              0.6261199712753296,
+              0.656952977180481,
+              0.6535159945487976,
+              0.662551999092102,
+              0.6307809948921204
+            ]
+          },
+          "wall": {
+            "median_ms": 0.728505001461599,
+            "min_ms": 0.6976369986659847,
+            "max_ms": 0.7555769989266992,
+            "samples_ms": [
+              0.7022560021141544,
+              0.7166330033214763,
+              0.7286760010174476,
+              0.7287160042324103,
+              0.7555769989266992,
+              0.708637002389878,
+              0.6987489978200756,
+              0.7175450009526685,
+              0.7492449949495494,
+              0.7243479994940571,
+              0.6976369986659847,
+              0.7318920033867471,
+              0.728505001461599,
+              0.7373620028374717,
+              0.7383740012301132
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 26.912507913396023,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 4,
+          "device": {
+            "median_ms": 0.6011457443237305,
+            "min_ms": 0.5906379818916321,
+            "max_ms": 0.6087239980697632,
+            "samples_ms": [
+              0.5947329998016357,
+              0.5978387594223022,
+              0.5936132669448853,
+              0.5951694846153259,
+              0.6087239980697632,
+              0.5948699712753296,
+              0.6011457443237305,
+              0.6043164730072021,
+              0.5982032418251038,
+              0.6053712368011475,
+              0.6025130152702332,
+              0.6015887260437012,
+              0.6027734875679016,
+              0.5906379818916321,
+              0.60198575258255
+            ]
+          },
+          "wall": {
+            "median_ms": 0.6233804997464176,
+            "min_ms": 0.6131412501417799,
+            "max_ms": 0.6472107506851899,
+            "samples_ms": [
+              0.6148820011731004,
+              0.6233027506823419,
+              0.6131412501417799,
+              0.6189394989633001,
+              0.6472107506851899,
+              0.633231749816332,
+              0.624540249191341,
+              0.6315160007943632,
+              0.6224562494026031,
+              0.6330037485895446,
+              0.6237237503228243,
+              0.6225990000530146,
+              0.6233804997464176,
+              0.6189972500578733,
+              0.6326832499325974
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 28.578542468643438,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "batch512",
+      "op": "gemm",
+      "dtype": "fp16",
+      "m": 512,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 0.7218490242958069,
+            "min_ms": 0.7032549977302551,
+            "max_ms": 0.7317709922790527,
+            "samples_ms": [
+              0.7218490242958069,
+              0.7032549977302551,
+              0.7081509828567505,
+              0.7106249928474426,
+              0.7274479866027832,
+              0.7220579981803894,
+              0.7317709922790527,
+              0.7183330059051514,
+              0.7258599996566772,
+              0.7248179912567139,
+              0.715624988079071,
+              0.7254170179367065,
+              0.7245569825172424,
+              0.7072129845619202,
+              0.7196620106697083
+            ]
+          },
+          "wall": {
+            "median_ms": 0.7987290009623393,
+            "min_ms": 0.7878879987401888,
+            "max_ms": 0.8296280066133477,
+            "samples_ms": [
+              0.7974960026331246,
+              0.7878879987401888,
+              0.7967759956954978,
+              0.7905630045570433,
+              0.800572001026012,
+              0.7988799989107065,
+              0.8091189956758171,
+              0.8034179991227575,
+              0.803777998953592,
+              0.8296280066133477,
+              0.7942309966892935,
+              0.8038489977479912,
+              0.7987290009623393,
+              0.7892209978308529,
+              0.7962539966683835
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 23.79980938640135,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 4,
+          "device": {
+            "median_ms": 0.671875,
+            "min_ms": 0.6663540005683899,
+            "max_ms": 0.675358235836029,
+            "samples_ms": [
+              0.6739192605018616,
+              0.6730272769927979,
+              0.673821747303009,
+              0.675358235836029,
+              0.6689777374267578,
+              0.6717252731323242,
+              0.6676105260848999,
+              0.6698960065841675,
+              0.671966016292572,
+              0.6669009923934937,
+              0.671875,
+              0.6750584840774536,
+              0.6663540005683899,
+              0.6732094883918762,
+              0.667213499546051
+            ]
+          },
+          "wall": {
+            "median_ms": 0.6922990014572861,
+            "min_ms": 0.6865257491881493,
+            "max_ms": 0.695660499332007,
+            "samples_ms": [
+              0.6936417503311532,
+              0.6930429990461562,
+              0.6942277505004313,
+              0.6953449992579408,
+              0.6892029996379279,
+              0.6910967495059595,
+              0.6867887495900504,
+              0.6892632500239415,
+              0.6922990014572861,
+              0.6869087501399918,
+              0.6927199992787791,
+              0.6954000000405358,
+              0.6865257491881493,
+              0.695660499332007,
+              0.6920964988239575
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 25.570037855255816,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "batch2048",
+      "op": "gemm",
+      "dtype": "fp16",
+      "m": 2048,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "passed",
+      "weight_storage_format": 2,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 2.650391101837158,
+            "min_ms": 2.52679705619812,
+            "max_ms": 2.7269270420074463,
+            "samples_ms": [
+              2.6262760162353516,
+              2.654036045074463,
+              2.6720058917999268,
+              2.650391101837158,
+              2.7269270420074463,
+              2.5724480152130127,
+              2.6615889072418213,
+              2.5555989742279053,
+              2.609452962875366,
+              2.52679705619812,
+              2.6218230724334717,
+              2.5557808876037598,
+              2.686431884765625,
+              2.669011116027832,
+              2.651276111602783
+            ]
+          },
+          "wall": {
+            "median_ms": 2.7303829992888495,
+            "min_ms": 2.6134409999940544,
+            "max_ms": 2.8449210003600456,
+            "samples_ms": [
+              2.7190009932382964,
+              2.732045999437105,
+              2.749108003627043,
+              2.7303829992888495,
+              2.8136609980720095,
+              2.656431999639608,
+              2.7612720004981384,
+              2.645230997586623,
+              2.6930120002361946,
+              2.6134409999940544,
+              2.7052250006818213,
+              2.6386879981146194,
+              2.8449210003600456,
+              2.839830005541444,
+              2.74984999850858
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 25.928051406589038,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 4,
+          "device": {
+            "median_ms": 2.5813281536102295,
+            "min_ms": 2.543287754058838,
+            "max_ms": 2.6227667331695557,
+            "samples_ms": [
+              2.6227667331695557,
+              2.577467441558838,
+              2.6174025535583496,
+              2.597708225250244,
+              2.543287754058838,
+              2.599290609359741,
+              2.600846290588379,
+              2.564310073852539,
+              2.594954252243042,
+              2.547513008117676,
+              2.5765299797058105,
+              2.59869122505188,
+              2.5813281536102295,
+              2.567636728286743,
+              2.571028470993042
+            ]
+          },
+          "wall": {
+            "median_ms": 2.6095230005012127,
+            "min_ms": 2.570305750850821,
+            "max_ms": 2.661599501152523,
+            "samples_ms": [
+              2.649428748554783,
+              2.598193999801879,
+              2.661599501152523,
+              2.634505499372608,
+              2.571375249317498,
+              2.633516000059899,
+              2.628070749778999,
+              2.5844952506304253,
+              2.617034750073799,
+              2.570305750850821,
+              2.6053074998344528,
+              2.620871749968501,
+              2.6095230005012127,
+              2.5899305001075845,
+              2.592312499473337
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 26.62175153511163,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "batch2048",
+      "op": "gemm",
+      "dtype": "fp16",
+      "m": 2048,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 1.4937759637832642,
+            "min_ms": 1.460468053817749,
+            "max_ms": 1.5745049715042114,
+            "samples_ms": [
+              1.4763020277023315,
+              1.460468053817749,
+              1.5052859783172607,
+              1.4937759637832642,
+              1.492082953453064,
+              1.5291149616241455,
+              1.4852080345153809,
+              1.538437008857727,
+              1.484349012374878,
+              1.498594045639038,
+              1.4753650426864624,
+              1.4888030290603638,
+              1.5745049715042114,
+              1.4997919797897339,
+              1.5187760591506958
+            ]
+          },
+          "wall": {
+            "median_ms": 1.5777110020280816,
+            "min_ms": 1.555738999741152,
+            "max_ms": 1.6569509971304797,
+            "samples_ms": [
+              1.5772599945194088,
+              1.555738999741152,
+              1.5864870001678355,
+              1.5777110020280816,
+              1.5711180021753535,
+              1.6105030008475296,
+              1.5676510010962375,
+              1.6171750030480325,
+              1.5918680001050234,
+              1.6051529964897782,
+              1.561599005071912,
+              1.5614299991284497,
+              1.6569509971304797,
+              1.5757270011818036,
+              1.5952339963405393
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 46.00387099679607,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 4,
+          "device": {
+            "median_ms": 1.4761847257614136,
+            "min_ms": 1.4541209936141968,
+            "max_ms": 1.5125324726104736,
+            "samples_ms": [
+              1.5125324726104736,
+              1.4884963035583496,
+              1.4979687929153442,
+              1.5110547542572021,
+              1.4704817533493042,
+              1.4730600118637085,
+              1.5033202171325684,
+              1.4685872793197632,
+              1.4541209936141968,
+              1.454420804977417,
+              1.4887239933013916,
+              1.4583334922790527,
+              1.4553124904632568,
+              1.4852800369262695,
+              1.4761847257614136
+            ]
+          },
+          "wall": {
+            "median_ms": 1.5099539996299427,
+            "min_ms": 1.473412001359975,
+            "max_ms": 1.5639192497474141,
+            "samples_ms": [
+              1.5639192497474141,
+              1.5366224997706013,
+              1.557607500217273,
+              1.5531412500422448,
+              1.5075094997882843,
+              1.5190640006039757,
+              1.532825250251335,
+              1.4905924999766285,
+              1.473412001359975,
+              1.4811092496529454,
+              1.5137137488636654,
+              1.4831682510703104,
+              1.4787472500756849,
+              1.5099539996299427,
+              1.500496249718708
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 46.55208493676468,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "square4096",
+      "op": "gemm",
+      "dtype": "fp16",
+      "m": 4096,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "passed",
+      "weight_storage_format": 2,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 4.504843235015869,
+            "min_ms": 4.392213821411133,
+            "max_ms": 4.542786121368408,
+            "samples_ms": [
+              4.542786121368408,
+              4.504843235015869,
+              4.509791851043701,
+              4.466744899749756,
+              4.532812118530273,
+              4.392213821411133,
+              4.487657070159912,
+              4.523254871368408,
+              4.536900997161865,
+              4.513984203338623,
+              4.502500057220459,
+              4.4070048332214355,
+              4.507629871368408,
+              4.423334121704102,
+              4.471718788146973
+            ]
+          },
+          "wall": {
+            "median_ms": 4.589067997585516,
+            "min_ms": 4.4854510051663965,
+            "max_ms": 4.635946999769658,
+            "samples_ms": [
+              4.635946999769658,
+              4.582555004162714,
+              4.589588999806438,
+              4.558890999760479,
+              4.617591999704018,
+              4.4854510051663965,
+              4.584099006024189,
+              4.600719999871217,
+              4.615047000697814,
+              4.620147003151942,
+              4.589067997585516,
+              4.49531900085276,
+              4.617071004759055,
+              4.499406997638289,
+              4.563097994832788
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 30.50915343816972,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 4.476745128631592,
+            "min_ms": 4.372057914733887,
+            "max_ms": 4.601537227630615,
+            "samples_ms": [
+              4.474584102630615,
+              4.460391044616699,
+              4.372057914733887,
+              4.495728969573975,
+              4.6009368896484375,
+              4.531276226043701,
+              4.442708969116211,
+              4.46750020980835,
+              4.442292213439941,
+              4.489296913146973,
+              4.444400787353516,
+              4.565989971160889,
+              4.476745128631592,
+              4.601537227630615,
+              4.596927165985107
+            ]
+          },
+          "wall": {
+            "median_ms": 4.582615998515394,
+            "min_ms": 4.4565150019479915,
+            "max_ms": 4.773749002197292,
+            "samples_ms": [
+              4.558189000817947,
+              4.537260007055011,
+              4.4565150019479915,
+              4.582615998515394,
+              4.6975439981906675,
+              4.628602000593673,
+              4.5221499967738055,
+              4.553810002107639,
+              4.528502002358437,
+              4.58439900103258,
+              4.5673970016650856,
+              4.771223997522611,
+              4.672997005400248,
+              4.773749002197292,
+              4.748199993628077
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 30.700642882926644,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "square4096",
+      "op": "gemm",
+      "dtype": "fp16",
+      "m": 4096,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 2.911875009536743,
+            "min_ms": 2.832056999206543,
+            "max_ms": 3.1145570278167725,
+            "samples_ms": [
+              3.01216197013855,
+              2.9918229579925537,
+              3.1145570278167725,
+              2.945729970932007,
+              2.9502079486846924,
+              2.989375114440918,
+              2.9580469131469727,
+              2.9018750190734863,
+              2.911875009536743,
+              2.8777871131896973,
+              2.8871090412139893,
+              2.8650259971618652,
+              2.8720569610595703,
+              2.832056999206543,
+              2.875598907470703
+            ]
+          },
+          "wall": {
+            "median_ms": 2.9891649974160828,
+            "min_ms": 2.923770996858366,
+            "max_ms": 3.193323005689308,
+            "samples_ms": [
+              3.0947050036047585,
+              3.0697280017193407,
+              3.193323005689308,
+              3.0237210012273863,
+              3.029251005500555,
+              3.0704189994139597,
+              3.042044998437632,
+              2.9801380005665123,
+              2.9891649974160828,
+              2.9528360028052703,
+              2.9633060039486736,
+              2.938026998890564,
+              2.946243002952542,
+              2.923770996858366,
+              2.9518040028051473
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 47.199468734705576,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 2.805285930633545,
+            "min_ms": 2.7325780391693115,
+            "max_ms": 2.872291088104248,
+            "samples_ms": [
+              2.872291088104248,
+              2.820858955383301,
+              2.7972140312194824,
+              2.8650519847869873,
+              2.795912027359009,
+              2.7983338832855225,
+              2.8294789791107178,
+              2.776249885559082,
+              2.846224069595337,
+              2.7325780391693115,
+              2.796588897705078,
+              2.806900978088379,
+              2.7579429149627686,
+              2.805285930633545,
+              2.8061718940734863
+            ]
+          },
+          "wall": {
+            "median_ms": 2.8822910026065074,
+            "min_ms": 2.824472001520917,
+            "max_ms": 2.945070998976007,
+            "samples_ms": [
+              2.945070998976007,
+              2.900006002164446,
+              2.8828930007875897,
+              2.9413140000542626,
+              2.8731040001730435,
+              2.879085994209163,
+              2.9043739996268414,
+              2.8509920011856593,
+              2.923560001363512,
+              2.824472001520917,
+              2.873304001695942,
+              2.885939000407234,
+              2.8342899968265556,
+              2.877972998248879,
+              2.8822910026065074
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 48.99285023718093,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "square8192",
+      "op": "gemm",
+      "dtype": "fp16",
+      "m": 8192,
+      "n": 8192,
+      "k": 8192,
+      "pinned": false,
+      "layout": "ND",
+      "status": "passed",
+      "weight_storage_format": 2,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 41.001251220703125,
+            "min_ms": 40.69028854370117,
+            "max_ms": 41.26559829711914,
+            "samples_ms": [
+              41.17770767211914,
+              40.76484298706055,
+              41.001251220703125,
+              41.15187454223633,
+              40.840858459472656,
+              41.26559829711914,
+              40.69028854370117,
+              41.14921951293945,
+              41.20497512817383,
+              40.93185043334961,
+              40.721744537353516,
+              41.036354064941406,
+              40.91518020629883,
+              41.05057144165039,
+              40.87325668334961
+            ]
+          },
+          "wall": {
+            "median_ms": 41.181922002579086,
+            "min_ms": 40.85335599665996,
+            "max_ms": 41.37389599782182,
+            "samples_ms": [
+              41.34892900037812,
+              40.96206199756125,
+              41.181922002579086,
+              41.26737300248351,
+              40.96023999591125,
+              41.3677140022628,
+              40.85335599665996,
+              41.37389599782182,
+              41.36738299712306,
+              41.032246001122985,
+              40.885467002226505,
+              41.29394399933517,
+              41.14798600494396,
+              41.349580002133735,
+              41.078104004554916
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 26.81653839921875,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 40.83335876464844,
+            "min_ms": 40.559844970703125,
+            "max_ms": 41.29460906982422,
+            "samples_ms": [
+              41.29460906982422,
+              40.667579650878906,
+              40.559844970703125,
+              40.83335876464844,
+              40.79294204711914,
+              40.79557418823242,
+              40.76755142211914,
+              41.02815246582031,
+              40.918357849121094,
+              40.88140869140625,
+              40.86174392700195,
+              41.16598892211914,
+              40.7034912109375,
+              40.70286560058594,
+              41.05229187011719
+            ]
+          },
+          "wall": {
+            "median_ms": 40.99168900575023,
+            "min_ms": 40.68758000357775,
+            "max_ms": 41.4522449937067,
+            "samples_ms": [
+              41.4522449937067,
+              40.81392200168921,
+              40.68758000357775,
+              40.936915000202134,
+              40.90770900074858,
+              40.95743299694732,
+              40.99168900575023,
+              41.232798001146875,
+              41.11790999741061,
+              41.08810300385812,
+              41.03075299644843,
+              41.283765000116546,
+              40.8182190003572,
+              40.894092999224085,
+              41.25222499715164
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 26.926798603888162,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "square8192",
+      "op": "gemm",
+      "dtype": "fp16",
+      "m": 8192,
+      "n": 8192,
+      "k": 8192,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 40.233673095703125,
+            "min_ms": 39.93893051147461,
+            "max_ms": 40.53593826293945,
+            "samples_ms": [
+              40.369972229003906,
+              40.10502624511719,
+              40.20914077758789,
+              40.135990142822266,
+              39.98622512817383,
+              40.243465423583984,
+              40.21940231323242,
+              40.53593826293945,
+              40.36117172241211,
+              39.93893051147461,
+              40.24140548706055,
+              40.240753173828125,
+              40.233673095703125,
+              39.94927215576172,
+              40.437110900878906
+            ]
+          },
+          "wall": {
+            "median_ms": 40.373042997089215,
+            "min_ms": 40.05646099540172,
+            "max_ms": 40.7843050052179,
+            "samples_ms": [
+              40.49523499998031,
+              40.27994600619422,
+              40.32318800454959,
+              40.29966300004162,
+              40.13668300467543,
+              40.34384700207738,
+              40.41638399939984,
+              40.7843050052179,
+              40.52307800156996,
+              40.09406199475052,
+              40.419520999421366,
+              40.3906459978316,
+              40.373042997089215,
+              40.05646099540172,
+              40.599722997285426
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 27.328144391903052,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 40.14906311035156,
+            "min_ms": 39.799896240234375,
+            "max_ms": 40.5993766784668,
+            "samples_ms": [
+              40.27375030517578,
+              40.14372253417969,
+              40.28080749511719,
+              40.10700607299805,
+              40.5993766784668,
+              40.23622512817383,
+              39.99028778076172,
+              40.21442794799805,
+              40.22481918334961,
+              39.903724670410156,
+              40.20494842529297,
+              39.83283996582031,
+              40.024166107177734,
+              40.14906311035156,
+              39.799896240234375
+            ]
+          },
+          "wall": {
+            "median_ms": 40.37442499975441,
+            "min_ms": 39.922896001371555,
+            "max_ms": 40.88133999903221,
+            "samples_ms": [
+              40.54656300286297,
+              40.376659999310505,
+              40.538136003306136,
+              40.37442499975441,
+              40.88133999903221,
+              40.45226299786009,
+              40.23195400077384,
+              40.44453900132794,
+              40.38723999838112,
+              40.03863700199872,
+              40.29702799743973,
+              39.922896001371555,
+              40.11979099595919,
+              40.271198995469604,
+              39.94734300067648
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 27.385735621126233,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "narrow",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 1,
+      "n": 128,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "failed",
+      "weight_storage_format": 2,
+      "error": "AssertionError: Tensor-likes are not close!\n\nMismatched elements: 3 / 5 (60.0%)\nGreatest absolute difference: 0.00012933462858200073 at index (0, 4) (up to 1e-05 allowed)\nGreatest relative difference: 0.0053901060116536845 at index (0, 0) (up to 0.0001 allowed)"
+    },
+    {
+      "name": "narrow",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 1,
+      "n": 128,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "failed",
+      "weight_storage_format": 29,
+      "error": "AssertionError: Tensor-likes are not close!\n\nMismatched elements: 3 / 5 (60.0%)\nGreatest absolute difference: 0.00012933462858200073 at index (0, 4) (up to 1e-05 allowed)\nGreatest relative difference: 0.0053901060116536845 at index (0, 0) (up to 0.0001 allowed)"
+    },
+    {
+      "name": "vector",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 1,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "failed",
+      "weight_storage_format": 2,
+      "error": "AssertionError: Tensor-likes are not close!\n\nMismatched elements: 4 / 5 (80.0%)\nGreatest absolute difference: 0.00010076165199279785 at index (0, 3) (up to 1e-05 allowed)\nGreatest relative difference: 0.005386542894144742 at index (0, 0) (up to 0.0001 allowed)"
+    },
+    {
+      "name": "vector",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 1,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "failed",
+      "weight_storage_format": 29,
+      "error": "AssertionError: Tensor-likes are not close!\n\nMismatched elements: 4 / 5 (80.0%)\nGreatest absolute difference: 0.00010076165199279785 at index (0, 3) (up to 1e-05 allowed)\nGreatest relative difference: 0.005386542894144742 at index (0, 0) (up to 0.0001 allowed)"
+    },
+    {
+      "name": "vector_large",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 1,
+      "n": 8192,
+      "k": 8192,
+      "pinned": false,
+      "layout": "ND",
+      "status": "failed",
+      "weight_storage_format": 2,
+      "error": "AssertionError: Tensor-likes are not close!\n\nMismatched elements: 2 / 5 (40.0%)\nGreatest absolute difference: 9.560585021972656e-05 at index (0, 4) (up to 1e-05 allowed)\nGreatest relative difference: 0.0009365652583345811 at index (0, 0) (up to 0.0001 allowed)"
+    },
+    {
+      "name": "vector_large",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 1,
+      "n": 8192,
+      "k": 8192,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "failed",
+      "weight_storage_format": 29,
+      "error": "AssertionError: Tensor-likes are not close!\n\nMismatched elements: 2 / 5 (40.0%)\nGreatest absolute difference: 9.560585021972656e-05 at index (0, 4) (up to 1e-05 allowed)\nGreatest relative difference: 0.0009365652583345811 at index (0, 0) (up to 0.0001 allowed)"
+    },
+    {
+      "name": "batch8",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 8,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "failed",
+      "weight_storage_format": 2,
+      "error": "AssertionError: Tensor-likes are not close!\n\nMismatched elements: 11 / 15 (73.3%)\nGreatest absolute difference: 0.00019147992134094238 at index (2, 0) (up to 1e-05 allowed)\nGreatest relative difference: 0.00394930634424864 at index (0, 0) (up to 0.0001 allowed)"
+    },
+    {
+      "name": "batch8",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 8,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "failed",
+      "weight_storage_format": 29,
+      "error": "AssertionError: Tensor-likes are not close!\n\nMismatched elements: 11 / 15 (73.3%)\nGreatest absolute difference: 0.00019147992134094238 at index (2, 0) (up to 1e-05 allowed)\nGreatest relative difference: 0.00394930634424864 at index (0, 0) (up to 0.0001 allowed)"
+    },
+    {
+      "name": "batch128",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 128,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "failed",
+      "weight_storage_format": 2,
+      "error": "AssertionError: Tensor-likes are not close!\n\nMismatched elements: 10 / 15 (66.7%)\nGreatest absolute difference: 0.00012931227684020996 at index (0, 0) (up to 1e-05 allowed)\nGreatest relative difference: 0.001282048156878492 at index (0, 0) (up to 0.0001 allowed)"
+    },
+    {
+      "name": "batch128",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 128,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "failed",
+      "weight_storage_format": 29,
+      "error": "AssertionError: Tensor-likes are not close!\n\nMismatched elements: 10 / 15 (66.7%)\nGreatest absolute difference: 0.00012931227684020996 at index (0, 0) (up to 1e-05 allowed)\nGreatest relative difference: 0.001282048156878492 at index (0, 0) (up to 0.0001 allowed)"
+    },
+    {
+      "name": "batch512",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 512,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "failed",
+      "weight_storage_format": 2,
+      "error": "AssertionError: Tensor-likes are not close!\n\nMismatched elements: 11 / 15 (73.3%)\nGreatest absolute difference: 0.0001074373722076416 at index (0, 0) (up to 1e-05 allowed)\nGreatest relative difference: 0.008883266159490012 at index (0, 1) (up to 0.0001 allowed)"
+    },
+    {
+      "name": "batch512",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 512,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "failed",
+      "weight_storage_format": 29,
+      "error": "AssertionError: Tensor-likes are not close!\n\nMismatched elements: 11 / 15 (73.3%)\nGreatest absolute difference: 0.0001074373722076416 at index (0, 0) (up to 1e-05 allowed)\nGreatest relative difference: 0.008883266159490012 at index (0, 1) (up to 0.0001 allowed)"
+    },
+    {
+      "name": "batch2048",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 2048,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "failed",
+      "weight_storage_format": 2,
+      "error": "AssertionError: Tensor-likes are not close!\n\nMismatched elements: 13 / 15 (86.7%)\nGreatest absolute difference: 0.00011879578232765198 at index (1, 3) (up to 1e-05 allowed)\nGreatest relative difference: 0.00467547361547796 at index (1, 3) (up to 0.0001 allowed)"
+    },
+    {
+      "name": "batch2048",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 2048,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "failed",
+      "weight_storage_format": 29,
+      "error": "AssertionError: Tensor-likes are not close!\n\nMismatched elements: 13 / 15 (86.7%)\nGreatest absolute difference: 0.00011879578232765198 at index (1, 3) (up to 1e-05 allowed)\nGreatest relative difference: 0.00467547361547796 at index (1, 3) (up to 0.0001 allowed)"
+    },
+    {
+      "name": "square4096",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 4096,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "failed",
+      "weight_storage_format": 2,
+      "error": "AssertionError: Tensor-likes are not close!\n\nMismatched elements: 11 / 15 (73.3%)\nGreatest absolute difference: 0.00015131384134292603 at index (2, 0) (up to 1e-05 allowed)\nGreatest relative difference: 0.010519476539861837 at index (1, 2) (up to 0.0001 allowed)"
+    },
+    {
+      "name": "square4096",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 4096,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "failed",
+      "weight_storage_format": 29,
+      "error": "AssertionError: Tensor-likes are not close!\n\nMismatched elements: 11 / 15 (73.3%)\nGreatest absolute difference: 0.00015131384134292603 at index (2, 0) (up to 1e-05 allowed)\nGreatest relative difference: 0.010519476539861837 at index (1, 2) (up to 0.0001 allowed)"
+    },
+    {
+      "name": "square8192",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 8192,
+      "n": 8192,
+      "k": 8192,
+      "pinned": false,
+      "layout": "ND",
+      "status": "failed",
+      "weight_storage_format": 2,
+      "error": "AssertionError: Tensor-likes are not close!\n\nMismatched elements: 12 / 15 (80.0%)\nGreatest absolute difference: 0.00030934810638427734 at index (2, 0) (up to 1e-05 allowed)\nGreatest relative difference: 0.0038112610512185856 at index (0, 1) (up to 0.0001 allowed)"
+    },
+    {
+      "name": "square8192",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 8192,
+      "n": 8192,
+      "k": 8192,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "failed",
+      "weight_storage_format": 29,
+      "error": "AssertionError: Tensor-likes are not close!\n\nMismatched elements: 12 / 15 (80.0%)\nGreatest absolute difference: 0.00030934810638427734 at index (2, 0) (up to 1e-05 allowed)\nGreatest relative difference: 0.0038112610512185856 at index (0, 1) (up to 0.0001 allowed)"
+    },
+    {
+      "name": "narrow",
+      "op": "gemm",
+      "dtype": "int8",
+      "m": 1,
+      "n": 128,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "failed",
+      "weight_storage_format": 2,
+      "error": "RuntimeError: npu_quant_matmul:../third_party/op-plugin/op_plugin/ops/opapi/QuantMatmulKernelNpuOpApi.cpp:302 NPU function error: call aclnnQuantMatmulV5 failed, error code is 161002\n[ERROR] 2026-10-12-02:53:25 (PID:2063650, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\n"
+    },
+    {
+      "name": "narrow",
+      "op": "gemm",
+      "dtype": "int8",
+      "m": 1,
+      "n": 128,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 0.0925000011920929,
+            "min_ms": 0.08755200356245041,
+            "max_ms": 0.1081250011920929,
+            "samples_ms": [
+              0.09596399962902069,
+              0.09125000238418579,
+              0.08921899646520615,
+              0.09247399866580963,
+              0.09958299994468689,
+              0.1081250011920929,
+              0.0923440009355545,
+              0.0925000011920929,
+              0.08755200356245041,
+              0.08937499672174454,
+              0.09390600025653839,
+              0.10325600206851959,
+              0.08963499963283539,
+              0.09385400265455246,
+              0.09492199867963791
+            ]
+          },
+          "wall": {
+            "median_ms": 0.17134600057033822,
+            "min_ms": 0.16682699788361788,
+            "max_ms": 0.18791799811879173,
+            "samples_ms": [
+              0.17134600057033822,
+              0.1711450022412464,
+              0.16902100469451398,
+              0.1734100005705841,
+              0.18178599566454068,
+              0.18791799811879173,
+              0.16961200162768364,
+              0.16682699788361788,
+              0.16966300609055907,
+              0.16815999697428197,
+              0.17133600340457633,
+              0.1791909962776117,
+              0.1792010007193312,
+              0.1725779948174022,
+              0.1716070037218742
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.011335956610664721,
+            "operations": "integer multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 32,
+          "device": {
+            "median_ms": 0.03981122002005577,
+            "min_ms": 0.038575030863285065,
+            "max_ms": 0.046669092029333115,
+            "samples_ms": [
+              0.03948812559247017,
+              0.04021240770816803,
+              0.039812810719013214,
+              0.04039875045418739,
+              0.03953040763735771,
+              0.03945884481072426,
+              0.04021565616130829,
+              0.03913087397813797,
+              0.03981122002005577,
+              0.03957518935203552,
+              0.03991943597793579,
+              0.046669092029333115,
+              0.039532873779535294,
+              0.040318187326192856,
+              0.038575030863285065
+            ]
+          },
+          "wall": {
+            "median_ms": 0.04237340635881992,
+            "min_ms": 0.041284156395704485,
+            "max_ms": 0.04918634363093588,
+            "samples_ms": [
+              0.04202618742965569,
+              0.042938874912579195,
+              0.04244071874381916,
+              0.04309918745093455,
+              0.04205371874377306,
+              0.04246168737154221,
+              0.04286337502890092,
+              0.0417121250393393,
+              0.04231109369357,
+              0.04235368760419078,
+              0.04237340635881992,
+              0.04918634363093588,
+              0.04236278118696646,
+              0.0431636563007487,
+              0.041284156395704485
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.02633870550743627,
+            "operations": "integer multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "vector",
+      "op": "gemm",
+      "dtype": "int8",
+      "m": 1,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "failed",
+      "weight_storage_format": 2,
+      "error": "RuntimeError: npu_quant_matmul:../third_party/op-plugin/op_plugin/ops/opapi/QuantMatmulKernelNpuOpApi.cpp:302 NPU function error: call aclnnQuantMatmulV5 failed, error code is 161002\n[ERROR] 2026-10-12-02:53:26 (PID:2063650, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\n"
+    },
+    {
+      "name": "vector",
+      "op": "gemm",
+      "dtype": "int8",
+      "m": 1,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 0.16307300329208374,
+            "min_ms": 0.13731800019741058,
+            "max_ms": 0.18854199349880219,
+            "samples_ms": [
+              0.1719529926776886,
+              0.18854199349880219,
+              0.1641409993171692,
+              0.1614069938659668,
+              0.1591150015592575,
+              0.16411399841308594,
+              0.16705800592899323,
+              0.15869799256324768,
+              0.13731800019741058,
+              0.16307300329208374,
+              0.15981799364089966,
+              0.16026000678539276,
+              0.16533799469470978,
+              0.17038999497890472,
+              0.16276000440120697
+            ]
+          },
+          "wall": {
+            "median_ms": 0.23701100144535303,
+            "min_ms": 0.23081900144461542,
+            "max_ms": 0.2628290021675639,
+            "samples_ms": [
+              0.24696000036783516,
+              0.2628290021675639,
+              0.2419199954601936,
+              0.233934995776508,
+              0.23269300436368212,
+              0.23538800451206043,
+              0.23783200595062226,
+              0.23081900144461542,
+              0.23226099438033998,
+              0.23692999820923433,
+              0.23756200243951753,
+              0.26164700102526695,
+              0.23701100144535303,
+              0.24214999575633556,
+              0.2342060033697635
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.20576325524525907,
+            "operations": "integer multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 32,
+          "device": {
+            "median_ms": 0.07797443866729736,
+            "min_ms": 0.07736003398895264,
+            "max_ms": 0.0789705291390419,
+            "samples_ms": [
+              0.07752522081136703,
+              0.07806071639060974,
+              0.07783937454223633,
+              0.07815349847078323,
+              0.07736003398895264,
+              0.07787681370973587,
+              0.07746418565511703,
+              0.07778159528970718,
+              0.07805093377828598,
+              0.07794106006622314,
+              0.07820884138345718,
+              0.07849934697151184,
+              0.07802002876996994,
+              0.0789705291390419,
+              0.07797443866729736
+            ]
+          },
+          "wall": {
+            "median_ms": 0.08052878115449857,
+            "min_ms": 0.07993640633685573,
+            "max_ms": 0.08162337485373428,
+            "samples_ms": [
+              0.0800841874024627,
+              0.08060390632635972,
+              0.08021224994081422,
+              0.08059828110162925,
+              0.07993640633685573,
+              0.08041074988796026,
+              0.07999368745004176,
+              0.08027893750295334,
+              0.08070631247392157,
+              0.08041387491175556,
+              0.08078049995674519,
+              0.08091328140835685,
+              0.08052878115449857,
+              0.08162337485373428,
+              0.08059828132900293
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.43032604752912185,
+            "operations": "integer multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "vector_large",
+      "op": "gemm",
+      "dtype": "int8",
+      "m": 1,
+      "n": 8192,
+      "k": 8192,
+      "pinned": false,
+      "layout": "ND",
+      "status": "failed",
+      "weight_storage_format": 2,
+      "error": "RuntimeError: npu_quant_matmul:../third_party/op-plugin/op_plugin/ops/opapi/QuantMatmulKernelNpuOpApi.cpp:302 NPU function error: call aclnnQuantMatmulV5 failed, error code is 161002\n[ERROR] 2026-10-12-02:53:27 (PID:2063650, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\n"
+    },
+    {
+      "name": "vector_large",
+      "op": "gemm",
+      "dtype": "int8",
+      "m": 1,
+      "n": 8192,
+      "k": 8192,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 0.4121359884738922,
+            "min_ms": 0.402213990688324,
+            "max_ms": 0.42648500204086304,
+            "samples_ms": [
+              0.4236460030078888,
+              0.402213990688324,
+              0.42096400260925293,
+              0.4064840078353882,
+              0.4151040017604828,
+              0.4090360105037689,
+              0.4121359884738922,
+              0.4133070111274719,
+              0.4161979854106903,
+              0.42648500204086304,
+              0.4095839858055115,
+              0.40658900141716003,
+              0.40708398818969727,
+              0.4074220061302185,
+              0.4170840084552765
+            ]
+          },
+          "wall": {
+            "median_ms": 0.4933090021950193,
+            "min_ms": 0.4841209956794046,
+            "max_ms": 0.5065639998065308,
+            "samples_ms": [
+              0.5043290002504364,
+              0.48943099682219326,
+              0.5065639998065308,
+              0.4880979977315292,
+              0.49741599650587887,
+              0.4841209956794046,
+              0.48976099787978455,
+              0.4929370043100789,
+              0.4963239989592694,
+              0.5032969929743558,
+              0.48639500164426863,
+              0.498808003612794,
+              0.48760699428385124,
+              0.4942800005665049,
+              0.4933090021950193
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.325663692940279,
+            "operations": "integer multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 32,
+          "device": {
+            "median_ms": 0.35047200322151184,
+            "min_ms": 0.34776201844215393,
+            "max_ms": 0.35491862893104553,
+            "samples_ms": [
+              0.3503369092941284,
+              0.34840333461761475,
+              0.3523372411727905,
+              0.34881022572517395,
+              0.3524104654788971,
+              0.34776201844215393,
+              0.35085612535476685,
+              0.3494693636894226,
+              0.35085612535476685,
+              0.35021647810935974,
+              0.35491862893104553,
+              0.35047200322151184,
+              0.3503783941268921,
+              0.35190269351005554,
+              0.3519856631755829
+            ]
+          },
+          "wall": {
+            "median_ms": 0.3539328124588792,
+            "min_ms": 0.35060899995187356,
+            "max_ms": 0.3577406876047462,
+            "samples_ms": [
+              0.35399728130869335,
+              0.3539612812346604,
+              0.35616393756754405,
+              0.3517035625009157,
+              0.3551642187176185,
+              0.35060899995187356,
+              0.3536967499258026,
+              0.3524434375776764,
+              0.3539328124588792,
+              0.3530432811658102,
+              0.3577406876047462,
+              0.3534359375407803,
+              0.3531732188548631,
+              0.3549951250079175,
+              0.3549096875303803
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.3829627666868706,
+            "operations": "integer multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "batch8",
+      "op": "gemm",
+      "dtype": "int8",
+      "m": 8,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "failed",
+      "weight_storage_format": 2,
+      "error": "RuntimeError: npu_quant_matmul:../third_party/op-plugin/op_plugin/ops/opapi/QuantMatmulKernelNpuOpApi.cpp:302 NPU function error: call aclnnQuantMatmulV5 failed, error code is 161002\n[ERROR] 2026-10-12-02:53:28 (PID:2063650, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\n"
+    },
+    {
+      "name": "batch8",
+      "op": "gemm",
+      "dtype": "int8",
+      "m": 8,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 0.16351500153541565,
+            "min_ms": 0.1573439985513687,
+            "max_ms": 0.17132799327373505,
+            "samples_ms": [
+              0.16351500153541565,
+              0.1606770008802414,
+              0.160521000623703,
+              0.16093699634075165,
+              0.1692180037498474,
+              0.1656769961118698,
+              0.15916700661182404,
+              0.17132799327373505,
+              0.16890600323677063,
+              0.15960900485515594,
+              0.16658799350261688,
+              0.16557300090789795,
+              0.1573439985513687,
+              0.15869799256324768,
+              0.16828100383281708
+            ]
+          },
+          "wall": {
+            "median_ms": 0.23768199753249064,
+            "min_ms": 0.2295560043421574,
+            "max_ms": 0.2454369969200343,
+            "samples_ms": [
+              0.2365099935559556,
+              0.2354179960093461,
+              0.23952600167831406,
+              0.23350400442723185,
+              0.24479500279994681,
+              0.23768199753249064,
+              0.23049800074659288,
+              0.24159999884432182,
+              0.2454369969200343,
+              0.2295560043421574,
+              0.23929500457597896,
+              0.23795299784978852,
+              0.23221199808176607,
+              0.23004800459602848,
+              0.24010700144572183
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 1.6416564442367674,
+            "operations": "integer multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 32,
+          "device": {
+            "median_ms": 0.07953693717718124,
+            "min_ms": 0.07884031534194946,
+            "max_ms": 0.08068849891424179,
+            "samples_ms": [
+              0.08068849891424179,
+              0.07992759346961975,
+              0.07980306446552277,
+              0.07986246794462204,
+              0.07889974862337112,
+              0.07953693717718124,
+              0.07934896647930145,
+              0.07964353263378143,
+              0.07989909499883652,
+              0.07906737178564072,
+              0.07898193597793579,
+              0.07884031534194946,
+              0.07933512330055237,
+              0.07891277968883514,
+              0.07981525361537933
+            ]
+          },
+          "wall": {
+            "median_ms": 0.08210678129216831,
+            "min_ms": 0.0814317500044126,
+            "max_ms": 0.08349475001523388,
+            "samples_ms": [
+              0.08341615625795384,
+              0.08349475001523388,
+              0.0828106251447025,
+              0.08260209392574325,
+              0.08149906261678552,
+              0.08237134375121968,
+              0.08181559383046988,
+              0.08210678129216831,
+              0.08273984371953702,
+              0.08171603121809312,
+              0.0815710625374777,
+              0.0814317500044126,
+              0.08192549989871623,
+              0.08162962512869854,
+              0.08234350002567226
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 3.374978538613036,
+            "operations": "integer multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "batch128",
+      "op": "gemm",
+      "dtype": "int8",
+      "m": 128,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "failed",
+      "weight_storage_format": 2,
+      "error": "RuntimeError: npu_quant_matmul:../third_party/op-plugin/op_plugin/ops/opapi/QuantMatmulKernelNpuOpApi.cpp:302 NPU function error: call aclnnQuantMatmulV5 failed, error code is 161002\n[ERROR] 2026-10-12-02:53:29 (PID:2063650, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\n"
+    },
+    {
+      "name": "batch128",
+      "op": "gemm",
+      "dtype": "int8",
+      "m": 128,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 0.16046899557113647,
+            "min_ms": 0.1331769973039627,
+            "max_ms": 0.17450599372386932,
+            "samples_ms": [
+              0.15658900141716003,
+              0.16117200255393982,
+              0.1331769973039627,
+              0.16778700053691864,
+              0.15739600360393524,
+              0.16374999284744263,
+              0.16046899557113647,
+              0.15768200159072876,
+              0.15924499928951263,
+              0.15510399639606476,
+              0.16184799373149872,
+              0.133542001247406,
+              0.17450599372386932,
+              0.1618490070104599,
+              0.17145900428295135
+            ]
+          },
+          "wall": {
+            "median_ms": 0.23455599875887856,
+            "min_ms": 0.20485899585764855,
+            "max_ms": 0.256697996519506,
+            "samples_ms": [
+              0.22927599638933316,
+              0.2369599969824776,
+              0.21768399892607704,
+              0.24673900043126196,
+              0.23156100360210985,
+              0.24174899590434507,
+              0.2341250001336448,
+              0.22940700000617653,
+              0.23455599875887856,
+              0.23345400404650718,
+              0.24661899806233123,
+              0.20485899585764855,
+              0.256697996519506,
+              0.23482699907617643,
+              0.24771099560894072
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 26.765091167383957,
+            "operations": "integer multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 4,
+          "device": {
+            "median_ms": 0.09215500205755234,
+            "min_ms": 0.09018225222826004,
+            "max_ms": 0.09570950269699097,
+            "samples_ms": [
+              0.09021475166082382,
+              0.09570950269699097,
+              0.09054674953222275,
+              0.09569674730300903,
+              0.09233074635267258,
+              0.09215500205755234,
+              0.092740997672081,
+              0.09115225076675415,
+              0.09276050329208374,
+              0.09164725244045258,
+              0.09536450356245041,
+              0.09018225222826004,
+              0.09426424652338028,
+              0.09026674926280975,
+              0.0914517492055893
+            ]
+          },
+          "wall": {
+            "median_ms": 0.11197549974895082,
+            "min_ms": 0.11062275007134303,
+            "max_ms": 0.11957249989791308,
+            "samples_ms": [
+              0.11081824959546793,
+              0.1158480008598417,
+              0.11075800102844369,
+              0.11933200039493386,
+              0.11123400145152118,
+              0.11957249989791308,
+              0.11904124949069228,
+              0.11197549974895082,
+              0.11229099982301705,
+              0.1117627507483121,
+              0.11400425137253478,
+              0.11062275007134303,
+              0.1162962507805787,
+              0.11073050154664088,
+              0.1113717517000623
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 46.60590526944724,
+            "operations": "integer multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "batch512",
+      "op": "gemm",
+      "dtype": "int8",
+      "m": 512,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "failed",
+      "weight_storage_format": 2,
+      "error": "RuntimeError: npu_quant_matmul:../third_party/op-plugin/op_plugin/ops/opapi/QuantMatmulKernelNpuOpApi.cpp:302 NPU function error: call aclnnQuantMatmulV5 failed, error code is 161002\n[ERROR] 2026-10-12-02:53:30 (PID:2063650, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\n"
+    },
+    {
+      "name": "batch512",
+      "op": "gemm",
+      "dtype": "int8",
+      "m": 512,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 0.33096298575401306,
+            "min_ms": 0.3225780129432678,
+            "max_ms": 0.3464840054512024,
+            "samples_ms": [
+              0.33382800221443176,
+              0.33190101385116577,
+              0.32476499676704407,
+              0.3273699879646301,
+              0.32276099920272827,
+              0.33096298575401306,
+              0.3367699980735779,
+              0.32744699716567993,
+              0.3225780129432678,
+              0.3464840054512024,
+              0.32867199182510376,
+              0.33281299471855164,
+              0.33244800567626953,
+              0.3382039964199066,
+              0.3276039958000183
+            ]
+          },
+          "wall": {
+            "median_ms": 0.40626200643600896,
+            "min_ms": 0.39279699558392167,
+            "max_ms": 0.4167730003246106,
+            "samples_ms": [
+              0.4073850068380125,
+              0.40651300514582545,
+              0.3957329972763546,
+              0.40626200643600896,
+              0.4043489971081726,
+              0.40484999772161245,
+              0.4147889994783327,
+              0.4079059945070185,
+              0.39279699558392167,
+              0.4167730003246106,
+              0.40520000038668513,
+              0.4055919998791069,
+              0.40795499808155,
+              0.4147590007050894,
+              0.4047699985676445
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 51.90873276919513,
+            "operations": "integer multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 4,
+          "device": {
+            "median_ms": 0.27893874049186707,
+            "min_ms": 0.27582699060440063,
+            "max_ms": 0.28114598989486694,
+            "samples_ms": [
+              0.27869799733161926,
+              0.27797549962997437,
+              0.2792382538318634,
+              0.2788737416267395,
+              0.279277503490448,
+              0.27893874049186707,
+              0.2801955044269562,
+              0.2804754972457886,
+              0.27582699060440063,
+              0.27901023626327515,
+              0.27755850553512573,
+              0.2801760137081146,
+              0.2771027386188507,
+              0.2784702479839325,
+              0.28114598989486694
+            ]
+          },
+          "wall": {
+            "median_ms": 0.2985327500937274,
+            "min_ms": 0.2951612495962763,
+            "max_ms": 0.3012904999195598,
+            "samples_ms": [
+              0.2995472514157882,
+              0.29790149892505724,
+              0.2987379994010553,
+              0.2983074991789181,
+              0.29905874907854013,
+              0.2978690008603735,
+              0.3012904999195598,
+              0.30066174986131955,
+              0.2951612495962763,
+              0.29821725001966115,
+              0.2969472516269889,
+              0.2990060002048267,
+              0.29647650080733,
+              0.2985327500937274,
+              0.30059425080253277
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 61.59011528375675,
+            "operations": "integer multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "batch2048",
+      "op": "gemm",
+      "dtype": "int8",
+      "m": 2048,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "failed",
+      "weight_storage_format": 2,
+      "error": "RuntimeError: npu_quant_matmul:../third_party/op-plugin/op_plugin/ops/opapi/QuantMatmulKernelNpuOpApi.cpp:302 NPU function error: call aclnnQuantMatmulV5 failed, error code is 161002\n[ERROR] 2026-10-12-02:53:31 (PID:2063650, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\n"
+    },
+    {
+      "name": "batch2048",
+      "op": "gemm",
+      "dtype": "int8",
+      "m": 2048,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 0.9684380292892456,
+            "min_ms": 0.9647660255432129,
+            "max_ms": 1.0222920179367065,
+            "samples_ms": [
+              0.9684380292892456,
+              0.9679690003395081,
+              0.9748700261116028,
+              0.9661459922790527,
+              0.9704160094261169,
+              0.9647660255432129,
+              0.9715880155563354,
+              1.0222920179367065,
+              0.9685930013656616,
+              0.9695320129394531,
+              0.9677609801292419,
+              0.9672399759292603,
+              0.9671880006790161,
+              0.9686459898948669,
+              0.9683589935302734
+            ]
+          },
+          "wall": {
+            "median_ms": 1.0440260011819191,
+            "min_ms": 1.038584996422287,
+            "max_ms": 1.101906003896147,
+            "samples_ms": [
+              1.0518200069782324,
+              1.0451370035298169,
+              1.0495759997866116,
+              1.038584996422287,
+              1.0481240024091676,
+              1.0418909951113164,
+              1.0440260011819191,
+              1.101906003896147,
+              1.0438659955980256,
+              1.0479929987923242,
+              1.0423720013932325,
+              1.0464799997862428,
+              1.0423620042274706,
+              1.043504998960998,
+              1.0411510011181235
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 70.95908530815801,
+            "operations": "integer multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 4,
+          "device": {
+            "median_ms": 0.912539005279541,
+            "min_ms": 0.909785270690918,
+            "max_ms": 0.9160547256469727,
+            "samples_ms": [
+              0.9136262536048889,
+              0.9140300154685974,
+              0.9160547256469727,
+              0.912539005279541,
+              0.9136197566986084,
+              0.9126237630844116,
+              0.9102280139923096,
+              0.9109050035476685,
+              0.912539005279541,
+              0.909785270690918,
+              0.9139582514762878,
+              0.9112499952316284,
+              0.9114647507667542,
+              0.9100455045700073,
+              0.9112499952316284
+            ]
+          },
+          "wall": {
+            "median_ms": 0.9330069988209289,
+            "min_ms": 0.9293849998357473,
+            "max_ms": 0.9433164996153209,
+            "samples_ms": [
+              0.9361004995298572,
+              0.9361352495034225,
+              0.9433164996153209,
+              0.933818500925554,
+              0.9339964999526273,
+              0.9330069988209289,
+              0.9302142498199828,
+              0.9320977496827254,
+              0.9334679998573847,
+              0.9305372495873598,
+              0.9354564990644576,
+              0.9322757505287882,
+              0.9309404995292425,
+              0.9293849998357473,
+              0.9321752495452529
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 75.30579661627608,
+            "operations": "integer multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "square4096",
+      "op": "gemm",
+      "dtype": "int8",
+      "m": 4096,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "failed",
+      "weight_storage_format": 2,
+      "error": "RuntimeError: npu_quant_matmul:../third_party/op-plugin/op_plugin/ops/opapi/QuantMatmulKernelNpuOpApi.cpp:302 NPU function error: call aclnnQuantMatmulV5 failed, error code is 161002\n[ERROR] 2026-10-12-02:53:33 (PID:2063650, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\n"
+    },
+    {
+      "name": "square4096",
+      "op": "gemm",
+      "dtype": "int8",
+      "m": 4096,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 1.7919789552688599,
+            "min_ms": 1.778905987739563,
+            "max_ms": 1.8187240362167358,
+            "samples_ms": [
+              1.8187240362167358,
+              1.7864329814910889,
+              1.8159120082855225,
+              1.7876050472259521,
+              1.7965890169143677,
+              1.7932039499282837,
+              1.7934900522232056,
+              1.7821099758148193,
+              1.7916929721832275,
+              1.785910964012146,
+              1.7919789552688599,
+              1.7897650003433228,
+              1.799062967300415,
+              1.778905987739563,
+              1.7929680347442627
+            ]
+          },
+          "wall": {
+            "median_ms": 1.8703270034166053,
+            "min_ms": 1.8625030061230063,
+            "max_ms": 1.896206995297689,
+            "samples_ms": [
+              1.896206995297689,
+              1.8818280004779808,
+              1.8908260026364587,
+              1.8640650014276616,
+              1.8759279992082156,
+              1.8802959966706112,
+              1.8697759951464832,
+              1.8629229962243699,
+              1.8696449988055974,
+              1.8653279985301197,
+              1.8703270034166053,
+              1.8688739946810529,
+              1.877241003967356,
+              1.8625030061230063,
+              1.8940720037790015
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 76.69674527588374,
+            "operations": "integer multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 1.7830990552902222,
+            "min_ms": 1.7725260257720947,
+            "max_ms": 1.811015009880066,
+            "samples_ms": [
+              1.787682056427002,
+              1.78895902633667,
+              1.7865619659423828,
+              1.7779690027236938,
+              1.7905210256576538,
+              1.777838945388794,
+              1.7876039743423462,
+              1.7752339839935303,
+              1.7902599573135376,
+              1.7725260257720947,
+              1.7804689407348633,
+              1.7735929489135742,
+              1.7830990552902222,
+              1.7788540124893188,
+              1.811015009880066
+            ]
+          },
+          "wall": {
+            "median_ms": 1.8594560024212115,
+            "min_ms": 1.8493180032237433,
+            "max_ms": 1.8931209997390397,
+            "samples_ms": [
+              1.8704569956753403,
+              1.8931209997390397,
+              1.8744850021903403,
+              1.8556089999037795,
+              1.8734920013230294,
+              1.8565310019766912,
+              1.8651470018085092,
+              1.855898997746408,
+              1.8693750025704503,
+              1.8493180032237433,
+              1.8594560024212115,
+              1.8498279969207942,
+              1.857603005191777,
+              1.8550780005170964,
+              1.8927999990410171
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 77.07869793561753,
+            "operations": "integer multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    },
+    {
+      "name": "square8192",
+      "op": "gemm",
+      "dtype": "int8",
+      "m": 8192,
+      "n": 8192,
+      "k": 8192,
+      "pinned": false,
+      "layout": "ND",
+      "status": "failed",
+      "weight_storage_format": 2,
+      "error": "RuntimeError: npu_quant_matmul:../third_party/op-plugin/op_plugin/ops/opapi/QuantMatmulKernelNpuOpApi.cpp:302 NPU function error: call aclnnQuantMatmulV5 failed, error code is 161002\n[ERROR] 2026-10-12-02:53:35 (PID:2063650, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\n"
+    },
+    {
+      "name": "square8192",
+      "op": "gemm",
+      "dtype": "int8",
+      "m": 8192,
+      "n": 8192,
+      "k": 8192,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 20.15088653564453,
+            "min_ms": 20.062917709350586,
+            "max_ms": 20.27216148376465,
+            "samples_ms": [
+              20.144739151000977,
+              20.08479118347168,
+              20.1284122467041,
+              20.102266311645508,
+              20.15088653564453,
+              20.081771850585938,
+              20.27216148376465,
+              20.219947814941406,
+              20.18372344970703,
+              20.209869384765625,
+              20.158124923706055,
+              20.062917709350586,
+              20.161354064941406,
+              20.142213821411133,
+              20.155338287353516
+            ]
+          },
+          "wall": {
+            "median_ms": 20.24641499883728,
+            "min_ms": 20.14528300060192,
+            "max_ms": 20.44789800129365,
+            "samples_ms": [
+              20.231085996783804,
+              20.177614002022892,
+              20.24688699748367,
+              20.212119998177513,
+              20.240433994331397,
+              20.22621699870797,
+              20.44789800129365,
+              20.342698000604287,
+              20.34253800229635,
+              20.33048500015866,
+              20.24067399906926,
+              20.14528300060192,
+              20.27307599928463,
+              20.24641499883728,
+              20.247687003575265
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 54.56393324586956,
+            "operations": "integer multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 20.18458366394043,
+            "min_ms": 20.073776245117188,
+            "max_ms": 20.275312423706055,
+            "samples_ms": [
+              20.158124923706055,
+              20.085729598999023,
+              20.18458366394043,
+              20.093854904174805,
+              20.1665096282959,
+              20.25031280517578,
+              20.275312423706055,
+              20.073776245117188,
+              20.149869918823242,
+              20.085832595825195,
+              20.274662017822266,
+              20.267370223999023,
+              20.24054718017578,
+              20.264894485473633,
+              20.274635314941406
+            ]
+          },
+          "wall": {
+            "median_ms": 20.36079199751839,
+            "min_ms": 20.165652000287082,
+            "max_ms": 20.472645002882928,
+            "samples_ms": [
+              20.247366999683436,
+              20.194275995891076,
+              20.30006799759576,
+              20.20084799733013,
+              20.36079199751839,
+              20.437548999325372,
+              20.403454000188503,
+              20.165652000287082,
+              20.251455003744923,
+              20.220315003825817,
+              20.46229599363869,
+              20.423131005372852,
+              20.454630997846834,
+              20.449742005439475,
+              20.472645002882928
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 54.472841554828165,
+            "operations": "integer multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled rows/columns, including first and last, against CPU FP64 dot products rounded to output dtype",
+        "max_absolute_error": 0.0,
+        "relative_l2_error": 0.0,
+        "atol": 0.001,
+        "rtol": 0.003
+      }
+    }
+  ],
+  "torch_npu": "2.13.0.rc1",
+  "npu_visible_devices": "2,3",
+  "physical_device": 2,
+  "device_name": "Ascend310P3",
+  "allow_hf32": false,
+  "ended_utc": "2026-10-12T02:53:39.061794+00:00",
+  "passed_cases": 27
+}
