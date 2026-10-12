@@ -9,6 +9,8 @@ import shutil
 import signal
 from pathlib import Path
 
+from .cold_placement import load as load_placement
+
 DEFAULT_MAX_CONTEXT = 65536
 GLM_DEPENDENCIES = ("__init__.py", "deployment_profiles.py", "fused_moe_profile.py", "glm_int4.py")
 
@@ -18,6 +20,12 @@ def prepare(output, specification, source):
     output, source = Path(output).resolve(), Path(source).resolve()
     if output == source or source in output.parents:
         raise ValueError("runtime output must be outside the source tree")
+    placement = None
+    if specification.get("architecture") == "cuda-backbone-ascend-experts":
+        load_placement(specification)
+        placement = Path(specification["expert_placement"]).read_bytes()
+        if hashlib.sha256(placement).hexdigest() != specification["expert_placement_sha256"]:
+            raise ValueError("expert ownership changed during snapshot")
     output.mkdir(parents=True, exist_ok=False)
     destination = output / "source" / "tools"
     (destination / "sidecard").mkdir(parents=True)
@@ -33,6 +41,9 @@ def prepare(output, specification, source):
         hashes[str(relative)] = hashlib.sha256(original.read_bytes()).hexdigest()
     (output / "source-sha256.json").write_text(json.dumps(hashes, indent=2) + "\n")
     specification = dict(specification, output=str(output))
+    if placement is not None:
+        (output / "placement.json").write_bytes(placement)
+        specification["expert_placement"] = str(output / "placement.json")
     (output / "runtime.json").write_text(json.dumps(specification, indent=2) + "\n")
     return output / "runtime.json"
 

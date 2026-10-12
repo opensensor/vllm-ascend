@@ -5,38 +5,31 @@ Atlas 300I Duo card, exposing two Ascend 310P3 chips. The product goal is useful
 for models larger than NVIDIA VRAM, improving on RTX plus CPU/weight offload.
 Keep expert weights resident where they execute and exchange activations.
 
-**Current implementation: complete-layer CUDA/Ascend runtime.** CUDA owns
-layers 0–17 and 33–44, embedding, normalization, head, and greedy sampling.
-One Atlas 300I Duo card runs layers 18–32 with TP2 attention/shared MLP and
-EP2 routed experts. Each MoE layer retains all 288 experts; the middle block
-stores 144 per NPU. Only physical NPU devices 2 and 3 are assigned. Physical
-0 and 1 remain available to the existing Qwen service.
+**Current implementation: CUDA backbone with Ascend cold experts.** CUDA
+owns all 45 backbone layers and caches. It retains complete expert banks
+outside layers 18–32 and 22 static hot experts per middle layer. One Atlas
+300I Duo supplies two independent cold expert workers on physical devices
+2 and 3. Physical 0 and 1 remain available for other work. GPU hot experts
+and shared MLPs overlap cold calls; original route weights are preserved.
 
-Use the [layer runtime runbook](LAYER_RUNTIME.md),
-[hardware report](../../artifacts/sidecard-layer-runtime-20261012/README.md),
-and [design PNG](../../artifacts/sidecard-layer-runtime-20261012/architecture.png).
+Use the [expert runtime runbook](EXPERT_RUNTIME.md),
+[hardware report](../../artifacts/sidecard-expert-runtime-20261012/README.md),
+and [design PNG](../../artifacts/sidecard-expert-runtime-20261012/architecture.png).
 The endpoint is `http://192.168.53.187:8000/v1`, model `glm-sidecard`.
-The runtime serializes requests, overlaps two bounded prompt chunks across
-architectures, and keeps recurrent/KV/indexer caches with their owning layers.
-Chat, completions, streaming, and tokenization have a deliberately small
-supported API surface described in the runbook.
-
-Earlier per-expert dispatch services and their measurements are historical.
-Their [one-card](ONE_CARD.md) and [original service](SERVICE.md) runbooks remain
-available for reproducing those experiments. The commands below describe
-those planning and transport tools; launch the current model with
-`tools.sidecard.layer_runtime`.
-
-The [optimization report](../../artifacts/sidecard-layer-optimization-20261012/README.md)
-records prepared Ascend projection weights, CUDA stream-aware experts and
-KDA span replay, including completed benchmarks and preserved numerical traces.
+Requests serialize, prompt chunks are bounded to 32 rows, and all attention,
+recurrent, KV, indexer, and mHC state stays on CUDA. The implementation has
+no HCCL dependency and does not move weights during inference.
 
 The [cold-expert study](../../artifacts/sidecard-cold-expert-study-20261012/README.md)
-profiles the real Ascend middle stage and validates a bounded RTX hot / Ascend
-cold expert overlap prototype. Its [design PNG](../../artifacts/sidecard-cold-expert-study-20261012/architecture.png)
-describes a candidate with the complete backbone on RTX. Full-model integration
-and performance for that candidate remain pending; the serving architecture above
-remains the qualified implementation.
+contains the stage profiling and component prototype that motivated this
+implementation. The former complete-layer split and its measurements remain
+available in the [layer runbook](LAYER_RUNTIME.md),
+[layer report](../../artifacts/sidecard-layer-runtime-20261012/README.md),
+and [optimization report](../../artifacts/sidecard-layer-optimization-20261012/README.md).
+Earlier per-expert dispatch runbooks remain available for reproducing those
+experiments: [one-card](ONE_CARD.md) and [original service](SERVICE.md).
+Launch the current model with `tools.sidecard.layer_runtime` using the
+expert architecture specification described in the new runbook.
 
 ## Previous expert-dispatch prototype
 
