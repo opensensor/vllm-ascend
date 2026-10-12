@@ -1,0 +1,58 @@
+{
+  "passed": true,
+  "health": {
+    "status": "ok",
+    "architecture": "cuda-prefix-ascend-middle-cuda-suffix",
+    "max_model_len": 65536
+  },
+  "models": {
+    "object": "list",
+    "data": [
+      {
+        "id": "glm-sidecard",
+        "object": "model",
+        "owned_by": "opensensor",
+        "max_model_len": 65536
+      }
+    ]
+  },
+  "coordinator": {
+    "pid": 3151775,
+    "command": [
+      "/srv/ai/venvs/sidecard-cuda-20261012/bin/python",
+      "-m",
+      "tools.sidecard.layer_server",
+      "--config",
+      "/srv/ai/storage/artifacts/sidecard-layer-runtime-20261012-v20/runtime.json",
+      "--port",
+      "8000"
+    ]
+  },
+  "npu": {
+    "pids": [
+      3152206,
+      3152207
+    ],
+    "physical_devices": [
+      2,
+      3
+    ]
+  },
+  "restored_source_matches_v18": true,
+  "startup_gate_passed": true,
+  "decode_repeat_gate_passed": true,
+  "pipeline_gate_passed": true,
+  "profiling_driver_exited": true,
+  "probe_drivers_exited": {
+    "3175494": true,
+    "3176598": true
+  },
+  "unassigned_physical_devices": [
+    0,
+    1
+  ],
+  "assigned_physical_devices": [
+    2,
+    3
+  ]
+}

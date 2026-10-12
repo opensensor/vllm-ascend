@@ -23,6 +23,7 @@ from pathlib import Path
 
 from .layer_decode_graph import DecodeGraphs
 from .layer_math import TextLayer, rms_norm, validate_config
+from .layer_stage_profile import StageProfile
 from .layer_tp_gate import validate_tp
 from .layer_weights import GPU_LAYERS, MAX_CHUNK, NPU_LAYERS, CudaExperts, NpuExperts, load_dense
 from .stage_wire import MAX_BODY_BYTES, descriptors, metadata, receive_into, send
@@ -159,6 +160,13 @@ def npu_worker(args):
     if connection is not None:
         connection.sendall(READY)
     sequence = 0
+    profile = (
+        StageProfile(Path(args.output) / f"stage-profile-rank{args.rank}.jsonl", args.rank, torch.npu.synchronize)
+        if args.stage_profile
+        else None
+    )
+    if profile is not None and decode_graphs is not None:
+        raise ValueError("synchronized component attribution requires eager Ascend layers")
     expected_position = 0
     active_context_limit = None
     try:
@@ -203,10 +211,13 @@ def npu_worker(args):
                             layer.sparse_enabled = context_limit > layer.config["index_topk"]
                 elif first_position != expected_position or context_limit != active_context_limit:
                     raise ValueError("stage positions disagree with its owner-local cache")
-                if args.rank == 0:
-                    state = unpack_state(memoryview(receive_buffer), rows, device, torch)[:4]
-                else:
-                    state = [
+                if profile is not None:
+                    profile.begin(sequence, first_position, rows)
+
+                def upload(rows=rows):
+                    if args.rank == 0:
+                        return unpack_state(memoryview(receive_buffer), rows, device, torch)[:4]
+                    return [
                         torch.empty(
                             field["shape"],
                             dtype=torch.float16 if field["dtype"] == "fp16" else torch.float32,
@@ -214,12 +225,25 @@ def npu_worker(args):
                         )
                         for field in descriptors(rows)[0][:4]
                     ]
-                for value in state:
-                    broadcast_stage(value, torch)
-                if decode_graphs is None:
+
+                state = (
+                    upload() if profile is None else profile.measure(profile.packet["transport_ms"], "upload", upload)
+                )
+
+                def broadcast(state=state):
+                    for value in state:
+                        broadcast_stage(value, torch)
+
+                if profile is not None:
+                    profile.measure(profile.packet["transport_ms"], "broadcast", broadcast)
+                    for layer in layers:
+                        state = profile.forward(layer, state)
+                elif decode_graphs is None:
+                    broadcast()
                     for layer in layers:
                         state = layer.forward(*state)
                 else:
+                    broadcast()
                     state = decode_graphs.forward(state)
                 if args.rank == 0:
                     if not all(bool(torch.isfinite(value).all().cpu()) for value in state):
@@ -227,6 +251,8 @@ def npu_worker(args):
                     positions = torch.arange(first_position, first_position + rows, dtype=torch.int64)
                     body = pack_state(state, positions, torch)
                     send(connection, metadata(rows, sequence, args.identity, request_context_limit=context_limit), body)
+                if profile is not None:
+                    profile.finish()
                 sequence += 1
                 expected_position = first_position + rows
     finally:
@@ -366,6 +392,8 @@ class Coordinator:
                 command.extend(("--ops-library", self.spec["npu_ops_library"]))
             if self.spec.get("npu_decode_graphs", False):
                 command.append("--decode-graphs")
+            if self.spec.get("stage_profile", False):
+                command.append("--stage-profile")
             process = subprocess.Popen(
                 command,
                 cwd=source,
@@ -602,6 +630,7 @@ def main():
     parser.add_argument("--parent-pid", type=int, required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--decode-graphs", action="store_true")
+    parser.add_argument("--stage-profile", action="store_true")
     args = parser.parse_args()
     guard_parent(args.parent_pid)
     npu_worker(args)

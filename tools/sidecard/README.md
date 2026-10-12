@@ -31,6 +31,13 @@ The [optimization report](../../artifacts/sidecard-layer-optimization-20261012/R
 records prepared Ascend projection weights, CUDA stream-aware experts and
 KDA span replay, including completed benchmarks and preserved numerical traces.
 
+The [cold-expert study](../../artifacts/sidecard-cold-expert-study-20261012/README.md)
+profiles the real Ascend middle stage and validates a bounded RTX hot / Ascend
+cold expert overlap prototype. Its [design PNG](../../artifacts/sidecard-cold-expert-study-20261012/architecture.png)
+describes a candidate with the complete backbone on RTX. Full-model integration
+and performance for that candidate remain pending; the serving architecture above
+remains the qualified implementation.
+
 ## Previous expert-dispatch prototype
 
 | Component | Intended owner | Reason and gate |

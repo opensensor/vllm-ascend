@@ -16,6 +16,16 @@ records the original tested scope and timings. The
 records projection layout and graph/stream experiments. The previous per-expert sidecard
 service on port 8001 is superseded.
 
+The [cold-expert study](../../artifacts/sidecard-cold-expert-study-20261012/README.md)
+retains synchronized component attribution and a real-weight expert-only probe.
+An optional `stage_profile: true` specification field enables per-rank JSONL
+traces in a private diagnostic runtime; NPU decode graphs must be disabled.
+This deliberately synchronizes each component and records selected expert IDs
+and original route weights. Use `tools.sidecard.layer_profile_run` against a
+qualified numerical reference and arrange service restoration before starting.
+Profiled timing is not production throughput. The expert-only design remains a
+candidate; launch the complete-layer service for the qualified implementation.
+
 ## Execution and arithmetic
 
 There are two cross-architecture boundaries per chunk/token. Each transports
