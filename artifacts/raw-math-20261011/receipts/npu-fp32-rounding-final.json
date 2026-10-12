@@ -1,0 +1,2764 @@
+{
+  "completed": true,
+  "backend": "npu",
+  "suite": "matrix",
+  "seed": 6000310,
+  "started_utc": "2026-10-12T02:43:57.609737+00:00",
+  "torch": "2.13.0+cpu",
+  "python": "3.12.13",
+  "warmups": 3,
+  "samples": 15,
+  "reference_fp16_inputs": true,
+  "timing": "device events include stream idle/host enqueue gaps; wall includes enqueue/events/synchronization; initialization/layout conversion/upload/readback excluded for resident math",
+  "math": "CUDA FP32 pedantic; NPU HF32 disabled and precision validated independently; CUDA FP16/BF16 requests FP32 accumulation; INT8 dot products to FP16 with unit scales, no activation quantization; FP32 input rounding diagnostic is explicitly flagged",
+  "source_sha256": {
+    "benchmark.py": "1a3d78baf38169ee439f9b83fad37bb6409ec6aa143aec649c6a57ec33cab5fc",
+    "cases.py": "561f700dc3d3d6c0e916e30932e4b7326ed97df47e7c79a272c6f579abf9f06c",
+    "cuda_math.cu": "23c77ebcfcbccba275287e6294e56e28e2ada6fe33229b1752f6900fadbaea6f"
+  },
+  "cases": [
+    {
+      "name": "narrow",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 1,
+      "n": 128,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "passed",
+      "weight_storage_format": 2,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 3.632158041000366e-08,
+        "relative_l2_error": 1.4883997282196483e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00012931972742080688,
+        "strict_fp32_relative_l2_error": 0.0004985402070470188
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 3.725290298461914e-08,
+        "relative_l2_error": 1.5855785605114384e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00012931972742080688,
+        "strict_fp32_relative_l2_error": 0.0004985337339427263
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 0.1003120020031929,
+            "min_ms": 0.06851500272750854,
+            "max_ms": 0.1361449956893921,
+            "samples_ms": [
+              0.1254429966211319,
+              0.1361449956893921,
+              0.09958299994468689,
+              0.06851500272750854,
+              0.078125,
+              0.08091100305318832,
+              0.09622400254011154,
+              0.10388000309467316,
+              0.11275999993085861,
+              0.10257799923419952,
+              0.11911500245332718,
+              0.1003120020031929,
+              0.09554699808359146,
+              0.12163999676704407,
+              0.09387999773025513
+            ]
+          },
+          "wall": {
+            "median_ms": 0.20962899725418538,
+            "min_ms": 0.17763800133252516,
+            "max_ms": 0.23379399499390274,
+            "samples_ms": [
+              0.22496799647342414,
+              0.21986800129525363,
+              0.20962899725418538,
+              0.20969899924239144,
+              0.19730599888134748,
+              0.22753299708710983,
+              0.18391000048723072,
+              0.21564000053331256,
+              0.2066630040644668,
+              0.19291699572931975,
+              0.22579900542041287,
+              0.18466199981048703,
+              0.18308800645172596,
+              0.23379399499390274,
+              0.17763800133252516
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.01045314597516082,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 32,
+          "device": {
+            "median_ms": 0.03795327991247177,
+            "min_ms": 0.037303876131772995,
+            "max_ms": 0.04381021857261658,
+            "samples_ms": [
+              0.04092446714639664,
+              0.04170409217476845,
+              0.040701501071453094,
+              0.04381021857261658,
+              0.038289375603199005,
+              0.03774087503552437,
+              0.0376790314912796,
+              0.03767171874642372,
+              0.037569187581539154,
+              0.037303876131772995,
+              0.040738124400377274,
+              0.03795327991247177,
+              0.03753093630075455,
+              0.03820149973034859,
+              0.03753337636590004
+            ]
+          },
+          "wall": {
+            "median_ms": 0.05502371868715272,
+            "min_ms": 0.044095406110500335,
+            "max_ms": 0.05722318746848032,
+            "samples_ms": [
+              0.044200625097801094,
+              0.04460668742467533,
+              0.044095406110500335,
+              0.046803062559774844,
+              0.05722318746848032,
+              0.05484587495629967,
+              0.05525256256078137,
+              0.05472687507790397,
+              0.05549525008063938,
+              0.05662831267727597,
+              0.04435965638549533,
+              0.05616899989036028,
+              0.055459531267842976,
+              0.05502371868715272,
+              0.056636781209817855
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.02762807331588301,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 2.9802322387695312e-08,
+        "relative_l2_error": 1.2391430272721436e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.0001293271780014038,
+        "strict_fp32_relative_l2_error": 0.000498537050533701
+      }
+    },
+    {
+      "name": "narrow",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 1,
+      "n": 128,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 3.725290298461914e-08,
+        "relative_l2_error": 1.6954616754601935e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00012931972742080688,
+        "strict_fp32_relative_l2_error": 0.000498542482103371
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 3.725290298461914e-08,
+        "relative_l2_error": 1.5855785605114384e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00012931972742080688,
+        "strict_fp32_relative_l2_error": 0.0004985337339427263
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 0.09182299673557281,
+            "min_ms": 0.06614500284194946,
+            "max_ms": 0.149400994181633,
+            "samples_ms": [
+              0.09992200136184692,
+              0.149400994181633,
+              0.09182299673557281,
+              0.09338600188493729,
+              0.1110680028796196,
+              0.08757799863815308,
+              0.06775999814271927,
+              0.11166699975728989,
+              0.08658800274133682,
+              0.09567700326442719,
+              0.12158799916505814,
+              0.08177100121974945,
+              0.0911720022559166,
+              0.06614500284194946,
+              0.0689850002527237
+            ]
+          },
+          "wall": {
+            "median_ms": 0.19494099979056045,
+            "min_ms": 0.14336300228023902,
+            "max_ms": 0.22997699852567166,
+            "samples_ms": [
+              0.2013930061366409,
+              0.22997699852567166,
+              0.1997700019273907,
+              0.1970349985640496,
+              0.20996900275349617,
+              0.19494099979056045,
+              0.1467890033381991,
+              0.21012900106143206,
+              0.15831099881324917,
+              0.1897710026241839,
+              0.2115419993060641,
+              0.151909000123851,
+              0.16963199595920742,
+              0.1537730058771558,
+              0.14336300228023902
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.011419535816497427,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 32,
+          "device": {
+            "median_ms": 0.03363362327218056,
+            "min_ms": 0.032746560871601105,
+            "max_ms": 0.03506021946668625,
+            "samples_ms": [
+              0.032972000539302826,
+              0.03345537558197975,
+              0.03506021946668625,
+              0.034077126532793045,
+              0.0349707193672657,
+              0.033559560775756836,
+              0.03404215723276138,
+              0.03284181281924248,
+              0.03434815630316734,
+              0.0342496857047081,
+              0.033867187798023224,
+              0.03303221985697746,
+              0.032746560871601105,
+              0.03363362327218056,
+              0.03280762583017349
+            ]
+          },
+          "wall": {
+            "median_ms": 0.0366199685686297,
+            "min_ms": 0.03559175002010306,
+            "max_ms": 0.03802450009970926,
+            "samples_ms": [
+              0.03581687496989616,
+              0.0366199685686297,
+              0.03802450009970926,
+              0.037179781202212325,
+              0.03765881251638348,
+              0.036434906178328674,
+              0.03671546892292099,
+              0.03614874981394678,
+              0.037435562489918084,
+              0.03780500014727295,
+              0.03685256228891376,
+              0.036616187571780756,
+              0.03559175002010306,
+              0.03654825013654772,
+              0.03577899997253553
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.031176421033035435,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 3.725290298461914e-08,
+        "relative_l2_error": 1.7225847567454047e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.0001293271780014038,
+        "strict_fp32_relative_l2_error": 0.0004985705731133491
+      }
+    },
+    {
+      "name": "vector",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 1,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "passed",
+      "weight_storage_format": 2,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 5.960464477539063e-08,
+        "relative_l2_error": 1.1769666977787397e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00010076165199279785,
+        "strict_fp32_relative_l2_error": 0.00019191948217086072
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 5.960464477539063e-08,
+        "relative_l2_error": 1.1769666977787397e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00010076165199279785,
+        "strict_fp32_relative_l2_error": 0.00019191948217086072
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 1.2621359825134277,
+            "min_ms": 1.2426559925079346,
+            "max_ms": 1.289141058921814,
+            "samples_ms": [
+              1.2657819986343384,
+              1.2573180198669434,
+              1.263124942779541,
+              1.2561719417572021,
+              1.289141058921814,
+              1.2473440170288086,
+              1.265468955039978,
+              1.2621359825134277,
+              1.2743489742279053,
+              1.2809109687805176,
+              1.2838799953460693,
+              1.2480469942092896,
+              1.2478649616241455,
+              1.2608850002288818,
+              1.2426559925079346
+            ]
+          },
+          "wall": {
+            "median_ms": 1.346831995761022,
+            "min_ms": 1.330008999502752,
+            "max_ms": 1.366599004541058,
+            "samples_ms": [
+              1.3492459984263405,
+              1.3410710016614757,
+              1.3653469941345975,
+              1.3364620026550256,
+              1.366599004541058,
+              1.346510005532764,
+              1.3464210060192272,
+              1.3558380014728755,
+              1.349004996882286,
+              1.356350003334228,
+              1.3620600002468564,
+              1.3325740001164377,
+              1.3408500017249025,
+              1.346831995761022,
+              1.330008999502752
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.02658543331692314,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 32,
+          "device": {
+            "median_ms": 1.2166235446929932,
+            "min_ms": 1.2011140584945679,
+            "max_ms": 1.2204500436782837,
+            "samples_ms": [
+              1.2179410457611084,
+              1.2163264751434326,
+              1.2043465375900269,
+              1.2189615964889526,
+              1.2155330181121826,
+              1.2166235446929932,
+              1.2142822742462158,
+              1.2204500436782837,
+              1.2140804529190063,
+              1.2178491353988647,
+              1.2194156646728516,
+              1.2011140584945679,
+              1.2185571193695068,
+              1.218701958656311,
+              1.2051953077316284
+            ]
+          },
+          "wall": {
+            "median_ms": 1.2241318124779355,
+            "min_ms": 1.2046766564708378,
+            "max_ms": 1.2547556875688315,
+            "samples_ms": [
+              1.224268625037439,
+              1.220606656261225,
+              1.2077584688086063,
+              1.2249946876181639,
+              1.2236283125730552,
+              1.2251393436599756,
+              1.224844093712818,
+              1.2269853750694892,
+              1.220245343802162,
+              1.224791812546755,
+              1.2241318124779355,
+              1.2046766564708378,
+              1.221762312525243,
+              1.2547556875688315,
+              1.2095490624233207
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.02757996271432281,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 5.960464477539063e-08,
+        "relative_l2_error": 1.1769666977787397e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00010076165199279785,
+        "strict_fp32_relative_l2_error": 0.00019191948217086072
+      }
+    },
+    {
+      "name": "vector",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 1,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 5.960464477539063e-08,
+        "relative_l2_error": 1.1769666977787397e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00010076165199279785,
+        "strict_fp32_relative_l2_error": 0.00019191948217086072
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 5.960464477539063e-08,
+        "relative_l2_error": 1.1769666977787397e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00010076165199279785,
+        "strict_fp32_relative_l2_error": 0.00019191948217086072
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 0.7783330082893372,
+            "min_ms": 0.7507290244102478,
+            "max_ms": 0.8160409927368164,
+            "samples_ms": [
+              0.7540630102157593,
+              0.7533069849014282,
+              0.7601310014724731,
+              0.8118230104446411,
+              0.7799999713897705,
+              0.777318000793457,
+              0.7848960161209106,
+              0.7771090269088745,
+              0.781328022480011,
+              0.8160409927368164,
+              0.7783330082893372,
+              0.774062991142273,
+              0.7507290244102478,
+              0.8084629774093628,
+              0.7957550287246704
+            ]
+          },
+          "wall": {
+            "median_ms": 0.8623699977761135,
+            "min_ms": 0.844385998789221,
+            "max_ms": 0.9025559993460774,
+            "samples_ms": [
+              0.844385998789221,
+              0.8579619970987551,
+              0.8468899977742694,
+              0.9025559993460774,
+              0.8623699977761135,
+              0.8659570012241602,
+              0.8794329987722449,
+              0.854375000926666,
+              0.8661169995320961,
+              0.8998819976113737,
+              0.8596240004408173,
+              0.8620090011390857,
+              0.8587240008637309,
+              0.8999010024126619,
+              0.8775490059633739
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.043110637275615184,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 32,
+          "device": {
+            "median_ms": 0.7097452282905579,
+            "min_ms": 0.7076326608657837,
+            "max_ms": 0.71552574634552,
+            "samples_ms": [
+              0.7082633376121521,
+              0.71552574634552,
+              0.7130175828933716,
+              0.7133439183235168,
+              0.7093839645385742,
+              0.7083121538162231,
+              0.7095776796340942,
+              0.7092553973197937,
+              0.7130346298217773,
+              0.7124341130256653,
+              0.7117350101470947,
+              0.7128735184669495,
+              0.7076326608657837,
+              0.7096508741378784,
+              0.7097452282905579
+            ]
+          },
+          "wall": {
+            "median_ms": 0.71428309388466,
+            "min_ms": 0.7117542188552761,
+            "max_ms": 0.7193402186658204,
+            "samples_ms": [
+              0.7139383749290573,
+              0.7193402186658204,
+              0.7160524062328477,
+              0.7167681560531491,
+              0.7130335313831893,
+              0.7117542188552761,
+              0.7127755625333521,
+              0.712824093625386,
+              0.7166037812567083,
+              0.7159976248658495,
+              0.714678562417248,
+              0.7173120000061317,
+              0.7123932812191924,
+              0.7133378751404962,
+              0.71428309388466
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.04727672784897312,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 5.960464477539063e-08,
+        "relative_l2_error": 1.1769666977787397e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00010076165199279785,
+        "strict_fp32_relative_l2_error": 0.00019191948217086072
+      }
+    },
+    {
+      "name": "vector_large",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 1,
+      "n": 8192,
+      "k": 8192,
+      "pinned": false,
+      "layout": "ND",
+      "status": "passed",
+      "weight_storage_format": 2,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 8.940696716308594e-08,
+        "relative_l2_error": 1.8569914395137874e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 9.560585021972656e-05,
+        "strict_fp32_relative_l2_error": 0.00020743928888281867
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 8.940696716308594e-08,
+        "relative_l2_error": 1.8569914395137874e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 9.560585021972656e-05,
+        "strict_fp32_relative_l2_error": 0.00020743928888281867
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 4.448072910308838,
+            "min_ms": 4.412292003631592,
+            "max_ms": 4.492187023162842,
+            "samples_ms": [
+              4.412292003631592,
+              4.471979141235352,
+              4.459218978881836,
+              4.481744766235352,
+              4.4761199951171875,
+              4.492187023162842,
+              4.465468883514404,
+              4.4594268798828125,
+              4.436379909515381,
+              4.418021202087402,
+              4.448072910308838,
+              4.429089069366455,
+              4.433229923248291,
+              4.444192886352539,
+              4.442995071411133
+            ]
+          },
+          "wall": {
+            "median_ms": 4.541927999525797,
+            "min_ms": 4.508404999796767,
+            "max_ms": 4.609386000083759,
+            "samples_ms": [
+              4.5187139985500835,
+              4.559371001960244,
+              4.550985002424568,
+              4.566614996292628,
+              4.560303001198918,
+              4.609386000083759,
+              4.5508949988288805,
+              4.541596994386055,
+              4.52723000489641,
+              4.508404999796767,
+              4.541927999525797,
+              4.522811999777332,
+              4.544112001894973,
+              4.536057000223082,
+              4.526748998614494
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.03017435431171496,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 32,
+          "device": {
+            "median_ms": 4.410672187805176,
+            "min_ms": 4.393050193786621,
+            "max_ms": 4.4182257652282715,
+            "samples_ms": [
+              4.404831409454346,
+              4.4182257652282715,
+              4.412395000457764,
+              4.401727676391602,
+              4.402069568634033,
+              4.399033069610596,
+              4.415014743804932,
+              4.410672187805176,
+              4.413646697998047,
+              4.411431312561035,
+              4.408853530883789,
+              4.415104389190674,
+              4.41024923324585,
+              4.393050193786621,
+              4.414829730987549
+            ]
+          },
+          "wall": {
+            "median_ms": 4.4183875625094515,
+            "min_ms": 4.398459343747163,
+            "max_ms": 4.42700300004617,
+            "samples_ms": [
+              4.410690718941623,
+              4.42700300004617,
+              4.419920781174369,
+              4.410419281384748,
+              4.407113625120473,
+              4.410212031189076,
+              4.422057968668014,
+              4.4183875625094515,
+              4.421012250077183,
+              4.420423000055962,
+              4.417203125058222,
+              4.424169499998243,
+              4.415525562535549,
+              4.398459343747163,
+              4.419681281206067
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.030430220675000785,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 8.940696716308594e-08,
+        "relative_l2_error": 1.8569914395137874e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 9.560585021972656e-05,
+        "strict_fp32_relative_l2_error": 0.00020743928888281867
+      }
+    },
+    {
+      "name": "vector_large",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 1,
+      "n": 8192,
+      "k": 8192,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 8.940696716308594e-08,
+        "relative_l2_error": 1.8569914395137874e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 9.560585021972656e-05,
+        "strict_fp32_relative_l2_error": 0.00020743928888281867
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 8.940696716308594e-08,
+        "relative_l2_error": 1.8569914395137874e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 9.560585021972656e-05,
+        "strict_fp32_relative_l2_error": 0.00020743928888281867
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 2.8243749141693115,
+            "min_ms": 2.80132794380188,
+            "max_ms": 2.8453121185302734,
+            "samples_ms": [
+              2.828125,
+              2.826719045639038,
+              2.804192066192627,
+              2.8243749141693115,
+              2.8235421180725098,
+              2.8292970657348633,
+              2.8156778812408447,
+              2.80132794380188,
+              2.8280210494995117,
+              2.804922103881836,
+              2.815052032470703,
+              2.8453121185302734,
+              2.824894905090332,
+              2.8208858966827393,
+              2.8434898853302
+            ]
+          },
+          "wall": {
+            "median_ms": 2.915475000918377,
+            "min_ms": 2.896117999625858,
+            "max_ms": 3.0331390007631853,
+            "samples_ms": [
+              2.9114569988450967,
+              2.923880994785577,
+              2.902781001466792,
+              2.9183200022089295,
+              2.9315249994397163,
+              2.915475000918377,
+              2.9139109974494204,
+              2.896117999625858,
+              2.9160759950173087,
+              2.909032002207823,
+              2.898282000387553,
+              2.9458119970513508,
+              2.9079599989927374,
+              2.9220870055723935,
+              3.0331390007631853
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.047521215163984463,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 32,
+          "device": {
+            "median_ms": 2.757251739501953,
+            "min_ms": 2.7525577545166016,
+            "max_ms": 2.761795997619629,
+            "samples_ms": [
+              2.7525577545166016,
+              2.754185438156128,
+              2.7555086612701416,
+              2.757986545562744,
+              2.757251739501953,
+              2.75286865234375,
+              2.7593677043914795,
+              2.761795997619629,
+              2.7595255374908447,
+              2.7582902908325195,
+              2.7570719718933105,
+              2.7597217559814453,
+              2.7571451663970947,
+              2.75653076171875,
+              2.7606852054595947
+            ]
+          },
+          "wall": {
+            "median_ms": 2.763717281368372,
+            "min_ms": 2.7563372811982845,
+            "max_ms": 2.768196437500592,
+            "samples_ms": [
+              2.7563372811982845,
+              2.758409375019255,
+              2.759715593811052,
+              2.762128937547459,
+              2.7656685001602455,
+              2.7591451562329894,
+              2.768196437500592,
+              2.767761875020369,
+              2.7652079061226686,
+              2.7654251875901537,
+              2.763717281368372,
+              2.764956812370656,
+              2.7630077811409137,
+              2.7613649999693735,
+              2.764988124908996
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.04867808262739331,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 8.940696716308594e-08,
+        "relative_l2_error": 1.8569914395137874e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 9.560585021972656e-05,
+        "strict_fp32_relative_l2_error": 0.00020743928888281867
+      }
+    },
+    {
+      "name": "batch8",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 8,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "passed",
+      "weight_storage_format": 2,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 1.1920928955078125e-07,
+        "relative_l2_error": 2.0038215059387011e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00019147992134094238,
+        "strict_fp32_relative_l2_error": 0.0003580482621786605
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 1.1920928955078125e-07,
+        "relative_l2_error": 2.0038215059387011e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00019147992134094238,
+        "strict_fp32_relative_l2_error": 0.0003580482621786605
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 1.2641140222549438,
+            "min_ms": 1.2418489456176758,
+            "max_ms": 1.3103649616241455,
+            "samples_ms": [
+              1.255599021911621,
+              1.28739595413208,
+              1.2641140222549438,
+              1.267969012260437,
+              1.2557560205459595,
+              1.2510939836502075,
+              1.261875033378601,
+              1.2739850282669067,
+              1.2657300233840942,
+              1.2678649425506592,
+              1.2934900522232056,
+              1.2418489456176758,
+              1.2539589405059814,
+              1.3103649616241455,
+              1.2483329772949219
+            ]
+          },
+          "wall": {
+            "median_ms": 1.351320002868306,
+            "min_ms": 1.3278249971335754,
+            "max_ms": 1.3928490006946959,
+            "samples_ms": [
+              1.3443770003505051,
+              1.3687729951925576,
+              1.34884499857435,
+              1.3470920021063648,
+              1.3500369968824089,
+              1.3455490043270402,
+              1.351320002868306,
+              1.3601969985757023,
+              1.355628999590408,
+              1.3534640020225197,
+              1.3843940032529645,
+              1.3278249971335754,
+              1.3420820032479241,
+              1.3928490006946959,
+              1.353152998490259
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.21235066716621115,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 32,
+          "device": {
+            "median_ms": 1.2139379978179932,
+            "min_ms": 1.2035807371139526,
+            "max_ms": 1.2196565866470337,
+            "samples_ms": [
+              1.2174088954925537,
+              1.212389349937439,
+              1.2126481533050537,
+              1.2188314199447632,
+              1.213477373123169,
+              1.2196565866470337,
+              1.21715247631073,
+              1.20467209815979,
+              1.21897292137146,
+              1.2035807371139526,
+              1.2081388235092163,
+              1.2139379978179932,
+              1.2182738780975342,
+              1.2156803607940674,
+              1.2056208848953247
+            ]
+          },
+          "wall": {
+            "median_ms": 1.2198981248729979,
+            "min_ms": 1.2077572498583322,
+            "max_ms": 1.2246268124727067,
+            "samples_ms": [
+              1.2203154687995266,
+              1.2167890938599157,
+              1.2183113749415497,
+              1.2246268124727067,
+              1.2198981248729979,
+              1.224180343797343,
+              1.2213496249842137,
+              1.2098527813577675,
+              1.2231145624355122,
+              1.2077572498583322,
+              1.213903906318592,
+              1.222963312329739,
+              1.2237964688210923,
+              1.2197434687095665,
+              1.2105581874948257
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.2211278141737901,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 1.1920928955078125e-07,
+        "relative_l2_error": 2.0038215059387011e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00019147992134094238,
+        "strict_fp32_relative_l2_error": 0.0003580482621786605
+      }
+    },
+    {
+      "name": "batch8",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 8,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 1.1920928955078125e-07,
+        "relative_l2_error": 2.0038215059387011e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00019147992134094238,
+        "strict_fp32_relative_l2_error": 0.0003580482621786605
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 1.1920928955078125e-07,
+        "relative_l2_error": 2.0038215059387011e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00019147992134094238,
+        "strict_fp32_relative_l2_error": 0.0003580482621786605
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 0.7769790291786194,
+            "min_ms": 0.7528640031814575,
+            "max_ms": 0.8198959827423096,
+            "samples_ms": [
+              0.7773439884185791,
+              0.7647650241851807,
+              0.7528640031814575,
+              0.7819269895553589,
+              0.7798960208892822,
+              0.7538020014762878,
+              0.7542179822921753,
+              0.8198959827423096,
+              0.7811459898948669,
+              0.7769790291786194,
+              0.7561460137367249,
+              0.7779939770698547,
+              0.7879679799079895,
+              0.7550789713859558,
+              0.7556769847869873
+            ]
+          },
+          "wall": {
+            "median_ms": 0.8529120023013093,
+            "min_ms": 0.8382949963561259,
+            "max_ms": 0.8982079962152056,
+            "samples_ms": [
+              0.8611369994468987,
+              0.8513590000802651,
+              0.8382949963561259,
+              0.859795996802859,
+              0.8553770021535456,
+              0.8529120023013093,
+              0.8421319944318384,
+              0.8982079962152056,
+              0.8573609957238659,
+              0.8499260002281517,
+              0.8484429999953136,
+              0.8531530038453639,
+              0.867901006131433,
+              0.8405289991060272,
+              0.8421820020885207
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.345486101836977,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 32,
+          "device": {
+            "median_ms": 0.7112565040588379,
+            "min_ms": 0.7085123658180237,
+            "max_ms": 0.7178141474723816,
+            "samples_ms": [
+              0.7178141474723816,
+              0.7168498039245605,
+              0.7135628461837769,
+              0.7126008868217468,
+              0.7139713764190674,
+              0.7108618021011353,
+              0.7085123658180237,
+              0.7123217582702637,
+              0.7108080983161926,
+              0.7090226411819458,
+              0.7102628350257874,
+              0.7107519507408142,
+              0.7112565040588379,
+              0.710070788860321,
+              0.7119686007499695
+            ]
+          },
+          "wall": {
+            "median_ms": 0.7155311250244267,
+            "min_ms": 0.7120022187336872,
+            "max_ms": 0.725574593843703,
+            "samples_ms": [
+              0.7249189686717727,
+              0.725574593843703,
+              0.7202053125183738,
+              0.7187149685705663,
+              0.7226543436900101,
+              0.7158586249715881,
+              0.7120022187336872,
+              0.7155311250244267,
+              0.7152643436256767,
+              0.7137101251828426,
+              0.7141143748867762,
+              0.713919593636092,
+              0.7152643436256767,
+              0.7139941249079129,
+              0.7174857812515256
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 0.3774101951520347,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 1.1920928955078125e-07,
+        "relative_l2_error": 2.0038215059387011e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00019147992134094238,
+        "strict_fp32_relative_l2_error": 0.0003580482621786605
+      }
+    },
+    {
+      "name": "batch128",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 128,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "passed",
+      "weight_storage_format": 2,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 2.086162567138672e-07,
+        "relative_l2_error": 3.074910810448167e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00012931227684020996,
+        "strict_fp32_relative_l2_error": 0.00027497689462644716
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 2.086162567138672e-07,
+        "relative_l2_error": 3.074910810448167e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00012931227684020996,
+        "strict_fp32_relative_l2_error": 0.00027497689462644716
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 1.3658859729766846,
+            "min_ms": 1.350782036781311,
+            "max_ms": 1.494400978088379,
+            "samples_ms": [
+              1.3856769800186157,
+              1.3623440265655518,
+              1.351354956626892,
+              1.494400978088379,
+              1.3822139501571655,
+              1.3682290315628052,
+              1.3582030534744263,
+              1.3639320135116577,
+              1.358646035194397,
+              1.350782036781311,
+              1.3691660165786743,
+              1.374271035194397,
+              1.3571360111236572,
+              1.372655987739563,
+              1.3658859729766846
+            ]
+          },
+          "wall": {
+            "median_ms": 1.4631919984822161,
+            "min_ms": 1.4402989982045256,
+            "max_ms": 1.623107003979385,
+            "samples_ms": [
+              1.4692340046167374,
+              1.4442869942286052,
+              1.5435760069522075,
+              1.623107003979385,
+              1.4984199951868504,
+              1.4631919984822161,
+              1.465716995880939,
+              1.464344997657463,
+              1.4522810015478171,
+              1.4402989982045256,
+              1.4542760036420077,
+              1.4689839954371564,
+              1.4447180001297966,
+              1.4577729962184094,
+              1.4541850032401271
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 3.144455233433541,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 4,
+          "device": {
+            "median_ms": 1.3278387784957886,
+            "min_ms": 1.3146289587020874,
+            "max_ms": 1.3393100500106812,
+            "samples_ms": [
+              1.3146289587020874,
+              1.3332942724227905,
+              1.3314584493637085,
+              1.3212175369262695,
+              1.3321549892425537,
+              1.337591290473938,
+              1.3211654424667358,
+              1.3323566913604736,
+              1.3255469799041748,
+              1.322350263595581,
+              1.3229752779006958,
+              1.3278387784957886,
+              1.3369139432907104,
+              1.327102780342102,
+              1.3393100500106812
+            ]
+          },
+          "wall": {
+            "median_ms": 1.3492684993252624,
+            "min_ms": 1.336519249889534,
+            "max_ms": 1.3641945006384049,
+            "samples_ms": [
+              1.336519249889534,
+              1.3552922500821296,
+              1.3534040008380543,
+              1.3429664995783241,
+              1.3549767500080634,
+              1.3621957496070536,
+              1.3438757487165276,
+              1.3548867500503547,
+              1.3486500010913005,
+              1.3442814997688401,
+              1.3453610008582473,
+              1.3480840007105144,
+              1.3596957505797036,
+              1.3492684993252624,
+              1.3641945006384049
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 3.2345548010470475,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 2.086162567138672e-07,
+        "relative_l2_error": 3.074910810448167e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00012931227684020996,
+        "strict_fp32_relative_l2_error": 0.00027497689462644716
+      }
+    },
+    {
+      "name": "batch128",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 128,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 2.086162567138672e-07,
+        "relative_l2_error": 3.074910810448167e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00012931227684020996,
+        "strict_fp32_relative_l2_error": 0.00027497689462644716
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 2.086162567138672e-07,
+        "relative_l2_error": 3.074910810448167e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00012931227684020996,
+        "strict_fp32_relative_l2_error": 0.00027497689462644716
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 0.868698000907898,
+            "min_ms": 0.8478909730911255,
+            "max_ms": 0.9102609753608704,
+            "samples_ms": [
+              0.8496090173721313,
+              0.8767189979553223,
+              0.8702859878540039,
+              0.8478909730911255,
+              0.8591399788856506,
+              0.868698000907898,
+              0.8763020038604736,
+              0.9076560139656067,
+              0.8665630221366882,
+              0.85309898853302,
+              0.8759899735450745,
+              0.8494529724121094,
+              0.8722919821739197,
+              0.9102609753608704,
+              0.8498960137367249
+            ]
+          },
+          "wall": {
+            "median_ms": 0.9489849981036969,
+            "min_ms": 0.9329439999419264,
+            "max_ms": 0.999231000605505,
+            "samples_ms": [
+              0.9461590016144328,
+              0.9576009979355149,
+              0.9494559999438934,
+              0.9338960007880814,
+              0.9430139980395325,
+              0.947291002376005,
+              0.9662380034569651,
+              0.991184999293182,
+              0.9489849981036969,
+              0.9448570053791627,
+              0.9574009964126162,
+              0.9329439999419264,
+              0.9520509993308224,
+              0.999231000605505,
+              0.9438950000912882
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 4.944143179230553,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 4,
+          "device": {
+            "median_ms": 0.8245182633399963,
+            "min_ms": 0.8175780177116394,
+            "max_ms": 0.848782479763031,
+            "samples_ms": [
+              0.8268292546272278,
+              0.8175780177116394,
+              0.826614499092102,
+              0.8232877254486084,
+              0.824999988079071,
+              0.8238282203674316,
+              0.8319985270500183,
+              0.8185222744941711,
+              0.8223894834518433,
+              0.8253840208053589,
+              0.8297657370567322,
+              0.8242122530937195,
+              0.848782479763031,
+              0.8237239718437195,
+              0.8245182633399963
+            ]
+          },
+          "wall": {
+            "median_ms": 0.8469432486890582,
+            "min_ms": 0.8400099995924393,
+            "max_ms": 0.8804594999674009,
+            "samples_ms": [
+              0.8488967505400069,
+              0.8400099995924393,
+              0.848939500428969,
+              0.8462392506771721,
+              0.8465850005450193,
+              0.8442604994343128,
+              0.851907749165548,
+              0.8415652500843862,
+              0.847271250677295,
+              0.8465199989586836,
+              0.8534507505828515,
+              0.8642385000712238,
+              0.8804594999674009,
+              0.8469432486890582,
+              0.8461667493975256
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 5.209062657510763,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 2.086162567138672e-07,
+        "relative_l2_error": 3.074910810448167e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00012931227684020996,
+        "strict_fp32_relative_l2_error": 0.00027497689462644716
+      }
+    },
+    {
+      "name": "batch512",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 512,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "passed",
+      "weight_storage_format": 2,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 7.450580596923828e-08,
+        "relative_l2_error": 1.9137648137626858e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.0001074373722076416,
+        "strict_fp32_relative_l2_error": 0.0003149707366073028
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 7.450580596923828e-08,
+        "relative_l2_error": 1.9137648137626858e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.0001074373722076416,
+        "strict_fp32_relative_l2_error": 0.0003149707366073028
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 1.831874966621399,
+            "min_ms": 1.8199739456176758,
+            "max_ms": 1.8636970520019531,
+            "samples_ms": [
+              1.8301310539245605,
+              1.8592449426651,
+              1.8203649520874023,
+              1.8520309925079346,
+              1.839269995689392,
+              1.8275519609451294,
+              1.8636970520019531,
+              1.8330470323562622,
+              1.8306770324707031,
+              1.8221609592437744,
+              1.8199739456176758,
+              1.8226300477981567,
+              1.8395049571990967,
+              1.831874966621399,
+              1.8390109539031982
+            ]
+          },
+          "wall": {
+            "median_ms": 1.9165250050718896,
+            "min_ms": 1.9076079988735728,
+            "max_ms": 1.9484950025798753,
+            "samples_ms": [
+              1.9165250050718896,
+              1.9337780031492002,
+              1.9078490004176274,
+              1.9364530016900972,
+              1.9409610031289048,
+              1.911254999868106,
+              1.9484950025798753,
+              1.9199410016881302,
+              1.916325003548991,
+              1.907937999931164,
+              1.9076079988735728,
+              1.90828899940243,
+              1.9228860037401319,
+              1.91651500063017,
+              1.9241500049247406
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 9.378297917180193,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 4,
+          "device": {
+            "median_ms": 1.8023957014083862,
+            "min_ms": 1.7914907932281494,
+            "max_ms": 1.8334765434265137,
+            "samples_ms": [
+              1.8254882097244263,
+              1.7988084554672241,
+              1.7966797351837158,
+              1.8023957014083862,
+              1.8334765434265137,
+              1.8239974975585938,
+              1.8029232025146484,
+              1.7914907932281494,
+              1.8000717163085938,
+              1.799088716506958,
+              1.8095897436141968,
+              1.7999999523162842,
+              1.8055859804153442,
+              1.79513680934906,
+              1.8044334650039673
+            ]
+          },
+          "wall": {
+            "median_ms": 1.8255344984936528,
+            "min_ms": 1.8135412501578685,
+            "max_ms": 1.8898039998020977,
+            "samples_ms": [
+              1.8542012494435767,
+              1.822799000365194,
+              1.818696498958161,
+              1.8431252501613926,
+              1.8898039998020977,
+              1.8625072498252848,
+              1.827610751206521,
+              1.8135412501578685,
+              1.822671249101404,
+              1.8205899996246444,
+              1.8316382502234774,
+              1.822370750232949,
+              1.8295342488272581,
+              1.8173062489950098,
+              1.8255344984936528
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 9.531685617412261,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 7.450580596923828e-08,
+        "relative_l2_error": 1.9137648137626858e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.0001074373722076416,
+        "strict_fp32_relative_l2_error": 0.0003149707366073028
+      }
+    },
+    {
+      "name": "batch512",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 512,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 7.450580596923828e-08,
+        "relative_l2_error": 1.9137648137626858e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.0001074373722076416,
+        "strict_fp32_relative_l2_error": 0.0003149707366073028
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 7.450580596923828e-08,
+        "relative_l2_error": 1.9137648137626858e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.0001074373722076416,
+        "strict_fp32_relative_l2_error": 0.0003149707366073028
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 1.2674479484558105,
+            "min_ms": 1.240859031677246,
+            "max_ms": 1.2886979579925537,
+            "samples_ms": [
+              1.2737760543823242,
+              1.2761980295181274,
+              1.2640620470046997,
+              1.2700259685516357,
+              1.2886979579925537,
+              1.271718978881836,
+              1.2674479484558105,
+              1.24679696559906,
+              1.2446099519729614,
+              1.246170997619629,
+              1.2690099477767944,
+              1.2715100049972534,
+              1.240859031677246,
+              1.250859022140503,
+              1.2445570230484009
+            ]
+          },
+          "wall": {
+            "median_ms": 1.3499679989763536,
+            "min_ms": 1.3298789999680594,
+            "max_ms": 1.3691539934370667,
+            "samples_ms": [
+              1.3522910012397915,
+              1.353082996502053,
+              1.3523210000130348,
+              1.3468509932863526,
+              1.3691539934370667,
+              1.3576019991887733,
+              1.3501479988917708,
+              1.3298789999680594,
+              1.3317230041138828,
+              1.3310710055520758,
+              1.3518909981939942,
+              1.3499679989763536,
+              1.3301190047059208,
+              1.3361110031837597,
+              1.332833999185823
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 13.554694064502621,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 4,
+          "device": {
+            "median_ms": 1.2111719846725464,
+            "min_ms": 1.2057292461395264,
+            "max_ms": 1.2399282455444336,
+            "samples_ms": [
+              1.2217905521392822,
+              1.2085872888565063,
+              1.2057292461395264,
+              1.2281379699707031,
+              1.2280207872390747,
+              1.2077734470367432,
+              1.2247395515441895,
+              1.2060937881469727,
+              1.2083202600479126,
+              1.207552194595337,
+              1.2111719846725464,
+              1.2073240280151367,
+              1.2389322519302368,
+              1.2275325059890747,
+              1.2399282455444336
+            ]
+          },
+          "wall": {
+            "median_ms": 1.239189250554773,
+            "min_ms": 1.2276525012566708,
+            "max_ms": 1.2804027501260862,
+            "samples_ms": [
+              1.2442012484825682,
+              1.2317800010350766,
+              1.2303522507863818,
+              1.2552650005090982,
+              1.2537117490865057,
+              1.2323562496021623,
+              1.2500925004133023,
+              1.2276525012566708,
+              1.2327642489253776,
+              1.2290475006011548,
+              1.2337815005594166,
+              1.239189250554773,
+              1.2756360010826029,
+              1.2766204999934416,
+              1.2804027501260862
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 14.184500138223363,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 7.450580596923828e-08,
+        "relative_l2_error": 1.9137648137626858e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.0001074373722076416,
+        "strict_fp32_relative_l2_error": 0.0003149707366073028
+      }
+    },
+    {
+      "name": "batch2048",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 2048,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "passed",
+      "weight_storage_format": 2,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 1.341104507446289e-07,
+        "relative_l2_error": 2.302566397160418e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00011879578232765198,
+        "strict_fp32_relative_l2_error": 0.000308597338601175
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 1.341104507446289e-07,
+        "relative_l2_error": 2.302566397160418e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00011879578232765198,
+        "strict_fp32_relative_l2_error": 0.000308597338601175
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 4.085937023162842,
+            "min_ms": 4.0567708015441895,
+            "max_ms": 4.196197986602783,
+            "samples_ms": [
+              4.107604026794434,
+              4.0729169845581055,
+              4.196197986602783,
+              4.0567708015441895,
+              4.130624771118164,
+              4.100155830383301,
+              4.108047008514404,
+              4.085937023162842,
+              4.076303005218506,
+              4.062526226043701,
+              4.084921836853027,
+              4.120912075042725,
+              4.059688091278076,
+              4.086954116821289,
+              4.076484203338623
+            ]
+          },
+          "wall": {
+            "median_ms": 4.175600995949935,
+            "min_ms": 4.146665996813681,
+            "max_ms": 4.306529997847974,
+            "samples_ms": [
+              4.19703200168442,
+              4.230384998663794,
+              4.306529997847974,
+              4.1476980040897615,
+              4.220005001116078,
+              4.1860809942591,
+              4.205589000775944,
+              4.175600995949935,
+              4.164649995800573,
+              4.151995999563951,
+              4.175100002612453,
+              4.203272997983731,
+              4.146665996813681,
+              4.17384799948195,
+              4.174418994807638
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 16.81853546602283,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 4,
+          "device": {
+            "median_ms": 4.041139602661133,
+            "min_ms": 4.015325546264648,
+            "max_ms": 4.073020935058594,
+            "samples_ms": [
+              4.0463151931762695,
+              4.035364627838135,
+              4.015325546264648,
+              4.073020935058594,
+              4.020605564117432,
+              4.028053283691406,
+              4.034687519073486,
+              4.031393051147461,
+              4.049225330352783,
+              4.041139602661133,
+              4.071380138397217,
+              4.017155170440674,
+              4.051100254058838,
+              4.0546159744262695,
+              4.04416036605835
+            ]
+          },
+          "wall": {
+            "median_ms": 4.06683175060607,
+            "min_ms": 4.039194249344291,
+            "max_ms": 4.099521500393166,
+            "samples_ms": [
+              4.071145000125398,
+              4.059786000652821,
+              4.039194249344291,
+              4.098925250218599,
+              4.04304424955626,
+              4.051732999869273,
+              4.059490500367247,
+              4.057802250827081,
+              4.073847749168635,
+              4.07277800150041,
+              4.099521500393166,
+              4.040985249957885,
+              4.0769887491478585,
+              4.075976499734679,
+              4.06683175060607
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 17.004974708309383,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 1.341104507446289e-07,
+        "relative_l2_error": 2.302566397160418e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00011879578232765198,
+        "strict_fp32_relative_l2_error": 0.000308597338601175
+      }
+    },
+    {
+      "name": "batch2048",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 2048,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 1.341104507446289e-07,
+        "relative_l2_error": 2.302566397160418e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00011879578232765198,
+        "strict_fp32_relative_l2_error": 0.000308597338601175
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 1.341104507446289e-07,
+        "relative_l2_error": 2.302566397160418e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00011879578232765198,
+        "strict_fp32_relative_l2_error": 0.000308597338601175
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 3.6396090984344482,
+            "min_ms": 3.619115114212036,
+            "max_ms": 3.6985409259796143,
+            "samples_ms": [
+              3.6493749618530273,
+              3.6401820182800293,
+              3.634582996368408,
+              3.6247129440307617,
+              3.6469271183013916,
+              3.6306509971618652,
+              3.6396090984344482,
+              3.682162046432495,
+              3.639530897140503,
+              3.6368489265441895,
+              3.6233069896698,
+              3.619115114212036,
+              3.6985409259796143,
+              3.6463539600372314,
+              3.6433329582214355
+            ]
+          },
+          "wall": {
+            "median_ms": 3.7249140004860237,
+            "min_ms": 3.7106669988133945,
+            "max_ms": 3.83682699612109,
+            "samples_ms": [
+              3.7406640039989725,
+              3.7238629956846125,
+              3.721437999047339,
+              3.7202749954303727,
+              3.73641600162955,
+              3.7249140004860237,
+              3.720675995282363,
+              3.769328002817929,
+              3.729673000634648,
+              3.720856002473738,
+              3.7106669988133945,
+              3.766993999306578,
+              3.83682699612109,
+              3.739480998774525,
+              3.7235909985611215
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 18.8810047665721,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 4,
+          "device": {
+            "median_ms": 3.582206964492798,
+            "min_ms": 3.5609700679779053,
+            "max_ms": 3.614687442779541,
+            "samples_ms": [
+              3.586282730102539,
+              3.614687442779541,
+              3.6068031787872314,
+              3.6100587844848633,
+              3.6103713512420654,
+              3.5774283409118652,
+              3.575162649154663,
+              3.5865299701690674,
+              3.577155113220215,
+              3.5697004795074463,
+              3.56318998336792,
+              3.582206964492798,
+              3.5850586891174316,
+              3.5609700679779053,
+              3.566093683242798
+            ]
+          },
+          "wall": {
+            "median_ms": 3.60756574991683,
+            "min_ms": 3.5836077495332574,
+            "max_ms": 3.6645742493419675,
+            "samples_ms": [
+              3.6296877515269443,
+              3.664146001028712,
+              3.6542897487379378,
+              3.6645742493419675,
+              3.6525989999063313,
+              3.6013440003443975,
+              3.599267498429981,
+              3.6078337507206015,
+              3.600910749810282,
+              3.595718500946532,
+              3.5850755011779256,
+              3.6088432498218026,
+              3.60756574991683,
+              3.5836077495332574,
+              3.58920574944932
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 19.183558464699132,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 1.341104507446289e-07,
+        "relative_l2_error": 2.302566397160418e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00011879578232765198,
+        "strict_fp32_relative_l2_error": 0.000308597338601175
+      }
+    },
+    {
+      "name": "square4096",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 4096,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "ND",
+      "status": "passed",
+      "weight_storage_format": 2,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 8.940696716308594e-08,
+        "relative_l2_error": 1.9745139974259424e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00015131384134292603,
+        "strict_fp32_relative_l2_error": 0.00034091933238103835
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 8.940696716308594e-08,
+        "relative_l2_error": 1.9745139974259424e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00015131384134292603,
+        "strict_fp32_relative_l2_error": 0.00034091933238103835
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 6.939166069030762,
+            "min_ms": 6.8660149574279785,
+            "max_ms": 7.007421970367432,
+            "samples_ms": [
+              7.007421970367432,
+              6.936666011810303,
+              6.96164083480835,
+              6.95187520980835,
+              6.952239990234375,
+              6.937812805175781,
+              6.897655963897705,
+              6.951770782470703,
+              6.92520809173584,
+              6.969400882720947,
+              6.97169303894043,
+              6.8660149574279785,
+              6.886771202087402,
+              6.904139995574951,
+              6.939166069030762
+            ]
+          },
+          "wall": {
+            "median_ms": 7.030029999441467,
+            "min_ms": 6.954806995054241,
+            "max_ms": 7.090305000019725,
+            "samples_ms": [
+              7.090305000019725,
+              7.024890001048334,
+              7.052070999634452,
+              7.038456002192106,
+              7.050157997582573,
+              7.025800994597375,
+              6.985995998547878,
+              7.052401997498237,
+              7.01379899692256,
+              7.0642150021740235,
+              7.066528996801935,
+              6.954806995054241,
+              6.984553001530003,
+              7.009249995462596,
+              7.030029999441467
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 19.80626376494791,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 6.9217448234558105,
+            "min_ms": 6.855364799499512,
+            "max_ms": 6.976302146911621,
+            "samples_ms": [
+              6.924921989440918,
+              6.955598831176758,
+              6.905364036560059,
+              6.888360023498535,
+              6.976302146911621,
+              6.943932056427002,
+              6.925572872161865,
+              6.91153621673584,
+              6.8969011306762695,
+              6.9217448234558105,
+              6.96817684173584,
+              6.855364799499512,
+              6.9134111404418945,
+              6.87442684173584,
+              6.972813129425049
+            ]
+          },
+          "wall": {
+            "median_ms": 7.004341001447756,
+            "min_ms": 6.946379995497409,
+            "max_ms": 7.0763780022389255,
+            "samples_ms": [
+              7.01763600227423,
+              7.042272998660337,
+              7.002837999607436,
+              6.989933994191233,
+              7.063833996653557,
+              7.030850996670779,
+              7.015481998678297,
+              6.998479999310803,
+              6.9901429960737005,
+              7.003538994467817,
+              7.0763780022389255,
+              6.946379995497409,
+              7.004341001447756,
+              6.9608880003215745,
+              7.0617000019410625
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 19.856113881323502,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 8.940696716308594e-08,
+        "relative_l2_error": 1.9745139974259424e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00015131384134292603,
+        "strict_fp32_relative_l2_error": 0.00034091933238103835
+      }
+    },
+    {
+      "name": "square4096",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 4096,
+      "n": 4096,
+      "k": 4096,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 8.940696716308594e-08,
+        "relative_l2_error": 1.9745139974259424e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00015131384134292603,
+        "strict_fp32_relative_l2_error": 0.00034091933238103835
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 8.940696716308594e-08,
+        "relative_l2_error": 1.9745139974259424e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00015131384134292603,
+        "strict_fp32_relative_l2_error": 0.00034091933238103835
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 6.693541049957275,
+            "min_ms": 6.652186870574951,
+            "max_ms": 6.736615180969238,
+            "samples_ms": [
+              6.734582901000977,
+              6.677499771118164,
+              6.7094268798828125,
+              6.699817180633545,
+              6.690260887145996,
+              6.686172008514404,
+              6.689115047454834,
+              6.714921951293945,
+              6.693541049957275,
+              6.68416690826416,
+              6.719400882720947,
+              6.736615180969238,
+              6.669192790985107,
+              6.652186870574951,
+              6.710287094116211
+            ]
+          },
+          "wall": {
+            "median_ms": 6.782689000829123,
+            "min_ms": 6.74411599902669,
+            "max_ms": 6.826652999734506,
+            "samples_ms": [
+              6.826652999734506,
+              6.75785199564416,
+              6.795483001042157,
+              6.785685000068042,
+              6.7731809976976365,
+              6.779112998628989,
+              6.775665999157354,
+              6.792397995013744,
+              6.782689000829123,
+              6.77072600228712,
+              6.81153399636969,
+              6.818688001658302,
+              6.748184001480695,
+              6.74411599902669,
+              6.788710998080205
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 20.533070977861154,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 6.700963973999023,
+            "min_ms": 6.640390872955322,
+            "max_ms": 6.767838954925537,
+            "samples_ms": [
+              6.700520992279053,
+              6.700963973999023,
+              6.744764804840088,
+              6.727447986602783,
+              6.673880100250244,
+              6.71346378326416,
+              6.692057132720947,
+              6.652681827545166,
+              6.680103778839111,
+              6.640390872955322,
+              6.723020076751709,
+              6.669219017028809,
+              6.703750133514404,
+              6.767838954925537,
+              6.726223945617676
+            ]
+          },
+          "wall": {
+            "median_ms": 6.788138998672366,
+            "min_ms": 6.731911998940632,
+            "max_ms": 6.85026800056221,
+            "samples_ms": [
+              6.785464996937662,
+              6.778832001145929,
+              6.827785000496078,
+              6.809068996517453,
+              6.759174997569062,
+              6.790865998482332,
+              6.788138998672366,
+              6.731911998940632,
+              6.762690994946752,
+              6.734196998877451,
+              6.804971999372356,
+              6.757200993888546,
+              6.790824998461176,
+              6.85026800056221,
+              6.808868994994555
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 20.51032567930353,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 8.940696716308594e-08,
+        "relative_l2_error": 1.9745139974259424e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00015131384134292603,
+        "strict_fp32_relative_l2_error": 0.00034091933238103835
+      }
+    },
+    {
+      "name": "square8192",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 8192,
+      "n": 8192,
+      "k": 8192,
+      "pinned": false,
+      "layout": "ND",
+      "status": "passed",
+      "weight_storage_format": 2,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 3.5762786865234375e-07,
+        "relative_l2_error": 3.532814894873556e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00030934810638427734,
+        "strict_fp32_relative_l2_error": 0.0002624558339448912
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 3.5762786865234375e-07,
+        "relative_l2_error": 3.532814894873556e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00030934810638427734,
+        "strict_fp32_relative_l2_error": 0.0002624558339448912
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 42.23421859741211,
+            "min_ms": 42.05669403076172,
+            "max_ms": 42.40216064453125,
+            "samples_ms": [
+              42.155391693115234,
+              42.21310043334961,
+              42.27937316894531,
+              42.23421859741211,
+              42.31479263305664,
+              42.227108001708984,
+              42.320858001708984,
+              42.354637145996094,
+              42.40216064453125,
+              42.182655334472656,
+              42.18080520629883,
+              42.27507781982422,
+              42.12510681152344,
+              42.05669403076172,
+              42.32833480834961
+            ]
+          },
+          "wall": {
+            "median_ms": 42.38351400272222,
+            "min_ms": 42.1553709966247,
+            "max_ms": 42.595617996994406,
+            "samples_ms": [
+              42.25757499807514,
+              42.3198839998804,
+              42.46279600192793,
+              42.45125399756944,
+              42.50816199783003,
+              42.364368004200514,
+              42.51903299882542,
+              42.595617996994406,
+              42.5714919983875,
+              42.29679999843938,
+              42.285397998057306,
+              42.38351400272222,
+              42.220474999339785,
+              42.1553709966247,
+              42.50422399491072
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 26.033668060887774,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 42.237003326416016,
+            "min_ms": 42.06513214111328,
+            "max_ms": 42.40385437011719,
+            "samples_ms": [
+              42.24422073364258,
+              42.26612091064453,
+              42.35932159423828,
+              42.237003326416016,
+              42.40385437011719,
+              42.33466339111328,
+              42.2701301574707,
+              42.268489837646484,
+              42.07765579223633,
+              42.14341354370117,
+              42.06513214111328,
+              42.16020965576172,
+              42.225990295410156,
+              42.2146110534668,
+              42.14622497558594
+            ]
+          },
+          "wall": {
+            "median_ms": 42.38514800090343,
+            "min_ms": 42.17691200028639,
+            "max_ms": 42.59397499845363,
+            "samples_ms": [
+              42.38514800090343,
+              42.464188001758885,
+              42.532117004157044,
+              42.41896299936343,
+              42.59397499845363,
+              42.46648200205527,
+              42.36831599700963,
+              42.37622099753935,
+              42.17691200028639,
+              42.25151400169125,
+              42.21568600041792,
+              42.41140799422283,
+              42.45449999871198,
+              42.384947002574336,
+              42.26486900006421
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 26.03195163441767,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 3.5762786865234375e-07,
+        "relative_l2_error": 3.532814894873556e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00030934810638427734,
+        "strict_fp32_relative_l2_error": 0.0002624558339448912
+      }
+    },
+    {
+      "name": "square8192",
+      "op": "gemm",
+      "dtype": "fp32",
+      "m": 8192,
+      "n": 8192,
+      "k": 8192,
+      "pinned": false,
+      "layout": "NZ",
+      "status": "passed",
+      "weight_storage_format": 29,
+      "initial_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 3.5762786865234375e-07,
+        "relative_l2_error": 3.532814894873556e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00030934810638427734,
+        "strict_fp32_relative_l2_error": 0.0002624558339448912
+      },
+      "changed_input_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 3.5762786865234375e-07,
+        "relative_l2_error": 3.532814894873556e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00030934810638427734,
+        "strict_fp32_relative_l2_error": 0.0002624558339448912
+      },
+      "timings": {
+        "single": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 38.80463409423828,
+            "min_ms": 38.66208267211914,
+            "max_ms": 38.8968505859375,
+            "samples_ms": [
+              38.6943244934082,
+              38.74047088623047,
+              38.819427490234375,
+              38.850624084472656,
+              38.70663833618164,
+              38.80463409423828,
+              38.799766540527344,
+              38.81559753417969,
+              38.81403732299805,
+              38.66208267211914,
+              38.81869888305664,
+              38.69072723388672,
+              38.8968505859375,
+              38.84549331665039,
+              38.77281188964844
+            ]
+          },
+          "wall": {
+            "median_ms": 38.94546600349713,
+            "min_ms": 38.74706899659941,
+            "max_ms": 39.19543200026965,
+            "samples_ms": [
+              38.79687400331022,
+              38.86560500541236,
+              38.95166900474578,
+              38.97433199745137,
+              38.86527400027262,
+              38.99450899916701,
+              38.95541500241961,
+              38.93187100038631,
+              38.911752999410965,
+              38.74706899659941,
+              38.94546600349713,
+              38.873028999660164,
+              39.19543200026965,
+              39.02281400223728,
+              39.005159997032024
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 28.334544402758734,
+            "operations": "floating multiply/add"
+          }
+        },
+        "queued": {
+          "repeats_per_sample": 1,
+          "device": {
+            "median_ms": 38.795806884765625,
+            "min_ms": 38.60955810546875,
+            "max_ms": 38.856014251708984,
+            "samples_ms": [
+              38.778255462646484,
+              38.797996520996094,
+              38.82979202270508,
+              38.829166412353516,
+              38.795806884765625,
+              38.75554656982422,
+              38.77513122558594,
+              38.60955810546875,
+              38.76140594482422,
+              38.71484375,
+              38.84716033935547,
+              38.833045959472656,
+              38.856014251708984,
+              38.745208740234375,
+              38.84622573852539
+            ]
+          },
+          "wall": {
+            "median_ms": 38.88891899987357,
+            "min_ms": 38.717262003046926,
+            "max_ms": 39.055224995536264,
+            "samples_ms": [
+              38.87460199621273,
+              38.90148299979046,
+              38.93341300135944,
+              38.92334400006803,
+              38.884901005076244,
+              38.857979998283554,
+              38.88891899987357,
+              38.717262003046926,
+              38.857569998071995,
+              38.86056500050472,
+              39.055224995536264,
+              39.04950400465168,
+              38.986824998573866,
+              38.85768900363473,
+              39.02195199771086
+            ]
+          },
+          "rates": {
+            "tera_ops_per_second": 28.34099136130501,
+            "operations": "floating multiply/add"
+          }
+        }
+      },
+      "final_validation": {
+        "passed": true,
+        "scope": "sampled CPU FP64 dot products of FP16-rounded inputs, with FP32 output",
+        "max_absolute_error": 3.5762786865234375e-07,
+        "relative_l2_error": 3.532814894873556e-07,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "input_rounding_diagnostic": true,
+        "strict_fp32_passed": false,
+        "strict_fp32_max_absolute_error": 0.00030934810638427734,
+        "strict_fp32_relative_l2_error": 0.0002624558339448912
+      }
+    }
+  ],
+  "torch_npu": "2.13.0.rc1",
+  "npu_visible_devices": "2,3",
+  "physical_device": 2,
+  "device_name": "Ascend310P3",
+  "allow_hf32": false,
+  "ended_utc": "2026-10-12T02:44:28.278607+00:00",
+  "passed_cases": 18
+}

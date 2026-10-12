@@ -19,6 +19,8 @@ repos:
   rev: v2.4.1
   hooks:
     - id: codespell
+      # Preserve literal driver diagnostics and numerical benchmark receipts.
+      exclude: '^artifacts/raw-math-20261011/.*\.(json|csv|log)$'
       args: [
         --toml, pyproject.toml,
         '--skip', 'tests/prompts/**,./benchmarks/sonnet.txt,*tests/lora/data/**,build/**,./vllm_ascend.egg-info/**,typos.toml',
@@ -31,6 +33,8 @@ repos:
   rev: v1.32.0
   hooks:
   - id: typos
+    # Preserve literal driver diagnostics and numerical benchmark receipts.
+    exclude: '^artifacts/raw-math-20261011/.*\.(json|csv|log)$'
     args: [
       "--force-exclude",
       "--exclude", "csrc/**"
