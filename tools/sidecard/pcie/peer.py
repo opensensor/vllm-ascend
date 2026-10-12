@@ -27,6 +27,7 @@ CUDA_POINTER_IS_MANAGED = 8
 CUDA_POINTER_RDMA_CAPABLE = 15
 CUDA_FLUSH_CURRENT_CONTEXT = 0
 CUDA_FLUSH_OWNER = 100
+CUDA_FLUSH_ALL_DEVICES = 200
 
 
 class Request(c.Structure):
@@ -63,6 +64,8 @@ class Driver:
             "cuPointerSetAttribute": [c.c_void_p, c.c_int, c.c_uint64],
             "cuMemGetHandleForAddressRange": [c.c_void_p, c.c_uint64, c.c_size_t, c.c_int, c.c_uint64],
             "cuFlushGPUDirectRDMAWrites": [c.c_int, c.c_int],
+            "cuEventRecord": [c.c_void_p, c.c_void_p],
+            "cuEventSynchronize": [c.c_void_p],
         }
         for name, arguments in signatures.items():
             function = getattr(self.library, name)
@@ -93,8 +96,9 @@ class Driver:
         self.call("cuMemGetHandleForAddressRange", c.byref(fd), allocation.pointer, allocation.size, CUDA_DMA_BUF_FD, 0)
         return DmaBuffer(self, allocation, fd.value)
 
-    def flush(self):
-        self.call("cuFlushGPUDirectRDMAWrites", CUDA_FLUSH_CURRENT_CONTEXT, CUDA_FLUSH_OWNER)
+    def flush(self, *, all_devices=False):
+        scope = CUDA_FLUSH_ALL_DEVICES if all_devices else CUDA_FLUSH_OWNER
+        self.call("cuFlushGPUDirectRDMAWrites", CUDA_FLUSH_CURRENT_CONTEXT, scope)
 
 
 class DmaBuffer:

@@ -31,12 +31,13 @@ def prepare(output, specification, source):
     (destination / "sidecard").mkdir(parents=True)
     (destination / "glm_perf").mkdir()
     files = []
-    for original in sorted((source / "tools" / "sidecard").glob("*.py")):
+    for original in sorted((source / "tools" / "sidecard").rglob("*.py")):
         files.append(original)
     files.extend(source / "tools" / "glm_perf" / name for name in GLM_DEPENDENCIES)
     hashes = {}
     for original in files:
         relative = original.relative_to(source)
+        (output / "source" / relative).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(original, output / "source" / relative)
         hashes[str(relative)] = hashlib.sha256(original.read_bytes()).hexdigest()
     (output / "source-sha256.json").write_text(json.dumps(hashes, indent=2) + "\n")

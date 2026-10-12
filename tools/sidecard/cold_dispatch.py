@@ -22,6 +22,18 @@ OUTPUT_ROW_BYTES = WIDTH * 4
 ACTIVE_TIMEOUT = 300
 
 
+def create_dispatch(config, cuda, torch, *, wait=True):
+    specification = json.loads(Path(config).read_bytes())
+    transport = specification.get("expert_transport", "socket")
+    if transport == "direct-dma":
+        from .dma_dispatch import DmaDispatch
+
+        return DmaDispatch(config, cuda, torch, wait=wait)
+    if transport != "socket":
+        raise ValueError("unknown expert transport")
+    return ColdDispatch(config, cuda, torch, wait=wait)
+
+
 def worker(config, rank, fd, parent_pid):
     """Keep expert banks resident; CPU sockets permit indefinite idle time."""
     guard_parent(parent_pid)

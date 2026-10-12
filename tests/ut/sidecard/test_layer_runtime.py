@@ -28,6 +28,8 @@ def test_snapshot_excludes_environment_and_dirty_glm_experiments(tmp_path):
     ]
     assert not (output / "runtime-environment.json").exists()
     assert "tools/sidecard/layer_server.py" in json.loads((output / "source-sha256.json").read_text())
+    assert "tools/sidecard/pcie/peer.py" in json.loads((output / "source-sha256.json").read_text())
+    assert (output / "source/tools/sidecard/pcie/__init__.py").is_file()
     with pytest.raises(FileExistsError):
         prepare(output, specification, source)
 

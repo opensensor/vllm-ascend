@@ -4,7 +4,7 @@ Direct cross-vendor DMA is **hardware-validated on this host**, using the
 Ascend DMA engine against NVIDIA-exported GPU memory. Both assigned chips
 pass repeated transfers in both directions. This backend does not stage
 tensor payloads in host DRAM. The first API performs a blocking ioctl;
-the qualified GLM service still uses its existing socket transport.
+GLM can use it through the [worker-owned serving integration](../GLM_DIRECT_DMA.md).
 
 See the [hardware report](../../../artifacts/sidecard-direct-dma-20261012/README.md)
 and [design PNG](../../../artifacts/sidecard-direct-dma-20261012/design.png).

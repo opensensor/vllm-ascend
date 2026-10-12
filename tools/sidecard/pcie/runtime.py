@@ -17,10 +17,11 @@ class IpcHandle(c.Structure):
 
 
 class Runtime:
-    def __init__(self, kind, library, device=0):
+    def __init__(self, kind, library, device=0, *, initialize=True):
         if kind not in ("cuda", "ascend"):
             raise ValueError("backend must be cuda or ascend")
         self.kind, self.pid, self.thread = kind, os.getpid(), threading.get_ident()
+        self.device = device
         self.library = c.CDLL(str(library))
         pointer = c.c_void_p
         output = c.POINTER(pointer)
@@ -70,7 +71,8 @@ class Runtime:
             function = getattr(self.library, name)
             function.argtypes, function.restype = arguments, c.c_int
         if kind == "ascend":
-            self.call("aclInit", None)
+            if initialize:
+                self.call("aclInit", None)
             self.call("aclrtSetDevice", device)
         else:
             self.call("cudaSetDevice", device)
