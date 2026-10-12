@@ -16,6 +16,22 @@ STREAMS = 4
 TOP_K = 8
 LOWER_BOUND = -5.0
 L2_EPS = 1e-6
+FRACTAL_NZ = 29
+
+
+def prepare_projection_layout(weights, format_weight):
+    """Format only 2D FP16 linear weights, retaining absorbed/cache operands.
+
+    Decode's skinny GEMM otherwise reformats the large ND weight each call.
+    kv_b and indexer weights have separate view/batched-matmul consumers.
+    """
+    for name, weight in list(weights.items()):
+        if (
+            name == "self_attn.in_proj"
+            or name == "self_attn.kv_a_proj_with_mqa.weight"
+            or (name.endswith("proj.weight") and "indexer" not in name and "kv_b" not in name)
+        ):
+            weights[name] = format_weight(weight, FRACTAL_NZ)
 
 
 def validate_config(config, max_context):
@@ -151,6 +167,10 @@ class TextLayer:
         if self.index >= 3:
             w["mlp.gate.weight"] = w["mlp.gate.weight"].float()
             w["mlp.gate.e_score_correction_bias"] = w["mlp.gate.e_score_correction_bias"].float()
+        if self.device.startswith("npu"):
+            import torch_npu
+
+            prepare_projection_layout(w, torch_npu.npu_format_cast)
 
     def reset(self):
         self.length = 0

@@ -6,6 +6,7 @@ import importlib
 import json
 import os
 import sys
+from contextlib import nullcontext
 from pathlib import Path
 
 from .device_backend import CudaOracle
@@ -82,6 +83,7 @@ def run(checkpoint, specification, device, output):
             actor = object.__new__(CudaExperts)
             actor.torch = torch
             actor.oracle = CudaOracle(PlanBanks(plan), specification["cuda_backend"], TOP_K * 32)
+            actor.configure_stream(specification["cuda_backend"].get("torch_stream_experts", False))
         try:
             for rows in (1, 4, 17):
                 for phase, multiplier in enumerate((1.0, 4.0)):
@@ -99,9 +101,12 @@ def run(checkpoint, specification, device, output):
                         activation = (torch.nn.functional.silu(g.clamp(max=10)) * u.clamp(-10, 10)).half()
                         projected = projection(activation, signed_down[expert], ds[expert].float(), 4)
                         expected += projected.float() * weights[:, expert, None]
-                    actual = actor(layer, hidden.to(device), ids.to(device), weights.to(device)).cpu()
+                    stream = torch.cuda.Stream() if device == "cuda" and getattr(actor, "use_stream", False) else None
+                    with torch.cuda.stream(stream) if stream is not None else nullcontext():
+                        actual = actor(layer, hidden.to(device), ids.to(device), weights.to(device)).cpu()
                     torch.testing.assert_close(actual, expected, rtol=0.002, atol=0.002)
-                    repeated = actor(layer, hidden.to(device), ids.to(device), weights.to(device)).cpu()
+                    with torch.cuda.stream(stream) if stream is not None else nullcontext():
+                        repeated = actor(layer, hidden.to(device), ids.to(device), weights.to(device)).cpu()
                     torch.testing.assert_close(repeated, actual, rtol=0, atol=0)
                     cases.append(
                         dict(
@@ -112,6 +117,7 @@ def run(checkpoint, specification, device, output):
                             max_abs_error=float((actual - expected).abs().max()),
                             passed=True,
                             repeat_equal=True,
+                            nondefault_cuda_stream=stream is not None,
                         )
                     )
         finally:

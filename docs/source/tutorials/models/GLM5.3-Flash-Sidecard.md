@@ -14,8 +14,8 @@ activations, FP16 projections, and BF16-rounded residuals in FP32 storage
 are explicit parts of this runtime's numerical policy. It does not establish
 parity with the original unquantized model.
 
-See the [design PNG](../../../../artifacts/sidecard-layer-runtime-20261012/architecture.png)
-and [measured report](../../../../artifacts/sidecard-layer-runtime-20261012/README.md).
+See the [design PNG](../../../../artifacts/sidecard-layer-optimization-20261012/architecture.png)
+and [measured report](../../../../artifacts/sidecard-layer-optimization-20261012/README.md).
 
 ## Supported features
 
@@ -25,9 +25,13 @@ sampling, sparse DSA, owner-local recurrent/KV state, and bounded prefill
 overlap are implemented. Requests serialize; the RTX executes prefix and
 suffix in order while overlapping known prompt chunks with Ascend.
 
-This is an independent eager actor server. ACLGraph, CUDA graphs,
-flashcomm1, MTP, vision, tools, batched scheduling, and prefix caching are
-outside its implemented scope. The model's theoretical position range is
+This is an independent actor server. Optional one-token KDA span graphs
+retain eager DSA cache control and eager multi-token prefill. CUDA expert
+kernels can run on the current Torch stream without per-layer barriers;
+Ascend linear weights use a prepared FRACTAL_NZ layout. See the
+[optimization report](../../../../artifacts/sidecard-layer-optimization-20261012/README.md)
+for measured candidates and the promoted configuration. flashcomm1, MTP,
+vision, tools, batched scheduling, and prefix caching remain outside scope. The model's theoretical position range is
 1,048,576; the deployed cap and completed capacity gates are documented
 separately in the report. A 128K/16-sequence profile is not validated.
 
@@ -52,7 +56,7 @@ Torch environments. Run from a checkout using the dedicated launcher:
 ```bash
 /srv/ai/venvs/sidecard-cuda-20261012/bin/python \
   -m tools.sidecard.layer_runtime \
-  --specification artifacts/sidecard-layer-runtime-20261012/runtime-specification.json \
+  --specification artifacts/sidecard-layer-optimization-20261012/runtime-specification.json \
   --cuda-python /srv/ai/venvs/sidecard-cuda-20261012/bin/python \
   --output /srv/ai/storage/artifacts/sidecard-layer-new \
   --port 8000

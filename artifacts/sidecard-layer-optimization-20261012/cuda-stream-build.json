@@ -1,0 +1,22 @@
+{
+  "command": [
+    "/usr/local/cuda/bin/nvcc",
+    "-std=c++17",
+    "-O3",
+    "--fmad=false",
+    "-arch=sm_120",
+    "-shared",
+    "-Xcompiler=-fPIC",
+    "/srv/ai/storage/artifacts/sidecard-cuda-stream-20261012/source/tools/sidecard/cuda_compact.cu",
+    "-o",
+    "/srv/ai/storage/artifacts/sidecard-cuda-stream-20261012/cuda-stream-clipped.so"
+  ],
+  "source_sha256": {
+    "cuda_oracle.cu": "9fa8d54de8b2c0fb2ad253aa721f2d9912d0fd77fca3aa48000534f4367ea131",
+    "cuda_compact.cu": "26abc8c32643f31b48208a1b42fb62683d8c03c5c0ffa2c65c8ce70f71f26421"
+  },
+  "library": "/srv/ai/storage/artifacts/sidecard-cuda-stream-20261012/cuda-stream-clipped.so",
+  "library_sha256": "9b501033041acce69274b134bd70a3ffbd007973acefecaa411914f4b80b5397",
+  "swiglu_limit": 10.0,
+  "hardware_validated": false
+}

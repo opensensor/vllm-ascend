@@ -325,29 +325,39 @@ extern "C" int sidecard_oracle_forward_splitk(const void* input, const void* ids
   return static_cast<int>(cudaGetLastError());
 }
 
-extern "C" int sidecard_oracle_forward_packed(const void* input, const void* ids, const void* gate, const void* gs,
+extern "C" int sidecard_oracle_forward_packed_stream(const void* input, const void* ids, const void* gate, const void* gs,
                                               const void* down, const void* ds, void* input_q, void* input_scales,
                                               void* gate_up, void* hidden, void* hidden_q, void* hidden_scales,
-                                              void* output, int rows, int width, int intermediate, int bits) {
+                                              void* output, int rows, int width, int intermediate, int bits, void* stream_handle) {
   if (rows < 1 || rows > kMaxRoutes || width != 4096 || intermediate != 2048 || (bits != 4 && bits != 8))
     return static_cast<int>(cudaErrorInvalidValue);
-  quantize<<<(rows * width / kBlock + kThreads - 1) / kThreads, kThreads>>>(
+  cudaStream_t stream = static_cast<cudaStream_t>(stream_handle);
+  quantize<<<(rows * width / kBlock + kThreads - 1) / kThreads, kThreads, 0, stream>>>(
       static_cast<const __half*>(input), static_cast<signed char*>(input_q), static_cast<float*>(input_scales), rows,
       width, bits);
-  project_nibbles<<<(rows * 2 * intermediate + kThreads - 1) / kThreads, kThreads>>>(
+  project_nibbles<<<(rows * 2 * intermediate + kThreads - 1) / kThreads, kThreads, 0, stream>>>(
       static_cast<const signed char*>(input_q), static_cast<const float*>(input_scales),
       static_cast<const signed char*>(gate), static_cast<const __half*>(gs), static_cast<const int*>(ids),
       static_cast<__half*>(gate_up), rows, 2 * intermediate, width);
-  swiglu<<<(rows * intermediate + kThreads - 1) / kThreads, kThreads>>>(
+  swiglu<<<(rows * intermediate + kThreads - 1) / kThreads, kThreads, 0, stream>>>(
       static_cast<const __half*>(gate_up), static_cast<__half*>(hidden), rows, intermediate);
-  quantize<<<(rows * intermediate / kBlock + kThreads - 1) / kThreads, kThreads>>>(
+  quantize<<<(rows * intermediate / kBlock + kThreads - 1) / kThreads, kThreads, 0, stream>>>(
       static_cast<const __half*>(hidden), static_cast<signed char*>(hidden_q), static_cast<float*>(hidden_scales), rows,
       intermediate, bits);
-  project_nibbles<<<(rows * width + kThreads - 1) / kThreads, kThreads>>>(
+  project_nibbles<<<(rows * width + kThreads - 1) / kThreads, kThreads, 0, stream>>>(
       static_cast<const signed char*>(hidden_q), static_cast<const float*>(hidden_scales),
       static_cast<const signed char*>(down), static_cast<const __half*>(ds), static_cast<const int*>(ids),
       static_cast<__half*>(output), rows, width, intermediate);
   return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int sidecard_oracle_forward_packed(const void* input, const void* ids, const void* gate, const void* gs,
+                                              const void* down, const void* ds, void* input_q, void* input_scales,
+                                              void* gate_up, void* hidden, void* hidden_q, void* hidden_scales,
+                                              void* output, int rows, int width, int intermediate, int bits) {
+  return sidecard_oracle_forward_packed_stream(input, ids, gate, gs, down, ds, input_q, input_scales,
+                                               gate_up, hidden, hidden_q, hidden_scales, output,
+                                               rows, width, intermediate, bits, nullptr);
 }
 
 extern "C" int sidecard_oracle_forward_grouped(const void* input, const void* ids, const void* gate, const void* gs,
@@ -464,12 +474,18 @@ __global__ void reduce_local(const __half* raw, const int* row_map, const float*
   output[index] = total;
 }
 
-extern "C" int sidecard_oracle_reduce_local(const void* raw, const void* row_map, const void* weights, void* output,
-                                            int rows, int width, int routes) {
+extern "C" int sidecard_oracle_reduce_local_stream(const void* raw, const void* row_map, const void* weights, void* output,
+                                            int rows, int width, int routes, void* stream_handle) {
   if (rows < 1 || rows > 640 || width != 4096 || routes < 1 || routes > kMaxRoutes)
     return static_cast<int>(cudaErrorInvalidValue);
-  reduce_local<<<(rows * width + kThreads - 1) / kThreads, kThreads>>>(
+  cudaStream_t stream = static_cast<cudaStream_t>(stream_handle);
+  reduce_local<<<(rows * width + kThreads - 1) / kThreads, kThreads, 0, stream>>>(
       static_cast<const __half*>(raw), static_cast<const int*>(row_map), static_cast<const float*>(weights),
       static_cast<float*>(output), rows, width, routes);
   return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int sidecard_oracle_reduce_local(const void* raw, const void* row_map, const void* weights, void* output,
+                                            int rows, int width, int routes) {
+  return sidecard_oracle_reduce_local_stream(raw, row_map, weights, output, rows, width, routes, nullptr);
 }
