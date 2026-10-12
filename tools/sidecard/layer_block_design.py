@@ -1,0 +1,309 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Capacity-first whole-layer CUDA/Ascend/CUDA design using checkpoint headers.
+
+This creates a design ledger, not a service or a prediction of model speed.
+Payload checksums and actual workspace/cache allocations remain runtime gates.
+"""
+
+import argparse
+import hashlib
+import json
+import math
+from collections import Counter
+from dataclasses import asdict, dataclass
+from pathlib import Path
+
+import regex as re
+
+from .checkpoint import EXPERT_TENSOR, read_header
+from .placement import GLM_EXPERTS, GLM_HIDDEN, GLM_INTERMEDIATE, GLM_LAYERS, validate_glm_config
+
+GIB = 1024**3
+HEADER_LIMIT = 32 * 1024**2
+LAYER_NAME = re.compile(r"^model\.language_model\.layers\.(\d+)\.")
+GPU_FREE_BYTES = 97338 * 1024**2
+NPU_FREE_BYTES = (45851 * 1024**2, 45206 * 1024**2)
+DEFAULT_BEGIN = 18
+DEFAULT_END = 33
+STREAMS = 4
+FP16_BYTES = 2
+FP32_BYTES = 4
+BUFFER_SLOTS = 2
+MAX_PACKET_ROWS = 512
+
+
+@dataclass(frozen=True)
+class Budget:
+    available: int
+    cache: int
+    workspace: int
+    reserve: int
+    preparation: int
+
+    def __post_init__(self):
+        if any(type(value) is not int or value < 0 for value in asdict(self).values()) or self.available == 0:
+            raise ValueError("memory allowances must be nonnegative byte counts with positive available memory")
+
+    def ledger(self, weights, buffers):
+        if any(type(value) is not int or value < 0 for value in (weights, buffers)):
+            raise ValueError("weight and buffer byte counts must be nonnegative integers")
+        live_runtime = self.cache + self.workspace + buffers
+        peak = weights + max(live_runtime, self.preparation) + self.reserve
+        return dict(
+            **asdict(self),
+            weights=weights,
+            transport_buffers=buffers,
+            peak_budgeted_bytes=peak,
+            headroom_bytes=self.available - peak,
+            fits=peak <= self.available,
+            runtime_allowances_hardware_qualified=False,
+        )
+
+
+def boundary_bytes(rows, residual_bytes=FP32_BYTES):
+    """Complete deferred mHC state plus int64 positions, preserving field dtypes."""
+    if type(rows) is not int or not 1 <= rows <= MAX_PACKET_ROWS or residual_bytes not in (FP16_BYTES, FP32_BYTES):
+        raise ValueError("bounded mHC rows and FP16/FP32 residual required")
+    return rows * (
+        GLM_HIDDEN * FP16_BYTES + STREAMS * GLM_HIDDEN * residual_bytes + (STREAMS + STREAMS**2) * FP32_BYTES + 8
+    )
+
+
+def aggregate_inventory(tensors, geometry, bits, layer_types, metadata_sha256, *, header_hashes=None):
+    """Reduce descriptors to a small ledger; require complete main-model coverage."""
+    if (
+        geometry.get("num_hidden_layers") != GLM_LAYERS
+        or geometry.get("hidden_size") != GLM_HIDDEN
+        or len(layer_types) != GLM_LAYERS
+        or geometry.get("hc_mult") != STREAMS
+    ):
+        raise ValueError("inventory requires the GLM main-model geometry")
+    layers = [
+        dict(
+            layer=index,
+            expert_bytes=0,
+            dense_bytes=0,
+            expert_tensors=0,
+            dense_tensors=0,
+            attention=layer_types[index],
+            bits=bits.get(str(index)),
+        )
+        for index in range(GLM_LAYERS)
+    ]
+    names, global_bytes, auxiliary_bytes = set(), 0, 0
+    dtypes = Counter()
+    for row in tensors:
+        name, size = row["name"], row["bytes"]
+        if name in names or type(size) is not int or size < 0:
+            raise ValueError("duplicate tensor or invalid descriptor size")
+        names.add(name)
+        layer = row["layer"]
+        if layer is not None and layer >= GLM_LAYERS:
+            auxiliary_bytes += size
+            continue
+        if layer is None:
+            global_bytes += size
+            continue
+        if type(layer) is not int or layer < 0 or row["kind"] not in ("expert", "dense"):
+            raise ValueError("invalid layer descriptor")
+        kind = row["kind"]
+        layers[layer][kind + "_bytes"] += size
+        layers[layer][kind + "_tensors"] += 1
+        dtypes[row["dtype"]] += size
+    for layer in layers:
+        if layer["dense_tensors"] == 0:
+            raise ValueError("missing backbone layer")
+        if layer["layer"] >= 3:
+            precision = layer["bits"]
+            if precision not in (2, 3, 4):
+                raise ValueError("unsupported expert code precision")
+            expected = GLM_EXPERTS * (
+                3 * GLM_HIDDEN * GLM_INTERMEDIATE * precision // 8
+                + 3 * (GLM_HIDDEN // 32) * (GLM_INTERMEDIATE // 32) * FP16_BYTES
+            )
+            if layer["expert_bytes"] != expected or layer["expert_tensors"] != GLM_EXPERTS * 6:
+                raise ValueError("expert code/scale coverage differs from full canonical layer")
+        elif layer["expert_bytes"]:
+            raise ValueError("first three layers must remain dense")
+    return dict(
+        header_only=True,
+        payload_checksums_verified=False,
+        geometry=geometry,
+        metadata_sha256=metadata_sha256,
+        header_sha256=header_hashes or {},
+        layers=layers,
+        global_bytes=global_bytes,
+        auxiliary_mtp_bytes=auxiliary_bytes,
+        tensor_count=len(names),
+        main_weights_bytes=global_bytes + sum(row["dense_bytes"] + row["expert_bytes"] for row in layers),
+        byte_preserving_expert_repack=True,
+        vision_inventoried=False,
+        dtype_bytes=dict(dtypes),
+    )
+
+
+def validate_expert_descriptor(name, descriptor, bits):
+    """Canonical names plus unique descriptors imply full per-expert coverage."""
+    match = EXPERT_TENSOR.fullmatch(name)
+    if match is None:
+        raise ValueError("noncanonical expert tensor name")
+    layer, expert, projection, kind = match.groups()
+    precision = bits.get(layer)
+    if not 0 <= int(expert) < GLM_EXPERTS or precision not in (2, 3, 4):
+        raise ValueError("expert ID or precision differs from checkpoint geometry")
+    rows, columns = (GLM_HIDDEN, GLM_INTERMEDIATE) if projection == "down" else (GLM_INTERMEDIATE, GLM_HIDDEN)
+    shape = [rows, columns * precision // 8] if kind == "codes" else [rows // 32, columns // 32]
+    dtypes = ("I8", "U8") if kind == "codes" else ("F16",)
+    if descriptor.get("shape") != shape or descriptor.get("dtype") not in dtypes:
+        raise ValueError("expert code/scale tensor shape or dtype differs")
+
+
+def scan_checkpoint(root):
+    root = root.resolve()
+    config = json.loads((root / "config.json").read_text())
+    validate_glm_config(config)
+    text = config["text_config"]
+    manifest = json.loads((root / "native-layout.json").read_text())
+    index = json.loads((root / "model.safetensors.index.json").read_text())["weight_map"]
+    rows, hashes = [], {}
+    for filename in sorted(set(index.values())):
+        path = (root / filename).resolve()
+        if not path.is_relative_to(root):
+            raise ValueError("checkpoint tensor path escapes root")
+        header, _ = read_header(path)
+        with path.open("rb") as file:
+            count = int.from_bytes(file.read(8), "little")
+            if count > HEADER_LIMIT:
+                raise ValueError("oversized checkpoint header")
+            hashes[filename] = hashlib.sha256(file.read(count)).hexdigest()
+        for name, descriptor in header.items():
+            if name == "__metadata__":
+                continue
+            if index.get(name) != filename:
+                raise ValueError("tensor header and index disagree")
+            if ".mlp.experts." in name:
+                validate_expert_descriptor(name, descriptor, manifest["layer_bits"])
+            match = LAYER_NAME.match(name)
+            rows.append(
+                dict(
+                    name=name,
+                    bytes=descriptor["data_offsets"][1] - descriptor["data_offsets"][0],
+                    layer=int(match[1]) if match else None,
+                    kind="expert" if ".mlp.experts." in name else "dense",
+                    dtype=descriptor["dtype"],
+                )
+            )
+    if len(rows) != len(index):
+        raise ValueError("index has missing tensor descriptors")
+    geometry = {
+        key: text[key]
+        for key in (
+            "num_hidden_layers",
+            "hidden_size",
+            "hc_mult",
+            "n_routed_experts",
+            "num_experts_per_tok",
+            "moe_intermediate_size",
+        )
+    }
+    metadata = {
+        name: hashlib.sha256((root / name).read_bytes()).hexdigest()
+        for name in ("config.json", "native-layout.json", "model.safetensors.index.json")
+    }
+    return aggregate_inventory(
+        rows, geometry, manifest["layer_bits"], text["layer_types"], metadata, header_hashes=hashes
+    )
+
+
+def candidate(inventory, begin, end, gpu, npus):
+    if type(begin) is not int or type(end) is not int or not 1 <= begin < end < GLM_LAYERS or len(npus) != 2:
+        raise ValueError("one interior interval and two NPU chips required")
+    middle = inventory["layers"][begin:end]
+    if len(inventory["layers"]) != GLM_LAYERS or any(
+        row["layer"] != index for index, row in enumerate(inventory["layers"])
+    ):
+        raise ValueError("inventory layer order differs")
+    experts = sum(row["expert_bytes"] for row in middle)
+    dense = sum(row["dense_bytes"] for row in middle)
+    gpu_weights = inventory["main_weights_bytes"] - experts - dense
+    # Replicate all dense bytes on BOTH NPU chips as a conservative upper bound;
+    # shard only the complete expert banks. Actual TP duplication is a runtime gate.
+    npu_weights = math.ceil(experts / 2) + dense
+    buffers = BUFFER_SLOTS * 2 * boundary_bytes(MAX_PACKET_ROWS)
+    ledgers = [gpu.ledger(gpu_weights, buffers), *(budget.ledger(npu_weights, buffers) for budget in npus)]
+    return dict(
+        begin=begin,
+        end=end,
+        gpu_layers=list(range(begin)) + list(range(end, GLM_LAYERS)),
+        npu_layers=list(range(begin, end)),
+        gpu=ledgers[0],
+        npus=ledgers[1:],
+        fits=all(row["fits"] for row in ledgers),
+        cross_architecture_boundaries=2,
+        old_expert_joins=42,
+        npu_dense_replicated=True,
+        experts_per_npu_layer=GLM_EXPERTS // 2,
+        weights_move_per_token=False,
+        full_model_speed_hardware_qualified=False,
+    )
+
+
+def design(inventory):
+    gpu = Budget(GPU_FREE_BYTES, 6 * GIB, 2 * GIB, 4 * GIB, 3 * GIB)
+    npus = tuple(Budget(free, 4 * GIB, 2 * GIB, 4 * GIB, 2 * GIB) for free in NPU_FREE_BYTES)
+    preferred = candidate(inventory, DEFAULT_BEGIN, DEFAULT_END, gpu, npus)
+    frontier = [
+        candidate(inventory, begin, end, gpu, npus)
+        for begin in range(1, GLM_LAYERS - 1)
+        for end in range(begin + 1, GLM_LAYERS)
+    ]
+    feasible = [row for row in frontier if row["fits"]]
+    feasible.sort(
+        key=lambda row: (
+            len(row["npu_layers"]),
+            -min(row["gpu"]["headroom_bytes"], *(x["headroom_bytes"] for x in row["npus"])),
+        )
+    )
+    if not preferred["fits"]:
+        raise ValueError("the preferred architecture does not fit its explicit allowances")
+    return dict(
+        schema_version=1,
+        kind="whole-layer architecture candidate",
+        inventory=inventory,
+        preferred=preferred,
+        capacity_alternatives=feasible[:12],
+        feasible_interval_count=len(feasible),
+        selection="18:33 keeps the complete middle W4 run on Ascend, with explicit startup/runtime headroom; "
+        "capacity ranking is not a runtime latency ranking",
+        boundary_state=dict(
+            hidden="FP16 [T,4096]",
+            residual="FP32 [T,4,4096] conservative; FP16 only if qualified",
+            post="FP32 [T,4,1]",
+            comb="FP32 [T,4,4]",
+            positions="INT64 [T]",
+            bytes_per_token=boundary_bytes(1),
+            bytes_for_512=boundary_bytes(512),
+        ),
+        execution="CUDA prefix -> Ascend TP2 middle -> CUDA suffix/head; one token remains sequential; "
+        "prefill chunks/independent sequences may overlap; autoregressive future tokens cannot",
+        runtime_implemented=False,
+        mtp_enabled=False,
+        vision_enabled=False,
+    )
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--checkpoint", type=Path)
+    parser.add_argument("--inventory", type=Path)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    if bool(args.checkpoint) == bool(args.inventory) or args.output.exists():
+        parser.error("one checkpoint or saved aggregate inventory, and fresh output required")
+    inventory = scan_checkpoint(args.checkpoint) if args.checkpoint else json.loads(args.inventory.read_text())
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(design(inventory), indent=2) + "\n")
+
+
+if __name__ == "__main__":
+    main()
