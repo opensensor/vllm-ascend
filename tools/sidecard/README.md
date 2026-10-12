@@ -5,52 +5,29 @@ Atlas 300I Duo card, exposing two Ascend 310P3 chips. The product goal is useful
 for models larger than NVIDIA VRAM, improving on RTX plus CPU/weight offload.
 Keep expert weights resident where they execute and exchange activations.
 
-**Status: one-card joined GLM service running.** The replacement
-uses only physical NPU devices 2 and 3 plus the RTX, with 144 CUDA experts and
-72 experts on each NPU. The Qwen service on devices 0 and 1 is preserved.
-See the [one-card runbook](ONE_CARD.md) for placement and qualification.
+**Current implementation: complete-layer CUDA/Ascend runtime.** CUDA owns
+layers 0–17 and 33–44, embedding, normalization, head, and greedy sampling.
+One Atlas 300I Duo card runs layers 18–32 with TP2 attention/shared MLP and
+EP2 routed experts. Each MoE layer retains all 288 experts; the middle block
+stores 144 per NPU. Only physical NPU devices 2 and 3 are assigned. Physical
+0 and 1 remain available to the existing Qwen service.
 
-The endpoint is `http://192.168.53.187:8001/v1`, model `glm-sidecard`, with
-260,352 context tokens. Fused Ascend mHC Sinkhorn raised completed 64-token
-decode to 3.46 tokens/s. Cold 8K prefill measured 57.7 tokens/s; cached repeat
-first text took 2.64 seconds. Cold prefill remains the principal limitation.
-All seven operational API checks and 168 real-input serialized/overlap checks
-passed; greedy repeat variation remains unresolved. See
-[current measurements](../../artifacts/sidecard-glm-20261011/optimization/README.md).
+Use the [layer runtime runbook](LAYER_RUNTIME.md),
+[hardware report](../../artifacts/sidecard-layer-runtime-20261012/README.md),
+and [design PNG](../../artifacts/sidecard-layer-runtime-20261012/architecture.png).
+The endpoint is `http://192.168.53.187:8000/v1`, model `glm-sidecard`.
+The runtime serializes requests, overlaps two bounded prompt chunks across
+architectures, and keeps recurrent/KV/indexer caches with their owning layers.
+Chat, completions, streaming, and tokenization have a deliberately small
+supported API surface described in the runbook.
 
-The [architecture sweep](../../artifacts/sidecard-glm-20261011/architecture/README.md)
-compares actual GLM projection shapes, real W4/W3/W2 expert pipelines and
-host-staged transfers. CUDA experts are 11–17× faster for the measured
-one-token local workload after a cache sweep, and 21–34× faster with warm
-weights. Cold streaming is sensitive to weight precision and
-batch size; it is a benchmark candidate, not a deployed optimization. The
-restored service measured 3.57 decode tokens/s after an authenticated checkpoint
-shard repair. The next placement experiments target residency, lossless compact
-storage and a bounded cache, with separate native attention/state measurements.
+Earlier per-expert dispatch services and their measurements are historical.
+Their [one-card](ONE_CARD.md) and [original service](SERVICE.md) runbooks remain
+available for reproducing those experiments. The commands below describe
+those planning and transport tools; launch the current model with
+`tools.sidecard.layer_runtime`.
 
-The previous OpenAI-compatible endpoint was
-`http://192.168.53.187:8001/v1`, model `glm-sidecard`. CUDA owns experts 0–71
-in all 42 routed layers; the qualified Ascend backbone and other expert ranks
-use both Ascend cards. Chat, streaming, concurrency and chunked prefill passed
-operational checks. Greedy repeat variation remains unresolved, so full
-numerical/quality qualification has not passed. See the [service runbook](SERVICE.md).
-The previous prefix-enabled profile advertised 645,120 context tokens and
-measured approximately 56 uncached prompt tokens/s and 2.6–3.0 decode tokens/s.
-The 8,192-token repeat reused 7,680 cached tokens, reaching first text in 9.16
-seconds. See [measured performance](../../artifacts/sidecard-glm-20261011/fast/README.md)
-for the cold-request timings and validation limits.
-
-Five persistent CPU workers exercise
-binary IPC, resident tiny SwiGLU experts and coordinator combination. The
-canonical checkpoint path plans, exports and verifies owner tensors. The
-packed-weight smoke loads exported W2/W3/W4 bytes in each child process.
-The independent prototype server uses the resident loader described in the
-runbook. A production accelerator expert backend, sidecard native checkpoint
-exporter and measured sidecard speedup remain follow-up work. Hardware gates establish host-staged copy
-integrity, real mixed-device expert execution and CUDA final reduction.
-The previous Ascend-only server was replaced after CUDA preparation completed.
-
-## Target ownership
+## Previous expert-dispatch prototype
 
 | Component | Intended owner | Reason and gate |
 | --- | --- | --- |

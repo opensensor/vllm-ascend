@@ -1,0 +1,183 @@
+{
+  "_build": {
+    "namespace": "glm_reconstruction_v1140",
+    "streaming_pipeline": true,
+    "version": 1140,
+    "output_columns": 128,
+    "helper_package": "glm_reconstruction_v1140_helpers",
+    "tile_pipeline": true,
+    "all_bits": true,
+    "prefill_native": true,
+    "fused_moe": true,
+    "prepared_weight_layout": true,
+    "pair_scale_groups": true,
+    "fp16_swiglu": false,
+    "pair_hidden_quant": false,
+    "strided_product_copy": false,
+    "repeat_product_cast": false,
+    "w3_float_fragments": false,
+    "specialize_w3": false,
+    "compact_w4_scratch": true,
+    "prefill_weight_cache": true,
+    "fp16_route_workspace": true,
+    "native_route_columns": true,
+    "prerounded_weight_scales": false,
+    "fp16_weight_scales": true,
+    "active_cube_rows": false,
+    "direct_w4_l1": true,
+    "prepared_offset_tables": true,
+    "product_pipe_events": true,
+    "bulk_route_store": true,
+    "fused_scale_accumulation": false,
+    "share_gate_up_input": true,
+    "cache_gate_up_activations": true,
+    "vector_scale_products": true,
+    "gather_product_matrix": false,
+    "prefill_rows_32": true,
+    "quad_hidden_quant": true,
+    "direct_hidden_gather": true,
+    "route_packed_input": true,
+    "route_packed_down": true,
+    "route_compact_down_scales": true,
+    "raw_hidden_scales": true,
+    "raw_input_scales": true,
+    "nz_prefill_accumulator": false,
+    "nz_prefill_min_rows": 0,
+    "cache_expert_ends": false,
+    "prefill_reduce_meta_cache": false,
+    "direct_compact_down_scales": false,
+    "group_major_input_scales": false,
+    "group_major_down_scales": true,
+    "down_scale_layout": "dense_group_major_sparse_tile_row_v1",
+    "input_scale_layout": "row_major_v1",
+    "prefill_product_cast": false,
+    "weight_decode_lut": false,
+    "wide_cube_k": 0,
+    "pair_prefill_scale_groups": true
+  },
+  "_streaming_sources": {
+    "native_sources/compile_reconstruction.cpp": "e7df352d8e98426001f43dd17116443c72ce9eafa9d7a07930329278d0c3447e",
+    "native_sources/coordinate_div.cpp": "897895ee80fbfcaf8e4b4090f5351eb4fe41a375529e75e9d76bdcbd32ede53c",
+    "native_sources/glm_bf16_cast.cpp": "a4c1a61fc5f43297c684a2f924ef73f8a90f82123184b0d72593c3860836c027",
+    "native_sources/glm_bf16_vector.cpp": "ff8740d9cb0e5c739dc74d6f78d487120a3b0a25920a710d7c47e269c6b6978f",
+    "native_sources/glm_fused_compact_scales.h": "e8fa17dfb7ee7235222052ebe544520da431e8ef7352828c556274c449f7d1d7",
+    "native_sources/glm_fused_down_scales.h": "8082a4413f3a07fa876f88c4737e23693cca476ed03a9c7bc2622286016ee440",
+    "native_sources/glm_fused_input_scales.h": "53da107eba4dc546ef2a8ccba7aacbc38d61fecfbaeca60bff41802d73787fd8",
+    "native_sources/glm_fused_moe.cpp": "2d6476911d9e7d683a309934913cba3084375a8ef8afb61bfc1c741d7b286522",
+    "native_sources/glm_fused_pack.cpp": "83dd3aa8357acf57123c77f253c372c34c5ba243a9f425499110707a7d2743f0",
+    "native_sources/glm_fused_quantize.h": "35980321f8df37ec1f05c431bfd51c38c34682cb3435a91a1e240eee4f654162",
+    "native_sources/glm_fused_reduce.cpp": "b88c5d28de459b149b35ce7882e10ff01cbc0155f17d77463ce96d1fc42e938b",
+    "native_sources/glm_fused_reduce_schedule.h": "2268e123b6e2009b6acac747828cdae45e5abec80be71aed419b77a218340c97",
+    "native_sources/glm_fused_route_cache.h": "4028d822e8a753a01056e28768c470b305cfd093949839d19adff894ed1cb0f3",
+    "native_sources/glm_fused_route_input.cpp": "b376d5a652df724a9786f8f4787349a74cfbf8874ef23823741e60b7f5a44ad5",
+    "native_sources/glm_fused_scratch.h": "e5dae080fc2736005c1b91927fee04bd4ab796f1b4eafaba497a58ee0fbbeac9",
+    "native_sources/glm_integer_divide.cpp": "b202ae555f08eb078ee9f9c915a519e6dbc5662469204f5c3a9ed8dfe028e4ed",
+    "native_sources/glm_kda_beta_scale_vector.cpp": "b3169e54fbc9cb118b229bd3c295c02de4bea3f2b1180ebd94b9d0e3577f16d5",
+    "native_sources/glm_lowbit_a8_pipeline.cpp": "9b7702fca17a6f86555a3737af1dc1b80010a3f882747779f0077d75c08aef5c",
+    "native_sources/glm_qsa_metadata.cpp": "2a1791c59a88a22a1ff93bfe955c9fe7f987b06639e56f1d8b2e83657571fdd3",
+    "native_sources/glm_query_bf16_vector.cpp": "a58041f372f1133b15a7edf6472f517b8c5c648fb31550c4b9562bc358844625",
+    "native_sources/glm_route_input_layout.h": "94a4c725cd5c2ff05541f7856463a46e3121305d559af01dce5b72e1fd0c7a15",
+    "native_sources/glm_sinkhorn_tiled.cpp": "aa6daea433de78a4b6c26befda349a0c8ec04dbec0d39672503433977c31cd18",
+    "native_sources/glm_state_rows.cpp": "1f9464745e32e8603d598bc003bac2b3c660257b547e2b475db620662861848c",
+    "native_sources/glm_streaming_contract.h": "e6cf82293e6455bacb4e13b0000b9813e82f532354ef22d203cce84eeeadb362",
+    "native_sources/glm_streaming_epilogue.h": "cf905c7b6562f61cfe72a126915695c41cdfa06395c4f7295cdeadae2ce20ca0",
+    "native_sources/glm_streaming_operands.h": "6064d68abfaa772f0e012d6fa273dc2e27f0bd6ab3dc5bd8e6fb4ddd3426a403",
+    "native_sources/glm_streaming_products.h": "4d6db3d10bfa57f93d0728912aa3c97501f78c08570d39ee7566d61e35a9517a",
+    "native_sources/glm_streaming_products_pointer.h": "b11035d70bd563ece99a85c945edfd186635767ce02fed2f5091d4705adf07eb",
+    "native_sources/glm_streaming_scale_gather.h": "00f57354938ccc4e36eeda77c51c90d1e0d29902c27fce392f30bd7a4fcb044a",
+    "native_sources/glm_w4a8_matmul.cpp": "357394bbde7a3ffe4f68ac84bbae6c4c5ad337f49f4c80d283e827e9904576ed",
+    "native_sources/glm_w4a8_pack.cpp": "07dc06ec4bf8b93719c06a762c51062b6d53bb3da1d591d8ac532e481db0640e",
+    "native_sources/glm_w4a8_pipeline.cpp": "98bc222250bd2dea659f0ab39fe12a4ee91801e7ff0a9b456f15a419759157e7",
+    "native_sources/mhc_post_kernel.cpp": "f161c2223ad4ef3454ec80ea958072a0f54bca9152fc959f7967816007f16d74",
+    "native_sources/mhc_projection_kernel.cpp": "b3fa46073213b9ff2ca93a83d73d62253adcae8f9ad44b4381ce620502e5ee0a",
+    "native_sources/reconstruction_bridge.cpp": "08906a208fab23cc9a87e5a18e624d7a64e6458f84f022f7039acf6d6a5b57e2",
+    "native_sources/reconstruction_kernel.cpp": "a240c74499e0d937271ce15adf70e1bb9a8e840f21f38cd522ab2c12297c79d9"
+  },
+  "_helpers": {
+    "reconstruction_native.py": "9bf814f721c063009c3e211841a55f7940c849c99d018d0822227f1cc3f5752c",
+    "reconstruction_probe.py": "53671a4e566771d23f945d55037e24cc7120df8a7d21672802b5a5e2724f3d83",
+    "glm_int4.py": "be71985a4fd66c3f99d950abb5da4f8383ad607c421c8b3bfbe1ec3564e0a843",
+    "glm_fused_moe.py": "388311a3eb00a0db6dd813554d95002f97e80f5441988a4c12e6309b43249ca4",
+    "fused_moe_probe.py": "ff983a03e5118f037b546c7c63074db6765a41b8b3eb3be719c99a5f9b78a2b6",
+    "fused_weight_layout.py": "dde6829b0be8238d91ee7bdd89246874bb13ab4379e29cfc057faaebd98ca6f0",
+    "fused_offset_tables.py": "5fb347efa75657ac337b58aca9165d335ddabe02cc4f7096049d372f52fdcdc1",
+    "expert_reconstruction.py": "2d3bfc73b1736f2abe605b43c0e0d81f483afa88c5c79c050df5faa630cea1a4",
+    "__init__.py": "6c6ec57de9f82ef42d82760f144a4571cb16b3cd6de33aaa7aa9fd65e8ab1fa1"
+  },
+  "glm_w4a8_pack.cpp": {
+    "source_sha256": "07dc06ec4bf8b93719c06a762c51062b6d53bb3da1d591d8ac532e481db0640e",
+    "binary_sha256": "aacdfeee1e1f4b374e2c9cf24c46ea3c87455d43336f41bbaf459fcc6a24cede"
+  },
+  "glm_lowbit_a8_pipeline.cpp": {
+    "source_sha256": "9b7702fca17a6f86555a3737af1dc1b80010a3f882747779f0077d75c08aef5c",
+    "binary_sha256": "947025ecd33e88f7341557b30d5169438bc8ddd506b1d1bba03619e67109db63"
+  },
+  "glm_fused_gate_up.bin": {
+    "source_sha256": "2d6476911d9e7d683a309934913cba3084375a8ef8afb61bfc1c741d7b286522",
+    "binary_sha256": "e16e31fdd20861d992129d0f93f5cc6f59a1226900e78d1fd281509428055211"
+  },
+  "glm_fused_down.bin": {
+    "source_sha256": "2d6476911d9e7d683a309934913cba3084375a8ef8afb61bfc1c741d7b286522",
+    "binary_sha256": "1ffc1e4a9cfd5bf4cc474802d64d1ab3750b527ceeabefdeab44133a53ea54c6"
+  },
+  "glm_fused_gate_up_w4.bin": {
+    "source_sha256": "2d6476911d9e7d683a309934913cba3084375a8ef8afb61bfc1c741d7b286522",
+    "binary_sha256": "b90e33b2567a94fb40bae532565db7edceed877799d24f693c8af9d6b77a9278"
+  },
+  "glm_fused_down_w4.bin": {
+    "source_sha256": "2d6476911d9e7d683a309934913cba3084375a8ef8afb61bfc1c741d7b286522",
+    "binary_sha256": "fcab47b8426a561637394656cee6230d0d1b0ed509620e6da59d032d4f295861"
+  },
+  "glm_streaming_contract.h": {
+    "source_sha256": "e6cf82293e6455bacb4e13b0000b9813e82f532354ef22d203cce84eeeadb362"
+  },
+  "glm_streaming_operands.h": {
+    "source_sha256": "6064d68abfaa772f0e012d6fa273dc2e27f0bd6ab3dc5bd8e6fb4ddd3426a403"
+  },
+  "glm_streaming_products.h": {
+    "source_sha256": "4d6db3d10bfa57f93d0728912aa3c97501f78c08570d39ee7566d61e35a9517a"
+  },
+  "glm_streaming_epilogue.h": {
+    "source_sha256": "cf905c7b6562f61cfe72a126915695c41cdfa06395c4f7295cdeadae2ce20ca0"
+  },
+  "glm_fused_scratch.h": {
+    "source_sha256": "e5dae080fc2736005c1b91927fee04bd4ab796f1b4eafaba497a58ee0fbbeac9"
+  },
+  "glm_fused_compact_scales.h": {
+    "source_sha256": "e8fa17dfb7ee7235222052ebe544520da431e8ef7352828c556274c449f7d1d7"
+  },
+  "glm_fused_route_cache.h": {
+    "source_sha256": "4028d822e8a753a01056e28768c470b305cfd093949839d19adff894ed1cb0f3"
+  },
+  "glm_fused_down_scales.h": {
+    "source_sha256": "8082a4413f3a07fa876f88c4737e23693cca476ed03a9c7bc2622286016ee440"
+  },
+  "glm_fused_input_scales.h": {
+    "source_sha256": "53da107eba4dc546ef2a8ccba7aacbc38d61fecfbaeca60bff41802d73787fd8"
+  },
+  "glm_route_input_layout.h": {
+    "source_sha256": "94a4c725cd5c2ff05541f7856463a46e3121305d559af01dce5b72e1fd0c7a15"
+  },
+  "glm_fused_route_input.bin": {
+    "source_sha256": "b376d5a652df724a9786f8f4787349a74cfbf8874ef23823741e60b7f5a44ad5",
+    "binary_sha256": "99d9d188e02755cf09e5e04daaeae8f76e20c076c7df30ee6cbab6c113ccea03"
+  },
+  "glm_fused_pack.bin": {
+    "source_sha256": "83dd3aa8357acf57123c77f253c372c34c5ba243a9f425499110707a7d2743f0",
+    "binary_sha256": "649cf14bfeebed5e67d28698c2751bb45c884e25bc6651c04c38e6db27c70f9a"
+  },
+  "glm_fused_quantize.h": {
+    "source_sha256": "35980321f8df37ec1f05c431bfd51c38c34682cb3435a91a1e240eee4f654162"
+  },
+  "glm_fused_reduce.bin": {
+    "source_sha256": "b88c5d28de459b149b35ce7882e10ff01cbc0155f17d77463ce96d1fc42e938b",
+    "binary_sha256": "b711d177b110d0bac26fd04d69802d98f746776c7553ea0b94abb400861db483"
+  },
+  "glm_fused_reduce_schedule.h": {
+    "source_sha256": "2268e123b6e2009b6acac747828cdae45e5abec80be71aed419b77a218340c97"
+  },
+  "reconstruction_bridge.cpp": {
+    "source_sha256": "08906a208fab23cc9a87e5a18e624d7a64e6458f84f022f7039acf6d6a5b57e2",
+    "binary_sha256": "620c86ed751450b9ac2d134304ab5f8769ead81a99aacd5276fc0200ff83f4c4"
+  }
+}
