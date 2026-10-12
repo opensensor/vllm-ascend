@@ -19,7 +19,16 @@ def draw(artifacts, output):
     parity = json.loads((parity_path if parity_path.exists() else artifacts / "pipeline-parity.json").read_bytes())
     context_path = artifacts / "context-gate.json"
     context = json.loads(context_path.read_bytes()) if context_path.exists() else {"passed": False}
-    capacity = "65,536 total tokens completed" if context["passed"] else "65,536 configured; full capacity gate pending"
+    completed = max((case["api"]["usage"]["total_tokens"] for case in context.get("cases", ())), default=0)
+    capacity = (
+        f"{completed:,} total tokens completed"
+        if context["passed"]
+        else "65,536 configured; full capacity gate pending"
+    )
+    configuration = artifacts / "runtime-specification.json"
+    specification = json.loads(configuration.read_bytes()) if configuration.exists() else {}
+    graphs = specification.get("npu_decode_graphs", False)
+    cuda_graphs = specification.get("cuda_decode_graphs", False)
     fig = plt.figure(figsize=(16, 10), facecolor="#f4f7fb")
     ax = fig.add_axes((0, 0, 1, 1))
     ax.set(xlim=(0, 1), ylim=(0, 1))
@@ -40,7 +49,7 @@ def draw(artifacts, output):
     text(
         0.04,
         0.909,
-        "Implemented eager text runtime • real resident W2/W3/W4 experts • A4 activations • one sequence",
+        "Implemented text runtime • real resident W2/W3/W4 experts • A4 activations • one sequence",
         13,
     )
     box(0.04, 0.817, 0.92, 0.053, "#fff0cc")
@@ -51,8 +60,9 @@ def draw(artifacts, output):
     text(
         0.055,
         0.696,
-        "Embedding + layers 0–17\nComplete layer math and routing\nAll 288 experts per MoE layer\n"
-        "Owner-local KDA / KV / indexer\nmHC residual and mixers",
+        "Embedding + layers 0–17\nStream-aware expert kernels\nAll 288 experts per MoE layer\n"
+        "Owner-local KDA / KV / indexer\n"
+        + ("KDA spans replay; DSA eager" if cuda_graphs else "mHC residual and mixers"),
         12,
         linespacing=1.7,
     )
@@ -61,7 +71,8 @@ def draw(artifacts, output):
         0.388,
         0.696,
         "Layers 18–32, all W4\nOne 300I Duo: physical 2 and 3\nTP2 attention and shared MLP\n"
-        "EP2: 144 experts/chip/layer\nHCCL stays within this stage",
+        "EP2: 144 experts/chip/layer\n"
+        + ("NZ weights; five KDA replay spans" if graphs else "NZ projections; HCCL TP/EP"),
         12,
         linespacing=1.7,
     )
@@ -69,8 +80,9 @@ def draw(artifacts, output):
     text(
         0.721,
         0.696,
-        "Layers 33–44, all W2\nComplete layer math and routing\nOwner-local attention state\n"
-        "FP32 contraction and RMSNorm\nFP16 head + greedy sampling",
+        "Layers 33–44, all W2\nStream-aware expert kernels\n"
+        + ("KDA replay; DSA eager\n" if cuda_graphs else "Owner-local attention state\n")
+        + "FP32 contraction and RMSNorm\nFP16 head + greedy sampling",
         12,
         linespacing=1.7,
     )
@@ -122,8 +134,8 @@ def draw(artifacts, output):
     text(
         0.04,
         0.075,
-        "Capacity tests do not establish recall quality. No batching, prefix caching, graphs, MTP, vision, or tools.\n"
-        "The other Ascend card remains assigned to Qwen. Receipts: artifacts/sidecard-layer-runtime-20261012.",
+        "Capacity tests do not establish recall quality. No batching, prefix caching, MTP, vision, or tools.\n"
+        f"The other Ascend card remains assigned to Qwen. Receipts: artifacts/{artifacts.name}.",
         11,
     )
     fig.savefig(output, dpi=150, facecolor=fig.get_facecolor())

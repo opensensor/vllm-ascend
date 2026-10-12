@@ -1,0 +1,129 @@
+{
+  "passed": true,
+  "cases": [
+    {
+      "name": "queued_request_isolation",
+      "passed": true,
+      "responses": [
+        {
+          "id": "chatcmpl-948dc9911d5a41d885342314a73e924f",
+          "object": "chat.completion",
+          "created": 1791801446,
+          "model": "glm-sidecard",
+          "choices": [
+            {
+              "index": 0,
+              "finish_reason": "stop",
+              "message": {
+                "role": "assistant",
+                "content": "2"
+              }
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 25,
+            "completion_tokens": 3,
+            "total_tokens": 28
+          }
+        },
+        {
+          "id": "chatcmpl-030578bacc244926b16551d81c69082c",
+          "object": "chat.completion",
+          "created": 1791801446,
+          "model": "glm-sidecard",
+          "choices": [
+            {
+              "index": 0,
+              "finish_reason": "stop",
+              "message": {
+                "role": "assistant",
+                "content": "99",
+                "reasoning_content": "99"
+              }
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 25,
+            "completion_tokens": 4,
+            "total_tokens": 29
+          }
+        }
+      ]
+    },
+    {
+      "name": "streaming_reasoning_and_usage",
+      "passed": true,
+      "content": "hello",
+      "reasoning_content": "",
+      "usage": {
+        "prompt_tokens": 18,
+        "completion_tokens": 3,
+        "total_tokens": 21
+      }
+    },
+    {
+      "name": "cancelled_stream_followed_by_request",
+      "passed": true,
+      "next_request_seconds": 0.8629138099931879
+    },
+    {
+      "name": "single_needle_smoke",
+      "passed": true,
+      "expected": "RAVEN-7319",
+      "response": {
+        "id": "chatcmpl-fd967f1e962447d7b76b3eaa17f371e6",
+        "object": "chat.completion",
+        "created": 1791801450,
+        "model": "glm-sidecard",
+        "choices": [
+          {
+            "index": 0,
+            "finish_reason": "stop",
+            "message": {
+              "role": "assistant",
+              "content": "RAVEN-7319"
+            }
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 3645,
+          "completion_tokens": 8,
+          "total_tokens": 3653
+        }
+      },
+      "scope": "one synthetic needle, not a general long-context quality benchmark"
+    },
+    {
+      "name": "generation_after_315_seconds_idle",
+      "passed": true,
+      "response": {
+        "id": "chatcmpl-0d5c62d77f17416eb9d30292f6379156",
+        "object": "chat.completion",
+        "created": 1791801824,
+        "model": "glm-sidecard",
+        "choices": [
+          {
+            "index": 0,
+            "finish_reason": "stop",
+            "message": {
+              "role": "assistant",
+              "content": "hello"
+            }
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 18,
+          "completion_tokens": 3,
+          "total_tokens": 21
+        }
+      }
+    }
+  ],
+  "health_current_service": {
+    "status": "ok",
+    "architecture": "cuda-prefix-ascend-middle-cuda-suffix",
+    "max_model_len": 65536
+  },
+  "idle_soak_started": 1791801509.6126065,
+  "idle_seconds": 315.0019317200058
+}

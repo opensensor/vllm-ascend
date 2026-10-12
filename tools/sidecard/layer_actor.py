@@ -4,7 +4,8 @@
 Only one request owns caches at a time. A position-zero packet clears every
 stage's caches; peer failure makes the coordinator unusable. Two prompt chunks
 can overlap across architectures; decode is serial. There is no cross-request
-prefix reuse, graph capture, or speculative decoding.
+prefix reuse or speculative decoding. Optional KDA-span decode replay retains
+eager DSA cache control and the same owner-local tensors and collectives.
 """
 
 import argparse
@@ -20,6 +21,7 @@ import time
 from datetime import timedelta
 from pathlib import Path
 
+from .layer_decode_graph import DecodeGraphs
 from .layer_math import TextLayer, rms_norm, validate_config
 from .layer_tp_gate import validate_tp
 from .layer_weights import GPU_LAYERS, MAX_CHUNK, NPU_LAYERS, CudaExperts, NpuExperts, load_dense
@@ -131,6 +133,21 @@ def npu_worker(args):
         for layer in NPU_LAYERS
     ]
     validate_tp(layers, root, args.rank, torch, Path(args.output) / f"tp-rank{args.rank}-gate.json")
+    decode_graphs = None
+    if args.decode_graphs:
+        with torch.inference_mode():
+            decode_graphs = DecodeGraphs(layers, torch, device)
+        (Path(args.output) / f"decode-graphs-rank{args.rank}.json").write_text(
+            json.dumps(
+                {
+                    "spans": [[layer.index for layer in span] for span in decode_graphs.spans],
+                    "captured": list(decode_graphs.graphs),
+                    "scope": "single-token KDA spans; DSA eager",
+                },
+                indent=2,
+            )
+            + "\n"
+        )
     control_connection = socket.socket(fileno=args.control_fd)
     receive_buffer = bytearray(MAX_BODY_BYTES)
     connection = socket.socket(fileno=args.fd) if args.rank == 0 else None
@@ -199,8 +216,11 @@ def npu_worker(args):
                     ]
                 for value in state:
                     broadcast_stage(value, torch)
-                for layer in layers:
-                    state = layer.forward(*state)
+                if decode_graphs is None:
+                    for layer in layers:
+                        state = layer.forward(*state)
+                else:
+                    state = decode_graphs.forward(state)
                 if args.rank == 0:
                     if not all(bool(torch.isfinite(value).all().cpu()) for value in state):
                         raise FloatingPointError("Ascend stage produced nonfinite mHC state")
@@ -255,6 +275,24 @@ class Coordinator:
                 layer: TextLayer(layer, weights[layer], self.config, "cuda", torch, self.experts, self.max_context)
                 for layer in GPU_LAYERS
             }
+            self.prefix_graphs, self.suffix_graphs = None, None
+            if self.spec.get("cuda_decode_graphs", False):
+                if not self.spec["cuda_backend"].get("torch_stream_experts", False):
+                    raise ValueError("CUDA decode capture requires stream-aware expert kernels")
+                with torch.inference_mode():
+                    self.prefix_graphs = DecodeGraphs([self.layers[index] for index in range(18)], torch, "cuda")
+                    self.suffix_graphs = DecodeGraphs([self.layers[index] for index in range(33, 45)], torch, "cuda")
+                (self.output / "cuda-decode-graphs.json").write_text(
+                    json.dumps(
+                        {
+                            "prefix": list(self.prefix_graphs.graphs),
+                            "suffix": list(self.suffix_graphs.graphs),
+                            "scope": "single-token KDA spans; DSA and vocabulary head eager",
+                        },
+                        indent=2,
+                    )
+                    + "\n"
+                )
             # Merged QKV preparation temporarily holds both source and final
             # tensors. Release those dead allocator segments before admitting
             # cache/workspace; retaining them wastes several GiB on this model.
@@ -326,6 +364,8 @@ class Coordinator:
             ]
             if self.spec.get("npu_ops_library"):
                 command.extend(("--ops-library", self.spec["npu_ops_library"]))
+            if self.spec.get("npu_decode_graphs", False):
+                command.append("--decode-graphs")
             process = subprocess.Popen(
                 command,
                 cwd=source,
@@ -364,8 +404,11 @@ class Coordinator:
                 begin = time.perf_counter()
                 hidden = t.nn.functional.embedding(t.tensor(tokens, device="cuda"), self.globals["embedding"])
                 state = (hidden, None, None, None)
-                for index in range(18):
-                    state = self.layers[index].forward(*state)
+                if self.prefix_graphs is not None:
+                    state = self.prefix_graphs.forward(state)
+                else:
+                    for index in range(18):
+                        state = self.layers[index].forward(*state)
                 t.cuda.synchronize()
                 prefix_end = time.perf_counter()
                 positions = t.arange(self.position, self.position + len(tokens), dtype=t.int64)
@@ -397,8 +440,11 @@ class Coordinator:
                     else None
                 )
                 middle_end = time.perf_counter()
-                for index in range(33, 45):
-                    state = self.layers[index].forward(*state)
+                if self.suffix_graphs is not None:
+                    state = self.suffix_graphs.forward(state)
+                else:
+                    for index in range(33, 45):
+                        state = self.layers[index].forward(*state)
                 hidden = rms_norm(state[0][-1:], self.globals["norm"], self.config["rms_norm_eps"], t)
                 logits = t.nn.functional.linear(hidden, self.globals["head"]).float()
                 if not bool(t.isfinite(logits).all().cpu()):
@@ -555,6 +601,7 @@ def main():
     parser.add_argument("--native-gate-override", required=True)
     parser.add_argument("--parent-pid", type=int, required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--decode-graphs", action="store_true")
     args = parser.parse_args()
     guard_parent(args.parent_pid)
     npu_worker(args)

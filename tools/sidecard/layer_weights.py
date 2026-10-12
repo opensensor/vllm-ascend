@@ -164,6 +164,34 @@ class CudaExperts:
         plan.authenticate()
         spec = dict(specification, weight_layout=CUDA_COMPACT_PLANES, partial_reduce=True, tp_rank_inputs=False)
         self.oracle = CudaOracle(PlanBanks(plan), spec, MAX_CHUNK * TOP_K)
+        self.configure_stream(specification.get("torch_stream_experts", False))
+
+    def configure_stream(self, enabled):
+        """Bind explicitly stream-aware kernels without changing legacy APIs."""
+        self.use_stream = enabled
+        if not enabled:
+            return
+        library = self.oracle.library
+        names = (
+            "sidecard_oracle_forward_packed_stream",
+            "sidecard_oracle_forward_compact_stream",
+            "sidecard_oracle_reduce_local_stream",
+        )
+        if not all(hasattr(library, name) for name in names):
+            raise ValueError("CUDA expert library lacks the qualified Torch-stream ABI")
+        self.stream_packed, self.stream_compact, self.stream_reduce = [getattr(library, name) for name in names]
+        for function, integers in ((self.stream_packed, 4), (self.stream_compact, 5), (self.stream_reduce, 3)):
+            pointers = 4 if function is self.stream_reduce else 13
+            function.argtypes = [ctypes.c_void_p] * pointers + [ctypes.c_int] * integers + [ctypes.c_void_p]
+            function.restype = ctypes.c_int
+        self.oracle.cuda.library.cudaMemcpyAsync.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_size_t,
+            ctypes.c_int,
+            ctypes.c_void_p,
+        ]
+        self.oracle.cuda.library.cudaMemcpyAsync.restype = ctypes.c_int
 
     def __call__(self, layer, x, ids, weights):
         t, oracle = self.torch, self.oracle
@@ -174,30 +202,42 @@ class CudaExperts:
         ids = ids.to(t.int32).contiguous().flatten()
         row_map = t.arange(rows, device="cuda", dtype=t.int32).reshape(-1, TOP_K)
         weights = weights.float().contiguous()
-        t.cuda.synchronize()
         runtime, check = oracle.cuda.library, oracle.cuda.check
+        use_stream = getattr(self, "use_stream", False)
+        stream = ctypes.c_void_p(t.cuda.current_stream().cuda_stream) if use_stream else None
+        if not use_stream:
+            t.cuda.synchronize()
+        copy = runtime.cudaMemcpyAsync if use_stream else runtime.cudaMemcpy
         for name, value in (("input", expanded), ("ids", ids), ("row_map", row_map), ("weights", weights)):
             check(
-                runtime.cudaMemcpy(
-                    oracle.buffers[name], ctypes.c_void_p(value.data_ptr()), value.numel() * value.element_size(), 3
+                copy(
+                    oracle.buffers[name],
+                    ctypes.c_void_p(value.data_ptr()),
+                    value.numel() * value.element_size(),
+                    3,
+                    *([stream] if use_stream else []),
                 )
             )
         pointers = oracle.bank_pointers[layer]
         names = ("input_q", "input_scales", "gate_up", "hidden", "hidden_q", "hidden_scales", "output")
-        check(
-            oracle.launch(
-                oracle.buffers["input"],
-                oracle.buffers["ids"],
-                *pointers,
-                *(oracle.buffers[name] for name in names),
-                rows,
-                WIDTH,
-                2048,
-                4,
-            )
+        arguments = (
+            oracle.buffers["input"],
+            oracle.buffers["ids"],
+            *pointers,
+            *(oracle.buffers[name] for name in names),
+            rows,
+            WIDTH,
+            2048,
+            4,
         )
+        if use_stream:
+            bits = oracle.weight_bits[pointers[0].value]
+            launch = self.stream_packed if bits == 4 else self.stream_compact
+            check(launch(*arguments, *([] if bits == 4 else [bits]), stream))
+        else:
+            check(oracle.launch(*arguments))
         check(
-            oracle.reduce(
+            (self.stream_reduce if use_stream else oracle.reduce)(
                 oracle.buffers["output"],
                 oracle.buffers["row_map"],
                 oracle.buffers["weights"],
@@ -205,18 +245,21 @@ class CudaExperts:
                 x.shape[0],
                 WIDTH,
                 rows,
+                *([stream] if use_stream else []),
             )
         )
         output = t.empty((x.shape[0], WIDTH), dtype=t.float32, device="cuda")
         check(
-            runtime.cudaMemcpy(
+            copy(
                 ctypes.c_void_p(output.data_ptr()),
                 oracle.buffers["partial_output"],
                 output.numel() * output.element_size(),
                 3,
+                *([stream] if use_stream else []),
             )
         )
-        check(runtime.cudaDeviceSynchronize())
+        if not use_stream:
+            check(runtime.cudaDeviceSynchronize())
         return output
 
     def close(self):

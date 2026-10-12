@@ -11,7 +11,9 @@ only assigned Ascend devices.
 The server is independent of vLLM's scheduler. A single heterogeneous
 `vllm serve` command cannot create these separate CUDA and NPU actors.
 Use the custom entry point below. The [hardware report](../../artifacts/sidecard-layer-runtime-20261012/README.md)
-records the tested scope and timings. The previous per-expert sidecard
+records the original tested scope and timings. The
+[optimization report](../../artifacts/sidecard-layer-optimization-20261012/README.md)
+records projection layout and graph/stream experiments. The previous per-expert sidecard
 service on port 8001 is superseded.
 
 ## Execution and arithmetic
@@ -21,7 +23,9 @@ hidden state FP16, four residual streams FP32, deferred post/comb mixers FP32,
 and positions INT64: 73,816 bytes per token. Residual/mixer arithmetic rounds
 to BF16 precision while retaining FP32 storage and range on the 310P.
 Final residual contraction and RMSNorm stay FP32 until the normalized output
-converts to FP16. Dense projections use FP16; routing and weighted expert
+converts to FP16. Ascend formats owner-local linear weights as FRACTAL_NZ once at preparation,
+avoiding repeated decode weight conversion. Absorbed DSA KV and indexer
+operands retain their existing layout. Dense projections use FP16; routing and weighted expert
 reduction use FP32. Both Torch backends enforce deterministic algorithms;
 CUDA disables reduced-precision GEMM reduction and uses its configured
 deterministic cuBLAS workspace. Expert codes and permanent FP16 scales are unchanged.
@@ -35,6 +39,17 @@ KV, KDA recurrent/causal-convolution state, and sparse pool/tail state stay
 with each layer. Sparse DSA uses learned causal pooled selection after 2,048
 tokens. A new request clears all stage state; there is no cross-request
 prefix reuse. Requests run one at a time.
+
+Optional `cuda_decode_graphs` and `npu_decode_graphs` specification fields
+capture contiguous KDA spans for single-token execution. DSA and its
+Python cache-length updates stay eager; multi-token prefill also stays eager.
+Capture warms each span before recording, then resets recurrent/convolution
+state. Every replay copies all deferred mHC inputs into owner-private buffers.
+CUDA capture requires `cuda_backend.torch_stream_experts: true`: native
+expert copies, projections and reduction use the current Torch stream without
+per-layer device synchronization. That flag requires the matching authenticated
+stream-aware CUDA library. A graph candidate must pass the full startup
+repeat gate and a completed API benchmark before promotion.
 
 HCCL remains an Ascend-only collective. Its raw Broadcast was a no-op on
 this 310P stack; the runtime qualifies byte AllGather and FP32 SUM before
@@ -100,7 +115,7 @@ middle-block layer and both all-routes-on-one-rank cases.
 
 ## Launch
 
-The [runtime specification](../../artifacts/sidecard-layer-runtime-20261012/runtime-specification.json)
+The [runtime specification](../../artifacts/sidecard-layer-optimization-20261012/runtime-specification.json)
 references the host's checkpoint, private NPU environment, two Python
 interpreters, native ops, and clipped kernel receipt. For a new build, update
 `native_gate_override`, CUDA `library` and `library_sha256` together using its
@@ -110,7 +125,7 @@ rendezvous port. Output must be new and outside the checkout.
 ```bash
 /srv/ai/venvs/sidecard-cuda-20261012/bin/python \
   -m tools.sidecard.layer_runtime \
-  --specification artifacts/sidecard-layer-runtime-20261012/runtime-specification.json \
+  --specification artifacts/sidecard-layer-optimization-20261012/runtime-specification.json \
   --cuda-python /srv/ai/venvs/sidecard-cuda-20261012/bin/python \
   --output /srv/ai/storage/artifacts/sidecard-layer-new \
   --port 8000
@@ -118,7 +133,8 @@ rendezvous port. Output must be new and outside the checkout.
 
 The launcher replaces itself with the server and records its exact PID and
 command. Redirect stdout/stderr to your chosen log for background operation.
-Readiness is exposed only after native repeat/TP2 gates, a complete-model
+Readiness is exposed only after native repeat/TP2 gates, three full
+boundary/vocabulary repeat traces, a complete-model
 serial/pipeline logit comparison, and a real generated request.
 
 ```bash
@@ -155,7 +171,7 @@ logprobs, response formats, images, and non-greedy sampling are rejected.
 | Greedy repeated request | Bitwise native expert and complete output checks |
 | Sparse DSA beyond 2K | Implemented; independent changed-input selection gates on both devices |
 | Two-slot prefill overlap | Implemented; complete-model serial/pipeline parity gate |
-| ACLGraph / CUDA graph capture | Not implemented; eager execution |
+| KDA span ACLGraph / CUDA graph capture | Optional one-token replay; DSA and multi-token prefill stay eager |
 | flashcomm1 | Not implemented in this independent actor runtime |
 | MTP | Disabled; main layers 0–44 only |
 | Multimodal | Vision tower outside the initial text scope |
@@ -183,3 +199,24 @@ The last length reserves eight output tokens and reaches a 65,536-token total.
 Context fixtures measure capacity and latency, not recall accuracy.
 `--noconftest` isolates these portable tools from the checkout's unavailable
 upstream vLLM attention imports. NPU/CUDA gates require the actual hardware.
+
+## CUDA stream rebuild receipts
+
+The CUDA library can be rebuilt independently using the same clipping patch,
+SM120 target, and `--fmad=false` compiler setting. Retain the clipped source
+SHA256, exact compiler command, `library`, `library_sha256`, and
+`swiglu_limit: 10.0` in its build JSON. Join it with the original clipped
+Ascend build using the authenticated helper:
+
+```bash
+python -m tools.sidecard.layer_cuda_join \
+  --output /srv/ai/storage/artifacts/sidecard-kernels-joined-new \
+  --clipped-build /srv/ai/storage/artifacts/sidecard-clipped-kernels-20261012/build.json \
+  --cuda-build /srv/ai/storage/artifacts/sidecard-cuda-stream-20261012/build.json
+```
+
+Use the joined receipt's CUDA path/hash and `native_gate_override` together.
+The helper authenticates both architectures and copies unchanged Ascend
+binaries; it does not claim hardware validation. Run the independent
+`layer_expert_gate` with stream mode enabled before serving. It exercises
+real W2/W3/W4 experts on a nondefault Torch stream against the CPU reference.

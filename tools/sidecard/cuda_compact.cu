@@ -127,11 +127,39 @@ __global__ void project_compact(const signed char* q, const float* xs, const uns
 }
 
 void dispatch_compact_project(const signed char* q, const float* xs, const unsigned short* weights, const __half* ws,
-                              const int* ids, __half* out, int rows, int n, int k, int bits) {
+                              const int* ids, __half* out, int rows, int n, int k, int bits, cudaStream_t stream) {
   if (bits == 2)
-    project_compact<2><<<(rows * n + kThreads - 1) / kThreads, kThreads>>>(q, xs, weights, ws, ids, out, rows, n, k);
+    project_compact<2><<<(rows * n + kThreads - 1) / kThreads, kThreads, 0, stream>>>(q, xs, weights, ws, ids, out, rows, n, k);
   else
-    project_compact<3><<<(rows * n + kThreads - 1) / kThreads, kThreads>>>(q, xs, weights, ws, ids, out, rows, n, k);
+    project_compact<3><<<(rows * n + kThreads - 1) / kThreads, kThreads, 0, stream>>>(q, xs, weights, ws, ids, out, rows, n, k);
+}
+
+extern "C" int sidecard_oracle_forward_compact_stream(const void* input, const void* ids, const void* gate, const void* gs,
+                                               const void* down, const void* ds, void* input_q, void* input_scales,
+                                               void* gate_up, void* hidden, void* hidden_q, void* hidden_scales,
+                                               void* output, int rows, int width, int intermediate, int activation_bits,
+                                               int weight_bits, void* stream_handle) {
+  if (rows < 1 || rows > kMaxRoutes || width != 4096 || intermediate != 2048 ||
+      (activation_bits != 4 && activation_bits != 8) || (weight_bits != 2 && weight_bits != 3))
+    return static_cast<int>(cudaErrorInvalidValue);
+  cudaStream_t stream = static_cast<cudaStream_t>(stream_handle);
+  quantize<<<(rows * width / kBlock + kThreads - 1) / kThreads, kThreads, 0, stream>>>(
+      static_cast<const __half*>(input), static_cast<signed char*>(input_q), static_cast<float*>(input_scales), rows,
+      width, activation_bits);
+  dispatch_compact_project(static_cast<const signed char*>(input_q), static_cast<const float*>(input_scales),
+                           static_cast<const unsigned short*>(gate), static_cast<const __half*>(gs),
+                           static_cast<const int*>(ids), static_cast<__half*>(gate_up), rows, 2 * intermediate, width,
+                           weight_bits, stream);
+  swiglu<<<(rows * intermediate + kThreads - 1) / kThreads, kThreads, 0, stream>>>(
+      static_cast<const __half*>(gate_up), static_cast<__half*>(hidden), rows, intermediate);
+  quantize<<<(rows * intermediate / kBlock + kThreads - 1) / kThreads, kThreads, 0, stream>>>(
+      static_cast<const __half*>(hidden), static_cast<signed char*>(hidden_q), static_cast<float*>(hidden_scales), rows,
+      intermediate, activation_bits);
+  dispatch_compact_project(static_cast<const signed char*>(hidden_q), static_cast<const float*>(hidden_scales),
+                           static_cast<const unsigned short*>(down), static_cast<const __half*>(ds),
+                           static_cast<const int*>(ids), static_cast<__half*>(output), rows, width, intermediate,
+                           weight_bits, stream);
+  return static_cast<int>(cudaGetLastError());
 }
 
 extern "C" int sidecard_oracle_forward_compact(const void* input, const void* ids, const void* gate, const void* gs,
@@ -139,24 +167,7 @@ extern "C" int sidecard_oracle_forward_compact(const void* input, const void* id
                                                void* gate_up, void* hidden, void* hidden_q, void* hidden_scales,
                                                void* output, int rows, int width, int intermediate, int activation_bits,
                                                int weight_bits) {
-  if (rows < 1 || rows > kMaxRoutes || width != 4096 || intermediate != 2048 ||
-      (activation_bits != 4 && activation_bits != 8) || (weight_bits != 2 && weight_bits != 3))
-    return static_cast<int>(cudaErrorInvalidValue);
-  quantize<<<(rows * width / kBlock + kThreads - 1) / kThreads, kThreads>>>(
-      static_cast<const __half*>(input), static_cast<signed char*>(input_q), static_cast<float*>(input_scales), rows,
-      width, activation_bits);
-  dispatch_compact_project(static_cast<const signed char*>(input_q), static_cast<const float*>(input_scales),
-                           static_cast<const unsigned short*>(gate), static_cast<const __half*>(gs),
-                           static_cast<const int*>(ids), static_cast<__half*>(gate_up), rows, 2 * intermediate, width,
-                           weight_bits);
-  swiglu<<<(rows * intermediate + kThreads - 1) / kThreads, kThreads>>>(
-      static_cast<const __half*>(gate_up), static_cast<__half*>(hidden), rows, intermediate);
-  quantize<<<(rows * intermediate / kBlock + kThreads - 1) / kThreads, kThreads>>>(
-      static_cast<const __half*>(hidden), static_cast<signed char*>(hidden_q), static_cast<float*>(hidden_scales), rows,
-      intermediate, activation_bits);
-  dispatch_compact_project(static_cast<const signed char*>(hidden_q), static_cast<const float*>(hidden_scales),
-                           static_cast<const unsigned short*>(down), static_cast<const __half*>(ds),
-                           static_cast<const int*>(ids), static_cast<__half*>(output), rows, width, intermediate,
-                           weight_bits);
-  return static_cast<int>(cudaGetLastError());
+  return sidecard_oracle_forward_compact_stream(input, ids, gate, gs, down, ds, input_q, input_scales,
+                                                gate_up, hidden, hidden_q, hidden_scales, output,
+                                                rows, width, intermediate, activation_bits, weight_bits, nullptr);
 }

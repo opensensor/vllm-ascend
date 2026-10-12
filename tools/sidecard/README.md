@@ -27,6 +27,10 @@ available for reproducing those experiments. The commands below describe
 those planning and transport tools; launch the current model with
 `tools.sidecard.layer_runtime`.
 
+The [optimization report](../../artifacts/sidecard-layer-optimization-20261012/README.md)
+records prepared Ascend projection weights, CUDA stream-aware experts and
+KDA span replay, including completed benchmarks and preserved numerical traces.
+
 ## Previous expert-dispatch prototype
 
 | Component | Intended owner | Reason and gate |
