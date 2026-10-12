@@ -50,6 +50,8 @@ def rejection_gates(peer, exported):
         ("oversize", dict(length=8 * 1024 * 1024 + 1), errno.EINVAL),
         ("unknown_operation", dict(operation=99), errno.EINVAL),
         ("nonzero_reserved", dict(reserved=1), errno.EINVAL),
+        ("unknown_mapping_mode", dict(gpu_mapping_mode=2), errno.EINVAL),
+        ("spoofed_mapping_hit", dict(gpu_mapping_reused=1), errno.EINVAL),
     )
     for name, changes, expected in cases:
         fields = dict(version=VERSION, physical_chip=peer.physical_chip, dmabuf_fd=exported.fd, length=65536)
@@ -72,6 +74,49 @@ def rejection_gates(peer, exported):
     return checks
 
 
+def mapping_gates(cuda, driver, physical_chip):
+    """Prove cache identity uses DMA-BUF objects rather than reusable fd numbers."""
+    allocations = [cuda.allocate(CAPACITY) for _ in range(3)]
+    exports = [driver.export(allocation) for allocation in allocations]
+    peer = KernelPeer(physical_chip, persistent_gpu_mappings=True)
+    alias = None
+    checks = []
+
+    def mapped(fd):
+        body = bytearray(
+            bytes(Request(version=VERSION, physical_chip=physical_chip, dmabuf_fd=fd, length=65536, gpu_mapping_mode=1))
+        )
+        fcntl.ioctl(peer.fd, EXECUTE, body, True)
+        return Request.from_buffer_copy(body)
+
+    try:
+        for exported in exports[:2]:
+            result = mapped(exported.fd)
+            if result.map_status or result.gpu_mapping_reused:
+                raise AssertionError("fresh GPU mapping did not register independently")
+            checks.append(dict(case="fresh_export", reused=False, passed=True))
+        alias = os.dup(exports[0].fd)
+        result = mapped(alias)
+        if result.map_status or result.gpu_mapping_reused != 1:
+            raise AssertionError("duplicate fd did not identify its original DMA-BUF")
+        checks.append(dict(case="duplicate_fd_same_export", reused=True, passed=True))
+        os.close(alias)
+        os.dup2(exports[2].fd, alias)
+        result = mapped(alias)
+        if result.map_status != -errno.ENOSPC or result.gpu_mapping_reused:
+            raise AssertionError("reused fd number bypassed GPU mapping capacity")
+        checks.append(dict(case="reused_fd_different_export_capacity", reused=False, passed=True))
+    finally:
+        if alias is not None:
+            os.close(alias)
+        peer.close()
+        for exported in exports:
+            exported.close()
+        for allocation in allocations:
+            allocation.close()
+    return checks
+
+
 def worker(arguments):
     """All CPU initialization and full red-zone checks occur outside timing."""
     if os.geteuid() != 0 or os.environ.get("ASCEND_RT_VISIBLE_DEVICES") != "2,3":
@@ -83,7 +128,10 @@ def worker(arguments):
     chost, nhost = cuda.allocate(CAPACITY, host=True), ascend.allocate(CAPACITY, host=True)
     guard = ascend.allocate(CAPACITY, host=True)
     cs, ns, ce, ne = cuda.stream(), ascend.stream(), cuda.event(), ascend.event()
-    exported, peer = driver.export(gpu), KernelPeer(arguments.rank + 2)
+    exported, peer = (
+        driver.export(gpu),
+        KernelPeer(arguments.rank + 2, persistent_gpu_mappings=arguments.persistent_gpu_mappings),
+    )
     report = dict(
         pid=os.getpid(),
         physical_chip=arguments.rank + 2,
@@ -94,6 +142,7 @@ def worker(arguments):
         verified_copies=0,
         guard_descriptor_submitted=False,
         payload_host_staging=False,
+        persistent_gpu_mappings=arguments.persistent_gpu_mappings,
     )
     output = arguments.output / f"rank{arguments.rank}.json"
 
@@ -122,6 +171,12 @@ def worker(arguments):
                 begin = time.perf_counter_ns()
                 completions[CUDA_TO_ASCEND] = peer.copy(CUDA_TO_ASCEND, exported, npu, guard, size, source_ready=ce)
                 upload_ms = (time.perf_counter_ns() - begin) / 1e6
+                if (
+                    arguments.persistent_gpu_mappings
+                    and iteration
+                    and not completions[CUDA_TO_ASCEND]["gpu_mapping_reused"]
+                ):
+                    raise AssertionError("GPU upload mapping was not reused")
                 ascend.copy(nhost.pointer, npu.pointer, CAPACITY, "d2h", ns)
                 ne.record(ns)
                 ne.wait()
@@ -139,6 +194,8 @@ def worker(arguments):
                 begin = time.perf_counter_ns()
                 completions[ASCEND_TO_CUDA] = peer.copy(ASCEND_TO_CUDA, exported, npu, guard, size, source_ready=ne)
                 download_ms = (time.perf_counter_ns() - begin) / 1e6
+                if arguments.persistent_gpu_mappings and not completions[ASCEND_TO_CUDA]["gpu_mapping_reused"]:
+                    raise AssertionError("GPU return mapping was not reused")
                 cuda.copy(chost.pointer, gpu.pointer, CAPACITY, "d2h", cs)
                 ce.record(cs)
                 ce.wait()
@@ -176,6 +233,7 @@ def worker(arguments):
                 flush=True,
             )
         report["rejection_gates"] = rejection_gates(peer, exported)
+        report["mapping_gates"] = mapping_gates(cuda, driver, arguments.rank + 2)
         report["state"] = "passed"
         save()
     except BaseException:
@@ -204,6 +262,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--iterations", type=int, default=50)
     parser.add_argument("--warmup", type=int, default=10)
+    parser.add_argument("--persistent-gpu-mappings", action="store_true")
     parser.add_argument("--rank", type=int, choices=(0, 1))
     parser.add_argument("--worker", action="store_true")
     parser.add_argument("--inner", action="store_true")

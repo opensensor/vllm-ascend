@@ -1,0 +1,76 @@
+{
+  "passed": true,
+  "fixture": {
+    "prompt_tokens": 2048,
+    "output_tokens": 64,
+    "ignore_eos": true,
+    "cached_tokens": 0
+  },
+  "before": {
+    "rates": [
+      8.573028851485645,
+      8.300442977342223,
+      8.634156612014086
+    ],
+    "median_tokens_per_second": 8.573028851485645,
+    "median_ttft_seconds": 28.073911102008424
+  },
+  "after": {
+    "rates": [
+      10.702718869176795,
+      10.691561901369791,
+      10.803012915251026
+    ],
+    "median_tokens_per_second": 10.702718869176795,
+    "median_ttft_seconds": 27.235816952001187
+  },
+  "decode_improvement_percent": 24.8417456022219,
+  "saved_socket_rate": 9.63940456386866,
+  "improvement_over_saved_socket_percent": 11.03091273182737,
+  "contemporaneous_socket_rebenchmark": false,
+  "hardware": {
+    "physical_ascend_chips": [
+      2,
+      3
+    ],
+    "other_card_accessed": false,
+    "clock_ecc_power_changed": false
+  },
+  "worker_timings": {
+    "0": {
+      "scope": "host wall medians; overlap across ranks and CUDA",
+      "samples": 256,
+      "calls_at_receipt": 13312,
+      "gpu_mapping_creations": 2,
+      "gpu_mapping_hits": 26622,
+      "receipt_interval_calls": 1024,
+      "median_ms": {
+        "upload_ms": 0.10416800068924204,
+        "unpack_and_validation_ms": 0.209012498089578,
+        "native_ms": 1.7342169958283193,
+        "pack_and_download_ms": 0.08982099825516343
+      }
+    },
+    "1": {
+      "scope": "host wall medians; overlap across ranks and CUDA",
+      "samples": 256,
+      "calls_at_receipt": 13312,
+      "gpu_mapping_creations": 2,
+      "gpu_mapping_hits": 26622,
+      "receipt_interval_calls": 1024,
+      "median_ms": {
+        "upload_ms": 0.1446605019737035,
+        "unpack_and_validation_ms": 0.20990399207221344,
+        "native_ms": 1.7257165018236265,
+        "pack_and_download_ms": 0.09612300345906988
+      }
+    }
+  },
+  "unit_tests_passed": 737,
+  "api_cases": 6,
+  "full_vocabulary_bitwise_equal": true,
+  "repeat_traces": 3,
+  "completed_context_tokens": 8192,
+  "full_65536_prefill_completed": false,
+  "automatic_fault_recovery_qualified": false
+}

@@ -1,0 +1,209 @@
+{
+  "passed": true,
+  "cases": [
+    {
+      "name": "concurrent_isolation",
+      "passed": true,
+      "controls": [
+        {
+          "elapsed_seconds": 0.7473478930041892,
+          "status": 200,
+          "response": {
+            "id": "cmpl-2331c57fcb824dc6b9d77ff793d7c5c0",
+            "object": "text_completion",
+            "created": 1791839870,
+            "model": "glm-sidecard",
+            "choices": [
+              {
+                "index": 0,
+                "finish_reason": "length",
+                "text": " cold. 2. The opposite of"
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 5,
+              "completion_tokens": 8,
+              "total_tokens": 13
+            }
+          }
+        },
+        {
+          "elapsed_seconds": 0.7969984990049852,
+          "status": 200,
+          "response": {
+            "id": "cmpl-85d1602d1cd24f5894e5b27803cd809d",
+            "object": "text_completion",
+            "created": 1791839871,
+            "model": "glm-sidecard",
+            "choices": [
+              {
+                "index": 0,
+                "finish_reason": "length",
+                "text": " three?: The Dutch Research Agenda (N"
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 4,
+              "completion_tokens": 8,
+              "total_tokens": 12
+            }
+          }
+        }
+      ],
+      "queued": [
+        {
+          "elapsed_seconds": 0.7596080479997909,
+          "status": 200,
+          "response": {
+            "id": "cmpl-5de9d96831274a6885cec39029f90b58",
+            "object": "text_completion",
+            "created": 1791839872,
+            "model": "glm-sidecard",
+            "choices": [
+              {
+                "index": 0,
+                "finish_reason": "length",
+                "text": " cold. 2. The opposite of"
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 5,
+              "completion_tokens": 8,
+              "total_tokens": 13
+            }
+          }
+        },
+        {
+          "elapsed_seconds": 1.5114469210093375,
+          "status": 200,
+          "response": {
+            "id": "cmpl-88b7ef78abe94db5beb0941f16e3ffc1",
+            "object": "text_completion",
+            "created": 1791839872,
+            "model": "glm-sidecard",
+            "choices": [
+              {
+                "index": 0,
+                "finish_reason": "length",
+                "text": " three?: The Dutch Research Agenda (N"
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 4,
+              "completion_tokens": 8,
+              "total_tokens": 12
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "stream_equivalence",
+      "passed": true,
+      "text": " cold. 2. The opposite of",
+      "usage": {
+        "prompt_tokens": 5,
+        "completion_tokens": 8,
+        "total_tokens": 13
+      },
+      "done": true
+    },
+    {
+      "name": "cancel_before_prefill",
+      "passed": true,
+      "followup": {
+        "elapsed_seconds": 0.7425194719980936,
+        "status": 200,
+        "response": {
+          "id": "cmpl-5d5e8f3fb6fd4065a00d3c28cd3c38a7",
+          "object": "text_completion",
+          "created": 1791839874,
+          "model": "glm-sidecard",
+          "choices": [
+            {
+              "index": 0,
+              "finish_reason": "length",
+              "text": " cold. 2. The opposite of"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 5,
+            "completion_tokens": 8,
+            "total_tokens": 13
+          }
+        }
+      },
+      "recovery_seconds": 0.742554819007637,
+      "cancelled_prompt_tokens": 65535
+    },
+    {
+      "name": "cancel_during_decode",
+      "passed": true,
+      "followup": {
+        "elapsed_seconds": 0.8790294899954461,
+        "status": 200,
+        "response": {
+          "id": "cmpl-7d052dd08456425799488e438af111d6",
+          "object": "text_completion",
+          "created": 1791839875,
+          "model": "glm-sidecard",
+          "choices": [
+            {
+              "index": 0,
+              "finish_reason": "length",
+              "text": " cold. 2. The opposite of"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 5,
+            "completion_tokens": 8,
+            "total_tokens": 13
+          }
+        }
+      },
+      "recovery_seconds": 0.8791095510096056,
+      "cancelled_prompt_tokens": null
+    },
+    {
+      "name": "kilo_output_budget",
+      "passed": true,
+      "result": {
+        "elapsed_seconds": 0.5764472869923338,
+        "status": 200,
+        "response": {
+          "id": "chatcmpl-b42ce498e9d846fe89d767d2556c513f",
+          "object": "chat.completion",
+          "created": 1791839876,
+          "model": "glm-sidecard",
+          "choices": [
+            {
+              "index": 0,
+              "finish_reason": "stop",
+              "message": {
+                "role": "assistant",
+                "content": "4"
+              }
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 26,
+            "completion_tokens": 3,
+            "total_tokens": 29
+          }
+        }
+      }
+    },
+    {
+      "name": "over_context_rejected",
+      "passed": true,
+      "status": 400
+    }
+  ],
+  "near_capacity_prefill_completed": false,
+  "health": {
+    "status": "ok",
+    "architecture": "cuda-backbone-ascend-experts",
+    "max_model_len": 65536,
+    "expert_transport": "direct-dma"
+  }
+}

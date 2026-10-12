@@ -3,6 +3,7 @@
 
 import json
 import socket
+import struct
 import subprocess
 import threading
 from types import SimpleNamespace
@@ -11,6 +12,7 @@ import pytest
 import torch
 
 from tools.sidecard.dma_dispatch import DmaDispatch
+from tools.sidecard.dma_pack_graph import prepare_payloads
 from tools.sidecard.dma_protocol import (
     CAPACITY,
     CLOSE_TAG,
@@ -28,6 +30,77 @@ from tools.sidecard.dma_protocol import (
     validate_descriptor,
     validate_identity,
 )
+from tools.sidecard.dma_worker import WorkerSlots, validate_routes
+from tools.sidecard.pcie.peer import ASCEND_TO_CUDA
+
+
+@pytest.mark.parametrize("rows", [1, 4, 17, 32])
+def test_worker_metadata_accepts_cold_routes_and_zero_weight_hot_routes(rows):
+    count = rows * 8
+    ids = [1, 2, 145, 287, 0, 3, 144, 286] * rows
+    weights = [0, 0.5, 1, 2, 0, 0.25, 0.125, 0] * rows
+    metadata = struct.pack(f"<{count}i{count}f", *ids, *weights)
+    validate_routes(metadata, rows, frozenset([1]))
+
+
+@pytest.mark.parametrize(
+    "expert,weight", [(-1, 0), (288, 0), (2, -0.1), (2, float("nan")), (2, float("inf")), (1, 0.01)]
+)
+def test_worker_metadata_rejects_bad_route_before_native_launch(expert, weight):
+    metadata = struct.pack("<8i8f", *([expert] + [2] * 7), *([weight] + [0.5] * 7))
+    with pytest.raises(ValueError, match="route"):
+        validate_routes(metadata, 1, frozenset([1]))
+
+
+@pytest.mark.parametrize("rows", [0, 33, True])
+def test_worker_metadata_rejects_invalid_capacity(rows):
+    with pytest.raises(ValueError, match="row capacity"):
+        validate_routes(b"", rows, frozenset())
+
+
+def test_worker_metadata_does_not_read_past_buffer():
+    with pytest.raises(struct.error):
+        validate_routes(b"\0" * 63, 1, frozenset())
+
+
+def test_native_completion_event_is_fresh_for_each_worker_invocation():
+    slots = object.__new__(WorkerSlots)
+    completions = []
+    slots.torch = SimpleNamespace(
+        float16=torch.float16,
+        int32=torch.int32,
+        float32=torch.float32,
+        npu=SimpleNamespace(Event=lambda: SimpleNamespace(record=lambda: None, synchronize=lambda: None)),
+    )
+    slots.ascend = SimpleNamespace(kind="ascend", device=0, copy=lambda *args: None, check_owner=lambda: None)
+    slots.packed = torch.zeros(CAPACITY, dtype=torch.uint8)
+    slots.npu_input = SimpleNamespace(pointer=1)
+    slots.metadata_host = SimpleNamespace(pointer=1)
+    slots.metadata = struct.pack("<8i8f", *([2] * 8), *([0.5] * 8))
+    slots.hot_ids = {18: frozenset([1])}
+    slots.event = SimpleNamespace(record=lambda stream: None, wait=lambda: None)
+    slots.stream = slots.guard = slots.input_export = slots.output_export = None
+    slots.source_event = SimpleNamespace(admitted=True)
+    slots.driver = SimpleNamespace(flush=lambda **kwargs: None)
+    slots.calls = slots.upload_bytes = slots.download_bytes = slots.mapping_creations = slots.mapping_hits = 0
+    slots.profile = []
+
+    def copy(operation, *args, source_ready):
+        if operation == ASCEND_TO_CUDA:
+            completions.append(source_ready.event)
+        return {"gpu_mapping_reused": 0}
+
+    slots.peer = SimpleNamespace(copy=copy)
+    output = SimpleNamespace(
+        device=SimpleNamespace(type="npu", index=0),
+        is_contiguous=lambda: True,
+        numel=lambda: 4096,
+        element_size=lambda: 4,
+        data_ptr=lambda: 12345,
+    )
+    for sequence in range(2):
+        slots.compute(lambda *args: output, sequence, 18, 1)
+    assert len(completions) == 2 and completions[0] is not completions[1]
 
 
 def test_private_control_roundtrip_and_budget():
@@ -147,6 +220,7 @@ def dispatcher():
     value.events = [Event(events, rank) for rank in range(2)]
     value.connections = [Peer(value, rank, events) for rank in range(2)]
     value.sequences = [0, 0]
+    value.pack_graphs = None
     value.failed = value.closed = False
     value.lock = threading.RLock()
     value.driver = SimpleNamespace(flush=lambda: events.append(("write_visibility", None)))
@@ -160,12 +234,19 @@ def dispatcher():
 
 
 @pytest.mark.parametrize("rows", [1, 4, 17, 32])
+@pytest.mark.parametrize("captured", [False, True])
 @pytest.mark.parametrize(
     "selected",
     [[1, 31, 76, 125, 144, 210, 223, 284], list(range(2, 10)), list(range(145, 153)), [1, 2, 3, 4, 144, 145, 146, 210]],
 )
-def test_dma_slots_preserve_route_math_and_never_consume_inactive_outputs(rows, selected):
+def test_dma_slots_preserve_route_math_and_never_consume_inactive_outputs(rows, selected, captured):
     actor, events = dispatcher()
+    if captured:
+        actor.pack_graphs = SimpleNamespace(
+            prepare=lambda layer, x, ids, weights: prepare_payloads(
+                torch, actor.lookups[layer], actor.inputs, x, ids, weights
+            )
+        )
     for amplitude in (0.5, 3.0):
         hidden = torch.full((rows, 4096), amplitude).half()
         ids = torch.tensor(selected).expand(rows, -1)
@@ -239,6 +320,7 @@ def test_clean_close_drains_consumers_releases_imports_then_releases_exporter(tm
     actor.torch.cuda.synchronize = lambda: events.append(("drain_cuda", None))
     actor.imports = [SimpleNamespace(close=lambda: events.append(("unmap_import", None)))]
     actor.events = [SimpleNamespace(close=lambda: events.append(("close_event", None)))]
+    actor.pack_graphs = SimpleNamespace(close=lambda: events.append(("release_graph_scratch", None)))
     actor.logs = []
     actor.processes = [SimpleNamespace(wait=lambda timeout: 0)]
 
@@ -261,6 +343,7 @@ def test_clean_close_drains_consumers_releases_imports_then_releases_exporter(tm
     actor.close()
     kinds = [kind for kind, _ in events]
     assert kinds[0] == "drain_cuda"
+    assert kinds.index("release_graph_scratch") < kinds.index("unmap_import")
     assert kinds.index("unmap_import") > max(i for i, kind in enumerate(kinds) if kind == "native_quiescent")
     assert kinds.index("release_export") > kinds.index("unmap_import")
     assert actor.closed

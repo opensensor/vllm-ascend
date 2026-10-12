@@ -25,6 +25,31 @@ from tools.sidecard.pcie.peer import (
 ROOT = Path(__file__).resolve().parents[3]
 
 
+@pytest.mark.parametrize("before", [0, 1])
+def test_imported_alias_checks_sync_memops_once_before_use(before):
+    driver = object.__new__(Driver)
+    state, calls = [before], []
+
+    def call(name, data, attribute, pointer):
+        assert attribute == 6 and pointer == 12345
+        calls.append(name)
+        value = ctypes.cast(data, ctypes.POINTER(ctypes.c_uint))
+        if name == "cuPointerSetAttribute":
+            state[0] = value[0]
+        else:
+            value[0] = state[0]
+
+    driver.call = call
+    allocation = endpoint(SimpleNamespace(kind="cuda"))
+    assert driver.ensure_sync_memops(allocation) is bool(before)
+    assert state == [1]
+    assert calls == (
+        ["cuPointerGetAttribute"]
+        if before
+        else ["cuPointerGetAttribute", "cuPointerSetAttribute", "cuPointerGetAttribute"]
+    )
+
+
 def endpoint(runtime, *, size=65536, host=False):
     return SimpleNamespace(runtime=runtime, size=size, host=host, pointer=12345, leases=0)
 
@@ -68,6 +93,57 @@ def test_source_event_and_gpu_flush_order_and_lifetimes(tmp_path, operation):
     assert all(resource.leases == 0 for resource in (gpu.allocation, npu, guard, ready))
     peer.close()
     peer.close()
+
+
+def test_persistent_mapping_retains_gpu_owner_until_clean_peer_close(tmp_path):
+    peer, gpu, npu, guard, event, calls = scenario(tmp_path)
+    peer.persistent_gpu_mappings = True
+    for _ in range(3):
+        peer.copy(CUDA_TO_ASCEND, gpu, npu, guard, 8256, source_ready=event(gpu.allocation.runtime))
+        assert gpu.allocation.leases == 1
+        assert npu.leases == guard.leases == 0
+        assert peer.exports == [gpu]
+    peer.close()
+    assert gpu.allocation.leases == 0 and peer.exports == []
+
+
+def test_persistent_mapping_rejection_still_retains_owner_until_peer_close(tmp_path):
+    peer, gpu, npu, guard, event, _ = scenario(tmp_path, lambda value: setattr(value, "map_status", -22))
+    peer.persistent_gpu_mappings = True
+    with pytest.raises(RuntimeError, match="rejected"):
+        peer.copy(CUDA_TO_ASCEND, gpu, npu, guard, 8256, source_ready=event(gpu.allocation.runtime))
+    assert gpu.allocation.leases == 1
+    peer.close()
+    assert gpu.allocation.leases == 0
+
+
+def test_persistent_mapping_fault_preserves_owner_and_active_leases(tmp_path):
+    peer, gpu, npu, guard, event, _ = scenario(tmp_path, lambda value: setattr(value, "retained", 1))
+    peer.persistent_gpu_mappings = True
+    with pytest.raises(QuarantinedDMA):
+        peer.copy(CUDA_TO_ASCEND, gpu, npu, guard, 8256, source_ready=event(gpu.allocation.runtime))
+    assert gpu.allocation.leases == 2 and npu.leases == guard.leases == 1
+    with pytest.raises(QuarantinedDMA):
+        peer.close()
+    os.close(peer.fd)  # Fake device only.
+
+
+def test_persistent_mapping_capacity_rejects_third_export_before_submission(tmp_path):
+    peer, gpu, npu, guard, event, calls = scenario(tmp_path)
+    peer.persistent_gpu_mappings = True
+    for _ in range(2):
+        gpu = SimpleNamespace(**vars(gpu))
+        gpu.allocation = endpoint(gpu.allocation.runtime)
+        peer.copy(CUDA_TO_ASCEND, gpu, npu, guard, 8256, source_ready=event(gpu.allocation.runtime))
+    before = list(calls)
+    with pytest.raises(ValueError, match="mapping capacity"):
+        peer.copy(
+            CUDA_TO_ASCEND, SimpleNamespace(**vars(gpu)), npu, guard, 8256, source_ready=event(gpu.allocation.runtime)
+        )
+    assert calls == before
+    owners = [exported.allocation for exported in peer.exports]
+    peer.close()
+    assert all(owner.leases == 0 for owner in owners)
 
 
 @pytest.mark.parametrize("size", [0, -1, 65537, True, 0.5])

@@ -12,7 +12,8 @@ import fcntl
 import os
 import threading
 
-VERSION = 4
+VERSION = 5
+MAX_GPU_MAPPINGS = 2
 MAP_ONLY = 0
 BAR_PIN_ONLY = 1
 LOCAL_PIN_ONLY = 2
@@ -50,6 +51,8 @@ class Request(c.Structure):
         ("cache_id", c.c_uint32),
         ("retained", c.c_uint32),
         ("reserved", c.c_uint32),
+        ("gpu_mapping_mode", c.c_uint32),
+        ("gpu_mapping_reused", c.c_uint32),
     ]
 
 
@@ -100,6 +103,24 @@ class Driver:
         scope = CUDA_FLUSH_ALL_DEVICES if all_devices else CUDA_FLUSH_OWNER
         self.call("cuFlushGPUDirectRDMAWrites", CUDA_FLUSH_CURRENT_CONTEXT, scope)
 
+    def ensure_sync_memops(self, allocation):
+        """Check RDMA/CUDA consistency on the coordinator's imported alias."""
+        if allocation.runtime.kind != "cuda" or allocation.host:
+            raise ValueError("RDMA synchronization requires CUDA device memory")
+        value = c.c_uint()
+        self.call("cuPointerGetAttribute", c.byref(value), CUDA_POINTER_SYNC_MEMOPS, allocation.pointer)
+        before = value.value
+        if before not in (0, 1):
+            raise ValueError("invalid CUDA SYNC_MEMOPS attribute")
+        if not before:
+            value.value = 1
+            self.call("cuPointerSetAttribute", c.byref(value), CUDA_POINTER_SYNC_MEMOPS, allocation.pointer)
+            value.value = 0
+            self.call("cuPointerGetAttribute", c.byref(value), CUDA_POINTER_SYNC_MEMOPS, allocation.pointer)
+            if value.value != 1:
+                raise ValueError("CUDA alias did not enable SYNC_MEMOPS")
+        return bool(before)
+
 
 class DmaBuffer:
     def __init__(self, driver, allocation, fd):
@@ -121,12 +142,16 @@ class QuarantinedDMA(RuntimeError):
 
 
 class KernelPeer:
-    def __init__(self, physical_chip, path="/dev/sidecard_peer", *, ioctl=fcntl.ioctl):
+    def __init__(self, physical_chip, path="/dev/sidecard_peer", *, ioctl=fcntl.ioctl, persistent_gpu_mappings=False):
         if isinstance(physical_chip, bool) or physical_chip not in (2, 3):
             raise ValueError("direct qualification is restricted to physical chips 2,3")
+        if type(persistent_gpu_mappings) is not bool:
+            raise ValueError("persistent GPU mapping mode must be boolean")
         self.physical_chip, self.pid, self.thread = physical_chip, os.getpid(), threading.get_ident()
         self.fd = os.open(path, os.O_RDWR | os.O_CLOEXEC)
         self.ioctl, self.failed, self.retained = ioctl, False, None
+        self.persistent_gpu_mappings = persistent_gpu_mappings
+        self.exports = []
 
     def check_owner(self):
         if os.getpid() != self.pid or threading.get_ident() != self.thread:
@@ -150,6 +175,9 @@ class KernelPeer:
             raise ValueError("direct copy exceeds its allocation capacity")
         if npu.size > MAX_BYTES or guard.size < npu.size:
             raise ValueError("invalid HBM pin extent or guard capacity")
+        new_export = self.persistent_gpu_mappings and not any(exported is gpu for exported in self.exports)
+        if new_export and len(self.exports) >= MAX_GPU_MAPPINGS:
+            raise ValueError("persistent peer exceeds its GPU mapping capacity")
         ready_runtime = gpu.allocation.runtime if operation == CUDA_TO_ASCEND else npu.runtime
         if source_ready.runtime is not ready_runtime:
             raise ValueError("source readiness event belongs to another runtime")
@@ -164,7 +192,13 @@ class KernelPeer:
             length=size,
             pin_length=npu.size,
             guard_va=guard.pointer,
+            gpu_mapping_mode=int(self.persistent_gpu_mappings),
         )
+        if new_export:
+            # Native static mappings outlive individual copies. Hold the owner
+            # even if setup fails, until a clean device-fd close releases them.
+            gpu.allocation.leases += 1
+            self.exports.append(gpu)
         resources = (gpu.allocation, npu, guard, source_ready)
         for resource in resources:
             resource.leases += 1
@@ -182,6 +216,7 @@ class KernelPeer:
                 "length",
                 "pin_length",
                 "guard_va",
+                "gpu_mapping_mode",
             )
             if any(getattr(result, key) != getattr(request, key) for key in identity):
                 raise QuarantinedDMA("kernel completion identity differs from the submitted transfer")
@@ -193,6 +228,8 @@ class KernelPeer:
                 or result.gpu_mapped_bytes < size
                 or result.revoked
                 or result.reserved
+                or result.gpu_mapping_reused not in (0, 1)
+                or (result.gpu_mapping_reused and not self.persistent_gpu_mappings)
             ):
                 raise QuarantinedDMA("invalid successful kernel completion geometry")
             completed = True  # Kernel has either rejected setup or completed DMA.
@@ -223,3 +260,6 @@ class KernelPeer:
             self.check_owner()
             os.close(self.fd)
             self.fd = None
+            for exported in self.exports:
+                exported.allocation.leases -= 1
+            self.exports.clear()

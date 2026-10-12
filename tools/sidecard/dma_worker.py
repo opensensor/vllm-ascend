@@ -4,6 +4,7 @@
 import argparse
 import ctypes
 import json
+import math
 import os
 import signal
 import socket
@@ -28,13 +29,32 @@ from .dma_protocol import (
     send_control,
     validate_command,
 )
+from .expert_decode_graph import ExpertDecodeGraphs
 from .layer_weights import MAX_CHUNK, NPU_LAYERS, TOP_K, WIDTH, NpuExperts
 from .pcie.peer import ASCEND_TO_CUDA, CUDA_TO_ASCEND, Driver, KernelPeer
 from .pcie.runtime import Runtime
 
 GUARD_POISON = 0xD3
 PROFILE_RECORD_LIMIT = 4096
-RECEIPT_INTERVAL = 64
+RECEIPT_INTERVAL = 1024
+EXPERT_COUNT = 288
+
+
+def validate_routes(metadata, rows, hot_ids):
+    """Check bounded CPU metadata without launching small Torch operations."""
+    if type(rows) is not int or not 1 <= rows <= MAX_CHUNK:
+        raise ValueError("route metadata exceeds its row capacity")
+    count = rows * TOP_K
+    values = struct.unpack_from(f"<{count}i{count}f", metadata)
+    for index in range(count):
+        expert, weight = values[index], values[count + index]
+        if (
+            not 0 <= expert < EXPERT_COUNT
+            or not math.isfinite(weight)
+            or weight < 0
+            or (expert in hot_ids and weight != 0)
+        ):
+            raise ValueError("invalid or hot-owned route in direct expert request")
 
 
 class TensorAllocation:
@@ -94,17 +114,16 @@ class WorkerSlots:
         self.guard = self.ascend.allocate(CAPACITY, host=True)
         ctypes.memset(self.guard.pointer, GUARD_POISON, CAPACITY)
         self.stream, self.event = self.ascend.stream(), self.ascend.event()
-        self.peer = KernelPeer(rank + 2)
+        self.peer = KernelPeer(
+            rank + 2, persistent_gpu_mappings=spec.get("direct_dma", {}).get("persistent_gpu_mappings", False)
+        )
         self.source_event = AdmittedCudaSource(self.cuda)
         self.metadata_host = self.ascend.allocate(MAX_CHUNK * TOP_K * 8, host=True)
         storage = (ctypes.c_uint8 * self.metadata_host.size).from_address(self.metadata_host.pointer)
-        self.metadata = torch.frombuffer(storage, dtype=torch.uint8)
-        self.hot_masks = {}
-        for layer, ids in load(spec).items():
-            mask = torch.zeros(288, dtype=torch.bool)
-            mask[ids] = True
-            self.hot_masks[int(layer)] = mask
+        self.metadata = storage
+        self.hot_ids = {int(layer): frozenset(ids) for layer, ids in load(spec).items()}
         self.calls, self.upload_bytes, self.download_bytes = 0, 0, 0
+        self.mapping_creations, self.mapping_hits = 0, 0
         self.profile = deque(maxlen=PROFILE_RECORD_LIMIT)
 
     def receipt(self, state):
@@ -118,15 +137,19 @@ class WorkerSlots:
             "verified_direct_transfers": self.calls * 2,
             "upload_bytes": self.upload_bytes,
             "download_bytes": self.download_bytes,
+            "gpu_mapping_creations": self.mapping_creations,
+            "gpu_mapping_hits": self.mapping_hits,
+            "persistent_gpu_mappings": self.peer.persistent_gpu_mappings,
             "profile": list(self.profile),
             "profile_record_limit": PROFILE_RECORD_LIMIT,
+            "receipt_interval_calls": RECEIPT_INTERVAL,
         }
 
     def compute(self, actor, sequence, layer, rows):
-        """Use private raw HBM slots; same-device copies bridge to native Torch kernels."""
+        """Transfer directly into Torch HBM and out of the native output tensor."""
         t = self.torch
         start = time.perf_counter()
-        self.peer.copy(
+        upload = self.peer.copy(
             CUDA_TO_ASCEND,
             self.input_export,
             self.npu_input,
@@ -145,15 +168,7 @@ class WorkerSlots:
         x = self.packed[:x_bytes].view(t.float16).reshape(rows, WIDTH)
         ids = self.packed[x_bytes : x_bytes + id_bytes].view(t.int32).reshape(rows, TOP_K)
         weights = self.packed[x_bytes + id_bytes : rows * INPUT_ROW_BYTES].view(t.float32).reshape(rows, TOP_K)
-        host_ids = self.metadata[:id_bytes].view(t.int32).reshape(rows, TOP_K)
-        host_weights = self.metadata[id_bytes : rows * TOP_K * 8].view(t.float32).reshape(rows, TOP_K)
-        if (
-            bool(((host_ids < 0) | (host_ids >= 288)).any())
-            or not bool(t.isfinite(host_weights).all())
-            or bool((host_weights < 0).any())
-            or bool((host_weights[self.hot_masks[layer][host_ids.long()]] != 0).any())
-        ):
-            raise ValueError("invalid or hot-owned route in direct expert request")
+        validate_routes(self.metadata, rows, self.hot_ids[layer])
         native_start = time.perf_counter()
         partial = actor(layer, x, ids, weights)
         complete = t.npu.Event()
@@ -161,7 +176,7 @@ class WorkerSlots:
         complete.synchronize()
         native_end = time.perf_counter()
         returned = TensorAllocation(self.ascend, partial)
-        self.peer.copy(
+        download = self.peer.copy(
             ASCEND_TO_CUDA,
             self.output_export,
             returned,
@@ -173,6 +188,9 @@ class WorkerSlots:
         # The CUDA coordinator consumes an IPC mapping in a separate CUDA context.
         self.driver.flush(all_devices=True)
         self.calls += 1
+        hits = upload["gpu_mapping_reused"] + download["gpu_mapping_reused"]
+        self.mapping_hits += hits
+        self.mapping_creations += 2 - hits
         self.source_event.admitted = False
         self.upload_bytes += rows * INPUT_ROW_BYTES
         self.download_bytes += rows * OUTPUT_ROW_BYTES
@@ -240,6 +258,9 @@ def worker(args, spec):
         layers=layers,
     )
     actor.validate_repeat(output / f"expert-repeat-rank{args.rank}.json", combine_results=False)
+    if spec.get("direct_dma", {}).get("npu_expert_graphs", False):
+        with torch.inference_mode():
+            actor = ExpertDecodeGraphs(actor, torch)
     slots = WorkerSlots(spec, args.rank, torch)
     # Ordinary termination is deferred to private socket EOF; never abandon in-flight DMA.
     signal.signal(signal.SIGTERM, lambda signum, frame: None)
@@ -305,6 +326,8 @@ def worker(args, spec):
         if not slots.peer.failed:
             guard_exact = ctypes.string_at(slots.guard.pointer, CAPACITY) == bytes([GUARD_POISON]) * CAPACITY
             receipt = dict(slots.receipt("closed"), guard_poison_exact=guard_exact)
+            if isinstance(actor, ExpertDecodeGraphs):
+                actor.close()
             slots.close()
             (output / f"dma-worker-rank{args.rank}.json").write_text(json.dumps(receipt, indent=2) + "\n")
             if not guard_exact:
