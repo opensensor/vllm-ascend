@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .cold_expert_probe import receive
 from .cold_placement import load, lookup
+from .expert_timing import WorkerTimers
 from .layer_actor import guard_parent
 from .layer_weights import MAX_CHUNK, NPU_LAYERS, TOP_K, WIDTH, NpuExperts
 
@@ -54,6 +55,11 @@ def worker(config, rank, fd, parent_pid):
         mask = torch.zeros(288, dtype=torch.bool)
         mask[hot[str(layer)]] = True
         hot_masks[layer] = mask
+    profile = (
+        WorkerTimers(Path(spec["output"]) / f"worker-profile-rank{rank}.jsonl", rank, torch.npu)
+        if spec.get("expert_worker_profile", False)
+        else None
+    )
     expected = 0
     with socket.socket(fileno=fd) as connection, torch.inference_mode():
         connection.sendall(READY + spec["expert_placement_sha256"].encode())
@@ -67,6 +73,8 @@ def worker(config, rank, fd, parent_pid):
             if sequence != expected or layer not in layers or not 1 <= rows <= MAX_CHUNK:
                 raise ValueError("invalid private expert request identity")
             receive(connection, host_bytes[: rows * INPUT_ROW_BYTES])
+            if profile is not None:
+                profile.begin(sequence, layer, rows)
             x_bytes, ids_bytes = rows * WIDTH * 2, rows * TOP_K * 4
             x = host[:x_bytes].view(torch.float16).reshape(rows, WIDTH)
             ids = host[x_bytes : x_bytes + ids_bytes].view(torch.int32).reshape(rows, TOP_K)
@@ -80,12 +88,25 @@ def worker(config, rank, fd, parent_pid):
             if bool((weights[hot_masks[layer][ids.long()]] != 0).any()):
                 raise ValueError("cold peer assigned nonzero work to a hot expert")
             device = f"npu:{rank}"
-            partial = actor(layer, x.to(device), ids.to(device), weights.to(device))
+            if profile is not None:
+                profile.mark("upload")
+            device_x, device_ids, device_weights = x.to(device), ids.to(device), weights.to(device)
+            if profile is not None:
+                profile.mark("native")
+            partial = actor(layer, device_x, device_ids, device_weights)
+            if profile is not None:
+                profile.mark("download")
             reply[: rows * OUTPUT_ROW_BYTES].view(torch.float32).reshape(rows, WIDTH).copy_(partial, non_blocking=True)
+            if profile is not None:
+                profile.mark("complete")
             torch.npu.synchronize()
             connection.sendall(tag)
             connection.sendall(reply_bytes[: rows * OUTPUT_ROW_BYTES])
+            if profile is not None:
+                profile.finish()
             expected += 1
+    if profile is not None:
+        profile.close()
 
 
 class ColdDispatch:

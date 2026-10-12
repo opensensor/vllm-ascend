@@ -6,8 +6,11 @@ assigned chips, physical **2 and 3**. The other Ascend card remains available
 for other work. The live endpoint is `http://192.168.53.187:8000/v1`, model
 `glm-sidecard`; requests use real checkpoint weights.
 
-The final serving snapshot is
-`/srv/ai/storage/artifacts/sidecard-expert-runtime-20261012-v2`.
+The measured V2 snapshot was restored after profiling as
+`/srv/ai/storage/artifacts/sidecard-expert-runtime-20261012-v3`, using the
+exact same serving Python source. The
+[complete latency profile](../sidecard-expert-profile-20261012/README.md)
+records the delay breakdown and a fresh 9.64-token/s serving confirmation.
 Read the [runtime runbook](../../tools/sidecard/EXPERT_RUNTIME.md) and
 [implemented design PNG](architecture.png).
 

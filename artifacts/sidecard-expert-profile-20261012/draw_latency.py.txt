@@ -1,0 +1,38 @@
+import json,statistics
+from pathlib import Path
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+root=Path(__file__).resolve().parent
+report=json.loads((root/'summary.json').read_bytes())
+labels=['Ascend reply waits','GPU backbone submission','Hot/shared + merge submission','Input readiness + socket send','Embedding/head/completion']
+colors=['#d27245','#377cb0','#63aab8','#8d7bc2','#8aaa66']
+fig,axes=plt.subplots(1,2,figsize=(14,7),gridspec_kw={'width_ratios':[1.6,1]})
+fig.patch.set_facecolor('#f3f6fb')
+for axis in axes:axis.set_facecolor('#f3f6fb')
+for row,workload in enumerate(report['workloads']):
+ d=workload['phases']['decode'];h=d['host_mean_ms']
+ values=[h['socket_receive_wait'],h['prefix_host_submit']+h['middle_backbone_host_submit']+h['suffix_host_submit'],h['hot_shared_reply_merge_submit']+h['middle_finish_host_submit'],h['input_readiness']+h['socket_send'],h['embedding_head_final_completion']]
+ assert abs(sum(values)-d['mean_forward_ms'])<1e-6
+ left=0
+ for index,(value,color,label) in enumerate(zip(values,colors,labels)):
+  axes[0].barh(row,value,left=left,color=color,label=label if row==0 else None,height=.45)
+  if value>=9:axes[0].text(left+value/2,row,f'{value:.1f}',ha='center',va='center',color='white',fontsize=11,weight='bold')
+  left+=value
+ axes[0].text(left+1,row,f'{left:.1f} ms',va='center',fontsize=11)
+axes[0].set_yticks([0,1],['2K prompt / 64 output','Short Python / 64 output'])
+axes[0].set_xlim(0,125);axes[0].set_xlabel('Mean host critical-path partition per decode step (ms)')
+axes[0].set_title('Where decode time adds up',fontsize=17,pad=20)
+axes[0].legend(loc='upper left',bbox_to_anchor=(0,-.20),frameon=False,fontsize=10,ncol=2)
+axes[0].spines[['top','right']].set_visible(False)
+d=report['workloads'][0]['phases']['decode'];layer=d['middle_backbone_per_layer_stream_mean_ms']
+kda=statistics.mean(value for key,value in layer.items() if int(key) not in (19,23,27,31));dsa=statistics.mean(layer[str(i)] for i in (19,23,27,31))
+axes[1].bar(['Captured KDA','Eager DSA'],[kda,dsa],color=['#63aab8','#377cb0'],width=.5)
+for index,value in enumerate([kda,dsa]):axes[1].text(index,value+.08,f'{value:.2f} ms',ha='center',fontsize=12)
+axes[1].set_ylim(0,4);axes[1].set_ylabel('Mean CUDA stream span per middle layer (ms)')
+axes[1].set_title('Backbone preparation\nIncludes mHC and routing',fontsize=15,pad=15)
+axes[1].spines[['top','right']].set_visible(False)
+fig.suptitle('Measured GLM sidecard decode: cold waits + eager CUDA launch cost',fontsize=19,y=.98)
+fig.text(.035,.04,'Diagnostic instrumentation lowers 2K decode to 9.22 tokens/s; restored production measures 9.64.\nGPU/NPU stream spans overlap host waits and include launch gaps. They are not added to the host waterfall.',fontsize=11)
+fig.subplots_adjust(left=.16,right=.97,bottom=.36,top=.80,wspace=.50)
+fig.savefig(root/'latency.png',dpi=150,facecolor=fig.get_facecolor())
