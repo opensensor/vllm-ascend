@@ -18,7 +18,9 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from .native_bank_release import release_cuda_only_bank
 from .native_expert_probe import digest_file
+from .one_card_partition import SEED_PARTITION, one_card_partition
 from .ordered_tensor import combine_compact
 from .placement import ExpertPlacement
 from .readiness import receive_ready
@@ -40,12 +42,20 @@ SHADOW_ATOL = 0.002
 OVERLAP_PREFILL_MIN_TOKENS = 32
 
 
-def service_placement(*, one_card=False):
+def service_placement(*, one_card=False, cuda_partition=SEED_PARTITION):
     if type(one_card) is not bool:
         raise ValueError("one_card must be boolean")
     if one_card:
-        layer = ("cuda:0",) * ONE_CARD_CUDA_EXPERTS + ("npu:0",) * CUDA_EXPERTS + ("npu:1",) * CUDA_EXPERTS
-        return ExpertPlacement(("cuda:0", "npu:0", "npu:1"), (layer,) * (LAST_LAYER - FIRST_LAYER))
+        partition = one_card_partition(cuda_partition)
+        layers = []
+        for layer_id in range(FIRST_LAYER, LAST_LAYER):
+            cuda_ids = frozenset(partition.cuda_ids(layer_id))
+            layers.append(
+                tuple("cuda:0" if expert in cuda_ids else "npu:0" if expert < 216 else "npu:1" for expert in range(288))
+            )
+        return ExpertPlacement(("cuda:0", "npu:0", "npu:1"), tuple(layers))
+    if cuda_partition != SEED_PARTITION:
+        raise ValueError("extended CUDA placement requires one-card mode")
     layer = ("cuda:0",) * CUDA_EXPERTS
     for rank in range(1, 4):
         layer += (f"npu:{rank}",) * CUDA_EXPERTS
@@ -70,9 +80,19 @@ def local_request(execution_id, layer_id, hidden, ids, weights):
     )
 
 
-def local_routes(ids, weights, *, max_tokens=CHUNK_ROWS, cuda_experts=CUDA_EXPERTS):
-    if cuda_experts not in (CUDA_EXPERTS, ONE_CARD_CUDA_EXPERTS):
+def local_routes(ids, weights, *, max_tokens=CHUNK_ROWS, cuda_experts=CUDA_EXPERTS, allowed_experts=None):
+    if allowed_experts is None and cuda_experts not in (CUDA_EXPERTS, ONE_CARD_CUDA_EXPERTS):
         raise ValueError("unsupported CUDA service partition")
+    if allowed_experts is not None and (
+        type(allowed_experts) is not tuple
+        or type(cuda_experts) is not int
+        or not 1 <= cuda_experts <= 288
+        or len(allowed_experts) != cuda_experts
+        or tuple(sorted(set(allowed_experts))) != allowed_experts
+        or any(type(expert) is not int or not 0 <= expert < 288 for expert in allowed_experts)
+    ):
+        raise ValueError("invalid explicit CUDA service partition")
+    allowed = frozenset(range(cuda_experts) if allowed_experts is None else allowed_experts)
     if not 1 <= len(ids) <= max_tokens <= MAX_PACKET_TOKENS or len(ids) != len(weights):
         raise ValueError("invalid sidecard service chunk geometry")
     routes = []
@@ -81,7 +101,7 @@ def local_routes(ids, weights, *, max_tokens=CHUNK_ROWS, cuda_experts=CUDA_EXPER
             raise ValueError("sidecard service requires top eight routing")
         selected = set()
         for slot, (expert, weight) in enumerate(zip(experts, row_weights, strict=True)):
-            if not math.isfinite(weight) or weight < 0 or type(expert) is not int or not 0 <= expert < cuda_experts:
+            if not math.isfinite(weight) or weight < 0 or type(expert) is not int or expert not in allowed:
                 raise ValueError("invalid or foreign sidecard service route")
             if weight == 0:
                 continue
@@ -105,8 +125,22 @@ class SidecardSession:
         self.one_card = config.get("one_card", False)
         if type(self.one_card) is not bool:
             raise ValueError("one_card must be boolean")
-        self.cuda_experts = ONE_CARD_CUDA_EXPERTS if self.one_card else CUDA_EXPERTS
+        self.partition = one_card_partition(config.get("cuda_partition", SEED_PARTITION))
+        if not self.one_card and self.partition.name != SEED_PARTITION:
+            raise ValueError("extended CUDA placement requires one-card mode")
+        self.cuda_expert_ids = (
+            {layer: self.partition.cuda_ids(layer) for layer in range(FIRST_LAYER, LAST_LAYER)} if self.one_card else {}
+        )
+        self.cuda_experts = (
+            (ONE_CARD_CUDA_EXPERTS if self.partition.name == SEED_PARTITION else None)
+            if self.one_card
+            else CUDA_EXPERTS
+        )
+        resident_experts = (
+            sum(map(len, self.cuda_expert_ids.values())) if self.one_card else CUDA_EXPERTS * (LAST_LAYER - FIRST_LAYER)
+        )
         self.overlap_shadows = self.one_card
+        self.tp_rank_inputs = self.one_card and self.partition.name != SEED_PARTITION
         self.tensor_transport = config.get("tensor_transport", False)
         self.reply_fp16 = config.get("reply_fp16", False)
         self.partial_reduce = config.get("partial_reduce", False)
@@ -129,18 +163,21 @@ class SidecardSession:
             "checkpoint_sha256": config["checkpoint_sha256"],
             "cuda_experts_per_layer": self.cuda_experts,
             "routed_layers": LAST_LAYER - FIRST_LAYER,
-            "retains_npu_shadow_banks": not self.one_card,
+            "retains_npu_shadow_banks": not self.one_card or self.partition.name != SEED_PARTITION,
             "tensor_transport": self.tensor_transport,
             "packet_tokens": self.packet_tokens,
             "reply_fp16": self.reply_fp16,
             "partial_reduce": self.partial_reduce,
+            "preserves_tp_rank_inputs": self.tp_rank_inputs,
         }
         if self.one_card:
             self.report["one_card"] = True
+            self.report["cuda_partition"] = self.partition.name
+            self.report["cuda_experts_by_layer"] = {str(layer): len(ids) for layer, ids in self.cuda_expert_ids.items()}
             self.report["packed_cuda_gate"] = config["packed_cuda_gate"]
             self.report["npu_devices"] = config.get("npu_devices", [0, 1])
             self.report["overlaps_native_cuda"] = True
-        placement = service_placement(one_card=self.one_card)
+        placement = service_placement(one_card=self.one_card, cuda_partition=self.partition.name)
         identity = WireIdentity.for_placement(placement, config["checkpoint_sha256"])
         limits = PacketLimits(HIDDEN_WIDTH, self.packet_tokens, self.packet_tokens * TOP_K, 288, TOP_K)
         receipt = json.loads(Path(config["worker_ready_path"]).read_bytes())
@@ -148,12 +185,13 @@ class SidecardSession:
             receipt["checkpoint_sha256"] != identity.checkpoint_sha256
             or receipt["placement_sha256"] != identity.placement_sha256
             or receipt["config_sha256"] != config["worker_config_sha256"]
-            or receipt["resident_experts"] != self.cuda_experts * (LAST_LAYER - FIRST_LAYER)
+            or receipt["resident_experts"] != resident_experts
             or receipt.get("tensor_transport", False) != self.tensor_transport
             or receipt.get("max_tokens", CHUNK_ROWS) != self.packet_tokens
             or receipt.get("max_routes", CHUNK_ROWS * TOP_K) != limits.max_routes
             or receipt.get("reply_fp16", False) != self.reply_fp16
             or receipt.get("partial_reduce", False) != self.partial_reduce
+            or receipt.get("tp_rank_inputs", False) != self.tp_rank_inputs
         ):
             raise ValueError("CUDA daemon readiness differs from service admission")
         connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -166,7 +204,13 @@ class SidecardSession:
             receive_ready(connection, "cuda:0", identity, time.monotonic() + 120)
             self.peer = (
                 TensorSocketPeer(
-                    connection, identity, limits, 120, reply_fp16=self.reply_fp16, partial_reduce=self.partial_reduce
+                    connection,
+                    identity,
+                    limits,
+                    120,
+                    reply_fp16=self.reply_fp16,
+                    partial_reduce=self.partial_reduce,
+                    tp_rank_inputs=self.tp_rank_inputs,
                 )
                 if self.tensor_transport
                 else SocketPeer(connection, identity, limits, 120)
@@ -229,7 +273,18 @@ class SidecardMoEMethod:
         }
         session.layers[str(layer_id)] = self.state
 
-    def apply(self, layer, x, topk_weights, topk_ids, shared_experts, shared_experts_input, *, native_dispatch=None):
+    def apply(
+        self,
+        layer,
+        x,
+        topk_weights,
+        topk_ids,
+        shared_experts,
+        shared_experts_input,
+        *,
+        native_dispatch=None,
+        rank_one_hidden=None,
+    ):
         import torch
         from vllm.forward_context import get_forward_context
 
@@ -256,6 +311,17 @@ class SidecardMoEMethod:
         native_result = None
         chunks = []
         tensor_transport = self.session.tensor_transport
+        tp_inputs = getattr(self.session, "tp_rank_inputs", False)
+        if (
+            tp_inputs != (rank_one_hidden is not None)
+            or rank_one_hidden is not None
+            and (
+                rank_one_hidden.shape != x.shape
+                or rank_one_hidden.dtype != x.dtype
+                or rank_one_hidden.device != x.device
+            )
+        ):
+            raise ValueError("CUDA expert inputs differ from admitted TP source geometry")
         transferred = time.perf_counter()
         if tensor_transport:
             import numpy as np
@@ -265,6 +331,10 @@ class SidecardMoEMethod:
             cpu_weights = topk_weights.detach().to(device="cpu", dtype=torch.float32).tolist()
             if not np.isfinite(cpu_hidden.numpy()).all():
                 raise ValueError("invalid sidecard service hidden rows")
+            if tp_inputs:
+                cpu_rank_one = rank_one_hidden.detach().to(device="cpu", dtype=torch.float16).contiguous()
+                if not np.isfinite(cpu_rank_one.numpy()).all():
+                    raise ValueError("invalid TP rank-one hidden rows")
             self.state["input_transfer_and_pending_npu_ms"] += (time.perf_counter() - transferred) * 1000
         for start in range(0, x.shape[0], self.session.packet_tokens):
             stop = min(start + self.session.packet_tokens, x.shape[0])
@@ -281,7 +351,12 @@ class SidecardMoEMethod:
                     ids,
                     weights,
                     max_tokens=self.session.packet_tokens,
-                    cuda_experts=getattr(self.session, "cuda_experts", CUDA_EXPERTS),
+                    cuda_experts=len(self.session.cuda_expert_ids[self.layer_id])
+                    if getattr(self.session, "cuda_expert_ids", None)
+                    else getattr(self.session, "cuda_experts", CUDA_EXPERTS),
+                    allowed_experts=self.session.cuda_expert_ids[self.layer_id]
+                    if getattr(self.session, "cuda_expert_ids", None)
+                    else None,
                 )
                 request = ExpertRequest(execution_id, self.layer_id, "cuda:0", routes, tokens, ()) if routes else None
             else:
@@ -303,9 +378,18 @@ class SidecardMoEMethod:
                     )
                     packet = TensorPacket(
                         request,
-                        selected.numpy().tobytes(),
+                        selected.numpy().tobytes()
+                        + (
+                            cpu_rank_one[start:stop]
+                            .index_select(0, torch.tensor(tokens, dtype=torch.long, device="cpu"))
+                            .numpy()
+                            .tobytes()
+                            if tp_inputs
+                            else b""
+                        ),
                         partial_reduce=self.session.partial_reduce,
                         route_weights=raw_weights,
+                        tp_rank_inputs=tp_inputs,
                     )
                     if native_dispatch is not None and native_result is None:
                         # Only immutable host packet I/O runs in this thread.
@@ -375,7 +459,15 @@ class SidecardMoEMethod:
             if getattr(self.session, "overlap_shadows", False) and self.state[shadow_key] < shadow_limit:
                 started = time.perf_counter()
                 serial_native = native_dispatch()
-                serial_cuda = self.apply(layer, x, topk_weights, topk_ids, shared_experts, shared_experts_input)
+                serial_cuda = self.apply(
+                    layer,
+                    x,
+                    topk_weights,
+                    topk_ids,
+                    shared_experts,
+                    shared_experts_input,
+                    rank_one_hidden=rank_one_hidden,
+                )
                 expected = serial_native.float() + serial_cuda
                 cpu_actual, cpu_expected = actual.cpu(), expected.float().cpu()
                 error = cpu_actual - cpu_expected
@@ -475,7 +567,12 @@ def install_one_card_model(model, config, rank):
         for layer_id, module in owners:
             native = module._method
             cuda = SidecardMoEMethod(session, layer_id, native) if session is not None else None
-            module.routed_experts_forward = types.MethodType(one_card_routed(native, cuda), module)
+            module.routed_experts_forward = types.MethodType(
+                one_card_routed(
+                    native, cuda, cuda_partition=config.get("cuda_partition", SEED_PARTITION), layer_id=layer_id
+                ),
+                module,
+            )
         if session is not None:
             model._sidecard_session = session
             session.flush()
@@ -493,32 +590,120 @@ def install_one_card_model(model, config, rank):
         raise
 
 
-def one_card_routed(native, cuda):
+def one_card_routed(native, cuda, *, cuda_partition=SEED_PARTITION, layer_id=FIRST_LAYER):
     """Compose explicitly owned contributions before GLM's existing all-reduce."""
+    partition = one_card_partition(cuda_partition)
+    native_enabled = partition.native_enabled(layer_id)
+    native_ranges = partition.native_ranges(layer_id)
+    qualification = {"decode": 0, "prefill": 0, "max_absolute_error": 0.0}
 
     def routed(module, hidden_states, topk_ids, topk_weights, *, experts=None, reduce_results=True):
         import torch
         from vllm.distributed import tensor_model_parallel_all_reduce
 
+        rank_one_hidden = None
+        if partition.name != SEED_PARTITION:
+            from vllm.distributed import get_tp_group
+
+            # FP16 backbone results can differ between TP ranks. Preserve the
+            # original expert's input rather than assuming rank-zero equality.
+            # Broadcast a clone so the model's live hidden state is unchanged.
+            rank_one_hidden = get_tp_group().broadcast(hidden_states.clone(), src=1)
+
         bank = module.w2_experts
         if experts is not None and experts is not bank:
             raise ValueError("one-card dispatch requires the admitted native bank")
         start, stop = bank.local_expert_offset, bank.local_expert_offset + bank.num_local_experts
-        local = (topk_ids >= start) & (topk_ids < stop)
-        ids = torch.where(local, topk_ids, torch.full_like(topk_ids, start))
-        weights = topk_weights * local.to(topk_weights.dtype)
         layer = types.SimpleNamespace(w2_experts=bank, w2_shared_expert=None)
-        native_dispatch = functools.partial(native.apply, layer, hidden_states, weights, ids, None, None)
+        if native_enabled:
+            active_start, active_stop = native_ranges[0 if start == ONE_CARD_CUDA_EXPERTS else 1]
+            local = (topk_ids >= active_start) & (topk_ids < active_stop)
+            ids = torch.where(local, topk_ids, torch.full_like(topk_ids, start))
+            weights = topk_weights * local.to(topk_weights.dtype)
+            native_dispatch = functools.partial(native.apply, layer, hidden_states, weights, ids, None, None)
+        else:
+            native_dispatch = functools.partial(torch.zeros_like, hidden_states, dtype=torch.float32)
         if cuda is None:
             actual = native_dispatch()
         else:
-            local = (topk_ids >= 0) & (topk_ids < ONE_CARD_CUDA_EXPERTS)
-            ids = torch.where(local, topk_ids, torch.zeros_like(topk_ids))
-            weights = topk_weights * local.to(topk_weights.dtype)
-            if getattr(cuda, "overlap_native", False):
-                actual = cuda.apply(layer, hidden_states, weights, ids, None, None, native_dispatch=native_dispatch)
+            if native_enabled:
+                local = partition.cuda_mask(topk_ids, layer_id)
+                ids = torch.where(local, topk_ids, torch.zeros_like(topk_ids))
+                weights = topk_weights * local.to(topk_weights.dtype)
             else:
-                actual = native_dispatch().float() + cuda.apply(layer, hidden_states, weights, ids, None, None)
+                # Every router slot belongs to CUDA on these layers; avoid
+                # eager NPU mask/remap kernels on the steady-state path.
+                ids, weights = topk_ids, topk_weights
+            if getattr(cuda, "overlap_native", False):
+                actual = cuda.apply(
+                    layer,
+                    hidden_states,
+                    weights,
+                    ids,
+                    None,
+                    None,
+                    native_dispatch=native_dispatch,
+                    **({"rank_one_hidden": rank_one_hidden} if rank_one_hidden is not None else {}),
+                )
+            else:
+                actual = native_dispatch().float() + cuda.apply(
+                    layer,
+                    hidden_states,
+                    weights,
+                    ids,
+                    None,
+                    None,
+                    **({"rank_one_hidden": rank_one_hidden} if rank_one_hidden is not None else {}),
+                )
+        if partition.name != SEED_PARTITION:
+            from vllm.forward_context import get_forward_context
+
+            category = "prefill" if hidden_states.shape[0] >= OVERLAP_PREFILL_MIN_TOKENS else "decode"
+            limit = 1 if category == "prefill" else 3
+            if get_forward_context().attn_metadata is not None and qualification[category] < limit:
+                # Native outputs can alias reusable workspace. Preserve the
+                # candidate before invoking the former native composition.
+                actual = actual.clone()
+                # Both TP ranks enter these collectives in the same forward.
+                # Compare the new ownership against the former 144+72+72
+                # composition on identical real hidden states and router slots.
+                old_local = (topk_ids >= start) & (topk_ids < stop)
+                old_ids = torch.where(old_local, topk_ids, torch.full_like(topk_ids, start))
+                old_weights = topk_weights * old_local.to(topk_weights.dtype)
+                expected = native.apply(layer, hidden_states, old_weights, old_ids, None, None).float()
+                if cuda is not None:
+                    old_local = (topk_ids >= 0) & (topk_ids < ONE_CARD_CUDA_EXPERTS)
+                    old_ids = torch.where(old_local, topk_ids, torch.zeros_like(topk_ids))
+                    old_weights = topk_weights * old_local.to(topk_weights.dtype)
+                    expected = expected + cuda.apply(
+                        layer,
+                        hidden_states,
+                        old_weights,
+                        old_ids,
+                        None,
+                        None,
+                        **({"rank_one_hidden": rank_one_hidden} if rank_one_hidden is not None else {}),
+                    )
+                compared = tensor_model_parallel_all_reduce(actual.clone()).cpu()
+                expected = tensor_model_parallel_all_reduce(expected).cpu()
+                torch.testing.assert_close(compared, expected, rtol=SHADOW_RTOL, atol=SHADOW_ATOL)
+                qualification["max_absolute_error"] = max(
+                    qualification["max_absolute_error"], float((compared - expected).abs().max())
+                )
+                qualification[category] += 1
+                if cuda is not None:
+                    cuda.state.update(
+                        placement_decode_shadow_checks=qualification["decode"],
+                        placement_prefill_shadow_checks=qualification["prefill"],
+                        placement_shadow_max_absolute_error=qualification["max_absolute_error"],
+                        native_experts_enabled=native_enabled,
+                    )
+                    cuda.session.flush()
+                if not native_enabled and qualification["decode"] >= 3 and qualification["prefill"] >= 1:
+                    released = release_cuda_only_bank(bank, partition, layer_id, qualification)
+                    if cuda is not None:
+                        cuda.state.update(native_bank_released=True, native_bank_released_bytes=released)
+                        cuda.session.flush()
         return tensor_model_parallel_all_reduce(actual) if reduce_results else actual
 
     return routed
@@ -547,6 +732,7 @@ def install_loader_hook(config_path):
             from .one_card import prepare_banks
 
             manifest = json.loads((Path(config["checkpoint_root"]) / "native-layout.json").read_bytes())
+            one_card_partition(config.get("cuda_partition", SEED_PARTITION)).validate_layer_bits(manifest["layer_bits"])
             if (
                 manifest.get("deployment_profile") != "one-card-sidecard-w2"
                 or manifest.get("sidecard_cuda_experts") != ONE_CARD_CUDA_EXPERTS

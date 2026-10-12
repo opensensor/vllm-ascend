@@ -11,11 +11,13 @@ from pathlib import Path
 
 from .device_backend import CUDA_COMPACT_PLANES, CUDA_NIBBLE_PLANES, CUDA_ROW_MAJOR, CUDA_WORD_PLANES
 from .native_expert_probe import digest_file
+from .one_card_partition import PARTITIONS, SEED_PARTITION, one_card_partition
 from .service_adapter import CHUNK_ROWS, MAX_PACKET_TOKENS, service_placement
 from .wire import PacketLimits, WireIdentity
 
 GIB = 1024**3
 CUDA_BUDGET_BYTES = 82 * GIB
+EXTENDED_CUDA_BUDGET_BYTES = 92 * GIB
 
 
 def prepare(
@@ -38,7 +40,13 @@ def prepare(
     one_card=False,
     cuda_gate=None,
     npu_devices=None,
+    cuda_partition=SEED_PARTITION,
 ):
+    partition = one_card_partition(cuda_partition)
+    if partition.name != SEED_PARTITION and (not one_card or weight_layout != CUDA_COMPACT_PLANES):
+        raise ValueError("precision placement requires one-card compact CUDA storage")
+    if partition.name != SEED_PARTITION and (not tensor_transport or not partial_reduce or reply_fp16):
+        raise ValueError("precision placement requires FP32 partial tensor transport for TP inputs")
     if type(max_sessions) is not int or max_sessions < 1:
         raise ValueError("max_sessions must be a positive integer")
     if type(packet_tokens) is not int or not 1 <= packet_tokens <= MAX_PACKET_TOKENS:
@@ -81,7 +89,7 @@ def prepare(
     cuda_python = Path(cuda_python).absolute()
     if not checkpoint.is_dir() or not library.is_file() or not cuda_python.is_file():
         raise ValueError("checkpoint, compiled CUDA library and CUDA interpreter must exist")
-    placement = service_placement(one_card=one_card)
+    placement = service_placement(one_card=one_card, cuda_partition=partition.name)
     identity = WireIdentity.for_placement(placement, digest_file(checkpoint / "native-layout.json"))
     packed_gate = None
     if one_card:
@@ -89,8 +97,11 @@ def prepare(
 
         npu_devices = validate_device_pair((0, 1) if npu_devices is None else npu_devices)
         manifest = json.loads((checkpoint / "native-layout.json").read_bytes())
+        partition.validate_layer_bits(manifest["layer_bits"])
         packed_gate = (
-            validate_compact_gate(cuda_gate, digest_file(library), identity.checkpoint_sha256)
+            validate_compact_gate(
+                cuda_gate, digest_file(library), identity.checkpoint_sha256, cuda_partition=partition.name
+            )
             if weight_layout == CUDA_COMPACT_PLANES
             else validate_packed_gate(cuda_gate, digest_file(library), manifest["sidecard_source_manifest_sha256"])
         )
@@ -119,11 +130,13 @@ def prepare(
         library=str(library),
         library_sha256=digest_file(library),
         cuda_runtime="/usr/local/cuda/lib64/libcudart.so",
-        cuda_memory_budget_bytes=CUDA_BUDGET_BYTES,
+        cuda_memory_budget_bytes=CUDA_BUDGET_BYTES if partition.name == SEED_PARTITION else EXTENDED_CUDA_BUDGET_BYTES,
         weight_layout=weight_layout,
         reply_fp16=reply_fp16,
         partial_reduce=partial_reduce,
     )
+    if partition.name != SEED_PARTITION:
+        backend["tp_rank_inputs"] = True
     if bank_cache is not None:
         from .cuda_bank_cache import MANIFEST_NAME, CachedCudaBanks
         from .device_backend import owned_keys
@@ -159,6 +172,8 @@ def prepare(
     if packed_gate is not None:
         config["packed_cuda_gate"] = packed_gate
         config["npu_devices"] = list(npu_devices)
+    if partition.name != SEED_PARTITION:
+        config["cuda_partition"] = partition.name
     (output / "service.json").write_text(json.dumps(config, indent=2) + "\n")
     (output / "runtime-environment.json").write_text(json.dumps(runtime, indent=2) + "\n")
     (output / "previous-service.json").write_text(json.dumps(previous, indent=2) + "\n")
@@ -218,6 +233,7 @@ def main():
         default=CUDA_ROW_MAJOR,
     )
     parser.add_argument("--one-card", action="store_true")
+    parser.add_argument("--cuda-partition", choices=PARTITIONS, default=SEED_PARTITION)
     parser.add_argument("--cuda-gate", type=Path)
     parser.add_argument("--npu-devices", choices=("0,1", "2,3"))
     parser.add_argument("--bank-cache", type=Path)
@@ -256,6 +272,7 @@ def main():
                 one_card=args.one_card,
                 cuda_gate=args.cuda_gate,
                 npu_devices=tuple(map(int, args.npu_devices.split(","))) if args.npu_devices else None,
+                cuda_partition=args.cuda_partition,
             )
         ),
         flush=True,

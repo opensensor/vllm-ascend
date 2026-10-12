@@ -15,6 +15,7 @@ from .reference import ExpertReply, ExpertRequest, Route
 MAGIC = b"SCARD001"
 HALF_REPLY_MAGIC = b"SCARD002"
 REDUCED_MAGIC = b"SCARD003"
+TP_INPUT_MAGIC = b"SCARD004"
 PREFIX = struct.Struct("!8sII")
 METADATA_LIMIT = 2048
 IDENTITY_LIMIT = 256
@@ -131,7 +132,7 @@ def encode_packet(packet, identity, limits):
     return frame_packet(packet, identity, limits, len(rows), body)
 
 
-def frame_packet(packet, identity, limits, rows, body, *, reply_fp16=False, partial_reduce=False):
+def frame_packet(packet, identity, limits, rows, body, *, reply_fp16=False, partial_reduce=False, tp_rank_inputs=False):
     """Frame a prevalidated binary payload with the shared identity contract."""
     metadata = json.dumps(
         {
@@ -148,19 +149,34 @@ def frame_packet(packet, identity, limits, rows, body, *, reply_fp16=False, part
         },
         separators=(",", ":"),
     ).encode()
-    if len(metadata) > METADATA_LIMIT or len(body) > limits.max_body_bytes:
+    maximum_body = (
+        limits.max_tokens * (limits.hidden_width * 4 + TOKEN_STRUCT.size) + limits.max_routes * 16
+        if tp_rank_inputs
+        else limits.max_body_bytes
+    )
+    if len(metadata) > METADATA_LIMIT or len(body) > maximum_body:
         raise ValueError("packet exceeds byte limits")
-    magic = REDUCED_MAGIC if partial_reduce else HALF_REPLY_MAGIC if reply_fp16 else MAGIC
+    magic = (
+        TP_INPUT_MAGIC
+        if tp_rank_inputs
+        else REDUCED_MAGIC
+        if partial_reduce
+        else HALF_REPLY_MAGIC
+        if reply_fp16
+        else MAGIC
+    )
     return PREFIX.pack(magic, len(metadata), len(body)) + metadata + body
 
 
-def frame_lengths(prefix, limits, *, allow_reply_fp16=False, allow_partial_reduce=False):
+def frame_lengths(prefix, limits, *, allow_reply_fp16=False, allow_partial_reduce=False, allow_tp_rank_inputs=False):
     if len(prefix) != PREFIX.size:
         raise ValueError("truncated frame prefix")
     magic, metadata_bytes, body_bytes = PREFIX.unpack(prefix)
     supported = (MAGIC,) + (HALF_REPLY_MAGIC,) if allow_reply_fp16 else (MAGIC,)
     if allow_partial_reduce:
         supported += (REDUCED_MAGIC,)
+    if allow_tp_rank_inputs and allow_partial_reduce:
+        supported += (TP_INPUT_MAGIC,)
     max_body = (
         limits.max_routes * (limits.hidden_width * 2 + ROUTE_STRUCT.size)
         if magic == HALF_REPLY_MAGIC
@@ -171,15 +187,21 @@ def frame_lengths(prefix, limits, *, allow_reply_fp16=False, allow_partial_reduc
             limits.max_tokens * (limits.hidden_width * 2 + 4) + limits.max_routes * 16,
             limits.max_tokens * limits.hidden_width * 4 + limits.max_routes * 12,
         )
+    if magic == TP_INPUT_MAGIC:
+        max_body = limits.max_tokens * (limits.hidden_width * 4 + TOKEN_STRUCT.size) + limits.max_routes * 16
     if magic not in supported or not 1 <= metadata_bytes <= METADATA_LIMIT or body_bytes > max_body:
         raise ValueError("unsupported frame or oversized allocation")
     return metadata_bytes, body_bytes
 
 
-def decode_control(frame, identity, limits, *, reply_fp16=False, partial_reduce=False):
+def decode_control(frame, identity, limits, *, reply_fp16=False, partial_reduce=False, tp_rank_inputs=False):
     """Authenticate framing and mappings, retaining immutable tensor storage."""
     metadata_bytes, body_bytes = frame_lengths(
-        frame[: PREFIX.size], limits, allow_reply_fp16=reply_fp16, allow_partial_reduce=partial_reduce
+        frame[: PREFIX.size],
+        limits,
+        allow_reply_fp16=reply_fp16,
+        allow_partial_reduce=partial_reduce,
+        allow_tp_rank_inputs=tp_rank_inputs,
     )
     if len(frame) != PREFIX.size + metadata_bytes + body_bytes:
         raise ValueError("truncated frame or trailing bytes")
@@ -208,7 +230,16 @@ def decode_control(frame, identity, limits, *, reply_fp16=False, partial_reduce=
         raise ValueError("worker placement/checkpoint identity mismatch")
     request = metadata["kind"] == "request"
     magic = PREFIX.unpack(frame[: PREFIX.size])[0]
-    if magic != (REDUCED_MAGIC if partial_reduce else MAGIC if request or not reply_fp16 else HALF_REPLY_MAGIC):
+    expected_magic = (
+        TP_INPUT_MAGIC
+        if request and tp_rank_inputs
+        else REDUCED_MAGIC
+        if partial_reduce
+        else MAGIC
+        if request or not reply_fp16
+        else HALF_REPLY_MAGIC
+    )
+    if magic != expected_magic:
         raise ValueError("packet reply precision differs from configured transport")
     if (
         metadata["kind"] not in ("request", "reply")
@@ -224,6 +255,8 @@ def decode_control(frame, identity, limits, *, reply_fp16=False, partial_reduce=
     route_bytes = routes * ROUTE_STRUCT.size
     weight_bytes = routes * 4 if request and partial_reduce else 0
     tensor_bytes = rows * limits.hidden_width * (2 if request or reply_fp16 else 4)
+    if request and tp_rank_inputs:
+        tensor_bytes *= 2
     if body_bytes != token_bytes + route_bytes + weight_bytes + tensor_bytes or (
         not request and not partial_reduce and rows != routes
     ):
@@ -273,10 +306,16 @@ def _read_exact(connection: socket.socket, count: int, deadline: float):
     return bytes(chunks)
 
 
-def receive_frame(connection, limits, deadline, *, allow_reply_fp16=False, allow_partial_reduce=False):
+def receive_frame(
+    connection, limits, deadline, *, allow_reply_fp16=False, allow_partial_reduce=False, allow_tp_rank_inputs=False
+):
     prefix = _read_exact(connection, PREFIX.size, deadline)
     metadata_bytes, body_bytes = frame_lengths(
-        prefix, limits, allow_reply_fp16=allow_reply_fp16, allow_partial_reduce=allow_partial_reduce
+        prefix,
+        limits,
+        allow_reply_fp16=allow_reply_fp16,
+        allow_partial_reduce=allow_partial_reduce,
+        allow_tp_rank_inputs=allow_tp_rank_inputs,
     )
     frame = prefix + _read_exact(connection, metadata_bytes + body_bytes, deadline)
     return frame

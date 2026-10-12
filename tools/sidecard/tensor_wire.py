@@ -22,6 +22,7 @@ class TensorPacket:
     reply_fp16: bool = False
     partial_reduce: bool = False
     route_weights: bytes = b""
+    tp_rank_inputs: bool = False
 
 
 def validate_tensor(packet, limits):
@@ -29,6 +30,12 @@ def validate_tensor(packet, limits):
 
     rows = validate_control(packet.control, limits)
     request = isinstance(packet.control, ExpertRequest)
+    if (
+        type(packet.tp_rank_inputs) is not bool
+        or packet.tp_rank_inputs
+        and (not request or not packet.partial_reduce or packet.reply_fp16)
+    ):
+        raise ValueError("TP inputs require a partial FP32 request")
     if not isinstance(packet.route_weights, bytes):
         raise ValueError("route weight storage must be immutable bytes")
     if type(packet.partial_reduce) is not bool or (packet.partial_reduce and packet.reply_fp16):
@@ -38,6 +45,8 @@ def validate_tensor(packet, limits):
     if (packet.control.hidden if request else packet.control.outputs) != ():
         raise ValueError("raw tensor control must not carry a second tensor representation")
     item_bytes = 2 if request or packet.reply_fp16 else 4
+    if packet.tp_rank_inputs:
+        rows *= 2
     if packet.partial_reduce:
         if request:
             if len(packet.route_weights) != len(packet.control.routes) * 4:
@@ -71,12 +80,21 @@ def encode_tensor(packet, identity, limits):
         else validate_control(control, limits)
     )
     return frame_packet(
-        control, identity, limits, rows, body, reply_fp16=packet.reply_fp16, partial_reduce=packet.partial_reduce
+        control,
+        identity,
+        limits,
+        rows,
+        body,
+        reply_fp16=packet.reply_fp16,
+        partial_reduce=packet.partial_reduce,
+        tp_rank_inputs=packet.tp_rank_inputs,
     )
 
 
-def decode_tensor(frame, identity, limits, *, reply_fp16=False, partial_reduce=False):
-    decoded = decode_control(frame, identity, limits, reply_fp16=reply_fp16, partial_reduce=partial_reduce)
+def decode_tensor(frame, identity, limits, *, reply_fp16=False, partial_reduce=False, tp_rank_inputs=False):
+    decoded = decode_control(
+        frame, identity, limits, reply_fp16=reply_fp16, partial_reduce=partial_reduce, tp_rank_inputs=tp_rank_inputs
+    )
     control, tensor = decoded[:2]
     weights = bytes(decoded[2]) if partial_reduce else b""
     packet = TensorPacket(
@@ -85,18 +103,30 @@ def decode_tensor(frame, identity, limits, *, reply_fp16=False, partial_reduce=F
         reply_fp16=reply_fp16 and isinstance(control, ExpertReply),
         partial_reduce=partial_reduce,
         route_weights=weights,
+        tp_rank_inputs=tp_rank_inputs and isinstance(control, ExpertRequest),
     )
     validate_tensor(packet, limits)
     return packet
 
 
 class TensorSocketPeer:
-    def __init__(self, connection, identity, limits, timeout_seconds, *, reply_fp16=False, partial_reduce=False):
+    def __init__(
+        self,
+        connection,
+        identity,
+        limits,
+        timeout_seconds,
+        *,
+        reply_fp16=False,
+        partial_reduce=False,
+        tp_rank_inputs=False,
+    ):
         from .runtime import SocketPeer
 
         self.socket_peer = SocketPeer(connection, identity, limits, timeout_seconds)
         self.reply_fp16 = reply_fp16
         self.partial_reduce = partial_reduce
+        self.tp_rank_inputs = tp_rank_inputs
 
     def exchange(self, packet):
         peer = self.socket_peer
@@ -106,6 +136,8 @@ class TensorSocketPeer:
                     raise ValueError("tensor peer requires an expert request")
                 if packet.partial_reduce != self.partial_reduce:
                     raise ValueError("tensor peer partial combination mode differs")
+                if packet.tp_rank_inputs != self.tp_rank_inputs:
+                    raise ValueError("tensor peer TP input mode differs")
                 deadline = time.monotonic() + peer.timeout_seconds
                 peer.connection.settimeout(peer.timeout_seconds)
                 peer.connection.sendall(encode_tensor(packet, peer.identity, peer.limits))
@@ -143,6 +175,7 @@ def serve_tensor_worker(connection, worker, identity):
     """Serve already admitted CUDA banks; malformed tensors close the stream."""
     try:
         partial = getattr(worker.backend, "specification", {}).get("partial_reduce", False)
+        tp_inputs = getattr(worker.backend, "specification", {}).get("tp_rank_inputs", False)
         send_ready(connection, worker.owner, identity, EXCHANGE_TIMEOUT_SECONDS)
         while True:
             connection.settimeout(None)
@@ -150,10 +183,13 @@ def serve_tensor_worker(connection, worker, identity):
                 return True
             deadline = time.monotonic() + EXCHANGE_TIMEOUT_SECONDS
             packet = decode_tensor(
-                receive_frame(connection, worker.limits, deadline, allow_partial_reduce=partial),
+                receive_frame(
+                    connection, worker.limits, deadline, allow_partial_reduce=partial, allow_tp_rank_inputs=tp_inputs
+                ),
                 identity,
                 worker.limits,
                 partial_reduce=partial,
+                tp_rank_inputs=tp_inputs,
             )
             control = packet.control
             if not isinstance(control, ExpertRequest) or control.owner != worker.owner:

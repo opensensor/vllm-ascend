@@ -52,6 +52,7 @@ def run(config_path, socket_path, ready_path, *, max_sessions=1, tensor_transpor
                 "max_routes": worker.limits.max_routes,
                 "reply_fp16": getattr(worker.backend, "specification", {}).get("reply_fp16", False),
                 "partial_reduce": getattr(worker.backend, "specification", {}).get("partial_reduce", False),
+                "tp_rank_inputs": getattr(worker.backend, "specification", {}).get("tp_rank_inputs", False),
                 "preparation_seconds": worker.backend.metrics.get("prepare_total_ms", 0) / 1000,
             }
             temporary = ready_path.with_suffix(".tmp")

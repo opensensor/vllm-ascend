@@ -11,6 +11,7 @@ from tools.glm_perf.deployment_profiles import one_card_sidecard_profile, valida
 
 from .device_backend import CUDA_COMPACT_PLANES
 from .native_expert_probe import digest_file
+from .one_card_partition import SEED_PARTITION, one_card_partition
 from .placement import validate_glm_config
 
 NPU_EXPERTS = 72
@@ -58,7 +59,8 @@ def validate_packed_gate(path, library_sha, source_manifest_sha):
     }
 
 
-def validate_compact_gate(path, library_sha, checkpoint_sha):
+def validate_compact_gate(path, library_sha, checkpoint_sha, *, cuda_partition=SEED_PARTITION):
+    partition = one_card_partition(cuda_partition)
     report = json.loads(Path(path).read_bytes())
     expected = {
         (layer, tokens, tokens * routes) for layer in (3, 8, 33) for tokens in (128, 512, 640) for routes in (1, 2, 8)
@@ -70,7 +72,13 @@ def validate_compact_gate(path, library_sha, checkpoint_sha):
         or report.get("candidate_sha256") != library_sha
         or report.get("checkpoint_sha256") != checkpoint_sha
         or report.get("candidate_weight_layout") != CUDA_COMPACT_PLANES
-        or report.get("cuda_experts_per_layer") != CUDA_EXPERTS
+        or report.get("cuda_experts_per_layer") != (CUDA_EXPERTS if partition.name == SEED_PARTITION else None)
+        or report.get("candidate_cuda_partition", SEED_PARTITION) != partition.name
+        or (
+            partition.name != SEED_PARTITION
+            and report.get("cuda_expert_ids_by_layer")
+            != {str(layer): list(partition.cuda_ids(layer)) for layer in (3, 8, 33)}
+        )
         or report.get("candidate_partial_reduce") is not True
         or report.get("candidate_experimental_projection") is not False
         or actual != expected
@@ -82,7 +90,9 @@ def validate_compact_gate(path, library_sha, checkpoint_sha):
         "passed": True,
         "sha256": digest_file(path),
         "cases": len(cases),
-        "cuda_experts_per_layer": CUDA_EXPERTS,
+        "cuda_experts_per_layer": CUDA_EXPERTS if partition.name == SEED_PARTITION else None,
+        "cuda_experts_by_layer": {str(layer): len(partition.cuda_ids(layer)) for layer in (3, 8, 33)},
+        "cuda_partition": partition.name,
         "layers": [3, 8, 33],
         "library_sha256": library_sha,
         "weight_layout": CUDA_COMPACT_PLANES,
