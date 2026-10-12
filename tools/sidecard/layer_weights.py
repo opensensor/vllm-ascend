@@ -154,11 +154,13 @@ class PlanBanks:
 
 
 class CudaExperts:
-    def __init__(self, root, checkpoint_sha256, specification, torch):
+    def __init__(self, root, checkpoint_sha256, specification, torch, *, keys=None):
         self.torch = torch
         plan = NativeResidentPlan(
             root,
-            tuple((layer, expert) for layer in GPU_LAYERS if layer >= 3 for expert in range(288)),
+            tuple((layer, expert) for layer in GPU_LAYERS if layer >= 3 for expert in range(288))
+            if keys is None
+            else keys,
             checkpoint_sha256,
         )
         plan.authenticate()
@@ -268,15 +270,30 @@ class CudaExperts:
 
 class NpuExperts:
     def __init__(
-        self, root, checkpoint_sha256, rank, torch, *, gate_override, reduce_results=True, stable_reduction=True
+        self,
+        root,
+        checkpoint_sha256,
+        rank,
+        torch,
+        *,
+        gate_override,
+        reduce_results=True,
+        stable_reduction=True,
+        layers=NPU_LAYERS,
     ):
         from tools.glm_perf.fused_moe_profile import frozen_helper
 
         self.torch, self.rank = torch, rank
         self.reduce_results = reduce_results
+        if (
+            not layers
+            or len(set(layers)) != len(layers)
+            or any(type(layer) is not int or layer not in NPU_LAYERS for layer in layers)
+        ):
+            raise ValueError("cold banks require unique supported middle layers")
         plan = NativeResidentPlan(
             root,
-            tuple((layer, expert) for layer in NPU_LAYERS for expert in range(rank * 144, (rank + 1) * 144)),
+            tuple((layer, expert) for layer in layers for expert in range(rank * 144, (rank + 1) * 144)),
             checkpoint_sha256,
         )
         plan.authenticate()
@@ -336,10 +353,10 @@ class NpuExperts:
             t.distributed.all_reduce(output)
         return output[:original_rows]
 
-    def validate_repeat(self, output):
+    def validate_repeat(self, output, *, combine_results=True):
         t = self.torch
         cases = []
-        for layer in NPU_LAYERS:
+        for layer in self.banks:
             for offset in (0, 144):
                 t.manual_seed(20261014 + layer)
                 hidden = t.randn(1, WIDTH).half().to(f"npu:{self.rank}")
@@ -349,7 +366,7 @@ class NpuExperts:
                 equal = True
                 for _ in range(4):
                     actual = self(layer, hidden, ids, weights)
-                    if not self.reduce_results:
+                    if not self.reduce_results and combine_results:
                         t.distributed.all_reduce(actual)
                     actual = actual.cpu()
                     equal = equal and bool(t.isfinite(actual).all())

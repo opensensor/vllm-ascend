@@ -264,7 +264,7 @@ class TextLayer:
         )
         return self.project((t.nn.functional.silu(gate.float()) * up.float()).to(x.dtype), f"{prefix}.down_proj.weight")
 
-    def forward(self, hidden, residual=None, post=None, comb=None):
+    def prepare_forward(self, hidden, residual=None, post=None, comb=None):
         t, w, c = self.torch, self.weights, self.config
         if post is None:
             if self.index != 0:
@@ -280,23 +280,36 @@ class TextLayer:
             x = x.to(t.float16)
         residual = mhc_post(x, residual, post, comb, t)
         post, comb, x = mhc_pre(residual, w, "ffn", "post_attention_layernorm.weight", c, t, self.native_sinkhorn)
+        return x, residual, post, comb
+
+    def route(self, x):
+        t, w, c = self.torch, self.weights, self.config
+        # Keep routing FP32; 310P requires explicit operand reduction.
+        gate = w["mlp.gate.weight"]
+        logits = (
+            (x.float()[:, None, :] * gate[None, :, :]).sum(-1)
+            if self.device.startswith("npu")
+            else x.float() @ gate.t()
+        )
+        scores = t.sigmoid(logits)
+        ids = t.topk(scores + w["mlp.gate.e_score_correction_bias"], TOP_K, -1).indices
+        route_weights = scores.gather(-1, ids)
+        route_weights = route_weights / route_weights.sum(-1, keepdim=True) * c["routed_scaling_factor"]
+        return ids, route_weights
+
+    def finish_forward(self, x, residual, post, comb, ids=None, route_weights=None):
+        t, c = self.torch, self.config
         if self.index < 3:
             x = self.dense_mlp(x, "mlp")
         else:
-            # Keep routing FP32. 310P FP32 GEMM rounds operands, so explicitly
-            # reduce the small router matrix on that device.
-            gate = w["mlp.gate.weight"]
-            logits = (
-                (x.float()[:, None, :] * gate[None, :, :]).sum(-1)
-                if self.device.startswith("npu")
-                else x.float() @ gate.t()
-            )
-            scores = t.sigmoid(logits)
-            ids = t.topk(scores + w["mlp.gate.e_score_correction_bias"], TOP_K, -1).indices
-            route_weights = scores.gather(-1, ids)
-            route_weights = route_weights / route_weights.sum(-1, keepdim=True) * c["routed_scaling_factor"]
-            routed = self.experts(self.index, x, ids, route_weights)
-            combined = routed.float() + self.dense_mlp(x, "mlp.shared_experts").float()
+            if ids is None:
+                ids, route_weights = self.route(x)
+            if hasattr(self.experts, "with_shared"):
+                routed, shared = self.experts.with_shared(self, x, ids, route_weights)
+            else:
+                routed = self.experts(self.index, x, ids, route_weights)
+                shared = self.dense_mlp(x, "mlp.shared_experts")
+            combined = routed.float() + shared.float()
             if self.tp_rank is not None:
                 t.distributed.all_reduce(combined)
             x = combined.to(x.dtype)
@@ -306,3 +319,6 @@ class TextLayer:
             # overflow valid BF16-range residuals before RMSNorm can act.
             return mhc_post(x, residual, post, comb, t).mean(1), None, None, None
         return x, residual, post, comb
+
+    def forward(self, hidden, residual=None, post=None, comb=None):
+        return self.finish_forward(*self.prepare_forward(hidden, residual, post, comb))

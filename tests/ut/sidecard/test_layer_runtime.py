@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Reproduction snapshots preserve isolation and do not overwrite evidence."""
 
+import hashlib
 import json
 import os
 import subprocess
@@ -51,3 +52,31 @@ def test_actor_parent_guard_fails_closed_after_parent_exit(parent_offset, return
     assert result.returncode == return_code
     if return_code:
         assert "coordinator exited" in result.stderr
+
+
+def test_snapshot_freezes_authenticated_expert_ownership(tmp_path):
+    source = Path(__file__).resolve().parents[3]
+    ownership = tmp_path / "ownership.json"
+    ownership.write_text(
+        json.dumps(
+            {
+                "checkpoint_sha256": "checkpoint",
+                "gpu_hot_experts": {str(i): [1, 71, 146, 280] for i in range(18, 33)},
+            }
+        )
+    )
+    original = ownership.read_bytes()
+    specification = {
+        "architecture": "cuda-backbone-ascend-experts",
+        "checkpoint_sha256": "checkpoint",
+        "expert_placement": str(ownership),
+        "expert_placement_sha256": hashlib.sha256(original).hexdigest(),
+    }
+    config = prepare(tmp_path / "frozen", specification, source)
+    frozen = Path(json.loads(config.read_bytes())["expert_placement"])
+    ownership.write_text("changed")
+    assert frozen.read_bytes() == original
+    assert frozen.parent == config.parent
+    with pytest.raises(ValueError, match="authentication"):
+        prepare(tmp_path / "rejected", specification, source)
+    assert not (tmp_path / "rejected").exists()

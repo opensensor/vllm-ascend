@@ -10,6 +10,7 @@ import time
 import uuid
 from pathlib import Path
 
+from .expert_actor import ExpertCoordinator
 from .layer_actor import Coordinator
 from .layer_reasoning import ReasoningStream, chat_message
 
@@ -181,7 +182,11 @@ def main():
         specification.get("max_context", 2048),
         chat=True,
     )
-    engine = Coordinator(args.config)
+    engine = (
+        ExpertCoordinator(args.config)
+        if specification.get("architecture") == ExpertCoordinator.architecture
+        else Coordinator(args.config)
+    )
     atexit.register(engine.close)
     probe = (tokenizer.encode("Describe the purpose of a Python dictionary. ") * 20)[:96]
     engine.reset(context_limit=len(probe) + 1)
@@ -255,7 +260,7 @@ def main():
             raise HTTPException(503, "stage worker unavailable")
         return {
             "status": "ok",
-            "architecture": "cuda-prefix-ascend-middle-cuda-suffix",
+            "architecture": getattr(engine, "architecture", "cuda-prefix-ascend-middle-cuda-suffix"),
             "max_model_len": engine.max_context,
         }
 
