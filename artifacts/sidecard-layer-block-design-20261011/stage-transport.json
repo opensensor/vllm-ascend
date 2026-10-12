@@ -1,0 +1,364 @@
+{
+  "completed": true,
+  "started_utc": "2026-10-12T03:55:28.587672+00:00",
+  "checkpoint_sha256": "a40e4312e4cd4162e7947aeb28c6fb80484a7500dc617f226eada1ed274d6a9f",
+  "physical_npu": 2,
+  "pinned_host_buffers": true,
+  "rows": [
+    1,
+    4,
+    128,
+    512
+  ],
+  "samples": 15,
+  "warmups": 3,
+  "full_model_speed_validated": false,
+  "model_math_executed": false,
+  "tp_broadcast_included": false,
+  "description": "Integrated pinned CUDA -> Ascend -> CUDA transfer of complete deferred mHC.\n\nNo model math is executed. This qualifies the TWO architecture boundaries with\nreal device allocations and full byte integrity. It excludes TP broadcast,\nattention/state correctness and stage compute; it does not qualify model speed.\n",
+  "cases": [
+    {
+      "rows": 1,
+      "residual_dtype": "fp16",
+      "payload_bytes_per_boundary": 41048,
+      "boundaries": 2,
+      "total_device_copy_bytes": 164192,
+      "wall": {
+        "median_ms": 0.8802440061117522,
+        "min_ms": 0.8569490018999204,
+        "max_ms": 0.9583329956512898,
+        "samples_ms": [
+          0.8720179976080544,
+          0.8569490018999204,
+          0.8962150022853166,
+          0.8754049995332025,
+          0.9583329956512898,
+          0.9323529957327992,
+          0.8936289959819987,
+          0.8791319996817037,
+          0.8756160023040138,
+          0.8966150053311139,
+          0.8802440061117522,
+          0.8595249964855611,
+          0.8791220025159419,
+          0.9407389952684753,
+          0.9070149972103536
+        ]
+      },
+      "validations": [
+        {
+          "phase": 0,
+          "bitwise_equal": true,
+          "sha256": "35a176e70ef6ab137176c27bd59f66d2febbc95f3a389d058098e638563847b3"
+        },
+        {
+          "phase": 1,
+          "bitwise_equal": true,
+          "sha256": "16d1291b46d198958910481c9a4b8f2ae2585b1693bfea23debcae871de947a2"
+        }
+      ]
+    },
+    {
+      "rows": 4,
+      "residual_dtype": "fp16",
+      "payload_bytes_per_boundary": 164192,
+      "boundaries": 2,
+      "total_device_copy_bytes": 656768,
+      "wall": {
+        "median_ms": 0.977609000983648,
+        "min_ms": 0.890062001417391,
+        "max_ms": 1.6347889977623709,
+        "samples_ms": [
+          1.6347889977623709,
+          1.0797539944178425,
+          1.3942720033810474,
+          1.1179870052728802,
+          1.0458589968038723,
+          1.0219539981335402,
+          1.112245001422707,
+          0.977609000983648,
+          0.9452679951209575,
+          0.9536639990983531,
+          0.9409990016138181,
+          0.9385849989484996,
+          0.9144389987341128,
+          0.9204000016325153,
+          0.890062001417391
+        ]
+      },
+      "validations": [
+        {
+          "phase": 0,
+          "bitwise_equal": true,
+          "sha256": "3d430082cdf0fbed3d283a5d97b56cac3c8b24edff8e862610c23071b380a8cd"
+        },
+        {
+          "phase": 1,
+          "bitwise_equal": true,
+          "sha256": "e5fc761fd74186d92e591240aff8413c034fe5c2ca2f6b80bb4ef33795f06fa0"
+        }
+      ]
+    },
+    {
+      "rows": 128,
+      "residual_dtype": "fp16",
+      "payload_bytes_per_boundary": 5254144,
+      "boundaries": 2,
+      "total_device_copy_bytes": 21016576,
+      "wall": {
+        "median_ms": 5.568369997490663,
+        "min_ms": 5.208736001804937,
+        "max_ms": 6.3322429996333085,
+        "samples_ms": [
+          5.732521996833384,
+          5.988408003759105,
+          5.873400004929863,
+          5.568369997490663,
+          5.577607997111045,
+          6.3322429996333085,
+          5.5039869985193945,
+          5.612123000901192,
+          5.47813799494179,
+          5.613786001049448,
+          5.5188249971251935,
+          5.336338006600272,
+          5.208736001804937,
+          5.384479998610914,
+          5.341117997886613
+        ]
+      },
+      "validations": [
+        {
+          "phase": 0,
+          "bitwise_equal": true,
+          "sha256": "0c6dba2342b262cfdd0bbfc98a51a89f985441774c6529dad12aceaf3cc430db"
+        },
+        {
+          "phase": 1,
+          "bitwise_equal": true,
+          "sha256": "0f5f4f63a8d3cdb82c1b6ae60e53d2c5ced357dceabe0efcb2eb423deac2b5ea"
+        }
+      ]
+    },
+    {
+      "rows": 512,
+      "residual_dtype": "fp16",
+      "payload_bytes_per_boundary": 21016576,
+      "boundaries": 2,
+      "total_device_copy_bytes": 84066304,
+      "wall": {
+        "median_ms": 17.868663002445828,
+        "min_ms": 16.914177998842206,
+        "max_ms": 19.08153999829665,
+        "samples_ms": [
+          18.835842005501036,
+          18.126201997802127,
+          19.08153999829665,
+          17.528796000988223,
+          17.82994899986079,
+          16.914177998842206,
+          18.224909996206407,
+          18.94282499415567,
+          18.216283002402633,
+          17.72409799741581,
+          17.092976995627396,
+          17.169704005937092,
+          17.868663002445828,
+          17.458542999520432,
+          18.670157005544752
+        ]
+      },
+      "validations": [
+        {
+          "phase": 0,
+          "bitwise_equal": true,
+          "sha256": "25cf50d287861ff6ea67b3957bfb4d69282a7079991e827681ec2d000c5b4114"
+        },
+        {
+          "phase": 1,
+          "bitwise_equal": true,
+          "sha256": "7fc49748de269f409b9604fb33e3a0f3d408a677c5ca1d22bfaf1e882e630558"
+        }
+      ]
+    },
+    {
+      "rows": 1,
+      "residual_dtype": "fp32",
+      "payload_bytes_per_boundary": 73816,
+      "boundaries": 2,
+      "total_device_copy_bytes": 295264,
+      "wall": {
+        "median_ms": 0.8261010007117875,
+        "min_ms": 0.7979369984241202,
+        "max_ms": 0.919127996894531,
+        "samples_ms": [
+          0.8180160002666526,
+          0.8261010007117875,
+          0.8285959993372671,
+          0.8165730032487772,
+          0.8077860038611107,
+          0.8477719966322184,
+          0.8234359993366525,
+          0.8234659981098957,
+          0.7979369984241202,
+          0.8362709995708428,
+          0.8060320033109747,
+          0.8362709995708428,
+          0.8903640045900829,
+          0.919127996894531,
+          0.8614180042059161
+        ]
+      },
+      "validations": [
+        {
+          "phase": 0,
+          "bitwise_equal": true,
+          "sha256": "857cac456c63944718de22b7a7d6853e209ed1cc30df64b8c117b62094c9b7c2"
+        },
+        {
+          "phase": 1,
+          "bitwise_equal": true,
+          "sha256": "6ce4d9718d798c88c2329e246ab3795536bd5a50c72848b2228b0e196d4741a6"
+        }
+      ]
+    },
+    {
+      "rows": 4,
+      "residual_dtype": "fp32",
+      "payload_bytes_per_boundary": 295264,
+      "boundaries": 2,
+      "total_device_copy_bytes": 1181056,
+      "wall": {
+        "median_ms": 1.0142389946850017,
+        "min_ms": 0.9499470033915713,
+        "max_ms": 1.0792629982461222,
+        "samples_ms": [
+          0.9608670006855391,
+          1.0769979999167845,
+          1.0702359941205941,
+          1.047391000611242,
+          1.0792629982461222,
+          1.0311610021744855,
+          0.9499470033915713,
+          0.9747039948706515,
+          0.9911550005199388,
+          0.9972170009859838,
+          0.9952830005204305,
+          1.0222239943686873,
+          1.0708970003179274,
+          1.0142389946850017,
+          1.0087479968206026
+        ]
+      },
+      "validations": [
+        {
+          "phase": 0,
+          "bitwise_equal": true,
+          "sha256": "249da2c4b8150d500ab36cf3018a868a4d2529618f0041c113522b2153152d96"
+        },
+        {
+          "phase": 1,
+          "bitwise_equal": true,
+          "sha256": "1aa6ff9e454d55b9a68d091c9126f092027963a66c69913ae0fdd0bca6a3e152"
+        }
+      ]
+    },
+    {
+      "rows": 128,
+      "residual_dtype": "fp32",
+      "payload_bytes_per_boundary": 9448448,
+      "boundaries": 2,
+      "total_device_copy_bytes": 37793792,
+      "wall": {
+        "median_ms": 8.316286002809647,
+        "min_ms": 8.028048003325239,
+        "max_ms": 9.309755005233455,
+        "samples_ms": [
+          8.24868700146908,
+          8.316286002809647,
+          8.028048003325239,
+          8.113449999655131,
+          8.108310001261998,
+          8.207708997360896,
+          8.302820002427325,
+          8.73897999554174,
+          8.422136997978669,
+          8.131634000164922,
+          8.508310995239299,
+          8.604925002146047,
+          8.955973004049156,
+          9.309755005233455,
+          9.032597998157144
+        ]
+      },
+      "validations": [
+        {
+          "phase": 0,
+          "bitwise_equal": true,
+          "sha256": "e0a3872912f17bc3202e4ec2c7a45caa3a026cc9bda02d0824a1fed2e8e4567a"
+        },
+        {
+          "phase": 1,
+          "bitwise_equal": true,
+          "sha256": "eb11b074813547f9aa9a56fc15b902716660752a69fc5f1205604bc27018ca34"
+        }
+      ]
+    },
+    {
+      "rows": 512,
+      "residual_dtype": "fp32",
+      "payload_bytes_per_boundary": 37793792,
+      "boundaries": 2,
+      "total_device_copy_bytes": 151175168,
+      "wall": {
+        "median_ms": 29.480976998456754,
+        "min_ms": 28.571477996592876,
+        "max_ms": 31.33978199912235,
+        "samples_ms": [
+          31.126786998356692,
+          28.571477996592876,
+          29.258264003146905,
+          28.6850430056802,
+          29.63625200209208,
+          29.480976998456754,
+          29.72144399973331,
+          29.295895001268946,
+          29.422435000014957,
+          29.272731000673957,
+          29.238956005428918,
+          30.70869200018933,
+          31.33978199912235,
+          29.7880710058962,
+          30.77541899983771
+        ]
+      },
+      "validations": [
+        {
+          "phase": 0,
+          "bitwise_equal": true,
+          "sha256": "22e0cb0a17a0983b8a1ffcac8e60c5b8c19e6a202ffa62a11448e38f5610f923"
+        },
+        {
+          "phase": 1,
+          "bitwise_equal": true,
+          "sha256": "8d782b7bbb40a23a00f6155b5b01b5444d675ad992752ed6d20a5c26e65fc653"
+        }
+      ]
+    }
+  ],
+  "source_sha256": {
+    "stage_probe.py": "5427fa91e86d8e0328c28ddb4c42303d2ab663c16c1f068353002c061a7b39ed",
+    "stage_wire.py": "9cc1a262aa1944c0d49a3109700f6666567bb4f7cea97bd22f49880ab365b646",
+    "layer_block_design.py": "e2f3f967518aa5b2bacef15a71324ad07bddaa6a08085073ac274a4e41e16bd8"
+  },
+  "worker_command": [
+    "/srv/ai/venvs/qwen38-w4-test-ce1862/bin/python",
+    "-m",
+    "tools.sidecard.stage_probe",
+    "--worker-fd",
+    "39",
+    "--checkpoint-sha256",
+    "a40e4312e4cd4162e7947aeb28c6fb80484a7500dc617f226eada1ed274d6a9f"
+  ],
+  "ended_utc": "2026-10-12T03:55:46.140794+00:00"
+}
