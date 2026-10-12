@@ -3,6 +3,7 @@
 
 import argparse
 import atexit
+import hashlib
 import json
 import os
 import threading
@@ -92,7 +93,7 @@ class Generation:
         self.eos = set(coordinator.config["eos_token_id"])
         self.last_result = None
 
-    def generate(self, tokens, limit, result=None, *, ignore_eos=False):
+    def generate(self, tokens, limit, result=None, *, ignore_eos=False, cancelled=None):
         if result is None:
             result = {}
         with self.lock:
@@ -101,9 +102,21 @@ class Generation:
             engine.metrics = {name: [] for name in engine.metrics}
             metric_start = {name: len(values) for name, values in engine.metrics.items()}
             begin = time.perf_counter()
-            logits = engine.prefill(tokens, overlap=engine.spec.get("prefill_overlap", True))
+            try:
+                if getattr(engine, "architecture", None) == ExpertCoordinator.architecture:
+                    logits = engine.prefill(
+                        tokens, overlap=engine.spec.get("prefill_overlap", True), cancelled=cancelled
+                    )
+                else:
+                    logits = engine.prefill(tokens, overlap=engine.spec.get("prefill_overlap", True))
+            except InterruptedError:
+                if cancelled is not None and cancelled.is_set():
+                    return
+                raise
             output, text, first = [], "", None
             for _ in range(limit):
+                if cancelled is not None and cancelled.is_set():
+                    return
                 token = int(logits.argmax().cpu())
                 output.append(token)
                 now = time.perf_counter()
@@ -230,6 +243,23 @@ def main():
     (engine.output / "decode-repeat-gate.json").write_text(json.dumps(repeat, indent=2) + "\n")
     if not repeat["passed"]:
         raise RuntimeError("complete-model decode boundary/logit repeatability failed")
+    if specification.get("expert_transport") == "direct-dma":
+        reference_path = Path(specification["transport_reference"])
+        reference_bytes = reference_path.read_bytes()
+        if hashlib.sha256(reference_bytes).hexdigest() != specification["transport_reference_sha256"]:
+            raise ValueError("qualified socket full-model reference changed")
+        reference = json.loads(reference_bytes)
+        parity = {
+            "passed": repeat["teacher_forced_tokens"] == reference["teacher_forced_tokens"]
+            and repeat["traces"][0] == reference["traces"][0],
+            "full_vocabulary_bitwise_equal": repeat["traces"][0] == reference["traces"][0],
+            "greedy_output_ids_equal": repeat["teacher_forced_tokens"] == reference["teacher_forced_tokens"],
+            "vocabulary_size": VOCAB_SIZE,
+            "reference_sha256": specification["transport_reference_sha256"],
+        }
+        (engine.output / "transport-parity.json").write_text(json.dumps(parity, indent=2) + "\n")
+        if not parity["passed"]:
+            raise RuntimeError("direct DMA changed qualified socket full-model logits or token IDs")
     generation = Generation(engine, tokenizer)
     # Complete a real-weight request before exposing readiness.
     startup_result = {}
@@ -244,10 +274,21 @@ def main():
     app = FastAPI()
 
     class ClosingStreamingResponse(StreamingResponse):
+        def __init__(self, iterator, cancelled):
+            super().__init__(iterator, media_type="text/event-stream")
+            self.cancelled = cancelled
+
         async def __call__(self, scope, receive, send):
+            async def watched_receive():
+                message = await receive()
+                if message["type"] == "http.disconnect":
+                    self.cancelled.set()
+                return message
+
             try:
-                await super().__call__(scope, receive, send)
+                await super().__call__(scope, watched_receive, send)
             finally:
+                self.cancelled.set()
                 # A disconnected client can leave a suspended synchronous
                 # generator alive. Explicitly close both async wrappers, so
                 # its request lock never depends on garbage collection.
@@ -262,6 +303,7 @@ def main():
             "status": "ok",
             "architecture": getattr(engine, "architecture", "cuda-prefix-ascend-middle-cuda-suffix"),
             "max_model_len": engine.max_context,
+            "expert_transport": specification.get("expert_transport", "socket"),
         }
 
     @app.get("/v1/models")
@@ -292,11 +334,14 @@ def main():
         created = int(time.time())
         result = {}
         if body.get("stream", False):
+            cancelled = threading.Event()
 
             async def events():
                 reasoning = ReasoningStream() if chat else None
                 deltas = managed_deltas(
-                    generation.generate(tokens, limit, result, ignore_eos=body.get("ignore_eos", False))
+                    generation.generate(
+                        tokens, limit, result, ignore_eos=body.get("ignore_eos", False), cancelled=cancelled
+                    )
                 )
                 try:
                     async for delta in deltas:
@@ -318,6 +363,8 @@ def main():
                 finally:
                     with anyio.CancelScope(shield=True):
                         await deltas.aclose()
+                if cancelled.is_set():
+                    return
                 choice = {"index": 0, "finish_reason": result["finish_reason"]}
                 choice["delta" if chat else "text"] = reasoning.feed("", final=True) if chat else ""
                 yield (
@@ -355,7 +402,7 @@ def main():
                     )
                 yield "data: [DONE]\n\n"
 
-            return ClosingStreamingResponse(events(), media_type="text/event-stream")
+            return ClosingStreamingResponse(events(), cancelled)
         list(generation.generate(tokens, limit, result, ignore_eos=body.get("ignore_eos", False)))
         choice = {"index": 0, "finish_reason": result["finish_reason"]}
         choice["message" if chat else "text"] = chat_message(result["text"]) if chat else result["text"]

@@ -3,14 +3,14 @@
 **Direct GPU/HBM DMA is now separately hardware-validated.** The
 [direct backend](DIRECT_DMA.md) uses an experimental kernel bridge with the
 Ascend DMA engine and NVIDIA DMA-BUF export. Its first API is blocking.
+GLM uses it through the [worker-owned integration](../GLM_DIRECT_DMA.md).
 The asynchronous host-staged backend below remains available independently.
 
 The first backend moves bytes between dedicated CUDA allocations and Ascend
 device allocations using native SDK streams and completion events. Each
 Ascend worker imports GPU buffers through **CUDA IPC**. Two bounded slots
 permit transfers to overlap without tensor payloads crossing a socket.
-This is a standalone transport library; the GLM server still uses its qualified
-socket transport. There is no measured GLM speedup from this library yet.
+This host-staged bus remains a standalone transport library.
 
 See the [hardware report](../../../artifacts/sidecard-pcie-bridge-20261012/README.md)
 and [design PNG](../../../artifacts/sidecard-pcie-bridge-20261012/design.png).
@@ -34,9 +34,9 @@ invocation identities, and completion notifications. Buffer handles are
 exchanged once; tensor bytes remain on the native transfer path.
 
 The CUDA and Ascend accelerators are behind different host root complexes.
-No cross-vendor peer-DMA path is established. CUDA peer APIs and ACL peer APIs
-do not themselves provide a mixed-vendor transport. This backend makes no
-claim of direct device-to-device DMA or shared registration.
+The host-staged `Bus` uses vendor-local copy APIs. The separate `KernelPeer`
+backend drives actual cross-vendor DMA through Ascend and NVIDIA's DMA-BUF
+mapping, as described in the direct backend runbook above.
 
 ## Ownership and asynchronous API
 

@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from .cold_dispatch import ColdDispatch
+from .cold_dispatch import create_dispatch
 from .cold_placement import cuda_keys, load
 from .layer_weights import CudaExperts, private_native_banks
 from .native_expert_probe import contained, digest_file
@@ -58,7 +58,7 @@ def run(config_path, output):
         "cases": [],
     }
     try:
-        dispatcher = ColdDispatch(config_path, None, torch, wait=False)
+        dispatcher = create_dispatch(config_path, None, torch, wait=False)
         cuda = CudaExperts(
             Path(spec["checkpoint"]),
             spec["checkpoint_sha256"],

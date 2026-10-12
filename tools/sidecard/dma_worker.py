@@ -1,0 +1,343 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Privileged Ascend expert actor owning both direct DMA endpoints."""
+
+import argparse
+import ctypes
+import json
+import os
+import signal
+import socket
+import struct
+import sys
+import time
+from collections import deque
+from pathlib import Path
+
+from .cold_expert_probe import receive
+from .cold_placement import load
+from .dma_protocol import (
+    CAPACITY,
+    CLOSE_TAG,
+    COMMAND,
+    INPUT_ROW_BYTES,
+    OUTPUT_ROW_BYTES,
+    PROTOCOL,
+    RELEASE,
+    AdmittedCudaSource,
+    receive_control,
+    send_control,
+    validate_command,
+)
+from .layer_weights import MAX_CHUNK, NPU_LAYERS, TOP_K, WIDTH, NpuExperts
+from .pcie.peer import ASCEND_TO_CUDA, CUDA_TO_ASCEND, Driver, KernelPeer
+from .pcie.runtime import Runtime
+
+GUARD_POISON = 0xD3
+PROFILE_RECORD_LIMIT = 4096
+RECEIPT_INTERVAL = 64
+
+
+class TensorAllocation:
+    """Retain a worker-owned contiguous Torch allocation during native DMA."""
+
+    def __init__(self, runtime, tensor):
+        if (
+            runtime.kind != "ascend"
+            or tensor.device.type != "npu"
+            or tensor.device.index != runtime.device
+            or not tensor.is_contiguous()
+        ):
+            raise ValueError("direct HBM endpoint requires a contiguous NPU tensor")
+        self.runtime, self.tensor = runtime, tensor
+        self.size = tensor.numel() * tensor.element_size()
+        self.host, self.leases = False, 0
+
+    @property
+    def pointer(self):
+        self.runtime.check_owner()
+        if self.tensor is None:
+            raise RuntimeError("direct HBM tensor endpoint is closed")
+        return self.tensor.data_ptr()
+
+    def close(self):
+        if self.leases:
+            raise RuntimeError("HBM tensor is retained by uncertain DMA")
+        self.tensor = None
+
+
+class TorchSourceEvent:
+    def __init__(self, runtime, event):
+        self.runtime, self.event, self.leases = runtime, event, 0
+
+    def require_recorded(self):
+        self.runtime.check_owner()
+
+    def wait(self):
+        self.require_recorded()
+        self.event.synchronize()
+
+
+class WorkerSlots:
+    def __init__(self, spec, rank, torch):
+        self.torch, self.rank = torch, rank
+        self.cuda = Runtime("cuda", spec["cuda_backend"]["cuda_runtime"])
+        library = spec.get("direct_dma", {}).get(
+            "ascend_library", "/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/libascendcl.so"
+        )
+        self.ascend = Runtime("ascend", library, rank, initialize=False)
+        self.driver = Driver()
+        self.gpu_input, self.gpu_output = self.cuda.allocate(CAPACITY), self.cuda.allocate(CAPACITY)
+        self.input_export = self.driver.export(self.gpu_input)
+        self.output_export = self.driver.export(self.gpu_output)
+        self.packed = torch.empty(CAPACITY, dtype=torch.uint8, device=f"npu:{rank}")
+        self.npu_input = TensorAllocation(self.ascend, self.packed)
+        self.guard = self.ascend.allocate(CAPACITY, host=True)
+        ctypes.memset(self.guard.pointer, GUARD_POISON, CAPACITY)
+        self.stream, self.event = self.ascend.stream(), self.ascend.event()
+        self.peer = KernelPeer(rank + 2)
+        self.source_event = AdmittedCudaSource(self.cuda)
+        self.metadata_host = self.ascend.allocate(MAX_CHUNK * TOP_K * 8, host=True)
+        storage = (ctypes.c_uint8 * self.metadata_host.size).from_address(self.metadata_host.pointer)
+        self.metadata = torch.frombuffer(storage, dtype=torch.uint8)
+        self.hot_masks = {}
+        for layer, ids in load(spec).items():
+            mask = torch.zeros(288, dtype=torch.bool)
+            mask[ids] = True
+            self.hot_masks[int(layer)] = mask
+        self.calls, self.upload_bytes, self.download_bytes = 0, 0, 0
+        self.profile = deque(maxlen=PROFILE_RECORD_LIMIT)
+
+    def receipt(self, state):
+        return {
+            "state": state,
+            "pid": os.getpid(),
+            "rank": self.rank,
+            "transport": "direct-dma",
+            "payload_host_staging": False,
+            "calls": self.calls,
+            "verified_direct_transfers": self.calls * 2,
+            "upload_bytes": self.upload_bytes,
+            "download_bytes": self.download_bytes,
+            "profile": list(self.profile),
+            "profile_record_limit": PROFILE_RECORD_LIMIT,
+        }
+
+    def compute(self, actor, sequence, layer, rows):
+        """Use private raw HBM slots; same-device copies bridge to native Torch kernels."""
+        t = self.torch
+        start = time.perf_counter()
+        self.peer.copy(
+            CUDA_TO_ASCEND,
+            self.input_export,
+            self.npu_input,
+            self.guard,
+            rows * INPUT_ROW_BYTES,
+            source_ready=self.source_event,
+        )
+        uploaded = time.perf_counter()
+        x_bytes, id_bytes = rows * WIDTH * 2, rows * TOP_K * 4
+        # Validate only routing metadata on CPU; activations never leave HBM.
+        self.ascend.copy(
+            self.metadata_host.pointer, self.npu_input.pointer + x_bytes, rows * TOP_K * 8, "d2h", self.stream
+        )
+        self.event.record(self.stream)
+        self.event.wait()
+        x = self.packed[:x_bytes].view(t.float16).reshape(rows, WIDTH)
+        ids = self.packed[x_bytes : x_bytes + id_bytes].view(t.int32).reshape(rows, TOP_K)
+        weights = self.packed[x_bytes + id_bytes : rows * INPUT_ROW_BYTES].view(t.float32).reshape(rows, TOP_K)
+        host_ids = self.metadata[:id_bytes].view(t.int32).reshape(rows, TOP_K)
+        host_weights = self.metadata[id_bytes : rows * TOP_K * 8].view(t.float32).reshape(rows, TOP_K)
+        if (
+            bool(((host_ids < 0) | (host_ids >= 288)).any())
+            or not bool(t.isfinite(host_weights).all())
+            or bool((host_weights < 0).any())
+            or bool((host_weights[self.hot_masks[layer][host_ids.long()]] != 0).any())
+        ):
+            raise ValueError("invalid or hot-owned route in direct expert request")
+        native_start = time.perf_counter()
+        partial = actor(layer, x, ids, weights)
+        complete = t.npu.Event()
+        complete.record()
+        complete.synchronize()
+        native_end = time.perf_counter()
+        returned = TensorAllocation(self.ascend, partial)
+        self.peer.copy(
+            ASCEND_TO_CUDA,
+            self.output_export,
+            returned,
+            self.guard,
+            rows * OUTPUT_ROW_BYTES,
+            source_ready=TorchSourceEvent(self.ascend, complete),
+        )
+        returned.close()
+        # The CUDA coordinator consumes an IPC mapping in a separate CUDA context.
+        self.driver.flush(all_devices=True)
+        self.calls += 1
+        self.source_event.admitted = False
+        self.upload_bytes += rows * INPUT_ROW_BYTES
+        self.download_bytes += rows * OUTPUT_ROW_BYTES
+        self.profile.append(
+            {
+                "sequence": sequence,
+                "layer": layer,
+                "rows": rows,
+                "upload_ms": (uploaded - start) * 1000,
+                "unpack_and_validation_ms": (native_start - uploaded) * 1000,
+                "native_ms": (native_end - native_start) * 1000,
+                "pack_and_download_ms": (time.perf_counter() - native_end) * 1000,
+            }
+        )
+
+    def close(self):
+        self.peer.close()
+        self.event.close()
+        self.stream.close()
+        self.input_export.close()
+        self.output_export.close()
+        for allocation in (self.npu_input, self.metadata_host, self.guard, self.gpu_input, self.gpu_output):
+            allocation.close()
+
+
+def quarantine(slots, output, rank, error):
+    """Preserve original CUDA/HBM ownership independently of API process lifetime."""
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    receipt = {
+        "pid": os.getpid(),
+        "physical_chip": rank + 2,
+        "state": "quarantined",
+        "error": {"type": type(error).__name__, "message": str(error)},
+        "automatic_kill": False,
+        "gpu_and_hbm_owners_alive": True,
+        "native_dma_uncertain": slots.peer.failed,
+    }
+    (output / f"dma-quarantine-rank{rank}.json").write_text(json.dumps(receipt, indent=2) + "\n")
+    print(json.dumps(receipt), flush=True)
+    while True:
+        time.sleep(1)
+
+
+def worker(args, spec):
+    """Authenticate the private owner, gate banks, and serialize DMA invocations."""
+    if os.geteuid() != 0 or os.environ.get("ASCEND_RT_VISIBLE_DEVICES") != "2,3":
+        raise ValueError("direct expert worker requires root and assigned physical chips 2,3")
+    import torch
+    import torch_npu
+
+    torch.set_num_threads(2)
+    torch.use_deterministic_algorithms(True)
+    torch.npu.set_device(args.rank)
+    torch_npu.npu.set_compile_mode(jit_compile=False)
+    output = Path(spec["output"])
+    layers = tuple(spec.get("cold_gate_layers", NPU_LAYERS))
+    actor = NpuExperts(
+        Path(spec["checkpoint"]),
+        spec["checkpoint_sha256"],
+        args.rank,
+        torch,
+        gate_override=spec["native_gate_override"],
+        reduce_results=False,
+        layers=layers,
+    )
+    actor.validate_repeat(output / f"expert-repeat-rank{args.rank}.json", combine_results=False)
+    slots = WorkerSlots(spec, args.rank, torch)
+    # Ordinary termination is deferred to private socket EOF; never abandon in-flight DMA.
+    signal.signal(signal.SIGTERM, lambda signum, frame: None)
+    signal.signal(signal.SIGINT, lambda signum, frame: None)
+    expected = 0
+    released_cleanly = False
+    try:
+        with socket.socket(socket.AF_UNIX) as connection, torch.inference_mode():
+            connection.connect(args.socket)
+            pid, uid, _ = struct.unpack("3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+            if (pid, uid) != (args.parent_pid, args.parent_uid):
+                raise ValueError("direct expert socket belongs to another coordinator")
+            send_control(
+                connection,
+                {
+                    "protocol": PROTOCOL,
+                    "nonce": args.nonce,
+                    "rank": args.rank,
+                    "physical_chip": args.rank + 2,
+                    "capacity": CAPACITY,
+                    "checkpoint_sha256": spec["checkpoint_sha256"],
+                    "placement_sha256": spec["expert_placement_sha256"],
+                    "pid": os.getpid(),
+                    "input": slots.gpu_input.export(),
+                    "output": slots.gpu_output.export(),
+                },
+            )
+            reply = receive_control(connection)
+            if reply != {"source_readiness": "sender-event-synchronized", "nonce": args.nonce}:
+                raise ValueError("direct source-event handshake differs")
+            send_control(connection, {"ready": True, "nonce": args.nonce})
+            while True:
+                tag = bytearray(COMMAND.size)
+                try:
+                    receive(connection, memoryview(tag))
+                except EOFError:
+                    if slots.calls:
+                        raise RuntimeError("CUDA IPC owner disappeared without a mapping-release acknowledgement")
+                    break
+                if tag == CLOSE_TAG:
+                    connection.sendall(tag)
+                    released = bytearray(len(RELEASE))
+                    receive(connection, memoryview(released))
+                    if released != RELEASE:
+                        raise ValueError("direct CUDA mapping release acknowledgement differs")
+                    released_cleanly = True
+                    break
+                sequence, layer, rows = validate_command(tag, expected, layers)
+                slots.source_event.admitted = True
+                slots.compute(actor, sequence, layer, rows)
+                connection.sendall(tag)
+                expected += 1
+                if expected % RECEIPT_INTERVAL == 0:
+                    path = output / f"dma-worker-rank{args.rank}.json"
+                    temporary = path.with_suffix(".json.tmp")
+                    temporary.write_text(json.dumps(slots.receipt("running")) + "\n")
+                    temporary.replace(path)
+    except BaseException as error:
+        if slots.peer.failed or (slots.calls and not released_cleanly):
+            quarantine(slots, output, args.rank, error)
+        raise
+    finally:
+        if not slots.peer.failed:
+            guard_exact = ctypes.string_at(slots.guard.pointer, CAPACITY) == bytes([GUARD_POISON]) * CAPACITY
+            receipt = dict(slots.receipt("closed"), guard_poison_exact=guard_exact)
+            slots.close()
+            (output / f"dma-worker-rank{args.rank}.json").write_text(json.dumps(receipt, indent=2) + "\n")
+            if not guard_exact:
+                raise AssertionError("unused HBM lifetime guard was modified")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--rank", type=int, choices=(0, 1), required=True)
+    parser.add_argument("--socket", required=True)
+    parser.add_argument("--nonce", required=True)
+    parser.add_argument("--parent-pid", type=int, required=True)
+    parser.add_argument("--parent-uid", type=int, required=True)
+    parser.add_argument("--bootstrap", action="store_true")
+    args = parser.parse_args()
+    spec = json.loads(args.config.read_bytes())
+    if args.bootstrap:
+        environment = dict(os.environ)
+        environment.update(json.loads(Path(spec["npu_environment"]).read_bytes()))
+        environment["ASCEND_RT_VISIBLE_DEVICES"] = "2,3"
+        environment["PYTHONPATH"] = (
+            str(args.config.resolve().parent / "source") + ":" + environment.get("PYTHONPATH", "")
+        )
+        command = [
+            spec["npu_python"],
+            "-m",
+            "tools.sidecard.dma_worker",
+            *[v for v in sys.argv[1:] if v != "--bootstrap"],
+        ]
+        os.execve(command[0], command, environment)
+    worker(args, spec)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,71 @@
+{
+  "unit_tests": {
+    "command": "pytest --noconftest -q tests/ut/sidecard",
+    "passed": 691,
+    "direct_integration_tests": 48,
+    "log": "unit-tests.log.gz"
+  },
+  "scoped_checks": {
+    "command": "pre-commit run --hook-stage manual --files <owned manifest>",
+    "exit_status": 0,
+    "log": "scoped-ci.log.gz"
+  },
+  "full_repository_checks": {
+    "command": "bash format.sh ci",
+    "exit_status": 1,
+    "log": "full-ci.log.gz",
+    "failed_hooks": [
+      "ruff check..................................................................Failed",
+      "ruff format.................................................................Failed",
+      "codespell...................................................................Failed",
+      "typos.......................................................................Failed",
+      "clang-format................................................................Failed",
+      "markdownlint................................................................Failed",
+      "Check for forbidden imports.................................................Failed"
+    ],
+    "failed_hook_set_identical_to_prior_committed_baseline": true
+  },
+  "hardware": {
+    "full_vocabulary_bitwise_parity": true,
+    "repeated_64_step_traces": 3,
+    "real_expert_cases": 64,
+    "physical_npu_chips": [
+      2,
+      3
+    ],
+    "completed_worker_calls_at_receipt": [
+      12672,
+      12800
+    ],
+    "completed_native_dma_transfers_at_receipt": 50944,
+    "completion_receipts_verify_identity_and_geometry": true,
+    "per_transfer_payload_checksums_in_serving": false,
+    "other_ascend_card_accessed": false,
+    "clock_ecc_power_changed": false
+  },
+  "serving": {
+    "base_url": "http://192.168.53.187:8000/v1",
+    "model": "glm-sidecard",
+    "transport": "direct-dma",
+    "advertised_max_context": 65536,
+    "completed_context_gate_tokens": 8192,
+    "near_capacity_request_cancelled": true,
+    "full_capacity_prefill_completed": false,
+    "api_isolation_and_cancellation_passed": true,
+    "arithmetic_smoke_correct": 5
+  },
+  "performance": {
+    "prompt_tokens": 2048,
+    "output_tokens": 64,
+    "direct_decode_tokens_per_second": 8.584968550221248,
+    "socket_baseline_decode_tokens_per_second": 9.63940456386866,
+    "direct_ttft_seconds": 27.685322104007355,
+    "socket_baseline_ttft_seconds": 27.06399600399891,
+    "speedup_claimed": false
+  },
+  "limitations": [
+    "Native DMA ioctl is blocking; mappings are prepared per call.",
+    "Automatic fault recovery is unqualified; original GPU/HBM owners remain alive on uncertain completion or missing release.",
+    "Only this host, kernel, driver stack, and assigned chips are qualified."
+  ]
+}

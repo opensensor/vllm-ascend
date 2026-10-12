@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 from .cold_decode_graph import ColdDecodeGraphs
-from .cold_dispatch import ColdDispatch
+from .cold_dispatch import create_dispatch
 from .cold_placement import cuda_keys, load
 from .layer_decode_graph import DecodeGraphs
 from .layer_math import TextLayer, rms_norm, validate_config
@@ -49,7 +49,7 @@ class ExpertCoordinator:
             raise ValueError("expert runtime requires authenticated clipped kernels")
         hot = load(self.spec)
         try:
-            self.experts = ColdDispatch(config_path, None, torch, wait=False)
+            self.experts = create_dispatch(config_path, None, torch, wait=False)
             self.processes = self.experts.processes
             self.cuda = CudaExperts(self.root, self.identity, self.spec["cuda_backend"], torch, keys=cuda_keys(hot))
             self.experts.cuda = self.cuda
@@ -140,11 +140,13 @@ class ExpertCoordinator:
             self.failed = True
             raise
 
-    def prefill(self, tokens, *, overlap=True):
+    def prefill(self, tokens, *, overlap=True, cancelled=None):
         # Dependencies between decoder layers remain serial. Cold work overlaps
         # hot experts/shared MLP within each layer; no separate backbone stage.
         result = None
         for offset in range(0, len(tokens), MAX_CHUNK):
+            if cancelled is not None and cancelled.is_set():
+                raise InterruptedError("generation cancelled between complete model chunks")
             result = self.forward(tokens[offset : offset + MAX_CHUNK])
         return result
 

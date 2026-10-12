@@ -1,5 +1,9 @@
 # GLM CUDA/Ascend sidecard
 
+The expert runtime now supports [direct cross-vendor DMA](GLM_DIRECT_DMA.md)
+with worker-owned GPU/HBM slots, CUDA IPC memory sharing, and socket control.
+Direct-mode readiness requires full-vocabulary parity against the socket baseline.
+
 Development now targets GLM-5.3-Flash on one RTX PRO 6000 Blackwell and one
 Atlas 300I Duo card, exposing two Ascend 310P3 chips. The product goal is useful inference
 for models larger than NVIDIA VRAM, improving on RTX plus CPU/weight offload.
@@ -13,15 +17,16 @@ outside layers 18–32 and 22 static hot experts per middle layer. One Atlas
 and shared MLPs overlap cold calls; original route weights are preserved.
 
 Use the [expert runtime runbook](EXPERT_RUNTIME.md),
-[hardware report](../../artifacts/sidecard-expert-runtime-20261012/README.md),
-and [design PNG](../../artifacts/sidecard-expert-runtime-20261012/architecture.png).
+[direct DMA runbook](GLM_DIRECT_DMA.md),
+[integration report](../../artifacts/sidecard-glm-direct-dma-20261012/README.md),
+and [design PNG](../../artifacts/sidecard-glm-direct-dma-20261012/design.png).
 The endpoint is `http://192.168.53.187:8000/v1`, model `glm-sidecard`.
 The [event-driven PCIe bus library](pcie/README.md) has a separate raw
 [hardware qualification](../../artifacts/sidecard-pcie-bridge-20261012/README.md).
-Its CUDA IPC transport is not yet connected to this endpoint.
+That host-staged backend remains standalone.
 The [direct DMA backend](pcie/DIRECT_DMA.md) also passes repeated GPU/HBM
 hardware transfers, using an Ascend-initiated DMA-BUF kernel bridge.
-Full-model integration remains pending for both new transports.
+The expert runtime integrates the direct backend through worker-owned CUDA IPC slots.
 Requests serialize, prompt chunks are bounded to 32 rows, and all attention,
 recurrent, KV, indexer, and mHC state stays on CUDA. The implementation has
 no HCCL dependency and does not move weights during inference.
@@ -124,9 +129,9 @@ FP16 hidden copies plus eight FP32 expert outputs: 160 KiB per layer, or
 6.5625 MiB across 42 layers, excluding metadata and intermediate host copies.
 At 640 prefill rows this becomes 4.1015625 GiB per model pass. Fewer active
 owners/routes reduce traffic. CPU tuples represent the oracle and worker API.
-The service's tensor transport passes contiguous binary buffers without
+The previous reference tensor transport passes contiguous binary buffers without
 per-element Python floats, with synchronous pageable host/device copies.
-Pinned memory and overlapped execution remain pending. Owner-level partial
+That prototype does not implement pinned-memory overlap. Owner-level partial
 reduction would reduce return traffic but changes floating-point addition
 order and needs its own parity gate.
 
