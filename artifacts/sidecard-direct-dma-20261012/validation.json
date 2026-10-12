@@ -1,0 +1,55 @@
+{
+  "unit_tests": {
+    "command": "pytest --noconftest -q tests/ut/sidecard",
+    "exit_status": 0,
+    "passed": 643,
+    "direct_dma_tests": 17,
+    "location": "clean fork-main publication worktree",
+    "log": "unit-tests.log.gz"
+  },
+  "scoped_checks": {
+    "command": "pre-commit run --hook-stage manual --files <owned manifest>",
+    "exit_status": 0,
+    "log": "scoped-ci.log.gz"
+  },
+  "full_repository_checks": {
+    "command": "bash format.sh ci",
+    "exit_status": 1,
+    "location": "isolated worktree at 7461b6988610f2622f7a0bdbd938ddf0a1fa0fd8",
+    "log": "full-ci.log.gz",
+    "failed_hooks": [
+      "ruff check..................................................................Failed",
+      "ruff format.................................................................Failed",
+      "codespell...................................................................Failed",
+      "typos.......................................................................Failed",
+      "clang-format................................................................Failed",
+      "markdownlint................................................................Failed",
+      "Check for forbidden imports.................................................Failed"
+    ],
+    "failed_hook_set_identical_to_previous_committed_baseline": true,
+    "baseline_log": "../sidecard-pcie-bridge-20261012/full-ci.log.gz"
+  },
+  "hardware": {
+    "direct_dma": true,
+    "physical_chips": [
+      2,
+      3
+    ],
+    "verified_copies": 1440,
+    "rejected_invalid_requests": 16,
+    "simultaneous_two_chip_throughput_tested": false,
+    "native_module_unloaded_cleanly": true,
+    "published_transport_sources_byte_identical_to_executed": true,
+    "report": "direct.json"
+  },
+  "glm": {
+    "healthy": true,
+    "direct_dma_integrated": false,
+    "last_fixed_2k_64_decode_tokens_per_second": 9.6394
+  },
+  "other_work": {
+    "unrelated_tracked_files_preserved": 13,
+    "other_ascend_card_accessed": false,
+    "clock_ecc_power_changed": false
+  }
+}

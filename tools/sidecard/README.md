@@ -19,6 +19,9 @@ The endpoint is `http://192.168.53.187:8000/v1`, model `glm-sidecard`.
 The [event-driven PCIe bus library](pcie/README.md) has a separate raw
 [hardware qualification](../../artifacts/sidecard-pcie-bridge-20261012/README.md).
 Its CUDA IPC transport is not yet connected to this endpoint.
+The [direct DMA backend](pcie/DIRECT_DMA.md) also passes repeated GPU/HBM
+hardware transfers, using an Ascend-initiated DMA-BUF kernel bridge.
+Full-model integration remains pending for both new transports.
 Requests serialize, prompt chunks are bounded to 32 rows, and all attention,
 recurrent, KV, indexer, and mHC state stays on CUDA. The implementation has
 no HCCL dependency and does not move weights during inference.

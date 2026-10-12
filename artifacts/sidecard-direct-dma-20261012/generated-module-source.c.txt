@@ -1,0 +1,153 @@
+#include <linux/module.h>
+#include <linux/export-internal.h>
+#include <linux/compiler.h>
+
+MODULE_INFO(name, KBUILD_MODNAME);
+
+__visible struct module __this_module
+__section(".gnu.linkonce.this_module") = {
+	.name = KBUILD_MODNAME,
+	.init = init_module,
+#ifdef CONFIG_MODULE_UNLOAD
+	.exit = cleanup_module,
+#endif
+	.arch = MODULE_ARCH_INIT,
+};
+
+
+
+static const struct modversion_info ____versions[]
+__used __section("__versions") = {
+	{ 0x0c161ddc, "capable" },
+	{ 0xbd03ed67, "random_kmalloc_seed" },
+	{ 0xa65b83f9, "kmalloc_caches" },
+	{ 0xce56ea17, "__kmalloc_cache_noprof" },
+	{ 0x9aa6980d, "mutex_init_generic" },
+	{ 0xc5c2a6a3, "const_current_task" },
+	{ 0xbd03ed67, "__ref_stack_chk_guard" },
+	{ 0x40397849, "devdrv_get_pci_dev_by_devid" },
+	{ 0x7edbab1e, "pci_bus_type" },
+	{ 0xcfdb7247, "dma_buf_get" },
+	{ 0x888b8f57, "strcmp" },
+	{ 0x8bb9baea, "dma_buf_attach" },
+	{ 0x3e536878, "ww_mutex_lock" },
+	{ 0x291a1d9b, "dma_buf_map_attachment" },
+	{ 0x773e3182, "dma_buf_unmap_attachment" },
+	{ 0xe97a5e8d, "ww_mutex_unlock" },
+	{ 0x7fb34a1e, "dma_buf_detach" },
+	{ 0xc1ae4bce, "dma_buf_put" },
+	{ 0xb4a15056, "hal_kernel_svm_dma_desc_create" },
+	{ 0xcf4dd97d, "hal_kernel_svm_dev_va_to_dma_addr" },
+	{ 0xc2ccdd1e, "__init_swait_queue_head" },
+	{ 0xf3931d9c, "hal_kernel_p2p_get_pages" },
+	{ 0xef2d71da, "devdrv_devmem_addr_h2d" },
+	{ 0x62cbec20, "complete_all" },
+	{ 0x5e7f3d1b, "hal_kernel_p2p_put_pages" },
+	{ 0xde1d09fb, "hal_kernel_svm_dma_desc_destroy" },
+	{ 0xd63f006f, "devdrv_dma_sync_link_copy_extend" },
+	{ 0x367d87b0, "__module_get" },
+	{ 0xd272d446, "__stack_chk_fail" },
+	{ 0x9aa6980d, "mutex_lock" },
+	{ 0x092a35a2, "_copy_from_user" },
+	{ 0x092a35a2, "_copy_to_user" },
+	{ 0x9aa6980d, "mutex_unlock" },
+	{ 0xd272d446, "__fentry__" },
+	{ 0xe98a2697, "misc_register" },
+	{ 0xd272d446, "__x86_return_thunk" },
+	{ 0xcb8b6ec6, "kfree" },
+	{ 0x62cbec20, "wait_for_completion" },
+	{ 0x155e60e3, "misc_deregister" },
+	{ 0xe9196a28, "module_layout" },
+};
+
+static const u32 ____version_ext_crcs[]
+__used __section("__version_ext_crcs") = {
+	0x0c161ddc,
+	0xbd03ed67,
+	0xa65b83f9,
+	0xce56ea17,
+	0x9aa6980d,
+	0xc5c2a6a3,
+	0xbd03ed67,
+	0x40397849,
+	0x7edbab1e,
+	0xcfdb7247,
+	0x888b8f57,
+	0x8bb9baea,
+	0x3e536878,
+	0x291a1d9b,
+	0x773e3182,
+	0xe97a5e8d,
+	0x7fb34a1e,
+	0xc1ae4bce,
+	0xb4a15056,
+	0xcf4dd97d,
+	0xc2ccdd1e,
+	0xf3931d9c,
+	0xef2d71da,
+	0x62cbec20,
+	0x5e7f3d1b,
+	0xde1d09fb,
+	0xd63f006f,
+	0x367d87b0,
+	0xd272d446,
+	0x9aa6980d,
+	0x092a35a2,
+	0x092a35a2,
+	0x9aa6980d,
+	0xd272d446,
+	0xe98a2697,
+	0xd272d446,
+	0xcb8b6ec6,
+	0x62cbec20,
+	0x155e60e3,
+	0xe9196a28,
+};
+static const char ____version_ext_names[]
+__used __section("__version_ext_names") =
+	"capable\0"
+	"random_kmalloc_seed\0"
+	"kmalloc_caches\0"
+	"__kmalloc_cache_noprof\0"
+	"mutex_init_generic\0"
+	"const_current_task\0"
+	"__ref_stack_chk_guard\0"
+	"devdrv_get_pci_dev_by_devid\0"
+	"pci_bus_type\0"
+	"dma_buf_get\0"
+	"strcmp\0"
+	"dma_buf_attach\0"
+	"ww_mutex_lock\0"
+	"dma_buf_map_attachment\0"
+	"dma_buf_unmap_attachment\0"
+	"ww_mutex_unlock\0"
+	"dma_buf_detach\0"
+	"dma_buf_put\0"
+	"hal_kernel_svm_dma_desc_create\0"
+	"hal_kernel_svm_dev_va_to_dma_addr\0"
+	"__init_swait_queue_head\0"
+	"hal_kernel_p2p_get_pages\0"
+	"devdrv_devmem_addr_h2d\0"
+	"complete_all\0"
+	"hal_kernel_p2p_put_pages\0"
+	"hal_kernel_svm_dma_desc_destroy\0"
+	"devdrv_dma_sync_link_copy_extend\0"
+	"__module_get\0"
+	"__stack_chk_fail\0"
+	"mutex_lock\0"
+	"_copy_from_user\0"
+	"_copy_to_user\0"
+	"mutex_unlock\0"
+	"__fentry__\0"
+	"misc_register\0"
+	"__x86_return_thunk\0"
+	"kfree\0"
+	"wait_for_completion\0"
+	"misc_deregister\0"
+	"module_layout\0"
+;
+
+MODULE_INFO(depends, "drv_pcie_host,drv_devmm_host");
+
+
+MODULE_INFO(srcversion, "C329532A0C2943A9F250ECA");
