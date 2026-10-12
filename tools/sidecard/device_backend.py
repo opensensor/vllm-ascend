@@ -100,6 +100,7 @@ def compact_routes(request, experts):
 CUDA_ROW_MAJOR = "row_major_v1"
 CUDA_WORD_PLANES = "k32_words_n_v1"
 CUDA_NIBBLE_PLANES = "k32_nibbles_n_v1"
+CUDA_COMPACT_PLANES = "k32_words_native_n_v1"
 TENSOR_TILE_ROWS = 16
 MIN_GROUPED_ROUTES = 32
 MAX_TENSOR_TILE_PADDING = 4
@@ -144,17 +145,19 @@ def encode_cuda_weights(values, layout):
 
 class CudaOracle:
     def __init__(self, banks, specification, routes):
-        from tools.glm_perf.fused_weight_layout import unpack_cube
-
         library_path = Path(specification["library"])
         if digest_file(library_path) != specification["library_sha256"]:
             raise ValueError("CUDA oracle library differs from pinned identity")
         layout = specification.get("weight_layout", CUDA_ROW_MAJOR)
-        if layout not in (CUDA_ROW_MAJOR, CUDA_WORD_PLANES, CUDA_NIBBLE_PLANES):
+        if layout not in (CUDA_ROW_MAJOR, CUDA_WORD_PLANES, CUDA_NIBBLE_PLANES, CUDA_COMPACT_PLANES):
             raise ValueError("unsupported CUDA weight layout")
         experimental = specification.get("experimental_projection", False)
         if type(experimental) is not bool or (experimental and layout != CUDA_NIBBLE_PLANES):
             raise ValueError("experimental CUDA projections require explicit packed selection")
+        if layout == CUDA_COMPACT_PLANES:
+            candidate = ctypes.CDLL(str(library_path))
+            # Check both required exports before any CUDA context or bank allocation.
+            _ = (candidate.sidecard_oracle_forward_compact, candidate.sidecard_oracle_pack_cube_compact)
         self.cuda = CudaCopies(Path(specification["cuda_runtime"]), 1, 1)
         self.buffers, self.bank_pointers = {}, {}
         self.allocation_budget = specification.get("cuda_memory_budget_bytes")
@@ -169,10 +172,18 @@ class CudaOracle:
                 CUDA_ROW_MAJOR: "sidecard_oracle_forward",
                 CUDA_WORD_PLANES: "sidecard_oracle_forward_transposed",
                 CUDA_NIBBLE_PLANES: "sidecard_oracle_forward_packed",
+                CUDA_COMPACT_PLANES: "sidecard_oracle_forward_packed",
             }[layout],
         )
         self.launch.argtypes = [ctypes.c_void_p] * 13 + [ctypes.c_int] * 4
         self.launch.restype = ctypes.c_int
+        self.weight_bits = {}
+        if layout == CUDA_COMPACT_PLANES:
+            self.compact_launch = self.library.sidecard_oracle_forward_compact
+            self.compact_launch.argtypes = [ctypes.c_void_p] * 13 + [ctypes.c_int] * 5
+            self.compact_launch.restype = ctypes.c_int
+            self.scalar_launch = self.launch
+            self.launch = self.launch_compact
         self.grouped_launch = getattr(self.library, "sidecard_oracle_forward_grouped", None) if experimental else None
         if self.grouped_launch is not None:
             self.grouped_launch.argtypes = [ctypes.c_void_p] * 14 + [ctypes.c_int] * 5
@@ -184,7 +195,13 @@ class CudaOracle:
         if self.split_launch is not None:
             self.split_launch.argtypes = [ctypes.c_void_p] * 14 + [ctypes.c_int] * 4
             self.split_launch.restype = ctypes.c_int
-        pack = getattr(self.library, "sidecard_oracle_pack_cube", None) if layout == CUDA_NIBBLE_PLANES else None
+        pack = (
+            self.library.sidecard_oracle_pack_cube_compact
+            if layout == CUDA_COMPACT_PLANES
+            else getattr(self.library, "sidecard_oracle_pack_cube", None)
+            if layout == CUDA_NIBBLE_PLANES
+            else None
+        )
         staging_size = 0
         prepared_at = time.perf_counter()
         if pack is not None:
@@ -195,10 +212,21 @@ class CudaOracle:
                 self.reduce.argtypes = [ctypes.c_void_p] * 4 + [ctypes.c_int] * 3
                 self.reduce.restype = ctypes.c_int
             for layer, bank in banks.items():
+                layer_bits = None
+                if layout == CUDA_COMPACT_PLANES:
+                    if "encoded" in bank:
+                        raise ValueError("compact CUDA preparation requires authenticated native Cube banks")
+                    gate, _, down, _ = bank["tensors"]
+                    layer_bits = gate.shape[-1] * 8 // 4096
+                    if layer_bits not in (2, 3, 4) or down.shape[-1] * 8 // 2048 != layer_bits:
+                        raise ValueError("compact bank precision or projection geometry differs")
                 if "encoded" in bank:
                     tensors = bank["encoded"]
                 else:
                     gate, gs, down, ds = bank["tensors"]
+                    if pack is None:
+                        from tools.glm_perf.fused_weight_layout import unpack_cube
+
                     tensors = (
                         (gate, gs, down, ds)
                         if pack is not None
@@ -219,7 +247,8 @@ class CudaOracle:
                             self.allocate("cube_staging", len(data))
                             staging_size = len(data)
                         self.upload(self.buffers["cube_staging"], data)
-                        pointer = self.allocate(f"layer-{layer}-{index}", experts * channels * width // 2)
+                        packed_bits = bits if layout == CUDA_COMPACT_PLANES else 4
+                        pointer = self.allocate(f"layer-{layer}-{index}", experts * channels * width * packed_bits // 8)
                         self.cuda.check(pack(self.buffers["cube_staging"], pointer, experts, channels, width, bits))
                         self.cuda.check(self.cuda.library.cudaDeviceSynchronize())
                         pointers.append(pointer)
@@ -235,6 +264,8 @@ class CudaOracle:
                     self.upload(pointer, data)
                     pointers.append(pointer)
                 self.bank_pointers[layer] = tuple(pointers)
+                if layer_bits is not None:
+                    self.weight_bits[pointers[0].value] = layer_bits
                 print(
                     json.dumps(
                         {
@@ -278,6 +309,12 @@ class CudaOracle:
         except BaseException:
             self.close()
             raise
+
+    def launch_compact(self, *arguments):
+        bits = self.weight_bits[arguments[2].value]
+        if bits == 4:
+            return self.scalar_launch(*arguments)
+        return self.compact_launch(*arguments, bits)
 
     def allocate(self, name, size):
         if self.allocation_budget is not None and self.allocated_bytes + size > self.allocation_budget:

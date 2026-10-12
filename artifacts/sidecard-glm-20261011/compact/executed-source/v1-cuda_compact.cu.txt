@@ -1,0 +1,73 @@
+// SPDX-License-Identifier: Apache-2.0
+// Standalone candidate: retain qualified W4 arithmetic and compact W2/W3.
+#include "cuda_oracle.cu"
+
+constexpr int kCompactValues = 8;
+
+// Each octet is stored in `bits` byte planes across adjacent N channels.
+// Signed codes are biased by 2^(bits-1), without changing quantization.
+__device__ unsigned int compact_octet(const unsigned char* weights, size_t octet, int channel, int n, int bits) {
+  unsigned int value = 0;
+  for (int byte = 0; byte < bits; ++byte)
+    value |= static_cast<unsigned int>(weights[(octet * bits + byte) * n + channel]) << (byte * 8);
+  return value;
+}
+
+__global__ void project_compact(const signed char* q, const float* xs, const unsigned char* weights,
+                               const __half* ws, const int* ids, __half* out, int rows, int n, int k, int bits) {
+  int index = blockIdx.x * blockDim.x + threadIdx.x;
+  if (index >= rows * n) return;
+  int row = index / n, channel = index % n, expert = ids[row];
+  const int* activations = reinterpret_cast<const int*>(q);
+  const unsigned int mask = (1U << bits) - 1;
+  const unsigned int bias = (1U << (bits - 1)) * 0x01010101U;
+  float result = 0;
+  for (int group = 0; group < k / kBlock; ++group) {
+    int dot = 0;
+#pragma unroll
+    for (int octet = 0; octet < kBlock / kCompactValues; ++octet) {
+      size_t position = (static_cast<size_t>(expert) * (k / kBlock) + group) * (kBlock / kCompactValues) + octet;
+      unsigned int packed = compact_octet(weights, position, channel, n, bits);
+#pragma unroll
+      for (int half = 0; half < 2; ++half) {
+        unsigned int expanded = 0;
+#pragma unroll
+        for (int lane = 0; lane < kDotValuesPerLane; ++lane)
+          expanded |= ((packed >> (bits * (half * kDotValuesPerLane + lane))) & mask) << (8 * lane);
+        int activation = activations[(row * (k / kBlock) + group) * (kBlock / kDotValuesPerLane) + octet * 2 + half];
+        dot = __dp4a(activation, static_cast<int>(__vsub4(expanded, bias)), dot);
+      }
+    }
+    float factor = __fmul_rn(xs[row * (k / kBlock) + group],
+                            __half2float(ws[(expert * (n / kBlock) + channel / kBlock) * (k / kBlock) + group]));
+    result = __fadd_rn(result, __fmul_rn(static_cast<float>(dot), factor));
+  }
+  out[index] = __float2half_rn(result);
+}
+
+extern "C" int sidecard_oracle_forward_compact(const void* input, const void* ids, const void* gate, const void* gs,
+                                               const void* down, const void* ds, void* input_q, void* input_scales,
+                                               void* gate_up, void* hidden, void* hidden_q, void* hidden_scales,
+                                               void* output, int rows, int width, int intermediate,
+                                               int activation_bits, int weight_bits) {
+  if (rows < 1 || rows > kMaxRoutes || width != 4096 || intermediate != 2048 ||
+      (activation_bits != 4 && activation_bits != 8) || (weight_bits != 2 && weight_bits != 3))
+    return static_cast<int>(cudaErrorInvalidValue);
+  quantize<<<(rows * width / kBlock + kThreads - 1) / kThreads, kThreads>>>(
+      static_cast<const __half*>(input), static_cast<signed char*>(input_q), static_cast<float*>(input_scales), rows,
+      width, activation_bits);
+  project_compact<<<(rows * 2 * intermediate + kThreads - 1) / kThreads, kThreads>>>(
+      static_cast<const signed char*>(input_q), static_cast<const float*>(input_scales),
+      static_cast<const unsigned char*>(gate), static_cast<const __half*>(gs), static_cast<const int*>(ids),
+      static_cast<__half*>(gate_up), rows, 2 * intermediate, width, weight_bits);
+  swiglu<<<(rows * intermediate + kThreads - 1) / kThreads, kThreads>>>(
+      static_cast<const __half*>(gate_up), static_cast<__half*>(hidden), rows, intermediate);
+  quantize<<<(rows * intermediate / kBlock + kThreads - 1) / kThreads, kThreads>>>(
+      static_cast<const __half*>(hidden), static_cast<signed char*>(hidden_q), static_cast<float*>(hidden_scales), rows,
+      intermediate, activation_bits);
+  project_compact<<<(rows * width + kThreads - 1) / kThreads, kThreads>>>(
+      static_cast<const signed char*>(hidden_q), static_cast<const float*>(hidden_scales),
+      static_cast<const unsigned char*>(down), static_cast<const __half*>(ds), static_cast<const int*>(ids),
+      static_cast<__half*>(output), rows, width, intermediate, weight_bits);
+  return static_cast<int>(cudaGetLastError());
+}

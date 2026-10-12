@@ -9,6 +9,7 @@ from pathlib import Path
 
 from tools.glm_perf.deployment_profiles import one_card_sidecard_profile, validate_profile
 
+from .device_backend import CUDA_COMPACT_PLANES
 from .native_expert_probe import digest_file
 from .placement import validate_glm_config
 
@@ -54,6 +55,37 @@ def validate_packed_gate(path, library_sha, source_manifest_sha):
         "cuda_experts_per_layer": CUDA_EXPERTS,
         "layers": [3, 8, 33],
         "library_sha256": library_sha,
+    }
+
+
+def validate_compact_gate(path, library_sha, checkpoint_sha):
+    report = json.loads(Path(path).read_bytes())
+    expected = {
+        (layer, tokens, tokens * routes) for layer in (3, 8, 33) for tokens in (128, 512, 640) for routes in (1, 2, 8)
+    }
+    cases = report.get("cases", [])
+    actual = {(case["layer"], case["tokens"], case["routes"]) for case in cases}
+    if (
+        report.get("passed") is not True
+        or report.get("candidate_sha256") != library_sha
+        or report.get("checkpoint_sha256") != checkpoint_sha
+        or report.get("candidate_weight_layout") != CUDA_COMPACT_PLANES
+        or report.get("cuda_experts_per_layer") != CUDA_EXPERTS
+        or report.get("candidate_partial_reduce") is not True
+        or report.get("candidate_experimental_projection") is not False
+        or actual != expected
+        or len(cases) != len(expected)
+        or any(case.get("bitwise_equal") is not True for case in cases)
+    ):
+        raise ValueError("one-card service requires the complete pinned compact CUDA gate")
+    return {
+        "passed": True,
+        "sha256": digest_file(path),
+        "cases": len(cases),
+        "cuda_experts_per_layer": CUDA_EXPERTS,
+        "layers": [3, 8, 33],
+        "library_sha256": library_sha,
+        "weight_layout": CUDA_COMPACT_PLANES,
     }
 
 

@@ -1,0 +1,168 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Paired real-weight CUDA gate for lossless W2/W3 storage, without NPU use.
+
+One authenticated layer with 72 experts is resident in each backend at a time.
+Check raw expert FP16 rows and weighted FP32 partials bitwise, then report warm
+and cache-swept timings. Allocation and CPU preparation remain outside timing.
+"""
+
+import argparse
+import ctypes
+import json
+import time
+from pathlib import Path
+
+from .architecture_benchmark import COPY_BYTES, SAMPLES, WARMUPS, summarize
+from .architecture_experts import EXPERTS, FIRST_EXPERT, LAYERS, WIDTH, cuda_measure, route_fixture
+from .compact_cuda import CompactCudaOracle
+from .device_backend import CUDA_NIBBLE_PLANES, CudaOracle
+from .native_expert_probe import digest_file
+from .resident import NativeResidentPlan
+
+MAX_ROUTES = 1024
+
+
+def release_flush_buffers(oracle):
+    for name in ("cache-flush-source", "cache-flush-target"):
+        pointer = oracle.buffers.pop(name, None)
+        if pointer is not None:
+            oracle.cuda.check(oracle.cuda.library.cudaFree(pointer))
+            oracle.allocated_bytes -= COPY_BYTES
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--checkpoint", type=Path, required=True)
+    parser.add_argument("--checkpoint-sha256", required=True)
+    parser.add_argument("--baseline-library", type=Path, required=True)
+    parser.add_argument("--baseline-sha256", required=True)
+    parser.add_argument("--compact-library", type=Path, required=True)
+    parser.add_argument("--compact-sha256", required=True)
+    parser.add_argument("--cache-flush-library", type=Path, required=True)
+    parser.add_argument("--cache-flush-sha256", required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    if args.output.exists():
+        parser.error("output must be new")
+    libraries = (
+        (args.baseline_library, args.baseline_sha256),
+        (args.compact_library, args.compact_sha256),
+        (args.cache_flush_library, args.cache_flush_sha256),
+    )
+    for path, expected in libraries:
+        if digest_file(path) != expected:
+            raise ValueError("gate library differs from pinned identity")
+    import torch
+
+    torch.set_num_threads(1)
+    plan = NativeResidentPlan(
+        args.checkpoint,
+        tuple((layer, expert) for layer in LAYERS for expert in range(FIRST_EXPERT, FIRST_EXPERT + EXPERTS)),
+        args.checkpoint_sha256,
+    )
+    plan.authenticate()
+    flush_library = ctypes.CDLL(str(args.cache_flush_library))
+    flush = flush_library.architecture_flush
+    flush.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int]
+    flush.restype = ctypes.c_int
+    report = {
+        "completed": False,
+        "checkpoint_sha256": args.checkpoint_sha256,
+        "libraries": [{"path": str(path), "sha256": expected} for path, expected in libraries],
+        "experts_per_layer": EXPERTS,
+        "first_expert": FIRST_EXPERT,
+        "warmups": WARMUPS,
+        "samples": SAMPLES,
+        "cache_flush_bytes": COPY_BYTES,
+        "scope": "resident expert pipeline + weighted reduction; excludes host routing, upload and RPC",
+        "banks": [],
+        "cases": [],
+    }
+    args.output.write_text(json.dumps(report, indent=2) + "\n")
+    for layer, bank in plan.items():
+        oracles = []
+        try:
+            preparation = []
+            for oracle_class, (path, expected) in zip((CudaOracle, CompactCudaOracle), libraries[:2], strict=True):
+                started = time.perf_counter()
+                oracles.append(
+                    oracle_class(
+                        {layer: bank},
+                        {
+                            "library": str(path),
+                            "library_sha256": expected,
+                            "cuda_runtime": "/usr/local/cuda/lib64/libcudart.so",
+                            "cuda_memory_budget_bytes": 2 * 1024**3,
+                            "weight_layout": CUDA_NIBBLE_PLANES,
+                            "partial_reduce": True,
+                        },
+                        MAX_ROUTES,
+                    )
+                )
+                preparation.append(time.perf_counter() - started)
+            baseline, compact = oracles
+            bits = plan.manifest["layer_bits"][str(layer)]
+            saved = baseline.allocated_bytes - compact.allocated_bytes
+            expected_saved = EXPERTS * 3 * WIDTH * (WIDTH // 2) * (4 - bits) // 8
+            if saved != expected_saved:
+                raise AssertionError("compact allocation savings differ from exact native code bytes")
+            report["banks"].append(
+                {
+                    "layer": layer,
+                    "weight_bits": bits,
+                    "baseline_allocated_bytes": baseline.allocated_bytes,
+                    "compact_allocated_bytes": compact.allocated_bytes,
+                    "saved_bytes": saved,
+                    "baseline_prepare_seconds": preparation[0],
+                    "compact_prepare_seconds": preparation[1],
+                }
+            )
+            for tokens in (1, 4, 128, 512):
+                fixture = route_fixture(tokens, torch)
+                for activation_bits in (4, 8):
+                    for swept in (False, True):
+                        measured = {}
+                        # Alternate the paired order across cases to reduce order bias.
+                        order = (0, 1) if len(report["cases"]) % 2 == 0 else (1, 0)
+                        for index in order:
+                            oracle = oracles[index]
+                            release_flush_buffers(oracle)
+                            actual, device, wall = cuda_measure(
+                                oracle,
+                                layer,
+                                fixture,
+                                torch,
+                                cache_flush=flush if swept else None,
+                                activation_bits=activation_bits,
+                            )
+                            raw = oracle.read_output("output", len(fixture[3]) * WIDTH * 2)
+                            if not torch.isfinite(actual).all():
+                                raise AssertionError("nonfinite CUDA expert output")
+                            measured[index] = (actual, raw, summarize(device), summarize(wall))
+                        if measured[0][1] != measured[1][1] or not torch.equal(measured[0][0], measured[1][0]):
+                            raise AssertionError("compact CUDA expert or weighted output differs bitwise")
+                        result = {
+                            "layer": layer,
+                            "weight_bits": bits,
+                            "tokens": tokens,
+                            "routes": len(fixture[3]),
+                            "activation_bits": activation_bits,
+                            "cache_swept": swept,
+                            "bitwise_equal": True,
+                            "baseline_device": measured[0][2],
+                            "baseline_wall": measured[0][3],
+                            "compact_device": measured[1][2],
+                            "compact_wall": measured[1][3],
+                        }
+                        report["cases"].append(result)
+                        args.output.write_text(json.dumps(report, indent=2) + "\n")
+                        print(json.dumps(result), flush=True)
+        finally:
+            for oracle in reversed(oracles):
+                oracle.close()
+    report["completed"] = True
+    args.output.write_text(json.dumps(report, indent=2) + "\n")
+
+
+if __name__ == "__main__":
+    main()

@@ -9,7 +9,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from .device_backend import CUDA_NIBBLE_PLANES, CUDA_ROW_MAJOR, CUDA_WORD_PLANES
+from .device_backend import CUDA_COMPACT_PLANES, CUDA_NIBBLE_PLANES, CUDA_ROW_MAJOR, CUDA_WORD_PLANES
 from .native_expert_probe import digest_file
 from .service_adapter import CHUNK_ROWS, MAX_PACKET_TOKENS, service_placement
 from .wire import PacketLimits, WireIdentity
@@ -45,12 +45,17 @@ def prepare(
         raise ValueError("packet_tokens must be within 1–640")
     if not tensor_transport and packet_tokens != CHUNK_ROWS:
         raise ValueError("large service packets require tensor transport")
-    if weight_layout not in (CUDA_ROW_MAJOR, CUDA_WORD_PLANES, CUDA_NIBBLE_PLANES):
+    if weight_layout not in (CUDA_ROW_MAJOR, CUDA_WORD_PLANES, CUDA_NIBBLE_PLANES, CUDA_COMPACT_PLANES):
         raise ValueError("unsupported CUDA weight layout")
+    if weight_layout == CUDA_COMPACT_PLANES and not one_card:
+        raise ValueError("compact CUDA service requires the qualified one-card profile")
     if type(one_card) is not bool or (
         one_card
         and (
-            weight_layout != CUDA_NIBBLE_PLANES or not tensor_transport or bank_cache is not None or not partial_reduce
+            weight_layout not in (CUDA_NIBBLE_PLANES, CUDA_COMPACT_PLANES)
+            or not tensor_transport
+            or bank_cache is not None
+            or not partial_reduce
         )
     ):
         raise ValueError("one-card service requires packed tensor transport without an INT8 bank cache")
@@ -80,11 +85,15 @@ def prepare(
     identity = WireIdentity.for_placement(placement, digest_file(checkpoint / "native-layout.json"))
     packed_gate = None
     if one_card:
-        from .one_card import validate_device_pair, validate_packed_gate
+        from .one_card import validate_compact_gate, validate_device_pair, validate_packed_gate
 
         npu_devices = validate_device_pair((0, 1) if npu_devices is None else npu_devices)
         manifest = json.loads((checkpoint / "native-layout.json").read_bytes())
-        packed_gate = validate_packed_gate(cuda_gate, digest_file(library), manifest["sidecard_source_manifest_sha256"])
+        packed_gate = (
+            validate_compact_gate(cuda_gate, digest_file(library), identity.checkpoint_sha256)
+            if weight_layout == CUDA_COMPACT_PLANES
+            else validate_packed_gate(cuda_gate, digest_file(library), manifest["sidecard_source_manifest_sha256"])
+        )
     output.mkdir(mode=0o700)
     source = output / "source"
     shutil.copytree(qualified_source, source, ignore=shutil.ignore_patterns("__pycache__", "kernel_meta"))
@@ -204,7 +213,9 @@ def main():
     parser.add_argument("--tensor-transport", action="store_true")
     parser.add_argument("--packet-tokens", type=int, default=CHUNK_ROWS)
     parser.add_argument(
-        "--weight-layout", choices=(CUDA_ROW_MAJOR, CUDA_WORD_PLANES, CUDA_NIBBLE_PLANES), default=CUDA_ROW_MAJOR
+        "--weight-layout",
+        choices=(CUDA_ROW_MAJOR, CUDA_WORD_PLANES, CUDA_NIBBLE_PLANES, CUDA_COMPACT_PLANES),
+        default=CUDA_ROW_MAJOR,
     )
     parser.add_argument("--one-card", action="store_true")
     parser.add_argument("--cuda-gate", type=Path)

@@ -46,7 +46,9 @@ def route_fixture(tokens, torch):
     return hidden, ids, weights, routes, row_map
 
 
-def cuda_measure(oracle, layer, fixture, torch, *, cache_flush=None):
+def cuda_measure(oracle, layer, fixture, torch, *, cache_flush=None, activation_bits=4):
+    if type(activation_bits) is not int or activation_bits not in (4, 8):
+        raise ValueError("CUDA expert activation precision must be A4 or A8")
     hidden, _, weights, routes, row_map = fixture
     tokens = hidden.shape[0]
     oracle.upload(oracle.buffers["input"], hidden[[row[1] for row in routes]].numpy().tobytes())
@@ -85,7 +87,7 @@ def cuda_measure(oracle, layer, fixture, torch, *, cache_flush=None):
                 check(runtime.cudaDeviceSynchronize())
             start = time.perf_counter()
             check(runtime.cudaEventRecord(begin, None))
-            check(oracle.launch(*arguments, len(routes), WIDTH, 2048, 4))
+            check(oracle.launch(*arguments, len(routes), WIDTH, 2048, activation_bits))
             check(
                 oracle.reduce(
                     oracle.buffers["output"],

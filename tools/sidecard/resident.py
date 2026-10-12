@@ -13,7 +13,15 @@ from contextlib import ExitStack
 from pathlib import Path
 
 from .checkpoint import read_header
-from .device_backend import CUDA_NIBBLE_PLANES, CUDA_ROW_MAJOR, CUDA_WORD_PLANES, CudaOracle, compact_routes, owned_keys
+from .device_backend import (
+    CUDA_COMPACT_PLANES,
+    CUDA_NIBBLE_PLANES,
+    CUDA_ROW_MAJOR,
+    CUDA_WORD_PLANES,
+    CudaOracle,
+    compact_routes,
+    owned_keys,
+)
 from .native_expert_probe import NATIVE_LAYOUT, SCALE_LAYOUT, contained, digest_file
 from .placement import validate_glm_config
 from .reference import ExpertReply
@@ -32,6 +40,24 @@ PACKED_STAGING_ALLOWANCE_BYTES = MAX_PACKED_RESIDENT_EXPERTS * 2 * INTERMEDIATE 
 EXPERT_UNPACKED_BYTES = 3 * WIDTH * INTERMEDIATE
 EXPERT_SCALE_BYTES = 3 * (WIDTH // 32) * (INTERMEDIATE // 32) * 2
 RESIDENT_PREPARE_THREADS = 8
+
+
+def required_cuda_bytes(plan, layout):
+    """Account peak resident banks, reusable native staging and bounded scratch."""
+    if layout == CUDA_COMPACT_PLANES:
+        banks, staging = 0, 0
+        for layer, experts in plan.by_layer.items():
+            bits = plan.manifest["layer_bits"][str(layer)]
+            banks += len(experts) * (EXPERT_UNPACKED_BYTES * bits // 8 + EXPERT_SCALE_BYTES)
+            staging = max(staging, len(experts) * 2 * INTERMEDIATE * WIDTH * bits // 8)
+        return banks + staging + SCRATCH_ALLOWANCE_BYTES
+    required = plan.required_cuda_bytes + SCRATCH_ALLOWANCE_BYTES
+    if layout == CUDA_NIBBLE_PLANES:
+        required -= len(plan.keys) * EXPERT_UNPACKED_BYTES // 2
+        required += PACKED_STAGING_ALLOWANCE_BYTES
+    elif layout not in (CUDA_ROW_MAJOR, CUDA_WORD_PLANES):
+        raise ValueError("unsupported resident CUDA layout")
+    return required
 
 
 def snapshot(path):
@@ -184,7 +210,8 @@ class CudaResidentBackend:
                 "experimental_projection",
             }
             or specification.get("weight_layout", CUDA_ROW_MAJOR)
-            not in (CUDA_ROW_MAJOR, CUDA_WORD_PLANES, CUDA_NIBBLE_PLANES)
+            not in (CUDA_ROW_MAJOR, CUDA_WORD_PLANES, CUDA_NIBBLE_PLANES, CUDA_COMPACT_PLANES)
+            or (specification.get("weight_layout") == CUDA_COMPACT_PLANES and "cache_root" in specification)
             or ("cache_root" in specification) != ("cache_manifest_sha256" in specification)
             or type(specification.get("reply_fp16", False)) is not bool
             or type(specification.get("partial_reduce", False)) is not bool
@@ -205,7 +232,7 @@ class CudaResidentBackend:
         keys = owned_keys(placement, owner)
         max_experts = (
             MAX_PACKED_RESIDENT_EXPERTS
-            if specification.get("weight_layout") == CUDA_NIBBLE_PLANES
+            if specification.get("weight_layout") in (CUDA_NIBBLE_PLANES, CUDA_COMPACT_PLANES)
             else MAX_RESIDENT_EXPERTS
         )
         if not keys or any(
@@ -222,10 +249,7 @@ class CudaResidentBackend:
         self.plan = NativeResidentPlan(
             self.specification["checkpoint_root"], self.keys, self.identity.checkpoint_sha256
         )
-        required = self.plan.required_cuda_bytes + SCRATCH_ALLOWANCE_BYTES
-        if self.specification.get("weight_layout") == CUDA_NIBBLE_PLANES:
-            required -= len(self.keys) * EXPERT_UNPACKED_BYTES // 2
-            required += PACKED_STAGING_ALLOWANCE_BYTES
+        required = required_cuda_bytes(self.plan, self.specification.get("weight_layout", CUDA_ROW_MAJOR))
         budget = self.specification["cuda_memory_budget_bytes"]
         if required > budget:
             raise ValueError("resident CUDA plan exceeds configured byte budget")

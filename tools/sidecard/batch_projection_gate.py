@@ -8,7 +8,14 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
-from .device_backend import CUDA_NIBBLE_PLANES, CUDA_ROW_MAJOR, CUDA_WORD_PLANES, CudaOracle, owned_keys
+from .device_backend import (
+    CUDA_COMPACT_PLANES,
+    CUDA_NIBBLE_PLANES,
+    CUDA_ROW_MAJOR,
+    CUDA_WORD_PLANES,
+    CudaOracle,
+    owned_keys,
+)
 from .native_expert_probe import digest_file
 from .ordered_tensor import combine_compact
 from .reference import ExpertReply, ExpertRequest, Route
@@ -266,7 +273,9 @@ def main():
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
-        "--weight-layout", choices=(CUDA_ROW_MAJOR, CUDA_WORD_PLANES, CUDA_NIBBLE_PLANES), default=CUDA_ROW_MAJOR
+        "--weight-layout",
+        choices=(CUDA_ROW_MAJOR, CUDA_WORD_PLANES, CUDA_NIBBLE_PLANES, CUDA_COMPACT_PLANES),
+        default=CUDA_ROW_MAJOR,
     )
     parser.add_argument("--one-card", action="store_true")
     parser.add_argument("--experimental-projection", action="store_true")

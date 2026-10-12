@@ -1,0 +1,103 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Lossless CUDA W2/W3 storage candidate, preserving the qualified W4 path.
+
+This module is an isolated experiment; service admission and placement retain
+their qualified defaults. It owns ordinary CudaOracle allocations and closes
+them through the same lifecycle. No global device state or reset is added.
+"""
+
+import ctypes
+from pathlib import Path
+
+from .device_backend import CUDA_NIBBLE_PLANES, CudaOracle, encode_cuda_weights
+from .native_expert_probe import digest_file
+
+COMPACT_VALUES = 8
+BLOCK_VALUES = 32
+SUPPORTED_BITS = (2, 3, 4)
+WIDTH = 4096
+INTERMEDIATE = 2048
+
+
+def encode_compact_weights(values, bits):
+    """Octets in byte planes; W4 deliberately keeps the existing word layout."""
+    import numpy as np
+
+    if (
+        type(bits) is not int
+        or bits not in SUPPORTED_BITS
+        or values.ndim != 3
+        or values.dtype != np.int8
+        or min(values.shape) < 1
+        or values.shape[-1] % BLOCK_VALUES
+        or values.shape[-2] % BLOCK_VALUES
+    ):
+        raise ValueError("compact CUDA storage requires signed block32 weights and W2/W3/W4 precision")
+    sign = 1 << (bits - 1)
+    if values.min() < -sign or values.max() >= sign:
+        raise ValueError("signed codes exceed their declared precision")
+    if bits == 4:
+        return encode_cuda_weights(values, CUDA_NIBBLE_PLANES)
+    experts, channels, width = values.shape
+    codes = (values.astype(np.int16) + sign).astype(np.uint32)
+    codes = codes.reshape(experts, channels, width // BLOCK_VALUES, BLOCK_VALUES // COMPACT_VALUES, COMPACT_VALUES)
+    codes = codes.transpose(0, 2, 3, 1, 4)
+    packed = np.zeros(codes.shape[:-1], dtype=np.uint32)
+    for lane in range(COMPACT_VALUES):
+        packed |= codes[..., lane] << (bits * lane)
+    planes = np.stack([(packed >> (8 * byte)).astype(np.uint8) for byte in range(bits)], axis=-2)
+    return planes.tobytes()
+
+
+class CompactCudaOracle(CudaOracle):
+    """Prototype adapter, only a bounded layer of CPU weights at a time."""
+
+    def __init__(self, banks, specification, routes):
+        # Reject a missing ABI before materializing or allocating large banks.
+        if digest_file(Path(specification["library"])) != specification["library_sha256"]:
+            raise ValueError("compact CUDA library differs from pinned identity")
+        library = ctypes.CDLL(str(specification["library"]))
+        compact_launch = library.sidecard_oracle_forward_compact
+        compact_launch.argtypes = [ctypes.c_void_p] * 13 + [ctypes.c_int] * 5
+        compact_launch.restype = ctypes.c_int
+        bit_widths = {}
+
+        class EncodedBanks:
+            def items(self):
+                from tools.glm_perf.fused_weight_layout import unpack_cube
+
+                for layer, bank in banks.items():
+                    gate, gs, down, ds = bank["tensors"]
+                    bits = gate.shape[-1] * 8 // WIDTH
+                    if bits not in SUPPORTED_BITS or down.shape[-1] * 8 // INTERMEDIATE != bits:
+                        raise ValueError("compact bank precision or projection geometry differs")
+                    bit_widths[layer] = bits
+                    yield (
+                        layer,
+                        {
+                            "encoded": (
+                                encode_compact_weights(unpack_cube(gate, WIDTH).numpy(), bits),
+                                gs.numpy().tobytes(),
+                                encode_compact_weights(unpack_cube(down, INTERMEDIATE).numpy(), bits),
+                                ds.numpy().tobytes(),
+                            )
+                        },
+                    )
+
+        spec = dict(specification, weight_layout=CUDA_NIBBLE_PLANES, experimental_projection=False)
+        super().__init__(EncodedBanks(), spec, routes)
+        try:
+            self.compact_launch = compact_launch
+            self.scalar_launch = self.launch
+            self.grouped_launch = self.split_launch = None
+            self.weight_bits = {self.bank_pointers[layer][0].value: bits for layer, bits in bit_widths.items()}
+            self.launch = self.launch_compact
+        except BaseException:
+            self.close()
+            raise
+
+    def launch_compact(self, *arguments):
+        bits = self.weight_bits[arguments[2].value]
+        if bits == 4:
+            return self.scalar_launch(*arguments)
+        return self.compact_launch(*arguments, bits)
