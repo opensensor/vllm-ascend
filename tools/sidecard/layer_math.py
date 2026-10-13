@@ -153,12 +153,14 @@ class TextLayer:
         native_sinkhorn=None,
         tp_rank=None,
         vectorized_prefill_conv=False,
+        fused_cuda_indexer=False,
     ):
         self.index, self.weights, self.config = index, weights, config
         self.device, self.torch, self.experts = device, torch, experts
         self.max_context, self.native_sinkhorn = max_context, native_sinkhorn
         self.tp_rank = tp_rank
         self.vectorized_prefill_conv = vectorized_prefill_conv
+        self.fused_cuda_indexer = fused_cuda_indexer
         self.heads = HEADS // 2 if tp_rank is not None else HEADS
         self.linear = config["layer_types"][index] == "linear_attention"
         self.state, self.conv, self.cache = None, None, None
@@ -181,7 +183,9 @@ class TextLayer:
             from .layer_indexer import PoolIndexer
 
             self.cache = t.empty((self.max_context, self.config["kv_lora_rank"]), dtype=t.float16, device=self.device)
-            self.indexer = PoolIndexer(w, self.config, self.device, t, self.max_context)
+            self.indexer = PoolIndexer(
+                w, self.config, self.device, t, self.max_context, fused_cuda_rotation=self.fused_cuda_indexer
+            )
             self.sparse_enabled = self.max_context > INDEX_TOP_K
         if self.index >= 3:
             w["mlp.gate.weight"] = w["mlp.gate.weight"].float()

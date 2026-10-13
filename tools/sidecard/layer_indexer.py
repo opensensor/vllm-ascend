@@ -6,6 +6,13 @@ POOL_SIZE = 4
 MAX_SCORE_ELEMENTS = 1 << 26
 
 
+def cuda_rotation_enabled(specification):
+    value = specification.get("cuda_indexer_hadamard", False)
+    if type(value) is not bool:
+        raise ValueError("CUDA fused indexer rotation selection must be boolean")
+    return value
+
+
 def hadamard_reference(x, torch):
     value = x.float()
     for stride in (1, 2, 4, 8, 16, 32, 64):
@@ -43,8 +50,11 @@ def select_tokens(scores, positions, topk, torch):
 
 
 class PoolIndexer:
-    def __init__(self, weights, config, device, torch, max_context):
+    def __init__(self, weights, config, device, torch, max_context, *, fused_cuda_rotation=False):
+        if type(fused_cuda_rotation) is not bool or (fused_cuda_rotation and not device.startswith("cuda")):
+            raise ValueError("fused indexer rotation requires a CUDA owner and a boolean selection")
         self.torch, self.device = torch, device
+        self.fused_cuda_rotation = fused_cuda_rotation
         self.topk = config["index_topk"]
         self.heads = config["index_n_heads"]
         self.weights = weights
@@ -73,6 +83,11 @@ class PoolIndexer:
 
     def rotate(self, x):
         t = self.torch
+        if self.fused_cuda_rotation:
+            # CUDA-only dependencies remain isolated from CPU/NPU owners.
+            from .cuda_layer_ops import hadamard
+
+            return hadamard(x)
         # Unnormalized +/-1 operands avoid rounding the normalization constant
         # into 310P FP16 GEMM inputs. Input is already BF16-rounded and finite
         # within the FP16 projection range; materialize that policy explicitly.

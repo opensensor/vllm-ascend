@@ -1,0 +1,54 @@
+"""Render the qualified fused indexer and actual context capacity result."""
+import json
+from pathlib import Path
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
+
+
+def main():
+    root = Path(__file__).resolve().parent
+    run = json.loads((root / "probe/indexer-benchmark.json").read_bytes())
+    assert run["passed"] and run["complete_context"]["passed"]
+    figure = Figure(figsize=(15, 9), facecolor="#f7f9fc")
+    FigureCanvasAgg(figure)
+    ink = "#1b293d"
+    ax = figure.add_axes((.035,.53,.93,.43))
+    ax.set(xlim=(0,1),ylim=(0,1)); ax.axis("off")
+    ax.text(0,.98,"GLM sidecard: fused CUDA indexer + tested 128K context",fontsize=20,weight="bold",color=ink,va="top")
+    ax.text(0,.84,"Same model, weights, cold expert kernels and ordered PCIe completion contract",fontsize=12,color=ink)
+    def box(x,w,color,title,body):
+        ax.add_patch(FancyBboxPatch((x,.25),w,.49,boxstyle="round,pad=.012",facecolor=color,edgecolor="#ccd5e0"))
+        ax.text(x+.018,.68,title,fontsize=15,weight="bold",color=ink,va="top")
+        ax.text(x+.018,.54,body,fontsize=11.5,color=ink,va="top",linespacing=1.6)
+    box(.02,.38,"#dce9fb","RTX PRO 6000 — 96 GB","Attention, KV cache, hot + shared experts\nOne fused 128-lane Hadamard kernel\nOriginal FP32 order → BF16 → FP16\n128K cache allocation; graph replay retained")
+    box(.65,.32,"#dff0e7","Ascend Duo — chips 2 + 3","Cold experts in layers 18–32\nFrozen clipped native kernels\nStable ordered FP32 reduction\nOther Ascend card remains excluded")
+    ax.add_patch(FancyArrowPatch((.42,.55),(.63,.55),arrowstyle="<->",mutation_scale=20,linewidth=2.5,color="#27846a"))
+    ax.text(.525,.64,"Direct PCIe DMA",fontsize=12,weight="bold",ha="center",color="#27846a")
+    ax.text(.525,.46,"16 MiB logical slots\nTwo 8 MiB transfer regions\nCold window 1,024 / CUDA 32",fontsize=10.5,ha="center",va="top",color=ink,linespacing=1.5)
+    ax.text(.02,.11,"Runtime switch: cuda_indexer_hadamard = true • CUDA-only path • default remains false",fontsize=11.5,color=ink)
+    ax.text(.02,.025,"Every measured model output matches the qualified vocabulary bytes. No shortened Code prompt or tools.",fontsize=11.5,color=ink)
+    decode = figure.add_axes((.085,.20,.51,.29))
+    cases = ("2K","8K","full-code")
+    baseline = [next(x for x in run["measurements"] if x["case"]==name and not x["fused"])["decode_tokens_per_second"] for name in cases]
+    fused = [next(x for x in run["measurements"] if x["case"]==name and x["fused"])["decode_tokens_per_second"] for name in cases]
+    positions = list(range(3))
+    decode.bar([x-.18 for x in positions],baseline,width=.34,color="#91a5bb",label="Reference")
+    decode.bar([x+.18 for x in positions],fused,width=.34,color="#27846a",label="Fused")
+    for i, (old,new) in enumerate(zip(baseline,fused)):
+        decode.text(i+.18,new+.13,f"{new:.2f}\n+{100*(new/old-1):.1f}%",ha="center",fontsize=11,color=ink)
+    decode.set(xticks=positions,xticklabels=["2K","8K","Full Code\n23,820 tokens"],ylim=(0,15.1),ylabel="Model-forward decode (tokens/s)")
+    decode.set_title("Matched fresh-state runs; full-vocabulary parity",fontsize=12,color=ink,pad=12)
+    decode.legend(loc="lower left",bbox_to_anchor=(0,-.37),ncol=2,frameon=False)
+    for side in ("top","right"):decode.spines[side].set_visible(False)
+    details = figure.add_axes((.68,.17,.29,.32)); details.axis("off")
+    context = run["complete_context"]
+    details.text(0,.96,"Actual 128K boundary test passed",fontsize=14,weight="bold",color=ink,va="top")
+    details.text(0,.79,"131,008 prompt tokens + 64 outputs\n670.8 s cold prefill\n11.74 tok/s forward decode\nAll vocabulary logits finite\nExact teacher-forced repeat\n~4.24 GiB free with full prompt snapshot",fontsize=12,color=ink,va="top",linespacing=1.75)
+    figure.text(.045,.035,"Transform microbenchmark: 364 µs → 28 µs for 32 vectors. Whole-model gains are smaller; cold Ascend work still dominates.",fontsize=11,color=ink)
+    figure.text(.045,.012,"One paired run per fixture. Synthetic full-context test validates capacity and repeat stability; task accuracy is not evaluated.",fontsize=10,color=ink)
+    figure.savefig(root / "design.png",dpi=140)
+
+
+if __name__ == "__main__":
+    main()

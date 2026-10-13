@@ -9,6 +9,35 @@ VALUE_TILE = 8
 MHC_STREAMS = 4
 MHC_WIDTH = 4096
 POST_TILE = 256
+INDEXER_HEAD_DIM = 128
+
+
+@triton.jit
+def hadamard_kernel(Input, Output, SCALE: tl.constexpr):
+    vector = tl.program_id(0)
+    offsets = tl.arange(0, 128)
+    value = tl.load(Input + vector * 128 + offsets).to(tl.float32)
+    for stride in tl.static_range(7):
+        distance = 1 << stride
+        other = tl.gather(value, offsets ^ distance, axis=0)
+        value = tl.where((offsets & distance) == 0, value + other, other - value)
+    # Keep the reference's seven FP32 butterflies, normalization, and two
+    # explicit rounding boundaries. Matrix multiplication changes their order.
+    value = (value * SCALE).to(tl.bfloat16).to(tl.float16)
+    tl.store(Output + vector * 128 + offsets, value)
+
+
+def hadamard(x):
+    if x.device.type != "cuda" or x.ndim < 1 or x.shape[-1] != INDEXER_HEAD_DIM:
+        raise ValueError("CUDA indexer rotation requires 128-wide device vectors")
+    if x.dtype != torch.float32 or not x.is_contiguous():
+        raise ValueError("CUDA indexer rotation requires contiguous FP32 input")
+    output = torch.empty_like(x, dtype=torch.float16)
+    if x.numel():
+        hadamard_kernel[(x.numel() // INDEXER_HEAD_DIM,)](
+            x, output, INDEXER_HEAD_DIM**-0.5, num_warps=4, enable_fp_fusion=False
+        )
+    return output
 
 
 @triton.jit

@@ -10,6 +10,7 @@ from .cold_decode_graph import ColdDecodeGraphs
 from .cold_dispatch import create_dispatch
 from .cold_placement import cuda_keys, load
 from .layer_decode_graph import DecodeGraphs
+from .layer_indexer import cuda_rotation_enabled
 from .layer_math import TextLayer, rms_norm, validate_config
 from .layer_weights import NPU_LAYERS, CudaExperts, load_dense, prefill_chunk_size, prefill_window_size
 
@@ -24,6 +25,7 @@ class ExpertCoordinator:
 
         self.torch = torch
         self.spec = json.loads(Path(config_path).read_bytes())
+        fused_cuda_indexer = cuda_rotation_enabled(self.spec)
         self.root, self.output = Path(self.spec["checkpoint"]), Path(self.spec["output"])
         self.output.mkdir(exist_ok=True)
         self.config = json.loads((self.root / "config.json").read_bytes())["text_config"]
@@ -74,6 +76,7 @@ class ExpertCoordinator:
                     self.experts,
                     self.max_context,
                     vectorized_prefill_conv=self.spec.get("cuda_prefill_conv", False),
+                    fused_cuda_indexer=fused_cuda_indexer,
                 )
                 for index in range(45)
             }
