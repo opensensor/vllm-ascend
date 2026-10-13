@@ -1,0 +1,25 @@
+{
+  "architecture": "cuda-backbone-ascend-experts",
+  "checkpoint": "/srv/ai/storage/models/GLM-5.3-Flash-one-card-sidecard-recovered-20261013",
+  "expert_transport": "direct-dma",
+  "prefill_window_size": 1024,
+  "prefill_chunk_size": 32,
+  "prompt_prefix_cache": false,
+  "cuda_prefill_conv": true,
+  "cuda_decode_graphs": true,
+  "direct_dma": {
+    "persistent_gpu_mappings": true,
+    "cuda_pack_graphs": true,
+    "npu_expert_graphs": true,
+    "cuda_hot_graphs": true,
+    "cuda_dsa_graphs": true,
+    "npu_prefill_graphs": false,
+    "cuda_completion_contract": true,
+    "completion_input_record": true,
+    "completion_library": "/srv/ai/storage/artifacts/sidecard-prefill16-20261013/raw-v1/completion_merge.so",
+    "completion_library_sha256": "58cd6b1a71ddf96a3f2e2af5cf42b3d72a5ba57c86453b0c3b3af4d0a4882883"
+  },
+  "transport_reference": "/srv/ai/storage/artifacts/sidecard-expert-runtime-20261012-v3/decode-repeat-gate.json",
+  "transport_reference_sha256": "c10236c3eb1aeb9b7e2e69273db040d48a745f7a1212fa7b9da30ef8867dfa66",
+  "native_helpers_match_qualified_service": true
+}

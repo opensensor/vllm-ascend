@@ -6,6 +6,7 @@ gaps and overlap host waits; never sum them into the host latency waterfall.
 """
 
 import argparse
+import hashlib
 import json
 import time
 from pathlib import Path
@@ -14,8 +15,8 @@ from .cold_dispatch import HEADER
 from .dma_protocol import COMMAND
 from .expert_actor import ExpertCoordinator
 from .expert_timing import TimedPeer
-from .layer_server import Generation
-from .layer_weights import NPU_LAYERS
+from .layer_server import Generation, request_tokens
+from .layer_weights import NPU_LAYERS, prefill_chunk_size, prefill_window_size
 from .prefill_benchmark import exact_prompt
 
 OUTPUT_TOKENS = 64
@@ -120,8 +121,11 @@ class ProfileMiddle:
 
 
 class ProfileCoordinator(ExpertCoordinator):
-    def __init__(self, config):
+    def __init__(self, config, *, decode_only=False):
         super().__init__(config)
+        self.decode_only = decode_only
+        self.workload_logits = None
+        self.capture_on_forward = self.capture_active = False
         if self.prefix_graphs is None or self.middle_graphs is None or self.suffix_graphs is None:
             self.close()
             raise ValueError("profile requires the qualified CUDA graph architecture")
@@ -138,6 +142,23 @@ class ProfileCoordinator(ExpertCoordinator):
         self.suffix_graphs = ProfileStage(self.suffix_graphs, self, "suffix")
         self.middle_graphs = ProfileMiddle(self.middle_graphs, self)
 
+    def observe_logits(self, logits):
+        if self.workload_logits is not None:
+            self.workload_logits.append(hashlib.sha256(logits.cpu().numpy().tobytes()).hexdigest())
+
+    def prefill(self, tokens, **kwargs):
+        # Cold windows do not pass through the staged forward observer. Keep
+        # their production geometry and observe only the subsequent decode.
+        enabled = self.enabled
+        if self.decode_only:
+            self.enabled = False
+        try:
+            result = super().prefill(tokens, **kwargs)
+        finally:
+            self.enabled = enabled
+        self.observe_logits(result)
+        return result
+
     def event(self):
         event = self.torch.cuda.Event(enable_timing=True)
         event.record()
@@ -152,6 +173,9 @@ class ProfileCoordinator(ExpertCoordinator):
     def forward(self, tokens):
         if not self.enabled:
             return super().forward(tokens)
+        if self.capture_on_forward:
+            self.torch.cuda.profiler.start()
+            self.capture_on_forward, self.capture_active = False, True
         self.frame = dict(
             sequence=self.sequence,
             position=self.position,
@@ -172,24 +196,63 @@ class ProfileCoordinator(ExpertCoordinator):
         ]
         self.frames.append(self.frame)
         self.frame = None
+        # Vocabulary checks occur after the timed forward and its existing sync.
+        self.observe_logits(result)
         return result
 
 
-def run(config, reference):
-    """Compare diagnostic logits, then collect two bounded real workloads."""
+def run(
+    config,
+    reference,
+    *,
+    decode_only=False,
+    chat_request=None,
+    benchmark_reference=None,
+    benchmark_sha256=None,
+    capture_cuda=False,
+):
+    """Qualify observers and collect bounded real-model attribution."""
     from transformers import AutoTokenizer
 
     spec = json.loads(Path(config).read_bytes())
     if spec.get("expert_transport") != "direct-dma" and not spec.get("expert_worker_profile"):
         raise ValueError("profile snapshot must enable worker device-event receipts")
+    if capture_cuda and not decode_only:
+        raise ValueError("CUDA capture requires decode-only profiling")
+    if not decode_only and prefill_window_size(spec) > prefill_chunk_size(spec):
+        raise ValueError("cold batch profiling requires decode-only observation")
+    benchmark = None
+    if decode_only:
+        if spec.get("prompt_prefix_cache", False):
+            raise ValueError("decode profiling requires fresh model state without prefix snapshots")
+        if chat_request is None or benchmark_reference is None or benchmark_sha256 is None:
+            raise ValueError("decode-only profiling requires its full prompt and authenticated vocabulary reference")
+        raw = Path(benchmark_reference).read_bytes()
+        if hashlib.sha256(raw).hexdigest() != benchmark_sha256:
+            raise ValueError("profile benchmark reference failed authentication")
+        benchmark = json.loads(raw)
+        if not benchmark.get("passed"):
+            raise ValueError("profile benchmark reference did not pass")
+    reference_bytes = Path(reference).read_bytes()
+    if (
+        spec.get("transport_reference_sha256")
+        and hashlib.sha256(reference_bytes).hexdigest() != spec["transport_reference_sha256"]
+    ):
+        raise ValueError("profile transport reference failed authentication")
     output, engine = Path(spec["output"]), None
     report = dict(
-        passed=False, production_speed_validated=False, transport=spec.get("expert_transport", "socket"), workloads=[]
+        passed=False,
+        production_speed_validated=False,
+        transport=spec.get("expert_transport", "socket"),
+        decode_only=decode_only,
+        cuda_capture_workload="nsight-2K" if capture_cuda else None,
+        vocabulary_checks_outside_forward_timing=decode_only,
+        workloads=[],
     )
     try:
-        engine = ProfileCoordinator(config)
+        engine = ProfileCoordinator(config, decode_only=decode_only)
         tokenizer = AutoTokenizer.from_pretrained(spec["checkpoint"], local_files_only=True, trust_remote_code=False)
-        expected = json.loads(Path(reference).read_bytes())
+        expected = json.loads(reference_bytes)
         prompt = tokenizer.encode('def factorial(n):\n    """Compute factorial recursively."""\n')
         engine.reset(context_limit=len(prompt) + OUTPUT_TOKENS)
         engine.enabled = True
@@ -203,32 +266,69 @@ def run(config, reference):
         engine.fingerprints = None
         engine.frames.clear()
         generation = Generation(engine, tokenizer)
-        for name, text, length in (
-            ("matched2048", "Inspect this module for profiler test 20261011 and explain the control flow. ", 2048),
-            ("python", 'def factorial(n):\n    """Compute factorial recursively."""\n', None),
-        ):
-            tokens = tokenizer.encode(text, add_special_tokens=False)
-            if length is not None:
-                tokens = exact_prompt(tokens, length)
+        if decode_only:
+            seed = tokenizer.encode("Inspect this module and explain its control flow. ")
+            full, _ = request_tokens(
+                json.loads(Path(chat_request).read_bytes()), tokenizer, engine.max_context, chat=True
+            )
+            workloads = [("2K", exact_prompt(seed, 2048)), ("8K", exact_prompt(seed, 8192)), ("full-code", full)]
+            if capture_cuda:
+                workloads.append(("nsight-2K", exact_prompt(seed, 2048)))
+        else:
+            seed = tokenizer.encode(
+                "Inspect this module for profiler test 20261011 and explain the control flow. ",
+                add_special_tokens=False,
+            )
+            workloads = [("matched2048", exact_prompt(seed, 2048)), ("python", prompt)]
+        for name, tokens in workloads:
             result = {}
             first = engine.sequence
-            list(generation.generate(tokens, OUTPUT_TOKENS, result, ignore_eos=True))
-            report["workloads"].append(
-                dict(
-                    name=name,
-                    first_sequence=first,
-                    end_sequence=engine.sequence,
-                    prompt_tokens=len(tokens),
-                    output_ids=result["output_ids"],
-                    text=result["text"],
-                )
+            engine.workload_logits = [] if decode_only else None
+            engine.capture_on_forward = capture_cuda and name == "nsight-2K"
+            limit = OUTPUT_TOKENS // 2 if name == "nsight-2K" else OUTPUT_TOKENS
+            list(generation.generate(tokens, limit, result, ignore_eos=True))
+            if engine.capture_active:
+                engine.torch.cuda.profiler.stop()
+                engine.capture_active = False
+            row = dict(
+                name=name,
+                first_sequence=first,
+                end_sequence=engine.sequence,
+                prompt_tokens=len(tokens),
+                cached_prompt_tokens=result["cached_prompt_tokens"],
             )
+            if decode_only:
+                reference_row = next(
+                    x
+                    for x in benchmark["measurements"]
+                    if x["case"] == ("2K" if name == "nsight-2K" else name)
+                    and x["window_rows"] == prefill_window_size(spec)
+                )
+                token_hash = hashlib.sha256(json.dumps(tokens, separators=(",", ":")).encode()).hexdigest()
+                equal = engine.workload_logits == reference_row["logits_sha256"][:limit]
+                if token_hash != reference_row["prompt_ids_sha256"] or result["cached_prompt_tokens"] != 0 or not equal:
+                    raise AssertionError("decode profile changed its full prompt, cache state, or vocabulary logits")
+                row.update(
+                    prompt_ids_sha256=token_hash,
+                    full_vocabulary_bitwise_equal=equal,
+                    logits_sha256=engine.workload_logits,
+                    output_tokens=len(result["output_ids"]),
+                    cuda_kernel_capture=name == "nsight-2K",
+                )
+            else:
+                row.update(output_ids=result["output_ids"], text=result["text"])
+            engine.workload_logits = None
+            report["workloads"].append(row)
+            (output / "profile-run.json").write_text(json.dumps(report, indent=2) + "\n")
         report["passed"] = True
     except Exception as error:
         report["error"] = dict(type=type(error).__name__, message=str(error))
         raise
     finally:
         if engine is not None:
+            if engine.capture_active:
+                engine.torch.cuda.profiler.stop()
+                engine.capture_active = False
             (output / "parent-profile.jsonl").write_text("".join(json.dumps(frame) + "\n" for frame in engine.frames))
             engine.close()
         (output / "profile-run.json").write_text(json.dumps(report, indent=2) + "\n")
@@ -238,8 +338,21 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, type=Path)
     parser.add_argument("--reference", required=True, type=Path)
+    parser.add_argument("--decode-only", action="store_true")
+    parser.add_argument("--chat-request", type=Path)
+    parser.add_argument("--benchmark-reference", type=Path)
+    parser.add_argument("--benchmark-sha256")
+    parser.add_argument("--capture-cuda", action="store_true")
     args = parser.parse_args()
-    run(args.config, args.reference)
+    run(
+        args.config,
+        args.reference,
+        decode_only=args.decode_only,
+        chat_request=args.chat_request,
+        benchmark_reference=args.benchmark_reference,
+        benchmark_sha256=args.benchmark_sha256,
+        capture_cuda=args.capture_cuda,
+    )
 
 
 if __name__ == "__main__":

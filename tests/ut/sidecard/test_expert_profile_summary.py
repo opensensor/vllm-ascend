@@ -94,3 +94,32 @@ def test_profile_summary_fails_closed_on_incomplete_or_ambiguous_evidence(error)
         run["full_vocabulary_reference_bitwise_equal"] = False
     with pytest.raises(ValueError):
         summarize(run, frames, workers)
+
+
+def test_decode_only_summary_requires_each_workload_parity_without_prefill_frames():
+    run, frames, workers = example()
+    run["decode_only"] = True
+    run["workloads"][0]["full_vocabulary_bitwise_equal"] = True
+    run["workloads"][0]["output_tokens"] = 2
+    report = summarize(run, frames[1:], workers)
+    assert set(report["workloads"][0]["phases"]) == {"decode"}
+    run["workloads"][0]["full_vocabulary_bitwise_equal"] = False
+    with pytest.raises(ValueError, match="every measured workload"):
+        summarize(run, frames[1:], workers)
+
+
+@pytest.mark.parametrize("error", ["missing", "duplicate", "batched"])
+def test_decode_only_summary_rejects_incomplete_or_duplicate_single_token_coverage(error):
+    run, frames, workers = example()
+    run["decode_only"] = True
+    run["workloads"][0].update(full_vocabulary_bitwise_equal=True, output_tokens=2)
+    frames = frames[1:]
+    if error == "missing":
+        run["workloads"][0]["output_tokens"] = 3
+    elif error == "duplicate":
+        frames.append(copy.deepcopy(frames[0]))
+        run["workloads"][0]["output_tokens"] = 3
+    else:
+        frames[0]["rows"] = 2
+    with pytest.raises(ValueError, match="every single-token forward"):
+        summarize(run, frames, workers)

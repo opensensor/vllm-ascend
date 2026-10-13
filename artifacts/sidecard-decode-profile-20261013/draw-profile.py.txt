@@ -1,0 +1,70 @@
+"""Render measured decode costs and the retained cross-vendor architecture."""
+import json
+from pathlib import Path
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.figure import Figure
+from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
+
+
+def main():
+    root = Path(__file__).resolve().parent
+    report = json.loads((root / "summary.json").read_bytes())
+    cuda = json.loads((root / "cuda-attribution.json").read_bytes())
+    figure = Figure(figsize=(16, 10), facecolor="#f7f9fc")
+    FigureCanvasAgg(figure)
+    overview = figure.add_axes((.025, .53, .95, .42))
+    overview.set(xlim=(0, 1), ylim=(0, 1))
+    overview.axis("off")
+    ink = "#172438"
+    overview.text(.01, .98, "GLM sidecard: decode after 16 MiB cold prefill", fontsize=22, weight="bold", color=ink, va="top")
+    overview.text(.01, .87, "Hardware validated • 1 RTX PRO 6000 + 1 Ascend Duo • all observed vocabulary logits exact", fontsize=12, color=ink)
+    def box(x, y, width, height, color, title, body):
+        overview.add_patch(FancyBboxPatch((x, y), width, height, boxstyle="round,pad=.012", facecolor=color, edgecolor="#ccd5e0"))
+        overview.text(x+.018, y+height-.055, title, fontsize=15, weight="bold", color=ink, va="top")
+        overview.text(x+.018, y+height-.155, body, fontsize=11.5, color=ink, va="top", linespacing=1.55)
+    box(.02, .27, .36, .48, "#dfeafb", "RTX PRO 6000 — 96 GB", "45-layer backbone, attention + KV cache\nResident hot + shared experts\nCUDA graphs + eager sparse attention\nOwns inputs, ordered result merge and sampling")
+    box(.64, .27, .33, .48, "#e1f2e9", "Ascend Duo — chips 2 + 3", "Cold experts in layers 18–32\nNative graphs; one decode row padded to 17\nRead CUDA inputs / write CUDA results by DMA\nPublish sequence after the result payload")
+    overview.add_patch(FancyArrowPatch((.39,.60),(.63,.60),arrowstyle="<->",mutation_scale=20,linewidth=2.5,color="#248666"))
+    overview.text(.51,.69,"Direct PCIe DMA",ha="center",fontsize=13,weight="bold",color="#248666")
+    overview.text(.51,.47,"Decode: ~0.70 MiB / token\nPrefill: 16 MiB logical slots\nTwo bounded 8 MiB regions",ha="center",fontsize=10.5,color=ink,linespacing=1.5,va="top")
+    overview.text(.02,.14,"Host still submits Ascend work and validates invocation metadata. GPU completion waits are already device ordered.",fontsize=11.5,color=ink)
+    overview.text(.02,.055,"Context admission: 65,536 tokens • cold window: 1,024 rows • CUDA math: 32 rows • other Ascend card excluded",fontsize=11.5,color=ink)
+    host = figure.add_axes((.10,.20,.50,.30))
+    rows = [w["phases"]["decode"] for w in report["workloads"][:3]]
+    labels = ["2K", "8K", "Full Code\n23,820 tokens"]
+    groups = [
+        ("Reply wait", ["socket_receive_wait"], "#c86654"),
+        ("Input readiness", ["input_readiness"], "#c7a24d"),
+        ("Backbone submission", ["prefix_host_submit", "middle_backbone_host_submit", "suffix_host_submit"], "#567fab"),
+        ("Other / completion", ["embedding_head_final_completion", "hot_shared_reply_merge_submit", "middle_finish_host_submit", "socket_send"], "#859aa8"),
+    ]
+    starts = [0.0]*3
+    for label, names, color in groups:
+        values = [sum(row["host_mean_ms"].get(name,0) for name in names) for row in rows]
+        host.barh(range(3),values,left=starts,label=label,color=color,height=.58)
+        starts = [a+b for a,b in zip(starts,values)]
+    for i, row in enumerate(rows):
+        host.text(row["mean_forward_ms"]+1,i,f'{row["mean_forward_ms"]:.2f} ms',va="center",fontsize=11,color=ink)
+    host.set(yticks=range(3),yticklabels=labels,xlim=(0,106),xlabel="Mean instrumented forward latency (ms)")
+    host.invert_yaxis()
+    host.set_title("Disjoint host spans: replies consume half the forward",fontsize=13,pad=12,color=ink)
+    host.legend(loc="lower left",bbox_to_anchor=(-.12,-.38),ncol=2,frameon=False,fontsize=10)
+    for spine in ("top","right"):host.spines[spine].set_visible(False)
+    gpu = figure.add_axes((.72,.22,.24,.25))
+    active = cuda["gpu_activity_union_ms_per_decode"]
+    extent = cuda["kernel_timeline_extent_ms_per_decode"]
+    gpu.barh([0],[active],color="#248666",height=.48,label="CUDA activity")
+    gpu.barh([0],[extent-active],left=[active],color="#d5dde6",height=.48,label="Gaps / dependencies")
+    gpu.set(xlim=(0,115),yticks=[],xlabel="ms per token in separate Nsight trace")
+    gpu.text(active/2,0,f'{active:.1f}',ha="center",va="center",color="white",weight="bold")
+    gpu.text((active+extent)/2,0,f'{extent-active:.1f}',ha="center",va="center",color=ink)
+    gpu.set_title("Nsight activity union / trace extent\nCapture adds overhead",fontsize=12,pad=10,color=ink)
+    gpu.legend(loc="lower left",bbox_to_anchor=(-.1,-.48),frameon=False,fontsize=10)
+    for spine in ("top","right","left"):gpu.spines[spine].set_visible(False)
+    figure.text(.04,.035,"Next targets: deterministic single-row Ascend experts → fused/captured CUDA sparse indexer → dispatch administration",fontsize=12,color=ink,weight="bold")
+    figure.text(.04,.012,"Native spans include launch and sync; CUDA and Ascend overlap. These observations do not establish a new production speedup.",fontsize=10,color=ink)
+    figure.savefig(root / "design.png", dpi=140)
+
+
+if __name__ == "__main__":
+    main()

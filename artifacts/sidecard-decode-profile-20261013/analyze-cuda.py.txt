@@ -1,0 +1,25 @@
+import json,sqlite3
+from pathlib import Path
+root=Path('/srv/ai/storage/artifacts/sidecard-decode-profile-20261013/probe-v1')
+c=sqlite3.connect('file:'+str(root/'cuda-decode.sqlite')+'?mode=ro',uri=True)
+steps=31
+kernels=list(c.execute('select start,end,globalPid,streamId from CUPTI_ACTIVITY_KIND_KERNEL order by start'))
+assert kernels and len({r[2] for r in kernels})==1
+mem=list(c.execute('select start,end from CUPTI_ACTIVITY_KIND_MEMCPY'))
+zero=list(c.execute('select start,end from CUPTI_ACTIVITY_KIND_MEMSET'))
+def union_ns(rows):
+ end=None;total=0
+ for begin,finish,*_ in sorted(rows):
+  if end is None or begin>end:total+=finish-begin
+  elif finish>end:total+=finish-end
+  end=max(end if end is not None else finish,finish)
+ return total
+assert union_ns([(0,3),(2,5),(8,10)])==7
+first,last=min(x[0] for x in kernels),max(x[1] for x in kernels)
+apis=[dict(name=name,calls=count,total_ms=ns/1e6,calls_per_decode=count/steps,mean_ms_per_decode=ns/1e6/steps) for name,count,ns in c.execute('select s.value,count(*),sum(r.end-r.start) from CUPTI_ACTIVITY_KIND_RUNTIME r join StringIds s on r.nameId=s.id group by s.value order by sum(r.end-r.start) desc')]
+copy_kinds=[dict(kind=kind,calls=count,total_bytes=amount,total_ms=ns/1e6,calls_per_decode=count/steps) for kind,count,amount,ns in c.execute('select copyKind,count(*),sum(bytes),sum(end-start) from CUPTI_ACTIVITY_KIND_MEMCPY group by copyKind')]
+small_copies=[dict(kind=kind,bytes=size,calls=count,calls_per_decode=count/steps) for kind,size,count in c.execute('select copyKind,bytes,count(*) from CUPTI_ACTIVITY_KIND_MEMCPY group by copyKind,bytes order by count(*) desc limit 12')]
+top=[dict(name=name,calls=count,total_ms=ns/1e6,mean_ms_per_decode=ns/1e6/steps,calls_per_decode=count/steps) for name,count,ns in c.execute('select s.value,count(*),sum(k.end-k.start) from CUPTI_ACTIVITY_KIND_KERNEL k join StringIds s on k.demangledName=s.id group by s.value order by sum(k.end-k.start) desc limit 20')]
+result=dict(passed=True,steps=steps,production_speed_validated=False,scope='Nsight CUDA graph node trace of separate 2K workload; capture adds overhead',kernel_count=len(kernels),kernels_per_decode=len(kernels)/steps,kernel_sum_ms_per_decode=sum(x[1]-x[0] for x in kernels)/1e6/steps,kernel_union_ms_per_decode=union_ns(kernels)/1e6/steps,gpu_activity_union_ms_per_decode=union_ns(kernels+mem+zero)/1e6/steps,kernel_timeline_extent_ms_per_decode=(last-first)/1e6/steps,top_kernels=top,runtime_apis=apis,copy_kinds=copy_kinds,frequent_copy_sizes=small_copies)
+(root/'cuda-attribution.json').write_text(json.dumps(result,indent=2)+'\n')
+print(json.dumps({k:v for k,v in result.items() if k not in ('top_kernels','runtime_apis')}))

@@ -19,6 +19,9 @@ def summarize(run, frames, workers):
     """Check disjoint host accounting and join each exact two-chip invocation."""
     if not run["passed"] or not run["full_vocabulary_reference_bitwise_equal"]:
         raise ValueError("profile requires completed reference parity")
+    decode_only = run.get("decode_only", False)
+    if decode_only and not all(row.get("full_vocabulary_bitwise_equal") for row in run["workloads"]):
+        raise ValueError("decode profile requires parity for every measured workload")
     direct = run.get("transport") == "direct-dma"
     stage_names = ("upload", "validation", "native", "download") if direct else ("upload", "native", "download")
     by_invocation = {}
@@ -39,13 +42,19 @@ def summarize(run, frames, workers):
         selected = [
             frame for frame in frames if workload["first_sequence"] <= frame["sequence"] < workload["end_sequence"]
         ]
-        result = dict(name=workload["name"], phases={})
-        for phase in ("prefill", "decode"):
+        result = dict(name=workload["name"], cuda_kernel_capture=workload.get("cuda_kernel_capture", False), phases={})
+        for phase in ("decode",) if decode_only else ("prefill", "decode"):
             group = [
                 frame for frame in selected if (frame["position"] < workload["prompt_tokens"]) == (phase == "prefill")
             ]
             if not group:
                 raise ValueError("missing observed prefill or decode")
+            if decode_only and (
+                len(group) != workload["output_tokens"] - 1
+                or any(frame["rows"] != 1 for frame in group)
+                or len({frame["sequence"] for frame in group}) != len(group)
+            ):
+                raise ValueError("decode profile must observe every single-token forward exactly once")
             names = set().union(*(frame["host_ms"] for frame in group))
             cold_routes, chip_calls, stream_totals, worker_critical = [], [], [], []
             for frame in group:

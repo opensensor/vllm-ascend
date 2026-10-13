@@ -1,0 +1,31 @@
+{
+  "pid": 2576360,
+  "command": [
+    "/usr/local/bin/nsys",
+    "profile",
+    "--trace=cuda,nvtx,osrt",
+    "--sample=none",
+    "--cpuctxsw=none",
+    "--cuda-graph-trace=node",
+    "--capture-range=cudaProfilerApi",
+    "--capture-range-end=stop",
+    "--wait=all",
+    "--output",
+    "/srv/ai/storage/artifacts/sidecard-decode-profile-20261013/probe-v1/cuda-decode",
+    "/srv/ai/venvs/sidecard-cuda-20261012/bin/python",
+    "-m",
+    "tools.sidecard.expert_profile",
+    "--config",
+    "/srv/ai/storage/artifacts/sidecard-decode-profile-20261013/probe-v1/runtime.json",
+    "--reference",
+    "/srv/ai/storage/artifacts/sidecard-expert-runtime-20261012-v3/decode-repeat-gate.json",
+    "--decode-only",
+    "--chat-request",
+    "/tmp/sidecard-cold-full-code-request.json",
+    "--benchmark-reference",
+    "/srv/ai/storage/artifacts/sidecard-prefill16-20261013/probe-v1/cold-benchmark.json",
+    "--benchmark-sha256",
+    "b9b6e88bff8fc140f67cc2f6e10429caa19fb9c6100e3f29c15b030940ca90c2",
+    "--capture-cuda"
+  ]
+}

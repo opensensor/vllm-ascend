@@ -1,0 +1,393 @@
+{
+  "passed": true,
+  "steps": 31,
+  "production_speed_validated": false,
+  "scope": "Nsight CUDA graph node trace of separate 2K workload; capture adds overhead",
+  "kernel_count": 210696,
+  "kernels_per_decode": 6796.645161290323,
+  "kernel_sum_ms_per_decode": 21.59477264516129,
+  "kernel_union_ms_per_decode": 21.59477264516129,
+  "gpu_activity_union_ms_per_decode": 21.96047725806452,
+  "kernel_timeline_extent_ms_per_decode": 107.39181893548387,
+  "top_kernels": [
+    {
+      "name": "std::enable_if<!T7, void>::type internal::gemvx::kernel<int, int, __half, __half, __half, float, (bool)0, (bool)1, (bool)1, (bool)0, (int)7, (bool)0, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<const __half>, cublasGemvTensorStridedBatched<const __half>, cublasGemvTensorStridedBatched<__half>, float>>(T13)",
+      "calls": 1736,
+      "total_ms": 141.053489,
+      "mean_ms_per_decode": 4.550112548387097,
+      "calls_per_decode": 56.0
+    },
+    {
+      "name": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_s161616gemm_f16_16x16_128x2_tn_align8>(T1::Params)",
+      "calls": 1488,
+      "total_ms": 80.029276,
+      "mean_ms_per_decode": 2.5815895483870968,
+      "calls_per_decode": 48.0
+    },
+    {
+      "name": "project_nibbles(const signed char *, const float *, const signed char *, const __half *, const int *, __half *, int, int, int)",
+      "calls": 1364,
+      "total_ms": 61.543185,
+      "mean_ms_per_decode": 1.9852640322580646,
+      "calls_per_decode": 44.0
+    },
+    {
+      "name": "std::enable_if<T7, void>::type internal::gemvx::kernel<int, int, __half, __half, __half, float, (bool)1, (bool)1, (bool)1, (bool)0, (int)8, (bool)0, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<const __half>, cublasGemvTensorStridedBatched<const __half>, cublasGemvTensorStridedBatched<__half>, float>>(T13)",
+      "calls": 4247,
+      "total_ms": 53.662512,
+      "mean_ms_per_decode": 1.7310487741935483,
+      "calls_per_decode": 137.0
+    },
+    {
+      "name": "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase &)::[lambda() (instance 3)]::operator ()() const::[lambda() (instance 7)]::operator ()() const::[lambda(float) (instance 1)], std::array<char *, (unsigned long)2>, (int)4, TrivialOffsetCalculator<(int)1, unsigned int>, TrivialOffsetCalculator<(int)1, unsigned int>, at::native::memory::LoadWithCast<(int)1>, at::native::memory::StoreWithCast<(int)1>>(int, T1, T2, T4, T5, T6, T7)",
+      "calls": 19824,
+      "total_ms": 31.500851,
+      "mean_ms_per_decode": 1.0161564838709678,
+      "calls_per_decode": 639.483870967742
+    },
+    {
+      "name": "void project_compact<(int)2>(const signed char *, const float *, const unsigned short *, const __half *, const int *, __half *, int, int, int)",
+      "calls": 744,
+      "total_ms": 31.006087,
+      "mean_ms_per_decode": 1.0001963548387096,
+      "calls_per_decode": 24.0
+    },
+    {
+      "name": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_f16_s161616gemm_f16_16x16_128x2_tn_align8>(T1::Params)",
+      "calls": 868,
+      "total_ms": 28.381919,
+      "mean_ms_per_decode": 0.9155457741935484,
+      "calls_per_decode": 28.0
+    },
+    {
+      "name": "std::enable_if<!T7, void>::type internal::gemvx::kernel<int, int, __half, __half, __half, float, (bool)0, (bool)1, (bool)1, (bool)0, (int)6, (bool)0, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<const __half>, cublasGemvTensorStridedBatched<const __half>, cublasGemvTensorStridedBatched<__half>, float>>(T13)",
+      "calls": 31,
+      "total_ms": 24.502241,
+      "mean_ms_per_decode": 0.790394870967742,
+      "calls_per_decode": 1.0
+    },
+    {
+      "name": "void project_compact<(int)3>(const signed char *, const float *, const unsigned short *, const __half *, const int *, __half *, int, int, int)",
+      "calls": 496,
+      "total_ms": 23.53226,
+      "mean_ms_per_decode": 0.7591051612903226,
+      "calls_per_decode": 16.0
+    },
+    {
+      "name": "void at::native::vectorized_elementwise_kernel<(int)4, at::native::FillFunctor<float>, std::array<char *, (unsigned long)1>, (bool)0>(int, T2, T3)",
+      "calls": 37463,
+      "total_ms": 16.619682,
+      "mean_ms_per_decode": 0.5361187741935484,
+      "calls_per_decode": 1208.483870967742
+    },
+    {
+      "name": "quantize(const __half *, signed char *, float *, int, int, int)",
+      "calls": 2604,
+      "total_ms": 12.965958,
+      "mean_ms_per_decode": 0.41825670967741935,
+      "calls_per_decode": 84.0
+    },
+    {
+      "name": "pre_mix_kernel",
+      "calls": 2790,
+      "total_ms": 9.785442,
+      "mean_ms_per_decode": 0.3156594193548387,
+      "calls_per_decode": 90.0
+    },
+    {
+      "name": "std::enable_if<!T7, void>::type internal::gemvx::kernel<int, int, float, float, float, float, (bool)0, (bool)1, (bool)1, (bool)0, (int)7, (bool)0, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>, float>>(T13)",
+      "calls": 2325,
+      "total_ms": 9.519064,
+      "mean_ms_per_decode": 0.3070665806451613,
+      "calls_per_decode": 75.0
+    },
+    {
+      "name": "void at::native::sbtopk::gatherTopK<float, unsigned int, (int)1, (bool)0>(at::cuda::detail::TensorInfo<const T1, T2>, T2, T2, bool, T2, T2, at::cuda::detail::TensorInfo<T1, T2>, T2, at::cuda::detail::TensorInfo<long, T2>, T2, T1 *)",
+      "calls": 1643,
+      "total_ms": 7.931633,
+      "mean_ms_per_decode": 0.25585912903225805,
+      "calls_per_decode": 53.0
+    },
+    {
+      "name": "void dot_kernel<float, (int)128, (int)0, cublasDotParams<cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>>>(T4)",
+      "calls": 2790,
+      "total_ms": 6.668446,
+      "mean_ms_per_decode": 0.2151111612903226,
+      "calls_per_decode": 90.0
+    },
+    {
+      "name": "std::enable_if<T7, void>::type internal::gemvx::kernel<int, int, __half, __half, __half, float, (bool)1, (bool)1, (bool)1, (bool)0, (int)7, (bool)0, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<const __half>, cublasGemvTensorStridedBatched<const __half>, cublasGemvTensorStridedBatched<__half>, float>>(T13)",
+      "calls": 2108,
+      "total_ms": 5.946424,
+      "mean_ms_per_decode": 0.19182012903225806,
+      "calls_per_decode": 68.0
+    },
+    {
+      "name": "pre_input_kernel",
+      "calls": 2790,
+      "total_ms": 5.850337,
+      "mean_ms_per_decode": 0.18872054838709676,
+      "calls_per_decode": 90.0
+    },
+    {
+      "name": "void at::native::vectorized_elementwise_kernel<(int)4, at::native::FillFunctor<c10::Half>, std::array<char *, (unsigned long)1>, (bool)0>(int, T2, T3)",
+      "calls": 12539,
+      "total_ms": 5.477297,
+      "mean_ms_per_decode": 0.176687,
+      "calls_per_decode": 404.48387096774195
+    },
+    {
+      "name": "void at::native::elementwise_kernel<(int)128, (int)2, void at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<float>>(at::TensorIteratorBase &, const T1 &)::[lambda(int) (instance 1)]>(int, T3)",
+      "calls": 5698,
+      "total_ms": 4.821492,
+      "mean_ms_per_decode": 0.155532,
+      "calls_per_decode": 183.80645161290323
+    },
+    {
+      "name": "recurrent_kernel",
+      "calls": 1054,
+      "total_ms": 4.20076,
+      "mean_ms_per_decode": 0.13550838709677418,
+      "calls_per_decode": 34.0
+    }
+  ],
+  "runtime_apis": [
+    {
+      "name": "cudaLaunchKernel_v7000",
+      "calls": 46426,
+      "total_ms": 301.412647,
+      "calls_per_decode": 1497.6129032258063,
+      "mean_ms_per_decode": 9.722988612903226
+    },
+    {
+      "name": "cudaMemcpyAsync_v3020",
+      "calls": 10122,
+      "total_ms": 204.401263,
+      "calls_per_decode": 326.51612903225805,
+      "mean_ms_per_decode": 6.593589129032258
+    },
+    {
+      "name": "cudaGraphLaunch_v10000",
+      "calls": 2232,
+      "total_ms": 130.776732,
+      "calls_per_decode": 72.0,
+      "mean_ms_per_decode": 4.218604258064516
+    },
+    {
+      "name": "cuKernelGetName",
+      "calls": 46426,
+      "total_ms": 13.229242,
+      "calls_per_decode": 1497.6129032258063,
+      "mean_ms_per_decode": 0.4267497419354839
+    },
+    {
+      "name": "cudaEventRecordWithFlags_v11010",
+      "calls": 1984,
+      "total_ms": 10.626139,
+      "calls_per_decode": 64.0,
+      "mean_ms_per_decode": 0.34277867741935486
+    },
+    {
+      "name": "cuLaunchKernel",
+      "calls": 1023,
+      "total_ms": 7.968884,
+      "calls_per_decode": 33.0,
+      "mean_ms_per_decode": 0.2570607741935484
+    },
+    {
+      "name": "cudaLaunchKernelExC_v11060",
+      "calls": 1023,
+      "total_ms": 6.656936,
+      "calls_per_decode": 33.0,
+      "mean_ms_per_decode": 0.21473987096774194
+    },
+    {
+      "name": "cudaEventCreateWithFlags_v3020",
+      "calls": 1984,
+      "total_ms": 5.252547,
+      "calls_per_decode": 64.0,
+      "mean_ms_per_decode": 0.169437
+    },
+    {
+      "name": "cuStreamWaitValue64_v2",
+      "calls": 917,
+      "total_ms": 4.619101,
+      "calls_per_decode": 29.580645161290324,
+      "mean_ms_per_decode": 0.14900325806451611
+    },
+    {
+      "name": "cudaEventQuery_v3020",
+      "calls": 2901,
+      "total_ms": 3.732602,
+      "calls_per_decode": 93.58064516129032,
+      "mean_ms_per_decode": 0.12040651612903226
+    },
+    {
+      "name": "cudaStreamSynchronize_v3020",
+      "calls": 589,
+      "total_ms": 2.317375,
+      "calls_per_decode": 19.0,
+      "mean_ms_per_decode": 0.07475403225806453
+    },
+    {
+      "name": "cudaEventRecord_v3020",
+      "calls": 917,
+      "total_ms": 2.043728,
+      "calls_per_decode": 29.580645161290324,
+      "mean_ms_per_decode": 0.06592670967741936
+    },
+    {
+      "name": "cudaStreamIsCapturing_v10000",
+      "calls": 2573,
+      "total_ms": 1.987843,
+      "calls_per_decode": 83.0,
+      "mean_ms_per_decode": 0.06412396774193549
+    },
+    {
+      "name": "cuEventRecord",
+      "calls": 917,
+      "total_ms": 1.87163,
+      "calls_per_decode": 29.580645161290324,
+      "mean_ms_per_decode": 0.060375161290322575
+    },
+    {
+      "name": "cudaEventDestroy_v3020",
+      "calls": 1984,
+      "total_ms": 1.60397,
+      "calls_per_decode": 64.0,
+      "mean_ms_per_decode": 0.05174096774193548
+    },
+    {
+      "name": "cuEventSynchronize",
+      "calls": 917,
+      "total_ms": 1.372632,
+      "calls_per_decode": 29.580645161290324,
+      "mean_ms_per_decode": 0.04427845161290323
+    },
+    {
+      "name": "cuKernelGetFunction",
+      "calls": 1023,
+      "total_ms": 1.045289,
+      "calls_per_decode": 33.0,
+      "mean_ms_per_decode": 0.033719
+    },
+    {
+      "name": "cudaDeviceSynchronize_v3020",
+      "calls": 31,
+      "total_ms": 0.892617,
+      "calls_per_decode": 1.0,
+      "mean_ms_per_decode": 0.028794096774193548
+    },
+    {
+      "name": "cudaMemsetAsync_v3020",
+      "calls": 62,
+      "total_ms": 0.670813,
+      "calls_per_decode": 2.0,
+      "mean_ms_per_decode": 0.021639129032258064
+    },
+    {
+      "name": "cuProfilerStart",
+      "calls": 1,
+      "total_ms": 0.006262,
+      "calls_per_decode": 0.03225806451612903,
+      "mean_ms_per_decode": 0.000202
+    }
+  ],
+  "copy_kinds": [
+    {
+      "kind": 1,
+      "calls": 31,
+      "total_bytes": 248,
+      "total_ms": 0.008,
+      "calls_per_decode": 1.0
+    },
+    {
+      "kind": 2,
+      "calls": 558,
+      "total_bytes": 19206329,
+      "total_ms": 1.130005,
+      "calls_per_decode": 18.0
+    },
+    {
+      "kind": 8,
+      "calls": 18957,
+      "total_bytes": 294758536,
+      "total_ms": 10.18239,
+      "calls_per_decode": 611.516129032258
+    }
+  ],
+  "frequent_copy_sizes": [
+    {
+      "kind": 8,
+      "bytes": 32,
+      "calls": 6231,
+      "calls_per_decode": 201.0
+    },
+    {
+      "kind": 8,
+      "bytes": 65536,
+      "calls": 2914,
+      "calls_per_decode": 94.0
+    },
+    {
+      "kind": 8,
+      "bytes": 8192,
+      "calls": 2821,
+      "calls_per_decode": 91.0
+    },
+    {
+      "kind": 8,
+      "bytes": 64,
+      "calls": 1736,
+      "calls_per_decode": 56.0
+    },
+    {
+      "kind": 8,
+      "bytes": 16384,
+      "calls": 1302,
+      "calls_per_decode": 42.0
+    },
+    {
+      "kind": 8,
+      "bytes": 16,
+      "calls": 1271,
+      "calls_per_decode": 41.0
+    },
+    {
+      "kind": 8,
+      "bytes": 49152,
+      "calls": 1054,
+      "calls_per_decode": 34.0
+    },
+    {
+      "kind": 8,
+      "bytes": 1024,
+      "calls": 517,
+      "calls_per_decode": 16.677419354838708
+    },
+    {
+      "kind": 2,
+      "bytes": 2,
+      "calls": 465,
+      "calls_per_decode": 15.0
+    },
+    {
+      "kind": 8,
+      "bytes": 16408,
+      "calls": 341,
+      "calls_per_decode": 11.0
+    },
+    {
+      "kind": 8,
+      "bytes": 512,
+      "calls": 176,
+      "calls_per_decode": 5.67741935483871
+    },
+    {
+      "kind": 8,
+      "bytes": 1536,
+      "calls": 176,
+      "calls_per_decode": 5.67741935483871
+    }
+  ]
+}
