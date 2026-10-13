@@ -55,6 +55,8 @@ class PoolIndexer:
             raise ValueError("fused indexer rotation requires a CUDA owner and a boolean selection")
         self.torch, self.device = torch, device
         self.fused_cuda_rotation = fused_cuda_rotation
+        self.projection_graph = None
+        self.projection_graph_enabled = False
         self.topk = config["index_topk"]
         self.heads = config["index_n_heads"]
         self.weights = weights
@@ -95,12 +97,15 @@ class PoolIndexer:
             return (x.float() @ self.hadamard_matrix * (HEAD_DIM**-0.5)).to(t.bfloat16).to(t.float16)
         return hadamard_reference(x, t).to(t.bfloat16).to(t.float16)
 
-    def append(self, hidden):
+    def append(self, hidden, projected=None):
         t, w = self.torch, self.fp32
-        xf = hidden.float()
-        keys = t.nn.functional.linear(xf, w["wk.weight"])
-        keys = t.nn.functional.layer_norm(keys, (HEAD_DIM,), w["k_norm.weight"], w["k_norm.bias"], 1e-6)
-        gates = t.nn.functional.linear(xf, w["index_kpool_compress_gate"])
+        if projected is None:
+            xf = hidden.float()
+            keys = t.nn.functional.linear(xf, w["wk.weight"])
+            keys = t.nn.functional.layer_norm(keys, (HEAD_DIM,), w["k_norm.weight"], w["k_norm.bias"], 1e-6)
+            gates = t.nn.functional.linear(xf, w["index_kpool_compress_gate"])
+        else:
+            keys, gates = projected
         keys = t.cat((self.tail_keys[: self.tail_length], keys))
         gates = t.cat((self.tail_gates[: self.tail_length], gates))
         complete = keys.shape[0] // POOL_SIZE
@@ -120,14 +125,20 @@ class PoolIndexer:
 
     def select(self, hidden, qr, first_position):
         t = self.torch
-        self.append(hidden)
+        projected = None
+        if self.projection_graph_enabled and hidden.shape[0] == 1 and first_position + 1 > self.topk:
+            projected = self.projection_graph(hidden, qr)
+        self.append(hidden, None if projected is None else projected[:2])
         if first_position + hidden.shape[0] <= self.topk:
             return None
-        query = t.nn.functional.linear(qr, self.weights["self_attn.indexer.wq_b.weight"])
-        query = query.view(-1, self.heads, HEAD_DIM).to(t.bfloat16).float()
-        query = self.rotate(query).float()
-        weights = t.nn.functional.linear(hidden.float(), self.fp32["weights_proj.weight"])
-        weights = weights * (HEAD_DIM**-0.5 * self.heads**-0.5)
+        if projected is None:
+            query = t.nn.functional.linear(qr, self.weights["self_attn.indexer.wq_b.weight"])
+            query = query.view(-1, self.heads, HEAD_DIM).to(t.bfloat16).float()
+            query = self.rotate(query).float()
+            weights = t.nn.functional.linear(hidden.float(), self.fp32["weights_proj.weight"])
+            weights = weights * (HEAD_DIM**-0.5 * self.heads**-0.5)
+        else:
+            query, weights = projected[2:]
         keys = self.pools[: self.pool_count].float()
         # Query chunks bound the head-by-query-by-pool FP32 temporary.
         chunk = max(1, MAX_SCORE_ELEMENTS // max(1, self.heads * self.pool_count))

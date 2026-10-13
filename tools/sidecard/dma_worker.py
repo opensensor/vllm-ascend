@@ -51,11 +51,14 @@ from .pcie.mailbox import RECORD, Invocation
 from .pcie.peer import ASCEND_TO_CUDA, CUDA_TO_ASCEND, Driver, KernelPeer
 from .pcie.runtime import Runtime
 from .pcie.segmented import export_allocation, make_peer, mapping_counts
+from .single_route_gate import validate as validate_single_route
+from .single_route_graph import SingleRouteDecodeGraphs, single_route_enabled
 
 GUARD_POISON = 0xD3
 PROFILE_RECORD_LIMIT = 4096
 RECEIPT_INTERVAL = 1024
 EXPERT_COUNT = 288
+EXPERTS_PER_RANK = EXPERT_COUNT // 2
 
 
 def validate_routes(metadata, rows, hot_ids, *, max_chunk=MAX_CHUNK):
@@ -64,6 +67,7 @@ def validate_routes(metadata, rows, hot_ids, *, max_chunk=MAX_CHUNK):
         raise ValueError("route metadata exceeds its row capacity")
     count = rows * TOP_K
     values = struct.unpack_from(f"<{count}i{count}f", metadata)
+    owned = [0, 0]
     for index in range(count):
         expert, weight = values[index], values[count + index]
         if (
@@ -73,6 +77,9 @@ def validate_routes(metadata, rows, hot_ids, *, max_chunk=MAX_CHUNK):
             or (expert in hot_ids and weight != 0)
         ):
             raise ValueError("invalid or hot-owned route in direct expert request")
+        if weight > 0:
+            owned[expert // EXPERTS_PER_RANK] += 1
+    return tuple(owned)
 
 
 class TensorAllocation:
@@ -152,6 +159,7 @@ class WorkerSlots:
         self.hot_ids = {int(layer): frozenset(ids) for layer, ids in load(spec).items()}
         self.calls, self.upload_bytes, self.download_bytes = 0, 0, 0
         self.transfer_calls = 0
+        self.single_route_calls = 0
         self.mapping_creations, self.mapping_hits = 0, 0
         self.profile = deque(maxlen=PROFILE_RECORD_LIMIT)
         if self.completion_contract and not self.input_record:
@@ -194,6 +202,7 @@ class WorkerSlots:
             "transport": "direct-dma",
             "payload_host_staging": False,
             "calls": self.calls,
+            "single_route_calls": self.single_route_calls,
             "verified_direct_transfers": self.transfer_calls,
             "upload_bytes": self.upload_bytes,
             "download_bytes": self.download_bytes,
@@ -237,7 +246,7 @@ class WorkerSlots:
         x = self.packed[:x_bytes].view(t.float16).reshape(rows, WIDTH)
         ids = self.packed[x_bytes : x_bytes + id_bytes].view(t.int32).reshape(rows, TOP_K)
         weights = self.packed[x_bytes + id_bytes : rows * INPUT_ROW_BYTES].view(t.float32).reshape(rows, TOP_K)
-        validate_routes(self.metadata, rows, self.hot_ids[layer], max_chunk=self.max_chunk)
+        route_counts = validate_routes(self.metadata, rows, self.hot_ids[layer], max_chunk=self.max_chunk)
         contract = getattr(self, "completion_contract", False)
         if input_contract:
             metadata_offset = rows * TOP_K * 8
@@ -259,7 +268,8 @@ class WorkerSlots:
             self.event.record(self.stream)
             self.event.wait()
         native_start = time.perf_counter()
-        partial = actor(layer, x, ids, weights)
+        single = rows == 1 and route_counts[self.rank] == 1 and isinstance(actor, SingleRouteDecodeGraphs)
+        partial = actor(layer, x, ids, weights, owned_routes=1) if single else actor(layer, x, ids, weights)
         if contract and not input_contract:
             length = RESULT_OFFSET + rows * OUTPUT_ROW_BYTES
             self.result_packet[RESULT_OFFSET:length].view(t.float32).reshape(rows, WIDTH).copy_(partial)
@@ -302,6 +312,7 @@ class WorkerSlots:
             # Legacy results are consumed through IPC in another CUDA context.
             self.driver.flush(all_devices=True)
         self.calls += 1
+        self.single_route_calls += int(single)
         for receipt in (upload, download):
             creations, hits = mapping_counts(receipt)
             self.mapping_hits += hits
@@ -316,6 +327,8 @@ class WorkerSlots:
                 "sequence": sequence,
                 "layer": layer,
                 "rows": rows,
+                "owned_routes": route_counts[self.rank],
+                "single_route_graph": single,
                 "upload_ms": (uploaded - start) * 1000,
                 "unpack_and_validation_ms": (native_start - uploaded) * 1000,
                 "native_ms": (native_end - native_start) * 1000,
@@ -366,6 +379,7 @@ def worker(args, spec):
     if os.geteuid() != 0 or os.environ.get("ASCEND_RT_VISIBLE_DEVICES") != "2,3":
         raise ValueError("direct expert worker requires root and assigned physical chips 2,3")
     prefill_rows = prefill_graph_rows(spec)
+    single_route = single_route_enabled(spec)
     import torch
     import torch_npu
 
@@ -387,7 +401,11 @@ def worker(args, spec):
     actor.validate_repeat(output / f"expert-repeat-rank{args.rank}.json", combine_results=False)
     if spec.get("direct_dma", {}).get("npu_expert_graphs", False):
         with torch.inference_mode():
-            actor = ExpertDecodeGraphs(actor, torch, prefill_rows=prefill_rows)
+            actor = (SingleRouteDecodeGraphs if single_route else ExpertDecodeGraphs)(
+                actor, torch, prefill_rows=prefill_rows
+            )
+            if single_route:
+                validate_single_route(actor, torch, output / f"single-route-parity-rank{args.rank}.json")
             if prefill_rows is not None:
                 validate_prefill_graphs(
                     actor.actor, actor, torch, output=output / f"expert-prefill-parity-rank{args.rank}.json"

@@ -33,6 +33,7 @@ from tools.sidecard.dma_protocol import (
 )
 from tools.sidecard.dma_worker import WorkerSlots, validate_routes
 from tools.sidecard.pcie.peer import ASCEND_TO_CUDA
+from tools.sidecard.single_route_graph import SingleRouteDecodeGraphs
 
 
 @pytest.mark.parametrize("rows", [1, 4, 17, 32])
@@ -41,7 +42,7 @@ def test_worker_metadata_accepts_cold_routes_and_zero_weight_hot_routes(rows):
     ids = [1, 2, 145, 287, 0, 3, 144, 286] * rows
     weights = [0, 0.5, 1, 2, 0, 0.25, 0.125, 0] * rows
     metadata = struct.pack(f"<{count}i{count}f", *ids, *weights)
-    validate_routes(metadata, rows, frozenset([1]))
+    assert validate_routes(metadata, rows, frozenset([1])) == (2 * rows, 3 * rows)
 
 
 @pytest.mark.parametrize(
@@ -64,9 +65,13 @@ def test_worker_metadata_does_not_read_past_buffer():
         validate_routes(b"\0" * 63, 1, frozenset())
 
 
-def test_native_completion_event_is_fresh_for_each_worker_invocation():
+@pytest.mark.parametrize("rank", [0, 1])
+@pytest.mark.parametrize("route_count", [0, 1, 2, 8])
+def test_native_completion_event_is_fresh_and_fast_selection_counts_owned_contributions(monkeypatch, rank, route_count):
     slots = object.__new__(WorkerSlots)
     slots.max_chunk = 32
+    slots.rank = rank
+    slots.single_route_calls = 0
     completions = []
     slots.torch = SimpleNamespace(
         float16=torch.float16,
@@ -78,7 +83,8 @@ def test_native_completion_event_is_fresh_for_each_worker_invocation():
     slots.packed = torch.zeros(CAPACITY, dtype=torch.uint8)
     slots.npu_input = SimpleNamespace(pointer=1)
     slots.metadata_host = SimpleNamespace(pointer=1)
-    slots.metadata = struct.pack("<8i8f", *([2] * 8), *([0.5] * 8))
+    # Repeated IDs are separate contributions, rather than one distinct expert.
+    slots.metadata = struct.pack("<8i8f", *([2] * 8), *([0.5] * route_count + [0.0] * (8 - route_count)))
     slots.hot_ids = {18: frozenset([1])}
     slots.event = SimpleNamespace(record=lambda stream: None, wait=lambda: None)
     slots.stream = slots.guard = slots.input_export = slots.output_export = None
@@ -101,9 +107,20 @@ def test_native_completion_event_is_fresh_for_each_worker_invocation():
         element_size=lambda: 4,
         data_ptr=lambda: 12345,
     )
+    selections = []
+
+    def execute(self, *args, **kwargs):
+        selections.append(kwargs.get("owned_routes"))
+        return output
+
+    monkeypatch.setattr(SingleRouteDecodeGraphs, "__call__", execute)
+    actor = object.__new__(SingleRouteDecodeGraphs)
     for sequence in range(2):
-        slots.compute(lambda *args: output, sequence, 18, 1)
+        slots.compute(actor, sequence, 18, 1)
     assert len(completions) == 2 and completions[0] is not completions[1]
+    single = rank == 0 and route_count == 1
+    assert selections == ([1, 1] if single else [None, None])
+    assert slots.single_route_calls == (2 if single else 0)
 
 
 def test_private_control_roundtrip_and_budget():

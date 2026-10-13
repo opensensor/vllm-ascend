@@ -1,0 +1,38 @@
+{
+  "max_context": 131072,
+  "expert_transport": "direct-dma",
+  "prefill_chunk_size": 32,
+  "prefill_window_size": 1024,
+  "cuda_indexer_hadamard": true,
+  "cuda_indexer_projection_graphs": true,
+  "prompt_prefix_cache": true,
+  "service_url": "http://192.168.53.187:8000/v1",
+  "model": "glm-sidecard",
+  "physical_npu_devices": [
+    2,
+    3
+  ],
+  "npu_single_route_graphs": false,
+  "gates": {
+    "pipeline-parity": true,
+    "decode-repeat-gate": true,
+    "transport-parity": true,
+    "dsa-graph-parity": true,
+    "prefill-parity": true,
+    "prefix-parity": true
+  },
+  "bridge_references": 6,
+  "pid": 2849779,
+  "source_manifest_sha256": "30ac776551a86cbacb2806c63ace0d6288fe411b465301f84a1e701843ec73ce",
+  "memory": {
+    "gpu_free_bytes": 6319308800,
+    "gpu_torch_bytes": 19903944192,
+    "cuda_expert_bytes": 73417802752,
+    "physical_npu_devices": [
+      2,
+      3
+    ],
+    "attention_cache_owner": "cuda",
+    "hccl": false
+  }
+}

@@ -1,0 +1,59 @@
+"""Render the qualified projection graph and actual matched model result."""
+import json
+from pathlib import Path
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
+
+
+def main():
+    root = Path(__file__).resolve().parent
+    run = json.loads((root / "probe/projection-benchmark.json").read_bytes())
+    decision = json.loads((root / "probe/deployment-decision.json").read_bytes())
+    api = json.loads((root / "api-summary.json").read_bytes())
+    assert run["passed"] and len(run["measurements"]) == 12
+    figure = Figure(figsize=(15, 9), facecolor="#f7f9fc")
+    FigureCanvasAgg(figure)
+    ink = "#1b293d"
+    ax = figure.add_axes((.035, .53, .93, .43))
+    ax.set(xlim=(0, 1), ylim=(0, 1)); ax.axis("off")
+    ax.text(0, .98, "GLM sidecard: capture fixed CUDA indexer math", fontsize=21, weight="bold", color=ink, va="top")
+    ax.text(0, .84, "Identical weights, arithmetic, expert placement, context and PCIe ownership protocol", fontsize=12, color=ink)
+    def box(x, width, color, title, body):
+        ax.add_patch(FancyBboxPatch((x, .25), width, .49, boxstyle="round,pad=.012", facecolor=color, edgecolor="#ccd5e0"))
+        ax.text(x+.018, .68, title, fontsize=15, weight="bold", color=ink, va="top")
+        ax.text(x+.018, .54, body, fontsize=11.5, color=ink, va="top", linespacing=1.6)
+    box(.02, .38, "#dce9fb", "RTX PRO 6000 — 96 GB", "One graph: keys + gates + queries + weights\nOriginal normalization, rotation and rounding\nSparse state and cache append remain eager\nAttention, KV cache, hot + shared experts")
+    box(.65, .32, "#dff0e7", "Ascend Duo — chips 2 + 3", "Cold experts in layers 18–32\nQualified stable native reduction\nSingle-route candidate stays disabled\nOther Ascend card remains excluded")
+    ax.add_patch(FancyArrowPatch((.42, .55), (.63, .55), arrowstyle="<->", mutation_scale=20, linewidth=2.5, color="#27846a"))
+    ax.text(.525, .64, "Direct PCIe DMA", fontsize=12, weight="bold", ha="center", color="#27846a")
+    ax.text(.525, .46, "16 MiB logical slots\nTwo 8 MiB export regions\nCold window 1,024 / CUDA 32", fontsize=10.5, ha="center", va="top", color=ink, linespacing=1.5)
+    ax.text(.02, .11, "768 complete vocabularies match. Same loaded runtime; two alternating paired repetitions per prompt.", fontsize=11.5, color=ink)
+    ax.text(.02, .025, "128K total context retained. No shortened Code prompt or tools. Prefill and decode measured separately.", fontsize=11.5, color=ink)
+    decode = figure.add_axes((.085, .20, .51, .29))
+    cases = ("2K", "8K", "full-code")
+    def rate(case, selected):
+        rows = [r for r in run["measurements"] if r["case"] == case and r["captured"] == selected]
+        return sum(len(r["decode_forward_seconds"]) for r in rows) / sum(sum(r["decode_forward_seconds"]) for r in rows)
+    baseline, candidate = [rate(c, False) for c in cases], [rate(c, True) for c in cases]
+    positions = list(range(3))
+    decode.bar([x-.18 for x in positions], baseline, width=.34, color="#91a5bb", label="Eager projections")
+    decode.bar([x+.18 for x in positions], candidate, width=.34, color="#27846a", label="Captured projections")
+    for i, (old, new) in enumerate(zip(baseline, candidate)):
+        decode.text(i+.18, new+.13, f"{new:.2f}\n{100*(new/old-1):+.1f}%", ha="center", fontsize=11, color=ink)
+    decode.set(xticks=positions, xticklabels=["2K", "8K", "Full Code\n23,820 tokens"], ylim=(0, max(baseline+candidate)+2), ylabel="Model-forward decode (tokens/s)")
+    decode.set_title("Identical prompt snapshots; time excludes restoration", fontsize=12, color=ink, pad=12)
+    decode.legend(loc="lower left", bbox_to_anchor=(0, -.37), ncol=2, frameon=False)
+    for side in ("top", "right"): decode.spines[side].set_visible(False)
+    details = figure.add_axes((.68, .17, .29, .32)); details.axis("off")
+    title = "Qualified and deployed" if decision["qualified"] else "Candidate retained disabled"
+    details.text(0, .96, title, fontsize=16, weight="bold", color=ink, va="top")
+    details.text(0, .77, "Projection: 253 µs → 60 µs (layer 19)\n40 component cases, byte-identical\n768 model vectors, byte-identical\n3 cold API fixtures, 64 outputs each", fontsize=12, color=ink, va="top", linespacing=1.8)
+    details.text(0, .30, f"API median: {api['baseline_median_decode_tokens_per_second']:.2f} → {api['candidate_median_decode_tokens_per_second']:.2f} tok/s\nCold first text: {api['candidate_median_time_to_first_text_seconds']:.2f} s", fontsize=12, color=ink, va="top", linespacing=1.8)
+    figure.text(.045, .035, "DMA moves activation/result payloads directly between cards. The host still validates routing metadata and submits NPU work.", fontsize=11, color=ink)
+    figure.text(.045, .012, "Small matched performance sample. Prior actual 128K capacity test is preserved; long-context task accuracy is not evaluated.", fontsize=10, color=ink)
+    figure.savefig(root / "design.png", dpi=140)
+
+
+if __name__ == "__main__":
+    main()

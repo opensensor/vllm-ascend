@@ -9,6 +9,8 @@ from pathlib import Path
 from .cold_decode_graph import ColdDecodeGraphs
 from .cold_dispatch import create_dispatch
 from .cold_placement import cuda_keys, load
+from .indexer_projection_graph import IndexerProjectionGraph
+from .indexer_projection_graph import enabled as projection_graph_enabled
 from .layer_decode_graph import DecodeGraphs
 from .layer_indexer import cuda_rotation_enabled
 from .layer_math import TextLayer, rms_norm, validate_config
@@ -26,6 +28,7 @@ class ExpertCoordinator:
         self.torch = torch
         self.spec = json.loads(Path(config_path).read_bytes())
         fused_cuda_indexer = cuda_rotation_enabled(self.spec)
+        indexer_graphs = projection_graph_enabled(self.spec)
         self.root, self.output = Path(self.spec["checkpoint"]), Path(self.spec["output"])
         self.output.mkdir(exist_ok=True)
         self.config = json.loads((self.root / "config.json").read_bytes())["text_config"]
@@ -81,6 +84,12 @@ class ExpertCoordinator:
                 for index in range(45)
             }
             self.prefix_graphs = self.suffix_graphs = self.middle_graphs = None
+            if indexer_graphs:
+                with torch.inference_mode():
+                    for layer in self.layers.values():
+                        if not layer.linear:
+                            layer.indexer.projection_graph = IndexerProjectionGraph(layer.indexer)
+                            layer.indexer.projection_graph_enabled = True
             if self.spec.get("cuda_decode_graphs", False):
                 with torch.inference_mode():
                     dsa_graphs = self.spec.get("direct_dma", {}).get("cuda_dsa_graphs", False)
@@ -259,6 +268,12 @@ class ExpertCoordinator:
     def close(self):
         if self.experts is not None:
             self.experts.close()
+        for layer in getattr(self, "layers", {}).values():
+            indexer = getattr(layer, "indexer", None)
+            if indexer is not None and indexer.projection_graph is not None:
+                indexer.projection_graph.close()
+                indexer.projection_graph = None
+                indexer.projection_graph_enabled = False
         for name in ("prefix_graphs", "middle_graphs", "suffix_graphs"):
             graph = getattr(self, name, None)
             if graph is not None:
