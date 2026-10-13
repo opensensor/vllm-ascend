@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
+import hashlib
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -66,3 +68,38 @@ def test_larger_chunks_compare_final_prefill_and_every_decode_logit(tmp_path, ch
     assert len(report["traces"][0]) == 64 + 63
     assert len(report["traces"][1]) == 2048 // chunk + 63
     assert engine.prefill_chunk_size == chunk and engine.fingerprints is None
+
+
+@pytest.mark.parametrize("change", [None, "logit", "token", "auth"])
+def test_authenticated_reference_detects_shared_worker_arithmetic_changes(tmp_path, change):
+    engine = SimpleNamespace(
+        layers={0: SimpleNamespace(vectorized_prefill_conv=True)},
+        prefill_chunk_size=32,
+        max_context=4096,
+        fingerprints=None,
+    )
+
+    def forward(tokens):
+        engine.fingerprints.append(dict(logits_sha256="same"))
+        return torch.tensor([0.0, 1.0])
+
+    engine.reset = lambda **kwargs: None
+    engine.prefill = engine.forward = forward
+    path = tmp_path / "reference.json"
+    reference = validate(engine, [1, 2], output=path)
+    if change == "logit":
+        reference["traces"][1][0]["logits_sha256"] = "changed"
+    if change == "token":
+        reference["teacher_forced_tokens"][0] = 0
+    path.write_text(json.dumps(reference))
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    if change == "auth":
+        digest = "wrong"
+    arguments = dict(reference_path=path, reference_sha256=digest)
+    if change is None:
+        assert validate(engine, [1, 2], **arguments)["reference_bitwise_equal"]
+    else:
+        error = ValueError if change == "auth" else AssertionError
+        with pytest.raises(error):
+            validate(engine, [1, 2], **arguments)
+    assert engine.fingerprints is None and engine.layers[0].vectorized_prefill_conv

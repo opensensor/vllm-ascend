@@ -279,11 +279,18 @@ def main():
             tokenizer.encode("Inspect this module and explain its control flow. "),
             output=engine.output / "dsa-graph-parity.json",
         )
-    if specification.get("cuda_prefill_conv", False) or specification.get("prefill_chunk_size", MAX_CHUNK) != MAX_CHUNK:
+    npu_prefill_graphs = specification.get("direct_dma", {}).get("npu_prefill_graphs", False)
+    if (
+        specification.get("cuda_prefill_conv", False)
+        or specification.get("prefill_chunk_size", MAX_CHUNK) != MAX_CHUNK
+        or npu_prefill_graphs
+    ):
         validate_prefill(
             engine,
             tokenizer.encode("Inspect this module and explain its control flow. "),
             output=engine.output / "prefill-parity.json",
+            reference_path=Path(specification["prefill_reference"]) if npu_prefill_graphs else None,
+            reference_sha256=specification.get("prefill_reference_sha256") if npu_prefill_graphs else None,
         )
     generation = Generation(engine, tokenizer)
     # Complete a real-weight request before exposing readiness.

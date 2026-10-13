@@ -6,6 +6,11 @@ Ascend DMA engine and NVIDIA DMA-BUF export. Its first API is blocking.
 GLM uses it through the [worker-owned integration](../GLM_DIRECT_DMA.md).
 The asynchronous host-staged backend below remains available independently.
 
+The [DMA-driven handoff prototype](DEVICE_CONTRACT.md) separately qualifies
+prequeued CUDA consumers released by direct-DMA completion words. It includes
+independent slots and an invocation codec; Ascend dispatch and DMA submission
+remain host-driven.
+
 The first backend moves bytes between dedicated CUDA allocations and Ascend
 device allocations using native SDK streams and completion events. Each
 Ascend worker imports GPU buffers through **CUDA IPC**. Two bounded slots
