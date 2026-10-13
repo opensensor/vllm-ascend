@@ -6,3 +6,4 @@ This section provides an overview of the features implemented in vLLM Ascend. De
 - [Persistent Incremental Csrc Build Cache](persistent_csrc_build_cache.md) — Fine-grained native build reuse, correctness identity, concurrency, and CI integration.
 - [GLM 5.3 Flash Performance and Context Plan for Four Ascend 310P Chips](glm53_flash_310p_performance_prd.md) — Measured baseline, acceptance targets, optimization sequence, and context qualification.
 - [GLM CUDA/Ascend Sidecard Research](glm_sidecard_research.md) — Prior design, hardware inventory, resident expert placement, and integration gates.
+- [GLM Sidecard Execution and Prefill Performance PRD](glm_sidecard_execution_performance_prd.md) — Current measurements, kernel and packing priorities, prefill overlap, and release gates for one RTX plus one Ascend Duo.

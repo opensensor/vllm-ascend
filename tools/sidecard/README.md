@@ -9,6 +9,10 @@ Atlas 300I Duo card, exposing two Ascend 310P3 chips. The product goal is useful
 for models larger than NVIDIA VRAM, improving on RTX plus CPU/weight offload.
 Keep expert weights resident where they execute and exchange activations.
 
+The [execution and prefill performance PRD](../../docs/source/developer_guide/Design_Documents/glm_sidecard_execution_performance_prd.md)
+sets the next kernel, packing, and overlap priorities, with matched serving
+targets and correctness/context gates for the complete Ascend block experiment.
+
 **Current implementation: CUDA backbone with Ascend cold experts.** CUDA
 owns all 45 backbone layers and caches. It retains complete expert banks
 outside layers 18–32 and 22 static hot experts per middle layer. One Atlas
