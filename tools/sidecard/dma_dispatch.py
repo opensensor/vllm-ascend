@@ -33,7 +33,7 @@ from .dma_protocol import (
     validate_identity,
 )
 from .hot_decode_graph import HotDecodeGraphs
-from .layer_weights import NPU_LAYERS, TOP_K, WIDTH, prefill_chunk_size
+from .layer_weights import NPU_LAYERS, TOP_K, WIDTH, expert_batch_size
 from .pcie.peer import Driver
 from .pcie.runtime import Runtime
 
@@ -45,7 +45,7 @@ CLOSE_TIMEOUT = 15
 class DmaDispatch:
     def __init__(self, config, cuda, torch, *, wait=True):
         self.spec = json.loads(Path(config).read_bytes())
-        self.max_chunk = prefill_chunk_size(self.spec)
+        self.max_chunk = expert_batch_size(self.spec)
         self.hot = load(self.spec)
         self.cuda, self.torch = cuda, torch
         self.lookups = {
@@ -210,17 +210,45 @@ class DmaDispatch:
     def with_shared(self, layer, x, ids, weights):
         return self.compute(layer.index, x, ids, weights, lambda: layer.dense_mlp(x, "mlp.shared_experts"))
 
-    def compute(self, layer, x, ids, weights, shared_call=None):
+    def batch_with_shared(self, layer, prepared):
+        """Combine only cold rows; CUDA hot/shared calls keep their original shapes."""
+        if layer.index not in NPU_LAYERS or not prepared:
+            raise ValueError("cold batching requires prepared middle-layer chunks")
+        t = self.torch
+        sizes = [value[0].shape[0] for value in prepared]
+        if any(size < 1 or size > self.cuda.max_chunk for size in sizes) or sum(sizes) > self.max_chunk:
+            raise ValueError("cold batching exceeds CUDA chunk or DMA slot capacity")
+        x = t.cat([value[0] for value in prepared])
+        ids = t.cat([value[4] for value in prepared])
+        weights = t.cat([value[5] for value in prepared])
+
+        def hot_call(hot_ids, hot_weights):
+            return t.cat(
+                [
+                    self.cuda(layer.index, value[0], local_ids, local_weights)
+                    for value, local_ids, local_weights in zip(
+                        prepared, hot_ids.split(sizes), hot_weights.split(sizes), strict=True
+                    )
+                ]
+            )
+
+        def shared_call():
+            return t.cat([layer.dense_mlp(value[0], "mlp.shared_experts") for value in prepared])
+
+        routed, shared = self.compute(layer.index, x, ids, weights, shared_call, hot_call=hot_call)
+        return zip(routed.split(sizes), shared.split(sizes), strict=True)
+
+    def compute(self, layer, x, ids, weights, shared_call=None, *, hot_call=None):
         with self.lock:
             if self.closed or self.failed:
                 raise RuntimeError("direct expert transport is closed or failed")
             try:
-                return self._compute(layer, x, ids, weights, shared_call)
+                return self._compute(layer, x, ids, weights, shared_call, hot_call=hot_call)
             except BaseException:
                 self.failed = True
                 raise
 
-    def _compute(self, layer, x, ids, weights, shared_call):
+    def _compute(self, layer, x, ids, weights, shared_call, *, hot_call=None):
         t, rows = self.torch, x.shape[0]
         if layer not in NPU_LAYERS:
             return self.cuda(layer, x, ids, weights), shared_call() if shared_call else None
@@ -266,7 +294,7 @@ class DmaDispatch:
         if self.hot_graphs is not None and rows == 1 and shared_call is not None:
             hot, shared = self.hot_graphs.compute(layer, x, hot_ids, hot_weights)
         else:
-            hot = self.cuda(layer, x, hot_ids, hot_weights)
+            hot = hot_call(hot_ids, hot_weights) if hot_call is not None else self.cuda(layer, x, hot_ids, hot_weights)
             shared = shared_call() if shared_call is not None else None
         if completion is not None:
             # Prequeue the exact rank-ordered consumers before receiving host

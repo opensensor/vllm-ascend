@@ -362,6 +362,7 @@ def main():
     if (
         specification.get("cuda_prefill_conv", False)
         or specification.get("prefill_chunk_size", MAX_CHUNK) != MAX_CHUNK
+        or specification.get("prefill_window_size", MAX_CHUNK) != MAX_CHUNK
         or requires_prefill_reference
     ):
         validate_prefill(

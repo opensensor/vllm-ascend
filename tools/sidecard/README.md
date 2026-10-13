@@ -27,9 +27,34 @@ That host-staged backend remains standalone.
 The [direct DMA backend](pcie/DIRECT_DMA.md) also passes repeated GPU/HBM
 hardware transfers, using an Ascend-initiated DMA-BUF kernel bridge.
 The expert runtime integrates the direct backend through worker-owned CUDA IPC slots.
-Requests serialize, prompt chunks are bounded to 32 rows, and all attention,
+Requests serialize, CUDA prompt chunks are bounded to 32 rows, and all attention,
 recurrent, KV, indexer, and mHC state stays on CUDA. The implementation has
 no HCCL dependency and does not move weights during inference.
+
+The optional `prefill_window_size: 64` groups two CUDA chunks by layer and
+combines only their cold expert rows into one Ascend call per active chip.
+CUDA attention, routing, hot experts, and shared MLP retain 32-row arithmetic;
+decode retains its existing graphs. The default window equals the configured
+chunk size. Cold batching requires 32-row chunks and direct DMA, with private
+slots, metadata validation, and completion scratch sized for the cold batch.
+The full-vocabulary prefill gate compares every original CUDA chunk boundary
+and 64 decode steps before exposing the endpoint. See the
+[cold compute comparison](../../artifacts/sidecard-cold-prefill-20261013/README.md)
+for matched full Code prompt measurements and the resulting design.
+
+To reproduce with a private full Code request JSON, run the loaded-runtime
+benchmark in the hardware environment after closing the serving coordinator:
+
+```bash
+python -m tools.sidecard.cold_prefill_benchmark \
+  --config /absolute/path/to/runtime.json \
+  --chat-request /private/path/to/full-code-request.json
+```
+
+It resets all model state for each path and bypasses prefix caching and the API
+queue. It records isolated prefill compute time and complete-vocabulary parity
+for 2K, 8K, and the unchanged full request; it does not execute generated tools.
+The caller's normal serving lifecycle remains responsible for hardware ownership.
 
 The [cold-expert study](../../artifacts/sidecard-cold-expert-study-20261012/README.md)
 contains the stage profiling and component prototype that motivated this

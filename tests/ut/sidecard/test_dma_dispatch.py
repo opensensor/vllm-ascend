@@ -291,6 +291,29 @@ def test_larger_prefill_batches_share_slots_and_keep_both_rank_results(rows):
     assert events[-1] == ("write_visibility", None)
 
 
+@pytest.mark.parametrize("tail", [1, 7, 32])
+def test_cold_batch_uses_union_admission_and_keeps_each_cuda_chunk(tail):
+    actor, events = dispatcher()
+    actor.max_chunk = 64
+    actor.cuda.max_chunk = 32
+    actor.torch.cat = torch.cat
+    parts = []
+    # First chunk visits only rank 0; the second visits only rank 1.
+    for rows, start, amplitude in ((32, 2, 0.5), (tail, 145, 3.0)):
+        x = torch.full((rows, 4096), amplitude).half()
+        ids = torch.arange(start, start + 8).expand(rows, -1)
+        weights = torch.ones(rows, 8)
+        parts.append((x, None, None, None, ids, weights))
+    layer = SimpleNamespace(index=18, dense_mlp=lambda x, name: x.float() * 2)
+    outputs = list(actor.batch_with_shared(layer, parts))
+    for value, (routed, shared) in zip(parts, outputs, strict=True):
+        torch.testing.assert_close(routed, value[0].float() * (value[4] + 1).sum(-1, keepdim=True))
+        assert torch.equal(shared, value[0].float() * 2)
+    assert actor.sequences == [1, 1]
+    assert events.count(("cuda_hot", None)) == 2
+    assert [COMMAND.unpack(peer.tag)[2] for peer in actor.connections] == [32 + tail] * 2
+
+
 @pytest.mark.parametrize("rows,shared", [(1, True), (4, True), (1, False)])
 def test_hot_capture_runs_after_admission_and_prefill_keeps_eager_math(rows, shared):
     actor, events = dispatcher()

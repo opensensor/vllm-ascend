@@ -103,3 +103,36 @@ def test_authenticated_reference_detects_shared_worker_arithmetic_changes(tmp_pa
         with pytest.raises(error):
             validate(engine, [1, 2], **arguments)
     assert engine.fingerprints is None and engine.layers[0].vectorized_prefill_conv
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_cold_window_gate_disables_batching_for_baseline_and_restores_it(tmp_path, fail):
+    engine = SimpleNamespace(
+        layers={0: SimpleNamespace(vectorized_prefill_conv=True)},
+        prefill_chunk_size=32,
+        prefill_window_size=64,
+        max_context=4096,
+        fingerprints=None,
+    )
+    seen = []
+
+    def forward(tokens):
+        changed = fail and engine.prefill_window_size == 64
+        engine.fingerprints.append(dict(logits_sha256="changed" if changed else "same"))
+        return torch.tensor([0.0, 1.0 + int(changed)])
+
+    def prefill(tokens):
+        seen.append(engine.prefill_window_size)
+        return forward(tokens)
+
+    engine.reset = lambda **kwargs: None
+    engine.prefill, engine.forward = prefill, forward
+    path = tmp_path / "gate.json"
+    if fail:
+        with pytest.raises(AssertionError, match="full-vocabulary"):
+            validate(engine, [1, 2], output=path)
+    else:
+        assert validate(engine, [1, 2], output=path)["candidate_window_rows"] == 64
+    assert seen == [32, 64]
+    assert engine.prefill_window_size == 64
+    assert engine.fingerprints is None and engine.layers[0].vectorized_prefill_conv

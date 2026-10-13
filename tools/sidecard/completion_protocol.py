@@ -6,7 +6,7 @@ import os
 import socket
 
 from .dma_protocol import CAPACITY, OUTPUT_ROW_BYTES
-from .layer_weights import prefill_chunk_size
+from .layer_weights import expert_batch_size
 from .pcie.mailbox import RECORD, Invocation
 
 RESULT_OFFSET = 8 + RECORD.size
@@ -20,7 +20,7 @@ def enabled(spec):
     value = spec.get("direct_dma", {}).get("cuda_completion_contract", False)
     if type(value) is not bool:
         raise ValueError("CUDA completion contract selection must be boolean")
-    if value and prefill_chunk_size(spec) * OUTPUT_ROW_BYTES + RESULT_OFFSET > CAPACITY:
+    if value and expert_batch_size(spec) * OUTPUT_ROW_BYTES + RESULT_OFFSET > CAPACITY:
         raise ValueError("completion header and prefill results exceed their dedicated allocation")
     return value
 

@@ -11,7 +11,7 @@ from .cold_dispatch import create_dispatch
 from .cold_placement import cuda_keys, load
 from .layer_decode_graph import DecodeGraphs
 from .layer_math import TextLayer, rms_norm, validate_config
-from .layer_weights import CudaExperts, load_dense, prefill_chunk_size
+from .layer_weights import NPU_LAYERS, CudaExperts, load_dense, prefill_chunk_size, prefill_window_size
 
 ARCHITECTURE = "cuda-backbone-ascend-experts"
 
@@ -29,6 +29,7 @@ class ExpertCoordinator:
         self.config = json.loads((self.root / "config.json").read_bytes())["text_config"]
         self.max_context = self.spec["max_context"]
         self.prefill_chunk_size = prefill_chunk_size(self.spec)
+        self.prefill_window_size = prefill_window_size(self.spec)
         validate_config(self.config, self.max_context)
         self.identity = self.spec["checkpoint_sha256"]
         self.failed = self.stopping = False
@@ -172,14 +173,85 @@ class ExpertCoordinator:
             raise
 
     def prefill(self, tokens, *, overlap=True, cancelled=None):
-        # Dependencies between decoder layers remain serial. Cold work overlaps
-        # hot experts/shared MLP within each layer; no separate backbone stage.
+        window = getattr(self, "prefill_window_size", self.prefill_chunk_size)
+        if window > self.prefill_chunk_size:
+            result = None
+            for offset in range(0, len(tokens), window):
+                if cancelled is not None and cancelled.is_set():
+                    raise InterruptedError("generation cancelled between complete model windows")
+                result = self.prefill_window(tokens[offset : offset + window])
+            return result
         result = None
         for offset in range(0, len(tokens), self.prefill_chunk_size):
             if cancelled is not None and cancelled.is_set():
                 raise InterruptedError("generation cancelled between complete model chunks")
             result = self.forward(tokens[offset : offset + self.prefill_chunk_size])
         return result
+
+    def prefill_window(self, tokens):
+        """Advance small bounded windows by layer, batching only Ascend experts.
+
+        Every CUDA projection, attention cache update and route calculation
+        keeps the original chunk shape/order. Cold MLPs have no recurrent state.
+        No decode graph or scratch-backed prepared tensor survives another replay.
+        """
+        if (
+            self.stopping
+            or not 1 <= len(tokens) <= self.prefill_window_size
+            or self.position + len(tokens) > self.max_context
+        ):
+            raise ValueError("token window exceeds expert runtime admission")
+        t = self.torch
+        try:
+            with t.inference_mode():
+                begin = time.perf_counter()
+                chunks = [
+                    tokens[offset : offset + self.prefill_chunk_size]
+                    for offset in range(0, len(tokens), self.prefill_chunk_size)
+                ]
+                states = [
+                    (
+                        t.nn.functional.embedding(t.tensor(chunk, device="cuda"), self.globals["embedding"]),
+                        None,
+                        None,
+                        None,
+                    )
+                    for chunk in chunks
+                ]
+                for index, layer in self.layers.items():
+                    if index in NPU_LAYERS and len(states) > 1:
+                        prepared = []
+                        for state in states:
+                            value = layer.prepare_forward(*state)
+                            prepared.append((*value, *layer.route(value[0])))
+                        outputs = self.experts.batch_with_shared(layer, prepared)
+                        states = [
+                            layer.finish_experts(*value[:4], routed, shared)
+                            for value, (routed, shared) in zip(prepared, outputs, strict=True)
+                        ]
+                    else:
+                        states = [layer.forward(*state) for state in states]
+                logits = None
+                for chunk, state in zip(chunks, states, strict=True):
+                    normalized = rms_norm(state[0][-1:], self.globals["norm"], self.config["rms_norm_eps"], t)
+                    logits = t.nn.functional.linear(normalized, self.globals["head"]).float()
+                    if not bool(t.isfinite(logits).all().cpu()):
+                        raise FloatingPointError("expert model produced nonfinite logits")
+                    if self.fingerprints is not None:
+                        self.fingerprints.append(
+                            dict(
+                                position=self.position,
+                                logits_sha256=hashlib.sha256(logits.cpu().numpy().tobytes()).hexdigest(),
+                            )
+                        )
+                    self.position += len(chunk)
+                    self.sequence += 1
+                t.cuda.synchronize()
+                self.metrics["cuda_backbone_ms"].append((time.perf_counter() - begin) * 1000)
+                return logits[0]
+        except BaseException:
+            self.failed = True
+            raise
 
     def close(self):
         if self.experts is not None:

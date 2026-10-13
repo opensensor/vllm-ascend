@@ -348,7 +348,6 @@ class TextLayer:
         return ids, route_weights
 
     def finish_forward(self, x, residual, post, comb, ids=None, route_weights=None):
-        t, c = self.torch, self.config
         if self.index < 3:
             x = self.dense_mlp(x, "mlp")
         else:
@@ -359,10 +358,17 @@ class TextLayer:
             else:
                 routed = self.experts(self.index, x, ids, route_weights)
                 shared = self.dense_mlp(x, "mlp.shared_experts")
-            combined = routed.float() + shared.float()
-            if self.tp_rank is not None:
-                t.distributed.all_reduce(combined)
-            x = combined.to(x.dtype)
+            return self.finish_experts(x, residual, post, comb, routed, shared)
+        return self.finish_mlp(x, residual, post, comb)
+
+    def finish_experts(self, x, residual, post, comb, routed, shared):
+        combined = routed.float() + shared.float()
+        if self.tp_rank is not None:
+            self.torch.distributed.all_reduce(combined)
+        return self.finish_mlp(combined.to(x.dtype), residual, post, comb)
+
+    def finish_mlp(self, x, residual, post, comb):
+        t, c = self.torch, self.config
         if self.index == c["num_hidden_layers"] - 1:
             # Normalize the contracted residual in FP32 before converting the
             # bounded normalized result to the head dtype. FP16 here would

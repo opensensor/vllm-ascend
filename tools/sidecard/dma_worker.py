@@ -45,7 +45,7 @@ from .dma_protocol import (
 )
 from .expert_decode_graph import ExpertDecodeGraphs, prefill_graph_rows
 from .expert_prefill_gate import validate as validate_prefill_graphs
-from .layer_weights import MAX_CHUNK, NPU_LAYERS, TOP_K, WIDTH, NpuExperts, prefill_chunk_size
+from .layer_weights import MAX_CHUNK, NPU_LAYERS, TOP_K, WIDTH, NpuExperts, expert_batch_size
 from .pcie.mailbox import RECORD, Invocation
 from .pcie.peer import ASCEND_TO_CUDA, CUDA_TO_ASCEND, Driver, KernelPeer
 from .pcie.runtime import Runtime
@@ -116,7 +116,7 @@ class TorchSourceEvent:
 class WorkerSlots:
     def __init__(self, spec, rank, torch):
         self.torch, self.rank = torch, rank
-        self.max_chunk = prefill_chunk_size(spec)
+        self.max_chunk = expert_batch_size(spec)
         self.cuda = Runtime("cuda", spec["cuda_backend"]["cuda_runtime"])
         library = spec.get("direct_dma", {}).get(
             "ascend_library", "/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/libascendcl.so"

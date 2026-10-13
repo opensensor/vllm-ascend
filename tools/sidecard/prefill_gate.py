@@ -14,6 +14,7 @@ PARITY_OUTPUT_TOKENS = 64
 def validate(engine, seed, *, output=None, reference_path=None, reference_sha256=None):
     """Restore runtime choices even when a real-weight numerical gate fails."""
     original_chunk = getattr(engine, "prefill_chunk_size", MAX_CHUNK)
+    original_window = getattr(engine, "prefill_window_size", original_chunk)
     original_flags = {index: layer.vectorized_prefill_conv for index, layer in engine.layers.items()}
     original_fingerprints = engine.fingerprints
     length = min(PARITY_PROMPT_TOKENS, engine.max_context - PARITY_OUTPUT_TOKENS)
@@ -24,6 +25,8 @@ def validate(engine, seed, *, output=None, reference_path=None, reference_sha256
     try:
         for optimized in (False, True):
             engine.prefill_chunk_size = original_chunk if optimized else MAX_CHUNK
+            if hasattr(engine, "prefill_window_size"):
+                engine.prefill_window_size = original_window if optimized else MAX_CHUNK
             for index, layer in engine.layers.items():
                 layer.vectorized_prefill_conv = original_flags[index] if optimized else False
             engine.reset(context_limit=length + PARITY_OUTPUT_TOKENS)
@@ -61,6 +64,7 @@ def validate(engine, seed, *, output=None, reference_path=None, reference_sha256
             max_abs_logit_error=max_error,
             baseline_chunk_rows=MAX_CHUNK,
             candidate_chunk_rows=original_chunk,
+            candidate_window_rows=original_window,
             all_prefill_boundaries_compared=all_boundaries,
             vectorized_convolution=any(original_flags.values()),
             prompt_tokens=length,
@@ -76,6 +80,8 @@ def validate(engine, seed, *, output=None, reference_path=None, reference_sha256
         return report
     finally:
         engine.prefill_chunk_size = original_chunk
+        if hasattr(engine, "prefill_window_size"):
+            engine.prefill_window_size = original_window
         engine.fingerprints = original_fingerprints
         for index, layer in engine.layers.items():
             layer.vectorized_prefill_conv = original_flags[index]

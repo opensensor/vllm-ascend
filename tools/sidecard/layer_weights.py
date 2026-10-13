@@ -14,6 +14,7 @@ from .resident import NativeResidentPlan
 MAX_CHUNK = 32
 PREFILL_CHUNK_CHOICES = (32, 64, 128)
 MAX_PREFILL_CHUNK = max(PREFILL_CHUNK_CHOICES)
+COLD_PREFILL_WINDOW_ROWS = 64
 TOP_K = 8
 WIDTH = 4096
 GPU_LAYERS = tuple(range(18)) + tuple(range(33, 45))
@@ -27,6 +28,21 @@ def prefill_chunk_size(specification):
     if value > MAX_CHUNK and specification.get("expert_transport") != "direct-dma":
         raise ValueError("larger prefill chunks require direct DMA")
     return value
+
+
+def prefill_window_size(specification):
+    """Batch cold work while retaining the qualified CUDA chunk geometry."""
+    chunk = prefill_chunk_size(specification)
+    value = specification.get("prefill_window_size", chunk)
+    if type(value) is not int or value not in (chunk, COLD_PREFILL_WINDOW_ROWS):
+        raise ValueError("prefill window must equal its chunk size or 64 rows")
+    if value != chunk and (chunk != MAX_CHUNK or specification.get("expert_transport") != "direct-dma"):
+        raise ValueError("cold prefill batching requires 32-row CUDA chunks and direct DMA")
+    return value
+
+
+def expert_batch_size(specification):
+    return max(prefill_chunk_size(specification), prefill_window_size(specification))
 
 
 def private_tensor(handle, descriptor, payload_offset, torch):
