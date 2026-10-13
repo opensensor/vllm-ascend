@@ -31,12 +31,15 @@ Requests serialize, CUDA prompt chunks are bounded to 32 rows, and all attention
 recurrent, KV, indexer, and mHC state stays on CUDA. The implementation has
 no HCCL dependency and does not move weights during inference.
 
-The optional `prefill_window_size: 64` groups two CUDA chunks by layer and
-combines only their cold expert rows into one Ascend call per active chip.
+The optional `prefill_window_size: 64` or `128` groups two or four CUDA chunks
+by layer and combines only their cold expert rows into one Ascend call per chip.
 CUDA attention, routing, hot experts, and shared MLP retain 32-row arithmetic;
 decode retains its existing graphs. The default window equals the configured
 chunk size. Cold batching requires 32-row chunks and direct DMA, with private
 slots, metadata validation, and completion scratch sized for the cold batch.
+The 128-row window requires separate input-record completion control and a
+consumer binary advertising 128-row capacity; its FP32 result fills the existing
+2 MiB slot exactly. See the [128-row results](../../artifacts/sidecard-prefill128-20261013/README.md).
 The full-vocabulary prefill gate compares every original CUDA chunk boundary
 and 64 decode steps before exposing the endpoint. See the
 [cold compute comparison](../../artifacts/sidecard-cold-prefill-20261013/README.md)
@@ -54,6 +57,9 @@ python -m tools.sidecard.cold_prefill_benchmark \
 It resets all model state for each path and bypasses prefix caching and the API
 queue. It records isolated prefill compute time and complete-vocabulary parity
 for 2K, 8K, and the unchanged full request; it does not execute generated tools.
+Use `--windows 64 128` to compare the two cold batching configurations on a
+runtime provisioned for 128 rows. Without this option it compares the original
+32-row path against the configured cold window.
 The caller's normal serving lifecycle remains responsible for hardware ownership.
 
 The [cold-expert study](../../artifacts/sidecard-cold-expert-study-20261012/README.md)

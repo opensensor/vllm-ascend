@@ -38,12 +38,14 @@ from .dma_protocol import (
     receive_control,
     send_control,
 )
+from .layer_weights import expert_batch_size
 from .pcie.mailbox import RECORD, Invocation
 from .pcie.peer import ASCEND_TO_CUDA, CUDA_TO_ASCEND, Driver, KernelPeer
 from .pcie.runtime import Runtime
 
 GUARD_POISON = 0xD3
 PROBE_ROWS = (1, 4, 17, 32)
+LARGE_PROBE_ROWS = (64, 96, 128)
 WIDTH = 4096
 
 
@@ -51,6 +53,11 @@ def fixture(rank, rows):
     # Cancellation and small additions make rank addition order observable.
     values = (-1e20, -1e20, 1e20, 0.125) if rank == 0 else (1.0, 1e20, -1e20, -0.0625)
     return struct.pack("<4f", *values) * (rows * WIDTH // len(values))
+
+
+def probe_rows(spec):
+    limit = expert_batch_size(spec)
+    return PROBE_ROWS + tuple(rows for rows in LARGE_PROBE_ROWS if rows <= limit)
 
 
 class HbmSequence:
@@ -90,6 +97,7 @@ def producer(args, spec):
     ctypes.memset(guard.pointer, GUARD_POISON, CAPACITY)
     peer = KernelPeer(args.rank + 2, persistent_gpu_mappings=True)
     use_input = input_record(spec)
+    admitted_rows = probe_rows(spec)
     notification = None
     incoming = None
     with socket.socket(socket.AF_UNIX) as connection:
@@ -128,7 +136,7 @@ def producer(args, spec):
                     )
                     break
                 sequence, layer, rows = COMMAND.unpack(tag)
-                if sequence != expected or layer != 18 or rows not in PROBE_ROWS:
+                if sequence != expected or layer != 18 or rows not in admitted_rows:
                     raise ValueError("foreign result probe command differs")
                 if use_input:
                     ready.admitted = True
@@ -196,16 +204,17 @@ def coordinator(args, spec):
 
     torch.cuda.set_device(0)
     nonce = secrets.token_hex(32)
+    admitted_rows = probe_rows(spec)
     root = args.output.parent
     root.mkdir(exist_ok=True)
-    results = CompletionResults(spec, nonce, Driver(), torch, max(PROBE_ROWS))
+    results = CompletionResults(spec, nonce, Driver(), torch, max(admitted_rows))
     inputs, input_exports = [], []
     if results.input_record:
         for rank in range(2):
             allocation = results.runtime.allocate(CAPACITY)
             inputs.append((allocation, torch.as_tensor(CudaByteView(allocation), device="cuda:0")))
             input_exports.append(Driver().export(allocation))
-    hot_cpu = torch.tensor((1e20, 1.0, -1e20, 0.03125)).repeat(max(PROBE_ROWS) * WIDTH // 4).reshape(-1, WIDTH)
+    hot_cpu = torch.tensor((1e20, 1.0, -1e20, 0.03125)).repeat(max(admitted_rows) * WIDTH // 4).reshape(-1, WIDTH)
     hot = hot_cpu.cuda()
     torch.cuda.synchronize()
     peers, processes, listeners, logs = [], [], [], []
@@ -264,8 +273,8 @@ def coordinator(args, spec):
                 send_fd(connection, input_exports[rank].fd)
             if receive_control(connection) != dict(ready=True, rank=rank):
                 raise ValueError("probe producer acknowledgement differs")
-        for sequence in range(12):
-            rows = PROBE_ROWS[sequence % len(PROBE_ROWS)]
+        for sequence in range(len(admitted_rows) * 3):
+            rows = admitted_rows[sequence % len(admitted_rows)]
             pending = [(rank, COMMAND.pack(sequence, 18, rows)) for rank in range(2)]
             if results.input_record:
                 for rank in range(2):

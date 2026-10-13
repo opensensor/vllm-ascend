@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 import ctypes
+import hashlib
 import os
 import socket
 import threading
@@ -9,7 +10,8 @@ import pytest
 import torch
 
 from tests.ut.sidecard.test_dma_dispatch import dispatcher
-from tools.sidecard.completion_probe import HbmSequence, fixture
+from tools.sidecard import completion_results
+from tools.sidecard.completion_probe import HbmSequence, fixture, probe_rows
 from tools.sidecard.completion_protocol import (
     RESULT_OFFSET,
     SEQUENCE_OFFSET,
@@ -21,7 +23,7 @@ from tools.sidecard.completion_protocol import (
     result_header,
     send_fd,
 )
-from tools.sidecard.completion_results import CompletionResults
+from tools.sidecard.completion_results import CompletionResults, validate_capacity
 from tools.sidecard.dma_protocol import COMMAND
 from tools.sidecard.pcie.cuda_context import CudaContextRuntime
 from tools.sidecard.pcie.mailbox import Invocation
@@ -106,6 +108,61 @@ def test_completion_packet_capacity_includes_header():
             dict(expert_transport="direct-dma", prefill_chunk_size=128, direct_dma=dict(cuda_completion_contract=True))
         )
     assert epoch("0" * 64) == 1
+
+
+def test_separate_control_admits_exact_2mib_results_but_packed_control_does_not():
+    spec = dict(
+        expert_transport="direct-dma",
+        prefill_window_size=128,
+        direct_dma=dict(cuda_completion_contract=True, completion_input_record=True),
+    )
+    assert enabled(spec) and input_record(spec)
+    spec["direct_dma"]["completion_input_record"] = False
+    with pytest.raises(ValueError, match="allocation"):
+        enabled(spec)
+
+
+@pytest.mark.parametrize("capacity", [0, 64, 128, 256])
+def test_native_binary_capacity_is_checked_before_future_waits(capacity):
+    query = lambda separate: capacity if separate else 64
+    native = SimpleNamespace(sidecard_glm_completion_max_rows=query)
+    if capacity == 128:
+        assert validate_capacity(native, 128, True) == 128
+    else:
+        with pytest.raises(ValueError, match="capacity"):
+            validate_capacity(native, 128, True)
+    assert validate_capacity(native, 64, False) == 64
+    assert validate_capacity(SimpleNamespace(), 64, True) == 64
+    with pytest.raises(ValueError, match="capacity"):
+        validate_capacity(SimpleNamespace(), 128, True)
+
+
+def test_transport_probe_covers_large_payload_boundaries_only_when_admitted():
+    assert probe_rows({}) == (1, 4, 17, 32)
+    assert probe_rows(dict(expert_transport="direct-dma", prefill_window_size=128)) == (1, 4, 17, 32, 64, 96, 128)
+
+
+def test_old_consumer_rejection_precedes_context_and_export_allocation(tmp_path, monkeypatch):
+    library = tmp_path / "old.so"
+    library.write_bytes(b"authenticated old 64-row binary")
+    spec = dict(
+        expert_transport="direct-dma",
+        prefill_window_size=128,
+        direct_dma=dict(
+            cuda_completion_contract=True,
+            completion_input_record=True,
+            completion_library=str(library),
+            completion_library_sha256=hashlib.sha256(library.read_bytes()).hexdigest(),
+        ),
+    )
+    monkeypatch.setattr(completion_results.ctypes, "CDLL", lambda name: SimpleNamespace())
+
+    def fail_allocation(*args):
+        raise AssertionError("context/export allocation preceded capacity admission")
+
+    monkeypatch.setattr(completion_results, "CudaContextRuntime", fail_allocation)
+    with pytest.raises(ValueError, match="capacity"):
+        completion_results.CompletionResults(spec, "1" * 64, None, None, 128)
 
 
 def test_serialized_context_runtime_allows_asgi_threads_only_in_the_same_context():

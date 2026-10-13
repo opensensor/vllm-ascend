@@ -17,10 +17,15 @@ INPUT_SEQUENCE_OFFSET = 16
 
 
 def enabled(spec):
-    value = spec.get("direct_dma", {}).get("cuda_completion_contract", False)
+    options = spec.get("direct_dma", {})
+    value = options.get("cuda_completion_contract", False)
     if type(value) is not bool:
         raise ValueError("CUDA completion contract selection must be boolean")
-    if value and expert_batch_size(spec) * OUTPUT_ROW_BYTES + RESULT_OFFSET > CAPACITY:
+    separate = options.get("completion_input_record", False)
+    if type(separate) is not bool:
+        raise ValueError("input-record completion selection must be boolean")
+    header_bytes = 0 if separate else RESULT_OFFSET
+    if value and expert_batch_size(spec) * OUTPUT_ROW_BYTES + header_bytes > CAPACITY:
         raise ValueError("completion header and prefill results exceed their dedicated allocation")
     return value
 

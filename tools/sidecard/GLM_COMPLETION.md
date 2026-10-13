@@ -42,6 +42,15 @@ The supplied native library must expose all three consumer/preparation entry
 points and the preload entry point. Startup authenticates its bytes and preloads
 kernels before any future-value wait can block CUDA initialization.
 
+The native capacity query `sidecard_glm_completion_max_rows(uint32_t separate)`
+returns 64 for packed results and 128 for separate result/control buffers.
+An older binary without this symbol remains limited to 64 rows. Startup checks
+the admitted cold batch against the authenticated binary's advertised capacity
+before allocating exports or submitting future waits. A 128-row cold window
+requires `completion_input_record: true`: its FP32 result uses all 2 MiB of the
+result slot, with the invocation header retained in the separate control slot.
+CUDA model chunks remain 32 rows.
+
 ## Input-record path
 
 1. CUDA generates a 64-byte invocation record after packing each input. It writes
@@ -68,6 +77,7 @@ With `completion_input_record` false, the first contract version packs a
 72-byte header before the FP32 result in HBM, then transfers that packet and its
 sequence. It supports the same fixed rank addition order but adds an HBM copy
 and host-to-HBM header upload. Retain separate evidence for the two versions.
+The packed path retains its 64-row limit.
 
 ## Lifetime and error handling
 

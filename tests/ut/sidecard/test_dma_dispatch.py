@@ -292,14 +292,17 @@ def test_larger_prefill_batches_share_slots_and_keep_both_rank_results(rows):
 
 
 @pytest.mark.parametrize("tail", [1, 7, 32])
-def test_cold_batch_uses_union_admission_and_keeps_each_cuda_chunk(tail):
+@pytest.mark.parametrize("chunks", [2, 4])
+def test_cold_batch_uses_union_admission_and_keeps_each_cuda_chunk(tail, chunks):
     actor, events = dispatcher()
-    actor.max_chunk = 64
+    actor.max_chunk = chunks * 32
     actor.cuda.max_chunk = 32
     actor.torch.cat = torch.cat
     parts = []
-    # First chunk visits only rank 0; the second visits only rank 1.
-    for rows, start, amplitude in ((32, 2, 0.5), (tail, 145, 3.0)):
+    # Alternating chunks visit different ranks, including a partial final chunk.
+    for index in range(chunks):
+        rows = tail if index == chunks - 1 else 32
+        start, amplitude = (2, 0.5) if index % 2 == 0 else (145, 3.0)
         x = torch.full((rows, 4096), amplitude).half()
         ids = torch.arange(start, start + 8).expand(rows, -1)
         weights = torch.ones(rows, 8)
@@ -310,8 +313,8 @@ def test_cold_batch_uses_union_admission_and_keeps_each_cuda_chunk(tail):
         torch.testing.assert_close(routed, value[0].float() * (value[4] + 1).sum(-1, keepdim=True))
         assert torch.equal(shared, value[0].float() * 2)
     assert actor.sequences == [1, 1]
-    assert events.count(("cuda_hot", None)) == 2
-    assert [COMMAND.unpack(peer.tag)[2] for peer in actor.connections] == [32 + tail] * 2
+    assert events.count(("cuda_hot", None)) == chunks
+    assert [COMMAND.unpack(peer.tag)[2] for peer in actor.connections] == [32 * (chunks - 1) + tail] * 2
 
 
 @pytest.mark.parametrize("rows,shared", [(1, True), (4, True), (1, False)])

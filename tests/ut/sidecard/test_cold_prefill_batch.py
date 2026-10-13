@@ -11,14 +11,14 @@ from tools.sidecard.expert_actor import ExpertCoordinator
 from tools.sidecard.layer_weights import expert_batch_size, prefill_window_size
 
 
-@pytest.mark.parametrize("window", [32, 64])
+@pytest.mark.parametrize("window", [32, 64, 128])
 def test_window_configuration_keeps_cuda_chunk_size(window):
     spec = dict(expert_transport="direct-dma", prefill_chunk_size=32, prefill_window_size=window)
     assert prefill_window_size(spec) == window
     assert expert_batch_size(spec) == window
 
 
-@pytest.mark.parametrize("window", [True, None, "64", 64.0, 0, 16, 128])
+@pytest.mark.parametrize("window", [True, None, "64", 64.0, 0, 16, 96, 256])
 def test_invalid_window_is_rejected(window):
     with pytest.raises(ValueError, match="window"):
         prefill_window_size(dict(expert_transport="direct-dma", prefill_window_size=window))
@@ -119,7 +119,7 @@ def make_engine():
     engine.stopping = engine.failed = False
     engine.max_context, engine.prefill_chunk_size, engine.prefill_window_size = 4096, 32, 64
     engine.config = {"rms_norm_eps": 1e-6}
-    engine.globals = dict(embedding=torch.arange(200).float().reshape(100, 2), norm=torch.ones(2), head=torch.eye(2))
+    engine.globals = dict(embedding=torch.arange(1024).float().reshape(512, 2), norm=torch.ones(2), head=torch.eye(2))
     engine.layers = {index: CausalLayer(index) for index in (0, 18, 19, 44)}
     engine.fingerprints = []
     engine.metrics = {"cuda_backbone_ms": []}
@@ -133,10 +133,12 @@ def make_engine():
     return engine, calls
 
 
-@pytest.mark.parametrize("length", [1, 32, 33, 64, 65, 99])
-def test_layer_major_windows_equal_serial_chunks_and_causal_states(length):
+@pytest.mark.parametrize("window", [64, 128])
+@pytest.mark.parametrize("length", [1, 32, 33, 64, 65, 99, 128, 129, 257])
+def test_layer_major_windows_equal_serial_chunks_and_causal_states(length, window):
     candidate, calls = make_engine()
     baseline, _ = make_engine()
+    candidate.prefill_window_size = window
     tokens = list(range(length))
     for offset in range(0, length, 32):
         expected = baseline.prefill_window(tokens[offset : offset + 32])
@@ -148,7 +150,7 @@ def test_layer_major_windows_equal_serial_chunks_and_causal_states(length):
     for index, layer in candidate.layers.items():
         assert torch.equal(layer.memory, baseline.layers[index].memory)
         assert layer.seen == baseline.layers[index].seen
-    assert all(sum(sizes) <= 64 for _, sizes in calls)
+    assert all(sum(sizes) <= window for _, sizes in calls)
 
 
 def test_failed_window_poisons_coordinator_and_cancellation_is_at_window_boundary():

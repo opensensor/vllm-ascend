@@ -9,14 +9,14 @@ from pathlib import Path
 
 from .expert_actor import ExpertCoordinator
 from .layer_server import request_tokens
-from .layer_weights import COLD_PREFILL_WINDOW_ROWS, MAX_CHUNK, prefill_window_size
+from .layer_weights import COLD_PREFILL_WINDOW_CHOICES, MAX_CHUNK, prefill_window_size
 from .prefill_benchmark import exact_prompt
 from .prefill_gate import validate
 
 OUTPUT_TOKENS = 64
 
 
-def run(engine, cases, *, output):
+def run(engine, cases, *, output, windows=None):
     """Measure compute, bypassing the API queue and every prefix-cache snapshot.
 
     The caller owns the loaded engine and its shutdown. Decode is teacher forced
@@ -24,8 +24,16 @@ def run(engine, cases, *, output):
     These timings are model compute measurements, not HTTP TTFT measurements.
     """
     original_window, original_fingerprints = engine.prefill_window_size, engine.fingerprints
-    if engine.prefill_chunk_size != MAX_CHUNK or original_window != COLD_PREFILL_WINDOW_ROWS:
-        raise ValueError("matched cold benchmark requires 32-row CUDA chunks and a 64-row cold window")
+    windows = tuple(windows) if windows is not None else (MAX_CHUNK, original_window)
+    if (
+        engine.prefill_chunk_size != MAX_CHUNK
+        or original_window not in COLD_PREFILL_WINDOW_CHOICES
+        or len(windows) < 2
+        or any(type(value) is not int or value not in (MAX_CHUNK, *COLD_PREFILL_WINDOW_CHOICES) for value in windows)
+        or len(set(windows)) != len(windows)
+        or max(windows) > original_window
+    ):
+        raise ValueError("matched cold benchmark requires distinct admitted cold windows and 32-row CUDA chunks")
     report = dict(passed=False, cached_prompt_tokens=0, measurements=[], decode_includes_parity_observer=True)
     try:
         engine.fingerprints = None
@@ -34,7 +42,7 @@ def run(engine, cases, *, output):
                 raise ValueError("benchmark prompt and output must fit model capacity")
             token_hash = hashlib.sha256(json.dumps(tokens, separators=(",", ":")).encode()).hexdigest()
             forced, baseline = [], []
-            for window in (MAX_CHUNK, COLD_PREFILL_WINDOW_ROWS):
+            for window in windows:
                 engine.prefill_window_size = window
                 engine.reset(context_limit=len(tokens) + OUTPUT_TOKENS)
                 started = time.perf_counter()
@@ -45,7 +53,7 @@ def run(engine, cases, *, output):
                 for step in range(OUTPUT_TOKENS):
                     observed = logits.cpu()
                     hashes.append(hashlib.sha256(observed.numpy().tobytes()).hexdigest())
-                    if window == MAX_CHUNK:
+                    if window == windows[0]:
                         baseline.append(observed)
                         forced.append(int(observed.argmax()))
                     else:
@@ -87,10 +95,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--chat-request", type=Path, required=True, help="Private captured full Code request JSON")
+    parser.add_argument("--windows", nargs="+", type=int, choices=(MAX_CHUNK, *COLD_PREFILL_WINDOW_CHOICES))
     args = parser.parse_args()
     spec = json.loads(args.config.read_bytes())
-    if prefill_window_size(spec) != COLD_PREFILL_WINDOW_ROWS:
-        raise ValueError("benchmark runtime must allocate a 64-row cold window")
+    if prefill_window_size(spec) not in COLD_PREFILL_WINDOW_CHOICES:
+        raise ValueError("benchmark runtime must allocate a supported cold window")
     # Load device libraries and tokenizer only in the process owning the runtime.
     from transformers import AutoTokenizer
 
@@ -110,6 +119,7 @@ def main():
             engine,
             [("2K", exact_prompt(seed, 2048)), ("8K", exact_prompt(seed, 8192)), ("full-code", full)],
             output=engine.output / "cold-benchmark.json",
+            windows=args.windows,
         )
     finally:
         engine.close()

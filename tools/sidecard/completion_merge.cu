@@ -6,7 +6,8 @@ constexpr unsigned int THREADS = 256;
 constexpr uint32_t WIDTH = 4096;
 constexpr uint32_t INPUT_ROW_BYTES = 8256;
 constexpr uint32_t OUTPUT_ROW_BYTES = WIDTH * sizeof(float);
-constexpr uint32_t MAX_ROWS = 64;
+constexpr uint32_t MAX_PACKED_ROWS = 64;
+constexpr uint32_t MAX_SEPARATE_ROWS = 128;
 constexpr uint32_t FIRST_COLD_LAYER = 18;
 constexpr uint32_t LAST_COLD_LAYER = 32;
 constexpr uint32_t RANKS = 2;
@@ -24,6 +25,11 @@ struct Invocation {
   uint64_t reserved;
 };
 static_assert(sizeof(Invocation) == 64);
+static_assert(MAX_SEPARATE_ROWS * OUTPUT_ROW_BYTES == 2 * 1024 * 1024);
+
+extern "C" uint32_t sidecard_glm_completion_max_rows(uint32_t separate) {
+  return separate ? MAX_SEPARATE_ROWS : MAX_PACKED_ROWS;
+}
 
 __global__ void merge_rank(const float* input, float* output, const uint64_t* packet, uint64_t epoch, uint64_t sequence,
                            uint32_t layer, uint32_t rows, uint32_t rank, const float* separate) {
@@ -69,7 +75,7 @@ extern "C" int sidecard_glm_merge_rank(const float* input, float* output, const 
                                        uint64_t sequence, uint32_t layer, uint32_t rows, uint32_t rank,
                                        cudaStream_t stream) {
   if (!input || !output || !packet || !epoch || !sequence || layer < FIRST_COLD_LAYER || layer > LAST_COLD_LAYER ||
-      !rows || rows > MAX_ROWS || rank >= RANKS)
+      !rows || rows > MAX_PACKED_ROWS || rank >= RANKS)
     return cudaErrorInvalidValue;
   merge_rank<<<(rows * WIDTH + THREADS - 1) / THREADS, THREADS, 0, stream>>>(input, output, packet, epoch, sequence,
                                                                              layer, rows, rank, nullptr);
@@ -80,7 +86,7 @@ extern "C" int sidecard_glm_merge_separate(const float* input, float* output, co
                                            const float* partial, uint64_t epoch, uint64_t sequence, uint32_t layer,
                                            uint32_t rows, uint32_t rank, cudaStream_t stream) {
   if (!input || !output || !control || !partial || !epoch || !sequence || layer < FIRST_COLD_LAYER ||
-      layer > LAST_COLD_LAYER || !rows || rows > MAX_ROWS || rank >= RANKS)
+      layer > LAST_COLD_LAYER || !rows || rows > MAX_SEPARATE_ROWS || rank >= RANKS)
     return cudaErrorInvalidValue;
   merge_rank<<<(rows * WIDTH + THREADS - 1) / THREADS, THREADS, 0, stream>>>(input, output, control, epoch, sequence,
                                                                              layer, rows, rank, partial);
@@ -90,7 +96,7 @@ extern "C" int sidecard_glm_merge_separate(const float* input, float* output, co
 extern "C" int sidecard_glm_prepare_control(uint64_t* control, uint8_t* input, uint64_t epoch, uint64_t sequence,
                                             uint32_t layer, uint32_t rows, uint32_t rank, cudaStream_t stream) {
   if (!control || !input || !epoch || !sequence || layer < FIRST_COLD_LAYER || layer > LAST_COLD_LAYER || !rows ||
-      rows > MAX_ROWS || rank >= RANKS)
+      rows > MAX_SEPARATE_ROWS || rank >= RANKS)
     return cudaErrorInvalidValue;
   prepare_control<<<1, 1, 0, stream>>>(control, input, epoch, sequence, layer, rows, rank);
   return cudaGetLastError();
