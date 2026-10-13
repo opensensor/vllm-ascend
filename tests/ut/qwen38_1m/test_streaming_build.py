@@ -4,6 +4,7 @@
 import ast
 import builtins
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -454,3 +455,39 @@ def test_loader_injection_removed_without_mutating_parent_environment(monkeypatc
     assert "LD_PRELOAD" not in environment and "LD_AUDIT" not in environment
     assert environment["LD_LIBRARY_PATH"] == "/explicit/sdk/lib"
     assert builder.os.environ["LD_PRELOAD"] == "unsafe.so"
+
+
+def test_next_profile_freezes_new_contract_and_only_projection_resource(source_root, tmp_path, mock_compile):
+    for relative in builder.NEXT_REQUIRED:
+        target = source_root / relative
+        target.parent.mkdir(exist_ok=True, parents=True)
+        shutil.copyfile(ROOT / relative, target)
+    directory = tmp_path / "next"
+    builder.prepare_bundle(
+        directory, source_root, 6, REFERENCE, {"projection_variant": "m32n160_v2", "layers": {"native_wy": False}}
+    )
+    prepared = builder.verify_bundle(directory)
+    assert (
+        prepared["contract_sha256"]
+        != json.loads((ROOT / "artifacts/qwen38-streaming-upgrade/T2/contract.json").read_text())["contract_sha256"]
+    )
+    candidate = builder.build_bundle(directory, "unused")
+    assert candidate["native_components"] == ["native_streaming_next", "native_route_gather"]
+    projection = next(b for b in candidate["binaries"] if b["path"] == "binaries/native_streaming_next.bin")
+    assert projection["entrypoints"] == ["qwen_streaming_projection_v2", "qwen_streaming_columns_v2"]
+    assert builder.verify_bundle(directory, require_compiled=True) == candidate
+
+
+@pytest.mark.parametrize(
+    "config", [{"projection_variant": "unknown"}, {"projection_variant": "m32n160_v2", "layers": {"native_wy": True}}]
+)
+def test_next_profile_rejects_unknown_variant_and_failed_wy(config):
+    with pytest.raises(ValueError):
+        builder.projection_profile(config)
+
+
+def test_contained_compiler_has_explicit_transitive_library_paths_without_parent_mutation(monkeypatch, tmp_path):
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/unused/parent/path")
+    env = builder._compiler_environment((tmp_path / "sdk/lib64", tmp_path / "torch/lib"))
+    assert env["LD_LIBRARY_PATH"] == f"{tmp_path}/sdk/lib64:{tmp_path}/torch/lib:/unused/parent/path"
+    assert os.environ["LD_LIBRARY_PATH"] == "/unused/parent/path"

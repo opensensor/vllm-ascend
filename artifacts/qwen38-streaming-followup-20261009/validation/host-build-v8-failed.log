@@ -1,0 +1,13 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/matteius/experiments/qwen-streaming-next-bundle-v8-20261009/sources/tools/qwen4exp/build_streaming.py", line 849, in <module>
+    main()
+  File "/home/matteius/experiments/qwen-streaming-next-bundle-v8-20261009/sources/tools/qwen4exp/build_streaming.py", line 842, in main
+    value = build_bundle(args.bundle, args.cann_root, args.torch_abi, args.abi_evidence)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/matteius/experiments/qwen-streaming-next-bundle-v8-20261009/sources/tools/qwen4exp/build_streaming.py", line 702, in build_bundle
+    run_compiler([str(compiler), str(root / f"tools/qwen4exp/{name}.cpp"), str(output), *options])
+  File "/home/matteius/experiments/qwen-streaming-next-bundle-v8-20261009/sources/tools/qwen4exp/build_streaming.py", line 665, in run_compiler
+    raise subprocess.CalledProcessError(result.returncode, command, result.stdout, result.stderr)
+subprocess.CalledProcessError: Command '['/home/matteius/experiments/qwen-streaming-next-bundle-v8-20261009/build/compile-streaming', '/home/matteius/experiments/qwen-streaming-next-bundle-v8-20261009/sources/tools/qwen4exp/native_streaming_next.cpp', '/home/matteius/experiments/qwen-streaming-next-bundle-v8-20261009/binaries/native_streaming_next.bin', '--npu-arch=dav-2002', '-I/home/matteius/experiments/qwen-streaming-next-bundle-v8-20261009/sources/tools/qwen4exp', '--sysroot=/usr/local/Ascend/cann-9.1.0/tools/hcc/sysroot', '-isystem/usr/local/Ascend/cann-9.1.0/tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0', '-isystem/usr/local/Ascend/cann-9.1.0/tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0/aarch64-target-linux-gnu']' returned non-zero exit status 1.

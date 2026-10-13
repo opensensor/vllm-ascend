@@ -27,34 +27,25 @@ extern "C" __global__ __aicore__ void qwen_local_route_gather_v1(GM_ADDR low, GM
   const int64_t activeRows = ends.GetValue(experts - 1);
   TPipe pipe;
   TBuf<TPosition::VECCALC> bytes, floats;
-  pipe.InitBuffer(bytes, packedWidth);
-  pipe.InitBuffer(floats, metadataWidth * sizeof(float));
+  // Four disjoint operand regions let MTE2 fill the complete row before one
+  // producer/consumer handoff. Reusing one region for each limb forced four
+  // independent DMA round trips and eight event waits per route.
+  pipe.InitBuffer(bytes, 2 * packedWidth);
+  pipe.InitBuffer(floats, 2 * metadataWidth * sizeof(float));
   auto localBytes = bytes.Get<int8_t>();
   auto localFloats = floats.Get<float>();
   for (int64_t row = GetBlockIdx(); row < activeRows; row += GetBlockNum()) {
     const int64_t source = rows.GetValue(row);
     DataCopy(localBytes, inputLow[source * packedWidth], packedWidth);
+    DataCopy(localBytes[packedWidth], inputHigh[source * packedWidth], packedWidth);
+    DataCopy(localFloats, inputScale[source * metadataWidth], metadataWidth);
+    DataCopy(localFloats[metadataWidth], inputSum[source * metadataWidth], metadataWidth);
     SetFlag<HardEvent::MTE2_MTE3>(EVENT_ID0);
     WaitFlag<HardEvent::MTE2_MTE3>(EVENT_ID0);
     DataCopy(outputLow[row * packedWidth], localBytes, packedWidth);
-    SetFlag<HardEvent::MTE3_MTE2>(EVENT_ID0);
-    WaitFlag<HardEvent::MTE3_MTE2>(EVENT_ID0);
-    DataCopy(localBytes, inputHigh[source * packedWidth], packedWidth);
-    SetFlag<HardEvent::MTE2_MTE3>(EVENT_ID0);
-    WaitFlag<HardEvent::MTE2_MTE3>(EVENT_ID0);
-    DataCopy(outputHigh[row * packedWidth], localBytes, packedWidth);
-    SetFlag<HardEvent::MTE3_MTE2>(EVENT_ID0);
-    WaitFlag<HardEvent::MTE3_MTE2>(EVENT_ID0);
-    DataCopy(localFloats, inputScale[source * metadataWidth], metadataWidth);
-    SetFlag<HardEvent::MTE2_MTE3>(EVENT_ID0);
-    WaitFlag<HardEvent::MTE2_MTE3>(EVENT_ID0);
+    DataCopy(outputHigh[row * packedWidth], localBytes[packedWidth], packedWidth);
     DataCopy(outputScale[row * metadataWidth], localFloats, metadataWidth);
-    SetFlag<HardEvent::MTE3_MTE2>(EVENT_ID0);
-    WaitFlag<HardEvent::MTE3_MTE2>(EVENT_ID0);
-    DataCopy(localFloats, inputSum[source * metadataWidth], metadataWidth);
-    SetFlag<HardEvent::MTE2_MTE3>(EVENT_ID0);
-    WaitFlag<HardEvent::MTE2_MTE3>(EVENT_ID0);
-    DataCopy(outputSum[row * metadataWidth], localFloats, metadataWidth);
+    DataCopy(outputSum[row * metadataWidth], localFloats[metadataWidth], metadataWidth);
     SetFlag<HardEvent::MTE3_MTE2>(EVENT_ID0);
     WaitFlag<HardEvent::MTE3_MTE2>(EVENT_ID0);
   }

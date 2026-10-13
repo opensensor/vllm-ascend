@@ -2,8 +2,11 @@
 
 Date: 2026-10-09. Source baseline: `36ba88244`.
 Status: T1–T8 completed offline; T9 hardware gate rejected v5 on October 9.
-The image-enabled baseline is running for user testing. Further candidate work
-is offline; no further NPU diagnostics or service mutations are planned.
+Hardware access was renewed for the six-chip follow-up. Streaming v2 remains
+behind baseline projection performance; the six-chip GDN reference suite now
+passes after prefill scheduler and mask corrections. See the
+[six-chip hardware report](artifacts/qwen38-six-chip-hardware-20261009/README.md)
+for full-model gates, thermal limits, failed attempts, and final server state.
 Execution starts from clean commit `2a2a4e416`; unrelated workspace overlays are
 excluded from the frozen reference and implementation worktree.
 
@@ -22,8 +25,20 @@ attention, recurrent state, PLE, residual connections, and MTP. Both bulk prefil
 and decode/speculative verification are explicit modes of the architecture.
 Preserve image processing throughout; vision encoding remains a distinct stage.
 
-No speed multiplier, thermal reduction, larger context capacity, or improvement
-from overlap is assumed. Performance and sustained operation are acceptance gates.
+Completion requires at least **1.5× the older two-card baseline's decode
+tokens/second on equivalent workloads**, together with lower cold time to first
+token, working image processing, correct cache/state semantics, and sustained
+operation without checkpoint spills or thermal shutdown. Freeze prompts, output
+budgets, sampling, concurrency, cache policy, and timing definitions before the
+paired comparison. Six-request aggregate rates cannot replace the C1 comparison.
+The recorded TP4/MTP2 C1 median of 19.262 tok/s implies 28.893 tok/s for that
+specific workload; higher historical baselines require their own matched gate.
+Correctness fixes and capacity gates do not complete this performance objective.
+
+Current work: profile the live decode path, implement uneven six-chip MTP expert,
+shared-channel and vocabulary placement, qualify speculative GDN state handling,
+and test the candidate against the retained control. Baseline projections remain
+the control while grouped streaming down/gather overhead is corrected.
 
 ## Current execution and target dataflow
 
@@ -93,8 +108,9 @@ only after their individual gates; their composition is not already qualified.
 ## Work packages and dependencies
 
 The user invoked `$parallel-task qwen-streaming-plan.md` on 2026-10-09,
-authorizing offline implementation and subagents. Dependencies describe order;
-server changes, NPU execution, and a new hardware lease remain deferred.
+authorizing offline implementation and subagents. Dependencies describe order.
+The later six-chip hardware lease authorized the follow-up live gates recorded
+in the hardware report; the original offline task records remain historical.
 Each package requires CPU regression tests and versioned evidence in
 `artifacts/qwen38-streaming-upgrade/Tn/`. The offline builder and composition APIs
 are implemented; live worker/scheduler adapter binding and qualification remain
@@ -381,7 +397,8 @@ unmeasured. Full model/graph/cache/EP/MTP/thermal gates remain incomplete.
 [October 9 hardware evidence and follow-up](artifacts/qwen38-streaming-upgrade/T9/hardware-20261009/REPORT.md).
 
 The original qualification procedure below remains required for a new candidate.
-Defer further hardware experiments while the user tests the baseline. Prove allocation headroom before
+The user subsequently authorized controlled live hardware tests and paused Kilo
+traffic. Prove allocation headroom before
 standalone tests with any loaded service. Serialize hardware work; do not unload
 or shrink the service to make required coverage fit without authorization.
 Run production-shape kernel parity and changed-input graph stress, then shadow
@@ -401,10 +418,12 @@ or recapture during thermal hold. Include hold time in service results, and abor
 testing if the controller cannot enforce the policy. Do not bypass missing sensors.
 
 Promotion requires real-weight numerical/quality, image, cache/CoW, EP, MTP,
-graph replay, and sustained thermal gates. Seek at least 10% improvement in
-primary cold TTFT or sustained service throughput as an objective. A smaller
-gain must exceed `max(2%, twice the maximum variant IQR/median)` over paired
-trials; this repeatability rule is not a significance proof. Reject repeatable
+graph replay, and sustained thermal gates. Completion requires at least 50%
+higher decode throughput than the older two-card control on the same workload,
+including C1, and lower cold TTFT. Intermediate gains guide the next experiment
+but do not satisfy that target. Changes must exceed
+`max(2%, twice the maximum variant IQR/median)` over paired trials; this
+repeatability rule is not a significance proof. Reject repeatable
 decode or mixed-service regressions above 5%, capacity loss, or thermal cutoff.
 Record inconclusive outcomes and retain the qualified reference if no defensible
 overall gain is established. Publish the final evidence and runtime disposition.
@@ -420,7 +439,8 @@ T1–T8 now implement the offline candidate, with execution evidence in the
 [streaming report](artifacts/qwen38-streaming-upgrade/REPORT.md). The deferred
 [qualification runbook](artifacts/qwen38-streaming-upgrade/T9/RUNBOOK.md)
 records remaining worker/scheduler binding, hardware gates and promotion limits.
-No candidate is installed in the live baseline workers. October 9 standalone
+No streaming candidate replaces the live baseline forward. Diagnostic native
+resources were later appended to the six-chip workers. October 9 standalone
 hardware results and the offline follow-up are linked above. Previously staged component candidates
 and their CPU/build evidence are described in the
 [transfer report](artifacts/qwen38-transfer-next-20261009/REPORT.en.md) and
@@ -444,3 +464,98 @@ subsequently rejected v5, as recorded under T9. Repository-wide CI retains unrel
 unrelated files were restored in the isolated worktree. A broader regression
 group gives 179 passes and four GDN CPU-stub failures identically on the clean
 unchanged baseline. Full receipts and limitations are in the execution report.
+
+## October 9 follow-up and six-chip candidate
+
+The [follow-up report](artifacts/qwen38-streaming-followup-20261009/REPORT.md)
+records the new v2 projection schedule, bulk metadata cache, N160 two-window
+epilogue, WY trace diagnostics and opt-in six-chip GDN/vocabulary sharding.
+The image-enabled TP4/MTP2 profile remains the rollback control. The corrected
+TP6 profile now serves six request slots with baseline projections and MTP
+disabled; short/long text, full-size images, cached branches, cancellation, and
+six-request overlap passed. Its planner reserves 1,374,660 tokens, about 5.24
+256K windows. Serial decode is slower than TP4; a single cold-prefill sample
+does not establish improvement. WY and sustained thermal qualification remain
+incomplete. T9 still requires higher decode throughput and lower cold TTFT.
+
+The subsequent [six-chip transfer fixes](artifacts/qwen38-six-chip-transfer-fixes-20261009/REPORT.md)
+replace shared replication with uneven trained-channel slices and omit dummy
+GDN heads from execution/state IO. Uniform cache reservation remains required
+by the framework. The subsequent six-chip hardware report records 42 passing native checks
+and production-shape GDN scheduler/mask corrections. The full-tile v11 producer
+passed parity but remained behind baseline on most ranks. Keep it experimental;
+measure routing, gate/up, activation/packing, down, and finalization separately
+before changing more barriers. Preserve the small routed decode path and assess
+its graph/HCCL/LM-head/MTP costs separately from grouped prefill.
+
+## Six-chip MTP follow-up, October 10 UTC
+
+See [qualification and pending work](artifacts/qwen38-six-chip-mtp-20261010/README.md).
+Uneven six-chip MTP expert/shared/vocabulary loading, the shared bounded state
+pool, speculative state-view gates, and real-weight image/prefix/cancellation
+checks passed. The recorded C1 median is 27.193 tok/s, 41.18% above the older
+19.262 tok/s control. The 50% target, lower cold TTFT, matched precision A/B,
+and sustained thermal qualification remain incomplete. Small HC differences
+are not a demonstrated repeatable performance gain.
+
+After renewed access, the reversible PLE W8 cache passed component graph replay,
+image/prefix/cancellation checks on all six chips. It measured 26.128 tok/s,
+versus 26.929 in the subsequent FP16 repeat, and FP16 was restored. The paced
+scheduler string lookup remains CPU-tested only. No tests run automatically.
+Resume [queued tests](artifacts/qwen38-six-chip-mtp-20261010/queued-tests.json)
+only after renewed access. Draft graph sizing must account for its first pass;
+archive reclamation needs a proven scheduler-ownership bound.
+
+## Live max-context transfer audit and fairness follow-up
+
+The [October 10 audit](artifacts/qwen38-prefill-fairness-20261010/README.md)
+found zero checkpoint spills/restores on all six ranks. Active ledger coverage
+does not include PLE rows, most runner metadata, device kernel memory access,
+or graph/HCCL physical traffic. An 87-second thermal hold inflated the pasted
+decode timings; long synchronous mixed-prefill steps also delayed generation
+after resumption. A pause RPC timeout is recorded separately.
+
+The paced scheduler now has an opt-in decode-only cadence and image-span-aware
+budgets and registered strict configuration options. Its 105 CPU tests passed.
+After explicit cutover authorization it passed real-weight text, 1024×1024
+images, six cached branches/cancellation, and a mixed-request probe. Generation
+reached 17.4 tok/s during the 2,271-token concurrent prefill, with a 674-ms
+maximum SSE content-event gap and 71°C peak. A bounded physical capture on all
+six ranks is stopped and parsed. Ranks 0–3 show substantial DDR traffic;
+ranks 4–5 have invalid bandwidth counters. All ranks have similar copy counts,
+with payload attribution still incomplete. Cast/layout chains need attribution. The live six-window,
+image-enabled server now uses pacing. The +50% throughput and lower cold-TTFT
+target remains incomplete.
+
+## October 10 cast, layout, and barrier follow-up
+
+The [resident audit](artifacts/qwen38-cast-layout-20261010/README.md) now includes
+fixed-shape expert histogram counts, short INT32 speculative counts, and the
+GDN output RMS path at six-chip decode sizes. CPU and six-chip component gates
+passed. The original injection projection remains unchanged: joining or
+reformatting its four weight rows failed exact parity and was rejected.
+
+The residual kernel's ownership events replace whole-pipeline barriers without
+changing its tile sizes or arithmetic. It matched the old kernel and reference
+when given identical real-weight coefficients at all 98 HC layers on six chips.
+Repeated baseline projection calls sometimes vary in their last bits; independent
+projection reruns therefore cannot establish residual-kernel parity by themselves.
+Isolated 2560-row residual latency improved from about 1.66 to 0.85 ms. This is
+not a demonstrated whole-model throughput multiplier.
+
+The latest recorded historical-prompt median is 28.277 tok/s, about 46.8% above
+the older 19.262 tok/s control. The 50% target remains open. Previous prefill
+trials improved 4096-token cold TTFT from 10.370 to 9.470–9.729 seconds, without
+a reliable matched C1 improvement. Full six-by-256K stress and sustained thermal
+qualification remain open. Passive idle-transfer attribution and a clean-runtime
+speculative-depth comparison are the next gates; maintain the 94/85°C thermal
+controller and the separate 96°C cutoff.
+
+The passive idle trace reported roughly 43–44 GB/s DDR reads with no inference
+kernels or explicit copy submissions. DDR utilization briefly dropped to zero
+after all workers stopped, then returned to 47%; the third card reached 95°C
+without model processes. This prevents attribution to serving/HCCL alone. The
+server is stopped for cooling; a new load still requires all six chips to
+pass thermal admission even when CPU checks are complete. A model-free phase-isolation probe now enforces
+six-sensor admission at 72°C and a 90°C experiment abort. Its five CPU guards
+passed; device/allocator/PyHCCL/graph phases await hardware cooling.

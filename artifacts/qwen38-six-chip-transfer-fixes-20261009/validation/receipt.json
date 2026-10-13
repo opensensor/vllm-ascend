@@ -1,0 +1,96 @@
+{
+  "base_commit": "b08df99ff9a4a44268abb2c57bae6b729436f789",
+  "supported_cpu": {
+    "passed": 223,
+    "skipped": 5
+  },
+  "broader_cpu": {
+    "passed": 239,
+    "skipped": 5,
+    "failed": 4
+  },
+  "unchanged_baseline_comparison": {
+    "passed": 222,
+    "skipped": 5,
+    "failed": 4,
+    "failure": "same four test_gdn_lifecycle imports: CPU torch_npu stub lacks float4_e2m1fn_x2"
+  },
+  "new_targeted_tests": 17,
+  "queued_hardware": {
+    "passed": 0,
+    "skipped": 9,
+    "new_state_stride_gates": 2
+  },
+  "changed_file_hooks": "passed",
+  "shared_channel_counts": [
+    107,
+    107,
+    107,
+    107,
+    106,
+    106
+  ],
+  "shared_projection_logical_bytes_before": 58982400,
+  "shared_projection_logical_bytes_after": 9830400,
+  "gdn_live_key_heads": [
+    3,
+    3,
+    3,
+    3,
+    2,
+    2
+  ],
+  "gdn_live_value_heads": [
+    9,
+    9,
+    9,
+    9,
+    6,
+    6
+  ],
+  "gdn_allocated_value_heads": [
+    9,
+    9,
+    9,
+    9,
+    9,
+    9
+  ],
+  "uniform_cache_reserve_removed": false,
+  "dummy_head_execution_removed": true,
+  "device_execution_performed": false,
+  "server_modified": false,
+  "hardware_ready_for_cutover": false,
+  "limitations": [
+    "FP16 GEMM/collective numerical order needs real-weight validation",
+    "same cache descriptor across ranks remains required",
+    "prefix copy/CoW/clearing may still touch reserved bytes",
+    "legacy native state-layout resource rejected for compact partial head views",
+    "source byte counts are not measured DMA or thermal gains"
+  ],
+  "repository_format_ci": {
+    "status": "existing unrelated failures",
+    "failed_hooks": [
+      "ruff-check",
+      "ruff-format",
+      "codespell",
+      "typos",
+      "clang-format",
+      "markdownlint",
+      "forbidden-imports"
+    ],
+    "unrelated_checker_paths_restored": 169
+  },
+  "final_targeted_cpu": {
+    "passed": 17,
+    "skipped": 0,
+    "output_and_state_fp64_bound": 1e-12
+  },
+  "source_files_sha256": {
+    "vllm_ascend/models/qwen4_exp/model.py": "9e2d9d70396c3506aa1c4cd5becb069857aebace65ded244e9d018c42c1e7768",
+    "vllm_ascend/models/qwen4_exp/w4_moe.py": "7761c1c01a136cee7daef4051ade99519c8b42eacb7358788fc467d3002ef8a9",
+    "vllm_ascend/models/qwen4_exp/head_partition.py": "faa3fb358ccaa844593e1b126c57aa7892d764a1697ac150b120f543101948bd",
+    "vllm_ascend/models/qwen4_exp/shared_partition.py": "acdf4555a99a016a01aac889707bd28dd2c1cf39f3a47e3c2e5323bbd23887e7",
+    "tools/qwen4exp/three_card_profile.py": "1dc3b2e93e18ba1c968a505a8fa04347dc3287a7991676e93dd149e9878a62fa"
+  }
+}

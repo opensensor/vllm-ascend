@@ -1,0 +1,524 @@
+{
+  "passed": true,
+  "hardware_validated": true,
+  "serving_speedup_proven": false,
+  "args": {
+    "build_dir": "/srv/ai/src/qwen-int8-projection-probe-20261011-v9",
+    "model": "/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-TP6-MTP-20261010",
+    "output": "/srv/ai/src/qwen-int8-speed-gate-20261011/chip4-lookup-row32-rotate16-distinct-output-v9.json",
+    "device": 4,
+    "tokens": [
+      3,
+      128,
+      512
+    ],
+    "layer": 47,
+    "expert": 511,
+    "projections": [
+      "gate_up_proj",
+      "down_proj"
+    ],
+    "graph_unroll": 1,
+    "weight_rotations": 16,
+    "row_tile": 32,
+    "iterations": 20,
+    "repeats": 3,
+    "time": true,
+    "base_url": "http://127.0.0.1:8001",
+    "fused_quant": true,
+    "lookup_decode": true,
+    "packed_weights": true,
+    "compare_w4": true,
+    "cpu_only": false
+  },
+  "build_provenance": {
+    "namespace": "qwen_int8_group_probe_v1",
+    "binary": "/srv/ai/src/qwen-int8-projection-probe-20261011-v9/int8-group.bin",
+    "bridge": "/srv/ai/src/qwen-int8-projection-probe-20261011-v9/qwen_int8_group_probe_v1.so",
+    "projection_binary": "/srv/ai/src/qwen-int8-projection-probe-20261011-v9/int8-projection.bin",
+    "activation_binary": "/srv/ai/src/qwen-int8-projection-probe-20261011-v9/int8-activation.bin",
+    "sha256": {
+      "int8-group.bin": "194dfd75ff1bb834579d6afe6e7ed9d84f2a0900d75c7269afdf5a27f497d448",
+      "qwen_int8_group_probe_v1.so": "7b5a60c7629c5ed86a17279cc4724a64653375d8a5f7265354a978b9691f0425",
+      "int8-projection.bin": "fef48f5c72e741ed780202d93dc57f76fd49945577c3d78eeb2fe9bd792846a6",
+      "int8-activation.bin": "948ea4a13ab084af6701ca844abe3622c7ecdbbce09a771cc6b229a74805766a",
+      "compile_reconstruction.cpp": "e7df352d8e98426001f43dd17116443c72ce9eafa9d7a07930329278d0c3447e",
+      "reconstruction_bridge.cpp": "08906a208fab23cc9a87e5a18e624d7a64e6458f84f022f7039acf6d6a5b57e2",
+      "native_int8_group_probe.cpp": "7ddf093bc24fac49a75a68665f143b5dcda9609edf9bee2218b4baa4add5bf50",
+      "native_int8_projection_probe.cpp": "3380f4b8c1cafb2dde89202d28e041b5ebc3eec27802718a2c4dc6aebeb88d80",
+      "native_int8_activation_probe.cpp": "92e0f2e2ce8c3c1bf18245fade8346535326932c85fc58e83db8b8571a49f2ba"
+    },
+    "hardware_validated": false,
+    "server_modified": false
+  },
+  "records": [
+    {
+      "projection": "gate_up_proj",
+      "rows": 3,
+      "shape": [
+        1280,
+        2560
+      ],
+      "exact_ordered_fp16": true,
+      "graph_replay": true,
+      "weight_bytes": 1638400,
+      "packed_w4_bytes": 1638400,
+      "includes_direct_a8_quantization": true,
+      "expands_w4_only_on_core": true,
+      "calls_per_graph": 16,
+      "weight_rotations": 16,
+      "distinct_output_per_rotated_bank": true,
+      "rotation_uses_equal_weights_at_distinct_addresses": true,
+      "row_tile": 32,
+      "lookup_decode": true,
+      "quant_and_projection_eager": {
+        "wall_median_ms": 0.18066734373860527,
+        "event_median_ms": 0.17899625301361083,
+        "wall_trials_ms": [
+          0.18066734373860527,
+          0.18339033124448179,
+          0.17963629061341635
+        ],
+        "event_trials_ms": [
+          0.17895491123199464,
+          0.18075391054153442,
+          0.17899625301361083
+        ]
+      },
+      "quant_and_projection_graph": {
+        "wall_median_ms": 0.17964693438443646,
+        "event_median_ms": 0.17911921739578246,
+        "wall_trials_ms": [
+          0.17936633751105546,
+          0.17964693438443646,
+          0.1800000125058432
+        ],
+        "event_trials_ms": [
+          0.17900935411453248,
+          0.17911921739578246,
+          0.17913029193878174
+        ]
+      },
+      "native_w4_exact": true,
+      "native_w4_quant_and_projection_eager": {
+        "wall_median_ms": 0.05863827811936062,
+        "event_median_ms": 0.05831437110900879,
+        "wall_trials_ms": [
+          0.057877049994203844,
+          0.05863827811936062,
+          0.05877867188246455
+        ],
+        "event_trials_ms": [
+          0.05744604468345642,
+          0.05831437110900879,
+          0.058432620763778684
+        ]
+      },
+      "native_w4_quant_and_projection_graph": {
+        "wall_median_ms": 0.0546821312582324,
+        "event_median_ms": 0.05416845679283142,
+        "wall_trials_ms": [
+          0.0546821312582324,
+          0.05478445000335341,
+          0.05468172187192977
+        ],
+        "event_trials_ms": [
+          0.05416845679283142,
+          0.05413012504577637,
+          0.054199707508087155
+        ]
+      },
+      "traffic_guard": "idle_before_and_after_no_completed_request"
+    },
+    {
+      "projection": "gate_up_proj",
+      "rows": 128,
+      "shape": [
+        1280,
+        2560
+      ],
+      "exact_ordered_fp16": true,
+      "graph_replay": true,
+      "weight_bytes": 1638400,
+      "packed_w4_bytes": 1638400,
+      "includes_direct_a8_quantization": true,
+      "expands_w4_only_on_core": true,
+      "calls_per_graph": 16,
+      "weight_rotations": 16,
+      "distinct_output_per_rotated_bank": true,
+      "rotation_uses_equal_weights_at_distinct_addresses": true,
+      "row_tile": 32,
+      "lookup_decode": true,
+      "quant_and_projection_eager": {
+        "wall_median_ms": 0.3836784843770147,
+        "event_median_ms": 0.3828656435012817,
+        "wall_trials_ms": [
+          0.3833325781215535,
+          0.38442308750745724,
+          0.3836784843770147
+        ],
+        "event_trials_ms": [
+          0.38249228000640867,
+          0.38331916332244875,
+          0.3828656435012817
+        ]
+      },
+      "quant_and_projection_graph": {
+        "wall_median_ms": 0.38362341249467136,
+        "event_median_ms": 0.3830611228942871,
+        "wall_trials_ms": [
+          0.38337603125455644,
+          0.38362341249467136,
+          0.383773946873589
+        ],
+        "event_trials_ms": [
+          0.3827944278717041,
+          0.38308708667755126,
+          0.3830611228942871
+        ]
+      },
+      "native_w4_exact": true,
+      "native_w4_quant_and_projection_eager": {
+        "wall_median_ms": 0.46574161563057714,
+        "event_median_ms": 0.46465244293212893,
+        "wall_trials_ms": [
+          0.4659157593778218,
+          0.46574161563057714,
+          0.4653917937503138
+        ],
+        "event_trials_ms": [
+          0.4648186683654785,
+          0.46465244293212893,
+          0.46451678276062014
+        ]
+      },
+      "native_w4_quant_and_projection_graph": {
+        "wall_median_ms": 0.4660904374986785,
+        "event_median_ms": 0.4653460502624512,
+        "wall_trials_ms": [
+          0.4660396843746639,
+          0.4660904374986785,
+          0.466335059377343
+        ],
+        "event_trials_ms": [
+          0.4651895523071289,
+          0.4653460502624512,
+          0.46543073654174805
+        ]
+      },
+      "traffic_guard": "idle_before_and_after_no_completed_request"
+    },
+    {
+      "projection": "gate_up_proj",
+      "rows": 512,
+      "shape": [
+        1280,
+        2560
+      ],
+      "exact_ordered_fp16": true,
+      "graph_replay": true,
+      "weight_bytes": 1638400,
+      "packed_w4_bytes": 1638400,
+      "includes_direct_a8_quantization": true,
+      "expands_w4_only_on_core": true,
+      "calls_per_graph": 16,
+      "weight_rotations": 16,
+      "distinct_output_per_rotated_bank": true,
+      "rotation_uses_equal_weights_at_distinct_addresses": true,
+      "row_tile": 32,
+      "lookup_decode": true,
+      "quant_and_projection_eager": {
+        "wall_median_ms": 1.0579759093843677,
+        "event_median_ms": 1.0569378852844238,
+        "wall_trials_ms": [
+          1.0578548687590228,
+          1.0579759093843677,
+          1.058059100000719
+        ],
+        "event_trials_ms": [
+          1.0565290451049805,
+          1.0569378852844238,
+          1.0569560050964355
+        ]
+      },
+      "quant_and_projection_graph": {
+        "wall_median_ms": 1.0575650999953723,
+        "event_median_ms": 1.056922435760498,
+        "wall_trials_ms": [
+          1.0575650999953723,
+          1.0582221593722352,
+          1.0573943343842984
+        ],
+        "event_trials_ms": [
+          1.056922435760498,
+          1.0574688911437988,
+          1.0565288543701172
+        ]
+      },
+      "native_w4_exact": true,
+      "native_w4_quant_and_projection_eager": {
+        "wall_median_ms": 1.5765794812523382,
+        "event_median_ms": 1.5757060050964355,
+        "wall_trials_ms": [
+          1.5772586468756344,
+          1.5762288437372263,
+          1.5765794812523382
+        ],
+        "event_trials_ms": [
+          1.5764779090881347,
+          1.574994945526123,
+          1.5757060050964355
+        ]
+      },
+      "native_w4_quant_and_projection_graph": {
+        "wall_median_ms": 1.5803616718585545,
+        "event_median_ms": 1.5793536186218262,
+        "wall_trials_ms": [
+          1.5805048500169505,
+          1.5803616718585545,
+          1.5795113375133951
+        ],
+        "event_trials_ms": [
+          1.5794314384460448,
+          1.5793536186218262,
+          1.5786865234375
+        ]
+      },
+      "traffic_guard": "idle_before_and_after_no_completed_request"
+    },
+    {
+      "projection": "down_proj",
+      "rows": 3,
+      "shape": [
+        2560,
+        640
+      ],
+      "exact_ordered_fp16": true,
+      "graph_replay": true,
+      "weight_bytes": 819200,
+      "packed_w4_bytes": 819200,
+      "includes_direct_a8_quantization": true,
+      "expands_w4_only_on_core": true,
+      "calls_per_graph": 16,
+      "weight_rotations": 16,
+      "distinct_output_per_rotated_bank": true,
+      "rotation_uses_equal_weights_at_distinct_addresses": true,
+      "row_tile": 32,
+      "lookup_decode": true,
+      "quant_and_projection_eager": {
+        "wall_median_ms": 0.09480495311890991,
+        "event_median_ms": 0.0941992998123169,
+        "wall_trials_ms": [
+          0.09448290625186928,
+          0.09480495311890991,
+          0.09494221562817984
+        ],
+        "event_trials_ms": [
+          0.09387890696525573,
+          0.09436710476875305,
+          0.0941992998123169
+        ]
+      },
+      "quant_and_projection_graph": {
+        "wall_median_ms": 0.09133548126101232,
+        "event_median_ms": 0.09074690341949462,
+        "wall_trials_ms": [
+          0.0911163781211144,
+          0.09133548126101232,
+          0.09144835312326904
+        ],
+        "event_trials_ms": [
+          0.09068058133125305,
+          0.09080761671066284,
+          0.09074690341949462
+        ]
+      },
+      "native_w4_exact": true,
+      "native_w4_quant_and_projection_eager": {
+        "wall_median_ms": 0.056071837502713606,
+        "event_median_ms": 0.05509619116783142,
+        "wall_trials_ms": [
+          0.061793715622116,
+          0.056071837502713606,
+          0.055515218764412566
+        ],
+        "event_trials_ms": [
+          0.06065909862518311,
+          0.05509619116783142,
+          0.054905110597610475
+        ]
+      },
+      "native_w4_quant_and_projection_graph": {
+        "wall_median_ms": 0.017222809378836246,
+        "event_median_ms": 0.01690649688243866,
+        "wall_trials_ms": [
+          0.017256312503377558,
+          0.017222809378836246,
+          0.017161756250061444
+        ],
+        "event_trials_ms": [
+          0.01690649688243866,
+          0.01692008376121521,
+          0.01683691293001175
+        ]
+      },
+      "traffic_guard": "idle_before_and_after_no_completed_request"
+    },
+    {
+      "projection": "down_proj",
+      "rows": 128,
+      "shape": [
+        2560,
+        640
+      ],
+      "exact_ordered_fp16": true,
+      "graph_replay": true,
+      "weight_bytes": 819200,
+      "packed_w4_bytes": 819200,
+      "includes_direct_a8_quantization": true,
+      "expands_w4_only_on_core": true,
+      "calls_per_graph": 16,
+      "weight_rotations": 16,
+      "distinct_output_per_rotated_bank": true,
+      "rotation_uses_equal_weights_at_distinct_addresses": true,
+      "row_tile": 32,
+      "lookup_decode": true,
+      "quant_and_projection_eager": {
+        "wall_median_ms": 0.19131173748974106,
+        "event_median_ms": 0.1906249165534973,
+        "wall_trials_ms": [
+          0.19131173748974106,
+          0.19375391250378016,
+          0.19117021874990314
+        ],
+        "event_trials_ms": [
+          0.1904626488685608,
+          0.19106566905975342,
+          0.1906249165534973
+        ]
+      },
+      "quant_and_projection_graph": {
+        "wall_median_ms": 0.18907470312115038,
+        "event_median_ms": 0.18848453760147094,
+        "wall_trials_ms": [
+          0.18907470312115038,
+          0.18905391561929719,
+          0.1891017218667912
+        ],
+        "event_trials_ms": [
+          0.18848453760147094,
+          0.1884836435317993,
+          0.18852849006652833
+        ]
+      },
+      "native_w4_exact": true,
+      "native_w4_quant_and_projection_eager": {
+        "wall_median_ms": 0.3293702187420422,
+        "event_median_ms": 0.32872705459594725,
+        "wall_trials_ms": [
+          0.3293702187420422,
+          0.3295688156185861,
+          0.32936464688191336
+        ],
+        "event_trials_ms": [
+          0.3284851789474487,
+          0.32893033027648927,
+          0.32872705459594725
+        ]
+      },
+      "native_w4_quant_and_projection_graph": {
+        "wall_median_ms": 0.33221800938463275,
+        "event_median_ms": 0.3315260410308838,
+        "wall_trials_ms": [
+          0.3321918656183698,
+          0.33237415000257897,
+          0.33221800938463275
+        ],
+        "event_trials_ms": [
+          0.3315781354904175,
+          0.3315260410308838,
+          0.3314406633377075
+        ]
+      },
+      "traffic_guard": "idle_before_and_after_no_completed_request"
+    },
+    {
+      "projection": "down_proj",
+      "rows": 512,
+      "shape": [
+        2560,
+        640
+      ],
+      "exact_ordered_fp16": true,
+      "graph_replay": true,
+      "weight_bytes": 819200,
+      "packed_w4_bytes": 819200,
+      "includes_direct_a8_quantization": true,
+      "expands_w4_only_on_core": true,
+      "calls_per_graph": 16,
+      "weight_rotations": 16,
+      "distinct_output_per_rotated_bank": true,
+      "rotation_uses_equal_weights_at_distinct_addresses": true,
+      "row_tile": 32,
+      "lookup_decode": true,
+      "quant_and_projection_eager": {
+        "wall_median_ms": 0.5177912437602572,
+        "event_median_ms": 0.5169686794281005,
+        "wall_trials_ms": [
+          0.518419815625748,
+          0.5177912437602572,
+          0.5176037312594417
+        ],
+        "event_trials_ms": [
+          0.5174206733703614,
+          0.5167720317840576,
+          0.5169686794281005
+        ]
+      },
+      "quant_and_projection_graph": {
+        "wall_median_ms": 0.5179308218885126,
+        "event_median_ms": 0.517238187789917,
+        "wall_trials_ms": [
+          0.5178780656251547,
+          0.5181136687497201,
+          0.5179308218885126
+        ],
+        "event_trials_ms": [
+          0.5173415660858154,
+          0.517238187789917,
+          0.5171206951141357
+        ]
+      },
+      "native_w4_exact": true,
+      "native_w4_quant_and_projection_eager": {
+        "wall_median_ms": 0.6823774156146101,
+        "event_median_ms": 0.6814934253692627,
+        "wall_trials_ms": [
+          0.6838157437414338,
+          0.6800981437436349,
+          0.6823774156146101
+        ],
+        "event_trials_ms": [
+          0.6827149868011475,
+          0.6791341304779053,
+          0.6814934253692627
+        ]
+      },
+      "native_w4_quant_and_projection_graph": {
+        "wall_median_ms": 0.673996321870618,
+        "event_median_ms": 0.6731625080108643,
+        "wall_trials_ms": [
+          0.6745986874875598,
+          0.673996321870618,
+          0.6735145312632085
+        ],
+        "event_trials_ms": [
+          0.6737435817718506,
+          0.6731625080108643,
+          0.6727495193481445
+        ]
+      },
+      "traffic_guard": "idle_before_and_after_no_completed_request"
+    }
+  ]
+}

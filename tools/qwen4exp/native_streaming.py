@@ -20,6 +20,10 @@ class NativeStreamingProjection(NativeResource):
         super().__init__(kernel, launch)
         self.columns_kernel = columns_kernel
 
+    @property
+    def tile_columns(self):
+        return N
+
     def _validate(self, bank, prepared, group_ends):
         if len(prepared) != 4 or prepared[0].ndim != 2 or bank.weight.ndim != 3:
             raise ValueError("four packed operands and a rank-three expert bank required")

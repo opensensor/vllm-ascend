@@ -1,0 +1,95 @@
+import statistics
+import time
+
+import torch
+
+from tools.qwen4exp.resident_candidates import shared_hc_operand
+from tools.qwen4exp.resident_worker import QwenResidentExtension
+from vllm_ascend.models.qwen4_exp.model import _GatedResidual
+
+METHOD = "resident_cast_layout_probe_v17"
+
+
+def measure(functions, iterations=5, repeats=5):
+    samples = {name: [] for name in functions}
+    for function in functions.values():
+        for _ in range(2):
+            function()
+    torch.npu.synchronize()
+    for repeat in range(repeats):
+        names = list(functions)
+        if repeat % 2:
+            names.reverse()
+        for name in names:
+            torch.npu.synchronize()
+            start = time.perf_counter()
+            for _ in range(iterations):
+                functions[name]()
+            torch.npu.synchronize()
+            samples[name].append((time.perf_counter() - start) * 1000 / iterations)
+    return {"wall_samples_ms": samples, "wall_median_ms": {k: statistics.median(v) for k, v in samples.items()}}
+
+
+def validate():
+    assert torch.ops.qwen_stage_diagnostic_v17.marker() == 1
+    assert not hasattr(QwenResidentExtension, METHOD)
+
+    def probe(self, mode):
+        rank = torch.distributed.get_rank()
+        records = []
+        try:
+            with torch.inference_mode():
+                if mode == "counts":
+                    experts = 86 if rank < 2 else 85
+                    for tokens in (128, 384, 640, 2560):
+                        generator = torch.Generator().manual_seed(20261010 + tokens)
+                        keys = torch.randint(experts + 1, (tokens * 10,), generator=generator).npu()
+                        local = torch.arange(experts, device=keys.device)
+                        sort_keys = keys.to(torch.int32).to(torch.float32)
+                        mask = keys[:, None] == local
+                        histogram = torch.histc(sort_keys, bins=experts + 1, min=0, max=experts)[:experts]
+                        functions = {
+                            "compare": lambda: (keys[:, None] == local).sum(0),
+                            "compare_int32": lambda: (keys[:, None] == local).sum(0, dtype=torch.int32).to(torch.int64),
+                            "histogram": lambda: torch.histc(sort_keys, bins=experts + 1, min=0, max=experts)[:experts].to(torch.int64),
+                            "histogram_int32": lambda: torch.histc(sort_keys, bins=experts + 1, min=0, max=experts)[:experts].to(torch.int32).to(torch.int64),
+                        }
+                        expected = mask.cpu().sum(0)
+                        for function in functions.values():
+                            torch.testing.assert_close(function().cpu(), expected, rtol=0, atol=0)
+                        isolated = measure({
+                            "float_to_int64": lambda: histogram.to(torch.int64),
+                            "float_via_int32": lambda: histogram.to(torch.int32).to(torch.int64),
+                        })
+                        records.append({"tokens": tokens, "experts": experts, "exact": True,
+                                        "count": measure(functions), "isolated_cast": isolated})
+                elif mode == "hc":
+                    modules = [m for w in self._resident_wrappers() for m in w.runnable.modules()
+                               if isinstance(m, _GatedResidual) and m.use_combine]
+                    assert modules
+                    # Real loaded parameters, bounded synthetic inputs. No model/TP forward.
+                    module = modules[0]
+                    for tokens in (3, 18, 128, 640, 2560):
+                        generator = torch.Generator().manual_seed(20261010 + tokens)
+                        hyper = torch.randn(tokens, module.hyper_hidden, generator=generator).half().npu()
+                        block = torch.randn(tokens, module.hidden_size, generator=generator).half().npu()
+                        def baseline():
+                            mixed, residual = _GatedResidual.mix(module, hyper)
+                            return mixed, module.combine(block, residual)
+                        def shared():
+                            mixed, residual = shared_hc_operand.mix(module, hyper)
+                            return mixed, module.combine(block, residual)
+                        expected, actual = baseline(), shared()
+                        for left, right in zip(expected, actual):
+                            torch.testing.assert_close(left.cpu(), right.cpu(), rtol=0, atol=0)
+                        records.append({"tokens": tokens, "exact": True, "timing": measure(
+                            {"baseline": baseline, "shared": shared}, iterations=2, repeats=3)})
+                else:
+                    raise ValueError("unknown mode")
+            return {"rank": rank, "passed": True, "mode": mode, "records": records}
+        except Exception as error:
+            return {"rank": rank, "passed": False, "records": records,
+                    "error": f"{type(error).__name__}: {error}"}
+
+    setattr(QwenResidentExtension, METHOD, probe)
+    return {"passed": True, "diagnostic_method": METHOD, "production_forward_changed": False}

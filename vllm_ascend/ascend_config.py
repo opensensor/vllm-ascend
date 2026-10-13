@@ -29,6 +29,7 @@ from vllm.logger import logger
 from vllm.utils.math_utils import cdiv
 
 from vllm_ascend.config_utils import config
+from vllm_ascend.core.qwen_prefill_pacing import PrefillPacingConfig
 from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_hardware_profile
 
 if TYPE_CHECKING:
@@ -444,6 +445,8 @@ class AscendConfig:
             "msmonitor_use_daemon": false,
             "enable_transpose_kv_cache_by_block": true,
             "weight_nz_mode": 1,
+            "qwen_prefill_pacing": {},
+            "qwen_prefix_mamba_min_slots": 64,
             "enable_shared_expert_dp": false,
             "enable_sparse_sfa_c8": false,
             "enable_sparse_li_c8": false,
@@ -607,6 +610,16 @@ class AscendConfig:
     msmonitor_use_daemon: bool = False
     enable_transpose_kv_cache_by_block: bool = True
     weight_nz_mode: int = 1
+    # Resident recurrent-state floor. Live windows always fit; excess prefix
+    # checkpoints can spill to host. Used only by Qwen's compact prefix tier.
+    qwen_prefix_mamba_min_slots: int = 64
+
+    @field_validator("qwen_prefix_mamba_min_slots", mode="before")
+    @classmethod
+    def _validate_qwen_prefix_mamba_min_slots(cls, value):
+        if type(value) is not int or value < 1:
+            raise ValueError("qwen_prefix_mamba_min_slots must be a positive integer")
+        return value
 
     # ---- sub-configs (no vllm_config dep): pydantic dict→dataclass coercion ----
     ascend_compilation_config: AscendCompilationConfig = dataclasses.field(default_factory=AscendCompilationConfig)
@@ -615,6 +628,9 @@ class AscendConfig:
     eplb_config: EplbConfig = dataclasses.field(default_factory=EplbConfig)
     rejection_sampler_config: RejectionSamplerConfig = dataclasses.field(default_factory=RejectionSamplerConfig)
     rl_config: RlConfig = dataclasses.field(default_factory=RlConfig)
+    # Used only by the explicitly selected QwenPrefillPacedScheduler. Empty
+    # options retain the policy defaults, including zero decode-only cadence.
+    qwen_prefill_pacing: dict[str, Any] = dataclasses.field(default_factory=dict)
 
     # ---- sub-configs declared later in this module ----
     # Lambdas defer class lookup until construction, after module initialization.
@@ -642,6 +658,17 @@ class AscendConfig:
     _sparse_li_c8_layer_names: set[str] = dataclasses.field(default_factory=set, init=False, repr=False)
     _sparse_li_c8_layer_filter_enabled: bool = dataclasses.field(default=False, init=False, repr=False)
     _c8_reshape_optim_enabled: bool = dataclasses.field(default=False, init=False, repr=False)
+
+    @field_validator("qwen_prefill_pacing", mode="before")
+    @classmethod
+    def _validate_qwen_prefill_pacing(cls, value):
+        if not isinstance(value, dict):
+            raise ValueError("qwen_prefill_pacing must be a dictionary")
+        try:
+            PrefillPacingConfig(**value)
+        except TypeError as error:
+            raise ValueError(f"invalid qwen_prefill_pacing options: {error}") from error
+        return value
 
     @model_validator(mode="after")
     def _validate_user_input_ranges(self):

@@ -1,0 +1,45 @@
+import argparse
+import hashlib
+import json
+import subprocess
+import urllib.request
+from pathlib import Path
+
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_native import NativeManifest
+from tools.qwen4exp.thermal_controller import parse_temperatures
+
+ROOT = Path("/srv/ai/src/qwen-cast-layout-20261010")
+parser = argparse.ArgumentParser()
+parser.add_argument("mode", choices=["load", "gate"])
+args = parser.parse_args()
+client = ResidentClient("http://127.0.0.1:8001", 6, 180)
+temperatures = parse_temperatures(subprocess.check_output(["npu-smi", "info"], text=True, timeout=5), 6)
+assert max(temperatures) < 85
+assert client.request("/is_paused", method="GET")["is_paused"] is False
+metrics = urllib.request.urlopen(client.base_url + "/metrics", timeout=10).read().decode()
+assert all(float(line.rsplit(" ", 1)[1]) == 0 for line in metrics.splitlines()
+           if line.startswith(("vllm:num_requests_running{", "vllm:num_requests_waiting{")))
+before = client.rpc("resident_status")
+client.request("/pause?mode=wait&clear_cache=false")
+try:
+    if args.mode == "load":
+        library = ROOT / "diagnostic-marker-v20.so"
+        manifest = NativeManifest({
+            "name": "qwen_stage_diagnostic_v20",
+            "libraries": [{"path": str(library), "sha256": hashlib.sha256(library.read_bytes()).hexdigest()}],
+            "assets": [], "operators": ["qwen_stage_diagnostic_v20::marker"],
+            "validation_source": (ROOT / "gdn-gate.py").read_text(),
+        })
+        result = client.load_native(manifest)
+    else:
+        result = client.rpc("resident_gdn_gate_v20")
+        assert all(v["passed"] for v in result), result
+    (ROOT / ("hc-v20-" + args.mode + ".json")).write_text(json.dumps(result, indent=2) + "\n")
+    after = client.rpc("resident_status")
+    assert [(r["rank"], r["weight_storage_digest"]) for r in before] == [
+        (r["rank"], r["weight_storage_digest"]) for r in after]
+    assert all(not r["graphs_dirty"] and not r["native_failed"] for r in after)
+finally:
+    client.resume()
+print(json.dumps({"mode": args.mode, "ranks": len(result), "before_c": temperatures}), flush=True)

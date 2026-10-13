@@ -175,3 +175,17 @@ class AscendAttentionMetadataBuilder310(AscendAttentionMetadataBuilder):
         return self.build(
             common_prefix_len=0, common_attn_metadata=common_attn_metadata, fast_build=True, is_drafting=True
         )
+
+    def build_for_graph_capture(
+        self,
+        common_attn_metadata: AscendCommonAttentionMetadata,
+        attn_state: AscendAttentionState = AscendAttentionState.DecodeOnly,
+    ):
+        metadata = super().build_for_graph_capture(common_attn_metadata, attn_state)
+        # Capturing a later draft mutates the builder's shared pinned qLens
+        # buffer. Earlier metadata maps remain live until every step has been
+        # captured, and breakable QSA callbacks consult those host boundaries.
+        # Own a CPU snapshot just as build_for_drafting does. This is capture
+        # preparation only; ordinary serving retains the existing buffer reuse.
+        set_query_lens_cpu(metadata, get_query_lens_cpu(metadata).clone())
+        return metadata

@@ -1,0 +1,486 @@
+{
+  "status": {
+    "context": 131072,
+    "batch": 512,
+    "prefix_slots": 7,
+    "images": false,
+    "parallel_gather": false,
+    "stages": [
+      {
+        "stage": "waiting-for-automatic-profile",
+        "unix": 1791757399.2326272
+      },
+      {
+        "stage": "automatic-profile-admitted",
+        "unix": 1791757661.3110957
+      },
+      {
+        "stage": "text128k-native",
+        "unix": 1791757661.3114126
+      },
+      {
+        "stage": "text128k-native-passed",
+        "unix": 1791757666.888025,
+        "exit": 0
+      },
+      {
+        "stage": "text128k-near-limit",
+        "unix": 1791757666.8884716
+      },
+      {
+        "stage": "text128k-near-limit-passed",
+        "unix": 1791758201.8524926,
+        "exit": 0
+      },
+      {
+        "stage": "text128k-long-decode",
+        "unix": 1791758201.8529725
+      },
+      {
+        "stage": "failed",
+        "unix": 1791758741.336617,
+        "failed_stage": "text128k-long-decode",
+        "exit": 1
+      },
+      {
+        "stage": "text128k-smoke",
+        "unix": 1791758760.4848998
+      },
+      {
+        "stage": "text128k-smoke-passed",
+        "unix": 1791758768.095531,
+        "exit": 1
+      },
+      {
+        "stage": "text128k-small-prefill",
+        "unix": 1791758768.09605
+      },
+      {
+        "stage": "text128k-small-prefill-passed",
+        "unix": 1791758799.2441363,
+        "exit": 0
+      },
+      {
+        "stage": "text128k-decode",
+        "unix": 1791758799.2446382
+      },
+      {
+        "stage": "text128k-decode-passed",
+        "unix": 1791758878.1793098,
+        "exit": 0
+      },
+      {
+        "stage": "text128k-post-long-quality",
+        "unix": 1791758878.1797752
+      },
+      {
+        "stage": "text128k-post-long-quality-passed",
+        "unix": 1791758889.2109299,
+        "exit": 0
+      },
+      {
+        "stage": "passed-with-known-cache-miss",
+        "unix": 1791758889.2117827,
+        "capacity_validated": true,
+        "finished_tests": true
+      }
+    ],
+    "stage": "passed-with-known-cache-miss",
+    "updated_unix": 1791758889.2117808,
+    "exit": 0,
+    "near_limit_prompt_tokens": 131008,
+    "near_limit_output_budget": 64,
+    "near_limit_server_log_offset": 74281,
+    "failed_stage": "text128k-long-decode",
+    "failed_expectation": "The shortened near-limit prompt was expected to reuse prefix cache; actual cached_tokens was zero. Complete 512-token generation passed. This cache expectation was not part of context capacity validation.",
+    "full_window_generation_passed": true,
+    "changed_prompt_cache_hit": false,
+    "smoke_passed": 6,
+    "capacity_validated": true,
+    "finished_tests": true
+  },
+  "hardware": {
+    "physical_card": 8217,
+    "chips": [
+      0,
+      1
+    ],
+    "soc": "310P3",
+    "host_ram_bytes": 265538883584
+  },
+  "environment": {
+    "python": "3.12.13",
+    "packages": {
+      "torch": "2.13.0+cpu",
+      "torch-npu": "2.13.0rc1",
+      "transformers": "5.17.0",
+      "vllm": "0.1.dev1+g3ab5dda29.empty"
+    },
+    "ram": "               total        used        free      shared  buff/cache   available\nMem:     265538883584 43294019584 37238194176    56311808 187176157184 222244864000\nSwap:    111669141504    56545280 111612596224\n",
+    "cann_version": "9.1.0",
+    "cann_root": "/usr/local/Ascend/cann-9.1.0",
+    "driver_version": "26.0.rc1",
+    "architecture": "x86_64"
+  },
+  "live_service": {
+    "pid": 1473625,
+    "devices": [
+      0,
+      1
+    ],
+    "card": 8217,
+    "context": 131072,
+    "batch": 512,
+    "resident_state_slots": 7,
+    "images": false,
+    "parallel_gather": false,
+    "log": "/srv/ai/storage/artifacts/qwen-single-card-20261011/text128k-server-r8.log",
+    "started_unix": 1791757399.1684582,
+    "status": "hardware-validated-selected",
+    "startup_status": "starting; full relocated import gate passed; sequential gathers; long gate pending",
+    "test_status_file": "text128k-test-status.json",
+    "native_generation": "718de9a3719448f88438c773af86be29"
+  },
+  "unchanged_checkpoint": "Qwen3.8-Flash-Next-W4A16-G128-300i",
+  "comparisons": {
+    "historical_24k_batch512": {
+      "prefill": {
+        "cold": {
+          "ttft_s": 31.322741592997772,
+          "e2e_s": 31.858681144000002,
+          "prompt_tokens": 8192,
+          "cached_tokens": 0,
+          "correct": true,
+          "uncached_prompt_tok_s_including_first_token": 261.53521637554644
+        },
+        "warm": {
+          "ttft_s": 2.7506589789991267,
+          "e2e_s": 3.305180018000101,
+          "prompt_tokens": 8192,
+          "cached_tokens": 7680,
+          "correct": true,
+          "uncached_prompt_tok_s_including_first_token": 186.13721435810257
+        },
+        "summary": {}
+      },
+      "decode": {
+        "completed_runs": 3,
+        "output_tokens_per_run": 512,
+        "rates": [
+          20.078245160286674,
+          18.1189106231784,
+          17.402138595644782
+        ],
+        "median_tokens_per_s": 18.1189106231784,
+        "draft_acceptance": [
+          0.8447368421052631,
+          0.7018779342723005,
+          0.6613636363636364
+        ]
+      }
+    },
+    "native_32k_batch1024_parallel": {
+      "prefill": {
+        "cold": {
+          "ttft_s": 25.261180936999153,
+          "e2e_s": 25.69657620399812,
+          "prompt_tokens": 8192,
+          "cached_tokens": 0,
+          "correct": true,
+          "uncached_prompt_tok_s_including_first_token": 324.2920440034325
+        },
+        "warm": {
+          "ttft_s": 0.7809472270018887,
+          "e2e_s": 1.2128741089982213,
+          "prompt_tokens": 8192,
+          "cached_tokens": 8064,
+          "correct": true,
+          "uncached_prompt_tok_s_including_first_token": 163.90352071727176
+        },
+        "summary": {}
+      },
+      "decode": {
+        "completed_runs": 3,
+        "output_tokens_per_run": 512,
+        "rates": [
+          26.19323487802918,
+          21.72921704016025,
+          22.239515357947717
+        ],
+        "median_tokens_per_s": 22.239515357947717,
+        "draft_acceptance": [
+          0.9093406593406593,
+          0.6828703703703703,
+          0.7272727272727273
+        ]
+      }
+    },
+    "selected_128k_batch512_sequential": {
+      "prefill": {
+        "cold": {
+          "ttft_s": 28.59090219299833,
+          "e2e_s": 29.090470789000392,
+          "prompt_tokens": 8192,
+          "cached_tokens": 0,
+          "correct": true,
+          "uncached_prompt_tok_s_including_first_token": 286.52471141698186
+        },
+        "warm": {
+          "ttft_s": 0.9059738770010881,
+          "e2e_s": 1.4076354229982826,
+          "prompt_tokens": 8192,
+          "cached_tokens": 8064,
+          "correct": true,
+          "uncached_prompt_tok_s_including_first_token": 141.284426901689
+        },
+        "summary": {}
+      },
+      "decode": {
+        "completed_runs": 3,
+        "output_tokens_per_run": 512,
+        "rates": [
+          23.309143768077067,
+          20.460704923900753,
+          20.939288130616386
+        ],
+        "median_tokens_per_s": 20.939288130616386,
+        "draft_acceptance": [
+          0.8544973544973545,
+          0.6939252336448598,
+          0.7075471698113207
+        ]
+      },
+      "near_limit": {
+        "cold": {
+          "ttft_s": 528.3658472280003,
+          "e2e_s": 528.8681944850032,
+          "prompt_tokens": 131008,
+          "cached_tokens": 0,
+          "correct": true,
+          "uncached_prompt_tok_s_including_first_token": 247.94940984038934
+        },
+        "warm": {
+          "ttft_s": 4.932256179999968,
+          "e2e_s": 5.371579031998408,
+          "prompt_tokens": 131008,
+          "cached_tokens": 130944,
+          "correct": true,
+          "uncached_prompt_tok_s_including_first_token": 12.975806135033404
+        },
+        "summary": {}
+      }
+    }
+  },
+  "limitations": [
+    "One concurrent session; excludes images/video",
+    "Short-prompt decode numbers are not full-window generation speeds",
+    "Updated runtime also preserves FP32 recurrent decode state; comparison does not isolate a single fusion",
+    "Baseline reverse-word test failure retained; no fresh broad accuracy evaluation",
+    "Parallel-gather 128K trial stalled after 6144 prompt tokens; successful startup alone did not validate that profile",
+    "Changed/shortened 130560-token prompt had zero cached tokens; identical first replay remains validated"
+  ],
+  "offline_checks": {
+    "scoped_cpu_tests_passed": 128,
+    "typed_config_host_tests_passed": 2,
+    "scoped_precommit": "passed",
+    "whole_repository_format_ci": "preexisting unrelated artifact and v2 lint failures; scoped checks pass",
+    "local_upstream_scheduler_tests_skipped": 28,
+    "pinned_upstream_scheduler_tests_passed": 28
+  },
+  "full_window_generation": {
+    "prompt_tokens": 130560,
+    "output_budget": 512,
+    "total_context_budget": 131072,
+    "usage": {
+      "prompt_tokens": 130560,
+      "total_tokens": 131072,
+      "completion_tokens": 512,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "decode_tok_s": 19.725598875539287,
+    "ttft_s": 512.8600197349951,
+    "e2e_s": 538.7654436070006,
+    "correct": true,
+    "done": true,
+    "text_sha256": "fdf1bfc892a6b1a59bd2637077b5b36ab9f9d87e4c71f827da00ce967d4e3f38"
+  },
+  "text_tool_smoke": {
+    "passed": 6,
+    "total": 7,
+    "failures": [
+      {
+        "prompt": "Reverse ASCEND. Reply with only the reversed uppercase word.",
+        "expected": "DNECSA",
+        "actual": "DNESCA"
+      }
+    ]
+  },
+  "reasoning_problem": {
+    "answer_correct": true,
+    "finished": true,
+    "wall_s": 6.8647847439933685
+  },
+  "generated_code": {
+    "function_cases_passed": true,
+    "finished": true,
+    "child_stdout": "13 prime cases passed\n",
+    "wall_s": 4.060428873999626
+  },
+  "minimum-pool-npu-gates.json": [
+    {
+      "device": 0,
+      "resident_slots": 7,
+      "windows": 2,
+      "steps": 96,
+      "spill_restore_cow_recycle": true
+    },
+    {
+      "device": 0,
+      "resident_slots": 7,
+      "windows": 3,
+      "steps": 96,
+      "spill_restore_cow_recycle": true
+    },
+    {
+      "device": 1,
+      "resident_slots": 7,
+      "windows": 2,
+      "steps": 96,
+      "spill_restore_cow_recycle": true
+    },
+    {
+      "device": 1,
+      "resident_slots": 7,
+      "windows": 3,
+      "steps": 96,
+      "spill_restore_cow_recycle": true
+    }
+  ],
+  "compact-pool-npu-gates.json": [
+    {
+      "device": 0,
+      "resident_slots": 8,
+      "windows": 2,
+      "steps": 96,
+      "spill_restore_cow_recycle": true
+    },
+    {
+      "device": 0,
+      "resident_slots": 8,
+      "windows": 3,
+      "steps": 96,
+      "spill_restore_cow_recycle": true
+    },
+    {
+      "device": 1,
+      "resident_slots": 8,
+      "windows": 2,
+      "steps": 96,
+      "spill_restore_cow_recycle": true
+    },
+    {
+      "device": 1,
+      "resident_slots": 8,
+      "windows": 3,
+      "steps": 96,
+      "spill_restore_cow_recycle": true
+    }
+  ],
+  "small-pool-npu-gates.json": [
+    {
+      "device": 0,
+      "resident_slots": 16,
+      "windows": 2,
+      "steps": 96,
+      "spill_restore_cow_recycle": true
+    },
+    {
+      "device": 0,
+      "resident_slots": 16,
+      "windows": 4,
+      "steps": 96,
+      "spill_restore_cow_recycle": true
+    },
+    {
+      "device": 1,
+      "resident_slots": 16,
+      "windows": 2,
+      "steps": 96,
+      "spill_restore_cow_recycle": true
+    },
+    {
+      "device": 1,
+      "resident_slots": 16,
+      "windows": 4,
+      "steps": 96,
+      "spill_restore_cow_recycle": true
+    }
+  ],
+  "native": {
+    "generation": "718de9a3719448f88438c773af86be29",
+    "candidate_sha256": "53423bba42e3f0aa3ee0e76eef77c51761a77bcb49c337fb627367f221729b5d",
+    "workers": [
+      {
+        "rank": 0,
+        "pid": 1474732,
+        "native_name": "hc_residual_v3",
+        "native_digest": "08cc185921487b5af26d94a6ed8b966927233e096679480795b0049db93c28e9",
+        "validation": {
+          "passed": true,
+          "cases": 70,
+          "exact_bytes": true
+        }
+      },
+      {
+        "rank": 1,
+        "pid": 1474733,
+        "native_name": "hc_residual_v3",
+        "native_digest": "08cc185921487b5af26d94a6ed8b966927233e096679480795b0049db93c28e9",
+        "validation": {
+          "passed": true,
+          "cases": 70,
+          "exact_bytes": true
+        }
+      }
+    ]
+  },
+  "physical_memory_profile_lines": [
+    "(Worker_TP1_EP1 pid=1474733) INFO 10-11 22:27:34 [worker_310p.py:220] 310P physical cache profile: requested=44.03 GiB, weights=37.97 GiB, peak_activation=0.39 GiB, non_torch_increase=1.73 GiB, transient_non_torch=1.05 GiB, headroom=2.74 GiB, cache_before_layout=2.20 GiB.",
+    "(Worker_TP1_EP1 pid=1474733) INFO 10-11 22:27:34 [worker.py:783] Compact prefix KV budget: 1830400 physical attention bytes/block, 21112832 planner bytes/block, 1064 blocks within 1947635974 physical bytes.",
+    "(Worker_TP0_EP0 pid=1474732) INFO 10-11 22:27:34 [worker_310p.py:220] 310P physical cache profile: requested=44.58 GiB, weights=37.97 GiB, peak_activation=0.39 GiB, non_torch_increase=1.74 GiB, transient_non_torch=0.98 GiB, headroom=3.37 GiB, cache_before_layout=2.70 GiB.",
+    "(Worker_TP0_EP0 pid=1474732) INFO 10-11 22:27:34 [worker.py:783] Compact prefix KV budget: 1830400 physical attention bytes/block, 21112832 planner bytes/block, 1358 blocks within 2486206300 physical bytes.",
+    "(EngineCore pid=1474383) INFO 10-11 22:27:34 [kv_cache_utils.py:2395] NPU KV cache size: 134,614 tokens, Maximum concurrency for 131,072 tokens per request: 1.03x",
+    "(Worker_TP0_EP0 pid=1474732) INFO 10-11 22:27:36 [model_runner_310p.py:1416] Prefix Mamba device archive: primary_slots=6, archive_slots=0, checkpoint_bytes=58466304, archive_bytes=0.00 GiB, post_capture_free=3.02 GiB, reserve=4.00 GiB. Host spill starts only after both device tiers fill.",
+    "(Worker_TP0_EP0 pid=1474732) INFO 10-11 22:27:46 [model_runner_310p.py:1416] Prefix Mamba device archive: primary_slots=6, archive_slots=0, checkpoint_bytes=58466304, archive_bytes=0.00 GiB, post_capture_free=3.00 GiB, reserve=4.00 GiB. Host spill starts only after both device tiers fill."
+  ],
+  "runtime_source_sha256": {
+    "vllm_ascend/models/qwen4_exp/model.py": "88de6be32ead3370d37a61ec3b12aa12068fca8ae67bf6f1faeb8caa6a646cb1",
+    "vllm_ascend/models/qwen4_exp/mtp.py": "e1e626e49f94d80453a73997259224c03ac19c4d6d5956021442c71fe3682506",
+    "vllm_ascend/models/qwen4_exp/w4_moe.py": "a6e56756ccff9a3cf15b7d3a6fc6b6ba299d72957b0766a590c797dc79bb09f7",
+    "tools/qwen4exp/single_card_profile.py": "9771d42e72b88c0b6b741af200efdd17d6ba983f0e9cb2b17a37cad7ed325da3",
+    "vllm_ascend/_310p/model_runner_310p.py": "54ec63d8ec820ea29db9be8a551203c0062c3558f62367997fa6080fc4ffd526",
+    "vllm_ascend/_310p/prefix_mamba_state.py": "afeca6964cb14c6d7d06d683f1bcb23d9a0ccd918a28a2eb110beec137d3df69",
+    "vllm_ascend/ascend_config.py": "3e5fd45d8fa9d32220ca37d155ae9b134f670bd60de99ea3c3d928b6d8418f92",
+    "vllm_ascend/core/qwen_prefix_replay_scheduler.py": "82d77228c5339777c65f7c267e196fccb2c065fa1eb659745e03768b122b734c"
+  },
+  "raw_evidence_sha256": {
+    "baseline-prefill.jsonl": "f9de48b7b248004bc308e83eb87f6eb10d540394094949075ab7ab95f1825374",
+    "baseline-decode.jsonl": "7cb25c1b8dffbef582278721b727966610304b6e7631cff65375979dcb9a0973",
+    "native-prefill.jsonl": "adabeb9250e8e34634c3cb1cbd6c664e7370846c843e7ea32da08a172767de68",
+    "native-decode.jsonl": "5121cfb65fb56450cf29d8d09c37f1f60b0ed72af549876ec465c50117c54b99",
+    "text128k-near-limit.jsonl": "ab8668bb12ab99889b23f1b673fe5431f20e933760e2344d7a303f8b14b559c1",
+    "text128k-long-decode.json": "c721ac1258a4886276e1754ae3342a21bcee67bdceb192a1de80139fd4a3422b",
+    "text128k-small-prefill.jsonl": "3a9b628a8918a724f844d18734e11bb70512b8eb0f2011735551b11c46be8596",
+    "text128k-decode.jsonl": "759359cb861a550b10b6c627a7f5060e6a3620bacfc49fa937406359721ef8c7",
+    "text128k-smoke.json": "9751c3b46a6d71e37c378f0c8253ed945c58deaa99bdfa3c4761f22ffb701aad",
+    "text128k-thinking.json": "5316d3ff3d6c2b85de43ec51f8cda2bddac138600135104fe38ad56431fbfcdf",
+    "text128k-coding.json": "0c4970c3a9ab56a31a2f701ee08d49ce0501845657cba317dd4d1792e00c90a1"
+  },
+  "checkpoint": {
+    "repo_id": "matteiuspi/Qwen3.8-Flash-Next-W4A16-G128-300i",
+    "revision": "d32978ccdde1729caec0034571b03a14779698e9",
+    "config_sha256": "dbd8ac590dfd639548014c7d44b2296d59cb0ceda3fbdf30b9a35111763fd5e1"
+  }
+}

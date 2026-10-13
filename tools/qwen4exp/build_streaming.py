@@ -57,6 +57,42 @@ REQUIRED = (
     "vllm_ascend/_310p/ops/fla/chunk_gated_delta_rule.py",
     *(f"tools/qwen4exp/{name}.cpp" for name, _ in KERNELS),
 )
+NEXT_REQUIRED = (
+    "tools/qwen4exp/streaming_next_memory.py",
+    "tools/qwen4exp/streaming_next_schedule.py",
+    "tools/qwen4exp/native_streaming_next.py",
+    "tools/qwen4exp/native_streaming_next.cpp",
+    "tools/qwen4exp/qwen_streaming_next_contract.h",
+    "tools/qwen4exp/qwen_streaming_next_operands.h",
+    "tools/qwen4exp/qwen_streaming_next_projection.h",
+    "artifacts/qwen38-streaming-followup-20261009/projection-contract-v2.json",
+)
+
+
+def projection_profile(configuration):
+    variant = configuration.get("projection_variant", "v1")
+    if variant == "v1":
+        return (
+            KERNELS,
+            "artifacts/qwen38-streaming-upgrade/T2/contract.json",
+            "tools/qwen4exp/qwen_streaming_contract.h",
+            (),
+        )
+    if variant == "m32n160_v2":
+        if configuration.get("layers", {}).get("native_wy", False):
+            raise ValueError("v2 projection bundle retains reference WY")
+        return (
+            (
+                ("native_streaming_next", ("qwen_streaming_projection_v2", "qwen_streaming_columns_v2")),
+                ("native_route_gather", ("qwen_local_route_gather_v1",)),
+            ),
+            "artifacts/qwen38-streaming-followup-20261009/projection-contract-v2.json",
+            "tools/qwen4exp/qwen_streaming_next_contract.h",
+            NEXT_REQUIRED,
+        )
+    raise ValueError("unknown streaming projection variant")
+
+
 INCLUDES = re.compile(r'^\s*#\s*include\s*"([^"\n]+)"', re.MULTILINE)
 EXTERNAL_HEADERS = ("kernel_operator.h",)
 
@@ -124,9 +160,9 @@ def _source_files(root, extra_assets):
     return sorted(paths)
 
 
-def _native_closure(root):
+def _native_closure(root, kernels=KERNELS):
     """Resolve native quoted includes; SDK-owned kernel headers are explicit."""
-    pending = [root / f"tools/qwen4exp/{name}.cpp" for name, _ in KERNELS]
+    pending = [root / f"tools/qwen4exp/{name}.cpp" for name, _ in kernels]
     visited, external = set(), set()
     while pending:
         path = pending.pop()
@@ -141,7 +177,7 @@ def _native_closure(root):
             if not target.is_file() or not target.resolve().is_relative_to(root.resolve()):
                 raise ValueError(f"unresolved native source include: {name}")
             pending.append(target)
-    for name, entrypoints in KERNELS:
+    for name, entrypoints in kernels:
         source = (root / f"tools/qwen4exp/{name}.cpp").read_text()
         if any(not re.search(r"\bvoid\s+" + re.escape(entry) + r"\s*\(", source) for entry in entrypoints):
             raise ValueError("native source entrypoint missing")
@@ -173,12 +209,13 @@ def prepare_bundle(directory, source_root, version, reference_manifest, configur
     configuration_sha256 = canonical_sha256(configuration)
     reference = json.loads(Path(reference_manifest).read_text())
     validate_manifest(reference)
-    files = _source_files(root, extra_assets)
-    closure, external = _native_closure(root)
+    kernels, contract_path, header_path, required = projection_profile(configuration)
+    files = _source_files(root, (*extra_assets, *required))
+    closure, external = _native_closure(root, kernels)
     if not set(closure) <= set(files):
         raise ValueError("native include closure omitted from source inventory")
-    contract = json.loads((root / "artifacts/qwen38-streaming-upgrade/T2/contract.json").read_text())
-    header = (root / "tools/qwen4exp/qwen_streaming_contract.h").read_text()
+    contract = json.loads((root / contract_path).read_text())
+    header = (root / header_path).read_text()
     _verify_contract(contract, header)
     directory.mkdir(parents=True, exist_ok=False)
     assets = []
@@ -191,9 +228,9 @@ def prepare_bundle(directory, source_root, version, reference_manifest, configur
         if actual != digest(source):
             raise ValueError("source changed during freeze")
         role = "source"
-        if relative.endswith("T2/contract.json"):
+        if relative == contract_path:
             role = "streaming_contract"
-        elif relative.endswith("qwen_streaming_contract.h"):
+        elif relative == header_path:
             role = "streaming_contract_header"
         assets.append({"path": target.relative_to(directory).as_posix(), "sha256": actual, "role": role})
     _write_new(directory / "configuration.json", configuration)
@@ -247,7 +284,8 @@ def verify_bundle(directory, require_compiled=False):
     if prepared != seal_manifest(prepared) or prepared.get("kind") != "qwen_streaming_prepared_bundle":
         raise ValueError("prepared bundle seal mismatch")
     _verify_assets(directory, prepared["assets"])
-    expected_assets = {"sources/" + path for path in REQUIRED} | {"configuration.json", "reference.json"}
+    kernels, contract_path, header_path, required = projection_profile(prepared["configuration"])
+    expected_assets = {"sources/" + path for path in (*REQUIRED, *required)} | {"configuration.json", "reference.json"}
     if not expected_assets <= {entry["path"] for entry in prepared["assets"]}:
         raise ValueError("prepared source inventory incomplete")
     if (
@@ -256,11 +294,11 @@ def verify_bundle(directory, require_compiled=False):
         or prepared["namespace"] != f"qwen_streaming_v{prepared['version']}"
     ):
         raise ValueError("prepared namespace identity mismatch")
-    closure, external = _native_closure(directory / "sources")
+    closure, external = _native_closure(directory / "sources", kernels)
     if closure != prepared["native_include_closure"] or external != prepared["external_headers_requiring_host_compile"]:
         raise ValueError("frozen native closure mismatch")
-    contract = json.loads((directory / "sources/artifacts/qwen38-streaming-upgrade/T2/contract.json").read_text())
-    _verify_contract(contract, (directory / "sources/tools/qwen4exp/qwen_streaming_contract.h").read_text())
+    contract = json.loads((directory / "sources" / contract_path).read_text())
+    _verify_contract(contract, (directory / "sources" / header_path).read_text())
     if contract["contract_sha256"] != prepared["contract_sha256"]:
         raise ValueError("prepared logical contract identity mismatch")
     configuration = json.loads((directory / "configuration.json").read_text())
@@ -288,14 +326,14 @@ def verify_bundle(directory, require_compiled=False):
     if candidate["resources_sha256"] != canonical_sha256(resource_inventory(candidate)):
         raise ValueError("native resource inventory mismatch")
     _verify_assets(directory, candidate["assets"] + candidate["binaries"] + candidate["bridges"])
-    expected_binaries = {"binaries/" + name + ".bin": list(entries) for name, entries in KERNELS}
+    expected_binaries = {"binaries/" + name + ".bin": list(entries) for name, entries in kernels}
     if {entry["path"]: entry["entrypoints"] for entry in candidate["binaries"]} != expected_binaries:
         raise ValueError("native per-binary entrypoint identity mismatch")
-    if candidate["native_components"] != [name for name, _ in KERNELS]:
+    if candidate["native_components"] != [name for name, _ in kernels]:
         raise ValueError("native component coverage mismatch")
     if len(candidate["bridges"]) != 1 or candidate["bridges"][0]["path"] != f"bridge/{candidate['namespace']}.so":
         raise ValueError("versioned bridge identity mismatch")
-    expected = {entry for _, entries in KERNELS for entry in entries}
+    expected = {entry for _, entries in kernels for entry in entries}
     actual = [entry for binary in candidate["binaries"] for entry in binary["entrypoints"]]
     if set(actual) != expected or len(actual) != len(expected):
         raise ValueError("native entrypoint coverage mismatch")
@@ -317,7 +355,7 @@ def verify_bundle(directory, require_compiled=False):
     containment = receipt.get("filesystem_containment", {})
     _verify_containment(directory, containment, prepared)
     attestations = receipt.get("command_attestations", [])
-    if len(attestations) != len(KERNELS) + 2:
+    if len(attestations) != len(kernels) + 2:
         raise ValueError("complete host compilation containment attestations required")
     for record in attestations:
         _verify_assets(directory, [record["stdout"], record["stderr"]])
@@ -421,11 +459,18 @@ def _toolchain(cann, torch_abi=None, abi_evidence=None):
     }
 
 
-def _compiler_environment():
+def _compiler_environment(library_dirs=()):
     """Prevent loader injection before the unlinked containment helper starts."""
     environment = dict(os.environ)
     for name in ("LD_PRELOAD", "LD_AUDIT"):
         environment.pop(name, None)
+    if library_dirs:
+        # SDK ELF dependencies use RUNPATH only for direct dependencies. Give
+        # the contained child explicit SDK paths for transitive libacl_rt.so.
+        paths = [str(Path(path).resolve()) for path in library_dirs]
+        if environment.get("LD_LIBRARY_PATH"):
+            paths.append(environment["LD_LIBRARY_PATH"])
+        environment["LD_LIBRARY_PATH"] = os.pathsep.join(paths)
     return environment
 
 
@@ -580,7 +625,12 @@ def build_bundle(directory, cann_root, torch_abi=None, abi_evidence=None):
 
     def run_compiler(command):
         result = subprocess.run(
-            [*containment["command_prefix"], *command], capture_output=True, text=True, env=_compiler_environment()
+            [*containment["command_prefix"], *command],
+            capture_output=True,
+            text=True,
+            env=_compiler_environment(
+                (toolchain["cann"] / "lib64", toolchain["npu"] / "lib", toolchain["torch_root"] / "lib")
+            ),
         )
         index = len(command_attestations)
         logs = {}
@@ -650,7 +700,7 @@ def build_bundle(directory, cann_root, torch_abi=None, abi_evidence=None):
     ]
     binaries = []
     (directory / "binaries").mkdir(exist_ok=False)
-    for name, entrypoints in KERNELS:
+    for name, entrypoints in projection_profile(prepared["configuration"])[0]:
         output = directory / "binaries" / f"{name}.bin"
         run_compiler([str(compiler), str(root / f"tools/qwen4exp/{name}.cpp"), str(output), *options])
         if not output.is_file() or not output.stat().st_size:
@@ -715,7 +765,7 @@ def build_bundle(directory, cann_root, torch_abi=None, abi_evidence=None):
             "kind": "qwen_streaming_compiled_candidate",
             "binaries": sorted(binaries, key=lambda item: item["path"]),
             "bridges": bridges,
-            "native_components": [name for name, _ in KERNELS],
+            "native_components": [name for name, _ in projection_profile(prepared["configuration"])[0]],
             "prepared_manifest_sha256": prepared["manifest_sha256"],
             "hardware_validated": False,
             "admissible_without_gate_evidence": False,

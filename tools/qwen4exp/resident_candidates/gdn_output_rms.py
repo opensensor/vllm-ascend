@@ -7,7 +7,10 @@ from tools.qwen4exp.direct_gdn_output import HEAD_WIDTH, MAX_ROWS
 from tools.qwen4exp.resident_candidates.fused_hc_projection import _is_capturing, _weight_key
 from vllm_ascend.models.qwen4_exp.model import _linear, _rms_norm
 
-MAX_DECODE_TOKENS = 6
+# The six-chip MTP2 maximum-concurrency graph contains 18 scheduled tokens.
+# A direct fused op still obeys its independent MAX_ROWS bound; native RMSNorm
+# can cover this whole graph without changing FP32 accumulation or TP reduce.
+MAX_DECODE_TOKENS = 18
 CACHE_ATTRIBUTE = "_qwen_gdn_output_norm_weight"
 
 

@@ -1,0 +1,6 @@
+// Diagnostic registration only; no device work or model storage.
+#include <torch/library.h>
+int64_t Marker() { return 1; }
+TORCH_LIBRARY(qwen_stage_diagnostic_v18, m) {
+  m.def("marker() -> int", &Marker);
+}

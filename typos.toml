@@ -26,10 +26,17 @@ extend-ignore-identifiers-re = [".*Unc.*", ".*_thw",
     ".*(?i)mata.*"]
 extend-ignore-words-re = ["CANN", "cann","ND","alog","nd","BA","datas","ful","udo","artifcat",]
 # Preserve raw benchmark request IDs; hex substrings are not prose to fix.
-extend-ignore-re = ['"(?:request_id|id)"\s*:\s*"(?:chatcmpl|cmpl)-[0-9a-f]+"']
+# Preserve generated output verbatim; its spelling is part of the evidence.
+extend-ignore-re = [
+    '"text"\s*:\s*"(?:\\.|[^"\\])*"',
+    '"(?:request_id|id)"\s*:\s*"(?:chatcmpl|cmpl)-[0-9a-f]+"',
+    # Exact passcodes in near-limit recall measurements are hex, not prose.
+    'CAP-[0-9a-f]{12}',
+]
 
 [default.extend-identifiers]
 # Preserve exact CANN kernel names in archived profiler evidence.
+schemMode = "schemMode"
 aclnnBatchMatMul_BatchMatMulNd_BatchMatMulV2 = "aclnnBatchMatMul_BatchMatMulNd_BatchMatMulV2"
 TransdataNdToNzKernel = "TransdataNdToNzKernel"
 TransdataNzToNdKernel = "TransdataNzToNdKernel"

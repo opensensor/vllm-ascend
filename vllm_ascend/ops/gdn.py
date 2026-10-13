@@ -20,11 +20,6 @@ from functools import lru_cache, wraps
 import torch
 import torch_npu
 from einops import rearrange
-from fla_npu.ops.ascendc import (
-    causal_conv1d_fn,
-    causal_conv1d_update,
-    recurrent_gated_delta_rule,
-)
 from torch import nn
 from vllm.distributed import get_pcp_group
 from vllm.forward_context import get_forward_context
@@ -44,6 +39,7 @@ from vllm_ascend.attention.utils import (
 from vllm_ascend.device.device_op import DeviceOperator
 from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_hardware_profile
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.attention_fence import record_attention_compute_start
+from vllm_ascend.ops.fla_backend import load_fla_op
 from vllm_ascend.ops.gdn_attn_builder import AscendGDNAttentionBackend
 from vllm_ascend.ops.triton.fla.chunk import chunk_gated_delta_rule
 from vllm_ascend.ops.triton.fla.fused_qkvzba_split_reshape import fused_qkvzba_split_reshape_cat
@@ -52,6 +48,9 @@ from vllm_ascend.ops.triton.mamba.causal_conv1d import extract_last_width
 from vllm_ascend.ops.triton.mamba.state_index import gather_ssm_states, scatter_ssm_states_
 
 _PACKED_CONV_WEIGHT_NAME = "ascend_conv1d_weight"
+causal_conv1d_fn = load_fla_op("causal_conv1d_fn")
+causal_conv1d_update = load_fla_op("causal_conv1d_update")
+recurrent_gated_delta_rule = load_fla_op("recurrent_gated_delta_rule")
 
 
 @lru_cache(maxsize=1)

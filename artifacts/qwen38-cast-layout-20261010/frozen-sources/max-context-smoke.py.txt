@@ -1,0 +1,30 @@
+import base64,json,time,urllib.request
+from pathlib import Path
+root=Path('/srv/ai/src/qwen-cast-layout-20261010')
+base='http://127.0.0.1:8001'
+def request(path,body=None,timeout=120):
+ data=None if body is None else json.dumps(body).encode()
+ req=urllib.request.Request(base+path,data=data,headers={'Content-Type':'application/json'})
+ with urllib.request.urlopen(req,timeout=timeout) as r:return json.load(r)
+model=request('/v1/models')['data'][0]['id']
+records=[]
+for prompt,needle in [('What is 2 plus 7? Respond only with the number.','9'),('What is the capital of France? Respond with one word.','Paris'),('Sort these integers in ascending order: 8, 1, 5. Respond only with the sorted list.','1, 5, 8')]:
+ body={'model':model,'messages':[{'role':'user','content':prompt}],'max_tokens':64,'temperature':0,'seed':42,'chat_template_kwargs':{'enable_thinking':False}}
+ start=time.monotonic();r=request('/v1/chat/completions',body)
+ text=r['choices'][0]['message'].get('content') or ''
+ record={'kind':'text','prompt':prompt,'response':r,'elapsed_s':time.monotonic()-start,'passed':needle.lower() in text.lower()}
+ records.append(record);print(json.dumps(record),flush=True)
+ if not record['passed']:break
+else:
+ image='data:image/png;base64,'+base64.b64encode((root/'vision-fixture.png').read_bytes()).decode()
+ body={'model':model,'messages':[{'role':'user','content':[{'type':'text','text':'Describe the two colored shapes and transcribe the large text below them.'},{'type':'image_url','image_url':{'url':image}}]}],'max_tokens':128,'temperature':0,'seed':42,'chat_template_kwargs':{'enable_thinking':False}}
+ for attempt in ['cold','cached']:
+  start=time.monotonic();r=request('/v1/chat/completions',body)
+  text=(r['choices'][0]['message'].get('content') or '').lower()
+  record={'kind':'image','attempt':attempt,'response':r,'elapsed_s':time.monotonic()-start,'passed':all(w in text for w in ['red','square','blue','circle','six chips'])}
+  records.append(record);print(json.dumps(record),flush=True)
+status=request('/collective_rpc',{'method':'resident_status'},timeout=30)
+(root/'mtp-v2-ple-after-smoke.json').write_text(json.dumps(status,indent=2))
+(root/'mtp-v2-ple-smoke.json').write_text(json.dumps({'model':model,'passed':len(records)==5 and all(r['passed'] for r in records),'records':records},indent=2))
+assert len(status['results'])==6 and sorted(r['rank'] for r in status['results'])==list(range(6))
+assert len(records)==5 and all(r['passed'] for r in records), 'coherence or image smoke failed'

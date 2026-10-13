@@ -1,0 +1,66 @@
+import torch
+import torch_npu
+
+from tools.qwen4exp.resident_candidates import fused_hc_projection, fused_hc_residual, shared_hc_operand
+from tools.qwen4exp.resident_worker import QwenResidentExtension
+from vllm_ascend.models.qwen4_exp.model import _GatedResidual
+
+
+def validate():
+    assert torch.ops.qwen_stage_diagnostic_v18.marker() == 1
+    assert not hasattr(QwenResidentExtension, "resident_hc_gate_v18")
+
+    def gate(self):
+        count = 0
+        try:
+            combine = fused_hc_residual.make_combine(self._resident_native_session().resources["hc_residual_v1"])
+            modules = [m for w in self._resident_wrappers() for m in w.runnable.modules()
+                       if isinstance(m, _GatedResidual) and m.use_combine]
+            with torch.inference_mode():
+                for index, module in enumerate(modules):
+                    rows_list = (3, 18, 128, 640, 2560) if index == 0 else (3, 18)
+                    for rows in rows_list:
+                        gen = torch.Generator().manual_seed(20261010 + index + rows)
+                        hyper = torch.randn(rows, module.hyper_hidden, generator=gen).half().npu()
+                        block = torch.randn(rows, module.hidden_size, generator=gen).half().npu()
+                        expected_mix, residual = shared_hc_operand.mix(module, hyper)
+                        expected = fused_hc_projection.combine(module, block, residual)
+                        actual_mix, actual_residual = fused_hc_projection.mix(module, hyper)
+                        assert isinstance(actual_residual, fused_hc_projection.ProjectionResidual)
+                        actual = combine(module, block, actual_residual)
+                        torch.testing.assert_close(actual_mix.cpu(), expected_mix.cpu(), rtol=0, atol=0)
+                        torch.testing.assert_close(actual.cpu(), expected.cpu(), rtol=0, atol=0)
+                        count += 1
+            return {"rank": torch.distributed.get_rank(), "passed": True, "cases": count,
+                    "modules": len(modules), "bitwise_equal": True,
+                    "reference": "shared HC operand, previously exact against baseline at all five row sizes"}
+        except Exception as error:
+            return {"rank": torch.distributed.get_rank(), "passed": False, "cases": count,
+                    "error": f"{type(error).__name__}: {error}"}
+
+    def profile(self, action):
+        rank = torch.distributed.get_rank()
+        if rank != 0:
+            return {"rank": rank, "passed": True, "profiled": False}
+        if action == "start":
+            assert not hasattr(self, "_cast_layout_profile_v18")
+            self._cast_layout_profile_v18 = torch_npu.profiler.profile(
+                activities=[torch_npu.profiler.ProfilerActivity.CPU, torch_npu.profiler.ProfilerActivity.NPU],
+                on_trace_ready=torch_npu.profiler.tensorboard_trace_handler("/srv/ai/src/qwen-cast-layout-20261010/transfer-profile-v18"),
+                record_shapes=True, profile_memory=True, with_stack=False,
+                experimental_config=torch_npu.profiler._ExperimentalConfig(
+                    profiler_level=torch_npu.profiler.ProfilerLevel.Level1,
+                    aic_metrics=torch_npu.profiler.AiCMetrics.Memory,
+                    export_type=[torch_npu.profiler.ExportType.Text, torch_npu.profiler.ExportType.Db], op_attr=True),
+            )
+            self._cast_layout_profile_v18.start()
+        elif action == "stop":
+            self._cast_layout_profile_v18.stop()
+            del self._cast_layout_profile_v18
+        else:
+            raise ValueError("unknown action")
+        return {"rank": rank, "passed": True, "profiled": True, "action": action}
+
+    setattr(QwenResidentExtension, "resident_hc_gate_v18", gate)
+    setattr(QwenResidentExtension, "resident_cast_layout_profile_v18", profile)
+    return {"passed": True, "production_forward_changed": False}

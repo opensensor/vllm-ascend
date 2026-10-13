@@ -1,0 +1,32 @@
+# Manual runtime diagnostic record, not an lm-eval task configuration.
+# Do not pass this file to test_lm_eval_correctness.py.
+model_name: /srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-TP6-MTP-20261010
+model_type: runtime_diagnostic
+hardware: Three Atlas 300I Duo cards, six Ascend 310P3 chips
+manual_only: true
+serve:
+  tensor_parallel_size: 6
+  enable_expert_parallel: true
+  dtype: float16
+  max_model_len: 1048576
+  max_num_seqs: 2
+  gpu_memory_utilization: 0.955
+  served_model_name: qwen38-flash-next
+  speculative_tokens: 2
+  rope_type: yarn
+  rope_factor: 4.0
+tasks:
+  - name: bootstrap_marker_arithmetic_code_and_images
+    metrics:
+      - name: passed_fraction
+        value: 1.0
+    sample_count: 5
+    evidence: artifacts/qwen38-yarn-1m-20261011/bootstrap-smoke-*.json
+num_fewshot: 0
+validation_runner: /srv/ai/src/qwen-yarn-1m-tp6-20261011/bootstrap_profile.py
+long_context_quality: unqualified
+notes: >-
+  Real checkpoint startup smokes passed. Short prompts and fresh/cached images
+  do not establish language quality or retrieval accuracy at one million tokens.
+  The user elected interactive long-context testing. This file records measured
+  runtime checks; it makes no GSM8K, MMLU, or whole-model throughput claim.

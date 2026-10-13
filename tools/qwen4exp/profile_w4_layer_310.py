@@ -26,11 +26,13 @@ from tools.qwen4exp.profile_runtime import export_cprofile
 from vllm_ascend.models.qwen4_exp.dtype_policy import Qwen4ExpDtypePolicy
 from vllm_ascend.models.qwen4_exp.model import _format_eager_linear_weights_npu
 from vllm_ascend.models.qwen4_exp.moe import route_topk
+from vllm_ascend.models.qwen4_exp.shared_partition import shared_expert_range
 from vllm_ascend.models.qwen4_exp.w4_moe import CUBE_BACKENDS, CUBE_DEVICE_ROUTED_BACKENDS, EXPERT_NAME, W4SparseMoE
 from vllm_ascend.models.qwen4_exp.w4a8_int4 import NATIVE_INT4_BACKEND
 from vllm_ascend.utils import enable_custom_op
 
 
+@torch.inference_mode()
 def load_layer(model, layer_number, rank, tp_size, backend):
     config = json.loads((model / "config.json").read_text())["text_config"]
     config["ascend_expert_quantization"]["backend"] = backend
@@ -65,7 +67,12 @@ def load_layer(model, layer_number, rank, tp_size, backend):
                     shared[name[len(prefix) :]] = tensor
     if layer.has_shared_expert:
         width = layer.local_shared_inter
-        start, stop = rank * width, (rank + 1) * width
+        if layer.shared_expert_replicated:
+            start, stop = 0, width
+        elif layer.shared_expert_execution == "tp_sharded_uneven":
+            start, stop = shared_expert_range(config["shared_expert_intermediate_size"], rank, tp_size)
+        else:
+            start, stop = rank * width, (rank + 1) * width
         layer.shared_gate_up.copy_(
             torch.cat(
                 [

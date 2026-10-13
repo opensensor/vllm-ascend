@@ -12,7 +12,6 @@ from functools import wraps
 import torch
 import torch_npu
 from einops import rearrange
-from fla_npu.ops.ascendc import causal_conv1d_fn, causal_conv1d_update
 from torch import nn
 from vllm.compilation.breakable_cudagraph import eager_break_during_capture
 from vllm.forward_context import get_forward_context
@@ -34,6 +33,7 @@ from vllm_ascend.attention.utils import (
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.attention_fence import (
     record_attention_compute_start,
 )
+from vllm_ascend.ops.fla_backend import load_fla_op
 from vllm_ascend.ops.gdn_attn_builder import AscendGDNAttentionBackend
 from vllm_ascend.ops.kda import run_chunk_kda, run_recurrent_kda
 from vllm_ascend.quantization.methods.w4a8.w4a8_mxfp4 import (
@@ -45,6 +45,8 @@ from vllm_ascend.quantization.methods.w8a8.w8a8_mxfp8 import (
 from vllm_ascend.utils import npu_stream_switch
 
 _PACKED_CONV_WEIGHT_NAME = "ascend_conv1d_weight"
+causal_conv1d_fn = load_fla_op("causal_conv1d_fn")
+causal_conv1d_update = load_fla_op("causal_conv1d_update")
 _F_PROJ_SHARD_ID = 1
 _KDA_BFG_STREAM: torch.npu.Stream | None = None
 

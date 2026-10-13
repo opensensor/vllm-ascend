@@ -1,0 +1,71 @@
+import hashlib
+import json
+import time
+import urllib.request
+from pathlib import Path
+
+root = Path("/srv/ai/src/qwen-cast-layout-20261010")
+
+
+def call(path, body=None, timeout=60):
+    request = urllib.request.Request(
+        "http://127.0.0.1:8001" + path,
+        data=None if body is None else json.dumps(body).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        raw = response.read()
+        return json.loads(raw) if raw else None
+
+
+def rpc(method, args=None, timeout=180):
+    return call("/collective_rpc", {"method": method, "args": args or [], "timeout": timeout}, timeout + 10)
+
+
+def save(name, value):
+    (root / ("gdn-" + name + ".json")).write_text(json.dumps(value, indent=2))
+    return value
+
+
+assert not call("/is_paused")["is_paused"]
+metrics = urllib.request.urlopen("http://127.0.0.1:8001/metrics", timeout=10).read().decode()
+assert all(
+    float(line.rsplit(" ", 1)[1]) == 0
+    for line in metrics.splitlines()
+    if line.startswith(("vllm:num_requests_running{", "vllm:num_requests_waiting{"))
+)
+call("/pause?mode=wait&clear_cache=true", {})
+try:
+    before = save("profile-before", rpc("resident_status"))
+    started = save("profile-started", rpc("resident_cast_layout_profile_v19", ["start"]))
+    assert all(v["passed"] for v in started["results"]), started
+finally:
+    call("/resume", {})
+try:
+    start = time.perf_counter()
+    response = call(
+        "/v1/completions",
+        {
+            "model": "qwen38-flash-next",
+            "prompt": "Transfer trace cold prefix: "
+            + ("The archive describes a blue project with tests and a completed review.\n" * 32)
+            + "Continue briefly.",
+            "temperature": 0,
+            "seed": 42,
+            "max_tokens": 12,
+            "ignore_eos": True,
+        },
+        timeout=180,
+    )
+    save("profile-request", {"elapsed_s": time.perf_counter() - start, "response": response})
+finally:
+    stopped = save("profile-stopped", rpc("resident_cast_layout_profile_v19", ["stop"]))
+    assert all(v["passed"] for v in stopped["results"]), stopped
+    after = save("profile-after", rpc("resident_status"))
+    assert [v["weight_storage_digest"] for v in before["results"]] == [
+        v["weight_storage_digest"] for v in after["results"]
+    ]
+    assert all(
+        v["candidate"] == "histogram_prefill_gdn" and not v["graphs_dirty"] and not v["native_failed"] for v in after["results"]
+    )
+    print("Rank-zero mixed trace collected; server retains histogram/exact native HC", flush=True)

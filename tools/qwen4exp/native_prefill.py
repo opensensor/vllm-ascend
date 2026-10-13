@@ -8,6 +8,8 @@ HEAD_DIM = 128
 MAX_PADDED_TOKENS = 8192
 MAX_ROUTES = 25600
 MAX_CONFIGS = 256
+DECODE_ROUTE_LIMIT = 128
+GROUPED_PROJECTION_SHAPES = ((1280, 2560), (2560, 640))
 
 
 def _on_npu(device):
@@ -157,3 +159,45 @@ class NativeLocalSwigluPack(NativeResource):
         config = self.config((width // 128, group_ends.numel()), gate_up.device)
         self.launch(self.kernel, [gate_up, group_ends, low, high, scale, total, config], 8)
         return low, high, scale, total
+
+
+class NativeGroupedPrefill(NativeResource):
+    """Prefill-only schedule over the original packed banks, without copies.
+
+    No per-expert host count is read. The kernel chooses its bounded tile from
+    the final device group boundary, then uses the original arithmetic.
+    """
+
+    def __call__(self, bank, prepared, group_ends):
+        if len(prepared) != 4 or bank.weight.ndim != 3:
+            raise ValueError("grouped prefill requires a packed expert bank and four operands")
+        low, high, scale, total = prepared
+        experts, outputs, packed_inputs = bank.weight.shape
+        inputs = packed_inputs * 2
+        rows = low.shape[0] if low.ndim == 2 else 0
+        metadata_shape = (rows, inputs // 128, 8)
+        weight_metadata_shape = (experts, outputs, inputs // 128)
+        if (
+            (outputs, inputs) not in GROUPED_PROJECTION_SHAPES
+            or not DECODE_ROUTE_LIMIT < rows <= MAX_ROUTES
+            or not 0 < experts <= 128
+            or low.shape != (rows, packed_inputs)
+            or high.shape != low.shape
+            or any(t.dtype != torch.int8 for t in (low, high, bank.weight))
+            or scale.shape != metadata_shape
+            or total.shape != metadata_shape
+            or any(t.dtype != torch.float32 for t in (scale, total))
+            or group_ends.shape != (experts,)
+            or group_ends.dtype != torch.int64
+            or any(
+                t.shape != weight_metadata_shape or t.dtype != torch.float16
+                for t in (bank.weight_scale, bank.weight_offset, bank.weight_sum)
+            )
+        ):
+            raise ValueError("unsupported grouped prefill geometry/dtype; preserve the installed decode operator")
+        operands = (*prepared, bank.weight, bank.weight_scale, bank.weight_offset, bank.weight_sum, group_ends)
+        _tensors_on_one_device(operands, low.device)
+        output = torch.empty((rows, outputs), dtype=torch.float16, device=low.device)
+        descriptor = self.config((rows, experts, outputs, inputs, 8, 0, 1), low.device)
+        self.launch(self.kernel, [*operands, output, descriptor], 8)
+        return output

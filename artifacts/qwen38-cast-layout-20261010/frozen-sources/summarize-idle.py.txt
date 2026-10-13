@@ -1,0 +1,16 @@
+from pathlib import Path
+import json,sqlite3,hashlib
+r=Path('/srv/ai/src/qwen-cast-layout-20261010')
+p=next((r/'transfer-profile-v19').glob('*20261010150047368*/ASCEND_PROFILER_OUTPUT'))
+db=p/'ascend_pytorch_profiler_0.db'
+c=sqlite3.connect('file:'+str(db)+'?mode=ro',uri=True)
+tables=[x[0] for x in c.execute('SELECT name FROM sqlite_master WHERE type=?',('table',))]
+result={'scope':'rank-zero passive 10-second idle window; no requests; parser reported no ACL-to-NPU flow events','database_sha256':hashlib.sha256(db.read_bytes()).hexdigest(),'tables':tables,'absent_tables_do_not_prove_no_hardware_traffic':True}
+if 'TASK' in tables:
+ result['tasks']=list(c.execute('SELECT STRING_IDS.value,COUNT(*) FROM TASK JOIN STRING_IDS ON TASK.taskType=STRING_IDS.id GROUP BY TASK.taskType'))
+events=json.loads((p/'trace_view.json').read_text())
+if isinstance(events,dict):events=events['traceEvents']
+result['trace_event_count']=len(events)
+result['device_task_count']=sum(e.get('ph')=='X' and bool(e.get('args',{}).get('Task Type')) for e in events)
+(r/'idle-physical-summary.json').write_text(json.dumps(result,indent=2)+'\n')
+print(json.dumps(result))

@@ -16,6 +16,7 @@ from vllm_ascend._310p.prefix_mamba_state import (
     prefix_mamba_slot_count,
     prefix_mamba_state_bytes_per_slot,
     retain_prefix_mamba_blocks,
+    uses_bounded_prefix_mamba_scheduler,
 )
 
 
@@ -276,10 +277,44 @@ def test_shared_slot_count_covers_previous_and_current_candidate_windows(request
     assert prefix_mamba_slot_count(requests, drafts) == expected
 
 
+@pytest.mark.parametrize("requests,drafts,expected", [(1, 2, 64), (4, 2, 81), (6, 2, 105), (8, 2, 129)])
+def test_bounded_slot_count_covers_live_cow_write_windows_and_retained_history(requests, drafts, expected):
+    slots = prefix_mamba_slot_count(requests, drafts, bounded_checkpoints=True)
+    assert slots == expected
+    assert slots - 1 - requests * 4 * (1 + drafts) >= 32
+
+
+def test_bounded_scheduler_identity_supports_name_class_and_subclass_only():
+    qualified = "vllm_ascend.core.prefix_mamba_scheduler.PrefixMambaBoundedScheduler"
+    owner = type("PrefixMambaBoundedScheduler", (), {"__module__": "vllm_ascend.core.prefix_mamba_scheduler"})
+    subclass = type("CustomBoundedScheduler", (owner,), {})
+    assert all(uses_bounded_prefix_mamba_scheduler(value) for value in (qualified, owner, subclass))
+    assert not any(uses_bounded_prefix_mamba_scheduler(value) for value in (None, object, "other.Scheduler"))
+
+
+def test_paced_scheduler_string_selects_the_same_bounded_pool_as_its_parent():
+    paced = "vllm_ascend.core.qwen_prefill_scheduler.QwenPrefillPacedScheduler"
+    assert uses_bounded_prefix_mamba_scheduler(paced)
+    assert prefix_mamba_slot_count(6, 2, bounded_checkpoints=uses_bounded_prefix_mamba_scheduler(paced)) == 105
+
+
 @pytest.mark.parametrize("requests,drafts", [(0, 1), (1, -1)])
 def test_invalid_slot_count_fails(requests, drafts):
     with pytest.raises(ValueError):
         prefix_mamba_slot_count(requests, drafts)
+
+
+@pytest.mark.parametrize(
+    "requests,drafts,floor,expected", [(1, 2, 16, 16), (1, 2, 7, 7), (1, 2, 8, 8), (2, 2, 1, 13), (1, 0, 1, 3)]
+)
+def test_smaller_resident_pool_preserves_all_live_windows(requests, drafts, floor, expected):
+    assert prefix_mamba_slot_count(requests, drafts, minimum_slots=floor) == expected
+
+
+@pytest.mark.parametrize("floor", [0, -1, True, 16.0, "16", None])
+def test_resident_pool_floor_rejects_invalid_configuration(floor):
+    with pytest.raises(ValueError, match="minimum slots"):
+        prefix_mamba_slot_count(1, 2, minimum_slots=floor)
 
 
 def test_active_windows_follow_each_requests_progress_and_speculation():

@@ -23,16 +23,18 @@ def load_method(path, cls, name, namespace):
     return namespace[name]
 
 
-@pytest.mark.parametrize("batch_size", [1, 2, 4])
+@pytest.mark.parametrize("compact_argmax", [False, True])
+@pytest.mark.parametrize("batch_size", [1, 2, 4, 6])
 @pytest.mark.parametrize("full_graph", [False, True])
 @pytest.mark.parametrize("k", [1, 2, 4])
-def test_drafts_compact_after_first_pass_but_preserve_graph_bucket(batch_size, full_graph, k):
+def test_drafts_compact_after_first_pass_but_preserve_graph_bucket(batch_size, full_graph, k, compact_argmax):
     """Prefill 256 rows -> B rows; a captured verify bucket stays padded."""
     first_rows = batch_size * (k + 1) if full_graph else 256
     context = SimpleNamespace(cudagraph_runtime_mode="full" if full_graph else "none", attn_metadata=None)
     namespace = {
         "torch": torch,
         "lmhead_tp_enable": lambda: False,
+        "try_qwen4exp_draft_argmax": lambda owner, hidden, **kwargs: hidden[:, 0].long() if compact_argmax else None,
         "get_ascend_config": lambda: SimpleNamespace(enable_reduce_sample=True),
         "get_forward_context": lambda: context,
         "CUDAGraphMode": SimpleNamespace(FULL="full"),
@@ -51,6 +53,12 @@ def test_drafts_compact_after_first_pass_but_preserve_graph_bucket(batch_size, f
         assert kwargs["hidden_states"].shape == (expected, 8)
         calls.append(expected)
         return kwargs["hidden_states"] + 1
+
+    def logits(hidden):
+        assert not compact_argmax, "compact proposals must skip full-vocabulary logits"
+        return hidden
+
+    model.compute_logits = logits
 
     proposer = SimpleNamespace(
         runner=None,
@@ -71,12 +79,14 @@ def test_drafts_compact_after_first_pass_but_preserve_graph_bucket(batch_size, f
         arange=torch.arange(first_rows),
         vllm_config=SimpleNamespace(model_config=SimpleNamespace(max_model_len=4096)),
         compute_draft_token_ids=lambda hidden, sampling: (hidden[:, 0].long(), None),
+        _sample_draft_from_logits=lambda logits, sampling: (logits[:, 0].long(), None),
     )
     proposer._get_positions = lambda n: proposer.positions[:n]
     proposer._set_positions = lambda n, p: proposer.positions[:n].copy_(p)
     indices = torch.arange(batch_size) * (first_rows // batch_size) + first_rows // batch_size - 1
     result = method(proposer, first_rows, batch_size, indices, None, None, [object() for _ in range(k)], first_rows)
     assert result.shape == (batch_size, k)
+    assert result.is_contiguous(), "draft rows must be packed before asynchronous CPU readback"
     assert calls == [first_rows] + [first_rows if full_graph else batch_size] * (k - 1)
     assert torch.equal(result, torch.arange(1, k + 1).expand(batch_size, -1))
 

@@ -14,7 +14,14 @@ from vllm_ascend.models.qwen4_exp.model import _GDNAttention
 
 @pytest.mark.parametrize(
     "tokens,grad,supported,tp",
-    [(3, False, True, 1), (6, False, True, 2), (7, False, True, 1), (3, True, True, 1), (3, False, False, 1)],
+    [
+        (3, False, True, 1),
+        (6, False, True, 2),
+        (18, False, True, 2),
+        (19, False, True, 1),
+        (3, True, True, 1),
+        (3, False, False, 1),
+    ],
 )
 def test_decode_dispatch_preserves_complete_output_and_tp(monkeypatch, tokens, grad, supported, tp):
     norm = Mock(

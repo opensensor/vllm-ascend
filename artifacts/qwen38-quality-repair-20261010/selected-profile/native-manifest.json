@@ -1,0 +1,23 @@
+{
+  "assets": [
+    {
+      "path": "/srv/ai/src/qwen-shroud-resume-20261010/residual-v3.bin",
+      "sha256": "867938a0fa3a86d82cc181657a5378d6424b2977d3340f412c162d587bf6c7d0"
+    },
+    {
+      "path": "/srv/ai/src/qwen-quality-repair-tp6-v3-20261010/tools/qwen4exp/direct_hc_residual.py",
+      "sha256": "bf933e4298dbed7337e040221453e9a5fb82f8dbb43d12211f29441c195e98c9"
+    }
+  ],
+  "libraries": [
+    {
+      "path": "/srv/ai/src/qwen-shroud-resume-20261010/qwen_native_hc_residual_v3.so",
+      "sha256": "538cd609255255c6d43a0eafbbb99bc3c554ff2c1e63dfe9caa7382f372e63b5"
+    }
+  ],
+  "name": "hc_residual_v3",
+  "operators": [
+    "qwen_native_hc_residual_v3::launch"
+  ],
+  "validation_source": "# SPDX-License-Identifier: Apache-2.0\nimport statistics\nimport time\nimport torch\nfrom tools.qwen4exp.direct_hc_residual import DirectHCResidual\nfrom tools.qwen4exp.resident_worker import QwenResidentExtension\n\ndef prepare():\n    path = '/srv/ai/src/qwen-shroud-resume-20261010/residual-v3.bin'\n    kernel = torch.classes.qwen_native_hc_residual_v3.Kernel(path, 'qwen_hc_residual_v3')\n    return DirectHCResidual(path, kernel=kernel, launch=torch.ops.qwen_native_hc_residual_v3.launch)\n\ndef validate(op):\n    cases = 0\n    with torch.inference_mode():\n        for rows,width in ((1,512),(3,2560),(18,2560),(128,2560),(640,2560),(2560,2560),(7,3072)):\n            gen=torch.Generator().manual_seed(rows+width)\n            for dtype in (torch.float16,torch.float32):\n                h=torch.randn(rows,4*width,generator=gen).half().npu()\n                b=torch.randn(rows,width,generator=gen).half().npu()\n                c=(torch.rand(rows,4,generator=gen)*2).to(dtype).npu()\n                for pattern in ('random','zero','large','subnormal','signed_zero'):\n                    if pattern=='zero': h.zero_(); b.zero_(); c.fill_(1)\n                    elif pattern=='large': h.fill_(60000); b.fill_(60000); c.fill_(2); h[:,::2].neg_(); b[:,::2].neg_()\n                    elif pattern=='subnormal': h.fill_(2**-24); b.fill_(-2**-24); c.fill_(0.5)\n                    elif pattern=='signed_zero': h.fill_(-0.0); b.fill_(-0.0); c.zero_(); c[:,::2].fill_(-0.0)\n                    expected=(h.float().view(rows,4,width)+b.float()[:,None]*c.float()[:,:,None]).flatten(1).half()\n                    actual=op(h,b,c)\n                    assert torch.equal(expected.cpu().view(torch.uint8),actual.cpu().view(torch.uint8)),(rows,width,str(dtype),pattern)\n                    cases+=1\n    return {'passed':True,'cases':cases,'exact_bytes':True}\n"
+}

@@ -34,6 +34,9 @@ _QSA_MATMUL_PREFILL_MIN_TOKENS = 128
 _QSA_MATMUL_DECODE_MAX_TOKENS = 2
 _QSA_MATMUL_DECODE_MIN_GROUPS = 2048
 _QSA_MATMUL_MAX_TILE_ELEMENTS = 1 << 25
+# Bound score matrices and the backend sort/top-k workspace independently of
+# prefill length. At 256K context this is at most 64 query rows per tile.
+_QSA_SELECTION_MAX_TILE_ELEMENTS = 1 << 22
 QSA_SELECTION_STABLE_ARGSORT = "stable_argsort"
 QSA_SELECTION_FAST_TOPK = "fast_topk"
 QSA_SELECTION_POLICIES = frozenset((QSA_SELECTION_STABLE_ARGSORT, QSA_SELECTION_FAST_TOPK))
@@ -92,20 +95,89 @@ def _fast_topk_indices(scores: torch.Tensor, k: int) -> torch.Tensor:
     if k <= 0 or k > scores.shape[1]:
         raise ValueError("k must be in [1, scores.shape[1]]")
     selected = torch.topk(scores, k, dim=1, sorted=False).indices
+    # 310P supports INT32 gather indices and has a slower INT64 gather path.
+    # Cast only compact [rows, k] tensors; CPU gather still requires INT64.
+    compact_indices = scores.device.type == "npu" and scores.shape[1] <= torch.iinfo(torch.int32).max
+    if compact_indices:
+        selected = selected.to(torch.int32)
+    # The INT32 intermediate also avoids 310P's INT64 -> FP32 AiCPU cast.
     index_order = torch.argsort(selected.to(torch.float32), dim=1, stable=True)
+    if compact_indices:
+        index_order = index_order.to(torch.int32)
     selected = selected.gather(1, index_order)
     selected_values = scores.gather(1, selected)
     value_order = torch.argsort(selected_values, dim=1, descending=True, stable=True)
+    if compact_indices:
+        value_order = value_order.to(torch.int32)
     return selected.gather(1, value_order)
 
 
 def _select_topk_indices(scores: torch.Tensor, k: int, policy: str) -> torch.Tensor:
-    """Dispatch an explicit QSA selection policy."""
+    """Dispatch QSA selection with a bounded number of rows per backend call."""
     if policy == QSA_SELECTION_STABLE_ARGSORT:
-        return _stable_topk_indices(scores, k)
-    if policy == QSA_SELECTION_FAST_TOPK:
-        return _fast_topk_indices(scores, k)
-    raise ValueError(f"qsa selection policy must be one of {sorted(QSA_SELECTION_POLICIES)}, got {policy!r}")
+        select = _stable_topk_indices
+    elif policy == QSA_SELECTION_FAST_TOPK:
+        select = _fast_topk_indices
+    else:
+        raise ValueError(f"qsa selection policy must be one of {sorted(QSA_SELECTION_POLICIES)}, got {policy!r}")
+    tile_rows = max(1, _QSA_SELECTION_MAX_TILE_ELEMENTS // max(1, scores.shape[1]))
+    if scores.shape[0] <= tile_rows:
+        return select(scores, k)
+    # Preserve the backend's compact index dtype across row tiles.
+    first_tile = select(scores[:tile_rows], k)
+    selected = torch.empty((scores.shape[0], k), dtype=first_tile.dtype, device=scores.device)
+    selected[:tile_rows].copy_(first_tile)
+    for start in range(tile_rows, scores.shape[0], tile_rows):
+        stop = min(start + tile_rows, scores.shape[0])
+        selected[start:stop].copy_(select(scores[start:stop], k))
+    return selected
+
+
+def _qsa_matmul_select_groups(
+    query: torch.Tensor,
+    compressed_key_cache: torch.Tensor,
+    block_table: torch.Tensor,
+    visible_groups: torch.Tensor,
+    query_lens: Sequence[int],
+    groups_per_block: int,
+    selected_width: int,
+    selection_policy: str,
+) -> torch.Tensor:
+    """Score and select each query tile without retaining full-prefill scores.
+
+    Every row still scores all compression groups for its request; only the
+    independent query-row axis is tiled. Selection policy and causal masking
+    are unchanged. Metadata remains on device and no host synchronization is
+    introduced. Only the compact [T, selected_width] result outlives a tile.
+    """
+    capacity = block_table.shape[1] * groups_per_block
+    tile_tokens = max(
+        1,
+        min(
+            _QSA_MATMUL_MAX_TILE_ELEMENTS // (query.shape[1] * capacity),
+            _QSA_SELECTION_MAX_TILE_ELEMENTS // capacity,
+        ),
+    )
+    query_fp32 = query.float()
+    selected = torch.empty((query.shape[0], selected_width), dtype=torch.int32, device=query.device)
+    group_ids = torch.arange(capacity, device=query.device)
+    request_start = 0
+    for request, request_length in enumerate(query_lens):
+        request_end = request_start + request_length
+        if request_length:
+            physical_blocks = block_table[request].to(torch.int32).clamp_min_(0)
+            keys = torch.index_select(compressed_key_cache, 0, physical_blocks)
+            keys_transposed = keys[:, :groups_per_block].reshape(capacity, query.shape[-1]).float().t()
+            for start in range(request_start, request_end, tile_tokens):
+                stop = min(start + tile_tokens, request_end)
+                scores = torch.matmul(query_fp32[start:stop], keys_transposed).relu_().sum(dim=1)
+                scores.masked_fill_(group_ids.unsqueeze(0) >= visible_groups[start:stop].unsqueeze(1), -torch.inf)
+                chosen = _select_topk_indices(scores, selected_width, selection_policy).to(torch.int32)
+                selected[start:stop].copy_(_repair_native_group_indices(chosen, visible_groups[start:stop]))
+                del scores, chosen
+            del keys, keys_transposed
+        request_start = request_end
+    return selected
 
 
 def _repair_native_group_indices(selected: torch.Tensor, visible_groups: torch.Tensor) -> torch.Tensor:
@@ -465,6 +537,13 @@ def qsa_indexer_select_groups_310(
 
     groups_per_block = compressed_key_cache.shape[1] - _QSA_INDEX_CACHE_SCRATCH_ROWS
     capacity = block_table.shape[1] * groups_per_block
+    if selection_policy not in QSA_SELECTION_POLICIES:
+        raise ValueError(
+            f"qsa selection policy must be one of {sorted(QSA_SELECTION_POLICIES)}, got {selection_policy!r}"
+        )
+    block_topk = token_topk // compress_ratio
+    selected_width = min(block_topk, capacity)
+    visible_groups, tail_starts, tail_counts = _qsa_position_geometry(positions, compress_ratio, capacity)
     use_matmul_score = _use_qsa_matmul_score_batch(
         query_lens,
         query.shape[0],
@@ -477,28 +556,17 @@ def qsa_indexer_select_groups_310(
         # Reuse the paged-key GEMM for long prefills and wide single-request
         # decode. At 7K visible groups and two decode queries on 310P, it
         # scores about four times faster than the native per-group kernel.
-        query_fp32 = query.float()
-        # The native operator already materializes [T, capacity] FP32 scores.
-        # Only the four-head GEMM intermediate needs an additional bound.
-        tile_tokens = max(1, _QSA_MATMUL_MAX_TILE_ELEMENTS // (query.shape[1] * capacity))
         lengths = (query.shape[0],) if query_lens is None else tuple(int(length) for length in query_lens)
-        score_parts = []
-        request_start = 0
-        for request, request_length in enumerate(lengths):
-            request_end = request_start + request_length
-            if request_length == 0:
-                request_start = request_end
-                continue
-            physical_blocks = block_table[request].to(torch.int32).clamp_min_(0)
-            keys = torch.index_select(compressed_key_cache, 0, physical_blocks)
-            keys_transposed = keys[:, :groups_per_block].reshape(capacity, query.shape[-1]).float().t()
-            request_scores = []
-            for start in range(request_start, request_end, tile_tokens):
-                stop = min(start + tile_tokens, request_end)
-                request_scores.append(torch.matmul(query_fp32[start:stop], keys_transposed).relu_().sum(dim=1))
-            score_parts.append(torch.cat(request_scores, dim=0))
-            request_start = request_end
-        scores = score_parts[0] if len(score_parts) == 1 else torch.cat(score_parts, dim=0)
+        selected = _qsa_matmul_select_groups(
+            query,
+            compressed_key_cache,
+            block_table,
+            visible_groups,
+            lengths,
+            groups_per_block,
+            selected_width,
+            selection_policy,
+        )
     else:
         scores = op(
             query.contiguous(),
@@ -508,20 +576,10 @@ def qsa_indexer_select_groups_310(
             positions.to(dtype=torch.int32).contiguous(),
             compress_ratio,
         )
-    if selection_policy not in QSA_SELECTION_POLICIES:
-        raise ValueError(
-            f"qsa selection policy must be one of {sorted(QSA_SELECTION_POLICIES)}, got {selection_policy!r}"
+        selected = _repair_native_group_indices(
+            _select_topk_indices(scores, selected_width, selection_policy).to(torch.int32),
+            visible_groups,
         )
-    block_topk = token_topk // compress_ratio
-    selected_width = min(block_topk, scores.shape[1])
-    visible_groups, tail_starts, tail_counts = _qsa_position_geometry(positions, compress_ratio, scores.shape[1])
-    if use_matmul_score:
-        group_ids = torch.arange(capacity, device=query.device)
-        scores.masked_fill_(group_ids.unsqueeze(0) >= visible_groups.unsqueeze(1), -torch.inf)
-    selected = _repair_native_group_indices(
-        _select_topk_indices(scores, selected_width, selection_policy).to(torch.int32),
-        visible_groups,
-    )
     group_counts = visible_groups.clamp_max(selected_width)
     return QSAGroupSelection(selected, group_counts, tail_starts, tail_counts)
 

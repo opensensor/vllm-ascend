@@ -1,0 +1,72 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Reuse identical QSA causal positions within one forward context.
+
+This resident candidate preserves the existing host-derived MRoPE positions.
+It shares only calls with the same metadata object, row count, and device.
+The original helper still owns position construction and graph callbacks.
+"""
+
+import ast
+import inspect
+import textwrap
+
+CACHE_ATTRIBUTE = "_qwen_qsa_causal_positions"
+
+
+def make_shared_positions(original, get_context, get_capture=None):
+    def positions(metadata, num_tokens, device, rope_positions, layer_prefix=None):
+        if rope_positions.ndim == 1:
+            return original(metadata, num_tokens, device, rope_positions, layer_prefix)
+        context = get_context()
+        cache = getattr(context, CACHE_ATTRIBUTE, None)
+        if cache is None:
+            cache = {}
+            setattr(context, CACHE_ATTRIBUTE, cache)
+        capture = get_capture() if get_capture is not None else None
+        capture = capture if capture is not None and capture._capturing else None
+        # Warmup and capture may reuse one forward context. Capture needs its
+        # own allocation and callback even if warmup already constructed rows.
+        key = (id(metadata), num_tokens, device, id(capture) if capture is not None else None)
+        cached = cache.get(key)
+        if cached is not None:
+            return cached[1]
+        result = original(metadata, num_tokens, device, rope_positions, layer_prefix)
+        # Retain the metadata as well: its identity must not be reused while
+        # this context's model/draft calls are still executing.
+        cache[key] = (metadata, result, capture)
+        return result
+
+    return positions
+
+
+def replacements():
+    # Worker-only model imports keep candidate inspection CPU-only.
+    from vllm.forward_context import get_forward_context
+
+    from vllm_ascend.models.qwen4_exp import model
+
+    original = model._QSAAttention.forward
+    if original.__closure__:
+        raise ValueError("QSA forward closures require an explicit adapter")
+    function = ast.parse(textwrap.dedent(inspect.getsource(original))).body[0]
+    calls = [
+        node
+        for node in ast.walk(function)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "self"
+        and node.func.attr == "_logical_query_positions"
+    ]
+    if len(calls) != 1:
+        raise ValueError("QSA forward must have one causal-position helper call")
+    calls[0].func = ast.Name(id="_shared_logical_query_positions", ctx=ast.Load())
+    function.decorator_list = []
+    scope = dict(vars(model))
+    scope["_shared_logical_query_positions"] = make_shared_positions(
+        model._QSAAttention._logical_query_positions, get_forward_context, model.BreakableCUDAGraphCapture.current
+    )
+    tree = ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[]))
+    exec(compile(tree, "<shared_qsa_positions>", "exec"), scope)
+    return {"vllm_ascend.models.qwen4_exp.model:_QSAAttention.forward": scope[function.name]}

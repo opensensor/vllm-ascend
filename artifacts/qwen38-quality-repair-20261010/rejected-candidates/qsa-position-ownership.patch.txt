@@ -1,0 +1,28 @@
+diff --git a/vllm_ascend/models/qwen4_exp/model.py b/vllm_ascend/models/qwen4_exp/model.py
+index dd6753b44..3047c985b 100644
+--- a/vllm_ascend/models/qwen4_exp/model.py
++++ b/vllm_ascend/models/qwen4_exp/model.py
+@@ -1594,17 +1594,18 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
+         if capture is not None and capture._capturing:
+             if layer_prefix is None:
+                 raise RuntimeError("Qwen4Exp QSA graph capture requires a layer prefix")
+-            from vllm_ascend.utils import weak_ref_tensor
+-
+             # MRoPE axes can differ from causal positions. The host metadata
+             # must be read on every replay, but its pageable H2D copy cannot
+-            # occur inside an NPU graph segment.
++            # occur inside an NPU graph segment. The eager producer owns its
++            # destination across replays; do not leave it as a borrowed weak
++            # tensor between separately captured segments. Copy host values
++            # directly into that destination, without a temporary NPU tensor
++            # followed by another device copy.
+             output = torch.empty(num_tokens, dtype=torch.int64, device=device)
+-            weak_output = weak_ref_tensor(output)
+ 
+             def copy_current_positions() -> None:
+                 current_metadata = get_forward_context().attn_metadata[layer_prefix]
+-                weak_output.copy_(positions_from_host(current_metadata).to(device=device, non_blocking=True))
++                output.copy_(positions_from_host(current_metadata), non_blocking=True)
+ 
+             capture.add_eager(copy_current_positions)
+             return output

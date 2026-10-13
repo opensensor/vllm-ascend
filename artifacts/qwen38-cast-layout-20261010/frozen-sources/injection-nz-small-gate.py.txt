@@ -1,0 +1,44 @@
+import torch
+
+from tools.qwen4exp.resident_candidates.fused_hc_projection import _format_joined, _weight_key
+from tools.qwen4exp.resident_worker import QwenResidentExtension
+from vllm_ascend.models.qwen4_exp.model import _GatedResidual, _linear
+
+CACHE_ATTRIBUTE = "_qwen_hc_exact_injection_nz_cache"
+
+
+def validate():
+    assert torch.ops.qwen_stage_diagnostic_v23.marker() == 1
+    assert not hasattr(QwenResidentExtension, "resident_injection_nz_gate_v23")
+
+    def gate(self):
+        count = 0
+        try:
+            modules = [m for w in self._resident_wrappers() for m in w.runnable.modules()
+                       if isinstance(m, _GatedResidual) and m.use_combine]
+            with torch.inference_mode():
+                for index, module in enumerate(modules):
+                    weight = module.block_inject_weight
+                    formatted = _format_joined(weight)
+                    assert formatted.shape == weight.shape
+                    rows_list = (3, 18)
+                    for rows in rows_list:
+                        for pattern, scale in (("random", .1), ("large", 8), ("zero", 0)):
+                            gen = torch.Generator().manual_seed(20261010 + index + rows)
+                            hyper = (torch.randn(rows, module.hyper_hidden, generator=gen) * scale).half().npu()
+                            normalized = module._normalize(hyper)
+                            expected = _linear(normalized, weight, module.compute_dtype)
+                            actual = _linear(normalized, formatted, module.compute_dtype)
+                            torch.testing.assert_close(actual.cpu(), expected.cpu(), rtol=0, atol=0)
+                            count += 1
+                    # Keep only exact original-shape copies. Cache is instance
+                    # owned; graph/parameter storage remains unchanged.
+                    setattr(module, CACHE_ATTRIBUTE, (_weight_key(weight), formatted))
+            return {"rank": torch.distributed.get_rank(), "passed": True, "cases": count,
+                    "modules": len(modules), "bitwise_equal": True, "logical_output_rows": 4}
+        except Exception as error:
+            return {"rank": torch.distributed.get_rank(), "passed": False, "cases": count,
+                    "error": f"{type(error).__name__}: {error}"}
+
+    setattr(QwenResidentExtension, "resident_injection_nz_gate_v23", gate)
+    return {"passed": True, "production_forward_changed": False}

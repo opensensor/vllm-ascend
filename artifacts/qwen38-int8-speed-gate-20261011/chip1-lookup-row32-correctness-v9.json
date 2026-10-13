@@ -1,0 +1,217 @@
+{
+  "passed": true,
+  "hardware_validated": true,
+  "serving_speedup_proven": false,
+  "args": {
+    "build_dir": "/srv/ai/src/qwen-int8-projection-probe-20261011-v9",
+    "model": "/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-TP6-MTP-20261010",
+    "output": "/srv/ai/src/qwen-int8-speed-gate-20261011/chip1-lookup-row32-correctness-v9.json",
+    "device": 1,
+    "tokens": [
+      3,
+      17,
+      33,
+      128
+    ],
+    "layer": 0,
+    "expert": 0,
+    "projections": [
+      "gate_up_proj",
+      "down_proj"
+    ],
+    "graph_unroll": 2,
+    "weight_rotations": 1,
+    "row_tile": 32,
+    "iterations": 30,
+    "repeats": 5,
+    "time": false,
+    "base_url": "http://127.0.0.1:8001",
+    "fused_quant": true,
+    "lookup_decode": true,
+    "packed_weights": true,
+    "compare_w4": true,
+    "cpu_only": false
+  },
+  "build_provenance": {
+    "namespace": "qwen_int8_group_probe_v1",
+    "binary": "/srv/ai/src/qwen-int8-projection-probe-20261011-v9/int8-group.bin",
+    "bridge": "/srv/ai/src/qwen-int8-projection-probe-20261011-v9/qwen_int8_group_probe_v1.so",
+    "projection_binary": "/srv/ai/src/qwen-int8-projection-probe-20261011-v9/int8-projection.bin",
+    "activation_binary": "/srv/ai/src/qwen-int8-projection-probe-20261011-v9/int8-activation.bin",
+    "sha256": {
+      "int8-group.bin": "194dfd75ff1bb834579d6afe6e7ed9d84f2a0900d75c7269afdf5a27f497d448",
+      "qwen_int8_group_probe_v1.so": "7b5a60c7629c5ed86a17279cc4724a64653375d8a5f7265354a978b9691f0425",
+      "int8-projection.bin": "fef48f5c72e741ed780202d93dc57f76fd49945577c3d78eeb2fe9bd792846a6",
+      "int8-activation.bin": "948ea4a13ab084af6701ca844abe3622c7ecdbbce09a771cc6b229a74805766a",
+      "compile_reconstruction.cpp": "e7df352d8e98426001f43dd17116443c72ce9eafa9d7a07930329278d0c3447e",
+      "reconstruction_bridge.cpp": "08906a208fab23cc9a87e5a18e624d7a64e6458f84f022f7039acf6d6a5b57e2",
+      "native_int8_group_probe.cpp": "7ddf093bc24fac49a75a68665f143b5dcda9609edf9bee2218b4baa4add5bf50",
+      "native_int8_projection_probe.cpp": "3380f4b8c1cafb2dde89202d28e041b5ebc3eec27802718a2c4dc6aebeb88d80",
+      "native_int8_activation_probe.cpp": "92e0f2e2ce8c3c1bf18245fade8346535326932c85fc58e83db8b8571a49f2ba"
+    },
+    "hardware_validated": false,
+    "server_modified": false
+  },
+  "records": [
+    {
+      "projection": "gate_up_proj",
+      "rows": 3,
+      "shape": [
+        1280,
+        2560
+      ],
+      "exact_ordered_fp16": true,
+      "graph_replay": true,
+      "weight_bytes": 1638400,
+      "packed_w4_bytes": 1638400,
+      "includes_direct_a8_quantization": true,
+      "expands_w4_only_on_core": true,
+      "calls_per_graph": 2,
+      "weight_rotations": 1,
+      "rotation_uses_equal_weights_at_distinct_addresses": false,
+      "row_tile": 32,
+      "lookup_decode": true,
+      "native_w4_exact": true
+    },
+    {
+      "projection": "gate_up_proj",
+      "rows": 17,
+      "shape": [
+        1280,
+        2560
+      ],
+      "exact_ordered_fp16": true,
+      "graph_replay": true,
+      "weight_bytes": 1638400,
+      "packed_w4_bytes": 1638400,
+      "includes_direct_a8_quantization": true,
+      "expands_w4_only_on_core": true,
+      "calls_per_graph": 2,
+      "weight_rotations": 1,
+      "rotation_uses_equal_weights_at_distinct_addresses": false,
+      "row_tile": 32,
+      "lookup_decode": true,
+      "native_w4_exact": true
+    },
+    {
+      "projection": "gate_up_proj",
+      "rows": 33,
+      "shape": [
+        1280,
+        2560
+      ],
+      "exact_ordered_fp16": true,
+      "graph_replay": true,
+      "weight_bytes": 1638400,
+      "packed_w4_bytes": 1638400,
+      "includes_direct_a8_quantization": true,
+      "expands_w4_only_on_core": true,
+      "calls_per_graph": 2,
+      "weight_rotations": 1,
+      "rotation_uses_equal_weights_at_distinct_addresses": false,
+      "row_tile": 32,
+      "lookup_decode": true,
+      "native_w4_exact": true
+    },
+    {
+      "projection": "gate_up_proj",
+      "rows": 128,
+      "shape": [
+        1280,
+        2560
+      ],
+      "exact_ordered_fp16": true,
+      "graph_replay": true,
+      "weight_bytes": 1638400,
+      "packed_w4_bytes": 1638400,
+      "includes_direct_a8_quantization": true,
+      "expands_w4_only_on_core": true,
+      "calls_per_graph": 2,
+      "weight_rotations": 1,
+      "rotation_uses_equal_weights_at_distinct_addresses": false,
+      "row_tile": 32,
+      "lookup_decode": true,
+      "native_w4_exact": true
+    },
+    {
+      "projection": "down_proj",
+      "rows": 3,
+      "shape": [
+        2560,
+        640
+      ],
+      "exact_ordered_fp16": true,
+      "graph_replay": true,
+      "weight_bytes": 819200,
+      "packed_w4_bytes": 819200,
+      "includes_direct_a8_quantization": true,
+      "expands_w4_only_on_core": true,
+      "calls_per_graph": 2,
+      "weight_rotations": 1,
+      "rotation_uses_equal_weights_at_distinct_addresses": false,
+      "row_tile": 32,
+      "lookup_decode": true,
+      "native_w4_exact": true
+    },
+    {
+      "projection": "down_proj",
+      "rows": 17,
+      "shape": [
+        2560,
+        640
+      ],
+      "exact_ordered_fp16": true,
+      "graph_replay": true,
+      "weight_bytes": 819200,
+      "packed_w4_bytes": 819200,
+      "includes_direct_a8_quantization": true,
+      "expands_w4_only_on_core": true,
+      "calls_per_graph": 2,
+      "weight_rotations": 1,
+      "rotation_uses_equal_weights_at_distinct_addresses": false,
+      "row_tile": 32,
+      "lookup_decode": true,
+      "native_w4_exact": true
+    },
+    {
+      "projection": "down_proj",
+      "rows": 33,
+      "shape": [
+        2560,
+        640
+      ],
+      "exact_ordered_fp16": true,
+      "graph_replay": true,
+      "weight_bytes": 819200,
+      "packed_w4_bytes": 819200,
+      "includes_direct_a8_quantization": true,
+      "expands_w4_only_on_core": true,
+      "calls_per_graph": 2,
+      "weight_rotations": 1,
+      "rotation_uses_equal_weights_at_distinct_addresses": false,
+      "row_tile": 32,
+      "lookup_decode": true,
+      "native_w4_exact": true
+    },
+    {
+      "projection": "down_proj",
+      "rows": 128,
+      "shape": [
+        2560,
+        640
+      ],
+      "exact_ordered_fp16": true,
+      "graph_replay": true,
+      "weight_bytes": 819200,
+      "packed_w4_bytes": 819200,
+      "includes_direct_a8_quantization": true,
+      "expands_w4_only_on_core": true,
+      "calls_per_graph": 2,
+      "weight_rotations": 1,
+      "rotation_uses_equal_weights_at_distinct_addresses": false,
+      "row_tile": 32,
+      "lookup_decode": true,
+      "native_w4_exact": true
+    }
+  ]
+}

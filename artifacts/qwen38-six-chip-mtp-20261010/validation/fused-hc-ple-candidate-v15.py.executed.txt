@@ -1,0 +1,6 @@
+from tools.qwen4exp.resident_candidates import cached_ple_w8a8, fused_hc_residual
+
+def replacements(native_resources):
+    result = fused_hc_residual.replacements(native_resources)
+    result.update(cached_ple_w8a8.replacements())
+    return result

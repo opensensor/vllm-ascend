@@ -1,0 +1,48 @@
+{
+  "autostart": false,
+  "deployed": true,
+  "deployment_authorized_by_user": true,
+  "further_jobs_require_controlled_idle_window": true,
+  "scheduler_cls": "vllm_ascend.core.qwen_prefill_scheduler.QwenPrefillPacedScheduler",
+  "additional_config": {
+    "qwen_prefill_pacing": {
+      "target_step_ms": 200,
+      "min_tokens": 128,
+      "initial_tokens": 128,
+      "max_tokens": 640,
+      "alignment": 128,
+      "smoothing": 0.25,
+      "decode_only_steps": 8
+    }
+  },
+  "preserve": {
+    "max_num_seqs": 6,
+    "max_model_len": 262144,
+    "max_num_batched_tokens": 2560,
+    "mtp_tokens": 2,
+    "graph_sizes": [3, 18],
+    "image_pixels": 1048576,
+    "hold_c": 94,
+    "resume_all_chips_c": 85,
+    "controlled_test_abort_c": 90
+  },
+  "passed_bounded_checks": [
+    "actual_scheduler_running_with_real_weights",
+    "mixed_2271_token_prefill_and_384_token_decode",
+    "1024x1024_fresh_cached_image_OCR_and_shapes",
+    "six_prefix_branches_CoW_cancellation_and_zero_spills",
+    "six_rank_physical_trace_start_stop_and_rank0_parse"
+  ],
+  "qualification_required": [
+    "matched_repeated_baseline_candidate_mixed_token_gaps",
+    "same_workload_cold_TTFT_and_prefill_completion_time",
+    "atomic_and_chunked_decoder_image_spans_with_encoder_admission",
+    "six_prefix_branches_CoW_cancellation_and_zero_spills",
+    "MTP_uniform_graph_replay_C1_C2_C6",
+    "remaining_rank_physical_trace_parse_and_per_copy_payload_attribution",
+    "per_rank_PLE_payload_metadata_sampling_and_kernel_memory_access",
+    "target_grouped_compare_vs_fixed_histogram_identical_shapes_and_quality",
+    "thermal_hold_overlap_and_pause_timeout_acknowledgment"
+  ],
+  "performance_target_complete": false
+}

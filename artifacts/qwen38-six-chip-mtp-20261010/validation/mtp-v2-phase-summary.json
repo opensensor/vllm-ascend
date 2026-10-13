@@ -1,0 +1,183 @@
+{
+  "mtp-v2-serial-gate": {
+    "result": {
+      "returncode": 0,
+      "abort_reason": null,
+      "duration_s": 37.69863414000065,
+      "initial_temperatures_c": [
+        75.0,
+        73.0,
+        64.0,
+        63.0,
+        66.0,
+        65.0
+      ],
+      "command": [
+        "/srv/ai/venvs/qwen38-w4-test-ce1862/bin/python",
+        "/srv/ai/src/qwen-performance-mtp-tp6-v2-20261010-8fce905/tools/qwen38_decode_study/benchmark.py",
+        "--base-url",
+        "http://127.0.0.1:8001",
+        "--output",
+        "/srv/ai/src/qwen-performance-evidence-20261010/mtp-v2-serial.jsonl",
+        "--lengths",
+        "256",
+        "--repeats",
+        "3"
+      ]
+    },
+    "maximum_c": 78.0,
+    "samples": 19
+  },
+  "mtp-v2-hc-serial-gate": {
+    "result": {
+      "returncode": 0,
+      "abort_reason": null,
+      "duration_s": 36.85667990100046,
+      "initial_temperatures_c": [
+        80.0,
+        78.0,
+        67.0,
+        66.0,
+        70.0,
+        68.0
+      ],
+      "command": [
+        "/srv/ai/venvs/qwen38-w4-test-ce1862/bin/python",
+        "/srv/ai/src/qwen-performance-mtp-tp6-v2-20261010-8fce905/tools/qwen38_decode_study/benchmark.py",
+        "--base-url",
+        "http://127.0.0.1:8001",
+        "--output",
+        "/srv/ai/src/qwen-performance-evidence-20261010/mtp-v2-hc-serial.jsonl",
+        "--lengths",
+        "256",
+        "--repeats",
+        "3"
+      ]
+    },
+    "maximum_c": 83.0,
+    "samples": 17
+  },
+  "mtp-v2-fused-serial-gate": {
+    "result": {
+      "returncode": 0,
+      "abort_reason": null,
+      "duration_s": 35.81366514900219,
+      "initial_temperatures_c": [
+        83.0,
+        81.0,
+        66.0,
+        65.0,
+        69.0,
+        67.0
+      ],
+      "command": [
+        "/srv/ai/venvs/qwen38-w4-test-ce1862/bin/python",
+        "/srv/ai/src/qwen-performance-mtp-tp6-v2-20261010-8fce905/tools/qwen38_decode_study/benchmark.py",
+        "--base-url",
+        "http://127.0.0.1:8001",
+        "--output",
+        "/srv/ai/src/qwen-performance-evidence-20261010/mtp-v2-fused-serial.jsonl",
+        "--lengths",
+        "256",
+        "--repeats",
+        "3"
+      ]
+    },
+    "maximum_c": 87.0,
+    "samples": 18
+  },
+  "mtp-v2-fused-prefix-gate": {
+    "result": {
+      "returncode": 0,
+      "abort_reason": null,
+      "duration_s": 13.956358442999772,
+      "initial_temperatures_c": [
+        85.0,
+        83.0,
+        67.0,
+        66.0,
+        70.0,
+        68.0
+      ],
+      "command": [
+        "/srv/ai/venvs/qwen38-w4-test-ce1862/bin/python",
+        "/srv/ai/src/qwen-performance-evidence-20261010/mtp-prefix-cancel.py"
+      ]
+    },
+    "maximum_c": 87.0,
+    "samples": 7
+  },
+  "mtp-v2-fused-image-gate": {
+    "result": {
+      "returncode": 1,
+      "abort_reason": null,
+      "duration_s": 9.952592744000867,
+      "initial_temperatures_c": [
+        83.0,
+        81.0,
+        66.0,
+        65.0,
+        68.0,
+        67.0
+      ],
+      "command": [
+        "/srv/ai/venvs/qwen38-w4-test-ce1862/bin/python",
+        "/srv/ai/src/qwen-performance-evidence-20261010/mtp-fused-max-image.py"
+      ]
+    },
+    "maximum_c": 85.0,
+    "samples": 5
+  },
+  "mtp-v2-fused-image-retry-gate": {
+    "result": {
+      "returncode": 0,
+      "abort_reason": null,
+      "duration_s": 5.989725770999939,
+      "initial_temperatures_c": [
+        82.0,
+        80.0,
+        65.0,
+        64.0,
+        68.0,
+        66.0
+      ],
+      "command": [
+        "/srv/ai/venvs/qwen38-w4-test-ce1862/bin/python",
+        "/srv/ai/src/qwen-performance-evidence-20261010/mtp-fused-max-image-retry.py"
+      ]
+    },
+    "maximum_c": 83.0,
+    "samples": 3
+  },
+  "spec-state-gate": {
+    "result": {
+      "returncode": 0,
+      "abort_reason": null,
+      "duration_s": 42.41827727800046,
+      "initial_temperatures_c": [
+        66.0,
+        64.0,
+        56.0,
+        55.0,
+        58.0,
+        57.0
+      ],
+      "command": [
+        "bash",
+        "/srv/ai/src/qwen-performance-evidence-20261010/run-spec-gate.sh",
+        "-m",
+        "pytest",
+        "-q",
+        "--confcutdir=tests/e2e/nightly/310p/single_node/ops/streaming_next",
+        "tests/e2e/nightly/310p/single_node/ops/streaming_next/test_gdn_state_views.py",
+        "-k",
+        "speculative",
+        "--qwen-streaming-next-bundle",
+        "/home/matteius/experiments/qwen-streaming-full-tile-v11-20261010",
+        "--qwen-streaming-next-execute"
+      ]
+    },
+    "maximum_c": 68.0,
+    "samples": 21
+  }
+}

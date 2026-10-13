@@ -66,6 +66,7 @@ from vllm.model_executor.layers.mamba.abstract import MambaBase
 from vllm.model_executor.layers.mamba.mamba_utils import MambaStateCopyFuncCalculator
 from vllm.model_executor.layers.quantization.base_config import QuantizeMethodBase
 from vllm.model_executor.layers.vocab_parallel_embedding import (
+    DEFAULT_VOCAB_PADDING_SIZE,
     ParallelLMHead,
     VocabParallelEmbedding,
 )
@@ -112,6 +113,14 @@ from .dtype_policy import (
     ASCEND_QWEN4EXP_DTYPE_POLICY,
     Qwen4ExpDtypePolicy,
 )
+from .head_partition import (
+    gdn_execution_caches,
+    gdn_execution_shard,
+    gdn_head_shard,
+    gdn_partition_policy,
+    place_padded_gdn_tensor,
+    vocab_partition_padding,
+)
 from .indexer_qsa import AscendQwen4ExpQSAIndexer
 from .kv_cache import (
     DEFAULT_ATTENTION_BLOCK_SIZE,
@@ -147,6 +156,7 @@ from .ops.qsa_indexer import (
     copy_group_selection_into,
     qsa_indexer_select_groups_310,
 )
+from .ops.qsa_metadata import packed_qsa_query_lens
 from .ops.qsa_sparse_attention_310 import qsa_sparse_attention_310
 from .ple_layer import AscendQwen4ExpPLELayer
 from .qsa import (
@@ -166,6 +176,8 @@ from .qwen4exp_gdn import (
     gdn_gating,
     gdn_short_conv,
 )
+from .rope_scaling import QSARopeScaling
+from .shared_partition import place_uneven_shared_expert_tensor
 from .w4_backend_policy import configure_w4_backend
 from .w4_moe import (
     CUBE_DEVICE_ROUTED_BACKENDS,
@@ -751,14 +763,19 @@ class _GDNAttention(nn.Module, MambaBase):
             raise ValueError(f"expert_sharding={expert_sharding} out of range")
         hidden = int(config.hidden_size)
         p = self.params
-        # TP-shard the GDN heads evenly: the gated delta rule is independent per
-        # value head (q/k are expanded to the v heads via repeat_interleave), so
-        # splitting both num_k_heads and num_v_heads keeps the 3:1 group ratio
-        # and the recurrent state is sharded per rank. out_proj is row-parallel.
-        if p.num_k_heads % self.tp_size or p.num_v_heads % self.tp_size:
-            raise ValueError(f"GDN heads (k={p.num_k_heads}, v={p.num_v_heads}) not divisible by TP {self.tp_size}")
-        self.num_k_heads = p.num_k_heads // self.tp_size
-        self.num_v_heads = p.num_v_heads // self.tp_size
+        self.head_shard = gdn_head_shard(
+            p.num_k_heads,
+            p.num_v_heads,
+            p.head_k_dim,
+            p.head_v_dim,
+            self.tp_rank,
+            self.tp_size,
+            gdn_partition_policy(config),
+        )
+        self._compact_gdn = gdn_partition_policy(config) == "padded_compact"
+        self.execution_head_shard = gdn_execution_shard(self.head_shard) if self._compact_gdn else self.head_shard
+        self.num_k_heads = self.execution_head_shard.key_heads
+        self.num_v_heads = self.execution_head_shard.value_heads
         self.key_dim = p.head_k_dim * self.num_k_heads
         self.value_dim = p.head_v_dim * self.num_v_heads
         self.conv_dim = 2 * self.key_dim + self.value_dim
@@ -780,6 +797,16 @@ class _GDNAttention(nn.Module, MambaBase):
             except Exception:
                 self._tp_reduce = None
 
+    def _execution_caches(self):
+        if not getattr(self, "_compact_gdn", False):
+            return self.kv_cache
+        key = tuple((t.data_ptr(), tuple(t.shape), tuple(t.stride())) for t in self.kv_cache)
+        cached = getattr(self, "_execution_cache_views", None)
+        if cached is None or cached[0] != key:
+            cached = (key, gdn_execution_caches(self.kv_cache, self.head_shard, self.execution_head_shard))
+            self._execution_cache_views = cached
+        return cached[1]
+
     def prepare_native_conv_weight(self) -> None:
         """Materialize the native operator's static ``[K, C]`` filter once."""
         if self.conv_weight.device.type != "npu":
@@ -799,7 +826,7 @@ class _GDNAttention(nn.Module, MambaBase):
         metadata: GDNAttentionMetadata | None = None,
     ) -> torch.Tensor:
         """Run the 310P stateful op, or the torch fallback."""
-        cache = self.kv_cache[0]
+        cache = self._execution_caches()[0] if getattr(self, "_compact_gdn", False) else self.kv_cache[0]
         if metadata is None:
             metadata = get_forward_context().attn_metadata[self.prefix]
         spec_metadata = getattr(metadata, "spec_decode_metadata", None)
@@ -906,8 +933,8 @@ class _GDNAttention(nn.Module, MambaBase):
 
     def get_state_shape(self) -> tuple[tuple[int, ...], ...]:
         return (
-            (self.params.conv_kernel_size - 1 + self.num_speculative_tokens, self.conv_dim),
-            (self.num_v_heads, self.params.head_v_dim, self.params.head_k_dim),
+            (self.params.conv_kernel_size - 1 + self.num_speculative_tokens, self.head_shard.conv_dim),
+            (self.head_shard.value_heads, self.params.head_v_dim, self.params.head_k_dim),
         )
 
     def get_state_dtype(self) -> tuple[torch.dtype, ...]:
@@ -970,6 +997,7 @@ class _GDNAttention(nn.Module, MambaBase):
             npu_recurrent_gated_delta_rule_310,
         )
 
+        state_cache = self._execution_caches()[1] if getattr(self, "_compact_gdn", False) else self.kv_cache[1]
         q = q.unsqueeze(0)
         k = k.unsqueeze(0)
         v = v.unsqueeze(0)
@@ -982,7 +1010,7 @@ class _GDNAttention(nn.Module, MambaBase):
                 v=v,
                 g=g,
                 beta=beta,
-                state=self.kv_cache[1],
+                state=state_cache,
                 cu_seqlens=query_start_loc,
                 ssm_state_indices=state_indices,
                 num_accepted_tokens=spec_metadata.spec_causal_conv1d.num_accepted_tokens,
@@ -999,11 +1027,17 @@ class _GDNAttention(nn.Module, MambaBase):
         if metadata.num_prefills > 0:
             assert has_initial_state is not None
             state_io = getattr(self, "_gdn_state_io", None)
+            if (
+                state_io is not None
+                and getattr(self, "_compact_gdn", False)
+                and self.num_v_heads != self.head_shard.value_heads
+            ):
+                raise ValueError("compact GDN requires a state IO resource qualified for strided live-head views")
             if state_io is None:
-                initial_state = self.kv_cache[1][state_indices].contiguous()
+                initial_state = state_cache[state_indices].contiguous()
                 initial_state = initial_state * has_initial_state[:, None, None, None].to(initial_state.dtype)
             else:
-                initial_state = state_io.gather(self.kv_cache[1], state_indices, has_initial_state)
+                initial_state = state_io.gather(state_cache, state_indices, has_initial_state)
             out, final_state = chunk_gated_delta_rule_310(
                 q=q,
                 k=k,
@@ -1021,9 +1055,9 @@ class _GDNAttention(nn.Module, MambaBase):
             )
             assert final_state is not None
             if state_io is None:
-                self.kv_cache[1][state_indices] = final_state.to(self.kv_cache[1].dtype)
+                state_cache[state_indices] = final_state.to(state_cache.dtype)
             else:
-                state_io.scatter(self.kv_cache[1], state_indices, has_initial_state, final_state)
+                state_io.scatter(state_cache, state_indices, has_initial_state, final_state)
             return out.squeeze(0)
 
         return npu_recurrent_gated_delta_rule_310(
@@ -1032,7 +1066,7 @@ class _GDNAttention(nn.Module, MambaBase):
             v=v,
             g=g,
             beta=beta,
-            state=self.kv_cache[1],
+            state=state_cache,
             cu_seqlens=query_start_loc,
             ssm_state_indices=state_indices,
             use_qk_l2norm_in_kernel=True,
@@ -1189,15 +1223,16 @@ class _GDNAttention(nn.Module, MambaBase):
                 dtype=self.compute_dtype,
                 device=block_input.device,
             )
+            state_cache = self._execution_caches()[1] if state_indices is not None else None
             for request_idx, (start, stop) in enumerate(ranges):
                 if stop <= start:
                     continue
                 initial_state = None
                 if state_indices is not None and has_initial_state is not None:
                     cache_idx = state_indices[request_idx].long()
-                    initial_state = self.kv_cache[1][cache_idx].to(self.compute_dtype) * has_initial_state[
-                        request_idx
-                    ].to(self.compute_dtype)
+                    initial_state = state_cache[cache_idx].to(self.compute_dtype) * has_initial_state[request_idx].to(
+                        self.compute_dtype
+                    )
                 segment, final_state = gdn_delta_rule(
                     q[start:stop],
                     k[start:stop],
@@ -1212,7 +1247,7 @@ class _GDNAttention(nn.Module, MambaBase):
                 )
                 out[start:stop] = segment
                 if state_indices is not None:
-                    self.kv_cache[1][cache_idx].copy_(final_state.to(self.kv_cache[1].dtype))
+                    state_cache[cache_idx].copy_(final_state.to(state_cache.dtype))
         return self._project_output(block_input, out)
 
     def _project_output(self, block_input: torch.Tensor, out: torch.Tensor) -> torch.Tensor:
@@ -1326,6 +1361,8 @@ def _step_rope_cos_sin(
     frequency_axes: torch.Tensor | None = None,
     mrope_section: list[int] | None = None,
     mrope_interleaved: bool = False,
+    rope_scaling: QSARopeScaling | None = None,
+    inv_freq: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Share dynamic RoPE tables between QSA layers in one model forward.
 
@@ -1350,6 +1387,7 @@ def _step_rope_cos_sin(
         compute_dtype,
         tuple(mrope_section) if mrope_section is not None else None,
         mrope_interleaved,
+        rope_scaling,
     )
     if cache is not None and key in cache:
         return cache[key]
@@ -1362,6 +1400,8 @@ def _step_rope_cos_sin(
         frequency_axes=frequency_axes,
         mrope_section=mrope_section,
         mrope_interleaved=mrope_interleaved,
+        rope_scaling=rope_scaling,
+        inv_freq=inv_freq,
     )
     if cache is not None:
         cache[key] = tables
@@ -1456,6 +1496,9 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
         vllm_config = get_current_vllm_config_or_none()
         device_config = getattr(vllm_config, "device_config", None)
         device = getattr(device_config, "device", torch.device("cpu"))
+        if self.attn.rope_inv_freq is not None:
+            # Transfer the tiny immutable vector once, before any graph capture.
+            self.attn.rope_inv_freq = self.attn.rope_inv_freq.to(device)
         scheduler_config = getattr(vllm_config, "scheduler_config", None)
         max_num_seqs = max(1, int(getattr(scheduler_config, "max_num_seqs", 1)))
         # Share the constant axis map as well as per-forward query tables.
@@ -1637,11 +1680,22 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
             num_kv_heads=self.num_kv_heads,
             num_heads=self.num_heads,
             scale_value=self.head_dim**-0.5,
-            block_table=metadata.block_tables,
+            block_table=self._dense_block_tables(metadata.block_tables, key_cache.shape[2]),
             context_lens=context_lens,
             out=output,
         )
         return output
+
+    def _dense_block_tables(self, block_tables: torch.Tensor, block_size: int) -> torch.Tensor:
+        """Bound exact dense QSA tables by the selection's known token budget.
+
+        These callers run only while every visible token is selected. Passing
+        the 1M padded table to 310P paged attention exceeds its transfer tiling
+        even for a short image request. A fixed budget bound is graph safe and
+        needs no device readback. Multiple request rows need a compact copy.
+        """
+        max_blocks = (self.indexer.token_topk + block_size - 1) // block_size
+        return block_tables[:, :max_blocks].contiguous()
 
     def _dense_prefill_310(
         self,
@@ -1707,7 +1761,7 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
                 key_cache=key_cache,
                 value_cache=value_cache,
                 mask=AttentionMaskBuilder310.get_compressed_splitfuse_mask(query.device),
-                block_table=metadata.block_tables,
+                block_table=self._dense_block_tables(metadata.block_tables, key_cache.shape[2]),
                 seq_len=query_lens,
                 context_lens=metadata.seq_lens,
                 num_kv_heads=self.num_kv_heads,
@@ -1722,7 +1776,7 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
                 key_cache=key_cache,
                 value_cache=value_cache,
                 mask=AttentionMaskBuilder310.get_splitfuse_mask(metadata, query.device),
-                block_table=metadata.block_tables,
+                block_table=self._dense_block_tables(metadata.block_tables, key_cache.shape[2]),
                 seq_len=query_lens,
                 context_lens=metadata.seq_lens,
                 num_kv_heads=self.num_kv_heads,
@@ -1804,6 +1858,8 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
                 frequency_axes=self._query_rope_frequency_axes,
                 mrope_section=self.attn.mrope_section,
                 mrope_interleaved=self.attn.mrope_interleaved,
+                rope_scaling=self.attn.rope_scaling,
+                inv_freq=self.attn.rope_inv_freq,
             )
         q, k = self.attn.project_qk(q, k, positions, positions, accum_dtype=self.compute_dtype, cos_sin=query_cos_sin)
         q = q.to(self.params_dtype)
@@ -1826,6 +1882,8 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
                 mrope_section=self.attn.mrope_section,
                 mrope_interleaved=self.attn.mrope_interleaved,
                 cos_sin=query_cos_sin,
+                rope_scaling=self.attn.rope_scaling,
+                inv_freq=self.attn.rope_inv_freq,
             ).to(self.params_dtype)
         if positions.ndim == 1:
             index_key_positions = positions - torch.remainder(logical_positions, self.indexer.compress_ratio)
@@ -1845,6 +1903,8 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
             mrope_section=self.attn.mrope_section,
             mrope_interleaved=self.attn.mrope_interleaved,
             frequency_axes=self._query_rope_frequency_axes,
+            rope_scaling=self.attn.rope_scaling,
+            inv_freq=self.attn.rope_inv_freq,
         )
         from vllm_ascend.device.device_op import DeviceOperator
 
@@ -1908,8 +1968,7 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
                 def select_current_groups() -> None:
                     current_metadata = get_forward_context().attn_metadata[self.prefix]
                     current_seq_lens = getattr(current_metadata, "seq_lens_cpu", None)
-                    current_query_lens_cpu = getattr(current_metadata, "query_lens_cpu", None)
-                    current_query_lens = None if current_query_lens_cpu is None else current_query_lens_cpu.tolist()
+                    current_query_lens = packed_qsa_query_lens(current_metadata, seq_len)
                     current_max_groups = None
                     if (
                         current_seq_lens is not None
@@ -1938,8 +1997,7 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
 
                 capture.add_eager(select_current_groups)
             else:
-                query_lens_cpu = getattr(metadata, "query_lens_cpu", None)
-                query_lens = None if query_lens_cpu is None else query_lens_cpu.tolist()
+                query_lens = packed_qsa_query_lens(metadata, seq_len)
                 selection = qsa_indexer_select_groups_310(
                     index_q,
                     index_cache,
@@ -1978,7 +2036,7 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
             sparse_kwargs = {}
             if sparse_attention in (qsa_batched_prefill_310, qsa_group_major_prefill_310):
                 if query_lens_cpu is not None:
-                    sparse_kwargs["query_lens"] = query_lens_cpu.tolist()
+                    sparse_kwargs["query_lens"] = packed_qsa_query_lens(metadata, seq_len)
             if sparse_attention is qsa_group_major_prefill_310:
                 sparse_kwargs["query_tile"] = self.qsa_group_major_query_tile
                 sparse_kwargs["fixed_plan"] = self.qsa_prefill_backend == _QSA_PREFILL_FIXED_GROUP_MAJOR_UNION
@@ -2764,6 +2822,9 @@ class AscendQwen4ExpModel(nn.Module):
             config.hidden_size,
             params_dtype=self.dtype_policy.embedding_dtype,
             quant_config=self.quant_config,
+            padding_size=vocab_partition_padding(
+                config, int(getattr(vllm_config.parallel_config, "tensor_parallel_size", 1)), DEFAULT_VOCAB_PADDING_SIZE
+            ),
             prefix=maybe_prefix(prefix, "embed_tokens"),
         )
 
@@ -2953,6 +3014,21 @@ class AscendQwen4ExpForCausalLM(
         self.model_config = vllm_config.model_config
         self.quant_config = getattr(vllm_config, "quant_config", None)
         self.config = config
+        if gdn_partition_policy(config) != "strict":
+            if w4_config(config) is None:
+                raise ValueError("padded GDN serving requires the explicit packed W4 checkpoint")
+            if getattr(vllm_config, "kv_transfer_config", None) is not None:
+                raise ValueError(
+                    "padded GDN does not support external KV transfer until padded state ownership is qualified"
+                )
+            if getattr(vllm_config.parallel_config, "pipeline_parallel_size", 1) != 1:
+                raise ValueError("padded GDN currently requires PP1")
+            if getattr(getattr(vllm_config, "speculative_config", None), "method", None) == "mtp" and not w4_config(
+                config
+            ).get("mtp_uneven_sharding", False):
+                raise ValueError(
+                    "padded GDN candidate requires MTP disabled until uneven drafter sharding is qualified"
+                )
         # Authoritative dtype policy (PRD §5.3 / R4): every submodule reads it.
         self.dtype_policy = Qwen4ExpDtypePolicy.from_vllm_config(vllm_config)
 
@@ -2968,6 +3044,9 @@ class AscendQwen4ExpForCausalLM(
             config.hidden_size,
             params_dtype=self.dtype_policy.lm_head_dtype,
             quant_config=self.quant_config,
+            padding_size=vocab_partition_padding(
+                config, int(getattr(vllm_config.parallel_config, "tensor_parallel_size", 1)), DEFAULT_VOCAB_PADDING_SIZE
+            ),
             prefix=maybe_prefix(prefix, "lm_head"),
         )
         if getattr(config, "tie_word_embeddings", False):
@@ -3013,12 +3092,21 @@ class AscendQwen4ExpForCausalLM(
         parallel_config = getattr(vllm_config, "parallel_config", None)
         tp_size = int(getattr(parallel_config, "tensor_parallel_size", 1) or 1)
         params = _gdn_params_from_config(config)
-        conv_dim = params.conv_dim // tp_size
+        shard = gdn_head_shard(
+            params.num_k_heads,
+            params.num_v_heads,
+            params.head_k_dim,
+            params.head_v_dim,
+            0,
+            tp_size,
+            gdn_partition_policy(config),
+        )
+        conv_dim = shard.conv_dim
         conv_state = (
             params.conv_kernel_size - 1 + getattr(vllm_config, "num_speculative_tokens", 0),
             conv_dim,
         )
-        recurrent_state = (params.num_v_heads // tp_size, params.head_v_dim, params.head_k_dim)
+        recurrent_state = (shard.value_heads, params.head_v_dim, params.head_k_dim)
         return (conv_state, recurrent_state)
 
     @classmethod
@@ -3291,6 +3379,10 @@ class AscendQwen4ExpForCausalLM(
         """
         metadata = getattr(self.config, "ascend_expert_quantization", None)
         shared_execution = metadata.get("shared_expert_execution", "tp_sharded") if metadata else "tp_sharded"
+        if shared_execution == "tp_sharded_uneven":
+            return place_uneven_shared_expert_tensor(
+                params, name, tensor, int(self.config.shared_expert_intermediate_size), tp_rank, tp_size
+            )
         replicated = shared_execution.startswith("replicated")
         if name.endswith(".mlp.shared_expert.gate_proj.weight"):
             target_name = name[: -len(".mlp.shared_expert.gate_proj.weight")] + ".mlp.shared_gate_up"
@@ -3349,6 +3441,19 @@ class AscendQwen4ExpForCausalLM(
         is row-parallel (split value_dim).
         """
         full = _gdn_params_from_config(self.model.config)
+        if gdn_partition_policy(self.model.config) != "strict":
+            shard = gdn_head_shard(
+                full.num_k_heads,
+                full.num_v_heads,
+                full.head_k_dim,
+                full.head_v_dim,
+                tp_rank,
+                tp_size,
+                gdn_partition_policy(self.model.config),
+            )
+            if gdn_partition_policy(self.model.config) == "padded_compact":
+                shard = gdn_execution_shard(shard)
+            return place_padded_gdn_tensor(params, name, tensor, shard, full.num_k_heads, full.num_v_heads)
         fkd = full.key_dim
         fvd = full.value_dim
         fnum_v = full.num_v_heads
@@ -3764,6 +3869,8 @@ class AscendQwen4ExpForConditionalGeneration(
         self._tokenizer = cached_tokenizer_from_config(vllm_config.model_config)
         self.multimodal_config = multimodal_config
         self.use_data_parallel = multimodal_config.mm_encoder_tp_mode == "data"
+        if gdn_partition_policy(config.text_config) != "strict" and not self.use_data_parallel:
+            raise ValueError("padded GDN multimodal candidate requires mm_encoder_tp_mode=data")
         pruning_spec = multimodal_config.get_video_pruning_spec()
         if pruning_spec is None:
             self.video_pruning_method = None

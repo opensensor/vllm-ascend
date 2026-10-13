@@ -1,0 +1,38 @@
+import hashlib, json, subprocess, uuid
+from pathlib import Path
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_native import NativeManifest
+from tools.qwen4exp.thermal_controller import parse_temperatures
+root = Path('/srv/ai/src/qwen-performance-evidence-20261010')
+runtime = Path('/srv/ai/src/qwen-performance-mtp-tp6-v2-20261010-8fce905')
+client = ResidentClient('http://127.0.0.1:8001', 6, 300)
+temperatures = parse_temperatures(subprocess.check_output(['npu-smi', 'info'], text=True, timeout=5), 6)
+assert max(temperatures) < 85
+assert client.request('/is_paused', method='GET')['is_paused'] is False
+library = root / 'diagnostic-marker-v15.so'
+asset = runtime / 'tools/qwen4exp/resident_candidates/cached_ple_w8a8.py'
+manifest = NativeManifest({'name': 'qwen_stage_diagnostic_v15',
+    'libraries': [{'path': str(library), 'sha256': hashlib.sha256(library.read_bytes()).hexdigest()}],
+    'assets': [{'path': str(asset), 'sha256': hashlib.sha256(asset.read_bytes()).hexdigest()}],
+    'operators': ['qwen_stage_diagnostic_v15::marker'],
+    'validation_source': (root / 'ple-validation-v15.py').read_text()})
+(root / 'mtp-v2-ple-manifest.json').write_text(manifest.payload)
+client.load_native(manifest)
+client.request('/pause?mode=wait&clear_cache=true')
+try:
+    receipts = client.rpc('resident_ple_gate_v15')
+    (root / 'mtp-v2-ple-math.json').write_text(json.dumps(receipts, indent=2))
+    assert all(value['passed'] for value in receipts), receipts
+    source = (root / 'fused-hc-ple-candidate-v15.py').read_text()
+    result = client.switch(Control(uuid.uuid4().hex, candidate='fused_native_hc_ple_w8', source=source, recapture=True))
+    (root / 'mtp-v2-ple-selected.json').write_text(json.dumps(result, indent=2))
+except Exception:
+    source = (runtime / 'tools/qwen4exp/resident_candidates/fused_hc_residual.py').read_text()
+    result = client.switch(Control(uuid.uuid4().hex, candidate='fused_native_hc', source=source, recapture=True))
+    (root / 'mtp-v2-ple-recovery.json').write_text(json.dumps(result, indent=2))
+    client.resume()
+    raise
+client.resume()
+print(json.dumps({'candidate': 'fused_native_hc_ple_w8', 'cases_per_rank': [v['cases'] for v in receipts],
+                  'temperatures_before': temperatures}), flush=True)

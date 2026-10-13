@@ -1,0 +1,49 @@
+{
+  "autostart": false,
+  "requires_renewed_npu_access": true,
+  "do_not_change_current_server": true,
+  "served_model": "qwen38-flash-next",
+  "performance_target": {
+    "recorded_two_card_c1_median_tok_s": 19.262081621261668,
+    "minimum_candidate_c1_median_tok_s": 28.8931224318925,
+    "lower_cold_ttft_required": true,
+    "paired_repeat_and_quality_gates_required": true,
+    "complete": false
+  },
+  "thermal_policy": {
+    "hold_c": 94,
+    "resume_all_chips_c": 85,
+    "independent_cutoff_c": 96,
+    "controlled_test_abort_c": 90
+  },
+  "offline_candidates": [
+    {
+      "name": "cached_ple_w8a8",
+      "path": "tools/qwen4exp/resident_candidates/cached_ple_w8a8.py",
+      "changes_precision": true,
+      "preserves_original_parameter_storage": true,
+      "npu_validated": true,
+      "gates": [
+        "component_W8_parity",
+        "graph_replay",
+        "text_image_quality",
+        "cache_CoW_cancellation",
+        "paired_C1"
+      ],
+      "selected_for_serving": false,
+      "reason": "W8 PLE median 26.128 tok/s versus FP16 repeat 26.929; FP16 restored."
+    }
+  ],
+  "pending_tests": [
+    "exact_23410_token_cold_repeat_pair",
+    "matched_two_card_and_six_chip_paired_C1_repeats",
+    "target_draft_HCCL_and_host_callback_attribution",
+    "C2_and_C6_sustained_decode",
+    "mixed_full_resolution_image_and_long_prefill",
+    "full_window_capacity_and_quality"
+  ],
+  "analysis_only": [
+    "independent_draft_graph_sizes_with_first_pass_geometry",
+    "bounded_primary_pool_ownership_before_unused_archive_reclamation"
+  ]
+}
