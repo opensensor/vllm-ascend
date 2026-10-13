@@ -7,7 +7,7 @@ constexpr uint32_t WIDTH = 4096;
 constexpr uint32_t INPUT_ROW_BYTES = 8256;
 constexpr uint32_t OUTPUT_ROW_BYTES = WIDTH * sizeof(float);
 constexpr uint32_t MAX_PACKED_ROWS = 64;
-constexpr uint32_t MAX_SEPARATE_ROWS = 512;
+constexpr uint32_t MAX_SEPARATE_ROWS = 1024;
 constexpr uint32_t FIRST_COLD_LAYER = 18;
 constexpr uint32_t LAST_COLD_LAYER = 32;
 constexpr uint32_t RANKS = 2;
@@ -25,7 +25,7 @@ struct Invocation {
   uint64_t reserved;
 };
 static_assert(sizeof(Invocation) == 64);
-static_assert(MAX_SEPARATE_ROWS * OUTPUT_ROW_BYTES == 8 * 1024 * 1024);
+static_assert(MAX_SEPARATE_ROWS * OUTPUT_ROW_BYTES == 16 * 1024 * 1024);
 
 extern "C" uint32_t sidecard_glm_completion_max_rows(uint32_t separate) {
   return separate ? MAX_SEPARATE_ROWS : MAX_PACKED_ROWS;

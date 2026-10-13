@@ -31,7 +31,7 @@ Requests serialize, CUDA prompt chunks are bounded to 32 rows, and all attention
 recurrent, KV, indexer, and mHC state stays on CUDA. The implementation has
 no HCCL dependency and does not move weights during inference.
 
-The optional `prefill_window_size` choices 64, 128, 256, and 512 group CUDA chunks
+The optional `prefill_window_size` choices 64, 128, 256, 512, and 1024 group CUDA chunks
 by layer and combines only their cold expert rows into one Ascend call per chip.
 CUDA attention, routing, hot experts, and shared MLP retain 32-row arithmetic;
 decode retains its existing graphs. The default window equals the configured
@@ -40,11 +40,14 @@ slots, metadata validation, and completion scratch sized for the cold batch.
 Windows of 128 rows and above require separate input-record completion control
 and a consumer binary advertising at least the configured row capacity. The
 slot capacity is derived from the cold window: 2 MiB through 128 rows, 4 MiB for
-256 rows, and 8 MiB for 512 rows. Every worker identity, IPC descriptor,
+256 rows, 8 MiB for 512 rows, and 16 MiB for 1024 rows. Every worker identity, IPC descriptor,
 DMA-BUF import, HBM slot, and lifetime guard uses the same bound. The existing
-PCIe bridge admits transfers through 8 MiB. See the
+PCIe bridge admits individual transfers through 8 MiB. A 16 MiB logical slot
+exports two bounded regions and completes both pieces before publishing its
+completion word, preserving the full allocation lifetime. See the
 [128-row results](../../artifacts/sidecard-prefill128-20261013/README.md) and
-[larger-slot qualification](../../artifacts/sidecard-prefillwide-20261013/README.md).
+[larger-slot qualification](../../artifacts/sidecard-prefillwide-20261013/README.md) and
+[16 MiB study](../../artifacts/sidecard-prefill16-20261013/README.md).
 The full-vocabulary prefill gate compares every original CUDA chunk boundary
 and 64 decode steps before exposing the endpoint. See the
 [cold compute comparison](../../artifacts/sidecard-cold-prefill-20261013/README.md)
@@ -62,8 +65,8 @@ python -m tools.sidecard.cold_prefill_benchmark \
 It resets all model state for each path and bypasses prefix caching and the API
 queue. It records isolated prefill compute time and complete-vocabulary parity
 for 2K, 8K, and the unchanged full request; it does not execute generated tools.
-Use `--windows 128 256 512` to compare the larger cold batches on a runtime
-provisioned for 512 rows. Without this option it compares the original
+Use `--windows 512 1024` to compare 8/16 MiB cold batches on a runtime
+provisioned for 1024 rows. Without this option it compares the original
 32-row path against the configured cold window.
 The caller's normal serving lifecycle remains responsible for hardware ownership.
 

@@ -24,6 +24,7 @@ from .completion_protocol import (
     epoch,
     input_record,
     receive_fd,
+    receive_result,
     result_header,
     send_fd,
 )
@@ -42,10 +43,11 @@ from .layer_weights import expert_batch_size
 from .pcie.mailbox import RECORD, Invocation
 from .pcie.peer import ASCEND_TO_CUDA, CUDA_TO_ASCEND, Driver, KernelPeer
 from .pcie.runtime import Runtime
+from .pcie.segmented import export_allocation, export_parts, make_peer
 
 GUARD_POISON = 0xD3
 PROBE_ROWS = (1, 4, 17, 32)
-LARGE_PROBE_ROWS = (64, 96, 128, 255, 256, 511, 512)
+LARGE_PROBE_ROWS = (64, 96, 128, 255, 256, 511, 512, 513, 768, 1023, 1024)
 WIDTH = 4096
 
 
@@ -96,7 +98,7 @@ def producer(args, spec):
     packet, host, guard = npu.allocate(capacity), npu.allocate(capacity, host=True), npu.allocate(capacity, host=True)
     stream, event = npu.stream(), npu.event()
     ctypes.memset(guard.pointer, GUARD_POISON, capacity)
-    peer = KernelPeer(args.rank + 2, persistent_gpu_mappings=True)
+    peer = make_peer(args.rank + 2, capacity, persistent_gpu_mappings=True)
     use_input = input_record(spec)
     admitted_rows = probe_rows(spec)
     notification = None
@@ -107,10 +109,10 @@ def producer(args, spec):
         registration = receive_control(connection)
         if registration != dict(nonce=args.nonce, epoch=epoch(args.nonce), rank=args.rank, pid=pid, uid=uid):
             raise ValueError("foreign result registration identity differs")
-        result = RemoteResult(cuda, receive_fd(connection), size=capacity)
+        result = receive_result(cuda, connection, capacity)
         if use_input:
             control = RemoteResult(cuda, receive_fd(connection), size=CONTROL_CAPACITY)
-            gpu_input = RemoteResult(cuda, receive_fd(connection), size=capacity)
+            gpu_input = receive_result(cuda, connection, capacity)
             incoming = npu.allocate(capacity)
             notification = KernelPeer(args.rank + 2, persistent_gpu_mappings=True)
             ready = AdmittedCudaSource(cuda)
@@ -217,7 +219,7 @@ def coordinator(args, spec):
         for rank in range(2):
             allocation = results.runtime.allocate(capacity)
             inputs.append((allocation, torch.as_tensor(CudaByteView(allocation), device="cuda:0")))
-            input_exports.append(Driver().export(allocation))
+            input_exports.append(export_allocation(Driver(), allocation))
     hot_cpu = torch.tensor((1e20, 1.0, -1e20, 0.03125)).repeat(max(admitted_rows) * WIDTH // 4).reshape(-1, WIDTH)
     hot = hot_cpu.cuda()
     torch.cuda.synchronize()
@@ -272,10 +274,12 @@ def coordinator(args, spec):
             send_control(
                 connection, dict(nonce=nonce, epoch=results.epoch, rank=rank, pid=os.getpid(), uid=os.getuid())
             )
-            send_fd(connection, results.exports[rank].fd)
+            for part in export_parts(results.exports[rank]):
+                send_fd(connection, part.fd)
             if results.input_record:
                 send_fd(connection, results.control_exports[rank].fd)
-                send_fd(connection, input_exports[rank].fd)
+                for part in export_parts(input_exports[rank]):
+                    send_fd(connection, part.fd)
             if receive_control(connection) != dict(ready=True, rank=rank):
                 raise ValueError("probe producer acknowledgement differs")
         for sequence in range(len(admitted_rows) * 3):

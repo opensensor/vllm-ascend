@@ -84,6 +84,7 @@ def test_native_completion_event_is_fresh_for_each_worker_invocation():
     slots.stream = slots.guard = slots.input_export = slots.output_export = None
     slots.source_event = SimpleNamespace(admitted=True)
     slots.driver = SimpleNamespace(flush=lambda **kwargs: None)
+    slots.transfer_calls = 0
     slots.calls = slots.upload_bytes = slots.download_bytes = slots.mapping_creations = slots.mapping_hits = 0
     slots.profile = []
 
@@ -506,7 +507,7 @@ def test_torch_hbm_endpoint_retains_storage_until_dma_lease_is_released():
         TensorAllocation(runtime, tensor)
 
 
-@pytest.mark.parametrize("rows,capacity", [(32, 2**21), (128, 2**21), (256, 2**22), (512, 2**23)])
+@pytest.mark.parametrize("rows,capacity", [(32, 2**21), (128, 2**21), (256, 2**22), (512, 2**23), (1024, 2**24)])
 def test_slot_capacity_is_derived_and_bound_to_identity_and_descriptors(rows, capacity):
     spec = dict(
         expert_transport="direct-dma",

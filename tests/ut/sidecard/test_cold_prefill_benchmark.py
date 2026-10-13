@@ -53,7 +53,7 @@ def test_cold_benchmark_rejects_insufficient_admission_and_restores_configuratio
         run(engine, [("full-code", [1])], output=tmp_path / "benchmark.json")
 
 
-@pytest.mark.parametrize("windows", [(64, 128), (32, 64, 128), (128, 256, 512)])
+@pytest.mark.parametrize("windows", [(64, 128), (32, 64, 128), (128, 256, 512), (512, 1024)])
 def test_larger_benchmark_uses_first_window_as_teacher_and_checks_each_candidate(tmp_path, windows):
     seen = []
     engine = SimpleNamespace(

@@ -11,6 +11,7 @@ from .layer_weights import COLD_PREFILL_WINDOW_ROWS, MAX_COLD_PREFILL_WINDOW, WI
 from .pcie.cuda_context import CudaContextRuntime
 from .pcie.mailbox import CudaCompletionWait
 from .pcie.runtime import Stream
+from .pcie.segmented import export_allocation
 
 
 def validate_capacity(native, rows, separate):
@@ -46,7 +47,7 @@ class CompletionResults:
         for _ in range(2):
             allocation = self.runtime.allocate(self.capacity)
             self.allocations.append(allocation)
-            self.exports.append(driver.export(allocation))
+            self.exports.append(export_allocation(driver, allocation))
             view = torch.as_tensor(CudaByteView(allocation), device="cuda:0")
             if view.data_ptr() != allocation.pointer:
                 raise ValueError("completion result does not share its owned CUDA allocation")

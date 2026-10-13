@@ -8,6 +8,7 @@ import socket
 from .dma_protocol import CAPACITY, OUTPUT_ROW_BYTES, dma_capacity
 from .layer_weights import expert_batch_size
 from .pcie.mailbox import RECORD, Invocation
+from .pcie.segmented import ExportGroup, segment_sizes
 
 RESULT_OFFSET = 8 + RECORD.size
 SEQUENCE_OFFSET = 8 + 8 + 8
@@ -101,3 +102,19 @@ class RemoteResult:
             os.close(self.fd)
             self.fd = None
             self.allocation.leases = 0
+
+
+def receive_result(runtime, connection, capacity):
+    """Import every bounded result region before acknowledging registration."""
+    sizes = segment_sizes(capacity)
+    parts = []
+    try:
+        for size in sizes:
+            parts.append(RemoteResult(runtime, receive_fd(connection), size=size))
+    except BaseException:
+        for value in parts:
+            value.close()
+        raise
+    if len(parts) == 1:
+        return parts[0]
+    return ExportGroup(RemoteAllocation(runtime, capacity), parts)

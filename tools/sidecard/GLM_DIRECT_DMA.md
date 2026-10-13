@@ -13,7 +13,7 @@ their NVIDIA DMA-BUF exports, a private Torch HBM input slot, and an
 unrelated poisoned ACL host lifetime guard. The coordinator imports the CUDA
 allocations through CUDA IPC and borrows them as Torch tensors. The CUDA
 allocator does not own or free these slots. Slots default to 2 MiB; cold
-windows of 256 and 512 rows derive 4 MiB and 8 MiB slots respectively. The
+windows of 256, 512, and 1024 rows derive 4 MiB, 8 MiB, and 16 MiB slots. The
 coordinator and workers bind descriptor sizes and guard lengths to that same
 runtime geometry. Separate completion control leaves the entire result slot
 available for FP32 rows. Older completion binaries fail admission before any
@@ -212,3 +212,32 @@ joins the final worker receipts to those observations by rank, sequence, layer,
 and row count. CUDA event spans overlap host waits; DMA worker timings are host
 wall spans including completion waits. Route counts remain unknown in direct
 mode because profiling does not add routing tensor readback.
+
+## Logical slots above the native transfer bound
+
+`pcie.segmented` admits a 16 MiB logical slot while keeping each UAPI 5
+registration and transfer within 8 MiB. NVIDIA exports two disjoint 8 MiB
+regions of the dedicated contiguous CUDA allocation. Each region has a
+separate private kernel endpoint, with at most two persistent GPU mappings
+(input and result). The CUDA IPC descriptor still identifies the complete
+16 MiB input allocation; result registration sends both region descriptors
+before the separate control descriptor. All endpoints derive those counts
+from the same admitted cold window and capacity.
+
+The Ascend worker splits its contiguous HBM payload into bounded regions and
+completes the corresponding DMA calls in order. A 1024-row FP32 result uses
+two 8 MiB return transfers. Its FP16 input plus routing and invocation record
+also crosses the 8 MiB boundary. The final 8-byte sequence publication occurs
+only after the complete result payload finishes. CUDA consumes the original
+contiguous result through one ordered merge and retains 32-row backbone math.
+
+Region lease counts also retain the full owner allocation. An uncertain piece
+retains its original HBM tensor, CUDA export, guard, source event, and kernel
+endpoint; the worker and coordinator keep their owners alive. All region
+mappings must close before any exported descriptor or full owner is released.
+The lifetime guard covers the whole logical HBM slot and remains poisoned.
+No kernel module replacement or driver configuration change is needed.
+
+The [16 MiB study](../../artifacts/sidecard-prefill16-20261013/README.md) records
+raw transfer qualification and the matched GLM comparison. This is a larger
+logical batch delivered in bounded pieces, not a single 16 MiB ioctl.

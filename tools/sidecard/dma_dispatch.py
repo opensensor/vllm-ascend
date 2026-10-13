@@ -36,6 +36,7 @@ from .hot_decode_graph import HotDecodeGraphs
 from .layer_weights import NPU_LAYERS, TOP_K, WIDTH, expert_batch_size
 from .pcie.peer import Driver
 from .pcie.runtime import Runtime
+from .pcie.segmented import export_parts
 
 STARTUP_TIMEOUT = 1800
 ACTIVE_TIMEOUT = 300
@@ -169,7 +170,8 @@ class DmaDispatch:
             send_control(connection, reply)
             if contract:
                 self.result_registrations.add(rank)
-                send_fd(connection, self.completion_results.exports[rank].fd)
+                for part in export_parts(self.completion_results.exports[rank]):
+                    send_fd(connection, part.fd)
                 if self.completion_results.input_record:
                     send_fd(connection, self.completion_results.control_exports[rank].fd)
             acknowledgement = receive_control(connection)

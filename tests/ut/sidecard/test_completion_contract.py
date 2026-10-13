@@ -112,7 +112,7 @@ def test_completion_packet_capacity_includes_header():
     assert epoch("0" * 64) == 1
 
 
-@pytest.mark.parametrize("rows", [128, 256, 512])
+@pytest.mark.parametrize("rows", [128, 256, 512, 1024])
 def test_separate_control_admits_full_slots_but_packed_control_does_not(rows):
     spec = dict(
         expert_transport="direct-dma",
@@ -125,11 +125,11 @@ def test_separate_control_admits_full_slots_but_packed_control_does_not(rows):
         enabled(spec)
 
 
-@pytest.mark.parametrize("capacity", [0, 64, 128, 256, 512, 1024])
+@pytest.mark.parametrize("capacity", [0, 64, 128, 256, 512, 1024, 2048])
 def test_native_binary_capacity_is_checked_before_future_waits(capacity):
     query = lambda separate: capacity if separate else 64
     native = SimpleNamespace(sidecard_glm_completion_max_rows=query)
-    if capacity in (128, 256, 512):
+    if capacity in (128, 256, 512, 1024):
         assert validate_capacity(native, 128, True) == capacity
     else:
         with pytest.raises(ValueError, match="capacity"):
@@ -147,7 +147,7 @@ def test_transport_probe_covers_large_payload_boundaries_only_when_admitted():
     assert probe_rows(dict(expert_transport="direct-dma", prefill_window_size=512))[-2:] == (511, 512)
 
 
-@pytest.mark.parametrize("rows", [128, 256, 512])
+@pytest.mark.parametrize("rows", [128, 256, 512, 1024])
 def test_old_consumer_rejection_precedes_context_and_export_allocation(tmp_path, monkeypatch, rows):
     library = tmp_path / "old.so"
     library.write_bytes(b"authenticated old 64-row binary")
@@ -302,7 +302,7 @@ def test_input_sequence_subrange_pins_uploaded_record_allocation():
     assert base.leases == 1
 
 
-@pytest.mark.parametrize("rows", [256, 512])
+@pytest.mark.parametrize("rows", [256, 512, 1024])
 def test_128_row_native_consumer_rejects_wider_runtime(rows):
     query = lambda separate: 128 if separate else 64
     native = SimpleNamespace(sidecard_glm_completion_max_rows=query)

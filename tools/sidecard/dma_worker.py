@@ -25,6 +25,7 @@ from .completion_protocol import (
     epoch,
     input_record,
     receive_fd,
+    receive_result,
     result_header,
 )
 from .completion_protocol import (
@@ -49,6 +50,7 @@ from .layer_weights import MAX_CHUNK, NPU_LAYERS, TOP_K, WIDTH, NpuExperts, expe
 from .pcie.mailbox import RECORD, Invocation
 from .pcie.peer import ASCEND_TO_CUDA, CUDA_TO_ASCEND, Driver, KernelPeer
 from .pcie.runtime import Runtime
+from .pcie.segmented import export_allocation, make_peer, mapping_counts
 
 GUARD_POISON = 0xD3
 PROFILE_RECORD_LIMIT = 4096
@@ -129,15 +131,17 @@ class WorkerSlots:
         self.control_export = self.notification_peer = None
         self.gpu_input = self.cuda.allocate(self.capacity)
         self.gpu_output = None if self.completion_contract else self.cuda.allocate(self.capacity)
-        self.input_export = self.driver.export(self.gpu_input)
-        self.output_export = None if self.completion_contract else self.driver.export(self.gpu_output)
+        self.input_export = export_allocation(self.driver, self.gpu_input)
+        self.output_export = None if self.completion_contract else export_allocation(self.driver, self.gpu_output)
         self.packed = torch.empty(self.capacity, dtype=torch.uint8, device=f"npu:{rank}")
         self.npu_input = TensorAllocation(self.ascend, self.packed)
         self.guard = self.ascend.allocate(self.capacity, host=True)
         ctypes.memset(self.guard.pointer, GUARD_POISON, self.capacity)
         self.stream, self.event = self.ascend.stream(), self.ascend.event()
-        self.peer = KernelPeer(
-            rank + 2, persistent_gpu_mappings=spec.get("direct_dma", {}).get("persistent_gpu_mappings", False)
+        self.peer = make_peer(
+            rank + 2,
+            self.capacity,
+            persistent_gpu_mappings=spec.get("direct_dma", {}).get("persistent_gpu_mappings", False),
         )
         self.source_event = AdmittedCudaSource(self.cuda)
         self.metadata_host = self.ascend.allocate(
@@ -147,6 +151,7 @@ class WorkerSlots:
         self.metadata = storage
         self.hot_ids = {int(layer): frozenset(ids) for layer, ids in load(spec).items()}
         self.calls, self.upload_bytes, self.download_bytes = 0, 0, 0
+        self.transfer_calls = 0
         self.mapping_creations, self.mapping_hits = 0, 0
         self.profile = deque(maxlen=PROFILE_RECORD_LIMIT)
         if self.completion_contract and not self.input_record:
@@ -167,7 +172,7 @@ class WorkerSlots:
             expected.update(input_record=True, control_capacity=CONTROL_CAPACITY)
         if reply != expected:
             raise ValueError("coordinator result ownership contract differs")
-        self.output_export = RemoteResult(self.cuda, receive_fd(connection), size=self.capacity)
+        self.output_export = receive_result(self.cuda, connection, self.capacity)
         self.epoch = epoch(nonce)
         if self.input_record:
             self.control_export = RemoteResult(self.cuda, receive_fd(connection), size=CONTROL_CAPACITY)
@@ -189,7 +194,7 @@ class WorkerSlots:
             "transport": "direct-dma",
             "payload_host_staging": False,
             "calls": self.calls,
-            "verified_direct_transfers": self.calls * (3 if self.completion_contract else 2),
+            "verified_direct_transfers": self.transfer_calls,
             "upload_bytes": self.upload_bytes,
             "download_bytes": self.download_bytes,
             "gpu_mapping_creations": self.mapping_creations,
@@ -297,9 +302,12 @@ class WorkerSlots:
             # Legacy results are consumed through IPC in another CUDA context.
             self.driver.flush(all_devices=True)
         self.calls += 1
-        hits = upload["gpu_mapping_reused"] + download["gpu_mapping_reused"]
-        self.mapping_hits += hits
-        self.mapping_creations += 2 - hits
+        for receipt in (upload, download):
+            creations, hits = mapping_counts(receipt)
+            self.mapping_hits += hits
+            self.mapping_creations += creations
+            self.transfer_calls += creations + hits
+        self.transfer_calls += int(contract)
         self.source_event.admitted = False
         self.upload_bytes += rows * INPUT_ROW_BYTES
         self.download_bytes += rows * OUTPUT_ROW_BYTES

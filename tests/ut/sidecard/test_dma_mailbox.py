@@ -171,7 +171,7 @@ def test_foreign_runtime_thread_cannot_mutate_completion_ownership():
     assert flag.leases == 1 and flag in queue.events and not queue.active
 
 
-@pytest.mark.parametrize("rows", [128, 255, 256, 511, 512])
+@pytest.mark.parametrize("rows", [128, 255, 256, 511, 512, 513, 1023, 1024])
 def test_mailbox_large_cold_geometry_round_trips_without_changing_cuda_chunks(rows):
     value = Invocation(7, 9, 18, rows, 1, 0)
     body = value.encode(slots=2)
@@ -180,7 +180,7 @@ def test_mailbox_large_cold_geometry_round_trips_without_changing_cuda_chunks(ro
     assert fields[7:9] == (rows * 8256, rows * 16384)
 
 
-@pytest.mark.parametrize("rows", [0, 513, 1024])
-def test_mailbox_rejects_rows_above_registered_driver_capacity(rows):
+@pytest.mark.parametrize("rows", [0, 1025, 2048])
+def test_mailbox_rejects_rows_above_registered_logical_capacity(rows):
     with pytest.raises(ValueError, match="registered contract"):
         Invocation(7, 9, 18, rows, 1, 0).encode(slots=2)
