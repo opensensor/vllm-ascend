@@ -29,7 +29,8 @@ from .dma_protocol import (
     send_control,
     validate_command,
 )
-from .expert_decode_graph import ExpertDecodeGraphs
+from .expert_decode_graph import ExpertDecodeGraphs, prefill_graph_rows
+from .expert_prefill_gate import validate as validate_prefill_graphs
 from .layer_weights import MAX_CHUNK, NPU_LAYERS, TOP_K, WIDTH, NpuExperts, prefill_chunk_size
 from .pcie.peer import ASCEND_TO_CUDA, CUDA_TO_ASCEND, Driver, KernelPeer
 from .pcie.runtime import Runtime
@@ -241,6 +242,7 @@ def worker(args, spec):
     """Authenticate the private owner, gate banks, and serialize DMA invocations."""
     if os.geteuid() != 0 or os.environ.get("ASCEND_RT_VISIBLE_DEVICES") != "2,3":
         raise ValueError("direct expert worker requires root and assigned physical chips 2,3")
+    prefill_rows = prefill_graph_rows(spec)
     import torch
     import torch_npu
 
@@ -262,7 +264,11 @@ def worker(args, spec):
     actor.validate_repeat(output / f"expert-repeat-rank{args.rank}.json", combine_results=False)
     if spec.get("direct_dma", {}).get("npu_expert_graphs", False):
         with torch.inference_mode():
-            actor = ExpertDecodeGraphs(actor, torch)
+            actor = ExpertDecodeGraphs(actor, torch, prefill_rows=prefill_rows)
+            if prefill_rows is not None:
+                validate_prefill_graphs(
+                    actor.actor, actor, torch, output=output / f"expert-prefill-parity-rank{args.rank}.json"
+                )
     slots = WorkerSlots(spec, args.rank, torch)
     # Ordinary termination is deferred to private socket EOF; never abandon in-flight DMA.
     signal.signal(signal.SIGTERM, lambda signum, frame: None)
