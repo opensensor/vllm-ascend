@@ -19,7 +19,6 @@ from .completion_protocol import enabled as completion_enabled
 from .completion_results import CompletionResults
 from .dma_pack_graph import DmaPackGraphs
 from .dma_protocol import (
-    CAPACITY,
     CLOSE_TAG,
     COMMAND,
     INPUT_ROW_BYTES,
@@ -27,6 +26,7 @@ from .dma_protocol import (
     RELEASE,
     CudaByteView,
     CudaSourceEvent,
+    dma_capacity,
     receive_control,
     send_control,
     validate_descriptor,
@@ -46,6 +46,7 @@ class DmaDispatch:
     def __init__(self, config, cuda, torch, *, wait=True):
         self.spec = json.loads(Path(config).read_bytes())
         self.max_chunk = expert_batch_size(self.spec)
+        self.capacity = dma_capacity(self.spec)
         self.hot = load(self.spec)
         self.cuda, self.torch = cuda, torch
         self.lookups = {
@@ -142,14 +143,14 @@ class DmaDispatch:
                 raise ValueError("worker and coordinator completion protocol selection differs")
             slots = (("input", self.inputs),) if contract else (("input", self.inputs), ("output", self.outputs))
             for name, targets in slots:
-                validate_descriptor(hello[name])
+                validate_descriptor(hello[name], capacity=self.capacity)
                 allocation = self.runtime.import_memory(hello[name])
                 self.imports.append(allocation)
                 before = self.driver.ensure_sync_memops(allocation)
                 sync_memops.append({"rank": rank, "slot": name, "enabled_before_import_check": before})
                 view = CudaByteView(allocation)
                 tensor = self.torch.as_tensor(view, device="cuda:0")
-                if tensor.data_ptr() != allocation.pointer or tensor.numel() != CAPACITY:
+                if tensor.data_ptr() != allocation.pointer or tensor.numel() != self.capacity:
                     raise ValueError("CUDA IPC tensor does not share its dedicated mapping")
                 targets.append(tensor)
             event = CudaSourceEvent(self.runtime, self.driver, self.torch.cuda.current_stream())
@@ -160,7 +161,7 @@ class DmaDispatch:
                     result_owner="coordinator",
                     native_owner_ordering=True,
                     epoch=self.completion_results.epoch,
-                    capacity=CAPACITY,
+                    capacity=self.capacity,
                 )
                 self.outputs.append(self.completion_results.views[rank])
                 if self.completion_results.input_record:
@@ -187,7 +188,7 @@ class DmaDispatch:
                     "hccl": False,
                     "transport": "direct-dma",
                     "payload_host_staging": False,
-                    "capacity_per_slot": CAPACITY,
+                    "capacity_per_slot": self.capacity,
                     "gpu_slot_owner": "coordinator-results-worker-inputs"
                     if self.completion_results
                     else "independent-ascend-worker",

@@ -53,16 +53,18 @@ def test_cold_benchmark_rejects_insufficient_admission_and_restores_configuratio
         run(engine, [("full-code", [1])], output=tmp_path / "benchmark.json")
 
 
-@pytest.mark.parametrize("windows", [(64, 128), (32, 64, 128)])
+@pytest.mark.parametrize("windows", [(64, 128), (32, 64, 128), (128, 256, 512)])
 def test_larger_benchmark_uses_first_window_as_teacher_and_checks_each_candidate(tmp_path, windows):
     seen = []
-    engine = SimpleNamespace(prefill_chunk_size=32, prefill_window_size=128, fingerprints=None, max_context=512)
+    engine = SimpleNamespace(
+        prefill_chunk_size=32, prefill_window_size=max(windows), fingerprints=None, max_context=512
+    )
     engine.reset = lambda **kwargs: seen.append(engine.prefill_window_size)
     engine.prefill = engine.forward = lambda tokens: torch.tensor([0.0, 1.0])
     report = run(engine, [("full-code", list(range(128)))], output=tmp_path / "benchmark.json", windows=windows)
     assert report["passed"] and seen == list(windows)
     assert all(row["full_vocabulary_bitwise_equal"] for row in report["measurements"])
-    assert engine.prefill_window_size == 128
+    assert engine.prefill_window_size == max(windows)
 
 
 @pytest.mark.parametrize("windows", [(128,), (64, 64), (64, 256), (True, 64), (64, 128)])

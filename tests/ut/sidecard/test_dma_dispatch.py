@@ -24,6 +24,7 @@ from tools.sidecard.dma_protocol import (
     PROTOCOL,
     AdmittedCudaSource,
     CudaSourceEvent,
+    dma_capacity,
     receive_control,
     send_control,
     validate_command,
@@ -205,9 +206,10 @@ class Peer:
         return len(tag)
 
 
-def dispatcher():
+def dispatcher(rows=32):
     value = object.__new__(DmaDispatch)
-    value.max_chunk = 32
+    value.max_chunk = rows
+    value.capacity = dma_capacity(dict(expert_transport="direct-dma", prefill_window_size=rows))
     events = []
     hot = torch.tensor([1, 31, 76, 125, 144, 210, 223, 284])
     lookup = torch.full((288,), -1, dtype=torch.int32)
@@ -217,8 +219,8 @@ def dispatcher():
         **{name: getattr(torch, name) for name in ("where", "stack", "float16", "float32", "int32")},
         cuda=SimpleNamespace(current_stream=lambda: "stream"),
     )
-    value.inputs = [torch.empty(CAPACITY, dtype=torch.uint8) for _ in range(2)]
-    value.outputs = [torch.full((CAPACITY,), 255, dtype=torch.uint8) for _ in range(2)]
+    value.inputs = [torch.empty(value.capacity, dtype=torch.uint8) for _ in range(2)]
+    value.outputs = [torch.full((value.capacity,), 255, dtype=torch.uint8) for _ in range(2)]
     value.events = [Event(events, rank) for rank in range(2)]
     value.connections = [Peer(value, rank, events) for rank in range(2)]
     value.sequences = [0, 0]
@@ -278,9 +280,9 @@ def test_source_events_precede_control_and_shared_overlaps_both_workers():
     assert events.index(("write_visibility", None)) > events.index(("control_receive", 1))
 
 
-@pytest.mark.parametrize("rows", [64, 128])
+@pytest.mark.parametrize("rows", [64, 128, 256, 512])
 def test_larger_prefill_batches_share_slots_and_keep_both_rank_results(rows):
-    actor, events = dispatcher()
+    actor, events = dispatcher(rows)
     actor.max_chunk = rows
     x = torch.ones(rows, 4096).half()
     ids = torch.tensor([[1, 2, 3, 4, 144, 145, 146, 210]]).expand(rows, -1)
@@ -292,9 +294,9 @@ def test_larger_prefill_batches_share_slots_and_keep_both_rank_results(rows):
 
 
 @pytest.mark.parametrize("tail", [1, 7, 32])
-@pytest.mark.parametrize("chunks", [2, 4])
+@pytest.mark.parametrize("chunks", [2, 4, 8, 16])
 def test_cold_batch_uses_union_admission_and_keeps_each_cuda_chunk(tail, chunks):
-    actor, events = dispatcher()
+    actor, events = dispatcher(chunks * 32)
     actor.max_chunk = chunks * 32
     actor.cuda.max_chunk = 32
     actor.torch.cat = torch.cat
@@ -502,3 +504,33 @@ def test_torch_hbm_endpoint_retains_storage_until_dma_lease_is_released():
     tensor.device.index = 1
     with pytest.raises(ValueError, match="NPU"):
         TensorAllocation(runtime, tensor)
+
+
+@pytest.mark.parametrize("rows,capacity", [(32, 2**21), (128, 2**21), (256, 2**22), (512, 2**23)])
+def test_slot_capacity_is_derived_and_bound_to_identity_and_descriptors(rows, capacity):
+    spec = dict(
+        expert_transport="direct-dma",
+        prefill_window_size=rows,
+        checkpoint_sha256="c" * 64,
+        expert_placement_sha256="p" * 64,
+    )
+    assert dma_capacity(spec) == capacity
+    assert rows * INPUT_ROW_BYTES + 64 < capacity
+    descriptor = dict(backend="cuda", size=capacity, offset=0, handle="00" * 64)
+    validate_descriptor(descriptor, capacity=capacity)
+    hello = dict(
+        protocol=PROTOCOL,
+        nonce="n",
+        rank=0,
+        physical_chip=2,
+        checkpoint_sha256=spec["checkpoint_sha256"],
+        placement_sha256=spec["expert_placement_sha256"],
+        capacity=capacity,
+    )
+    validate_identity(hello, spec, "n", 0)
+    hello["capacity"] = capacity // 2
+    with pytest.raises(ValueError, match="identity"):
+        validate_identity(hello, spec, "n", 0)
+    descriptor["size"] = capacity // 2
+    with pytest.raises(ValueError, match="descriptor"):
+        validate_descriptor(descriptor, capacity=capacity)

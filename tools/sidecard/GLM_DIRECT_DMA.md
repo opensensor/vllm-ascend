@@ -8,11 +8,16 @@ independent resident cold expert banks. HCCL is not involved.
 
 ## Payload and control
 
-Each privileged expert worker owns dedicated 2 MiB CUDA input/output allocations,
-their NVIDIA DMA-BUF exports, a private 2 MiB Torch HBM input slot, and an
+Each privileged expert worker owns dedicated CUDA input/output allocations,
+their NVIDIA DMA-BUF exports, a private Torch HBM input slot, and an
 unrelated poisoned ACL host lifetime guard. The coordinator imports the CUDA
 allocations through CUDA IPC and borrows them as Torch tensors. The CUDA
-allocator does not own or free these slots.
+allocator does not own or free these slots. Slots default to 2 MiB; cold
+windows of 256 and 512 rows derive 4 MiB and 8 MiB slots respectively. The
+coordinator and workers bind descriptor sizes and guard lengths to that same
+runtime geometry. Separate completion control leaves the entire result slot
+available for FP32 rows. Older completion binaries fail admission before any
+owner allocation or CUDA future wait.
 
 The coordinator packs FP16 hidden rows, int32 expert IDs, and FP32 original route
 weights into GPU memory. It synchronizes a source event on the current CUDA

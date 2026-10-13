@@ -5,7 +5,7 @@ import array
 import os
 import socket
 
-from .dma_protocol import CAPACITY, OUTPUT_ROW_BYTES
+from .dma_protocol import CAPACITY, OUTPUT_ROW_BYTES, dma_capacity
 from .layer_weights import expert_batch_size
 from .pcie.mailbox import RECORD, Invocation
 
@@ -25,7 +25,7 @@ def enabled(spec):
     if type(separate) is not bool:
         raise ValueError("input-record completion selection must be boolean")
     header_bytes = 0 if separate else RESULT_OFFSET
-    if value and expert_batch_size(spec) * OUTPUT_ROW_BYTES + header_bytes > CAPACITY:
+    if value and expert_batch_size(spec) * OUTPUT_ROW_BYTES + header_bytes > dma_capacity(spec):
         raise ValueError("completion header and prefill results exceed their dedicated allocation")
     return value
 

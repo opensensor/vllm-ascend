@@ -10,7 +10,7 @@ import struct
 from dataclasses import dataclass
 
 from ..dma_protocol import INPUT_ROW_BYTES, OUTPUT_ROW_BYTES
-from ..layer_weights import MAX_PREFILL_CHUNK, NPU_LAYERS
+from ..layer_weights import MAX_COLD_PREFILL_WINDOW, NPU_LAYERS
 
 MAGIC = b"SCMAIL01"
 RECORD = struct.Struct("<8sQQIIIIQQQ")
@@ -37,7 +37,7 @@ class Invocation:
             or not 1 <= self.epoch <= MAX_SEQUENCE
             or not 1 <= self.sequence <= MAX_SEQUENCE
             or self.layer not in NPU_LAYERS
-            or not 1 <= self.rows <= MAX_PREFILL_CHUNK
+            or not 1 <= self.rows <= MAX_COLD_PREFILL_WINDOW
             or type(slots) is not int
             or not 1 <= slots <= MAX_SLOTS
             or not 0 <= self.slot < slots

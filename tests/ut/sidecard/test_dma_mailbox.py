@@ -169,3 +169,18 @@ def test_foreign_runtime_thread_cannot_mutate_completion_ownership():
         with pytest.raises(RuntimeError, match="foreign thread"):
             operation()
     assert flag.leases == 1 and flag in queue.events and not queue.active
+
+
+@pytest.mark.parametrize("rows", [128, 255, 256, 511, 512])
+def test_mailbox_large_cold_geometry_round_trips_without_changing_cuda_chunks(rows):
+    value = Invocation(7, 9, 18, rows, 1, 0)
+    body = value.encode(slots=2)
+    assert Invocation.decode(body, epoch=7, sequence=9, slots=2, rank=0) == value
+    fields = RECORD.unpack(body)
+    assert fields[7:9] == (rows * 8256, rows * 16384)
+
+
+@pytest.mark.parametrize("rows", [0, 513, 1024])
+def test_mailbox_rejects_rows_above_registered_driver_capacity(rows):
+    with pytest.raises(ValueError, match="registered contract"):
+        Invocation(7, 9, 18, rows, 1, 0).encode(slots=2)

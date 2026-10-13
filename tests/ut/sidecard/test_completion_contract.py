@@ -78,11 +78,13 @@ def test_fd_registration_rejects_an_unaccompanied_or_wrong_marker():
             receive_fd(b)
 
 
-def test_foreign_result_keeps_fd_until_kernel_cache_lease_is_released(tmp_path):
+@pytest.mark.parametrize("size", [2 * 1024**2, 4 * 1024**2, 8 * 1024**2])
+def test_foreign_result_keeps_fd_until_kernel_cache_lease_is_released(tmp_path, size):
     path = tmp_path / "handle"
     path.write_bytes(b"fixture")
     descriptor = os.open(path, os.O_RDONLY)
-    result = RemoteResult(SimpleNamespace(check_owner=lambda: None), descriptor)
+    result = RemoteResult(SimpleNamespace(check_owner=lambda: None), descriptor, size=size)
+    assert result.allocation.size == size
     result.allocation.leases += 1
     with pytest.raises(RuntimeError, match="retained"):
         result.close()
@@ -110,10 +112,11 @@ def test_completion_packet_capacity_includes_header():
     assert epoch("0" * 64) == 1
 
 
-def test_separate_control_admits_exact_2mib_results_but_packed_control_does_not():
+@pytest.mark.parametrize("rows", [128, 256, 512])
+def test_separate_control_admits_full_slots_but_packed_control_does_not(rows):
     spec = dict(
         expert_transport="direct-dma",
-        prefill_window_size=128,
+        prefill_window_size=rows,
         direct_dma=dict(cuda_completion_contract=True, completion_input_record=True),
     )
     assert enabled(spec) and input_record(spec)
@@ -122,12 +125,12 @@ def test_separate_control_admits_exact_2mib_results_but_packed_control_does_not(
         enabled(spec)
 
 
-@pytest.mark.parametrize("capacity", [0, 64, 128, 256])
+@pytest.mark.parametrize("capacity", [0, 64, 128, 256, 512, 1024])
 def test_native_binary_capacity_is_checked_before_future_waits(capacity):
     query = lambda separate: capacity if separate else 64
     native = SimpleNamespace(sidecard_glm_completion_max_rows=query)
-    if capacity == 128:
-        assert validate_capacity(native, 128, True) == 128
+    if capacity in (128, 256, 512):
+        assert validate_capacity(native, 128, True) == capacity
     else:
         with pytest.raises(ValueError, match="capacity"):
             validate_capacity(native, 128, True)
@@ -140,14 +143,17 @@ def test_native_binary_capacity_is_checked_before_future_waits(capacity):
 def test_transport_probe_covers_large_payload_boundaries_only_when_admitted():
     assert probe_rows({}) == (1, 4, 17, 32)
     assert probe_rows(dict(expert_transport="direct-dma", prefill_window_size=128)) == (1, 4, 17, 32, 64, 96, 128)
+    assert probe_rows(dict(expert_transport="direct-dma", prefill_window_size=256))[-2:] == (255, 256)
+    assert probe_rows(dict(expert_transport="direct-dma", prefill_window_size=512))[-2:] == (511, 512)
 
 
-def test_old_consumer_rejection_precedes_context_and_export_allocation(tmp_path, monkeypatch):
+@pytest.mark.parametrize("rows", [128, 256, 512])
+def test_old_consumer_rejection_precedes_context_and_export_allocation(tmp_path, monkeypatch, rows):
     library = tmp_path / "old.so"
     library.write_bytes(b"authenticated old 64-row binary")
     spec = dict(
         expert_transport="direct-dma",
-        prefill_window_size=128,
+        prefill_window_size=rows,
         direct_dma=dict(
             cuda_completion_contract=True,
             completion_input_record=True,
@@ -162,7 +168,7 @@ def test_old_consumer_rejection_precedes_context_and_export_allocation(tmp_path,
 
     monkeypatch.setattr(completion_results, "CudaContextRuntime", fail_allocation)
     with pytest.raises(ValueError, match="capacity"):
-        completion_results.CompletionResults(spec, "1" * 64, None, None, 128)
+        completion_results.CompletionResults(spec, "1" * 64, None, None, rows)
 
 
 def test_serialized_context_runtime_allows_asgi_threads_only_in_the_same_context():
@@ -294,3 +300,11 @@ def test_input_sequence_subrange_pins_uploaded_record_allocation():
     assert view.pointer == base.pointer + 32 * 8256 + 16 and view.size == 48
     view.leases += 1
     assert base.leases == 1
+
+
+@pytest.mark.parametrize("rows", [256, 512])
+def test_128_row_native_consumer_rejects_wider_runtime(rows):
+    query = lambda separate: 128 if separate else 64
+    native = SimpleNamespace(sidecard_glm_completion_max_rows=query)
+    with pytest.raises(ValueError, match="capacity"):
+        validate_capacity(native, rows, True)

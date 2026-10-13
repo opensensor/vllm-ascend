@@ -6,7 +6,7 @@ import os
 import struct
 
 from .cold_expert_probe import receive
-from .layer_weights import MAX_CHUNK, NPU_LAYERS, TOP_K, WIDTH
+from .layer_weights import MAX_CHUNK, NPU_LAYERS, TOP_K, WIDTH, expert_batch_size
 
 PROTOCOL = "glm-direct-dma-v1"
 CAPACITY = 2 * 1024 * 1024
@@ -17,6 +17,11 @@ RELEASE = b"RELEASE\n"
 CLOSE_TAG = COMMAND.pack(2**32 - 1, 0, 0)
 INPUT_ROW_BYTES = WIDTH * 2 + TOP_K * 8
 OUTPUT_ROW_BYTES = WIDTH * 4
+
+
+def dma_capacity(spec):
+    """Derive dedicated slot bounds from the authenticated cold batch geometry."""
+    return max(CAPACITY, expert_batch_size(spec) * OUTPUT_ROW_BYTES)
 
 
 def send_control(connection, value):
@@ -48,18 +53,18 @@ def validate_identity(value, spec, nonce, rank):
         "physical_chip": rank + 2,
         "checkpoint_sha256": spec["checkpoint_sha256"],
         "placement_sha256": spec["expert_placement_sha256"],
-        "capacity": CAPACITY,
+        "capacity": dma_capacity(spec),
     }
     if any(value.get(key) != field for key, field in expected.items()):
         raise ValueError("direct DMA worker identity differs")
 
 
-def validate_descriptor(value):
+def validate_descriptor(value, *, capacity=CAPACITY):
     if (
         not isinstance(value, dict)
         or value.get("backend") != "cuda"
         or type(value.get("size")) is not int
-        or value["size"] != CAPACITY
+        or value["size"] != capacity
         or type(value.get("offset")) is not int
         or value["offset"] != 0
         or not isinstance(value.get("handle"), str)

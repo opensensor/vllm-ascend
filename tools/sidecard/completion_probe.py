@@ -29,12 +29,12 @@ from .completion_protocol import (
 )
 from .completion_results import CompletionResults
 from .dma_protocol import (
-    CAPACITY,
     CLOSE_TAG,
     COMMAND,
     INPUT_ROW_BYTES,
     AdmittedCudaSource,
     CudaByteView,
+    dma_capacity,
     receive_control,
     send_control,
 )
@@ -45,7 +45,7 @@ from .pcie.runtime import Runtime
 
 GUARD_POISON = 0xD3
 PROBE_ROWS = (1, 4, 17, 32)
-LARGE_PROBE_ROWS = (64, 96, 128)
+LARGE_PROBE_ROWS = (64, 96, 128, 255, 256, 511, 512)
 WIDTH = 4096
 
 
@@ -90,11 +90,12 @@ def producer(args, spec):
     """Validate uploaded records, publish ordered DMA, and retain uncertain owners."""
     if os.geteuid() != 0 or os.environ.get("ASCEND_RT_VISIBLE_DEVICES") != "2,3":
         raise ValueError("probe producer requires root and only assigned chips 2,3")
+    capacity = dma_capacity(spec)
     cuda = Runtime("cuda", spec["cuda_backend"]["cuda_runtime"])
     npu = Runtime("ascend", "/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/libascendcl.so", args.rank)
-    packet, host, guard = npu.allocate(CAPACITY), npu.allocate(CAPACITY, host=True), npu.allocate(CAPACITY, host=True)
+    packet, host, guard = npu.allocate(capacity), npu.allocate(capacity, host=True), npu.allocate(capacity, host=True)
     stream, event = npu.stream(), npu.event()
-    ctypes.memset(guard.pointer, GUARD_POISON, CAPACITY)
+    ctypes.memset(guard.pointer, GUARD_POISON, capacity)
     peer = KernelPeer(args.rank + 2, persistent_gpu_mappings=True)
     use_input = input_record(spec)
     admitted_rows = probe_rows(spec)
@@ -106,11 +107,11 @@ def producer(args, spec):
         registration = receive_control(connection)
         if registration != dict(nonce=args.nonce, epoch=epoch(args.nonce), rank=args.rank, pid=pid, uid=uid):
             raise ValueError("foreign result registration identity differs")
-        result = RemoteResult(cuda, receive_fd(connection))
+        result = RemoteResult(cuda, receive_fd(connection), size=capacity)
         if use_input:
             control = RemoteResult(cuda, receive_fd(connection), size=CONTROL_CAPACITY)
-            gpu_input = RemoteResult(cuda, receive_fd(connection))
-            incoming = npu.allocate(CAPACITY)
+            gpu_input = RemoteResult(cuda, receive_fd(connection), size=capacity)
+            incoming = npu.allocate(capacity)
             notification = KernelPeer(args.rank + 2, persistent_gpu_mappings=True)
             ready = AdmittedCudaSource(cuda)
         send_control(connection, dict(ready=True, rank=args.rank))
@@ -130,8 +131,8 @@ def producer(args, spec):
                         connection,
                         dict(
                             closed=True,
-                            guard_poison_exact=ctypes.string_at(guard.pointer, CAPACITY)
-                            == bytes([GUARD_POISON]) * CAPACITY,
+                            guard_poison_exact=ctypes.string_at(guard.pointer, capacity)
+                            == bytes([GUARD_POISON]) * capacity,
                         ),
                     )
                     break
@@ -202,16 +203,19 @@ def coordinator(args, spec):
     """Preflight the unaligned HBM sequence source before queuing future waits."""
     import torch
 
+    capacity = dma_capacity(spec)
     torch.cuda.set_device(0)
     nonce = secrets.token_hex(32)
     admitted_rows = probe_rows(spec)
+    for rows in admitted_rows:
+        Invocation(epoch(nonce), 1, 18, rows, 0, 0).encode(slots=2)
     root = args.output.parent
     root.mkdir(exist_ok=True)
     results = CompletionResults(spec, nonce, Driver(), torch, max(admitted_rows))
     inputs, input_exports = [], []
     if results.input_record:
         for rank in range(2):
-            allocation = results.runtime.allocate(CAPACITY)
+            allocation = results.runtime.allocate(capacity)
             inputs.append((allocation, torch.as_tensor(CudaByteView(allocation), device="cuda:0")))
             input_exports.append(Driver().export(allocation))
     hot_cpu = torch.tensor((1e20, 1.0, -1e20, 0.03125)).repeat(max(admitted_rows) * WIDTH // 4).reshape(-1, WIDTH)
@@ -226,6 +230,7 @@ def coordinator(args, spec):
         source_sequence_offset=None if results.input_record else SEQUENCE_OFFSET,
         source_sequence_offset_formula="rows * 8256 + 16" if results.input_record else None,
         host_result_flushes=0,
+        capacity_per_slot=capacity,
     )
     try:
         for rank in range(2):
@@ -276,14 +281,16 @@ def coordinator(args, spec):
         for sequence in range(len(admitted_rows) * 3):
             rows = admitted_rows[sequence % len(admitted_rows)]
             pending = [(rank, COMMAND.pack(sequence, 18, rows)) for rank in range(2)]
+            for view in results.views:
+                view.fill_(GUARD_POISON)
             if results.input_record:
                 for rank in range(2):
                     results.prepare(rank, sequence, 18, rows, inputs[rank][1])
                 torch.cuda.synchronize()
             for rank, tag in pending:
                 peers[rank].sendall(tag)
-            # Trial zero proves the sequence subrange DMA before any wait.
-            replies = [receive_control(peer) for peer in peers] if sequence == 0 else None
+            # Preflight every admitted shape before submitting its future wait.
+            replies = [receive_control(peer) for peer in peers] if sequence < len(admitted_rows) else None
             report["preflight_replies"] = replies if sequence == 0 else report.get("preflight_replies")
             if replies is not None and not all(value.get("passed") for value in replies):
                 raise RuntimeError("packed sequence DMA preflight failed")
@@ -298,18 +305,21 @@ def coordinator(args, spec):
                 partial = torch.frombuffer(bytearray(fixture(rank, rows)), dtype=torch.float32).reshape(rows, WIDTH)
                 expected = expected + partial
             equal = torch.equal(actual, expected)
+            result_end = rows * WIDTH * 4 + (0 if results.input_record else RESULT_OFFSET)
+            tails_equal = all(bool((view[result_end:] == GUARD_POISON).all().cpu()) for view in results.views)
             results.retire()
             report["cases"].append(
                 dict(
                     sequence=sequence,
                     rows=rows,
                     bitwise_equal=equal,
-                    prequeued_before_reply=sequence != 0,
+                    untouched_result_tail=tails_equal,
+                    prequeued_before_reply=sequence >= len(admitted_rows),
                     replies=replies,
                 )
             )
             args.output.write_text(json.dumps(report, indent=2) + "\n")
-            if not equal:
+            if not equal or not tails_equal:
                 raise AssertionError("packed result contract changed ordered FP32 rank addition")
         for connection in peers:
             connection.sendall(CLOSE_TAG)

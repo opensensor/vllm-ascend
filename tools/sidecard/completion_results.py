@@ -6,8 +6,8 @@ import hashlib
 from pathlib import Path
 
 from .completion_protocol import CONTROL_CAPACITY, epoch, input_record
-from .dma_protocol import CAPACITY, COMMAND, CudaByteView
-from .layer_weights import COLD_PREFILL_WINDOW_ROWS, MAX_PREFILL_CHUNK, WIDTH
+from .dma_protocol import COMMAND, CudaByteView, dma_capacity
+from .layer_weights import COLD_PREFILL_WINDOW_ROWS, MAX_COLD_PREFILL_WINDOW, WIDTH
 from .pcie.cuda_context import CudaContextRuntime
 from .pcie.mailbox import CudaCompletionWait
 from .pcie.runtime import Stream
@@ -20,7 +20,7 @@ def validate_capacity(native, rows, separate):
     if query is not None:
         query.argtypes, query.restype = [ctypes.c_uint32], ctypes.c_uint32
         capacity = query(int(separate))
-    if type(rows) is not int or not 1 <= rows <= capacity <= MAX_PREFILL_CHUNK:
+    if type(rows) is not int or not 1 <= rows <= capacity <= MAX_COLD_PREFILL_WINDOW:
         raise ValueError("completion binary does not support the admitted cold row capacity")
     return capacity
 
@@ -29,6 +29,7 @@ class CompletionResults:
     def __init__(self, spec, nonce, driver, torch, max_chunk):
         self.torch, self.epoch = torch, epoch(nonce)
         self.input_record = input_record(spec)
+        self.capacity = dma_capacity(spec)
         library = Path(spec["direct_dma"]["completion_library"])
         if hashlib.sha256(library.read_bytes()).hexdigest() != spec["direct_dma"]["completion_library_sha256"]:
             raise ValueError("GLM completion merge binary failed authentication")
@@ -43,7 +44,7 @@ class CompletionResults:
         self.allocations, self.exports, self.views = [], [], []
         self.controls, self.control_exports, self.control_views = [], [], []
         for _ in range(2):
-            allocation = self.runtime.allocate(CAPACITY)
+            allocation = self.runtime.allocate(self.capacity)
             self.allocations.append(allocation)
             self.exports.append(driver.export(allocation))
             view = torch.as_tensor(CudaByteView(allocation), device="cuda:0")

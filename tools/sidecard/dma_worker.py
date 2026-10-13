@@ -31,7 +31,6 @@ from .completion_protocol import (
     enabled as completion_enabled,
 )
 from .dma_protocol import (
-    CAPACITY,
     CLOSE_TAG,
     COMMAND,
     INPUT_ROW_BYTES,
@@ -39,6 +38,7 @@ from .dma_protocol import (
     PROTOCOL,
     RELEASE,
     AdmittedCudaSource,
+    dma_capacity,
     receive_control,
     send_control,
     validate_command,
@@ -117,6 +117,7 @@ class WorkerSlots:
     def __init__(self, spec, rank, torch):
         self.torch, self.rank = torch, rank
         self.max_chunk = expert_batch_size(spec)
+        self.capacity = dma_capacity(spec)
         self.cuda = Runtime("cuda", spec["cuda_backend"]["cuda_runtime"])
         library = spec.get("direct_dma", {}).get(
             "ascend_library", "/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/libascendcl.so"
@@ -126,14 +127,14 @@ class WorkerSlots:
         self.completion_contract = completion_enabled(spec)
         self.input_record = input_record(spec)
         self.control_export = self.notification_peer = None
-        self.gpu_input = self.cuda.allocate(CAPACITY)
-        self.gpu_output = None if self.completion_contract else self.cuda.allocate(CAPACITY)
+        self.gpu_input = self.cuda.allocate(self.capacity)
+        self.gpu_output = None if self.completion_contract else self.cuda.allocate(self.capacity)
         self.input_export = self.driver.export(self.gpu_input)
         self.output_export = None if self.completion_contract else self.driver.export(self.gpu_output)
-        self.packed = torch.empty(CAPACITY, dtype=torch.uint8, device=f"npu:{rank}")
+        self.packed = torch.empty(self.capacity, dtype=torch.uint8, device=f"npu:{rank}")
         self.npu_input = TensorAllocation(self.ascend, self.packed)
-        self.guard = self.ascend.allocate(CAPACITY, host=True)
-        ctypes.memset(self.guard.pointer, GUARD_POISON, CAPACITY)
+        self.guard = self.ascend.allocate(self.capacity, host=True)
+        ctypes.memset(self.guard.pointer, GUARD_POISON, self.capacity)
         self.stream, self.event = self.ascend.stream(), self.ascend.event()
         self.peer = KernelPeer(
             rank + 2, persistent_gpu_mappings=spec.get("direct_dma", {}).get("persistent_gpu_mappings", False)
@@ -149,7 +150,7 @@ class WorkerSlots:
         self.mapping_creations, self.mapping_hits = 0, 0
         self.profile = deque(maxlen=PROFILE_RECORD_LIMIT)
         if self.completion_contract and not self.input_record:
-            self.result_packet = torch.empty(CAPACITY, dtype=torch.uint8, device=f"npu:{rank}")
+            self.result_packet = torch.empty(self.capacity, dtype=torch.uint8, device=f"npu:{rank}")
             self.result_header_host = self.ascend.allocate(RESULT_OFFSET, host=True)
             self.epoch = None
 
@@ -160,13 +161,13 @@ class WorkerSlots:
             "result_owner": "coordinator",
             "native_owner_ordering": True,
             "epoch": epoch(nonce),
-            "capacity": CAPACITY,
+            "capacity": self.capacity,
         }
         if self.input_record:
             expected.update(input_record=True, control_capacity=CONTROL_CAPACITY)
         if reply != expected:
             raise ValueError("coordinator result ownership contract differs")
-        self.output_export = RemoteResult(self.cuda, receive_fd(connection))
+        self.output_export = RemoteResult(self.cuda, receive_fd(connection), size=self.capacity)
         self.epoch = epoch(nonce)
         if self.input_record:
             self.control_export = RemoteResult(self.cuda, receive_fd(connection), size=CONTROL_CAPACITY)
@@ -402,7 +403,7 @@ def worker(args, spec):
                     "nonce": args.nonce,
                     "rank": args.rank,
                     "physical_chip": args.rank + 2,
-                    "capacity": CAPACITY,
+                    "capacity": slots.capacity,
                     "checkpoint_sha256": spec["checkpoint_sha256"],
                     "placement_sha256": spec["expert_placement_sha256"],
                     "pid": os.getpid(),
@@ -453,7 +454,9 @@ def worker(args, spec):
         raise
     finally:
         if not slots.peer.failed:
-            guard_exact = ctypes.string_at(slots.guard.pointer, CAPACITY) == bytes([GUARD_POISON]) * CAPACITY
+            guard_exact = (
+                ctypes.string_at(slots.guard.pointer, slots.capacity) == bytes([GUARD_POISON]) * slots.capacity
+            )
             receipt = dict(slots.receipt("closed"), guard_poison_exact=guard_exact)
             if isinstance(actor, ExpertDecodeGraphs):
                 actor.close()
