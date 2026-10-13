@@ -16,6 +16,8 @@ from .dsa_graph_gate import validate as validate_dsa_graphs
 from .expert_actor import ExpertCoordinator
 from .layer_actor import Coordinator
 from .layer_reasoning import ReasoningStream, chat_message
+from .layer_weights import MAX_CHUNK
+from .prefill_gate import validate as validate_prefill
 
 MODEL_NAME = "glm-sidecard"
 DEFAULT_MAX_TOKENS = 128
@@ -276,6 +278,12 @@ def main():
             engine,
             tokenizer.encode("Inspect this module and explain its control flow. "),
             output=engine.output / "dsa-graph-parity.json",
+        )
+    if specification.get("cuda_prefill_conv", False) or specification.get("prefill_chunk_size", MAX_CHUNK) != MAX_CHUNK:
+        validate_prefill(
+            engine,
+            tokenizer.encode("Inspect this module and explain its control flow. "),
+            output=engine.output / "prefill-parity.json",
         )
     generation = Generation(engine, tokenizer)
     # Complete a real-weight request before exposing readiness.

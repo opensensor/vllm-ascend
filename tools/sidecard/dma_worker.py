@@ -30,7 +30,7 @@ from .dma_protocol import (
     validate_command,
 )
 from .expert_decode_graph import ExpertDecodeGraphs
-from .layer_weights import MAX_CHUNK, NPU_LAYERS, TOP_K, WIDTH, NpuExperts
+from .layer_weights import MAX_CHUNK, NPU_LAYERS, TOP_K, WIDTH, NpuExperts, prefill_chunk_size
 from .pcie.peer import ASCEND_TO_CUDA, CUDA_TO_ASCEND, Driver, KernelPeer
 from .pcie.runtime import Runtime
 
@@ -40,9 +40,9 @@ RECEIPT_INTERVAL = 1024
 EXPERT_COUNT = 288
 
 
-def validate_routes(metadata, rows, hot_ids):
+def validate_routes(metadata, rows, hot_ids, *, max_chunk=MAX_CHUNK):
     """Check bounded CPU metadata without launching small Torch operations."""
-    if type(rows) is not int or not 1 <= rows <= MAX_CHUNK:
+    if type(rows) is not int or not 1 <= rows <= max_chunk:
         raise ValueError("route metadata exceeds its row capacity")
     count = rows * TOP_K
     values = struct.unpack_from(f"<{count}i{count}f", metadata)
@@ -100,6 +100,7 @@ class TorchSourceEvent:
 class WorkerSlots:
     def __init__(self, spec, rank, torch):
         self.torch, self.rank = torch, rank
+        self.max_chunk = prefill_chunk_size(spec)
         self.cuda = Runtime("cuda", spec["cuda_backend"]["cuda_runtime"])
         library = spec.get("direct_dma", {}).get(
             "ascend_library", "/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/libascendcl.so"
@@ -118,7 +119,7 @@ class WorkerSlots:
             rank + 2, persistent_gpu_mappings=spec.get("direct_dma", {}).get("persistent_gpu_mappings", False)
         )
         self.source_event = AdmittedCudaSource(self.cuda)
-        self.metadata_host = self.ascend.allocate(MAX_CHUNK * TOP_K * 8, host=True)
+        self.metadata_host = self.ascend.allocate(self.max_chunk * TOP_K * 8, host=True)
         storage = (ctypes.c_uint8 * self.metadata_host.size).from_address(self.metadata_host.pointer)
         self.metadata = storage
         self.hot_ids = {int(layer): frozenset(ids) for layer, ids in load(spec).items()}
@@ -143,6 +144,7 @@ class WorkerSlots:
             "profile": list(self.profile),
             "profile_record_limit": PROFILE_RECORD_LIMIT,
             "receipt_interval_calls": RECEIPT_INTERVAL,
+            "max_chunk_rows": self.max_chunk,
         }
 
     def compute(self, actor, sequence, layer, rows):
@@ -168,7 +170,7 @@ class WorkerSlots:
         x = self.packed[:x_bytes].view(t.float16).reshape(rows, WIDTH)
         ids = self.packed[x_bytes : x_bytes + id_bytes].view(t.int32).reshape(rows, TOP_K)
         weights = self.packed[x_bytes + id_bytes : rows * INPUT_ROW_BYTES].view(t.float32).reshape(rows, TOP_K)
-        validate_routes(self.metadata, rows, self.hot_ids[layer])
+        validate_routes(self.metadata, rows, self.hot_ids[layer], max_chunk=self.max_chunk)
         native_start = time.perf_counter()
         partial = actor(layer, x, ids, weights)
         complete = t.npu.Event()
@@ -308,7 +310,7 @@ def worker(args, spec):
                         raise ValueError("direct CUDA mapping release acknowledgement differs")
                     released_cleanly = True
                     break
-                sequence, layer, rows = validate_command(tag, expected, layers)
+                sequence, layer, rows = validate_command(tag, expected, layers, max_chunk=slots.max_chunk)
                 slots.source_event.admitted = True
                 slots.compute(actor, sequence, layer, rows)
                 connection.sendall(tag)

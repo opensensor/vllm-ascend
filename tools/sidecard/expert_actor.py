@@ -11,7 +11,7 @@ from .cold_dispatch import create_dispatch
 from .cold_placement import cuda_keys, load
 from .layer_decode_graph import DecodeGraphs
 from .layer_math import TextLayer, rms_norm, validate_config
-from .layer_weights import MAX_CHUNK, CudaExperts, load_dense
+from .layer_weights import CudaExperts, load_dense, prefill_chunk_size
 
 ARCHITECTURE = "cuda-backbone-ascend-experts"
 
@@ -28,6 +28,7 @@ class ExpertCoordinator:
         self.output.mkdir(exist_ok=True)
         self.config = json.loads((self.root / "config.json").read_bytes())["text_config"]
         self.max_context = self.spec["max_context"]
+        self.prefill_chunk_size = prefill_chunk_size(self.spec)
         validate_config(self.config, self.max_context)
         self.identity = self.spec["checkpoint_sha256"]
         self.failed = self.stopping = False
@@ -51,12 +52,28 @@ class ExpertCoordinator:
         try:
             self.experts = create_dispatch(config_path, None, torch, wait=False)
             self.processes = self.experts.processes
-            self.cuda = CudaExperts(self.root, self.identity, self.spec["cuda_backend"], torch, keys=cuda_keys(hot))
+            self.cuda = CudaExperts(
+                self.root,
+                self.identity,
+                self.spec["cuda_backend"],
+                torch,
+                keys=cuda_keys(hot),
+                max_chunk=self.prefill_chunk_size,
+            )
             self.experts.cuda = self.cuda
             torch.set_num_threads(2)
             weights, self.globals = load_dense(self.root, tuple(range(45)), "cuda", torch, include_globals=True)
             self.layers = {
-                index: TextLayer(index, weights[index], self.config, "cuda", torch, self.experts, self.max_context)
+                index: TextLayer(
+                    index,
+                    weights[index],
+                    self.config,
+                    "cuda",
+                    torch,
+                    self.experts,
+                    self.max_context,
+                    vectorized_prefill_conv=self.spec.get("cuda_prefill_conv", False),
+                )
                 for index in range(45)
             }
             self.prefix_graphs = self.suffix_graphs = self.middle_graphs = None
@@ -107,7 +124,11 @@ class ExpertCoordinator:
                 layer.sparse_enabled = self.request_context_limit > self.config["index_topk"]
 
     def forward(self, tokens):
-        if self.stopping or not 1 <= len(tokens) <= MAX_CHUNK or self.position + len(tokens) > self.max_context:
+        if (
+            self.stopping
+            or not 1 <= len(tokens) <= self.prefill_chunk_size
+            or self.position + len(tokens) > self.max_context
+        ):
             raise ValueError("token chunk exceeds expert runtime admission")
         t = self.torch
         try:
@@ -154,10 +175,10 @@ class ExpertCoordinator:
         # Dependencies between decoder layers remain serial. Cold work overlaps
         # hot experts/shared MLP within each layer; no separate backbone stage.
         result = None
-        for offset in range(0, len(tokens), MAX_CHUNK):
+        for offset in range(0, len(tokens), self.prefill_chunk_size):
             if cancelled is not None and cancelled.is_set():
                 raise InterruptedError("generation cancelled between complete model chunks")
-            result = self.forward(tokens[offset : offset + MAX_CHUNK])
+            result = self.forward(tokens[offset : offset + self.prefill_chunk_size])
         return result
 
     def close(self):

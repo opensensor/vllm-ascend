@@ -29,7 +29,7 @@ from .dma_protocol import (
     validate_identity,
 )
 from .hot_decode_graph import HotDecodeGraphs
-from .layer_weights import MAX_CHUNK, NPU_LAYERS, TOP_K, WIDTH
+from .layer_weights import NPU_LAYERS, TOP_K, WIDTH, prefill_chunk_size
 from .pcie.peer import Driver
 from .pcie.runtime import Runtime
 
@@ -41,6 +41,7 @@ CLOSE_TIMEOUT = 15
 class DmaDispatch:
     def __init__(self, config, cuda, torch, *, wait=True):
         self.spec = json.loads(Path(config).read_bytes())
+        self.max_chunk = prefill_chunk_size(self.spec)
         self.hot = load(self.spec)
         self.cuda, self.torch = cuda, torch
         self.lookups = {
@@ -192,7 +193,7 @@ class DmaDispatch:
         t, rows = self.torch, x.shape[0]
         if layer not in NPU_LAYERS:
             return self.cuda(layer, x, ids, weights), shared_call() if shared_call else None
-        if not 1 <= rows <= MAX_CHUNK:
+        if not 1 <= rows <= self.max_chunk:
             raise ValueError("direct dispatch exceeds its private slot capacity")
         captured = self.pack_graphs is not None and rows == 1
         if captured:

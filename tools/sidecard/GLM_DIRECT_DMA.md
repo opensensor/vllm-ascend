@@ -151,6 +151,27 @@ The Python peer holds original GPU allocation leases until clean fd close.
 HBM lifetime descriptors and physical address queries remain per transfer;
 uncertain DMA retains all cached mappings and the descriptor.
 
+`cuda_prefill_conv` defaults to false. Enabling it batches the four-tap KDA
+convolution across prefill rows on CUDA. Each window still accumulates in FP32,
+rounds to FP16, and then applies SiLU; single-row decode keeps its existing path.
+The persistent convolution history is updated in the same order.
+
+`prefill_chunk_size` defaults to 32. Direct DMA also admits bounded candidates
+of 64 or 128 rows. Both coordinator and workers validate the choice before
+allocating scratch. The existing 2 MiB output slot holds exactly 128 FP32 rows;
+the routing metadata allocation scales with the admitted chunk. Cancellation
+is checked between completed chunks. Larger batches can change floating-point
+results through CUDA projection or attention batch geometry, so admission is
+not evidence of numerical qualification.
+
+Before API readiness, either choice runs `prefill-parity.json`: original
+32-row prefill versus the candidate on 2,048 prompt tokens and 64 subsequent
+teacher-forced output steps. It compares all 154,880 logits bitwise at every
+shared boundary and fails closed on a mismatch. For larger chunks, shared
+boundaries are the final prefill result and every decode step. Smaller context
+limits reduce the test prompt to leave room for the output budget. Consult the
+measured prefill report before selecting a larger chunk.
+
 The coordinator checks and enables `SYNC_MEMOPS` on each imported CUDA alias
 before any payload use. Setting this attribute on the worker's original
 allocation did not enable it on the imported aliases on the tested host.

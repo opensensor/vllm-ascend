@@ -10,7 +10,14 @@ from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 
 
 def draw(
-    output, *, optimized=False, expert_graphs=False, persistent_gpu_mappings=False, hot_graphs=False, dsa_graphs=False
+    output,
+    *,
+    optimized=False,
+    expert_graphs=False,
+    persistent_gpu_mappings=False,
+    hot_graphs=False,
+    dsa_graphs=False,
+    prefill_conv=False,
 ):
     """Show GPU aliases, physical DMA, CPU control, and clean release ordering."""
     figure = Figure(figsize=(18, 11), dpi=160, facecolor="#f4f7fb")
@@ -90,7 +97,7 @@ def draw(
             "Full CUDA banks outside layers 18–32",
             "Hot + shared experts replay together" if hot_graphs else "Configured hot middle-layer experts",
             "CUDA graph packing + fixed rank-order merge" if optimized else "GPU packing + fixed rank-order merge",
-            "Serialized requests; CUDA graphs retained",
+            "Prefill: batched four-tap convolution" if prefill_conv else "Serialized requests; CUDA graphs retained",
         ],
         "#26714d",
     )
@@ -184,6 +191,7 @@ def main():
     parser.add_argument("--persistent-gpu-mappings", action="store_true")
     parser.add_argument("--hot-graphs", action="store_true")
     parser.add_argument("--dsa-graphs", action="store_true")
+    parser.add_argument("--prefill-conv", action="store_true")
     args = parser.parse_args()
     draw(
         args.output,
@@ -192,6 +200,7 @@ def main():
         persistent_gpu_mappings=args.persistent_gpu_mappings,
         hot_graphs=args.hot_graphs,
         dsa_graphs=args.dsa_graphs,
+        prefill_conv=args.prefill_conv,
     )
 
 
