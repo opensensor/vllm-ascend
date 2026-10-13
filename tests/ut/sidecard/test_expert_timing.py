@@ -5,7 +5,7 @@ import pytest
 import torch
 
 from tools.sidecard.expert_actor import ExpertCoordinator
-from tools.sidecard.expert_profile import ProfileCoordinator, ProfileMiddle
+from tools.sidecard.expert_profile import ProfileCoordinator, ProfileDispatch, ProfileMiddle
 from tools.sidecard.expert_timing import TimedPeer, WorkerTimers
 
 
@@ -113,3 +113,42 @@ def test_incompatible_profile_closes_loaded_workers_before_rejecting(monkeypatch
     with pytest.raises(ValueError, match="qualified CUDA graph"):
         ProfileCoordinator("unused")
     assert closed == [True]
+
+
+def test_dma_profile_uses_control_observation_without_host_payload_or_extra_copy(monkeypatch):
+    clock = iter([1.0, 6.0])
+    monkeypatch.setattr("tools.sidecard.expert_profile.time.perf_counter", lambda: next(clock))
+    frame = dict(host_seconds={}, dispatches=[])
+    peer = SimpleNamespace(record=None)
+
+    def call(*args):
+        peer.record.extend(
+            [
+                dict(direction="send", begin=2, end=3),
+                dict(direction="receive", begin=4, end=5),
+            ]
+        )
+        return "result"
+
+    owner = SimpleNamespace(
+        enabled=True,
+        spec={"expert_transport": "direct-dma"},
+        frame=frame,
+        event=lambda: None,
+        pair=lambda *args: None,
+        add=lambda key, value: frame["host_seconds"].update({key: value}),
+    )
+    dispatch = SimpleNamespace(connections=[peer], with_shared=call)
+    assert (
+        ProfileDispatch(dispatch, owner).with_shared(SimpleNamespace(index=18), torch.ones(1, 2), None, None)
+        == "result"
+    )
+    assert frame["dispatches"][0]["cold_routes"] is None
+    assert sum(frame["host_seconds"].values()) == 5
+    assert peer.record is None
+
+
+def test_timed_peer_preserves_transport_close_timeout():
+    calls = []
+    TimedPeer(SimpleNamespace(settimeout=calls.append), 0).settimeout(15)
+    assert calls == [15]

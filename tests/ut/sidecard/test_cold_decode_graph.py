@@ -61,6 +61,7 @@ def test_decode_passes_captured_routes_to_experts_before_next_attention():
         SimpleNamespace(index=19, forward=eager),
     )
     graphs.graphs = {18: (SimpleNamespace(replay=lambda: calls.append("replay")), inputs, outputs)}
+    graphs.dsa_graphs = {}
     assert graphs.forward(state) == completed
     assert calls == ["replay", "remote", "dsa"]
     assert all(torch.equal(target, source) for target, source in zip(inputs, state, strict=True))
@@ -72,5 +73,30 @@ def test_prefill_uses_eager_routes_and_cache_updates():
     graphs = object.__new__(ColdDecodeGraphs)
     graphs.layers = (SimpleNamespace(index=18, forward=lambda *args: calls.append(args) or args),)
     graphs.graphs = {18: (None, None, None)}
+    graphs.dsa_graphs = {}
     assert graphs.forward(state) == state
     assert calls == [state]
+
+
+def test_dsa_graph_routes_finish_outside_capture_and_prefill_stays_eager():
+    state = tuple(torch.ones(1, 2) for _ in range(4))
+    routes = (*state, state[0], state[0])
+    calls = []
+    graphs = object.__new__(ColdDecodeGraphs)
+    graphs.layers = (
+        SimpleNamespace(
+            index=19,
+            finish_forward=lambda *args: calls.append(("remote", args)) or args[:4],
+            forward=lambda *args: calls.append(("eager", args)) or args,
+        ),
+    )
+    graphs.graphs = {}
+    graphs.dsa_graphs = {19: SimpleNamespace(forward=lambda value: calls.append(("graph", value)) or routes)}
+    assert graphs.forward(state) == state
+    assert [name for name, _ in calls] == ["graph", "remote"]
+    assert calls[1][1] == routes
+    large = tuple(x.expand(4, -1) for x in state)
+    assert graphs.forward(large) == large
+    assert calls[-1] == ("eager", large)
+    graphs.close()
+    assert graphs.dsa_graphs == {}

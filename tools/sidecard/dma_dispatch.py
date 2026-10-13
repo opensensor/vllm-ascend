@@ -28,6 +28,7 @@ from .dma_protocol import (
     validate_descriptor,
     validate_identity,
 )
+from .hot_decode_graph import HotDecodeGraphs
 from .layer_weights import MAX_CHUNK, NPU_LAYERS, TOP_K, WIDTH
 from .pcie.peer import Driver
 from .pcie.runtime import Runtime
@@ -51,7 +52,7 @@ class DmaDispatch:
         self.nonce = secrets.token_hex(32)
         self.connections, self.processes, self.logs = [], [], []
         self.inputs, self.outputs, self.imports, self.events = [], [], [], []
-        self.pack_graphs = None
+        self.pack_graphs = self.hot_graphs = None
         self.sequences = [0, 0]
         self.failed = self.closed = False
         self.lock = threading.RLock()
@@ -168,6 +169,12 @@ class DmaDispatch:
     def __call__(self, layer, x, ids, weights):
         return self.compute(layer, x, ids, weights)[0]
 
+    def prepare_layers(self, layers):
+        if self.spec.get("direct_dma", {}).get("cuda_hot_graphs", False):
+            if self.hot_graphs is not None:
+                raise RuntimeError("hot expert graphs already prepared")
+            self.hot_graphs = HotDecodeGraphs(self.cuda, [layers[index] for index in NPU_LAYERS], self.torch)
+
     def with_shared(self, layer, x, ids, weights):
         return self.compute(layer.index, x, ids, weights, lambda: layer.dense_mlp(x, "mlp.shared_experts"))
 
@@ -219,8 +226,11 @@ class DmaDispatch:
         for rank, tag in pending:
             self.events[rank].wait()
             self.connections[rank].sendall(tag)
-        hot = self.cuda(layer, x, hot_ids, hot_weights)
-        shared = shared_call() if shared_call is not None else None
+        if self.hot_graphs is not None and rows == 1 and shared_call is not None:
+            hot, shared = self.hot_graphs.compute(layer, x, hot_ids, hot_weights)
+        else:
+            hot = self.cuda(layer, x, hot_ids, hot_weights)
+            shared = shared_call() if shared_call is not None else None
         for rank, tag in pending:
             actual = bytearray(COMMAND.size)
             receive(self.connections[rank], memoryview(actual))
@@ -241,6 +251,9 @@ class DmaDispatch:
                 return
             self.closed = True
             self.torch.cuda.synchronize()
+            if self.hot_graphs is not None:
+                self.hot_graphs.close()
+                self.hot_graphs = None
             if self.pack_graphs is not None:
                 self.pack_graphs.close()
                 self.pack_graphs = None

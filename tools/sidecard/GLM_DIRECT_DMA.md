@@ -104,12 +104,14 @@ request resets model caches under the same serialized generation lock.
 
 ## Reducing dispatch overhead
 
-The optional `direct_dma` specification selects three independent optimizations:
+The optional `direct_dma` specification selects independent optimizations:
 
 ```json
 {
   "direct_dma": {
     "cuda_pack_graphs": true,
+    "cuda_hot_graphs": true,
+    "cuda_dsa_graphs": true,
     "npu_expert_graphs": true,
     "persistent_gpu_mappings": true
   }
@@ -123,6 +125,24 @@ for one-row decode; larger batches use the original eager path. External DMA,
 source events, metadata validation, and write flushes remain outside capture.
 Graph scratch is released after completed consumers and before its underlying
 slots or imported mappings are freed.
+
+CUDA hot graphs capture the existing local hot-expert kernels and shared MLP
+together for each of the 15 middle layers. They require the stream-aware CUDA
+expert ABI and are prepared after resident banks and DMA slots are ready.
+Invocation first admits active Ascend workers, then copies one-row graph inputs
+and replays the local work. Reply waiting, CUDA write flushes, and fixed-order
+cold reduction remain outside capture. Multi-row prefill and expert calls
+without a shared MLP use the eager path. All graphs share the existing native
+CUDA expert scratch under the serialized dispatch contract.
+
+With `cuda_decode_graphs` enabled, CUDA DSA graphs capture fixed one-row
+projections and mHC math before and after attention. For CUDA-owned layers,
+the second graph also captures the local experts and shared MLP. For cold
+layers, it produces routes and leaves expert dispatch outside capture.
+Cache append, variable-length dense attention, sparse indexer updates and
+selection, causal masks, and cache-length mutation remain eager. Multi-row
+prefill keeps the original path. This preserves the original tensor shapes
+and reduction arithmetic without padding the attention window for capture.
 
 Persistent GPU mappings use kernel UAPI version 5. Rebuild and load the matching
 module before launching this Python version. Each device fd retains at most
@@ -157,3 +177,12 @@ Measure performance through completed OpenAI requests with
 as the socket baseline. Raw PCIe latency alone does not determine model speed.
 Long-context admission is distinct from completing a long prompt or evaluating
 long-context model quality.
+
+`tools.sidecard.expert_profile` also accepts a fresh direct-DMA snapshot. Run it
+with the same private CUDA environment and an authenticated decode reference
+while the serving process is stopped. It writes bounded parent observations and
+closes both workers normally. `tools.sidecard.expert_profile_summary --root`
+joins the final worker receipts to those observations by rank, sequence, layer,
+and row count. CUDA event spans overlap host waits; DMA worker timings are host
+wall spans including completion waits. Route counts remain unknown in direct
+mode because profiling does not add routing tensor readback.

@@ -220,7 +220,7 @@ def dispatcher():
     value.events = [Event(events, rank) for rank in range(2)]
     value.connections = [Peer(value, rank, events) for rank in range(2)]
     value.sequences = [0, 0]
-    value.pack_graphs = None
+    value.pack_graphs = value.hot_graphs = None
     value.failed = value.closed = False
     value.lock = threading.RLock()
     value.driver = SimpleNamespace(flush=lambda: events.append(("write_visibility", None)))
@@ -276,6 +276,29 @@ def test_source_events_precede_control_and_shared_overlaps_both_workers():
     assert events.index(("write_visibility", None)) > events.index(("control_receive", 1))
 
 
+@pytest.mark.parametrize("rows,shared", [(1, True), (4, True), (1, False)])
+def test_hot_capture_runs_after_admission_and_prefill_keeps_eager_math(rows, shared):
+    actor, events = dispatcher()
+    graph_calls = []
+
+    def captured(layer, x, ids, weights):
+        graph_calls.append(layer)
+        events.append(("hot_graph", None))
+        return actor.cuda(layer, x, ids, weights), x.float() * 2
+
+    actor.hot_graphs = SimpleNamespace(compute=captured)
+    x = torch.ones(rows, 4096).half()
+    ids = torch.tensor([[1, 2, 3, 4, 144, 145, 146, 210]]).expand(rows, -1)
+    weights = torch.ones(rows, 8)
+    hot, shared_result = actor.compute(18, x, ids, weights, (lambda: x.float() * 2) if shared else None)
+    torch.testing.assert_close(hot, x.float() * (ids + 1).sum(-1, keepdim=True))
+    assert graph_calls == ([18] if rows == 1 and shared else [])
+    if graph_calls:
+        assert events.index(("control_send", 1)) < events.index(("hot_graph", None))
+        assert events.index(("hot_graph", None)) < events.index(("control_receive", 0))
+    assert shared_result is None if not shared else torch.equal(shared_result, x.float() * 2)
+
+
 def test_corrupted_completion_permanently_fails_dispatch():
     actor, _ = dispatcher()
     actor.connections[0].corrupt = True
@@ -321,6 +344,7 @@ def test_clean_close_drains_consumers_releases_imports_then_releases_exporter(tm
     actor.imports = [SimpleNamespace(close=lambda: events.append(("unmap_import", None)))]
     actor.events = [SimpleNamespace(close=lambda: events.append(("close_event", None)))]
     actor.pack_graphs = SimpleNamespace(close=lambda: events.append(("release_graph_scratch", None)))
+    actor.hot_graphs = SimpleNamespace(close=lambda: events.append(("release_hot_scratch", None)))
     actor.logs = []
     actor.processes = [SimpleNamespace(wait=lambda timeout: 0)]
 
@@ -343,6 +367,7 @@ def test_clean_close_drains_consumers_releases_imports_then_releases_exporter(tm
     actor.close()
     kinds = [kind for kind, _ in events]
     assert kinds[0] == "drain_cuda"
+    assert kinds.index("release_hot_scratch") < kinds.index("unmap_import")
     assert kinds.index("release_graph_scratch") < kinds.index("unmap_import")
     assert kinds.index("unmap_import") > max(i for i, kind in enumerate(kinds) if kind == "native_quiescent")
     assert kinds.index("release_export") > kinds.index("unmap_import")

@@ -101,3 +101,18 @@ def test_initial_cuda_span_rejects_unexpected_deferred_state():
     executor.graphs = {0: (replay, (torch.zeros(1, 4096), None, None, None), None)}
     with pytest.raises(ValueError, match="empty deferred state"):
         executor.forward((torch.ones(1, 4096), object(), None, None))
+
+
+def test_dsa_graph_keeps_complete_cuda_experts_in_suffix_and_prefill_eager():
+    calls = []
+    executor = object.__new__(DecodeGraphs)
+    executor.spans = ((SimpleNamespace(index=19, forward=lambda *state: calls.append("eager") or state),),)
+    executor.graphs = {}
+    executor.dsa_graphs = {19: SimpleNamespace(forward=lambda state: calls.append("graph") or state)}
+    state = tuple(torch.ones(1, 2) for _ in range(4))
+    assert executor.forward(state) is state
+    large = tuple(value.expand(4, -1) for value in state)
+    assert executor.forward(large) == large
+    assert calls == ["graph", "eager"]
+    executor.close()
+    assert executor.dsa_graphs == {}
