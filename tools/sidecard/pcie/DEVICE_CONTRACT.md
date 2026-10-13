@@ -8,10 +8,12 @@ then writes the completion value. Two independent slots can finish in
 reverse submission order. No socket command or host flush call releases the
 CUDA consumer in the qualified owner-context probe.
 
-**DMA submission and Ascend execution remain host-driven.** This prototype
-does not replace the live GLM transport, submit asynchronous DMA, or make a
-running GPU polling kernel coherent. The live GLM workers still use blocking
-DMA ioctls, socket commands, and CUDA IPC output views.
+**DMA submission and Ascend execution remain host-driven.** The optional
+[GLM completion integration](../GLM_COMPLETION.md) now registers
+coordinator-owned results and prequeues rank-ordered consumers behind DMA flags.
+The default transport retains its CUDA IPC output views and flush calls. Both
+paths use blocking DMA ioctls and socket commands. Neither submits asynchronous
+DMA or makes an arbitrary running GPU polling kernel coherent.
 
 See the [hardware evidence](../../../artifacts/sidecard-device-contract-20261012/README.md)
 and [design PNG](../../../artifacts/sidecard-device-contract-20261012/design.png).
@@ -33,9 +35,9 @@ and [design PNG](../../../artifacts/sidecard-device-contract-20261012/design.png
 The RTX reports 64-bit stream memory operations and native RDMA write ordering
 for the allocation's owner context. The no-flush probe requires those
 capabilities and checks that every exported allocation belongs to that context.
-This does not qualify the live coordinator's imported views. Keep its current
-flush path until buffer ownership and that consumption context are separately
-qualified. See NVIDIA's [GPUDirect RDMA ordering documentation](https://docs.nvidia.com/cuda/gpudirect-rdma/).
+Imported output aliases retain the legacy flush path. The optional GLM
+integration uses separately qualified coordinator-owned results and controls,
+with foreign DMA-BUF registration rather than imported result views. See NVIDIA's [GPUDirect RDMA ordering documentation](https://docs.nvidia.com/cuda/gpudirect-rdma/).
 
 The first probe stalled because a consumer launch lazily loaded its kernel
 behind an unsatisfied stream wait. Preloading removes that initialization from
@@ -68,7 +70,7 @@ pointers. Decode rejects a foreign rank, old epoch/sequence, invalid slot,
 changed geometry, or nonzero reserved field. The target dispatcher must also
 enforce slot ownership on device before executing work or publishing completion.
 
-## Remaining GLM integration
+## Ascend dispatcher remains future work
 
 Both assigned 310P chips return `ACL_ERROR_RT_FEATURE_NOT_SUPPORT` (207000)
 for `aclrtValueWait` and `aclrtValueWrite`, even for an already-satisfied wait.
@@ -77,12 +79,12 @@ Ascend therefore needs a separately qualified dispatcher or supported native
 queue mechanism. A persistent polling kernel cannot be assumed to coexist
 with the current Cube kernels or provide ordered DMA visibility.
 
-The next integration boundary is coordinator-owned CUDA result slots and
-completion words, registered once with the Ascend workers. Prequeue the
-ordered cold-result merge behind completion waits, while CUDA hot/shared
-experts run on another stream. Preserve the existing FP32 rank addition order.
-Then replace the Ascend host dispatch and blocking DMA submission with a
-qualified device queue. This requires measured scheduling, memory visibility,
+The [GLM integration](../GLM_COMPLETION.md) qualifies coordinator-owned CUDA
+result slots and completion words, registered once with the Ascend workers.
+CUDA hot/shared work is scheduled while the Ascend workers compute cold experts;
+ordered consumers follow the hot result on the CUDA stream. The existing FP32
+rank addition order is preserved. The next boundary is replacing Ascend host
+dispatch and blocking DMA submission with a qualified device queue. This requires measured scheduling, memory visibility,
 and failure recovery; the CUDA probe alone does not prove that full path.
 
 ## Reproduce the bounded probe

@@ -16,6 +16,20 @@ from pathlib import Path
 
 from .cold_expert_probe import receive
 from .cold_placement import load
+from .completion_protocol import (
+    CONTROL_CAPACITY,
+    INPUT_SEQUENCE_OFFSET,
+    RESULT_OFFSET,
+    SEQUENCE_OFFSET,
+    RemoteResult,
+    epoch,
+    input_record,
+    receive_fd,
+    result_header,
+)
+from .completion_protocol import (
+    enabled as completion_enabled,
+)
 from .dma_protocol import (
     CAPACITY,
     CLOSE_TAG,
@@ -32,6 +46,7 @@ from .dma_protocol import (
 from .expert_decode_graph import ExpertDecodeGraphs, prefill_graph_rows
 from .expert_prefill_gate import validate as validate_prefill_graphs
 from .layer_weights import MAX_CHUNK, NPU_LAYERS, TOP_K, WIDTH, NpuExperts, prefill_chunk_size
+from .pcie.mailbox import RECORD, Invocation
 from .pcie.peer import ASCEND_TO_CUDA, CUDA_TO_ASCEND, Driver, KernelPeer
 from .pcie.runtime import Runtime
 
@@ -108,9 +123,13 @@ class WorkerSlots:
         )
         self.ascend = Runtime("ascend", library, rank, initialize=False)
         self.driver = Driver()
-        self.gpu_input, self.gpu_output = self.cuda.allocate(CAPACITY), self.cuda.allocate(CAPACITY)
+        self.completion_contract = completion_enabled(spec)
+        self.input_record = input_record(spec)
+        self.control_export = self.notification_peer = None
+        self.gpu_input = self.cuda.allocate(CAPACITY)
+        self.gpu_output = None if self.completion_contract else self.cuda.allocate(CAPACITY)
         self.input_export = self.driver.export(self.gpu_input)
-        self.output_export = self.driver.export(self.gpu_output)
+        self.output_export = None if self.completion_contract else self.driver.export(self.gpu_output)
         self.packed = torch.empty(CAPACITY, dtype=torch.uint8, device=f"npu:{rank}")
         self.npu_input = TensorAllocation(self.ascend, self.packed)
         self.guard = self.ascend.allocate(CAPACITY, host=True)
@@ -120,13 +139,46 @@ class WorkerSlots:
             rank + 2, persistent_gpu_mappings=spec.get("direct_dma", {}).get("persistent_gpu_mappings", False)
         )
         self.source_event = AdmittedCudaSource(self.cuda)
-        self.metadata_host = self.ascend.allocate(self.max_chunk * TOP_K * 8, host=True)
+        self.metadata_host = self.ascend.allocate(
+            self.max_chunk * TOP_K * 8 + (RECORD.size if self.input_record else 0), host=True
+        )
         storage = (ctypes.c_uint8 * self.metadata_host.size).from_address(self.metadata_host.pointer)
         self.metadata = storage
         self.hot_ids = {int(layer): frozenset(ids) for layer, ids in load(spec).items()}
         self.calls, self.upload_bytes, self.download_bytes = 0, 0, 0
         self.mapping_creations, self.mapping_hits = 0, 0
         self.profile = deque(maxlen=PROFILE_RECORD_LIMIT)
+        if self.completion_contract and not self.input_record:
+            self.result_packet = torch.empty(CAPACITY, dtype=torch.uint8, device=f"npu:{rank}")
+            self.result_header_host = self.ascend.allocate(RESULT_OFFSET, host=True)
+            self.epoch = None
+
+    def register_result(self, connection, reply, nonce):
+        expected = {
+            "source_readiness": "sender-event-synchronized",
+            "nonce": nonce,
+            "result_owner": "coordinator",
+            "native_owner_ordering": True,
+            "epoch": epoch(nonce),
+            "capacity": CAPACITY,
+        }
+        if self.input_record:
+            expected.update(input_record=True, control_capacity=CONTROL_CAPACITY)
+        if reply != expected:
+            raise ValueError("coordinator result ownership contract differs")
+        self.output_export = RemoteResult(self.cuda, receive_fd(connection))
+        self.epoch = epoch(nonce)
+        if self.input_record:
+            self.control_export = RemoteResult(self.cuda, receive_fd(connection), size=CONTROL_CAPACITY)
+            self.notification_peer = KernelPeer(self.rank + 2, persistent_gpu_mappings=True)
+
+    def release_result_mapping(self):
+        self.peer.close()
+        if self.output_export is not None:
+            self.output_export.close()
+        if self.notification_peer is not None:
+            self.notification_peer.close()
+            self.control_export.close()
 
     def receipt(self, state):
         return {
@@ -136,7 +188,7 @@ class WorkerSlots:
             "transport": "direct-dma",
             "payload_host_staging": False,
             "calls": self.calls,
-            "verified_direct_transfers": self.calls * 2,
+            "verified_direct_transfers": self.calls * (3 if self.completion_contract else 2),
             "upload_bytes": self.upload_bytes,
             "download_bytes": self.download_bytes,
             "gpu_mapping_creations": self.mapping_creations,
@@ -146,25 +198,33 @@ class WorkerSlots:
             "profile_record_limit": PROFILE_RECORD_LIMIT,
             "receipt_interval_calls": RECEIPT_INTERVAL,
             "max_chunk_rows": self.max_chunk,
+            "cuda_completion_contract": self.completion_contract,
+            "gpu_result_owner": "coordinator" if self.completion_contract else "independent-ascend-worker",
+            "completion_input_record": self.input_record,
         }
 
     def compute(self, actor, sequence, layer, rows):
         """Transfer directly into Torch HBM and out of the native output tensor."""
         t = self.torch
+        input_contract = getattr(self, "input_record", False)
         start = time.perf_counter()
         upload = self.peer.copy(
             CUDA_TO_ASCEND,
             self.input_export,
             self.npu_input,
             self.guard,
-            rows * INPUT_ROW_BYTES,
+            rows * INPUT_ROW_BYTES + (RECORD.size if input_contract else 0),
             source_ready=self.source_event,
         )
         uploaded = time.perf_counter()
         x_bytes, id_bytes = rows * WIDTH * 2, rows * TOP_K * 4
         # Validate only routing metadata on CPU; activations never leave HBM.
         self.ascend.copy(
-            self.metadata_host.pointer, self.npu_input.pointer + x_bytes, rows * TOP_K * 8, "d2h", self.stream
+            self.metadata_host.pointer,
+            self.npu_input.pointer + x_bytes,
+            rows * TOP_K * 8 + (RECORD.size if input_contract else 0),
+            "d2h",
+            self.stream,
         )
         self.event.record(self.stream)
         self.event.wait()
@@ -172,24 +232,69 @@ class WorkerSlots:
         ids = self.packed[x_bytes : x_bytes + id_bytes].view(t.int32).reshape(rows, TOP_K)
         weights = self.packed[x_bytes + id_bytes : rows * INPUT_ROW_BYTES].view(t.float32).reshape(rows, TOP_K)
         validate_routes(self.metadata, rows, self.hot_ids[layer], max_chunk=self.max_chunk)
+        contract = getattr(self, "completion_contract", False)
+        if input_contract:
+            metadata_offset = rows * TOP_K * 8
+            record = Invocation.decode(
+                bytes(self.metadata[metadata_offset : metadata_offset + RECORD.size]),
+                epoch=self.epoch,
+                sequence=sequence + 1,
+                slots=2,
+                rank=self.rank,
+            )
+            if (record.layer, record.rows, record.slot) != (layer, rows, self.rank):
+                raise ValueError("GPU input record does not identify the requested cold computation")
+        if contract and not input_contract:
+            header = result_header(self.epoch, sequence, layer, rows, self.rank)
+            ctypes.memmove(self.result_header_host.pointer, header, len(header))
+            self.ascend.copy(
+                self.result_packet.data_ptr(), self.result_header_host.pointer, len(header), "h2d", self.stream
+            )
+            self.event.record(self.stream)
+            self.event.wait()
         native_start = time.perf_counter()
         partial = actor(layer, x, ids, weights)
+        if contract and not input_contract:
+            length = RESULT_OFFSET + rows * OUTPUT_ROW_BYTES
+            self.result_packet[RESULT_OFFSET:length].view(t.float32).reshape(rows, WIDTH).copy_(partial)
         complete = t.npu.Event()
         complete.record()
         complete.synchronize()
         native_end = time.perf_counter()
-        returned = TensorAllocation(self.ascend, partial)
+        packed_result = contract and not input_contract
+        returned = TensorAllocation(self.ascend, self.result_packet[:length] if packed_result else partial)
         download = self.peer.copy(
             ASCEND_TO_CUDA,
             self.output_export,
             returned,
             self.guard,
-            rows * OUTPUT_ROW_BYTES,
+            length if packed_result else rows * OUTPUT_ROW_BYTES,
             source_ready=TorchSourceEvent(self.ascend, complete),
         )
         returned.close()
-        # The CUDA coordinator consumes an IPC mapping in a separate CUDA context.
-        self.driver.flush(all_devices=True)
+        if contract:
+            # The sequence already resides inside the completed packet header.
+            # Copy it to the completion word only after the entire packet DMA.
+            source = (
+                self.packed[rows * INPUT_ROW_BYTES + INPUT_SEQUENCE_OFFSET : rows * INPUT_ROW_BYTES + RECORD.size]
+                if input_contract
+                else self.result_packet[SEQUENCE_OFFSET:RESULT_OFFSET]
+            )
+            signal_source = TensorAllocation(self.ascend, source)
+            signal_peer = self.notification_peer if input_contract else self.peer
+            signal_export = self.control_export if input_contract else self.output_export
+            signal_peer.copy(
+                ASCEND_TO_CUDA,
+                signal_export,
+                signal_source,
+                self.guard,
+                8,
+                source_ready=TorchSourceEvent(self.ascend, complete),
+            )
+            signal_source.close()
+        else:
+            # Legacy results are consumed through IPC in another CUDA context.
+            self.driver.flush(all_devices=True)
         self.calls += 1
         hits = upload["gpu_mapping_reused"] + download["gpu_mapping_reused"]
         self.mapping_hits += hits
@@ -214,9 +319,17 @@ class WorkerSlots:
         self.event.close()
         self.stream.close()
         self.input_export.close()
-        self.output_export.close()
+        if self.output_export is not None:
+            self.output_export.close()
+        if self.notification_peer is not None:
+            self.notification_peer.close()
+            self.control_export.close()
         for allocation in (self.npu_input, self.metadata_host, self.guard, self.gpu_input, self.gpu_output):
-            allocation.close()
+            if allocation is not None:
+                allocation.close()
+        if self.completion_contract and not self.input_record:
+            self.result_header_host.close()
+            self.result_packet = None
 
 
 def quarantine(slots, output, rank, error):
@@ -230,7 +343,8 @@ def quarantine(slots, output, rank, error):
         "error": {"type": type(error).__name__, "message": str(error)},
         "automatic_kill": False,
         "gpu_and_hbm_owners_alive": True,
-        "native_dma_uncertain": slots.peer.failed,
+        "native_dma_uncertain": slots.peer.failed
+        or bool(getattr(slots, "notification_peer", None) and slots.notification_peer.failed),
     }
     (output / f"dma-quarantine-rank{rank}.json").write_text(json.dumps(receipt, indent=2) + "\n")
     print(json.dumps(receipt), flush=True)
@@ -293,11 +407,14 @@ def worker(args, spec):
                     "placement_sha256": spec["expert_placement_sha256"],
                     "pid": os.getpid(),
                     "input": slots.gpu_input.export(),
-                    "output": slots.gpu_output.export(),
+                    **({} if slots.completion_contract else {"output": slots.gpu_output.export()}),
+                    "cuda_completion_contract": slots.completion_contract,
                 },
             )
             reply = receive_control(connection)
-            if reply != {"source_readiness": "sender-event-synchronized", "nonce": args.nonce}:
+            if slots.completion_contract:
+                slots.register_result(connection, reply, args.nonce)
+            elif reply != {"source_readiness": "sender-event-synchronized", "nonce": args.nonce}:
                 raise ValueError("direct source-event handshake differs")
             send_control(connection, {"ready": True, "nonce": args.nonce})
             while True:
@@ -309,6 +426,10 @@ def worker(args, spec):
                         raise RuntimeError("CUDA IPC owner disappeared without a mapping-release acknowledgement")
                     break
                 if tag == CLOSE_TAG:
+                    if slots.completion_contract:
+                        # Release foreign mappings/fd before the GPU owner is
+                        # permitted to free its result allocation.
+                        slots.release_result_mapping()
                     connection.sendall(tag)
                     released = bytearray(len(RELEASE))
                     receive(connection, memoryview(released))
@@ -327,7 +448,7 @@ def worker(args, spec):
                     temporary.write_text(json.dumps(slots.receipt("running")) + "\n")
                     temporary.replace(path)
     except BaseException as error:
-        if slots.peer.failed or (slots.calls and not released_cleanly):
+        if slots.peer.failed or ((slots.calls or slots.source_event.admitted) and not released_cleanly):
             quarantine(slots, output, args.rank, error)
         raise
     finally:

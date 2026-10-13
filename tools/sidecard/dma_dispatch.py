@@ -4,6 +4,7 @@
 import json
 import os
 import secrets
+import signal
 import socket
 import struct
 import subprocess
@@ -13,6 +14,9 @@ from pathlib import Path
 
 from .cold_expert_probe import receive
 from .cold_placement import load, lookup
+from .completion_protocol import CONTROL_CAPACITY, send_fd
+from .completion_protocol import enabled as completion_enabled
+from .completion_results import CompletionResults
 from .dma_pack_graph import DmaPackGraphs
 from .dma_protocol import (
     CAPACITY,
@@ -59,7 +63,11 @@ class DmaDispatch:
         self.lock = threading.RLock()
         self.runtime = Runtime("cuda", self.spec["cuda_backend"]["cuda_runtime"])
         self.driver = Driver()
+        self.completion_results = None
+        self.result_registrations = set()
         try:
+            if completion_enabled(self.spec):
+                self.completion_results = CompletionResults(self.spec, self.nonce, self.driver, torch, self.max_chunk)
             self.start(config)
             if wait:
                 self.ready()
@@ -129,7 +137,11 @@ class DmaDispatch:
             if hello.get("pid") != pid:
                 raise ValueError("direct worker PID differs from private socket credentials")
             validate_identity(hello, self.spec, self.nonce, rank)
-            for name, targets in (("input", self.inputs), ("output", self.outputs)):
+            contract = self.completion_results is not None
+            if hello.get("cuda_completion_contract", False) != contract:
+                raise ValueError("worker and coordinator completion protocol selection differs")
+            slots = (("input", self.inputs),) if contract else (("input", self.inputs), ("output", self.outputs))
+            for name, targets in slots:
                 validate_descriptor(hello[name])
                 allocation = self.runtime.import_memory(hello[name])
                 self.imports.append(allocation)
@@ -142,7 +154,23 @@ class DmaDispatch:
                 targets.append(tensor)
             event = CudaSourceEvent(self.runtime, self.driver, self.torch.cuda.current_stream())
             self.events.append(event)
-            send_control(connection, {"source_readiness": "sender-event-synchronized", "nonce": self.nonce})
+            reply = {"source_readiness": "sender-event-synchronized", "nonce": self.nonce}
+            if contract:
+                reply.update(
+                    result_owner="coordinator",
+                    native_owner_ordering=True,
+                    epoch=self.completion_results.epoch,
+                    capacity=CAPACITY,
+                )
+                self.outputs.append(self.completion_results.views[rank])
+                if self.completion_results.input_record:
+                    reply.update(input_record=True, control_capacity=CONTROL_CAPACITY)
+            send_control(connection, reply)
+            if contract:
+                self.result_registrations.add(rank)
+                send_fd(connection, self.completion_results.exports[rank].fd)
+                if self.completion_results.input_record:
+                    send_fd(connection, self.completion_results.control_exports[rank].fd)
             acknowledgement = receive_control(connection)
             if acknowledgement != {"ready": True, "nonce": self.nonce}:
                 raise ValueError("direct DMA worker source-event readiness differs")
@@ -160,7 +188,10 @@ class DmaDispatch:
                     "transport": "direct-dma",
                     "payload_host_staging": False,
                     "capacity_per_slot": CAPACITY,
-                    "gpu_slot_owner": "independent-ascend-worker",
+                    "gpu_slot_owner": "coordinator-results-worker-inputs"
+                    if self.completion_results
+                    else "independent-ascend-worker",
+                    "cuda_completion_contract": self.completion_results is not None,
                 },
                 indent=2,
             )
@@ -208,6 +239,9 @@ class DmaDispatch:
             hot_ids, hot_weights = t.where(owned, local_ids, 0), t.where(owned, weights, 0)
         # Only two admission flags reach the CPU; hidden rows and outputs remain on devices.
         active = flags.cpu().tolist()
+        completion = getattr(self, "completion_results", None)
+        if completion is not None:
+            completion.retire()
         x_bytes, id_bytes = rows * WIDTH * 2, rows * TOP_K * 4
         pending = []
         for rank in range(2):
@@ -221,6 +255,8 @@ class DmaDispatch:
                     cold_weights
                 )
             # Includes earlier reply consumers on this CUDA stream, preventing slot reuse races.
+            if completion is not None and getattr(completion, "input_record", False):
+                completion.prepare(rank, self.sequences[rank], layer, rows, self.inputs[rank])
             self.events[rank].record(t.cuda.current_stream())
             tag = COMMAND.pack(self.sequences[rank], layer, rows)
             pending.append((rank, tag))
@@ -232,25 +268,47 @@ class DmaDispatch:
         else:
             hot = self.cuda(layer, x, hot_ids, hot_weights)
             shared = shared_call() if shared_call is not None else None
+        if completion is not None:
+            # Prequeue the exact rank-ordered consumers before receiving host
+            # acknowledgements. DMA completion words release CUDA execution.
+            hot = completion.merge(hot, pending, layer, rows)
         for rank, tag in pending:
             actual = bytearray(COMMAND.size)
             receive(self.connections[rank], memoryview(actual))
             if actual != tag:
                 raise ValueError("direct expert completion belongs to another invocation")
             self.sequences[rank] += 1
-        if pending:
+        if pending and completion is None:
             self.driver.flush()
         # Match the qualified socket transport's fixed owner reduction order.
-        for rank, _ in pending:
-            hot = hot + self.outputs[rank][: rows * OUTPUT_ROW_BYTES].view(t.float32).reshape(rows, WIDTH)
+        if completion is None:
+            for rank, _ in pending:
+                hot = hot + self.outputs[rank][: rows * OUTPUT_ROW_BYTES].view(t.float32).reshape(rows, WIDTH)
         return hot, shared
+
+    def retain_completion_owner(self, reason):
+        """Keep the CUDA owner alive when pending waits or foreign DMA remain."""
+        (self.output / "dma-retained-coordinator.json").write_text(
+            json.dumps(dict(pid=os.getpid(), state="quarantined", reason=reason, automatic_kill=False), indent=2) + "\n"
+        )
+        if threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+        while True:
+            time.sleep(1)
 
     def close(self):
         """Never kill a worker whose native DMA completion might be uncertain."""
         with self.lock:
             if self.closed:
                 return
-            self.closed = True
+            completion = getattr(self, "completion_results", None)
+            if completion is not None:
+                queue = completion.queue
+                if queue.failed or any(
+                    not value.sealed or not value.complete.ready() for value in queue.active.values()
+                ):
+                    self.retain_completion_owner("CUDA completion consumers have not established quiescence")
             self.torch.cuda.synchronize()
             if self.hot_graphs is not None:
                 self.hot_graphs.close()
@@ -259,19 +317,41 @@ class DmaDispatch:
                 self.pack_graphs.close()
                 self.pack_graphs = None
             quiescent = []
-            if len(self.inputs) == 2:
-                for rank, connection in enumerate(self.connections):
-                    connection.settimeout(CLOSE_TIMEOUT)
-                    tag = CLOSE_TAG
-                    try:
-                        connection.sendall(tag)
-                        body = bytearray(COMMAND.size)
-                        receive(connection, memoryview(body))
-                        if body != tag:
-                            raise ValueError("direct close acknowledgement differs")
-                        quiescent.append(connection)
-                    except (OSError, EOFError, ValueError):
-                        self.failed = True
+            if completion is not None:
+                close_ranks = sorted(self.result_registrations)
+            else:
+                close_ranks = list(range(2)) if len(self.inputs) == 2 else []
+            for rank in close_ranks:
+                connection = self.connections[rank]
+                connection.settimeout(CLOSE_TIMEOUT)
+                tag = CLOSE_TAG
+                try:
+                    connection.sendall(tag)
+                    body = bytearray(COMMAND.size)
+                    receive(connection, memoryview(body))
+                    if body != tag:
+                        raise ValueError("direct close acknowledgement differs")
+                    quiescent.append(connection)
+                except (OSError, EOFError, ValueError):
+                    self.failed = True
+            if completion is not None:
+                if len(quiescent) != len(self.result_registrations):
+                    self.retain_completion_owner("foreign result DMA mappings were not released by every worker")
+                completion.close()
+                (self.output / "completion-contract-receipt.json").write_text(
+                    json.dumps(
+                        dict(
+                            calls=completion.calls,
+                            device_waits=completion.waits,
+                            state="closed",
+                            result_owner="coordinator",
+                            host_result_flushes=0,
+                        ),
+                        indent=2,
+                    )
+                    + "\n"
+                )
+            self.closed = True
             self.inputs.clear()
             self.outputs.clear()
             for event in self.events:
