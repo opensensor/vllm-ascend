@@ -120,7 +120,9 @@ to the clean integration worktree and discarded before delivery.
 - Endpoint: `http://192.168.53.187:8000/v1`
 - Model name: `glm-sidecard`
 - Configured admission limit: 65,536 tokens
-- Frozen runtime: `/srv/ai/storage/artifacts/sidecard-glm-completion-20261013/candidate-v2`
+- Benchmarked runtime: `/srv/ai/storage/artifacts/sidecard-glm-completion-20261013/candidate-v2`
+- Current runtime: `/srv/ai/storage/artifacts/sidecard-glm-completion-20261013/kilo-v8`
+- [Kilo configuration and API compatibility update](../sidecard-kilo-20261013/README.md)
 - Parent PID at qualification: 1156406
 
 Completed 8K measurements do not establish quality at the full admission limit.

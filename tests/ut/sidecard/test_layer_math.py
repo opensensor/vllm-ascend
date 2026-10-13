@@ -5,7 +5,7 @@ import pytest
 import torch
 
 from tools.sidecard.layer_math import TextLayer, mhc_post, mhc_pre, recurrent_kda, rms_norm, validate_config
-from tools.sidecard.layer_server import request_tokens
+from tools.sidecard.layer_server import request_tokens, text_messages
 from tools.sidecard.layer_weights import private_tensor, shard_dense_tensor
 
 
@@ -258,3 +258,45 @@ def test_private_tensor_never_aliases_checkpoint_file(tmp_path):
     path.write_bytes(b"header!!")
     with path.open("rb") as handle, pytest.raises(ValueError, match="truncated"):
         private_tensor(handle, descriptor, 8, torch)
+
+
+def test_chat_text_parts_preserve_prompt_tokens_and_request():
+    messages = [
+        {"role": "system", "content": "Be concise."},
+        {"role": "user", "content": [{"type": "text", "text": "What is "}, {"type": "text", "text": "2 + 2?"}]},
+    ]
+    normalized = text_messages(messages)
+    assert normalized == [
+        {"role": "system", "content": "Be concise."},
+        {"role": "user", "content": "What is 2 + 2?"},
+    ]
+    assert isinstance(messages[1]["content"], list)
+
+    class Backend(Tokenizer):
+        def apply_chat_template(self, actual, **kwargs):
+            assert actual == normalized
+            return [1, 2, 3]
+
+    assert request_tokens({"messages": messages, "max_tokens": 2}, Backend(), 8, chat=True) == ([1, 2, 3], 2)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        [],
+        [{"type": "image_url", "image_url": {"url": "unused"}}],
+        [{"type": "text", "text": 1}],
+        ["text"],
+        [{"type": "text", "text": "good"}, {"type": "audio"}],
+        None,
+    ],
+)
+def test_chat_rejects_nontext_content_parts(content):
+    with pytest.raises(ValueError, match="text"):
+        text_messages([{"role": "user", "content": content}])
+
+
+@pytest.mark.parametrize("messages", [None, [], [1], [{"role": "tool", "content": "result"}]])
+def test_chat_text_normalization_preserves_role_validation(messages):
+    with pytest.raises(ValueError, match="roles"):
+        text_messages(messages)

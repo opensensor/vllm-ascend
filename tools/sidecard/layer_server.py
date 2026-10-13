@@ -15,9 +15,11 @@ from pathlib import Path
 from .dsa_graph_gate import validate as validate_dsa_graphs
 from .expert_actor import ExpertCoordinator
 from .layer_actor import Coordinator
-from .layer_reasoning import ReasoningStream, chat_message
+from .layer_prefix import PromptPrefix
+from .layer_tools import Tools, ToolStream, history_calls, tool_message
 from .layer_weights import MAX_CHUNK
 from .prefill_gate import validate as validate_prefill
+from .prefix_gate import validate as validate_prefix
 
 MODEL_NAME = "glm-sidecard"
 DEFAULT_MAX_TOKENS = 128
@@ -47,26 +49,61 @@ async def engine_lifespan(engine):
         engine.close()
 
 
+def text_messages(messages):
+    """Normalize OpenAI text parts without changing order or accepting other modalities."""
+    if not isinstance(messages, list) or not messages:
+        raise ValueError("text messages with system/user/assistant roles are required")
+    normalized, pending, seen = [], set(), set()
+    for message in messages:
+        if not isinstance(message, dict) or message.get("role") not in ("system", "user", "assistant", "tool"):
+            raise ValueError("text messages with system/user/assistant roles are required")
+        message = dict(message)
+        if message.get("tool_calls"):
+            if message["role"] != "assistant":
+                raise ValueError("only assistant messages may contain tool calls")
+            message["tool_calls"] = history_calls(message["tool_calls"])
+            for call in message["tool_calls"]:
+                if call["id"] in seen:
+                    raise ValueError("tool call identifier is reused in conversation history")
+                pending.add(call["id"])
+                seen.add(call["id"])
+            if message.get("content") is None:
+                message["content"] = ""
+        if message["role"] == "tool":
+            identity = message.get("tool_call_id")
+            if not isinstance(identity, str) or identity not in pending:
+                raise ValueError("tool result must reference a pending assistant function call; unsupported roles")
+            pending.remove(identity)
+        content = message.get("content")
+        if isinstance(content, list) and content:
+            if any(
+                not isinstance(part, dict) or part.get("type") != "text" or not isinstance(part.get("text"), str)
+                for part in content
+            ):
+                raise ValueError("message content parts must contain only text")
+            content = "".join(part["text"] for part in content)
+        if not isinstance(content, str):
+            raise ValueError("text messages with system/user/assistant roles are required")
+        normalized.append({**message, "content": content})
+    return normalized
+
+
 def request_tokens(body, tokenizer, max_context, *, chat):
     if not isinstance(body, dict) or body.get("model", MODEL_NAME) != MODEL_NAME:
         raise ValueError("unknown model or malformed request")
-    if body.get("n", 1) != 1 or body.get("tools") or body.get("logprobs") or body.get("response_format"):
+    if body.get("n", 1) != 1 or body.get("logprobs") or body.get("response_format"):
         raise ValueError("initial serialized runtime supports one plain text completion per request")
+    if not chat and body.get("tools"):
+        raise ValueError("tools require the chat completion endpoint")
     if chat:
-        messages = body.get("messages")
-        if (
-            not isinstance(messages, list)
-            or not messages
-            or any(
-                not isinstance(message, dict)
-                or not isinstance(message.get("content"), str)
-                or message.get("role") not in ("system", "user", "assistant")
-                for message in messages
-            )
-        ):
-            raise ValueError("text messages with system/user/assistant roles are required")
+        tools = Tools(body)
+        messages = text_messages(body.get("messages"))
         tokens = tokenizer.apply_chat_template(
-            messages, tokenize=True, add_generation_prompt=True, reasoning_effort=body.get("reasoning_effort", "max")
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            reasoning_effort=body.get("reasoning_effort", "max"),
+            **({"tools": tools.definitions} if tools.definitions else {}),
         )
         if hasattr(tokens, "keys"):
             tokens = tokens["input_ids"]
@@ -99,29 +136,67 @@ def request_tokens(body, tokenizer, max_context, *, chat):
     return tokens, limit
 
 
+def prefix_boundary(body, tokens, tokenizer, chunk):
+    """Retain an exact aligned context prefix before the newest chat message."""
+    messages = text_messages(body["messages"])
+    if len(messages) < 2:
+        return None
+    tools = Tools(body)
+    prefix = tokenizer.apply_chat_template(
+        messages[:-1],
+        tokenize=True,
+        add_generation_prompt=False,
+        reasoning_effort=body.get("reasoning_effort", "max"),
+        **({"tools": tools.definitions} if tools.definitions else {}),
+    )
+    if hasattr(prefix, "keys"):
+        prefix = prefix["input_ids"]
+    common = next(
+        (index for index, (left, right) in enumerate(zip(prefix, tokens)) if left != right),
+        min(len(prefix), len(tokens)),
+    )
+    return common // chunk * chunk
+
+
 class Generation:
     def __init__(self, coordinator, tokenizer):
         self.coordinator, self.tokenizer = coordinator, tokenizer
         self.lock = threading.Lock()
         self.eos = set(coordinator.config["eos_token_id"])
         self.last_result = None
+        self.prefix = (
+            PromptPrefix(coordinator)
+            if getattr(coordinator, "architecture", None) == ExpertCoordinator.architecture
+            and coordinator.spec.get("prompt_prefix_cache", False)
+            else None
+        )
 
-    def generate(self, tokens, limit, result=None, *, ignore_eos=False, cancelled=None):
+    def generate(self, tokens, limit, result=None, *, ignore_eos=False, cancelled=None, cache_boundary=None):
         if result is None:
             result = {}
         with self.lock:
+            # A disconnected request may have spent its entire lifetime queued.
+            # Preserve the live prefix instead of resetting it for that client.
+            if cancelled is not None and cancelled.is_set():
+                return
             engine = self.coordinator
-            engine.reset(context_limit=len(tokens) + limit)
             engine.metrics = {name: [] for name in engine.metrics}
             metric_start = {name: len(values) for name, values in engine.metrics.items()}
             begin = time.perf_counter()
             try:
-                if getattr(engine, "architecture", None) == ExpertCoordinator.architecture:
-                    logits = engine.prefill(
-                        tokens, overlap=engine.spec.get("prefill_overlap", True), cancelled=cancelled
+                if self.prefix is not None:
+                    logits, cached = self.prefix.prefill(
+                        tokens, len(tokens) + limit, cancelled=cancelled, boundary=cache_boundary
                     )
                 else:
-                    logits = engine.prefill(tokens, overlap=engine.spec.get("prefill_overlap", True))
+                    cached = 0
+                    engine.reset(context_limit=len(tokens) + limit)
+                    kwargs = (
+                        {"cancelled": cancelled}
+                        if getattr(engine, "architecture", None) == ExpertCoordinator.architecture
+                        else {}
+                    )
+                    logits = engine.prefill(tokens, overlap=engine.spec.get("prefill_overlap", True), **kwargs)
             except InterruptedError:
                 if cancelled is not None and cancelled.is_set():
                     return
@@ -154,6 +229,7 @@ class Generation:
             stages = {name: values[metric_start[name] :] for name, values in engine.metrics.items()}
             self.last_result = {
                 "prompt_tokens": len(tokens),
+                "cached_prompt_tokens": cached,
                 "output_tokens": len(output),
                 "output_ids": output,
                 "text": self.tokenizer.decode(output, skip_special_tokens=True),
@@ -295,6 +371,14 @@ def main():
             reference_path=Path(specification["prefill_reference"]) if requires_prefill_reference else None,
             reference_sha256=specification.get("prefill_reference_sha256") if requires_prefill_reference else None,
         )
+    if specification.get("prompt_prefix_cache", False):
+        if getattr(engine, "architecture", None) != ExpertCoordinator.architecture:
+            raise ValueError("prompt prefix cache requires the CUDA backbone expert architecture")
+        validate_prefix(
+            engine,
+            tokenizer.encode("Inspect this module and explain its control flow. "),
+            output=engine.output / "prefix-parity.json",
+        )
     generation = Generation(engine, tokenizer)
     # Complete a real-weight request before exposing readiness.
     startup_result = {}
@@ -368,14 +452,24 @@ def main():
         request_id = ("chatcmpl-" if chat else "cmpl-") + uuid.uuid4().hex
         created = int(time.time())
         result = {}
+        cache_boundary = (
+            prefix_boundary(body, tokens, tokenizer, engine.prefill_chunk_size)
+            if chat and generation.prefix is not None
+            else None
+        )
         if body.get("stream", False):
             cancelled = threading.Event()
 
             async def events():
-                reasoning = ReasoningStream() if chat else None
+                reasoning = ToolStream(Tools(body)) if chat else None
                 deltas = managed_deltas(
                     generation.generate(
-                        tokens, limit, result, ignore_eos=body.get("ignore_eos", False), cancelled=cancelled
+                        tokens,
+                        limit,
+                        result,
+                        ignore_eos=body.get("ignore_eos", False),
+                        cancelled=cancelled,
+                        cache_boundary=cache_boundary,
                     )
                 )
                 try:
@@ -400,8 +494,12 @@ def main():
                         await deltas.aclose()
                 if cancelled.is_set():
                     return
-                choice = {"index": 0, "finish_reason": result["finish_reason"]}
-                choice["delta" if chat else "text"] = reasoning.feed("", final=True) if chat else ""
+                final_delta = reasoning.feed("", final=True) if chat else ""
+                choice = {
+                    "index": 0,
+                    "finish_reason": "tool_calls" if chat and reasoning.calls else result["finish_reason"],
+                }
+                choice["delta" if chat else "text"] = final_delta
                 yield (
                     "data: "
                     + json.dumps(
@@ -418,6 +516,7 @@ def main():
                 if body.get("stream_options", {}).get("include_usage", False):
                     usage = {
                         "prompt_tokens": len(tokens),
+                        "prompt_tokens_details": {"cached_tokens": result["cached_prompt_tokens"]},
                         "completion_tokens": result["output_tokens"],
                         "total_tokens": len(tokens) + result["output_tokens"],
                     }
@@ -438,9 +537,15 @@ def main():
                 yield "data: [DONE]\n\n"
 
             return ClosingStreamingResponse(events(), cancelled)
-        list(generation.generate(tokens, limit, result, ignore_eos=body.get("ignore_eos", False)))
+        list(
+            generation.generate(
+                tokens, limit, result, ignore_eos=body.get("ignore_eos", False), cache_boundary=cache_boundary
+            )
+        )
         choice = {"index": 0, "finish_reason": result["finish_reason"]}
-        choice["message" if chat else "text"] = chat_message(result["text"]) if chat else result["text"]
+        choice["message" if chat else "text"] = tool_message(result["text"], Tools(body)) if chat else result["text"]
+        if chat and choice["message"].get("tool_calls"):
+            choice["finish_reason"] = "tool_calls"
         return {
             "id": request_id,
             "object": "chat.completion" if chat else "text_completion",
@@ -449,6 +554,7 @@ def main():
             "choices": [choice],
             "usage": {
                 "prompt_tokens": len(tokens),
+                "prompt_tokens_details": {"cached_tokens": result["cached_prompt_tokens"]},
                 "completion_tokens": result["output_tokens"],
                 "total_tokens": len(tokens) + result["output_tokens"],
             },

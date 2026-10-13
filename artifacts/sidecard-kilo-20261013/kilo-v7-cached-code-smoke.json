@@ -1,0 +1,80 @@
+{
+  "passed": true,
+  "cli_returncode": 0,
+  "model": "vllm-sidecard/glm-sidecard",
+  "agent": "glm-sidecard-code",
+  "directory": "/tmp/sidecard-kilo-code-probe",
+  "readonly_fixture_permission": true,
+  "elapsed_seconds": 531.0998381719983,
+  "text": "The exact contents of /tmp/sidecard-kilo-code-probe/proof.txt:\n\n```\nSIDECARD_READ_29a4be268bd6794be518e1b2\n```",
+  "errors": [],
+  "finish_reasons": [
+    "tool-calls",
+    "stop"
+  ],
+  "health": {
+    "status": "ok",
+    "architecture": "cuda-backbone-ascend-experts",
+    "max_model_len": 65536,
+    "expert_transport": "direct-dma"
+  },
+  "tools": [
+    {
+      "tool": "read",
+      "status": "completed"
+    }
+  ],
+  "runtime": "kilo-v7",
+  "server_generations": [
+    {
+      "kind": "generation_completed",
+      "prompt_tokens": 1165,
+      "cached_prompt_tokens": 0,
+      "output_tokens": 62,
+      "ttft_seconds": 16.570691896020435,
+      "total_seconds": 21.19420292400173,
+      "decode_tokens_per_second": 13.1934366828219,
+      "finish_reason": "stop"
+    },
+    {
+      "kind": "generation_completed",
+      "prompt_tokens": 1296,
+      "cached_prompt_tokens": 1056,
+      "output_tokens": 83,
+      "ttft_seconds": 3.4252543399925344,
+      "total_seconds": 9.434564572002273,
+      "decode_tokens_per_second": 13.645492882562683,
+      "finish_reason": "stop"
+    }
+  ],
+  "cli_step_metrics": [
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 1227,
+        "input": 1165,
+        "output": 62,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "reason": "stop",
+      "tokens": {
+        "total": 1379,
+        "input": 240,
+        "output": 83,
+        "reasoning": 0,
+        "cache": {
+          "read": 1056,
+          "write": 0
+        }
+      }
+    }
+  ],
+  "cache_reuse_validated": true,
+  "queue_and_client_overhead_seconds": 500.47107067599427
+}
