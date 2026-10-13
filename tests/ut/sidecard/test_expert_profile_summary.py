@@ -57,6 +57,28 @@ def test_host_waterfall_accounts_for_total_but_parallel_device_spans_do_not_add(
     assert result["mean_chip_calls_per_step"] == 30
 
 
+def test_dma_summary_reports_host_worker_spans_and_unknown_route_counts():
+    run, frames, workers = example()
+    run["transport"] = "direct-dma"
+    for frame in frames:
+        for dispatch in frame["dispatches"]:
+            dispatch["cold_routes"] = None
+    for worker in workers:
+        stages = worker.pop("stream_ms")
+        worker.update(
+            upload_ms=stages["upload"],
+            unpack_and_validation_ms=0.3,
+            native_ms=stages["native"],
+            pack_and_download_ms=stages["download"],
+        )
+    report = summarize(run, frames, workers)
+    assert report["worker_timing_scope"] == "host wall including completion waits"
+    result = report["workloads"][0]["phases"]["decode"]
+    assert result["mean_cold_route_fraction"] is None
+    assert result["npu_sum_of_layer_rank_maxima_mean_ms"]["validation"] == pytest.approx(4.5)
+    assert result["npu_sum_of_layer_rank_maxima_mean_ms"]["all_stages"] == pytest.approx(55.5)
+
+
 @pytest.mark.parametrize("error", ["duplicates", "missing_worker", "incomplete_layers", "host_accounting", "parity"])
 def test_profile_summary_fails_closed_on_incomplete_or_ambiguous_evidence(error):
     run, frames, workers = copy.deepcopy(example())

@@ -1,0 +1,259 @@
+{
+  "passed": true,
+  "production_speed_validated": false,
+  "timing_scope": "device stream spans include launch/idle gaps and overlap host waits",
+  "host_partitions_disjoint": true,
+  "worker_timing_scope": "host wall including completion waits",
+  "workloads": [
+    {
+      "name": "matched2048",
+      "phases": {
+        "prefill": {
+          "steps": 64,
+          "tokens": 2048,
+          "mean_forward_ms": 424.8196095768435,
+          "median_forward_ms": 423.79280501336325,
+          "host_mean_ms": {
+            "embedding_head_final_completion": 2.4248823406196607,
+            "hot_shared_reply_merge_submit": 9.18501954720341,
+            "input_readiness": 8.000919419828278,
+            "middle_backbone_host_submit": 49.98791811703995,
+            "middle_finish_host_submit": 2.706611417579552,
+            "prefix_host_submit": 63.06973270329763,
+            "socket_receive_wait": 246.7106765061544,
+            "socket_send": 0.23212624410007265,
+            "suffix_host_submit": 42.50172328102053
+          },
+          "host_share_percent": {
+            "embedding_head_final_completion": 0.5708028268834036,
+            "hot_shared_reply_merge_submit": 2.1620987685461297,
+            "input_readiness": 1.8833686674204788,
+            "middle_backbone_host_submit": 11.766857506138235,
+            "middle_finish_host_submit": 0.637120169729351,
+            "prefix_host_submit": 14.846238563733076,
+            "socket_receive_wait": 58.074220432502926,
+            "socket_send": 0.054641132110471585,
+            "suffix_host_submit": 10.004651932935927
+          },
+          "mean_cold_route_fraction": null,
+          "mean_chip_calls_per_step": 30,
+          "middle_backbone_per_layer_stream_mean_ms": {
+            "18": 2.7446410059928894,
+            "19": 2.442465990781784,
+            "20": 3.7404480017721653,
+            "21": 3.733095485717058,
+            "22": 3.674551486968994,
+            "23": 2.438610501587391,
+            "24": 3.6875714994966984,
+            "25": 3.661515984684229,
+            "26": 3.640028487890959,
+            "27": 2.4571070037782192,
+            "28": 3.7532630041241646,
+            "29": 3.8090445026755333,
+            "30": 3.778386991471052,
+            "31": 2.4764055125415325,
+            "32": 3.756810490041971
+          },
+          "cuda_stream_mean_ms": {
+            "middle_backbone": 49.79394594952464,
+            "expert_dispatch": 264.92741598188877,
+            "prefix": 63.82006072998047,
+            "suffix": 42.88377666473389
+          },
+          "npu_sum_of_layer_rank_maxima_mean_ms": {
+            "upload": 3.6834853976870363,
+            "validation": 5.236473381955875,
+            "native": 240.68277094693258,
+            "download": 3.786666348332801,
+            "all_stages": 252.67692605848424
+          }
+        },
+        "decode": {
+          "steps": 63,
+          "tokens": 63,
+          "mean_forward_ms": 92.70181417481841,
+          "median_forward_ms": 92.06464097951539,
+          "host_mean_ms": {
+            "embedding_head_final_completion": 2.2893883819167042,
+            "hot_shared_reply_merge_submit": 7.360055140914425,
+            "input_readiness": 5.043749009639705,
+            "middle_backbone_host_submit": 12.636985905590423,
+            "middle_finish_host_submit": 1.9003558406857626,
+            "prefix_host_submit": 13.303536920353682,
+            "socket_receive_wait": 40.029226173554356,
+            "socket_send": 0.17562043476140216,
+            "suffix_host_submit": 9.96289636740195
+          },
+          "host_share_percent": {
+            "embedding_head_final_completion": 2.469626298358458,
+            "hot_shared_reply_merge_submit": 7.939494179730644,
+            "input_readiness": 5.44083096381278,
+            "middle_backbone_host_submit": 13.6318647246314,
+            "middle_finish_host_submit": 2.0499661820016213,
+            "prefix_host_submit": 14.350891661371032,
+            "socket_receive_wait": 43.18062869629139,
+            "socket_send": 0.18944659964282318,
+            "suffix_host_submit": 10.747250694159854
+          },
+          "mean_cold_route_fraction": null,
+          "mean_chip_calls_per_step": 29.77777777777778,
+          "middle_backbone_per_layer_stream_mean_ms": {
+            "18": 0.28998653850858175,
+            "19": 2.9499662149520147,
+            "20": 0.34746920589416747,
+            "21": 0.33841472816845725,
+            "22": 0.3410300967239198,
+            "23": 3.094284704753331,
+            "24": 0.34094069779865327,
+            "25": 0.33954234917958576,
+            "26": 0.34198196776329526,
+            "27": 3.0048558787694053,
+            "28": 0.3435418416583349,
+            "29": 0.3442331424781254,
+            "30": 0.34448355389019797,
+            "31": 3.0846613361721946,
+            "32": 0.34616381119167994
+          },
+          "cuda_stream_mean_ms": {
+            "middle_backbone": 15.851556067901944,
+            "expert_dispatch": 49.62931199300857,
+            "prefix": 14.206743876139322,
+            "suffix": 10.40666004968068
+          },
+          "npu_sum_of_layer_rank_maxima_mean_ms": {
+            "upload": 2.081605557274694,
+            "validation": 3.4728947429112087,
+            "native": 38.59298771740647,
+            "download": 1.6904658506742665,
+            "all_stages": 45.407604659438164
+          }
+        }
+      }
+    },
+    {
+      "name": "python",
+      "phases": {
+        "prefill": {
+          "steps": 1,
+          "tokens": 10,
+          "mean_forward_ms": 270.6121650116984,
+          "median_forward_ms": 270.6121650116984,
+          "host_mean_ms": {
+            "embedding_head_final_completion": 2.1955649717710912,
+            "hot_shared_reply_merge_submit": 7.809968898072839,
+            "input_readiness": 7.783033011946827,
+            "middle_backbone_host_submit": 28.714355983538553,
+            "middle_finish_host_submit": 2.2202230466064066,
+            "prefix_host_submit": 39.35206599999219,
+            "socket_receive_wait": 151.67717801523395,
+            "socket_send": 0.19024006905965507,
+            "suffix_host_submit": 30.669535015476868
+          },
+          "host_share_percent": {
+            "embedding_head_final_completion": 0.8113326951418383,
+            "hot_shared_reply_merge_submit": 2.8860376242639423,
+            "input_readiness": 2.876083937915493,
+            "middle_backbone_host_submit": 10.61088882766865,
+            "middle_finish_host_submit": 0.8204446561042176,
+            "prefix_host_submit": 14.541868802642716,
+            "socket_receive_wait": 56.04965246432179,
+            "socket_send": 0.07029989544314504,
+            "suffix_host_submit": 11.33339109649821
+          },
+          "mean_cold_route_fraction": null,
+          "mean_chip_calls_per_step": 30,
+          "middle_backbone_per_layer_stream_mean_ms": {
+            "18": 1.8876479864120483,
+            "19": 1.5252480506896973,
+            "20": 2.525279998779297,
+            "21": 2.212480068206787,
+            "22": 1.9882559776306152,
+            "23": 1.6234560012817383,
+            "24": 1.9642879962921143,
+            "25": 1.9518400430679321,
+            "26": 2.0360960960388184,
+            "27": 1.508288025856018,
+            "28": 2.0784640312194824,
+            "29": 1.9343359470367432,
+            "30": 1.9436479806900024,
+            "31": 1.5809600353240967,
+            "32": 2.3025600910186768
+          },
+          "cuda_stream_mean_ms": {
+            "middle_backbone": 29.062848329544067,
+            "expert_dispatch": 168.07715320587158,
+            "prefix": 39.51715087890625,
+            "suffix": 30.715744018554688
+          },
+          "npu_sum_of_layer_rank_maxima_mean_ms": {
+            "upload": 2.4937019334174693,
+            "validation": 4.178656992735341,
+            "native": 148.80295904004015,
+            "download": 2.2725600574631244,
+            "all_stages": 157.1780160011258
+          }
+        },
+        "decode": {
+          "steps": 63,
+          "tokens": 63,
+          "mean_forward_ms": 72.10729219017566,
+          "median_forward_ms": 72.46838402352296,
+          "host_mean_ms": {
+            "embedding_head_final_completion": 2.364714772695498,
+            "hot_shared_reply_merge_submit": 7.393739984041849,
+            "input_readiness": 5.407757672762114,
+            "middle_backbone_host_submit": 6.41562829823381,
+            "middle_finish_host_submit": 1.873622125010967,
+            "prefix_host_submit": 7.113969919460249,
+            "socket_receive_wait": 35.783425738964795,
+            "socket_send": 0.1713507092698285,
+            "suffix_host_submit": 5.5830829697365445
+          },
+          "host_share_percent": {
+            "embedding_head_final_completion": 3.2794391536140384,
+            "hot_shared_reply_merge_submit": 10.253803408040357,
+            "input_readiness": 7.49959887343946,
+            "middle_backbone_host_submit": 8.897336321149382,
+            "middle_finish_host_submit": 2.5983809239008435,
+            "prefix_host_submit": 9.865812046717656,
+            "socket_receive_wait": 49.62525238721993,
+            "socket_send": 0.2376329828305138,
+            "suffix_host_submit": 7.74274390308782
+          },
+          "mean_cold_route_fraction": null,
+          "mean_chip_calls_per_step": 29.476190476190474,
+          "middle_backbone_per_layer_stream_mean_ms": {
+            "18": 0.29013587321553913,
+            "19": 1.4133912305983285,
+            "20": 0.34551771529137143,
+            "21": 0.3389831104921916,
+            "22": 0.3413404448637887,
+            "23": 1.5058854591278803,
+            "24": 0.3421018421649933,
+            "25": 0.33862603089166066,
+            "26": 0.3414913018544515,
+            "27": 1.4775989755751595,
+            "28": 0.3439288886766585,
+            "29": 0.33916444343233865,
+            "30": 0.34251885896637324,
+            "31": 1.515883687942747,
+            "32": 0.34526628586981034
+          },
+          "cuda_stream_mean_ms": {
+            "middle_backbone": 9.621834148963293,
+            "expert_dispatch": 45.36410471749684,
+            "prefix": 8.407293455941337,
+            "suffix": 6.111889778621613
+          },
+          "npu_sum_of_layer_rank_maxima_mean_ms": {
+            "upload": 2.151772990593657,
+            "validation": 3.430584714459699,
+            "native": 34.35801358206109,
+            "download": 1.6045832271052023,
+            "all_stages": 41.05658979628176
+          }
+        }
+      }
+    }
+  ]
+}

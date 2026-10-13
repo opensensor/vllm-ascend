@@ -9,7 +9,9 @@ from matplotlib.figure import Figure
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 
 
-def draw(output, *, optimized=False, expert_graphs=False, persistent_gpu_mappings=False):
+def draw(
+    output, *, optimized=False, expert_graphs=False, persistent_gpu_mappings=False, hot_graphs=False, dsa_graphs=False
+):
     """Show GPU aliases, physical DMA, CPU control, and clean release ordering."""
     figure = Figure(figsize=(18, 11), dpi=160, facecolor="#f4f7fb")
     FigureCanvasAgg(figure)
@@ -84,9 +86,9 @@ def draw(output, *, optimized=False, expert_graphs=False, persistent_gpu_mapping
         "CUDA coordinator",
         [
             "All 45 backbone layers + caches",
-            "Attention / routers / shared MLP",
+            "DSA math graphs; dynamic attention eager" if dsa_graphs else "Attention / routers / shared MLP",
             "Full CUDA banks outside layers 18–32",
-            "Configured hot middle-layer experts",
+            "Hot + shared experts replay together" if hot_graphs else "Configured hot middle-layer experts",
             "CUDA graph packing + fixed rank-order merge" if optimized else "GPU packing + fixed rank-order merge",
             "Serialized requests; CUDA graphs retained",
         ],
@@ -180,12 +182,16 @@ def main():
     parser.add_argument("--optimized", action="store_true")
     parser.add_argument("--expert-graphs", action="store_true")
     parser.add_argument("--persistent-gpu-mappings", action="store_true")
+    parser.add_argument("--hot-graphs", action="store_true")
+    parser.add_argument("--dsa-graphs", action="store_true")
     args = parser.parse_args()
     draw(
         args.output,
         optimized=args.optimized,
         expert_graphs=args.expert_graphs,
         persistent_gpu_mappings=args.persistent_gpu_mappings,
+        hot_graphs=args.hot_graphs,
+        dsa_graphs=args.dsa_graphs,
     )
 
 

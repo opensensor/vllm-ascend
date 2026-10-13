@@ -1,0 +1,209 @@
+{
+  "passed": true,
+  "cases": [
+    {
+      "name": "concurrent_isolation",
+      "passed": true,
+      "controls": [
+        {
+          "elapsed_seconds": 0.6577298670017626,
+          "status": 200,
+          "response": {
+            "id": "cmpl-9c0dc6d88735438f981ebda514f7865c",
+            "object": "text_completion",
+            "created": 1791853762,
+            "model": "glm-sidecard",
+            "choices": [
+              {
+                "index": 0,
+                "finish_reason": "length",
+                "text": " cold. 2. The opposite of"
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 5,
+              "completion_tokens": 8,
+              "total_tokens": 13
+            }
+          }
+        },
+        {
+          "elapsed_seconds": 0.6527007130207494,
+          "status": 200,
+          "response": {
+            "id": "cmpl-a8f1101db769416b92fed495d9d6c52a",
+            "object": "text_completion",
+            "created": 1791853763,
+            "model": "glm-sidecard",
+            "choices": [
+              {
+                "index": 0,
+                "finish_reason": "length",
+                "text": " three? (C) - Cg"
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 4,
+              "completion_tokens": 8,
+              "total_tokens": 12
+            }
+          }
+        }
+      ],
+      "queued": [
+        {
+          "elapsed_seconds": 0.6363657410256565,
+          "status": 200,
+          "response": {
+            "id": "cmpl-e9adc948fcf642bea4bad5ca5635673c",
+            "object": "text_completion",
+            "created": 1791853763,
+            "model": "glm-sidecard",
+            "choices": [
+              {
+                "index": 0,
+                "finish_reason": "length",
+                "text": " cold. 2. The opposite of"
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 5,
+              "completion_tokens": 8,
+              "total_tokens": 13
+            }
+          }
+        },
+        {
+          "elapsed_seconds": 1.305366349988617,
+          "status": 200,
+          "response": {
+            "id": "cmpl-4d57b6ccd85d4d4681b9f807f3274c3f",
+            "object": "text_completion",
+            "created": 1791853763,
+            "model": "glm-sidecard",
+            "choices": [
+              {
+                "index": 0,
+                "finish_reason": "length",
+                "text": " three? (C) - Cg"
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 4,
+              "completion_tokens": 8,
+              "total_tokens": 12
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "stream_equivalence",
+      "passed": true,
+      "text": " cold. 2. The opposite of",
+      "usage": {
+        "prompt_tokens": 5,
+        "completion_tokens": 8,
+        "total_tokens": 13
+      },
+      "done": true
+    },
+    {
+      "name": "cancel_before_prefill",
+      "passed": true,
+      "followup": {
+        "elapsed_seconds": 0.6379135140159633,
+        "status": 200,
+        "response": {
+          "id": "cmpl-c7101d55d4f24450a30199c44990a845",
+          "object": "text_completion",
+          "created": 1791853765,
+          "model": "glm-sidecard",
+          "choices": [
+            {
+              "index": 0,
+              "finish_reason": "length",
+              "text": " cold. 2. The opposite of"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 5,
+            "completion_tokens": 8,
+            "total_tokens": 13
+          }
+        }
+      },
+      "recovery_seconds": 0.6379720650147647,
+      "cancelled_prompt_tokens": 65535
+    },
+    {
+      "name": "cancel_during_decode",
+      "passed": true,
+      "followup": {
+        "elapsed_seconds": 0.7172773210040759,
+        "status": 200,
+        "response": {
+          "id": "cmpl-0b506a7bfbc74f2fa3a8803062e7c95d",
+          "object": "text_completion",
+          "created": 1791853766,
+          "model": "glm-sidecard",
+          "choices": [
+            {
+              "index": 0,
+              "finish_reason": "length",
+              "text": " cold. 2. The opposite of"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 5,
+            "completion_tokens": 8,
+            "total_tokens": 13
+          }
+        }
+      },
+      "recovery_seconds": 0.7173482660145964,
+      "cancelled_prompt_tokens": null
+    },
+    {
+      "name": "kilo_output_budget",
+      "passed": true,
+      "result": {
+        "elapsed_seconds": 0.556700651999563,
+        "status": 200,
+        "response": {
+          "id": "chatcmpl-b0b085ae7e9347f5baab7c374b2cfb14",
+          "object": "chat.completion",
+          "created": 1791853767,
+          "model": "glm-sidecard",
+          "choices": [
+            {
+              "index": 0,
+              "finish_reason": "stop",
+              "message": {
+                "role": "assistant",
+                "content": "4"
+              }
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 26,
+            "completion_tokens": 3,
+            "total_tokens": 29
+          }
+        }
+      }
+    },
+    {
+      "name": "over_context_rejected",
+      "passed": true,
+      "status": 400
+    }
+  ],
+  "near_capacity_prefill_completed": false,
+  "health": {
+    "status": "ok",
+    "architecture": "cuda-backbone-ascend-experts",
+    "max_model_len": 65536,
+    "expert_transport": "direct-dma"
+  }
+}

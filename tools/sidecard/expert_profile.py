@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 from .cold_dispatch import HEADER
+from .dma_protocol import COMMAND
 from .expert_actor import ExpertCoordinator
 from .expert_timing import TimedPeer
 from .layer_server import Generation
@@ -33,6 +34,9 @@ class ProfileStage:
         self.owner.add(self.name + "_host_submit", time.perf_counter() - begin)
         self.owner.pair(self.name, start)
         return result
+
+    def close(self):
+        self.stage.close()
 
 
 class ProfileDispatch:
@@ -64,12 +68,15 @@ class ProfileDispatch:
         self.owner.add("socket_receive_wait", receive)
         self.owner.add("hot_shared_reply_merge_submit", end - begin - ready - send - receive)
         rows = x.shape[0]
-        offset = rows * 4096 * 2
-        host_ids = self.dispatch.host[offset : offset + rows * 8 * 4].view(self.owner.torch.int32).numpy()
-        hot = set(self.dispatch.hot[str(layer.index)])
-        cold = {
-            rank: int(sum(expert not in hot and expert // 144 == rank for expert in host_ids.flat)) for rank in (0, 1)
-        }
+        cold = None
+        if self.owner.spec.get("expert_transport") != "direct-dma":
+            offset = rows * 4096 * 2
+            host_ids = self.dispatch.host[offset : offset + rows * 8 * 4].view(self.owner.torch.int32).numpy()
+            hot = set(self.dispatch.hot[str(layer.index)])
+            cold = {
+                rank: int(sum(expert not in hot and expert // 144 == rank for expert in host_ids.flat))
+                for rank in (0, 1)
+            }
         self.owner.frame["dispatches"].append(
             dict(layer=layer.index, rows=rows, cold_routes=cold, begin=begin, end=end, socket_events=events)
         )
@@ -87,7 +94,10 @@ class ProfileMiddle:
             start = self.owner.event()
             begin = time.perf_counter()
             captured = self.stage.graphs.get(layer.index)
-            if captured is None or state[0].shape[0] != 1:
+            dsa = getattr(self.stage, "dsa_graphs", {}).get(layer.index)
+            if dsa is not None and state[0].shape[0] == 1:
+                inputs = dsa.forward(state)
+            elif captured is None or state[0].shape[0] != 1:
                 prepared = layer.prepare_forward(*state)
                 inputs = (*prepared, *layer.route(prepared[0]))
             else:
@@ -105,6 +115,9 @@ class ProfileMiddle:
             self.owner.add("middle_finish_host_submit", time.perf_counter() - begin - dispatch)
         return state
 
+    def close(self):
+        self.stage.close()
+
 
 class ProfileCoordinator(ExpertCoordinator):
     def __init__(self, config):
@@ -113,8 +126,9 @@ class ProfileCoordinator(ExpertCoordinator):
             self.close()
             raise ValueError("profile requires the qualified CUDA graph architecture")
         self.enabled, self.frame, self.frames = False, None, []
+        header = COMMAND if self.spec.get("expert_transport") == "direct-dma" else HEADER
         self.experts.connections = [
-            TimedPeer(peer, rank, header_size=HEADER.size, header_decoder=HEADER.unpack)
+            TimedPeer(peer, rank, header_size=header.size, header_decoder=header.unpack)
             for rank, peer in enumerate(self.experts.connections)
         ]
         dispatch = ProfileDispatch(self.experts, self)
@@ -166,10 +180,12 @@ def run(config, reference):
     from transformers import AutoTokenizer
 
     spec = json.loads(Path(config).read_bytes())
-    if not spec.get("expert_worker_profile"):
+    if spec.get("expert_transport") != "direct-dma" and not spec.get("expert_worker_profile"):
         raise ValueError("profile snapshot must enable worker device-event receipts")
     output, engine = Path(spec["output"]), None
-    report = dict(passed=False, production_speed_validated=False, workloads=[])
+    report = dict(
+        passed=False, production_speed_validated=False, transport=spec.get("expert_transport", "socket"), workloads=[]
+    )
     try:
         engine = ProfileCoordinator(config)
         tokenizer = AutoTokenizer.from_pretrained(spec["checkpoint"], local_files_only=True, trust_remote_code=False)

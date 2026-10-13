@@ -62,12 +62,22 @@ class ExpertCoordinator:
             self.prefix_graphs = self.suffix_graphs = self.middle_graphs = None
             if self.spec.get("cuda_decode_graphs", False):
                 with torch.inference_mode():
-                    self.prefix_graphs = DecodeGraphs([self.layers[index] for index in range(18)], torch, "cuda")
-                    self.suffix_graphs = DecodeGraphs([self.layers[index] for index in range(33, 45)], torch, "cuda")
-                    self.middle_graphs = ColdDecodeGraphs([self.layers[index] for index in range(18, 33)], torch)
+                    dsa_graphs = self.spec.get("direct_dma", {}).get("cuda_dsa_graphs", False)
+                    self.prefix_graphs = DecodeGraphs(
+                        [self.layers[index] for index in range(18)], torch, "cuda", dsa_graphs=dsa_graphs
+                    )
+                    self.suffix_graphs = DecodeGraphs(
+                        [self.layers[index] for index in range(33, 45)], torch, "cuda", dsa_graphs=dsa_graphs
+                    )
+                    self.middle_graphs = ColdDecodeGraphs(
+                        [self.layers[index] for index in range(18, 33)], torch, dsa_graphs=dsa_graphs
+                    )
             torch.cuda.synchronize()
             torch.cuda.empty_cache()
             self.experts.ready()
+            if hasattr(self.experts, "prepare_layers"):
+                with torch.inference_mode():
+                    self.experts.prepare_layers(self.layers)
             (self.output / "memory-receipt.json").write_text(
                 json.dumps(
                     {
@@ -153,5 +163,10 @@ class ExpertCoordinator:
     def close(self):
         if self.experts is not None:
             self.experts.close()
+        for name in ("prefix_graphs", "middle_graphs", "suffix_graphs"):
+            graph = getattr(self, name, None)
+            if graph is not None:
+                graph.close()
+                setattr(self, name, None)
         if self.cuda is not None:
             self.cuda.close()

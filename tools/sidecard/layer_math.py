@@ -215,14 +215,12 @@ class TextLayer:
         ).to(x.dtype)
         return self.project(output.flatten(1), "self_attn.o_proj.weight")
 
-    def dsa(self, x):
+    def dsa_prepare(self, x):
         t, w, c = self.torch, self.weights, self.config
         heads = (
             c["num_attention_heads"] // 2 if getattr(self, "tp_rank", None) is not None else c["num_attention_heads"]
         )
         count = x.shape[0]
-        if self.length + count > self.max_context:
-            raise ValueError("owner-local DSA cache capacity exceeded")
         q = rms_norm(
             self.project(x, "self_attn.q_a_proj.weight"), w["self_attn.q_a_layernorm.weight"], c["rms_norm_eps"], t
         )
@@ -234,11 +232,18 @@ class TextLayer:
             c["rms_norm_eps"],
             t,
         )
-        self.cache[self.length : self.length + count].copy_(kv)
         # Absorb K/V projections without expanding persistent KV into all heads.
         wb = w["self_attn.kv_b_proj.weight"].view(heads, c["qk_nope_head_dim"] + c["v_head_dim"], c["kv_lora_rank"])
-        wk, wv = wb.split((c["qk_nope_head_dim"], c["v_head_dim"]), 1)
+        wk, _ = wb.split((c["qk_nope_head_dim"], c["v_head_dim"]), 1)
         qlatent = t.bmm(q.transpose(0, 1), wk).transpose(0, 1)
+        return qlatent, qr, kv
+
+    def dsa_attend(self, x, qlatent, qr, kv):
+        t, c = self.torch, self.config
+        count = x.shape[0]
+        if self.length + count > self.max_context:
+            raise ValueError("owner-local DSA cache capacity exceeded")
+        self.cache[self.length : self.length + count].copy_(kv)
         selected = self.indexer.select(x, qr, self.length) if getattr(self, "sparse_enabled", False) else None
         if selected is None:
             keys = self.cache[: self.length + count]
@@ -252,9 +257,23 @@ class TextLayer:
             scores.masked_fill_((selected < 0)[:, None, :], -float("inf"))
         probabilities = t.softmax(scores, -1).to(x.dtype)
         latent = t.matmul(probabilities, keys) if selected is None else t.bmm(probabilities, keys)
-        output = t.bmm(latent.transpose(0, 1), wv.transpose(1, 2)).transpose(0, 1).flatten(1)
         self.length += count
+        return latent
+
+    def dsa_project(self, latent):
+        t, w, c = self.torch, self.weights, self.config
+        heads = (
+            c["num_attention_heads"] // 2 if getattr(self, "tp_rank", None) is not None else c["num_attention_heads"]
+        )
+        wb = w["self_attn.kv_b_proj.weight"].view(heads, c["qk_nope_head_dim"] + c["v_head_dim"], c["kv_lora_rank"])
+        _, wv = wb.split((c["qk_nope_head_dim"], c["v_head_dim"]), 1)
+        output = t.bmm(latent.transpose(0, 1), wv.transpose(1, 2)).transpose(0, 1).flatten(1)
         return self.project(output, "self_attn.o_proj.weight")
+
+    def dsa(self, x):
+        if self.length + x.shape[0] > self.max_context:
+            raise ValueError("owner-local DSA cache capacity exceeded")
+        return self.dsa_project(self.dsa_attend(x, *self.dsa_prepare(x)))
 
     def dense_mlp(self, x, prefix):
         t = self.torch
@@ -264,7 +283,7 @@ class TextLayer:
         )
         return self.project((t.nn.functional.silu(gate.float()) * up.float()).to(x.dtype), f"{prefix}.down_proj.weight")
 
-    def prepare_forward(self, hidden, residual=None, post=None, comb=None):
+    def prepare_attention(self, hidden, residual=None, post=None, comb=None):
         t, w, c = self.torch, self.weights, self.config
         if post is None:
             if self.index != 0:
@@ -273,7 +292,10 @@ class TextLayer:
         else:
             residual = mhc_post(hidden, residual, post, comb, t)
         post, comb, x = mhc_pre(residual, w, "attn", "input_layernorm.weight", c, t, self.native_sinkhorn)
-        x = self.kda(x) if self.linear else self.dsa(x)
+        return x, residual, post, comb
+
+    def finish_attention(self, x, residual, post, comb):
+        t, w, c = self.torch, self.weights, self.config
         if self.tp_rank is not None:
             x = x.float()
             t.distributed.all_reduce(x)
@@ -281,6 +303,11 @@ class TextLayer:
         residual = mhc_post(x, residual, post, comb, t)
         post, comb, x = mhc_pre(residual, w, "ffn", "post_attention_layernorm.weight", c, t, self.native_sinkhorn)
         return x, residual, post, comb
+
+    def prepare_forward(self, hidden, residual=None, post=None, comb=None):
+        x, residual, post, comb = self.prepare_attention(hidden, residual, post, comb)
+        x = self.kda(x) if self.linear else self.dsa(x)
+        return self.finish_attention(x, residual, post, comb)
 
     def route(self, x):
         t, w, c = self.torch, self.weights, self.config

@@ -38,6 +38,9 @@ class TimedPeer:
     def close(self):
         self.connection.close()
 
+    def settimeout(self, timeout):
+        self.connection.settimeout(timeout)
+
 
 class WorkerTimers:
     def __init__(self, output, rank, backend, clock=time.perf_counter):

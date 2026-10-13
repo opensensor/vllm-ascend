@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Capture CUDA attention/routing while keeping cold expert IPC outside graphs."""
 
+from .dsa_decode_graph import DsaDecodeGraph
 from .layer_decode_graph import CAPTURE_WARMUP_STEPS
 from .layer_math import HIDDEN, STREAMS
 
@@ -11,11 +12,14 @@ def prepare_routes(layer, state):
 
 
 class ColdDecodeGraphs:
-    def __init__(self, layers, torch):
+    def __init__(self, layers, torch, *, dsa_graphs=False):
         self.layers = tuple(layers)
         self.graphs = {}
+        self.dsa_graphs = {}
         for layer in self.layers:
             if not layer.linear:
+                if dsa_graphs:
+                    self.dsa_graphs[layer.index] = DsaDecodeGraph(layer, torch, cold=True)
                 continue
             inputs = (
                 torch.zeros((1, HIDDEN), dtype=torch.float16, device="cuda"),
@@ -39,7 +43,8 @@ class ColdDecodeGraphs:
         for layer in self.layers:
             captured = self.graphs.get(layer.index)
             if captured is None or state[0].shape[0] != 1:
-                state = layer.forward(*state)
+                dsa = self.dsa_graphs.get(layer.index) if state[0].shape[0] == 1 else None
+                state = layer.finish_forward(*dsa.forward(state)) if dsa is not None else layer.forward(*state)
             else:
                 graph, inputs, outputs = captured
                 for target, source in zip(inputs, state, strict=True):
@@ -49,3 +54,7 @@ class ColdDecodeGraphs:
                 # after capture; GPU hot/shared work overlaps those calls.
                 state = layer.finish_forward(*outputs)
         return state
+
+    def close(self):
+        self.graphs.clear()
+        self.dsa_graphs.clear()

@@ -33,13 +33,19 @@ def forward_span(layers, state):
 
 
 class DecodeGraphs:
-    def __init__(self, layers, torch, device):
+    def __init__(self, layers, torch, device, *, dsa_graphs=False):
         self.spans = linear_spans(layers)
         self.graphs = {}
+        self.dsa_graphs = {}
         backend = torch.cuda if device == "cuda" else torch.npu
         graph_type = backend.CUDAGraph if device == "cuda" else backend.NPUGraph
         for span in self.spans:
             if not span[0].linear:
+                if dsa_graphs:
+                    # Load the CUDA-only helper after graph constants are initialized.
+                    from .dsa_decode_graph import DsaDecodeGraph
+
+                    self.dsa_graphs[span[0].index] = DsaDecodeGraph(span[0], torch, cold=False)
                 continue
             inputs = (
                 torch.zeros((1, HIDDEN), dtype=torch.float16, device=device),
@@ -69,7 +75,8 @@ class DecodeGraphs:
         for span in self.spans:
             captured = self.graphs.get(span[0].index)
             if captured is None:
-                state = forward_span(span, state)
+                dsa = getattr(self, "dsa_graphs", {}).get(span[0].index)
+                state = dsa.forward(state) if dsa is not None else forward_span(span, state)
             else:
                 graph, inputs, outputs = captured
                 for target, source in zip(inputs, state, strict=True):
@@ -81,3 +88,7 @@ class DecodeGraphs:
                 graph.replay()
                 state = outputs
         return state
+
+    def close(self):
+        self.graphs.clear()
+        self.dsa_graphs.clear()

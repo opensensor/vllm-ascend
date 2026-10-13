@@ -12,6 +12,7 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from .dsa_graph_gate import validate as validate_dsa_graphs
 from .expert_actor import ExpertCoordinator
 from .layer_actor import Coordinator
 from .layer_reasoning import ReasoningStream, chat_message
@@ -270,6 +271,12 @@ def main():
         (engine.output / "transport-parity.json").write_text(json.dumps(parity, indent=2) + "\n")
         if not parity["passed"]:
             raise RuntimeError("direct DMA changed qualified socket full-model logits or token IDs")
+    if specification.get("direct_dma", {}).get("cuda_dsa_graphs", False):
+        validate_dsa_graphs(
+            engine,
+            tokenizer.encode("Inspect this module and explain its control flow. "),
+            output=engine.output / "dsa-graph-parity.json",
+        )
     generation = Generation(engine, tokenizer)
     # Complete a real-weight request before exposing readiness.
     startup_result = {}
