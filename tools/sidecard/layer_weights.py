@@ -12,10 +12,21 @@ from .native_expert_probe import contained, digest_file
 from .resident import NativeResidentPlan
 
 MAX_CHUNK = 32
+PREFILL_CHUNK_CHOICES = (32, 64, 128)
+MAX_PREFILL_CHUNK = max(PREFILL_CHUNK_CHOICES)
 TOP_K = 8
 WIDTH = 4096
 GPU_LAYERS = tuple(range(18)) + tuple(range(33, 45))
 NPU_LAYERS = tuple(range(18, 33))
+
+
+def prefill_chunk_size(specification):
+    value = specification.get("prefill_chunk_size", MAX_CHUNK)
+    if type(value) is not int or value not in PREFILL_CHUNK_CHOICES:
+        raise ValueError("prefill chunk size must be 32, 64, or 128")
+    if value > MAX_CHUNK and specification.get("expert_transport") != "direct-dma":
+        raise ValueError("larger prefill chunks require direct DMA")
+    return value
 
 
 def private_tensor(handle, descriptor, payload_offset, torch):
@@ -154,8 +165,9 @@ class PlanBanks:
 
 
 class CudaExperts:
-    def __init__(self, root, checkpoint_sha256, specification, torch, *, keys=None):
+    def __init__(self, root, checkpoint_sha256, specification, torch, *, keys=None, max_chunk=MAX_CHUNK):
         self.torch = torch
+        self.max_chunk = prefill_chunk_size({"prefill_chunk_size": max_chunk, "expert_transport": "direct-dma"})
         plan = NativeResidentPlan(
             root,
             tuple((layer, expert) for layer in GPU_LAYERS if layer >= 3 for expert in range(288))
@@ -165,7 +177,7 @@ class CudaExperts:
         )
         plan.authenticate()
         spec = dict(specification, weight_layout=CUDA_COMPACT_PLANES, partial_reduce=True, tp_rank_inputs=False)
-        self.oracle = CudaOracle(PlanBanks(plan), spec, MAX_CHUNK * TOP_K)
+        self.oracle = CudaOracle(PlanBanks(plan), spec, self.max_chunk * TOP_K)
         self.configure_stream(specification.get("torch_stream_experts", False))
 
     def configure_stream(self, enabled):
@@ -198,7 +210,7 @@ class CudaExperts:
     def __call__(self, layer, x, ids, weights):
         t, oracle = self.torch, self.oracle
         rows = x.shape[0] * TOP_K
-        if not 1 <= x.shape[0] <= MAX_CHUNK:
+        if not 1 <= x.shape[0] <= self.max_chunk:
             raise ValueError("CUDA expert chunk exceeds admitted scratch")
         expanded = x[:, None, :].expand(-1, TOP_K, -1).reshape(rows, WIDTH).contiguous()
         ids = ids.to(t.int32).contiguous().flatten()

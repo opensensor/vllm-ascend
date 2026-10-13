@@ -130,16 +130,35 @@ def recurrent_kda(q, k, v, gate, beta, state, torch):
     return torch.stack(result)
 
 
+def prefill_convolution(history, kernel, torch):
+    """Reduce each four-tap window in FP32, round to FP16, then apply SiLU."""
+    windows = history.unfold(-1, kernel.shape[-1], 1)
+    convolved = (windows.float() * kernel[:, None, :]).sum(-1)
+    return torch.nn.functional.silu(convolved.to(history.dtype)).t().contiguous()
+
+
 class TextLayer:
     """One owner-local attention cache and complete decoder-layer computation."""
 
     def __init__(
-        self, index, weights, config, device, torch, experts, max_context, *, native_sinkhorn=None, tp_rank=None
+        self,
+        index,
+        weights,
+        config,
+        device,
+        torch,
+        experts,
+        max_context,
+        *,
+        native_sinkhorn=None,
+        tp_rank=None,
+        vectorized_prefill_conv=False,
     ):
         self.index, self.weights, self.config = index, weights, config
         self.device, self.torch, self.experts = device, torch, experts
         self.max_context, self.native_sinkhorn = max_context, native_sinkhorn
         self.tp_rank = tp_rank
+        self.vectorized_prefill_conv = vectorized_prefill_conv
         self.heads = HEADS // 2 if tp_rank is not None else HEADS
         self.linear = config["layer_types"][index] == "linear_attention"
         self.state, self.conv, self.cache = None, None, None
@@ -190,13 +209,17 @@ class TextLayer:
         qkv, b, fa, ga = projected.split((3 * heads * HEAD_DIM, heads, HEAD_DIM, HEAD_DIM), -1)
         history = t.cat((self.conv, qkv.t()), -1)
         kernel = w["self_attn.conv"].view(3 * heads * HEAD_DIM, 4).float()
-        rows = []
-        for offset in range(x.shape[0]):
-            convolved = (history[:, offset : offset + 4].float() * kernel).sum(-1)
-            # Conv kernels round the accumulation before SiLU.
-            rows.append(t.nn.functional.silu(convolved.to(x.dtype)))
+        if self.vectorized_prefill_conv and self.device == "cuda" and x.shape[0] > 1:
+            convolved_rows = prefill_convolution(history, kernel, t)
+        else:
+            rows = []
+            for offset in range(x.shape[0]):
+                convolved = (history[:, offset : offset + 4].float() * kernel).sum(-1)
+                # Conv kernels round the accumulation before SiLU.
+                rows.append(t.nn.functional.silu(convolved.to(x.dtype)))
+            convolved_rows = t.stack(rows)
         self.conv.copy_(history[:, -3:])
-        q, k, v = t.stack(rows).reshape(-1, 3, heads, HEAD_DIM).unbind(1)
+        q, k, v = convolved_rows.reshape(-1, 3, heads, HEAD_DIM).unbind(1)
         raw_gate = self.project(fa, "self_attn.f_b_proj.weight").reshape(-1, heads, HEAD_DIM).float()
         gate = LOWER_BOUND * t.sigmoid(
             t.exp(w["self_attn.A_log"].float())[None, :, None]

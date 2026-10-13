@@ -1,0 +1,125 @@
+{
+  "passed": true,
+  "fixture": {
+    "prompt_tokens": 2048,
+    "output_tokens": 8,
+    "cached_tokens": 0,
+    "ignore_eos": true,
+    "recipe_file": "benchmark-recipe.json",
+    "seed_text": "Inspect this module for profiler test 20261011 and explain the control flow. ",
+    "prompt_token_ids_json_sha256": {
+      "2048": "b5c36c9db9c3072c1ebdc4681a867218b89fffaee9c21d470881c694587a87c0",
+      "8192": "075ea56e4db58846d6d27dd9baf16caac044122815be313f9a0813803c75b003"
+    }
+  },
+  "before": {
+    "samples": 3,
+    "ttft_seconds": [
+      26.740200031985296,
+      26.77985121900565,
+      27.02296511500026
+    ],
+    "median_ttft_seconds": 26.77985121900565,
+    "median_uncached_prompt_tokens_per_second": 76.47540620190358
+  },
+  "after": {
+    "samples": 3,
+    "ttft_seconds": [
+      22.835285422974266,
+      23.214437312999507,
+      23.854635460011195
+    ],
+    "median_ttft_seconds": 23.214437312999507,
+    "median_uncached_prompt_tokens_per_second": 88.22096234282495
+  },
+  "ttft_reduction_percent": 13.31379280955739,
+  "prefill_rate_improvement_percent": 15.35860575870862,
+  "long_prompt": {
+    "prompt_tokens": 8192,
+    "output_tokens": 8,
+    "cached_tokens": 0,
+    "before_ttft_seconds": 96.40006238801288,
+    "after_ttft_seconds": 79.99883954398683,
+    "ttft_reduction_percent": 17.01370563227509,
+    "samples_per_configuration": 1
+  },
+  "decode": {
+    "prompt_tokens": 2048,
+    "output_tokens": 64,
+    "samples": 3,
+    "rates": [
+      12.219228599338837,
+      12.017949019748254,
+      12.461893537345151
+    ],
+    "median_tokens_per_second": 12.219228599338837,
+    "previous_published_median_tokens_per_second": 12.424850324177951
+  },
+  "all_matched_text_equal": true,
+  "prefill_gate": {
+    "full_vocabulary_bitwise_equal": true,
+    "max_abs_logit_error": 0.0,
+    "prompt_tokens": 2048,
+    "output_tokens": 64,
+    "matched_boundaries": 127,
+    "vocabulary_size": 154880
+  },
+  "larger_batches": {
+    "qualified": false,
+    "never_exposed_to_api": true,
+    "max_abs_logit_error": {
+      "64": 8.16015625,
+      "128": 4.5634765625
+    },
+    "root_cause_isolated": false
+  },
+  "api_cases": [
+    "concurrent_isolation",
+    "stream_equivalence",
+    "cancel_before_prefill",
+    "cancel_during_decode",
+    "kilo_output_budget",
+    "over_context_rejected"
+  ],
+  "unit_tests_passed": 795,
+  "changed_file_hooks_passed": true,
+  "full_repository_ci_passed": false,
+  "existing_full_ci_failed_hooks": [
+    "ruff-check",
+    "ruff-format",
+    "codespell",
+    "typos",
+    "clang-format",
+    "markdownlint",
+    "check-forbidden-imports"
+  ],
+  "hardware": {
+    "nvidia": "RTX PRO 6000 Blackwell",
+    "ascend": "one 310P Duo card",
+    "physical_chips": [
+      2,
+      3
+    ],
+    "other_card_untouched": true,
+    "clocks_ecc_power_unchanged": true
+  },
+  "runtime": {
+    "endpoint": "http://192.168.53.187:8000/v1",
+    "model": "glm-sidecard",
+    "cuda_prefill_conv": true,
+    "prefill_chunk_size": 32,
+    "max_context_admitted": 65536,
+    "largest_completed_prompt_this_iteration": 8192,
+    "near_capacity_completion_validated": false,
+    "broad_long_context_quality_validated": false,
+    "source_parity": {
+      "passed": true,
+      "compared_python_files": 104,
+      "mismatched_files": []
+    }
+  },
+  "excluded_different_prompt_runs": {
+    "prefix": "review-prompt-",
+    "included_in_matched_comparisons": false
+  }
+}

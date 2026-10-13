@@ -17,6 +17,7 @@ def test_native_work_and_copies_use_current_torch_stream_without_sync(bits):
     unexpected = Mock(side_effect=AssertionError("synchronous expert path used"))
     copy = Mock(return_value=0)
     actor = object.__new__(CudaExperts)
+    actor.max_chunk = 32
     actor.use_stream = True
     actor.torch = SimpleNamespace(
         arange=allocate(torch.arange),

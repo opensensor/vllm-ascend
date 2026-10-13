@@ -65,6 +65,7 @@ def test_worker_metadata_does_not_read_past_buffer():
 
 def test_native_completion_event_is_fresh_for_each_worker_invocation():
     slots = object.__new__(WorkerSlots)
+    slots.max_chunk = 32
     completions = []
     slots.torch = SimpleNamespace(
         float16=torch.float16,
@@ -206,6 +207,7 @@ class Peer:
 
 def dispatcher():
     value = object.__new__(DmaDispatch)
+    value.max_chunk = 32
     events = []
     hot = torch.tensor([1, 31, 76, 125, 144, 210, 223, 284])
     lookup = torch.full((288,), -1, dtype=torch.int32)
@@ -274,6 +276,19 @@ def test_source_events_precede_control_and_shared_overlaps_both_workers():
     ]
     assert events.index(("shared", None)) < events.index(("control_receive", 0))
     assert events.index(("write_visibility", None)) > events.index(("control_receive", 1))
+
+
+@pytest.mark.parametrize("rows", [64, 128])
+def test_larger_prefill_batches_share_slots_and_keep_both_rank_results(rows):
+    actor, events = dispatcher()
+    actor.max_chunk = rows
+    x = torch.ones(rows, 4096).half()
+    ids = torch.tensor([[1, 2, 3, 4, 144, 145, 146, 210]]).expand(rows, -1)
+    weights = torch.ones(rows, 8)
+    actual = actor(18, x, ids, weights)
+    torch.testing.assert_close(actual, x.float() * (ids + 1).sum(-1, keepdim=True))
+    assert actor.sequences == [1, 1]
+    assert events[-1] == ("write_visibility", None)
 
 
 @pytest.mark.parametrize("rows,shared", [(1, True), (4, True), (1, False)])
@@ -396,6 +411,7 @@ def test_cancelled_prefill_stops_between_complete_chunks_without_poisoning_engin
     from tools.sidecard.expert_actor import ExpertCoordinator
 
     engine = object.__new__(ExpertCoordinator)
+    engine.prefill_chunk_size = 32
     cancel = threading.Event()
     seen = []
 

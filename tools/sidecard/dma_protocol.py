@@ -73,9 +73,9 @@ def validate_descriptor(value):
         raise ValueError("invalid CUDA IPC handle size")
 
 
-def validate_command(tag, expected, layers=NPU_LAYERS):
+def validate_command(tag, expected, layers=NPU_LAYERS, *, max_chunk=MAX_CHUNK):
     sequence, layer, rows = COMMAND.unpack(tag)
-    if sequence != expected or layer not in layers or not 1 <= rows <= MAX_CHUNK:
+    if sequence != expected or layer not in layers or not 1 <= rows <= max_chunk:
         raise ValueError("invalid direct expert request identity")
     return sequence, layer, rows
 

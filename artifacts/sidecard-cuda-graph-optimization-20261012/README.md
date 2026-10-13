@@ -101,4 +101,6 @@ API checks, worker receipts, and capacity scope are in `summary.json` and
 Near-capacity prefill completion, broad model quality, and automatic fault
 recovery remain unqualified. Dynamic sparse attention and native cold experts
 still offer optimization opportunities. The deterministic Ascend decode path
-continues to use nine-row padding; this iteration does not replace that kernel.
+uses 17-row padding in the pinned v1140 helper; this iteration does not replace
+that kernel. The earlier nine-row description was incorrect; both runtime
+expert-repeat receipts record 17 rows.
