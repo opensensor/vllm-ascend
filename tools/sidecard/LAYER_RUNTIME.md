@@ -13,8 +13,12 @@ The server is independent of vLLM's scheduler. A single heterogeneous
 Use the custom entry point below. The [hardware report](../../artifacts/sidecard-layer-runtime-20261012/README.md)
 records the original tested scope and timings. The
 [optimization report](../../artifacts/sidecard-layer-optimization-20261012/README.md)
-records projection layout and graph/stream experiments. The previous per-expert sidecard
-service on port 8001 is superseded.
+records projection layout and graph/stream experiments. The
+[complete-block DMA experiment](../../artifacts/sidecard-layer-dma-20261013/README.md)
+adds direct transfers and the current CUDA/native rounding optimizations.
+The active, faster [expert-only service](../../artifacts/sidecard-projection-20261013/README.md)
+uses the CUDA backbone and has a qualified 128K context. The complete-layer
+implementation remains an experimental alternative.
 
 The [cold-expert study](../../artifacts/sidecard-cold-expert-study-20261012/README.md)
 retains synchronized component attribution and a real-weight expert-only probe.
@@ -23,8 +27,9 @@ traces in a private diagnostic runtime; NPU decode graphs must be disabled.
 This deliberately synchronizes each component and records selected expert IDs
 and original route weights. Use `tools.sidecard.layer_profile_run` against a
 qualified numerical reference and arrange service restoration before starting.
-Profiled timing is not production throughput. The expert-only design remains a
-candidate; launch the complete-layer service for the qualified implementation.
+Profiled timing is not production throughput. Use the current expert-only
+service for the qualified deployment; use fresh isolated output directories
+and exclusive accelerator ownership for complete-layer experiments.
 
 ## Execution and arithmetic
 
@@ -42,17 +47,28 @@ deterministic cuBLAS workspace. Expert codes and permanent FP16 scales are uncha
 Both architectures apply the checkpoint's asymmetric SwiGLU clipping:
 gate at most 10, up in [-10, 10].
 
-Known prompt chunks use a bounded two-slot pipeline: prepare CUDA prefix B
+With socket transport, known prompt chunks use a bounded two-slot pipeline: prepare CUDA prefix B
 while Ascend processes A; send B before CUDA suffix A. Prefix and suffix
 share one RTX and execute in order. Autoregressive decode is serial.
+With `stage_transport: direct-dma`, both chips receive complete state directly
+from CUDA and rank zero returns it using the existing PCIe bridge. This
+serialized implementation uses coordinator-owned 4 MiB slots and admits
+32 prefill rows. It does not overlap prompt chunks. Host sockets carry metadata
+and acknowledgements; payloads stay on devices. Native mapping release must
+complete on both workers before CUDA frees a slot.
+
 KV, KDA recurrent/causal-convolution state, and sparse pool/tail state stay
 with each layer. Sparse DSA uses learned causal pooled selection after 2,048
 tokens. A new request clears all stage state; there is no cross-request
 prefix reuse. Requests run one at a time.
 
 Optional `cuda_decode_graphs` and `npu_decode_graphs` specification fields
-capture contiguous KDA spans for single-token execution. DSA and its
-Python cache-length updates stay eager; multi-token prefill also stays eager.
+capture contiguous KDA spans for single-token execution. Ascend DSA stays
+eager. CUDA can also enable the qualified `direct_dma.cuda_dsa_graphs`,
+`cuda_indexer_hadamard`, and `cuda_indexer_projection_graphs` options; cache
+cursor updates remain outside captured projections. Multi-token prefill stays
+eager. Optional `npu_native_bf16_round` uses the existing operator library only
+for large single-row state conversion, preserving BF16 rounding and FP32 range.
 Capture warms each span before recording, then resets recurrent/convolution
 state. Every replay copies all deferred mHC inputs into owner-private buffers.
 CUDA capture requires `cuda_backend.torch_stream_experts: true`: native
@@ -63,8 +79,10 @@ repeat gate and a completed API benchmark before promotion.
 
 HCCL remains an Ascend-only collective. Its raw Broadcast was a no-op on
 this 310P stack; the runtime qualifies byte AllGather and FP32 SUM before
-loading. Idle workers block on private CPU sockets, avoiding collective
-operations or idle timeouts. Every NPU child installs a parent-death signal.
+loading. Socket transport uses byte AllGather for boundary state; DMA sends
+the input to each chip directly. Idle workers block on private CPU sockets.
+Legacy socket children install parent-death signals. Privileged DMA workers
+preserve owners after uncertain transfers or unacknowledged mapping release.
 Shutdown interrupts prefill between chunks and closes only owned processes.
 
 ## Qualified environment
@@ -171,8 +189,10 @@ Chat accepts system/user/assistant text messages. Use `temperature: 0`, `n: 1`;
 context budget. Streaming supports `[DONE]` and optional final usage.
 Chat separates `reasoning_content` from `content`, including terminators
 split across chunks. `reasoning_effort` accepts low/high/max. Benchmark-only
-`ignore_eos: true` completes a fixed token count. Custom stop, tools,
-logprobs, response formats, images, and non-greedy sampling are rejected.
+`ignore_eos: true` completes a fixed token count. The shared server also supports text function-tool messages and streaming
+through its current tool adapter; these block experiments did not benchmark
+tool use. Custom stop, logprobs, response formats, images, and non-greedy
+sampling are rejected.
 
 | Feature | Status in this runtime |
 | --- | --- |
@@ -180,8 +200,8 @@ logprobs, response formats, images, and non-greedy sampling are rejected.
 | TP2 middle attention/shared MLP and EP2 experts | Implemented and hardware gated |
 | Greedy repeated request | Bitwise native expert and complete output checks |
 | Sparse DSA beyond 2K | Implemented; independent changed-input selection gates on both devices |
-| Two-slot prefill overlap | Implemented; complete-model serial/pipeline parity gate |
-| KDA span ACLGraph / CUDA graph capture | Optional one-token replay; DSA and multi-token prefill stay eager |
+| Two-slot prefill overlap | Socket only; DMA complete-block slot is serialized |
+| KDA span ACLGraph / CUDA graph capture | Optional one-token replay; CUDA DSA replay also available; Ascend DSA/prefill eager |
 | flashcomm1 | Not implemented in this independent actor runtime |
 | MTP | Disabled; main layers 0–44 only |
 | Multimodal | Vision tower outside the initial text scope |

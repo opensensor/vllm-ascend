@@ -225,7 +225,7 @@ def test_chat_accepts_tokenizer_batchencoding_result():
 def test_final_contraction_preserves_residual_range_until_norm(monkeypatch):
     layer = object.__new__(TextLayer)
     layer.torch, layer.device, layer.index, layer.linear, layer.tp_rank = torch, "cpu", 44, False, None
-    layer.native_sinkhorn = None
+    layer.native_sinkhorn = layer.native_round = None
     layer.config = {"num_hidden_layers": 45, "routed_scaling_factor": 2.5}
     layer.weights = {"mlp.gate.weight": torch.zeros(288, 6), "mlp.gate.e_score_correction_bias": torch.zeros(288)}
     hidden = torch.zeros(1, 6).half()

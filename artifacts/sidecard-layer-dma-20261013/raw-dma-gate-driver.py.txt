@@ -1,0 +1,30 @@
+import argparse,json,os,sys,subprocess,hashlib
+from pathlib import Path
+parser=argparse.ArgumentParser();parser.add_argument('--worker',action='store_true');parser.add_argument('--config',required=True);parser.add_argument('--rank',type=int);parser.add_argument('--socket');parser.add_argument('--nonce');parser.add_argument('--parent-pid',type=int);parser.add_argument('--parent-uid',type=int);parser.add_argument('--bootstrap',action='store_true');args=parser.parse_args();spec=json.loads(Path(args.config).read_bytes())
+if args.worker and args.bootstrap:
+ env=dict(os.environ);env.update(json.loads(Path(spec['npu_environment']).read_bytes()));env['ASCEND_RT_VISIBLE_DEVICES']='2,3';env['PYTHONPATH']=str(Path(args.config).parent/'source')+':'+env.get('PYTHONPATH','');cmd=[spec['npu_python'],__file__,*[v for v in sys.argv[1:] if v!='--bootstrap']];os.execve(cmd[0],cmd,env)
+import torch
+from tools.sidecard.stage_dma import StageDMA,serve
+if args.worker:
+ import torch_npu
+ torch.npu.set_device(args.rank);torch_npu.npu.set_compile_mode(jit_compile=False);args.stage_dma=args.config
+ serve(args,[],None,torch)
+else:
+ original=subprocess.Popen
+ def spawn(command,**kwargs):
+  command=command[:3]+[__file__,'--worker']+command[5:]
+  return original(command,**kwargs)
+ subprocess.Popen=spawn
+ transport=StageDMA(args.config,torch)
+ try:
+  transport.ready();cases=[]
+  for seq,rows in enumerate([1,4,32,1,32,4]):
+   torch.manual_seed(179+seq)
+   values=(torch.randn(rows,4096,device='cuda').half(),torch.randn(rows,4,4096,device='cuda')*100000,torch.randn(rows,4,1,device='cuda'),torch.randn(rows,4,4,device='cuda'))
+   observed=transport.compute(values,0,seq,131072)
+   flags=[torch.equal(a,b) for a,b in zip(values,observed)]
+   assert all(flags)
+   cases.append(dict(rows=rows,sequence=seq,bitwise_equal=flags))
+ finally:transport.close()
+ report=dict(passed=True,cases=cases,payload_host_staging=False,model_math_executed=False)
+ (Path(spec['output'])/'raw-gate.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report))

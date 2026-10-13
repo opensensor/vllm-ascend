@@ -21,11 +21,15 @@ import time
 from datetime import timedelta
 from pathlib import Path
 
+from .indexer_projection_graph import IndexerProjectionGraph
+from .indexer_projection_graph import enabled as projection_graph_enabled
 from .layer_decode_graph import DecodeGraphs
+from .layer_indexer import cuda_rotation_enabled
 from .layer_math import TextLayer, rms_norm, validate_config
 from .layer_stage_profile import StageProfile
 from .layer_tp_gate import validate_tp
 from .layer_weights import GPU_LAYERS, MAX_CHUNK, NPU_LAYERS, CudaExperts, NpuExperts, load_dense
+from .stage_options import enabled as stage_dma_enabled
 from .stage_wire import MAX_BODY_BYTES, descriptors, metadata, receive_into, send
 
 READY = b"LAYER_READY\n"
@@ -93,10 +97,12 @@ def npu_worker(args):
     torch.use_deterministic_algorithms(True)
     torch.npu.set_device(args.rank)
     torch_npu.npu.set_compile_mode(jit_compile=False)
-    native_sinkhorn = None
+    native_sinkhorn = native_round = None
     if args.ops_library:
         torch.ops.load_library(args.ops_library)
         native_sinkhorn = torch.ops._C_ascend.mhc_sinkhorn_310
+        if getattr(args, "native_bf16_round", False):
+            native_round = torch.ops._C_ascend.mhc_bf16_round_310
     torch.distributed.init_process_group(
         "hccl", init_method=args.init_method, rank=args.rank, world_size=2, timeout=timedelta(seconds=STARTUP_TIMEOUT)
     )
@@ -129,6 +135,7 @@ def npu_worker(args):
             experts,
             args.max_context,
             native_sinkhorn=native_sinkhorn,
+            native_round=native_round,
             tp_rank=args.rank,
         )
         for layer in NPU_LAYERS
@@ -149,6 +156,16 @@ def npu_worker(args):
             )
             + "\n"
         )
+    if getattr(args, "stage_dma", None):
+        from .stage_dma import serve
+
+        try:
+            serve(args, layers, decode_graphs, torch)
+        finally:
+            if decode_graphs is not None:
+                decode_graphs.close()
+            torch.distributed.destroy_process_group()
+        return
     control_connection = socket.socket(fileno=args.control_fd)
     receive_buffer = bytearray(MAX_BODY_BYTES)
     connection = socket.socket(fileno=args.fd) if args.rank == 0 else None
@@ -273,6 +290,9 @@ class Coordinator:
         torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
         torch.use_deterministic_algorithms(True)
         self.spec = json.loads(Path(config_path).read_bytes())
+        direct_stage = stage_dma_enabled(self.spec)
+        fused_indexer = cuda_rotation_enabled(self.spec)
+        indexer_graphs = projection_graph_enabled(self.spec)
         if self.spec.get("routed_swiglu_limit") != 10.0 or not self.spec.get("native_gate_override"):
             raise ValueError("GLM requires authenticated clipped CUDA and Ascend routed kernels")
         override = json.loads(Path(self.spec["native_gate_override"]).read_bytes())
@@ -286,7 +306,7 @@ class Coordinator:
         self.output = Path(self.spec["output"])
         self.output.mkdir(exist_ok=True)
         self.processes, self.logs = [], []
-        self.connection, self.experts = None, None
+        self.connection, self.experts, self.stage_dma = None, None, None
         self.sequence, self.position = 0, 0
         self.request_context_limit = self.max_context
         self.metrics = {"prefix_ms": [], "middle_roundtrip_ms": [], "suffix_ms": []}
@@ -298,22 +318,43 @@ class Coordinator:
             self.experts = CudaExperts(self.root, self.identity, self.spec["cuda_backend"], torch)
             weights, self.globals = load_dense(self.root, GPU_LAYERS, "cuda", torch, include_globals=True)
             self.layers = {
-                layer: TextLayer(layer, weights[layer], self.config, "cuda", torch, self.experts, self.max_context)
+                layer: TextLayer(
+                    layer,
+                    weights[layer],
+                    self.config,
+                    "cuda",
+                    torch,
+                    self.experts,
+                    self.max_context,
+                    vectorized_prefill_conv=self.spec.get("cuda_prefill_conv", False),
+                    fused_cuda_indexer=fused_indexer,
+                )
                 for layer in GPU_LAYERS
             }
             self.prefix_graphs, self.suffix_graphs = None, None
+            if indexer_graphs:
+                with torch.inference_mode():
+                    for layer in self.layers.values():
+                        if not layer.linear:
+                            layer.indexer.projection_graph = IndexerProjectionGraph(layer.indexer)
+                            layer.indexer.projection_graph_enabled = True
             if self.spec.get("cuda_decode_graphs", False):
                 if not self.spec["cuda_backend"].get("torch_stream_experts", False):
                     raise ValueError("CUDA decode capture requires stream-aware expert kernels")
                 with torch.inference_mode():
-                    self.prefix_graphs = DecodeGraphs([self.layers[index] for index in range(18)], torch, "cuda")
-                    self.suffix_graphs = DecodeGraphs([self.layers[index] for index in range(33, 45)], torch, "cuda")
+                    dsa_graphs = self.spec.get("direct_dma", {}).get("cuda_dsa_graphs", False)
+                    self.prefix_graphs = DecodeGraphs(
+                        [self.layers[index] for index in range(18)], torch, "cuda", dsa_graphs=dsa_graphs
+                    )
+                    self.suffix_graphs = DecodeGraphs(
+                        [self.layers[index] for index in range(33, 45)], torch, "cuda", dsa_graphs=dsa_graphs
+                    )
                 (self.output / "cuda-decode-graphs.json").write_text(
                     json.dumps(
                         {
                             "prefix": list(self.prefix_graphs.graphs),
                             "suffix": list(self.suffix_graphs.graphs),
-                            "scope": "single-token KDA spans; DSA and vocabulary head eager",
+                            "scope": "single-token KDA spans; optional CUDA DSA replay; vocabulary head eager",
                         },
                         indent=2,
                     )
@@ -324,6 +365,10 @@ class Coordinator:
             # cache/workspace; retaining them wastes several GiB on this model.
             torch.cuda.synchronize()
             torch.cuda.empty_cache()
+            if direct_stage:
+                self.stage_dma.ready()
+                self.receive_buffer = None
+                return
             self.connection.settimeout(STARTUP_TIMEOUT)
             received = bytearray()
             while len(received) < len(READY):
@@ -352,6 +397,13 @@ class Coordinator:
             raise
 
     def start_npu(self, config_path):
+        if stage_dma_enabled(self.spec):
+            # Lazy import breaks the existing expert-probe/actor import cycle.
+            from .stage_dma import StageDMA
+
+            self.stage_dma = StageDMA(config_path, self.torch)
+            self.processes = self.stage_dma.processes
+            return
         environment = dict(os.environ)
         environment.update(json.loads(Path(self.spec["npu_environment"]).read_bytes()))
         environment["ASCEND_RT_VISIBLE_DEVICES"] = "2,3"
@@ -392,6 +444,8 @@ class Coordinator:
                 command.extend(("--ops-library", self.spec["npu_ops_library"]))
             if self.spec.get("npu_decode_graphs", False):
                 command.append("--decode-graphs")
+            if self.spec.get("npu_native_bf16_round", False):
+                command.append("--native-bf16-round")
             if self.spec.get("stage_profile", False):
                 command.append("--stage-profile")
             process = subprocess.Popen(
@@ -440,33 +494,16 @@ class Coordinator:
                 t.cuda.synchronize()
                 prefix_end = time.perf_counter()
                 positions = t.arange(self.position, self.position + len(tokens), dtype=t.int64)
-                prefix_body = pack_state(state, positions, t)
-                send(
-                    self.connection,
-                    metadata(
-                        len(tokens), self.sequence, self.identity, request_context_limit=self.request_context_limit
-                    ),
-                    prefix_body,
-                )
-                packet = receive_into(
-                    self.connection,
-                    memoryview(self.receive_buffer),
-                    checkpoint_sha256=self.identity,
-                    sequence=self.sequence,
-                )
-                if packet["rows"] != len(tokens):
-                    raise ValueError("stage reply row count differs")
-                if packet.get("request_context_limit") != self.request_context_limit:
-                    raise ValueError("stage reply changed its request cache reservation")
-                values = unpack_state(memoryview(self.receive_buffer), len(tokens), "cuda", t)
-                if values[-1].cpu().tolist() != positions.tolist():
-                    raise ValueError("stage reply positions differ")
-                state = values[:4]
-                middle_hash = (
-                    hashlib.sha256(memoryview(self.receive_buffer)[: packet["payload_bytes"]]).hexdigest()
-                    if self.fingerprints is not None
-                    else None
-                )
+                prefix_body = pack_state(state, positions, t) if self.fingerprints is not None else None
+                if self.stage_dma is not None:
+                    state = self.stage_dma.compute(state, self.position, self.sequence, self.request_context_limit)
+                    middle_hash = (
+                        hashlib.sha256(pack_state(state, positions, t)).hexdigest()
+                        if self.fingerprints is not None
+                        else None
+                    )
+                else:
+                    state, middle_hash = self.socket_middle(state, positions, prefix_body)
                 middle_end = time.perf_counter()
                 if self.suffix_graphs is not None:
                     state = self.suffix_graphs.forward(state)
@@ -501,6 +538,33 @@ class Coordinator:
             self.failed = True
             raise
 
+    def socket_middle(self, state, positions, prefix_body):
+        t = self.torch
+        send(
+            self.connection,
+            metadata(state[0].shape[0], self.sequence, self.identity, request_context_limit=self.request_context_limit),
+            prefix_body if prefix_body is not None else pack_state(state, positions, t),
+        )
+        packet = receive_into(
+            self.connection,
+            memoryview(self.receive_buffer),
+            checkpoint_sha256=self.identity,
+            sequence=self.sequence,
+        )
+        if packet["rows"] != state[0].shape[0]:
+            raise ValueError("stage reply row count differs")
+        if packet.get("request_context_limit") != self.request_context_limit:
+            raise ValueError("stage reply changed its request cache reservation")
+        values = unpack_state(memoryview(self.receive_buffer), state[0].shape[0], "cuda", t)
+        if values[-1].cpu().tolist() != positions.tolist():
+            raise ValueError("stage reply positions differ")
+        middle_hash = (
+            hashlib.sha256(memoryview(self.receive_buffer)[: packet["payload_bytes"]]).hexdigest()
+            if self.fingerprints is not None
+            else None
+        )
+        return values[:4], middle_hash
+
     def prefill(self, tokens, *, overlap=True):
         """Two bounded prefix slots overlap prefill on the shared GPU/NPU.
 
@@ -509,7 +573,7 @@ class Coordinator:
         middle chunk. Each suffix completes in sequence; decode never enters
         this path. Packet storage is private until its consumer finishes.
         """
-        if not overlap or len(tokens) <= MAX_CHUNK:
+        if self.stage_dma is not None or not overlap or len(tokens) <= MAX_CHUNK:
             logits = None
             for offset in range(0, len(tokens), MAX_CHUNK):
                 logits = self.forward(tokens[offset : offset + MAX_CHUNK])
@@ -599,6 +663,22 @@ class Coordinator:
             raise
 
     def close(self):
+        self.torch.cuda.synchronize()
+        for name in ("prefix_graphs", "suffix_graphs"):
+            graphs = getattr(self, name, None)
+            if graphs is not None:
+                graphs.close()
+                setattr(self, name, None)
+        for layer in getattr(self, "layers", {}).values():
+            indexer = getattr(layer, "indexer", None)
+            if indexer is not None and indexer.projection_graph is not None:
+                indexer.projection_graph.close()
+                indexer.projection_graph = None
+                indexer.projection_graph_enabled = False
+        if self.stage_dma is not None:
+            self.stage_dma.close()
+            self.stage_dma = None
+            self.processes = []
         if self.connection is not None:
             self.connection.close()
         for process in self.processes:
@@ -612,6 +692,9 @@ class Coordinator:
                 process.wait(timeout=10)
         if self.experts is not None:
             self.experts.close()
+            self.experts = None
+        getattr(self, "layers", {}).clear()
+        getattr(self, "globals", {}).clear()
         for log in self.logs:
             log.close()
 
@@ -631,6 +714,7 @@ def main():
     parser.add_argument("--output", required=True)
     parser.add_argument("--decode-graphs", action="store_true")
     parser.add_argument("--stage-profile", action="store_true")
+    parser.add_argument("--native-bf16-round", action="store_true")
     args = parser.parse_args()
     guard_parent(args.parent_pid)
     npu_worker(args)

@@ -31,8 +31,9 @@ def prepare(output, specification, source):
     (destination / "sidecard").mkdir(parents=True)
     (destination / "glm_perf").mkdir()
     files = []
-    for original in sorted((source / "tools" / "sidecard").rglob("*.py")):
-        files.append(original)
+    for original in sorted((source / "tools" / "sidecard").rglob("*")):
+        if original.suffix in (".py", ".cu"):
+            files.append(original)
     files.extend(source / "tools" / "glm_perf" / name for name in GLM_DEPENDENCIES)
     hashes = {}
     for original in files:

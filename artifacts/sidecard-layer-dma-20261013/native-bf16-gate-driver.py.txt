@@ -1,0 +1,34 @@
+import json,os,sys,time
+from pathlib import Path
+if '--child' not in sys.argv:
+ import subprocess
+ env=dict(os.environ)
+ env.update(json.loads(Path('/srv/ai/storage/artifacts/sidecard-glm-service-20261011-one-card-v19/runtime-environment.json').read_bytes()))
+ env['ASCEND_RT_VISIBLE_DEVICES']='2,3'
+ raise SystemExit(subprocess.call(['/srv/ai/venvs/qwen38-w4-test-ce1862/bin/python',__file__,'--child'],env=env))
+import torch,torch_npu
+out=[]
+for rank in (0,1):
+ torch.npu.set_device(rank)
+ torch_npu.npu.set_compile_mode(jit_compile=False)
+ torch.ops.load_library('/srv/ai/storage/artifacts/glm-next-math-hardware-20261011/qualified-source/vllm_ascend/vllm_ascend_C.cpython-312-x86_64-linux-gnu.so')
+ for rows in (1,4,32):
+  torch.manual_seed(724+rows)
+  cpu=torch.randn(rows,4,4096,dtype=torch.float32)*97
+  cpu.flatten()[:8]=torch.tensor([0,1e-30,70000,-70000,65504,-65504,1.00390625,1.01171875])
+  x=cpu.to(f'npu:{rank}')
+  ref=x.to(torch.bfloat16).float()
+  try:
+   native=torch.ops._C_ascend.mhc_bf16_round_310(x)
+   torch.npu.synchronize()
+   exact=torch.equal(native.cpu(),ref.cpu())
+   timing={}
+   for name,fn in [('eager',lambda:x.to(torch.bfloat16).float()),('native',lambda:torch.ops._C_ascend.mhc_bf16_round_310(x))]:
+    for _ in range(5):fn()
+    torch.npu.synchronize();start=time.perf_counter()
+    for _ in range(100):fn()
+    torch.npu.synchronize();timing[name]=(time.perf_counter()-start)*1e6/100
+   out.append(dict(rank=rank,rows=rows,exact=exact,us=timing))
+  except Exception as e:out.append(dict(rank=rank,rows=rows,error=str(e)))
+Path('/tmp/sidecard-block-native-gate.json').write_text(json.dumps(out,indent=2)+'\n')
+print(json.dumps(out))

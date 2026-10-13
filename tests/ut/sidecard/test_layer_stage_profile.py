@@ -28,7 +28,7 @@ def test_profile_preserves_complete_middle_layer_math(tmp_path, monkeypatch, row
     layer = object.__new__(TextLayer)
     layer.torch, layer.weights, layer.device = torch, weights, "npu:0"
     layer.index, layer.linear, layer.tp_rank = 18 if linear else 19, linear, 0 if reduce else None
-    layer.native_sinkhorn = None
+    layer.native_sinkhorn = layer.native_round = None
     layer.config = dict(
         num_hidden_layers=45, rms_norm_eps=1e-5, hc_eps=1e-6, hc_sinkhorn_iters=20, routed_scaling_factor=2.5
     )

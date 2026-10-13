@@ -332,10 +332,12 @@ def main():
     (engine.output / "decode-repeat-gate.json").write_text(json.dumps(repeat, indent=2) + "\n")
     if not repeat["passed"]:
         raise RuntimeError("complete-model decode boundary/logit repeatability failed")
-    if specification.get("expert_transport") == "direct-dma":
-        reference_path = Path(specification["transport_reference"])
+    direct_stage = specification.get("stage_transport") == "direct-dma"
+    if specification.get("expert_transport") == "direct-dma" or direct_stage:
+        reference_key = "stage_transport_reference" if direct_stage else "transport_reference"
+        reference_path = Path(specification[reference_key])
         reference_bytes = reference_path.read_bytes()
-        if hashlib.sha256(reference_bytes).hexdigest() != specification["transport_reference_sha256"]:
+        if hashlib.sha256(reference_bytes).hexdigest() != specification[reference_key + "_sha256"]:
             raise ValueError("qualified socket full-model reference changed")
         reference = json.loads(reference_bytes)
         parity = {
@@ -344,7 +346,7 @@ def main():
             "full_vocabulary_bitwise_equal": repeat["traces"][0] == reference["traces"][0],
             "greedy_output_ids_equal": repeat["teacher_forced_tokens"] == reference["teacher_forced_tokens"],
             "vocabulary_size": VOCAB_SIZE,
-            "reference_sha256": specification["transport_reference_sha256"],
+            "reference_sha256": specification[reference_key + "_sha256"],
         }
         (engine.output / "transport-parity.json").write_text(json.dumps(parity, indent=2) + "\n")
         if not parity["passed"]:
@@ -356,8 +358,8 @@ def main():
             output=engine.output / "dsa-graph-parity.json",
         )
     npu_prefill_graphs = specification.get("direct_dma", {}).get("npu_prefill_graphs", False)
-    requires_prefill_reference = npu_prefill_graphs or specification.get("direct_dma", {}).get(
-        "cuda_completion_contract", False
+    requires_prefill_reference = getattr(engine, "architecture", None) == ExpertCoordinator.architecture and (
+        npu_prefill_graphs or specification.get("direct_dma", {}).get("cuda_completion_contract", False)
     )
     if (
         specification.get("cuda_prefill_conv", False)
@@ -423,7 +425,7 @@ def main():
             "status": "ok",
             "architecture": getattr(engine, "architecture", "cuda-prefix-ascend-middle-cuda-suffix"),
             "max_model_len": engine.max_context,
-            "expert_transport": specification.get("expert_transport", "socket"),
+            "expert_transport": specification.get("stage_transport", specification.get("expert_transport", "socket")),
         }
 
     @app.get("/v1/models")

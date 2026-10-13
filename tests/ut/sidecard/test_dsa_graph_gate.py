@@ -8,7 +8,8 @@ from tools.sidecard.dsa_graph_gate import validate
 
 
 @pytest.mark.parametrize("fail", [False, True])
-def test_parity_compares_same_teacher_forced_inputs_and_restores_graph_owners(fail):
+@pytest.mark.parametrize("middle_on_cuda", [False, True])
+def test_parity_compares_same_teacher_forced_inputs_and_restores_graph_owners(fail, middle_on_cuda):
     stages = tuple(SimpleNamespace(dsa_graphs={index: object()}) for index in (3, 19, 35))
     saved = tuple(stage.dsa_graphs for stage in stages)
     seen = []
@@ -20,6 +21,8 @@ def test_parity_compares_same_teacher_forced_inputs_and_restores_graph_owners(fa
         config={"index_topk": 2048},
         fingerprints=None,
     )
+    if not middle_on_cuda:
+        del engine.middle_graphs
 
     def reset(**kwargs):
         assert kwargs == {"context_limit": 2056}
@@ -39,7 +42,7 @@ def test_parity_compares_same_teacher_forced_inputs_and_restores_graph_owners(fa
     else:
         report = validate(engine, [1, 2, 3])
         assert report["passed"] and report["sparse_indexer_exercised"]
-        assert report["captured_layers"] == [3, 19, 35]
+        assert report["captured_layers"] == ([3, 19, 35] if middle_on_cuda else [3, 35])
     assert seen[:8] == seen[8:]
     assert engine.fingerprints is None
     assert all(stage.dsa_graphs is graphs for stage, graphs in zip(stages, saved, strict=True))

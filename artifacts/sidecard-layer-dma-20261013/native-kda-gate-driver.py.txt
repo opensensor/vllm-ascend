@@ -1,0 +1,33 @@
+import os,sys,json,subprocess,time
+from pathlib import Path
+if '--child' not in sys.argv:
+ env=dict(os.environ);env.update(json.loads(Path('/srv/ai/storage/artifacts/sidecard-glm-service-20261011-one-card-v19/runtime-environment.json').read_bytes()));env['ASCEND_RT_VISIBLE_DEVICES']='2,3'
+ env['PYTHONPATH']='/srv/ai/storage/artifacts/sidecard-layer-dma-20261013/dma-v1/source:'+env.get('PYTHONPATH','')
+ raise SystemExit(subprocess.call(['/srv/ai/venvs/qwen38-w4-test-ce1862/bin/python',__file__,'--child'],env=env))
+import torch,torch_npu
+from tools.sidecard.layer_math import recurrent_kda
+library='/srv/ai/storage/artifacts/glm-next-math-hardware-20261011/qualified-source/vllm_ascend/vllm_ascend_C.cpython-312-x86_64-linux-gnu.so'
+torch.ops.load_library(library)
+report=[]
+for rank in (0,1):
+ torch.npu.set_device(rank);torch_npu.npu.set_compile_mode(jit_compile=False)
+ for count in (1,4):
+  torch.manual_seed(1405+count)
+  dev=f'npu:{rank}'
+  q,k,v=[torch.randn(count,32,128).half().to(dev).contiguous() for _ in range(3)]
+  beta=torch.rand(count,32,device=dev)
+  gate=-torch.rand(count,32,128,device=dev)*5
+  state=torch.randn(32,128,128,device=dev)*.1
+  expected_state=state.clone();expected=recurrent_kda(q,k,v,gate,beta,expected_state,torch)
+  normalized=lambda x:(x.float()*torch.rsqrt(x.float().square().sum(-1,keepdim=True)+1e-6)).half().contiguous()
+  nq,nk=normalized(q),normalized(k);nb=beta.half().contiguous()
+  lengths=torch.tensor([count],dtype=torch.int32,device=dev);indices=torch.zeros(count,dtype=torch.int32,device=dev)
+  actual_state=state[None].clone().contiguous()
+  try:
+   start=time.perf_counter()
+   observed=torch.ops._C_ascend.npu_recurrent_gated_delta_rule_310(query=nq,key=nk,value=v,beta=nb,state=actual_state,actual_seq_lengths=lengths,ssm_state_indices=indices,g=None,gk=gate.contiguous(),num_accepted_tokens=None,scale_value=128**-.5)
+   torch.npu.synchronize();latency=(time.perf_counter()-start)*1000
+   error=(observed.float()-expected.float()).abs().cpu();state_error=(actual_state[0]-expected_state).abs().cpu()
+   report.append(dict(rank=rank,rows=count,fp32_state_accepted=True,finite=bool(observed.isfinite().all().cpu()),output_max_abs_error=float(error.max()),state_max_abs_error=float(state_error.max()),bitwise_equal=torch.equal(observed.cpu(),expected.cpu()),first_call_ms=latency,normalization_and_beta_cast='FP32 to FP16',serving_qualified=False))
+  except Exception as e:report.append(dict(rank=rank,rows=count,fp32_state_accepted=False,error=str(e),serving_qualified=False))
+Path('/tmp/sidecard-block-kda-gate.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report))

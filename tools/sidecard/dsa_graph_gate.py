@@ -10,7 +10,13 @@ PARITY_OUTPUT_TOKENS = 8
 
 
 def validate(engine, seed, *, output=None):
-    stages = (engine.prefix_graphs, engine.middle_graphs, engine.suffix_graphs)
+    # Complete-layer placement keeps the middle attention on Ascend. Its CUDA
+    # graph gate covers only prefix/suffix; expert placement covers all stages.
+    stages = (engine.prefix_graphs, engine.suffix_graphs)
+    if hasattr(engine, "middle_graphs"):
+        stages = (engine.prefix_graphs, engine.middle_graphs, engine.suffix_graphs)
+    if any(stage is None for stage in stages):
+        raise ValueError("DSA parity requires every CUDA stage to be captured")
     saved = tuple(stage.dsa_graphs for stage in stages)
     fingerprints = engine.fingerprints
     length = min(PARITY_PROMPT_TOKENS, engine.max_context - PARITY_OUTPUT_TOKENS)

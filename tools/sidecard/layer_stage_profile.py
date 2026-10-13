@@ -41,11 +41,15 @@ class StageProfile:
             raise ValueError("profile requires complete deferred mHC state")
         record = dict(layer=layer.index, attention="kda" if layer.linear else "dsa", components_ms={})
         timing = record["components_ms"]
-        residual = self.measure(timing, "deferred_mhc_post", lambda: mhc_post(hidden, residual, post, comb, t))
+        residual = self.measure(
+            timing, "deferred_mhc_post", lambda: mhc_post(hidden, residual, post, comb, t, layer.native_round)
+        )
         post, comb, x = self.measure(
             timing,
             "attention_mhc_pre",
-            lambda: mhc_pre(residual, w, "attn", "input_layernorm.weight", c, t, layer.native_sinkhorn),
+            lambda: mhc_pre(
+                residual, w, "attn", "input_layernorm.weight", c, t, layer.native_sinkhorn, layer.native_round
+            ),
         )
         x = self.measure(timing, "attention", lambda: layer.kda(x) if layer.linear else layer.dsa(x))
 
@@ -56,11 +60,15 @@ class StageProfile:
 
         if layer.tp_rank is not None:
             x = self.measure(timing, "attention_sum", reduce_attention)
-        residual = self.measure(timing, "attention_mhc_post", lambda: mhc_post(x, residual, post, comb, t))
+        residual = self.measure(
+            timing, "attention_mhc_post", lambda: mhc_post(x, residual, post, comb, t, layer.native_round)
+        )
         post, comb, x = self.measure(
             timing,
             "ffn_mhc_pre",
-            lambda: mhc_pre(residual, w, "ffn", "post_attention_layernorm.weight", c, t, layer.native_sinkhorn),
+            lambda: mhc_pre(
+                residual, w, "ffn", "post_attention_layernorm.weight", c, t, layer.native_sinkhorn, layer.native_round
+            ),
         )
 
         def route():

@@ -59,12 +59,14 @@ def rms_norm(x, weight, eps, torch):
     return (xf * torch.rsqrt(xf.square().mean(-1, keepdim=True) + eps) * weight.float()).to(weight.dtype)
 
 
-def round_state(x, torch):
+def round_state(x, torch, native_round=None):
     """Preserve BF16 residual range using FP32 storage on both architectures."""
+    if native_round is not None and x.shape[0] == 1 and x.numel() >= HIDDEN:
+        return native_round(x.contiguous())
     return x.to(torch.bfloat16).float()
 
 
-def mhc_post(x, residual, post, comb, torch):
+def mhc_post(x, residual, post, comb, torch, native_round=None):
     if residual.device.type == "cuda":
         from .cuda_layer_ops import mhc_post as cuda_mhc_post
 
@@ -72,10 +74,10 @@ def mhc_post(x, residual, post, comb, torch):
     # comb[input_stream, output_stream]; elementwise reduction avoids 310P's
     # FP32 matmul rounding to FP16 and makes the accumulator policy explicit.
     mixed = (residual[:, :, None, :] * comb[:, :, :, None]).sum(1)
-    return round_state(mixed + post * x[:, None, :].float(), torch)
+    return round_state(mixed + post * x[:, None, :].float(), torch, native_round)
 
 
-def mhc_pre(residual, weights, kind, norm_name, config, torch, native_sinkhorn=None):
+def mhc_pre(residual, weights, kind, norm_name, config, torch, native_sinkhorn=None, native_round=None):
     if residual.device.type == "cuda":
         from .cuda_layer_ops import mhc_pre as cuda_mhc_pre
 
@@ -108,7 +110,7 @@ def mhc_pre(residual, weights, kind, norm_name, config, torch, native_sinkhorn=N
         for _ in range(config["hc_sinkhorn_iters"] - 1):
             comb = comb / (comb.sum(-1, keepdim=True) + config["hc_eps"])
             comb = comb / (comb.sum(-2, keepdim=True) + config["hc_eps"])
-    layer_input = round_state((pre[..., None] * residual).sum(1), torch)
+    layer_input = round_state((pre[..., None] * residual).sum(1), torch, native_round)
     return (
         round_state(post[..., None], torch),
         round_state(comb, torch),
@@ -151,6 +153,7 @@ class TextLayer:
         max_context,
         *,
         native_sinkhorn=None,
+        native_round=None,
         tp_rank=None,
         vectorized_prefill_conv=False,
         fused_cuda_indexer=False,
@@ -158,6 +161,7 @@ class TextLayer:
         self.index, self.weights, self.config = index, weights, config
         self.device, self.torch, self.experts = device, torch, experts
         self.max_context, self.native_sinkhorn = max_context, native_sinkhorn
+        self.native_round = native_round
         self.tp_rank = tp_rank
         self.vectorized_prefill_conv = vectorized_prefill_conv
         self.fused_cuda_indexer = fused_cuda_indexer
@@ -317,8 +321,10 @@ class TextLayer:
                 raise ValueError("noninitial layer requires complete deferred mHC state")
             residual = hidden[:, None, :].expand(-1, STREAMS, -1).float().contiguous()
         else:
-            residual = mhc_post(hidden, residual, post, comb, t)
-        post, comb, x = mhc_pre(residual, w, "attn", "input_layernorm.weight", c, t, self.native_sinkhorn)
+            residual = mhc_post(hidden, residual, post, comb, t, self.native_round)
+        post, comb, x = mhc_pre(
+            residual, w, "attn", "input_layernorm.weight", c, t, self.native_sinkhorn, self.native_round
+        )
         return x, residual, post, comb
 
     def finish_attention(self, x, residual, post, comb):
@@ -327,8 +333,10 @@ class TextLayer:
             x = x.float()
             t.distributed.all_reduce(x)
             x = x.to(t.float16)
-        residual = mhc_post(x, residual, post, comb, t)
-        post, comb, x = mhc_pre(residual, w, "ffn", "post_attention_layernorm.weight", c, t, self.native_sinkhorn)
+        residual = mhc_post(x, residual, post, comb, t, self.native_round)
+        post, comb, x = mhc_pre(
+            residual, w, "ffn", "post_attention_layernorm.weight", c, t, self.native_sinkhorn, self.native_round
+        )
         return x, residual, post, comb
 
     def prepare_forward(self, hidden, residual=None, post=None, comb=None):

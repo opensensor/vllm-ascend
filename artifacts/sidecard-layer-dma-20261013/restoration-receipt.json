@@ -1,0 +1,31 @@
+{
+  "health": {
+    "status": "ok",
+    "architecture": "cuda-backbone-ascend-experts",
+    "max_model_len": 131072,
+    "expert_transport": "direct-dma"
+  },
+  "coordinator": {
+    "pid": 3244009,
+    "command": [
+      "/srv/ai/venvs/sidecard-cuda-20261012/bin/python",
+      "-m",
+      "tools.sidecard.layer_server",
+      "--config",
+      "/srv/ai/storage/artifacts/sidecard-projection-20261013/serve-after-block-v1/runtime.json",
+      "--port",
+      "8000"
+    ]
+  },
+  "source_manifest_sha256": "30ac776551a86cbacb2806c63ace0d6288fe411b465301f84a1e701843ec73ce",
+  "bridge_references": 6,
+  "gates": {
+    "pipeline-parity.json": true,
+    "transport-parity.json": true,
+    "decode-repeat-gate.json": true,
+    "dsa-graph-parity.json": true,
+    "prefill-parity.json": true,
+    "prefix-parity.json": true
+  },
+  "startup_generation_completed": true
+}
