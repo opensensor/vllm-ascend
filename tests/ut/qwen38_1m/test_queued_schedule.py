@@ -109,6 +109,69 @@ def test_disabled_worker_bridge_does_not_observe_or_touch_drafts():
     assert bridge.resolve(schedule) is schedule
 
 
+def omitted_request_fixture():
+    requests = {
+        "a": SimpleNamespace(num_prompt_tokens=128, output_token_ids=[7]),
+        "b": SimpleNamespace(num_prompt_tokens=512, output_token_ids=[]),
+    }
+    runner = SimpleNamespace(
+        requests=requests,
+        input_batch=SimpleNamespace(req_ids=["a", "b"]),
+        use_async_scheduling=False,
+        max_model_len=1024,
+        _get_draft_token_ids_cpu=lambda: ([[9, 10], [0, 0]], ["a", "b"]),
+    )
+    bridge = QueuedScheduleBridge(runner)
+    bridge.enabled = True
+    prefill = Schedule(Cached(["b"], [128], [0]), {}, {"b": 128}, total_num_scheduled_tokens=128)
+    bridge.resolve(prefill)  # Preserve a's drafts before b replaces the runner batch.
+    runner.input_batch.req_ids = ["b"]
+    runner._get_draft_token_ids_cpu = lambda: ([[0, 0]], ["b"])
+    decode = Schedule(Cached(["a"], [128], [1]), {"a": [-1, -1]}, {"a": 3})
+    return bridge, runner, decode
+
+
+def test_prefill_only_interposition_preserves_actual_drafts_for_omitted_request():
+    bridge, runner, schedule = omitted_request_fixture()
+    result = bridge.resolve(schedule)
+    assert result.scheduled_spec_decode_tokens == {"a": [9, 10]}
+    assert bridge.draft_cache_hits == 1
+    assert schedule.scheduled_spec_decode_tokens == {"a": [-1, -1]}
+    assert set(bridge.draft_snapshots) == {"a"}  # No dummy drafts from unfinished prefill b.
+
+
+@pytest.mark.parametrize(
+    "change", ["advanced", "replaced", "same_length_changed", "prompt_changed", "resumed", "finished"]
+)
+def test_omitted_draft_snapshot_cannot_outlive_its_worker_history(change):
+    bridge, runner, schedule = omitted_request_fixture()
+    if change == "advanced":
+        runner.requests["a"].output_token_ids.append(8)
+        schedule.scheduled_cached_reqs.num_computed_tokens = [129]
+    elif change == "replaced":
+        runner.requests["a"] = SimpleNamespace(num_prompt_tokens=128, output_token_ids=[7])
+    elif change == "same_length_changed":
+        runner.requests["a"].output_token_ids[-1] = 8
+    elif change == "prompt_changed":
+        runner.requests["a"].num_prompt_tokens = 127
+    elif change == "resumed":
+        schedule.scheduled_cached_reqs.resumed_req_ids.add("a")
+    else:
+        schedule.finished_req_ids.add("a")
+    with pytest.raises(ValueError):
+        bridge.resolve(schedule)
+    assert "a" not in bridge.draft_snapshots
+    assert bridge.draft_cache_hits == 0
+
+
+def test_latest_invalid_drafts_do_not_fall_back_to_an_old_snapshot():
+    bridge, runner, schedule = omitted_request_fixture()
+    runner._get_draft_token_ids_cpu = lambda: ([[-1, -1]], ["a"])
+    with pytest.raises(ValueError, match="actual worker-owned"):
+        bridge.resolve(schedule)
+    assert "a" not in bridge.draft_snapshots
+
+
 class Scheduler:
     def _update_after_schedule(self, output):
         output.append("scheduler")

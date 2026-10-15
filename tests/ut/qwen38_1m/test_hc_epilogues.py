@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
-from types import SimpleNamespace
+import sys
+from types import ModuleType, SimpleNamespace
 
 import pytest
 import torch
@@ -114,3 +115,50 @@ def test_verification_returns_reference_and_disables_mismatch(owner, monkeypatch
     assert not adapter.enabled
     assert adapter.replacement(None, None) is expected
     assert adapter.calls == 1
+
+
+@pytest.mark.parametrize("corrupt", [False, True])
+def test_shared_operand_verifies_narrowed_values_and_preserves_reference(owner, monkeypatch, corrupt):
+    op, _ = owner
+    monkeypatch.setattr(hc, "eligible", lambda *args: True)
+    expected = (torch.ones(1, 2).half(), (None, torch.tensor([[1.0001, -0.0]])))
+    adapter = hc.HCEpilogueAdapter(op, lambda *args: expected, share_operand=True)
+    saved = expected[1][1].half()
+    if corrupt:
+        saved[0, 1] = 0.0  # Signed-zero changes are also rejected.
+    adapter.candidate = lambda *args: (expected[0], (None, saved))
+    assert adapter.replacement(None, None) is expected
+    assert adapter.checked == 1 and adapter.mismatches == int(corrupt)
+    assert adapter.enabled is not corrupt
+    assert adapter.status()["share_operand"]
+
+
+@pytest.mark.parametrize("share", [False, True])
+def test_mix_reuses_the_actual_projection_operand_only_when_selected(monkeypatch, share):
+    monkeypatch.setattr(hc, "eligible", lambda *args: True)
+    monkeypatch.setattr(hc, "_capturing", lambda: False)
+    monkeypatch.setitem(sys.modules, "torch_npu", ModuleType("torch_npu"))
+    model = ModuleType("vllm_ascend.models.qwen4_exp.model")
+    operands = []
+
+    def linear(values, weight, dtype):
+        operands.append(values)
+        return torch.nn.functional.linear(values, weight)
+
+    model._linear = linear
+    monkeypatch.setitem(sys.modules, model.__name__, model)
+    normalized = torch.tensor([[1.0001, -0.0, 2.0001, 3.0001]])
+    module = SimpleNamespace(
+        _normalize=lambda values: normalized,
+        input_mix_weight_down=torch.ones(2, 4).half(),
+        input_mix_weight_up=torch.ones(4, 2).half(),
+        hc_count=4,
+        compute_dtype=torch.float32,
+    )
+    owner = SimpleNamespace(mean=lambda values, gates: (values * gates).half())
+    mix = hc.make_mix(owner, lambda *args: pytest.fail("unexpected fallback"), affine=False, share_operand=share)
+    values = torch.ones(1, 4).half()
+    _, residual = mix(module, values)
+    assert residual[0] is values
+    assert residual[1] is (operands[0] if share else normalized)
+    assert torch.equal(residual[1].half().view(torch.uint8), normalized.half().view(torch.uint8))

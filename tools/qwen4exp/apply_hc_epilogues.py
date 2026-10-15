@@ -32,7 +32,8 @@ def operation(wrapper, check_only=False):
                 state["kernels"].append(torch.classes.qwen_hc_combine_v1.Kernel(BINARY, entry))
             owner = namespace["HCEpilogues"](*state["kernels"], torch.ops.qwen_hc_combine_v1.launch)
             state["owner"] = owner
-            state["adapter"] = namespace["HCEpilogueAdapter"](owner, state["original"])
+            state["adapter"] = namespace["HCEpilogueAdapter"](
+                owner, state["original"], share_operand=SHARE_OPERAND)
             cases = []
             generator = torch.Generator().manual_seed(15892)
             with torch.no_grad():
@@ -101,9 +102,15 @@ def main():
     parser.add_argument("--module", type=Path, required=True)
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--bridge", type=Path, required=True)
+    parser.add_argument(
+        "--share-operand",
+        action="store_true",
+        help="save the already narrowed FP16 projection operand for combine (installation only)",
+    )
     args = parser.parse_args()
     paths = dict(MODULE=args.module, BINARY=args.binary, BRIDGE=args.bridge)
     header = f"ACTION={args.action!r}\n"
+    header += f"SHARE_OPERAND={args.share_operand!r}\n"
     header += "".join(f"{name}={str(path.resolve(strict=True))!r}\n" for name, path in paths.items())
     digests = {str(path.resolve()): hashlib.sha256(path.read_bytes()).hexdigest() for path in paths.values()}
     header += f"DIGESTS={digests!r}\n"

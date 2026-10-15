@@ -1,9 +1,12 @@
 Optimized QFN with shared host PLE, October 15, 2026
 
-The live service is http://192.168.53.187:8001/v1, model qwen38-flash-next.
-Current instance: resident-live-v15. See HC_EPILOGUES_PROFILE.txt for the latest
-recovery, retained conversion fusions, measurements, and the outstanding queued
-draft-token failure. Earlier mixed-load changes are in MIXED_PREFILL_OPTIMIZATION.txt.
+Service endpoint: http://192.168.53.187:8001/v1, model qwen38-flash-next.
+Status at October 15, 22:30 UTC: resident-live-v15 is unavailable, with admissions
+paused after device 2 lost its heartbeat following a 102 C reading. The API
+process is alive but is not a healthy serving gate. See HC_FOLLOWUP_PROFILE.txt
+for fault evidence, qualified work, and candidates awaiting hardware recovery.
+HC_EPILOGUES_PROFILE.txt records the earlier recovery and conversion fusions.
+Earlier mixed-load changes are in MIXED_PREFILL_OPTIMIZATION.txt.
 The first PLE deployment omitted the post-startup resident optimizations. Its
 28–31 decode tokens/s were not a measurement of the retained optimized stack.
 That server was stopped cleanly and the full stack restored in resident-live-v13.

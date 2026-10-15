@@ -19,6 +19,7 @@ class MixedPrefillBudget:
         self.original = scheduler.schedule
         self.had_instance_schedule = "schedule" in vars(scheduler)
         self.capped_steps = 0
+        self.pending_decode_capped_steps = 0
         self.calls = 0
         self.wrapper = self.schedule
         scheduler.schedule = self.wrapper
@@ -27,11 +28,19 @@ class MixedPrefillBudget:
         config = self.scheduler.scheduler_config
         original_limit = config.long_prefill_token_threshold
         has_decoder = any(request.num_output_tokens > 0 for request in self.scheduler.running)
-        if has_decoder:
+        # AsyncScheduler reserves output placeholders only after a final
+        # prefill/decode step. Protect that pending first sample before its
+        # result reaches the engine, or another full prefill can queue ahead.
+        has_pending_decoder = not has_decoder and any(
+            getattr(request, "num_output_placeholders", 0) > 0 for request in self.scheduler.running
+        )
+        if has_decoder or has_pending_decoder:
             config.long_prefill_token_threshold = (
                 min(original_limit, self.max_prefill_tokens) if original_limit > 0 else self.max_prefill_tokens
             )
             self.capped_steps += 1
+            if not has_decoder:
+                self.pending_decode_capped_steps += 1
         self.calls += 1
         try:
             return self.original(*args, **kwargs)
@@ -47,4 +56,9 @@ class MixedPrefillBudget:
             del self.scheduler.schedule
 
     def status(self):
-        return dict(max_prefill_tokens=self.max_prefill_tokens, calls=self.calls, capped_steps=self.capped_steps)
+        return dict(
+            max_prefill_tokens=self.max_prefill_tokens,
+            calls=self.calls,
+            capped_steps=self.capped_steps,
+            pending_decode_capped_steps=self.pending_decode_capped_steps,
+        )

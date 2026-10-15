@@ -107,7 +107,7 @@ def eligible(module, values):
     )
 
 
-def make_mix(owner, original, *, affine=True, mean=True, affine_min_rows=MIN_AFFINE_ROWS):
+def make_mix(owner, original, *, affine=True, mean=True, affine_min_rows=MIN_AFFINE_ROWS, share_operand=False):
     def mix(module, values):
         if not eligible(module, values) or _capturing():
             return original(module, values)
@@ -132,7 +132,8 @@ def make_mix(owner, original, *, affine=True, mean=True, affine_min_rows=MIN_AFF
             mixed = owner.mean(normalized, gate)
         else:
             mixed = (gate.view(-1, STREAMS, WIDTH) * normalized.view(-1, STREAMS, WIDTH)).mean(1).half()
-        return mixed, (values, operand if getattr(module, "share_projection_operand", False) else normalized)
+        save_operand = share_operand or getattr(module, "share_projection_operand", False)
+        return mixed, (values, operand if save_operand else normalized)
 
     return mix
 
@@ -140,9 +141,10 @@ def make_mix(owner, original, *, affine=True, mean=True, affine_min_rows=MIN_AFF
 class HCEpilogueAdapter:
     """Verification returns the reference and disables on a numerical mismatch."""
 
-    def __init__(self, owner, original):
+    def __init__(self, owner, original, *, share_operand=False):
         self.owner, self.original = owner, original
-        self.candidate = make_mix(owner, original)
+        self.share_operand = share_operand
+        self.candidate = make_mix(owner, original, share_operand=share_operand)
         self.enabled = True
         self.verify = True
         self.calls = self.checked = self.mismatches = 0
@@ -156,9 +158,12 @@ class HCEpilogueAdapter:
                 return actual
             expected = self.original(module, values)
             self.checked += 1
+            # The combine consumer projects in FP16. Sharing that same narrowed
+            # operand must preserve its exact values, not the FP32 storage dtype.
+            expected_saved = expected[1][1].half() if self.share_operand else expected[1][1]
             if not all(
                 torch.equal(left.view(torch.uint8), right.view(torch.uint8))
-                for left, right in ((actual[0], expected[0]), (actual[1][1], expected[1][1]))
+                for left, right in ((actual[0], expected[0]), (actual[1][1], expected_saved))
             ):
                 self.mismatches += 1
                 self.enabled = False
@@ -176,4 +181,5 @@ class HCEpilogueAdapter:
             failed=self.owner.failed,
             min_rows=MIN_ROWS,
             min_affine_rows=MIN_AFFINE_ROWS,
+            share_operand=self.share_operand,
         )

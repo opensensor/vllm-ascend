@@ -1,0 +1,143 @@
+HC operand reuse and queued decode transitions, October 15, 2026
+
+Current service state
+  resident-live-v15 at 192.168.53.187:8001 is unavailable. Admissions are
+  paused after device 2 lost its heartbeat (ACL 507010) at 22:30 UTC.
+  Kernel management-channel IRQ timeouts began at 22:29 UTC. Device 2 had
+  reached 102 C during sustained profiling; the causal fault is not proven.
+  The second physical card is PCIe 49:00.0. Check cooling and device health
+  before recovery. The API process remaining alive is not a serving gate.
+  No firmware, driver, OPP, clock or fan setting was changed in this work.
+
+  The last completed comparison restored the original queue-draining HC
+  epilogues and the original FP32 saved-residual policy. Shared operands are
+  NOT retained as the default. The first draft-snapshot implementation was
+  attached; the final prompt-length guard and pending-sample budget update
+  were not deployed before the hardware fault. Do not mistake staged source
+  hashes for proof that these final versions ran in the workers.
+
+Fresh profile
+  Rank 0 / rank 3 summed task time in the new native capture:
+    W4 local-count kernels       417.5 / 425.7 ms
+    AllReduce                    211.1 / 170.3 ms
+    Cast                          86.5 /  86.7 ms
+    MatMulV2                      84.4 /  83.7 ms
+    QSA table attention           59.5 /  59.3 ms
+    TransData                     45.2 /  45.5 ms
+  There are about 4,760 casts and 3,440 layout conversions in this capture.
+  These are summed task durations, not independent percentages of request
+  latency. Collective time can include arrival skew. Profiling itself raised
+  request time, so the native trace is not a throughput benchmark.
+
+Queue-drain experiment: not promoted
+  Reused the existing non-draining checkpoint bridge, whose ownership source
+  hashes match the retained bridge. Neither native kernel math nor serving
+  graphs changed. A first private test retained too many full-size reference
+  tensors and failed allocation (22:05:20); the later error log preserves that
+  timestamp. No serving adapter was changed by that test. A read-only retained
+  audit passed before clearing its failed control transaction.
+  The bounded three-submission waves passed on all four NPUs, including
+  changed inputs, chained consumers and released producer references.
+  Isolated gated-mean timings changed less than 1%.
+
+  Mixed approximately 20.8K-token prefill, overlapping 512-token decode:
+    Draining A 66.384 s; queued A 66.725 s
+    Draining B 66.808 s; queued B 66.351 s
+  Mean difference is about 0.09%, with opposite directions in the two pairs.
+  This does not justify changing launch ownership/ordering. Restored draining.
+
+Shared projection operand: opt-in, not promoted
+  HC mix already narrows normalized FP32 values for its FP16 down projection.
+  Saving that same narrowed tensor lets combine reuse it for the FP16
+  injection projection. Its operand values and accumulation remain unchanged.
+  The normalizer and gated mean still use FP32. Admission remains eager-only,
+  256..2048 rows; short decode graphs and unsupported cases retain the original
+  path. There is no new environment variable or learned-weight copy.
+
+  Retained residual storage falls from 20.1 to 10.1 MiB at 515 rows, and from
+  80 to 40 MiB at 2048 rows, per HC residual. This is tensor payload accounting,
+  not a claim that the process allocator releases that memory to the driver.
+
+  Four real-weight target HC modules, two shapes and three changed inputs
+  matched mixed outputs, narrowed residuals and complete combine outputs on
+  all four ranks: 96 module/shape/input cases. Complete mix/combine calls fell
+  roughly 5-8% in paired component timings. Real serving verification checked
+  4116 calls per rank (16464 total), with zero byte mismatches. Verification
+  returns the reference; normal candidate serving followed only after it passed.
+
+  Full serving comparisons against the retained epilogue fusion:
+    Original A 67.441 s; shared A 66.723 s
+    Original B 74.436 s; shared B 75.732 s
+  The first pair improved 1.06%; the second regressed 1.74%. Temperature rose
+  through 99-102 C during these trials. Preserve both pairs; no reliable
+  sustained model-level speedup is established, and no new decode gain is
+  claimed. --share-operand on apply_hc_epilogues install remains opt-in.
+
+Draft snapshot fix
+  The v14 crash dump contained all_token_ids for the failed first-decode
+  request. The pinned Scheduler._make_cached_request_data adds that entry
+  when the request was absent from prev_step_scheduled_req_ids. Its runner
+  draft getter exposes only the most recent worker batch. A prefill-only
+  intervening batch can therefore overwrite drafts needed by the returning
+  request, producing the observed missing-worker-drafts exception.
+
+  QueuedScheduleBridge now snapshots actual host drafts before a nonuniform
+  batch replaces them, even when the next schedule is prefill-only. Reuse
+  requires the same worker request, prompt length, output count and last
+  sampled token. Finish/resume, replaced history and fresh invalid drafts
+  invalidate snapshots. Missing drafts still fail closed. The unchanged
+  device-only continuation path never reads host drafts or caches its zero
+  shape reservations.
+
+  Regression tests reproduce the omitted-request sequence and reject stale
+  snapshots. Two real concurrent 20.8K/23.1K prefill pairs completed, each
+  returning 64 tokens per request; the complete retained audit passed after
+  them. Snapshot-hit counters remained zero in those hardware workloads:
+  they validate integration, not the formerly failing branch. The final
+  prompt-length invalidation guard has host-test coverage only.
+
+Pending-first-sample fairness: host-tested, not hardware-qualified
+  The concurrent pairs exposed 5.208 / 5.225 second maximum decoder content
+  gaps. The prefill cap currently waits for num_output_tokens > 0, although
+  AsyncScheduler has already reserved a pending first sample. Its next large
+  prefill may queue ahead of that decode. MixedPrefillBudget now also checks
+  num_output_placeholders, preserving stricter limits and restoring config
+  after schedule(), including exceptions. The old pure-decode check still
+  short-circuits the added scan. Unit tests cover pending and absent samples.
+  The prepared shorter before/after hardware test was not run due to the fault;
+  no latency improvement from this change is claimed.
+
+Other candidate and validation
+  FP32 built-in SwiGLU has a prepared private parity/timing gate only. It was
+  not executed or installed. The pinned W4 code still uses the separate FP32
+  SiLU/multiply expression; older FP16 SwiGLU results are not evidence of exact
+  parity for this path.
+
+  Focused host suite: 149 passed; 65 scheduling tests passed again after the
+  short-circuit refinement. The new benchmark admission guard has 14 passing
+  tests. It parses all 22 saved four-device reports and rejects 13 at its
+  conservative default 90 C experiment limit. This is a preflight check, not
+  a manufacturer thermal limit or a continuous hardware safety guarantee.
+  Management-query failure, missing devices and non-OK health also reject a
+  new benchmark. Query timeout cleanup is bounded even for a stuck driver ioctl.
+  The comparison helpers now invoke this guard before further workloads; it
+  was added after the fault, not during the recorded timing comparisons.
+  Changed-file manual pre-commit checks pass.
+  Full format.sh ci was run in an isolated checkout and fails on existing
+  repository-wide lint, spelling, Markdown and forbidden-import findings.
+  There was no final hardware serving/recovery gate after the heartbeat fault.
+
+Evidence and recovery
+  Compact receipts, sources, thermal samples and fault logs are in
+  artifacts/qfn-hc-queue-20261015; remote originals use the same directory name
+  under /srv/ai/storage/artifacts. Raw profiles remain under
+  /srv/ai/storage/artifacts/qfn-mixed-prefill-20261015/hc-retained-native-v1.
+  thermal-pause.json records the pause HTTP 500, confirmed paused admissions,
+  and the engine's clean control-session state. The pause's device synchronize
+  failed; this must not be described as successful hardware quiescence.
+
+  After cooling/device recovery, rebuild the retained v15 stack using the
+  existing recovery controls; do not resume a context marked lost-heartbeat.
+  Requalify the final draft snapshot code, test the pending-sample budget with
+  short overlapping prefills, and compare shared operands at stable temperature
+  before selecting them. Preserve all original CPU reductions and graph sizes.

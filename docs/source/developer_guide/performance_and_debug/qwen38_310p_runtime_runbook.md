@@ -43,6 +43,15 @@ verify real serving outputs before disabling comparisons. See
 four-rank equivalence checks, v15 recovery, and the unresolved queued-draft
 failure that stopped v14 before this experiment.
 
+At October 15, 22:30 UTC, v15 became unavailable after device 2 reported lost
+heartbeat (`507010`), following a 102 C reading. Admissions are paused; an alive
+API process does not establish serving health. See
+`tools/qwen4exp/HC_FOLLOWUP_PROFILE.txt` for thermal samples, IRQ timeout logs,
+the draft-snapshot fix, and the pending-sample fairness candidate. Shared HC
+operands passed component and serving equivalence gates but remain opt-in:
+the longer performance comparison was inconclusive as temperatures rose.
+The final scheduler refinements still need hardware qualification after recovery.
+
 ## Sources of truth
 
 - Develop changes on the repository's current main branch, then deploy them as

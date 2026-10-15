@@ -126,6 +126,54 @@ class QueuedScheduleBridge:
         self.device_drafts = False
         self.device_draft_steps = 0
         self.expected_device_inputs = self.expected_device_history = None
+        self.draft_snapshots = {}
+        self.draft_cache_hits = 0
+
+    def _host_drafts(self, schedule):
+        """Keep actual drafts when another batch temporarily omits their request.
+
+        A queued prefill-only batch can run between a request's final prefill
+        and first decode. The runner exposes only its most recent batch's
+        drafts. Snapshot those before execution replaces them, tied to the
+        exact worker request and sampled history. Never cache device-path
+        shape reservations or use a snapshot after history advances.
+        """
+        requests = self.runner.requests
+        invalid = set(schedule.finished_req_ids) | set(schedule.scheduled_cached_reqs.resumed_req_ids)
+        for key, (request, prompt_count, count, last, _) in list(self.draft_snapshots.items()):
+            current = requests.get(key)
+            if (
+                key in invalid
+                or current is not request
+                or current.num_prompt_tokens != prompt_count
+                or len(current.output_token_ids) != count
+                or current.output_token_ids[-1] != last
+            ):
+                del self.draft_snapshots[key]
+        previous_ids = self.runner.input_batch.req_ids
+        has_outputs = any(key in requests and requests[key].output_token_ids for key in previous_ids)
+        current = {}
+        if schedule.scheduled_spec_decode_tokens or has_outputs:
+            values, ids = self.runner._get_draft_token_ids_cpu()
+            current = dict(zip(ids, values, strict=True))
+            for key, tokens in current.items():
+                self.draft_snapshots.pop(key, None)
+                request = requests.get(key)
+                if request is not None and request.output_token_ids and key not in invalid and tokens:
+                    if all(token >= 0 for token in tokens):
+                        self.draft_snapshots[key] = (
+                            request,
+                            request.num_prompt_tokens,
+                            len(request.output_token_ids),
+                            request.output_token_ids[-1],
+                            tuple(tokens),
+                        )
+        result = dict(current)
+        for key in schedule.scheduled_spec_decode_tokens:
+            if key not in result and key in self.draft_snapshots:
+                result[key] = list(self.draft_snapshots[key][4])
+                self.draft_cache_hits += 1
+        return result
 
     def resolve(self, schedule):
         if not self.enabled:
@@ -138,9 +186,8 @@ class QueuedScheduleBridge:
         use_device = self.device_drafts and can_use_device_drafts(self.runner, schedule, self.transition, self.history)
         if use_device:
             draft_ids = {key: [0, 0] for key in self.runner.input_batch.req_ids}
-        elif schedule.scheduled_spec_decode_tokens:
-            values, ids = self.runner._get_draft_token_ids_cpu()
-            draft_ids = dict(zip(ids, values))
+        else:
+            draft_ids = self._host_drafts(schedule)
         resolved, corrected = materialize_schedule(
             schedule, self.runner.requests, draft_ids, max_model_len=self.runner.max_model_len
         )
@@ -161,4 +208,6 @@ class QueuedScheduleBridge:
             pending_device_inputs=self.expected_device_inputs is not None,
             pending_device_history=self.expected_device_history is not None,
             worker_cpu_bookkeeping_retained=True,
+            draft_snapshots=len(self.draft_snapshots),
+            draft_cache_hits=self.draft_cache_hits,
         )

@@ -1,0 +1,190 @@
+(EngineCore pid=1265576) INFO 10-15 22:28:29 [scheduler.py:2619] setting pause state to PAUSED_NEW
+(APIServer pid=1264770) INFO:     127.0.0.1:51650 - "POST /pause?mode=wait&clear_cache=false HTTP/1.1" 200 OK
+(APIServer pid=1264770) INFO:     127.0.0.1:51654 - "POST /qfn_engine_control HTTP/1.1" 200 OK
+(APIServer pid=1264770) INFO:     127.0.0.1:51662 - "POST /qfn_engine_control HTTP/1.1" 200 OK
+(APIServer pid=1264770) INFO:     127.0.0.1:51668 - "POST /collective_rpc HTTP/1.1" 200 OK
+(EngineCore pid=1265576) INFO 10-15 22:28:29 [scheduler.py:2619] setting pause state to UNPAUSED
+(APIServer pid=1264770) INFO:     127.0.0.1:51672 - "POST /resume HTTP/1.1" 200 OK
+(APIServer pid=1264770) INFO:     127.0.0.1:51688 - "POST /collective_rpc HTTP/1.1" 200 OK
+(APIServer pid=1264770) INFO:     127.0.0.1:51696 - "GET /metrics HTTP/1.1" 200 OK
+(APIServer pid=1264770) INFO:     127.0.0.1:51698 - "GET /is_paused HTTP/1.1" 200 OK
+(APIServer pid=1264770) INFO:     127.0.0.1:51704 - "POST /collective_rpc HTTP/1.1" 200 OK
+(APIServer pid=1264770) INFO:     127.0.0.1:51714 - "POST /collective_rpc HTTP/1.1" 200 OK
+(EngineCore pid=1265576) INFO 10-15 22:28:30 [scheduler.py:2619] setting pause state to PAUSED_NEW
+(APIServer pid=1264770) INFO:     127.0.0.1:51722 - "POST /pause?mode=wait&clear_cache=false HTTP/1.1" 200 OK
+(APIServer pid=1264770) INFO:     127.0.0.1:51732 - "POST /qfn_engine_control HTTP/1.1" 200 OK
+(APIServer pid=1264770) INFO:     127.0.0.1:51734 - "POST /qfn_engine_control HTTP/1.1" 200 OK
+(APIServer pid=1264770) INFO:     127.0.0.1:51748 - "POST /collective_rpc HTTP/1.1" 200 OK
+(APIServer pid=1264770) INFO:     127.0.0.1:51754 - "POST /collective_rpc HTTP/1.1" 200 OK
+(EngineCore pid=1265576) INFO 10-15 22:28:30 [scheduler.py:2619] setting pause state to UNPAUSED
+(APIServer pid=1264770) INFO:     127.0.0.1:51766 - "POST /resume HTTP/1.1" 200 OK
+(APIServer pid=1264770) INFO 10-15 22:28:30 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 25.2 tokens/s, Running: 0 reqs, Waiting: 0 reqs, NPU KV cache usage: 0.0%, Prefix cache hit rate: 15.8%
+(APIServer pid=1264770) INFO 10-15 22:28:30 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 2.82, Accepted throughput: 16.40 tokens/s, Drafted throughput: 18.00 tokens/s, Accepted: 164 tokens, Drafted: 180 tokens, Per-position acceptance rate: 0.956, 0.867, Avg Draft acceptance rate: 91.1%
+(APIServer pid=1264770) INFO 10-15 22:28:40 [loggers.py:315] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0 tokens/s, Running: 0 reqs, Waiting: 0 reqs, NPU KV cache usage: 0.0%, Prefix cache hit rate: 15.8%
+(APIServer pid=1264770) INFO:     127.0.0.1:35072 - "GET /health HTTP/1.1" 200 OK
+(EngineCore pid=1265576) INFO 10-15 22:30:33 [scheduler.py:2619] setting pause state to PAUSED_NEW
+(Worker_TP2_EP2 pid=1266007) ERROR 10-15 22:30:33 [multiproc_executor.py:1055] WorkerProc hit an exception.
+(Worker_TP2_EP2 pid=1266007) ERROR 10-15 22:30:33 [multiproc_executor.py:1055] Traceback (most recent call last):
+(Worker_TP2_EP2 pid=1266007) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]   File "/srv/ai/src/vllm-opensensor/vllm/v1/executor/multiproc_executor.py", line 1047, in _execute_worker_rpc
+(Worker_TP2_EP2 pid=1266007) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]     output = func(*args, **kwargs)
+(Worker_TP2_EP2 pid=1266007) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]              ^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP2_EP2 pid=1266007) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]   File "/srv/ai/src/vllm-opensensor/vllm/v1/worker/worker_base.py", line 132, in synchronize_device
+(Worker_TP2_EP2 pid=1266007) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]     torch.accelerator.synchronize()
+(Worker_TP2_EP2 pid=1266007) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]   File "/srv/ai/venvs/qwen38-w4-test-ce1862/lib/python3.12/site-packages/torch/accelerator/__init__.py", line 270, in synchronize
+(Worker_TP2_EP2 pid=1266007) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]     torch._C._accelerator_synchronizeDevice(device_index)
+(Worker_TP2_EP2 pid=1266007) ERROR 10-15 22:30:33 [multiproc_executor.py:1055] torch.OutOfMemoryError: npuSynchronizeDevice:../torch_npu/csrc/core/npu/NPUStream.cpp:810 NPU function error: AclrtSynchronizeDeviceWithTimeout, error code is 507010
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055] [ERROR] 2026-10-15-22:30:33 (PID:1266007, Device:2, RankID:-1) ERR00100 PTA call acl api failed
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055] WorkerProc hit an exception.
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055] [Error]: The task scheduler loses the heartbeat.
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055] Traceback (most recent call last):
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         Rectify the fault based on the error information in the ascend log.
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055]   File "/srv/ai/src/vllm-opensensor/vllm/v1/executor/multiproc_executor.py", line 1047, in _execute_worker_rpc
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055] [PID: 1266007] 2026-10-15-22:05:20.491.532 Memory_Allocation_Failure(EL0004): Failed to allocate memory requested by UNKNOWN module.
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055]     output = func(*args, **kwargs)
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         Possible Cause: Available memory is insufficient.
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055]              ^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         Solution: Close applications not in use.
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055]   File "/srv/ai/src/vllm-opensensor/vllm/v1/worker/worker_base.py", line 132, in synchronize_device
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055] TraceBack (most recent call last):
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055]     torch.accelerator.synchronize()
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         Failed to check device status, device_id=2, retCode=0x711000b.[FUNC:CheckStatus][FILE:context.cc][LINE:2339]
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055]   File "/srv/ai/venvs/qwen38-w4-test-ce1862/lib/python3.12/site-packages/torch/accelerator/__init__.py", line 270, in synchronize
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         rtDeviceSynchronizeWithTimeout execution failed, reason=lost heartbeat[FUNC:FuncErrorReason][FILE:error_message_manage.cc][LINE:69]
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055]     torch._C._accelerator_synchronizeDevice(device_index)
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         Device not found or invalid.
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055] torch.OutOfMemoryError: npuSynchronizeDevice:../torch_npu/csrc/core/npu/NPUStream.cpp:810 NPU function error: AclrtSynchronizeDeviceWithTimeout, error code is 507010
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         Init device error msg handler failed, retCode=0x7020012.[FUNC:GetDevErrMsg][FILE:api_impl.cc][LINE:6062]
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055] [ERROR] 2026-10-15-22:30:33 (PID:1266008, Device:3, RankID:-1) ERR00100 PTA call acl api failed
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         rtGetDevMsg execution failed, reason=driver error:no valid device[FUNC:FuncErrorReason][FILE:error_message_manage.cc][LINE:69]
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055] [Error]: The task scheduler loses the heartbeat.
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         Rectify the fault based on the error information in the ascend log.
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055] Traceback (most recent call last):
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055] [PID: 1266008] 2026-10-15-22:05:20.686.957 Memory_Allocation_Failure(EL0004): Failed to allocate memory requested by UNKNOWN module.
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]   File "/srv/ai/src/vllm-opensensor/vllm/v1/executor/multiproc_executor.py", line 1047, in _execute_worker_rpc
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         Possible Cause: Available memory is insufficient.
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]     output = func(*args, **kwargs)
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         Solution: Close applications not in use.
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]              ^^^^^^^^^^^^^^^^^^^^^
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055] TraceBack (most recent call last):
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]   File "/srv/ai/src/vllm-opensensor/vllm/v1/worker/worker_base.py", line 132, in synchronize_device
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         Failed to check device status, device_id=3, retCode=0x711000b.[FUNC:CheckStatus][FILE:context.cc][LINE:2339]
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]     torch.accelerator.synchronize()
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         rtDeviceSynchronizeWithTimeout execution failed, reason=lost heartbeat[FUNC:FuncErrorReason][FILE:error_message_manage.cc][LINE:69]
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]   File "/srv/ai/venvs/qwen38-w4-test-ce1862/lib/python3.12/site-packages/torch/accelerator/__init__.py", line 270, in synchronize
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         Device not found or invalid.
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]     torch._C._accelerator_synchronizeDevice(device_index)
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         Init device error msg handler failed, retCode=0x7020012.[FUNC:GetDevErrMsg][FILE:api_impl.cc][LINE:6062]
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055] torch.OutOfMemoryError: npuSynchronizeDevice:../torch_npu/csrc/core/npu/NPUStream.cpp:810 NPU function error: AclrtSynchronizeDeviceWithTimeout, error code is 507010
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         rtGetDevMsg execution failed, reason=driver error:no valid device[FUNC:FuncErrorReason][FILE:error_message_manage.cc][LINE:69]
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055] [ERROR] 2026-10-15-22:30:33 (PID:1266007, Device:2, RankID:-1) ERR00100 PTA call acl api failed
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055]
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055] [Error]: The task scheduler loses the heartbeat.
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055] Traceback (most recent call last):
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         Rectify the fault based on the error information in the ascend log.
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055]   File "/srv/ai/src/vllm-opensensor/vllm/v1/executor/multiproc_executor.py", line 1047, in _execute_worker_rpc
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055] [PID: 1266007] 2026-10-15-22:05:20.491.532 Memory_Allocation_Failure(EL0004): Failed to allocate memory requested by UNKNOWN module.
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055]     output = func(*args, **kwargs)
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         Possible Cause: Available memory is insufficient.
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055]              ^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         Solution: Close applications not in use.
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055]   File "/srv/ai/src/vllm-opensensor/vllm/v1/worker/worker_base.py", line 132, in synchronize_device
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055] TraceBack (most recent call last):
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055]     torch.accelerator.synchronize()
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         Failed to check device status, device_id=2, retCode=0x711000b.[FUNC:CheckStatus][FILE:context.cc][LINE:2339]
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055]   File "/srv/ai/venvs/qwen38-w4-test-ce1862/lib/python3.12/site-packages/torch/accelerator/__init__.py", line 270, in synchronize
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         rtDeviceSynchronizeWithTimeout execution failed, reason=lost heartbeat[FUNC:FuncErrorReason][FILE:error_message_manage.cc][LINE:69]
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055]     torch._C._accelerator_synchronizeDevice(device_index)
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         Device not found or invalid.
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055] torch.OutOfMemoryError: npuSynchronizeDevice:../torch_npu/csrc/core/npu/NPUStream.cpp:810 NPU function error: AclrtSynchronizeDeviceWithTimeout, error code is 507010
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         Init device error msg handler failed, retCode=0x7020012.[FUNC:GetDevErrMsg][FILE:api_impl.cc][LINE:6062]
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055] [ERROR] 2026-10-15-22:30:33 (PID:1266008, Device:3, RankID:-1) ERR00100 PTA call acl api failed
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         rtGetDevMsg execution failed, reason=driver error:no valid device[FUNC:FuncErrorReason][FILE:error_message_manage.cc][LINE:69]
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055] [Error]: The task scheduler loses the heartbeat.
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         Rectify the fault based on the error information in the ascend log.
+(Worker_TP2_EP2 pid=1266007) (Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]
+ERROR 10-15 22:30:33 [multiproc_executor.py:1055] [PID: 1266008] 2026-10-15-22:05:20.686.957 Memory_Allocation_Failure(EL0004): Failed to allocate memory requested by UNKNOWN module.
+(Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         Possible Cause: Available memory is insufficient.
+(Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         Solution: Close applications not in use.
+(Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055] TraceBack (most recent call last):
+(Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         Failed to check device status, device_id=3, retCode=0x711000b.[FUNC:CheckStatus][FILE:context.cc][LINE:2339]
+(Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         rtDeviceSynchronizeWithTimeout execution failed, reason=lost heartbeat[FUNC:FuncErrorReason][FILE:error_message_manage.cc][LINE:69]
+(Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         Device not found or invalid.
+(Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         Init device error msg handler failed, retCode=0x7020012.[FUNC:GetDevErrMsg][FILE:api_impl.cc][LINE:6062]
+(Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]         rtGetDevMsg execution failed, reason=driver error:no valid device[FUNC:FuncErrorReason][FILE:error_message_manage.cc][LINE:69]
+(Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]
+(Worker_TP3_EP3 pid=1266008) ERROR 10-15 22:30:33 [multiproc_executor.py:1055]
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609] Invocation of pause_scheduler method failed
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609] Traceback (most recent call last):
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]   File "/srv/ai/src/vllm-opensensor/vllm/v1/engine/core.py", line 1599, in _invoke_utility_method
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]     result = get_result()
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]              ^^^^^^^^^^^^
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]   File "/srv/ai/src/vllm-opensensor/vllm/v1/engine/core.py", line 1554, in <lambda>
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]     and method(*self._convert_msgspec_args(method, args))
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]   File "/srv/ai/src/vllm-opensensor/vllm/v1/engine/core.py", line 1951, in pause_scheduler
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]     self._finish_pause(clear_cache)
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]   File "/srv/ai/src/vllm-opensensor/vllm/v1/engine/core.py", line 837, in _finish_pause
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]     self.model_executor.collective_rpc("synchronize_device")
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]   File "/srv/ai/src/vllm-opensensor/vllm/v1/executor/multiproc_executor.py", line 448, in collective_rpc
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]     return future if non_block else future.result()
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]                                     ^^^^^^^^^^^^^^^
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]   File "/srv/ai/src/vllm-opensensor/vllm/v1/executor/multiproc_executor.py", line 99, in result
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]     return super().result()
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]            ^^^^^^^^^^^^^^^^
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]   File "/usr/local/python3.12.13/lib/python3.12/concurrent/futures/_base.py", line 449, in result
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]     return self.__get_result()
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]            ^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]   File "/usr/local/python3.12.13/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]     raise self._exception
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]   File "/srv/ai/src/vllm-opensensor/vllm/v1/executor/multiproc_executor.py", line 103, in _wait_for_response
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]     response = self.aggregate(self.get_response())
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]                               ^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]   File "/srv/ai/src/vllm-opensensor/vllm/v1/executor/multiproc_executor.py", line 437, in get_response
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]     raise RuntimeError(
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609] RuntimeError: Worker failed with error 'npuSynchronizeDevice:../torch_npu/csrc/core/npu/NPUStream.cpp:810 NPU function error: AclrtSynchronizeDeviceWithTimeout, error code is 507010
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609] [ERROR] 2026-10-15-22:30:33 (PID:1266007, Device:2, RankID:-1) ERR00100 PTA call acl api failed
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609] [Error]: The task scheduler loses the heartbeat.
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]         Rectify the fault based on the error information in the ascend log.
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609] [PID: 1266007] 2026-10-15-22:05:20.491.532 Memory_Allocation_Failure(EL0004): Failed to allocate memory requested by UNKNOWN module.
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]         Possible Cause: Available memory is insufficient.
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]         Solution: Close applications not in use.
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609] TraceBack (most recent call last):
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]         Failed to check device status, device_id=2, retCode=0x711000b.[FUNC:CheckStatus][FILE:context.cc][LINE:2339]
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]         rtDeviceSynchronizeWithTimeout execution failed, reason=lost heartbeat[FUNC:FuncErrorReason][FILE:error_message_manage.cc][LINE:69]
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]         Device not found or invalid.
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]         Init device error msg handler failed, retCode=0x7020012.[FUNC:GetDevErrMsg][FILE:api_impl.cc][LINE:6062]
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609]         rtGetDevMsg execution failed, reason=driver error:no valid device[FUNC:FuncErrorReason][FILE:error_message_manage.cc][LINE:69]
+(EngineCore pid=1265576) ERROR 10-15 22:30:33 [core.py:1609] ', please check the stack trace above for the root cause
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67] Failed to pause generation
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67] Traceback (most recent call last):
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67]   File "/srv/ai/src/vllm-opensensor/vllm/entrypoints/serve/dev/rlhf/api_router.py", line 51, in pause_generation
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67]     await engine.pause_generation(
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67]   File "/srv/ai/src/vllm-opensensor/vllm/v1/engine/async_llm.py", line 911, in pause_generation
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67]     await self.engine_core.pause_scheduler_async(mode=mode, clear_cache=clear_cache)
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67]   File "/srv/ai/src/vllm-opensensor/vllm/v1/engine/core_client.py", line 1231, in pause_scheduler_async
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67]     await self.call_utility_async("pause_scheduler", mode, clear_cache)
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67]   File "/srv/ai/src/vllm-opensensor/vllm/v1/engine/core_client.py", line 1200, in call_utility_async
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67]     return await self._call_utility_async(method, *args, engine=self.core_engine)
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67]   File "/srv/ai/src/vllm-opensensor/vllm/v1/engine/core_client.py", line 1214, in _call_utility_async
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67]     return await future
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67]            ^^^^^^^^^^^^
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67] Exception: Call to pause_scheduler method failed: Worker failed with error 'npuSynchronizeDevice:../torch_npu/csrc/core/npu/NPUStream.cpp:810 NPU function error: AclrtSynchronizeDeviceWithTimeout, error code is 507010
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67] [ERROR] 2026-10-15-22:30:33 (PID:1266007, Device:2, RankID:-1) ERR00100 PTA call acl api failed
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67] [Error]: The task scheduler loses the heartbeat.
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67]         Rectify the fault based on the error information in the ascend log.
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67] [PID: 1266007] 2026-10-15-22:05:20.491.532 Memory_Allocation_Failure(EL0004): Failed to allocate memory requested by UNKNOWN module.
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67]         Possible Cause: Available memory is insufficient.
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67]         Solution: Close applications not in use.
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67] TraceBack (most recent call last):
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67]         Failed to check device status, device_id=2, retCode=0x711000b.[FUNC:CheckStatus][FILE:context.cc][LINE:2339]
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67]         rtDeviceSynchronizeWithTimeout execution failed, reason=lost heartbeat[FUNC:FuncErrorReason][FILE:error_message_manage.cc][LINE:69]
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67]         Device not found or invalid.
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67]         Init device error msg handler failed, retCode=0x7020012.[FUNC:GetDevErrMsg][FILE:api_impl.cc][LINE:6062]
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67]         rtGetDevMsg execution failed, reason=driver error:no valid device[FUNC:FuncErrorReason][FILE:error_message_manage.cc][LINE:69]
+(APIServer pid=1264770) ERROR 10-15 22:30:33 [api_router.py:67] ', please check the stack trace above for the root cause
+(APIServer pid=1264770) INFO:     127.0.0.1:36412 - "POST /pause?mode=wait&clear_cache=false HTTP/1.1" 500 Internal Server Error
+(APIServer pid=1264770) INFO:     127.0.0.1:36428 - "GET /is_paused HTTP/1.1" 200 OK
+(APIServer pid=1264770) INFO:     127.0.0.1:36438 - "POST /qfn_engine_control HTTP/1.1" 200 OK

@@ -53,6 +53,24 @@ def test_restore_config_even_if_scheduler_fails():
     assert scheduler.schedule is fail
 
 
+@pytest.mark.parametrize("placeholders,expected", [(0, 0), (1, 512), (3, 512)])
+def test_first_pending_sample_protects_decode_before_engine_observes_output(placeholders, expected):
+    scheduler = Scheduler((0, 0))
+    scheduler.running[0].num_output_placeholders = placeholders
+    owner = MixedPrefillBudget(scheduler, 512)
+    assert scheduler.schedule() == expected
+    assert owner.pending_decode_capped_steps == int(placeholders > 0)
+    assert scheduler.scheduler_config.long_prefill_token_threshold == 0
+
+
+def test_pending_first_sample_preserves_a_stricter_existing_limit():
+    scheduler = Scheduler((0, 0), 256)
+    scheduler.running[0].num_output_placeholders = 1
+    owner = MixedPrefillBudget(scheduler, 512)
+    assert scheduler.schedule() == 256
+    assert owner.pending_decode_capped_steps == 1
+
+
 def test_refuse_to_remove_another_wrapper():
     scheduler = Scheduler()
     owner = MixedPrefillBudget(scheduler, 512)
