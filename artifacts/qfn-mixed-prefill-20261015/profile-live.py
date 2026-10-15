@@ -29,7 +29,7 @@ def operation(worker):
         if MODE == 'cpu':
             result['profiler'] = QfnProfileWorkerExtension.qfn_cpu_profile_start(worker)
         elif MODE == 'native':
-            payload = json.dumps(dict(output_dir=OUTPUT, tag='native', delay=10, max=2))
+            payload = json.dumps(dict(output_dir=OUTPUT, tag='native', delay=DELAY, max=STEPS))
             result['profiler'] = QfnProfileWorkerExtension.qfn_native_profile_start(worker, payload)
             if 'error' in result['profiler']: raise RuntimeError(result['profiler']['error'])
         return result
@@ -90,6 +90,8 @@ def main():
     """Drain to install hooks, overlap two streams, then drain and restore owners."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--label", required=True)
+    parser.add_argument("--profile-delay", type=int, default=10)
+    parser.add_argument("--profile-iterations", type=int, default=2)
     parser.add_argument("--mode", choices=("spans", "cpu", "native"), default="spans")
     parser.add_argument("--paragraphs", type=int, default=500)
     workload = parser.add_mutually_exclusive_group()
@@ -99,6 +101,7 @@ def main():
     parser.add_argument("--run-root", type=Path, default=RUN)
     args = parser.parse_args()
     assert Path(args.label).name == args.label
+    assert 0 <= args.profile_delay <= 128 and 1 <= args.profile_iterations <= 8
     output = ROOT / args.label
     output.mkdir(parents=True, exist_ok=False)
     client = QfnResidentClient("http://127.0.0.1:8001", args.run_root / "control.token", timeout=900)
@@ -113,7 +116,10 @@ def main():
 
     def control(start):
         client.request("/pause?mode=wait&clear_cache=false")
-        source = f"START={start!r}\nMODE={args.mode!r}\nOUTPUT={str(output)!r}\nLIMIT={args.prefill_limit!r}\n" + SOURCE
+        source = (
+            f"START={start!r}\nMODE={args.mode!r}\nOUTPUT={str(output)!r}\nLIMIT={args.prefill_limit!r}\n"
+            f"DELAY={args.profile_delay!r}\nSTEPS={args.profile_iterations!r}\n" + SOURCE
+        )
         revision, digest = "mixed_" + uuid.uuid4().hex, hashlib.sha256(source.encode()).hexdigest()
         prepared = client.request(
             "/qfn_engine_control", dict(operation="prepare", revision=revision, sha256=digest, source=source)

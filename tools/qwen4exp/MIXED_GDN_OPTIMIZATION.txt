@@ -1,0 +1,128 @@
+Fresh mixed-workload profiling and exact GDN assembly, October 15, 2026
+
+Scope and retained stack
+------------------------
+Profiled resident-live-v14 on all four Ascend 310P devices, using actual QFN
+weights, TP4/EP4, MTP2, graph sizes 3/6/9/12, native shared-host PLE and every
+previous CPU reduction. The conditional mixed-prefill budget remains 512;
+prefill-only retains its existing 2048-token budget. No driver, firmware,
+collective implementation, model weights or attention arithmetic changed.
+Serving uses http://192.168.53.187:8001/v1, model qwen38-flash-next.
+
+Fresh traces and remaining targets
+----------------------------------
+Two bounded native captures sampled early and late mixed execution. Early
+capture includes one decode and one 515-row mixed step; late capture includes
+two 515-row mixed steps. Kernel sums are not elapsed wall time, and collective
+durations include waits. These are synthetic uncached prompts with real weights.
+
+Rank 0 kernel totals                 Early capture      Late capture
+Grouped W4 expert projections          420.60 ms          752.14 ms
+QSA sparse attention                    64.28 ms          543.80 ms
+HCCL all-reduce                         309.86 ms          411.36 ms
+Cast                                    89.99 ms          177.90 ms
+TopKV2                                  14.08 ms          132.58 ms
+IndexPut                                83.98 ms           96.29 ms
+
+The 46,060-token long-context run reached first output in 163.822 seconds;
+the concurrent decoder's maximum content gap was 3.225 seconds. Native
+profiling adds overhead. The approximately 20.8K-token early capture was about 72 seconds.
+QSA attention and row selection become more expensive as context grows.
+W4 expert compute remains the largest kernel total. Rank-dependent expert
+load also contributes to collective waits; these traces do not establish that
+all collective time is transfer overhead. Future work should isolate those
+costs before changing transport. The previously rejected batched attention
+candidate remains excluded; its numerical gate must not be weakened.
+
+Experiments and retained implementation
+---------------------------------------
+Private resident real-bank gates compared baseline, small and local_count
+expert schedules at 5150 routed rows, both projections, balanced/skewed routes,
+zero/all local routes and all four ranks. Every output was exact, but timing
+differences did not justify changing the installed local_count schedule.
+
+Generic scatter was exact but much slower on 310P: roughly 9--10 ms versus
+0.56--0.63 ms for indexed assembly at 515 rows. It was never installed.
+
+The retained mixed_gdn_merge candidate concatenates the speculative and prefill
+outputs, then gathers them into token order. A device-side inverse permutation
+is built once per step and shared by the GDN layers through their metadata.
+The builder's disjoint complete partition and immutable per-step indices are
+the contract; arbitrary interleaved token order is supported. State updates,
+gating, convolution and delta-rule arithmetic remain exactly the original.
+Pure decode never enters the changed method. No normal-path device readback
+or synchronization is introduced, and each returned output owns its storage.
+
+Private tests on every rank covered 515/518/521/1923 rows, 3/6/9 speculative
+rows and shuffled partitions. Gather took about 0.05--0.075 ms at 515 rows
+and 0.11--0.12 ms at 1923 rows. These are isolated synchronized timings.
+The subsequent real-weight mixed run checked 1512 merges per rank, 6048 total,
+bit-for-bit with zero mismatches. Verification always returns the reference;
+a mismatch disables the candidate without raising during rank collectives.
+Verification is disabled after admission for normal serving.
+
+In the comparable early native capture, rank 0 IndexPut totals fell from
+83.977 ms / 144 calls to 24.663 ms / 75 calls. The mixed-output indexed writes
+were removed; state-cache and WY inverse writes remain. GatherV2 and ConcatD
+totals together increased only about 0.42 ms. This establishes the local
+kernel improvement, not an equal reduction in request latency.
+
+Serving measurements and validation
+------------------------------------
+See artifacts/qfn-next-profile-20261015/measurements.json for alternating
+off/on trials, prompt/cache counts, streamed content gaps and host spans.
+Each trial overlaps an uncached approximately 20.8K-token prefill with a
+512-output-token decoder. Streamed content updates may contain several tokens.
+There are two trials per mode; these do not establish a confidence interval.
+
+Assembly / trial                 Prefill TTFT       Max decoder content gap
+Indexed A                           71.078 s                      1.872 s
+Gather A                            70.585 s                      1.887 s
+Indexed B                           71.481 s                      2.010 s
+Gather B                            70.261 s                      1.882 s
+
+Mean prefill TTFT fell from 71.279 to 70.423 seconds, a measured 1.2% gain.
+This is a modest serving improvement; the large isolated operator speedup
+does not translate into a similarly large end-to-end gain. Retain gather
+because the exact local reduction is clear and both paired runs improved.
+
+Final short-prompt decode measured 32.031 tok/s median C1 across three trials
+and 64.198 tok/s finite-batch C4 aggregate. These remain within the recent
+retained-stack measurements; the historical 69.2 tok/s C4 result is still not
+reproduced. This change does not accelerate the pure-decode graph path.
+The final audit passed on all four ranks: all prior CPU reductions, native PLE,
+score-only QSA dispatch, conditional 512 budget and graph ownership are intact.
+Gather is enabled with verification off, 6084 calls and zero mismatches per
+rank; 1512 of those calls per rank were explicitly verified. All profilers
+were released and the server resumed. Worker PIDs and weights were preserved.
+
+Host validation: 202 focused tests passed, including randomized bit patterns,
+signed zero and NaN payloads, changing metadata, exact branch/state-update
+ordering and rejection without disrupting output. The broader qwen38_1m suite
+still fails collection because the installed local vLLM lacks
+vllm.distributed.utils.is_weak_contiguous. Full bash format.sh ci was run in an
+isolated worktree; existing lint, spelling, markdown and forbidden-import
+violations remain outside this change. GitHub Actions on the fork is disabled.
+All changed-file manual hooks, including the secret scan, passed.
+
+Reapply and reverse
+-------------------
+Use the established resident Python and serving tools overlay described in
+the runtime runbook. Copy mixed_gdn_merge.py into that overlay. Each control
+command needs the current RUN directory and a fresh OUTPUT directory:
+
+python artifacts/qfn-next-profile-20261015/private-gates.py gather --run-root RUN --output OUTPUT
+python artifacts/qfn-next-profile-20261015/merge-control.py install --run-root RUN --output OUTPUT
+
+Install starts in verification mode and requires the exact qualified original
+method source. Run a mixed prefill/decode workload, inspect all worker checks,
+then use merge-control.py on. The on action requires successful live checks on
+every rank. off retains the owner but uses indexed assembly; restore reinstates
+the original method. Every transition drains the server first and verifies
+resident weight/graph/native-owner identity before resuming. No recapture or
+server restart is required. This is a resident deployment; after a restart,
+restore the qualified stack and repeat admission rather than assuming it is on.
+
+The compare-merge.py, finalize.py and collect-evidence.py controllers reproduce
+the comparisons, retained-stack audit and compact evidence collection. Full
+raw traces and receipts remain in the dated artifact directories on the host.
