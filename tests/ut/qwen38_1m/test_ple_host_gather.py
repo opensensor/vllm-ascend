@@ -147,3 +147,22 @@ def test_actual_native_producer_wait_policy(tmp_path):
         check=True,
     )
     subprocess.run([str(tmp_path / "test")], check=True)
+
+
+def test_populated_mapping_shared_lifetime(tmp_path):
+    root = Path(__file__).resolve().parents[3]
+    subprocess.run(
+        [
+            "c++",
+            "-std=c++17",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            f"-I{root / 'tools/qwen4exp'}",
+            str(Path(__file__).parent / "cpp/ple_shared_mapping.cpp"),
+            "-o",
+            str(tmp_path / "mapping-test"),
+        ],
+        check=True,
+    )
+    subprocess.run([str(tmp_path / "mapping-test")], check=True)

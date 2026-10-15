@@ -49,6 +49,7 @@ def load_library(path, digest):
     pointer, integer, timings = ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_uint64)
     for name, arguments in (
         ("ple_host_create", [integer, integer, ctypes.c_size_t, pointer, pointer, ctypes.POINTER(pointer)]),
+        ("ple_host_create_shared", [pointer, ctypes.c_size_t, pointer, pointer, ctypes.POINTER(pointer)]),
         ("ple_host_set_producer", [pointer, ctypes.c_char_p, ctypes.POINTER(pointer), ctypes.c_uint]),
         ("ple_host_produce_fetch_inputs", [pointer, pointer, pointer, pointer, timings, ctypes.c_uint]),
         ("ple_host_close", [pointer]),
@@ -81,17 +82,25 @@ class Lookup:
         # The manager retains this owner even if admission or a later DMA fails.
         manager.retained.append(self)
         torch.npu.current_stream(device).synchronize()
-        checked(
-            manager.lib.ple_host_create(
+        parent = manager.mapping_parent
+        if parent is None:
+            status = manager.lib.ple_host_create(
                 device.index,
                 manager.fd,
                 tokens,
                 self.packet.data_ptr(),
                 self.output.data_ptr(),
                 ctypes.byref(self.handle),
-            ),
-            "create",
-        )
+            )
+        else:
+            if parent.output.device != device:
+                raise ValueError("shared PLE mapping belongs to another device")
+            status = manager.lib.ple_host_create_shared(
+                parent.handle, tokens, self.packet.data_ptr(), self.output.data_ptr(), ctypes.byref(self.handle)
+            )
+        checked(status, "create")
+        if parent is None:
+            manager.mapping_parent = self
 
     def fetch(self, tokens, starts, history):
         import torch
@@ -149,6 +158,7 @@ class ServingPLE:
         if hashlib.sha256(Path(self.binary).read_bytes()).hexdigest() != config["binary_sha256"]:
             raise ValueError("native selector digest differs")
         self.lookups, self.retained = {}, []
+        self.mapping_parent = None
         self.calls, self.fallbacks = Counter(), Counter()
         self.checked = 0
         self.enabled = self.verify = True
@@ -170,6 +180,7 @@ class ServingPLE:
             table_inode=self.metadata["inode"],
             table_bytes=self.metadata["bytes"],
             owners=len(self.retained),
+            shared_mapping=self.mapping_parent is not None,
             host_assisted=True,
             torch_stream_join=True,
             lookup_median_us=median(self.elapsed),

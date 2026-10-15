@@ -1,0 +1,155 @@
+Fresh device-target profile, October 15, 2026
+
+Scope and retained runtime
+  Real Qwen3.8 Flash-Next W4 weights, TP4/EP4/MTP2 on four 310P devices.
+  Resident API :8001, resident-live-v14. No restart, firmware change, driver
+  replacement, graph recapture, or change to model weights in this wave.
+  Preserve the prior CPU reductions, native PLE, corrected GDN output,
+  mixed GDN gather merge, score-only mixed QSA, 512-token mixed budget,
+  and [3,6,9,12] decode graphs. WY graph replay remains disabled.
+  This is a targeted serving optimization, not a new model adaptation or a
+  new 128K x 16 capacity qualification. Maximum context and supported feature
+  claims remain those of the existing runtime runbook. Multimodal and larger
+  batch sizes were not requalified here.
+
+Fresh evidence
+  artifacts/qfn-device-targets-20261015 contains compact receipts, private
+  gates, controller sources, native summary and a host sampling summary.
+  Remote originals: /srv/ai/storage/artifacts/qfn-device-targets-20261015.
+  Raw native trace: sibling qfn-mixed-prefill-20261015/
+  device-targets-native-v2/native. Parse outside the daemon worker.
+
+  The initial benchmark deferred because the server was serving a user.
+  A 30-second nonblocking py-spy capture then found 516 of 839 captured samples
+  in Lookup.__init__ -> ple_host_create. There were 33 sampling read errors;
+  sample proportions are not a synchronized device-time breakdown.
+  A later controlled uncached 46,061-token mixed request measured 164.147s
+  TTFT and a 3.285s maximum content gap for the overlapping decode request.
+  In two late mixed steps, rank0/rank3 kernel totals were approximately:
+    W4 local-count: 768 / 908 ms
+    QSA attention: 551 / 549 ms
+    all-reduce:    965 / 728 ms
+  Collective duration includes waiting for other ranks. These totals overlap
+  across ranks and cannot be summed as independent critical-path costs.
+
+PLE admission fix
+  Each new token/request shape previously mmap'ed the entire 102,400,491,520
+  byte sealed table and ran MADV_POPULATE_READ again. Physical pages were
+  shared, but every mapping repeated process page-table population during
+  a request. This is a concrete source of multi-second cold-shape pauses.
+
+  SharedTable now owns one populated mapping. ple_host_create_shared retains
+  it with shared ownership while keeping each lookup's DMA descriptors,
+  packet/staging/output buffers, kernel inputs and producer stream separate.
+  Closing the first owner does not unmap a live child's table. No mutable
+  global registry or device-side host-memory access was introduced.
+  ServingPLE admits the first mapping before serving; subsequent Lookup
+  shapes use the shared creation API. Build the matching native library:
+  older libraries do not export ple_host_create_shared.
+
+  On all four live workers, private old creation took 8.804-8.951 seconds.
+  First admission of the new mapping still took 8.436-8.547 seconds.
+  All 47 subsequent shapes per rank took 0.188-0.194 ms median; the largest
+  measured case was 0.574 ms. These are owner-creation times, not decode
+  throughput or end-to-end request speedups.
+  All 48 token/request combinations (1..12 tokens, 1..4 requests) passed
+  exact device row IDs and host-table embedding bytes twice on every NPU.
+  Another 96 real serving lookups per rank passed exact comparison.
+  Verification hooks were removed afterward. Existing transport owners and
+  mappings remain retained in this process; their memory is not reclaimed by
+  the hot attachment. A fresh start creates only the new shared mapping.
+  This explains the observed initializer stall, but does not establish that
+  every historical decode outlier had the same cause.
+
+QSA block-table cache
+  Live geometry: [T,6,256] queries, one KV head, 64-token cache pages,
+  [requests,4096] block tables. The old on-core table cache admitted at most
+  2048 entries and only one request, so it was inactive in this workload.
+  The D=256 kernel now caches one 4096-entry row (16KB) per core and reloads
+  it at request boundaries. Group order and attention arithmetic are unchanged.
+  The D=512 cache capacity and request admission limits remain unchanged.
+  An isolated binary and an eager owner qualify this path without replacing
+  installed OPP files or decode graphs. Unsupported shapes retain the original.
+
+  Private tests on all ranks were bit-exact across single/mixed requests,
+  request boundary orders, sparse groups, dense prefixes and partial tails.
+  A 515-row mixed sparse case fell from about 21.2-21.6 ms to 19.8-20.3 ms,
+  roughly 6-7%, with alternating repeated measurements.
+  The first live adapter rejected int64 indexer metadata. That run exercised
+  the original operator and did not qualify the candidate. The adapter now
+  performs the same int32 normalization as the production wrapper.
+  The corrected adapter passed 546 live output comparisons per rank exactly.
+
+Operational notes
+  A diagnostic import absent from the worker overlay initially failed before
+  any kernel work. The engine remained drained; known queued diagnostic RPC
+  replies were retired, the harness was corrected, and the gates reran.
+  Never allow per-rank gate exceptions to escape collective_rpc: its response
+  collector stops at the first failed rank and can leave other replies queued.
+  Gates should catch errors on each worker and return structured failures.
+
+  The native PLE library and QSA binary are in the remote evidence directory's
+  shared-mapping-v1 and qsa-table-v1 subdirectories. Source and binary hashes
+  are recorded in provenance.json. Use a fresh output directory for every
+  controller transaction. Never pass an old library's Owner handle into a
+  newly loaded native library; the live migration uses a separate owner pool.
+  The shared-mapping gate/install/finalize scripts document that migration.
+  For a fresh process, build native_ple_host_gather.cpp with the command in
+  PLE_HOST_GATHER.txt and use that library with apply_ple_serving.
+
+Retained performance decision
+  Two alternating original/cached pairs used unique uncached ~20.8K-token
+  prompts with one overlapping 512-token decode stream. PLE sharing was
+  enabled throughout. TTFT seconds, with decode's largest content gap:
+    original A: 70.482, gap 2.299     cached A: 69.024, gap 2.220
+    original B: 69.445, gap 1.855     cached B: 69.186, gap 2.056
+  Mean TTFT decreased 69.963 -> 69.105 seconds (1.23%). Both pairs improved,
+  but this is a small two-pair sample and maximum decode gaps did not improve
+  consistently. Retain the exact QSA cache optimization; do not present its
+  isolated 6-7% kernel improvement as a model-wide gain.
+
+Validation limitations
+  Focused suite: 303 tests passed; an additional post-format pass of the 57
+  directly affected tests passed. The tests include shared mapping lifetime,
+  sealed-table rejection, failed native owner retention, QSA geometry bounds,
+  and int64-to-int32 selection normalization. Hardware gates used real resident
+  workers, not dummy weights. No model quality benchmark was rerun; equivalence
+  gates compare PLE bytes and QSA outputs exactly with the retained baseline.
+  Full `bash format.sh ci` was run in an isolated worktree and remains blocked
+  by repository-wide pre-existing formatting, spelling, import and context
+  manager issues. Only files owned by this optimization wave are delivered.
+
+Final serving checks
+  C1 HTTP output rate (including short prefill/API overhead): median 32.097
+  tokens/s; three trials 32.097, 31.424, 32.537. C4 initially measured 61.205
+  aggregate tokens/s. A direct follow-up measured QSA off 67.271 and on 65.218.
+  The candidate executed 13 prefill attention calls per rank in that on run;
+  decode retained its original graphs. The small C4 sample varies materially
+  and does not prove a decode improvement or exclude a throughput regression.
+  Preserve these results rather than selecting only the fastest observation.
+
+  Both complete retained-owner audits passed, including after the C4 follow-up.
+  PIDs, weight identities, prior native resources and graph ownership stayed
+  unchanged; the server was resumed. Public HTTP smoke returned 391 for 17*23.
+  All four NPUs reported healthy. Temporary profilers, layout hooks and live
+  verification were removed. The changed-file manual pre-commit checks passed.
+  Fork GitHub Actions remains disabled. The large remaining native costs are
+  W4 execution, collective rank waits, and QSA; mixed-request decode gaps and
+  C4 consistency remain useful targets for the next profiling pass.
+
+Final admission boundary
+  Because the short C4 comparison was inconclusive, the live adapter now admits
+  only 128..2048 query tokens. Short prefills and decode use the original
+  operator. This is a narrowing of the already bit-exact candidate, with no
+  change to its kernel arithmetic or buffers. In the final C4 run, all four
+  candidate call counters stayed at 1664: no optimized QSA kernel ran. That
+  run measured 67.931 aggregate tokens/s. This demonstrates preserved original
+  dispatch, not a claim that QSA caching accelerates C4 decode.
+  The earlier alternating mixed measurements used the broader admission;
+  their 24/27-row tail calls now also fall back. Large 259/515-row prefills
+  remain admitted. The final mixed smoke is separately recorded in measurements.
+  Final 128-token-minimum mixed smoke: 20,757 uncached prompt tokens,
+  TTFT 68.656 seconds, overlapping decode maximum gap 1.845 seconds.
+  This is one final-configuration sample, not another matched A/B pair.
+  The retained audit passed again after this run and the engine resumed.
+  The final 60-test admission/PLE subset also passed after narrowing dispatch.

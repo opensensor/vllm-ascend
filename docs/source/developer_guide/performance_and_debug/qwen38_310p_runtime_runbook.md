@@ -25,6 +25,15 @@ other resident optimizations. Compare PLE off/on with the same restored stack,
 request budgets and graphs. See `tools/qwen4exp/SERVING_OPTIMIZED_PLE.txt` for
 the restored configuration, receipts and matched measurements.
 
+The later October 15 device-target pass found a cold PLE shape rebuilding
+page tables for the entire shared host table. Build the current native PLE
+library, including `ple_host_create_shared`, with the current serving adapter;
+do not mix handles from old and new libraries. The first lookup owns the
+populated mapping and subsequent shapes share it. Existing DMA buffers and
+streams remain private to each lookup. See `tools/qwen4exp/DEVICE_TARGET_PROFILE.txt`
+for the four-rank gates, QSA block-table cache experiment, measured results,
+and the retained resident owner inventory.
+
 ## Sources of truth
 
 - Develop changes on the repository's current main branch, then deploy them as

@@ -27,6 +27,10 @@ template <int64_t HEAD_DIM>
 class QsaCubeSparseAttentionV310T {
     static constexpr int64_t MAX_HEAD_DIM = HEAD_DIM;
     static constexpr int64_t QUERY_L0_ELEMENTS = MAX_QUERY_HEADS * HEAD_DIM;
+    // Qwen's 256K context uses 4096 64-token blocks. Its D=256 tile has
+    // sufficient UB for one 16KB request row; preserve the wide-kernel budget.
+    static constexpr int64_t LOCAL_BLOCK_TABLE_ENTRIES =
+        HEAD_DIM == 256 ? 4096 : MAX_LOCAL_BLOCK_TABLE_ENTRIES;
 
 public:
     __aicore__ inline void Init(GM_ADDR query, GM_ADDR keyCache, GM_ADDR valueCache, GM_ADDR groupIndices,
@@ -61,8 +65,8 @@ public:
         queryStartLocGm_.SetGlobalBuffer(reinterpret_cast<__gm__ int32_t *>(queryStartLoc));
         outputGm_.SetGlobalBuffer(reinterpret_cast<__gm__ half *>(output));
 
-        useLocalBlockTable_ = numRequests_ == 1 && maxBlocksPerSequence_ > 0 &&
-                              maxBlocksPerSequence_ <= MAX_LOCAL_BLOCK_TABLE_ENTRIES &&
+        useLocalBlockTable_ = (numRequests_ == 1 || HEAD_DIM == 256) && maxBlocksPerSequence_ > 0 &&
+                              maxBlocksPerSequence_ <= LOCAL_BLOCK_TABLE_ENTRIES &&
                               maxBlocksPerSequence_ % INT32_ALIGNMENT == 0;
         useLocalGroups_ = selectedGroupsWidth_ > 0 && selectedGroupsWidth_ <= MAX_GROUP_WIDTH &&
                           selectedGroupsWidth_ % INT32_ALIGNMENT == 0;
@@ -101,8 +105,6 @@ public:
         LocalTensor<int32_t> localBlockTable;
         if (useLocalBlockTable_) {
             localBlockTable = blockTableBuf_.Get<int32_t>();
-            DataCopy(localBlockTable, blockTableGm_, maxBlocksPerSequence_);
-            PipeBarrier<PIPE_ALL>();
         }
         const int64_t firstTask = GetBlockIdx() * tasksPerCore_;
         for (int64_t offset = 0; offset < tasksPerCore_; ++offset) {
@@ -509,6 +511,14 @@ private:
         const int64_t queryHeads = totalQueryHeadsPerKvHead_ - headStart < headsPerTask_
                                        ? totalQueryHeadsPerKvHead_ - headStart : headsPerTask_;
         const int64_t request = RequestForToken(tokenRow);
+        // Tasks are contiguous within each core. Cache only the current
+        // request's table row, reloading at request boundaries without changing
+        // selected-group order or attention arithmetic.
+        if (useLocalBlockTable_ && cachedRequest_ != request) {
+            DataCopy(localBlockTable, blockTableGm_[request * maxBlocksPerSequence_], maxBlocksPerSequence_);
+            PipeBarrier<PIPE_ALL>();
+            cachedRequest_ = request;
+        }
         const int64_t queryOffset =
             (tokenRow * numQueryHeads_ + kvHead * totalQueryHeadsPerKvHead_ + headStart) * headDim_;
         LoadQuery(queryOffset, queryHeads);
@@ -609,6 +619,7 @@ private:
     float scale_ = 1.0f;
     bool useLocalGroups_ = false;
     bool useLocalBlockTable_ = false;
+    int64_t cachedRequest_ = -1;
 };
 
 using QsaCubeSparseAttentionV310 = QsaCubeSparseAttentionV310T<MAX_HEAD_DIM>;

@@ -149,3 +149,60 @@ def make_replacements(config, *, manager):
     exec(engine_source("install", adapter, {}), namespace)
     with pytest.raises(RuntimeError, match="already exists"):
         namespace["operation"](worker)
+
+
+def test_lookup_shapes_reuse_admitted_mapping_and_retain_failed_owner(monkeypatch):
+    import ctypes
+
+    import torch
+
+    from tools.qwen4exp.ple_serving import Lookup
+
+    calls = []
+    status = [0]
+
+    def create(*args):
+        calls.append(("first", args[:3]))
+        ctypes.cast(args[-1], ctypes.POINTER(ctypes.c_void_p))[0] = 17
+        return 0
+
+    def shared(*args):
+        calls.append(("shared", (args[0].value, args[1])))
+        ctypes.cast(args[-1], ctypes.POINTER(ctypes.c_void_p))[0] = 19
+        return status[0]
+
+    monkeypatch.setattr(
+        torch,
+        "npu",
+        SimpleNamespace(current_stream=lambda device: SimpleNamespace(synchronize=lambda: None)),
+        raising=False,
+    )
+    manager = SimpleNamespace(
+        metadata={
+            "geometry": dict(
+                eos=0,
+                vocabulary=256,
+                multipliers=(1, 3, 5),
+                sizes=(16,) * 16,
+                offsets=tuple(range(0, 256, 16)),
+                table_rows=256,
+            )
+        },
+        fd=7,
+        retained=[],
+        mapping_parent=None,
+        lib=SimpleNamespace(ple_host_create=create, ple_host_create_shared=shared),
+    )
+    device = torch.device("cpu")
+    first = Lookup(manager, 3, 1, device)
+    second = Lookup(manager, 6, 4, device)
+    assert manager.mapping_parent is first
+    assert first.handle.value == 17 and second.handle.value == 19
+    assert calls == [("first", (None, 7, 3)), ("shared", (17, 6))]
+    assert first.packet.data_ptr() != second.packet.data_ptr()
+    assert first.output.data_ptr() != second.output.data_ptr()
+    status[0] = -16
+    with pytest.raises(RuntimeError, match="create failed"):
+        Lookup(manager, 9, 2, device)
+    assert len(manager.retained) == 3
+    assert manager.mapping_parent is first
