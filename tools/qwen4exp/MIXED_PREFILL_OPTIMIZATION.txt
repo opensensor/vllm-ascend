@@ -1,0 +1,128 @@
+Mixed prefill optimization, October 15, 2026
+
+Scope
+-----
+The live pinned QFN runtime predates the canonical repository's mixed-query
+QSA GEMM dispatch. A short decode accompanying a long prefill fell back to
+scalar scoring until both requests had large enough group capacity. The
+mixed_qsa controller admits the newer predicate without replacing model
+forward, attention, graph owners, native resources, weights, or CPU reductions.
+Pure-decode crossover and selection policy remain unchanged.
+
+Admission drains the engine, compares live forward code objects with the
+qualified factory, checks exact selected group sets on every rank, and keeps
+original replacement ownership for reversal. Worker errors are collected on
+all ranks during preflight. Comparing marshalled byte strings is unsuitable:
+equal code objects can serialize differently because of interning/reference
+encoding. The initial overly strict check failed before mutation; admission
+and stale RPC replies were inspected and recovered before resuming.
+
+The conditional mixed_prefill_budget candidate uses the scheduler's existing
+long-prefill threshold only when a running request has produced output. It
+restores the configured threshold after every schedule call, including errors.
+It leaves request ordering, allocation, and async placeholders to the original
+scheduler. This improves scheduling fairness if the chunk cap is appropriate;
+it does not establish independent concurrent prefill/decode execution.
+
+Rejected attention experiment
+-----------------------------
+A separate candidate enabled tiled batched attention for mixed request rows.
+Small private numerical comparisons passed, but the actual 1923-row workload
+failed the configured rtol=0.02 / atol=0.002 comparison on rank 2: 5 of 2,953,728
+values differed, with maximum reported absolute difference 0.0052261353.
+The worker exited and AIcore/MTE errors followed (RmsNorm fault reported).
+The log does not establish that firmware or a specific attention kernel
+caused the device errors. Numerical equivalence remains unqualified.
+
+That candidate is blocked by the deployable installer. Canonical model and
+qualified-forward factory edits were reverted. Future attention experiments
+must isolate production shapes and streams and collect validation failures
+without letting one rank unwind while peers continue collective operations.
+Do not loosen the numerical gate merely to accept this candidate.
+
+Recovery
+--------
+The v13 workers were replaced by resident-live-v14. Stock firmware and the
+current driver were preserved. The retained restoration pipeline passed all
+its model, scheduling, turnover, structured-output and cancellation gates.
+The shared host PLE owner survived; its native adapter was reattached, exact
+lookups checked under C4 and C2, and verification disabled after passing.
+The full audit confirmed all retained CPU reductions, native fused checkpoint
+preparation, MTP2, async queue depth two, and graph sizes 3/6/9/12.
+
+Retained measurements
+---------------------
+Case                              Prefill TTFT      Max decoder content gap
+Original pinned mixed dispatch        76.411 s                    12.512 s
+Score-only, v13                       58.105 s                     5.447 s
+Score-only, restored v14              58.881 s                     5.488 s
+Score + conditional 512               69.301 s                     1.827 s
+Score + conditional 512 repeat        71.916 s                     1.902 s
+Score + conditional 256               84.396 s                     1.349 s
+
+Retain score dispatch plus the conditional 512-token cap. Compared with the
+original pinned trial, this reduced maximum decoder update gaps about 85%
+while prefill TTFT improved 6--9%. The 256-token cap's additional prefill cost
+was not retained. All long prompts were uncached, approximately 20.8K tokens,
+with a 512-output-token decoder already streaming. Unique nonces change prompt
+lengths slightly. These are individual sequential trials, not confidence
+intervals. Content updates may contain multiple speculative tokens.
+
+The retained 512 trial produced 44 decoder updates during prefill versus 14
+for score-only/default chunking. Prefill-only retained normal 2,048-token
+chunks and reached its first token in 57.531 seconds for 20,757 prompt tokens.
+
+C1 median HTTP throughput across three 256-token requests was 32.539 tok/s.
+C4 finite-batch HTTP aggregate was 65.434 and 61.879 tok/s with the cap enabled,
+and 63.563 tok/s with it disabled. This does not reproduce the historical
+69.179 tok/s result. The small on/off sample shows no consistent cap penalty;
+it does not establish numerical reproducibility or prove the entire remaining
+historical throughput difference is explained. No CPU reduction was disabled.
+
+Private query-row sort tiling preserved selected indices on all four NPUs,
+but was slightly slower: about 9.5--9.6 ms at 5,120 columns and 14.0--14.1 ms
+at 8,192 columns, versus 9.5--9.6 and 13.7--13.9 ms originally, for 1,923 rows.
+It remains a diagnostic candidate and is not installed in serving.
+
+Final validation and delivery
+-----------------------------
+The final four-rank audit passed with native PLE enabled, verification off,
+score-only mode owned, every prior CPU reduction enabled, and conditional
+budget 512. Configured long_prefill_token_threshold remains zero outside each
+schedule call. The server is resumed at http://192.168.53.187:8001/v1.
+
+A first read-only audit mistakenly looked for wrapper-owned PLE state on the
+underlying worker. The failure was inspected on all four ranks; corrected
+checks passed before clearing only that failed read-only transaction. The
+final controller performs worker checks during preparation, before mutation
+admission. Regression tests cover distinct wrapper/worker ownership and failed
+read-only preflight.
+
+183 focused host tests passed, with real NPU gates and serving trials above.
+The attempted full qwen38_1m suite stopped at collection because the local vLLM
+installation lacks is_weak_contiguous. Full bash format.sh ci was run in an
+isolated checkout; pre-existing lint/format/import violations prevent a clean
+repository-wide result. All changed-file manual hooks, including the secret
+scan, passed.
+GitHub Actions remains disabled on opensensor/vllm-ascend.
+
+Evidence: artifacts/qfn-mixed-opt-20261015/measurements.json and validation.json.
+Original profiling baseline: tools/qwen4exp/MIXED_PREFILL_PROFILE.txt.
+The v13 attention-failure and recovery logs remain under the dated artifact
+root on the device and in the local workspace.
+
+Reapply after a qualified stack restoration
+------------------------------------------
+Use the tools overlay containing mixed_qsa.py and mixed_prefill_budget.py.
+Set PYTHONPATH to that overlay and use the resident Python environment.
+Pass the active run directory explicitly; never reuse a stale control token.
+
+python artifacts/qfn-mixed-opt-20261015/control.py gate --run-root RUN --label NEW_GATE
+python artifacts/qfn-mixed-opt-20261015/control.py install --run-root RUN --label NEW_INSTALL
+python artifacts/qfn-mixed-opt-20261015/budget-control.py install --limit 512 --run-root RUN --output NEW_OUTPUT
+
+Each output path/label must be fresh. Use the corresponding restore action
+while drained to remove these changes without replacing the retained stack.
+The final-audit controller is a recorded v14 deployment audit; update its run
+path for a future instance. Mixed attention modes are explicitly rejected.
+

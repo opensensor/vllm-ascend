@@ -92,13 +92,16 @@ def main():
     parser.add_argument("--label", required=True)
     parser.add_argument("--mode", choices=("spans", "cpu", "native"), default="spans")
     parser.add_argument("--paragraphs", type=int, default=500)
-    parser.add_argument("--baseline", action="store_true")
+    workload = parser.add_mutually_exclusive_group()
+    workload.add_argument("--baseline", action="store_true")
+    workload.add_argument("--prefill-only", action="store_true")
     parser.add_argument("--prefill-limit", type=int, choices=(128, 256, 512))
+    parser.add_argument("--run-root", type=Path, default=RUN)
     args = parser.parse_args()
     assert Path(args.label).name == args.label
     output = ROOT / args.label
     output.mkdir(parents=True, exist_ok=False)
-    client = QfnResidentClient("http://127.0.0.1:8001", RUN / "control.token", timeout=900)
+    client = QfnResidentClient("http://127.0.0.1:8001", args.run_root / "control.token", timeout=900)
     record = dict(mode=args.mode, before=client.rpc("resident_status"), metrics_before=metrics(client))
     for line in record["metrics_before"].splitlines():
         if line.startswith(("vllm:num_requests_running{", "vllm:num_requests_waiting{")):
@@ -190,21 +193,25 @@ def main():
     )
     control(True)
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-            decode = pool.submit(
-                stream,
-                "decode",
-                f"Experiment {nonce}. Write a detailed numbered guide to "
-                "implementing a hash table, with Python examples and tests.",
-                512,
-            )
-            if not args.baseline:
-                assert trigger.wait(30), "decoder did not begin streaming"
-                prefill = pool.submit(stream, "prefill", long_prompt, 16)
-                record["prefill"] = prefill.result()
-                save()
-            record["decode"] = decode.result()
+        if args.prefill_only:
+            record["prefill"] = stream("prefill", long_prompt, 16)
             save()
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                decode = pool.submit(
+                    stream,
+                    "decode",
+                    f"Experiment {nonce}. Write a detailed numbered guide to "
+                    "implementing a hash table, with Python examples and tests.",
+                    512,
+                )
+                if not args.baseline:
+                    assert trigger.wait(30), "decoder did not begin streaming"
+                    prefill = pool.submit(stream, "prefill", long_prompt, 16)
+                    record["prefill"] = prefill.result()
+                    save()
+                record["decode"] = decode.result()
+                save()
     finally:
         control(False)
     record["after"] = client.rpc("resident_status")
