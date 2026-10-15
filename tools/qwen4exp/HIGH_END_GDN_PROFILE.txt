@@ -1,0 +1,154 @@
+Fresh long-context profiling and aligned GDN output
+==================================================
+2026-10-15, Qwen3.8 Flash-Next W4, four Ascend 310P devices, TP4/EP4/MTP2.
+The existing resident-live-v14 server on 192.168.53.187:8001 was used throughout.
+No firmware, driver, weights, full OPP package, or serving process was replaced.
+
+Findings
+--------
+A fresh native capture during a 46K-token uncached prefill overlapping decode
+still puts routed W4 GEMMs and QSA sparse attention first. Across two late
+mixed 515-row steps, rank 0 spent 728 ms in routed W4 and 551 ms in QSA;
+rank 3 spent 862 ms and 551 ms respectively. HCCL durations were 478/347 ms;
+these include imbalance/waiting and are not pure communication cost. Native
+profiling overhead is substantial: the baseline 46K prompt TTFT was 161.07 s,
+with a 3.17 s maximum streamed decoder content gap. A content update may contain
+more than one output token. Raw traces remain on the host; native-summary.json
+contains kernel totals, shapes, and host API totals (which can overlap).
+
+WY graph experiment
+-------------------
+The fixed 512-token WY preparation graph preserves the existing tensor math,
+stages five inputs, and clones all five outputs so subsequent layers cannot
+reuse a consumer's storage. It falls back on unsupported geometry, stream or
+capture state. Three changing private input sets passed on all ranks; a live
+shadow checked 5,760 calls / 28,800 output tensors exactly. Isolated preparation
+fell from roughly 3.5-3.8 ms to 2.2-2.4 ms including staging and output clones.
+The graph owns 6,877,184 static tensor bytes per rank, excluding graph workspaces.
+
+Native capture reduced host kernel launch calls from 38,273 to 26,345 on rank 0,
+but the whole profiled 46K prefill took 161.74 s. Launch count alone therefore
+did not demonstrate a serving speedup. Graph capture also released unused
+allocator cache; the resulting free-memory increase is not new model capacity.
+
+Correctness issue exposed by the full GDN gate
+----------------------------------------------
+Despite exact WY intermediates, full GDN output differed between eager and
+replay. Repeating the unchanged eager path also differed. Isolating the two
+native kernels showed exact h, v_new and final-state tensors, but unstable
+output-kernel rows, particularly row 56 within chunks on odd value heads.
+
+The pinned runtime's source snapshot predates the aligned causal-mask fix in
+commit 8fce905ef. Its unaligned vector writes and scalar tail writes are absent
+from the corrected repository source. An isolated direct binary built from
+that corrected source removes the observed variation, without changing OPP
+resolution. The diagnosis supports the stale-mask path; it does not establish
+that every source-level difference has been independently bisected.
+
+The direct wrapper admits eager FP16 q/k/v/h and FP32 g, B=1, four query/key
+heads, 12 value heads, 128-wide heads, and 64-row padded chunks up to 2,048
+tokens. It validates host varlen plans, keeps scratch per owner/stream, caches
+small tiling tensors, and allocates a distinct output per call. Unsupported
+calls retain the original operator, so this is not a general OPP replacement.
+The existing owned native bridge retains asynchronous operands. No new process
+global, environment variable, device synchronization, or host tensor readback
+was added to the normal path. The output-only patch changes no recurrent-state
+arithmetic. Prefix caches were cleared when installing the correction.
+
+On all four NPUs, repeated outputs were exact for 64, 128, 512, and 2,048 tokens
+and two multi-sequence layouts. Independent CPU output math agreed at the
+existing atol=0.002/rtol=0.02 gate; worst observed absolute difference was
+0.0000076294. With this corrected output, full GDN output AND FP32 recurrent
+state matched bitwise between eager WY and graph WY in both fixed and varlen
+cases. Earlier failures are preserved alongside successful gates in measurements.json.
+
+Serving decision and paired measurements
+-----------------------------------------
+Both modes below use the corrected GDN output. Each uncached approximately
+20.8K-token prompt overlaps a 512-token decoder. Two trials per mode do not
+provide a confidence interval; prompt nonces vary the token counts slightly.
+
+WY mode / trial                 Prefill TTFT       Max decoder content gap
+Eager A                             71.173 s                      1.977 s
+Replay A                            71.012 s                      2.052 s
+Eager B                             72.645 s                      3.313 s
+Replay B                            72.339 s                      2.103 s
+
+Mean TTFT was 71.909 s eager versus 71.676 s replay, about 0.33% lower.
+This small difference, together with the flat native-profiled comparison,
+does not establish a useful serving gain. WY replay is left disabled. The
+aligned GDN output correction is retained for correctness, not advertised as
+a throughput improvement. After these trials and additional randomized gates,
+it had 6,224 calls per rank and zero fallbacks. Random zero-gate and decaying-
+gate cases through 2,048 rows repeated exactly; maximum CPU-reference absolute
+difference was 0.0000152588. The first fixed-input CPU gate above is separate.
+
+Final short-prompt C1 median was 32.212 tok/s, with individual trials 32.328,
+32.212 and 15.117 tok/s. C4 aggregate was 62.418 tok/s including startup and
+finite-batch completion effects. These do not beat the historical 69.2 C4.
+The slow C1 trial had about nine extra seconds in decode despite similar MTP
+acceptance. Five additional instrumented trials ran at 31.280-32.645 tok/s;
+the slow event did not recur. Engine/worker GC callbacks measured at most
+1.060 ms; no causal claim about the earlier event is justified. The outlier
+remains unresolved, rather than being hidden by the median. Bounded scheduler,
+worker, checkpoint and GC traces are in decode-tail-summary.json, and every
+hook was restored. Generated hash-table explanations remained coherent; this
+is a smoke check, not an accuracy benchmark.
+
+The retained-stack audit passed on all four ranks, with unchanged worker PIDs,
+weight storage, native PLE and collective graph ownership. All profilers were
+released and serving resumed. Changed-file manual hooks, including the secret
+scan, passed. Provenance records use explicit path/sha256 fields to distinguish
+file checksums from credentials; the scanner initially misclassified filenames
+containing "per_token" followed by their SHA256 values.
+
+The next performance targets are routed W4 work distribution and QSA device
+execution. Prioritizing another broad host-launch reduction is not supported
+by this wave's end-to-end measurements.
+
+Validation and limitations
+--------------------------
+550 focused host tests passed, including admission, output lifetime, fallback,
+metadata ownership, WY replay, retained scheduling and checkpoint helpers.
+The unscoped local unit invocation cannot collect because its installed vLLM
+lacks vllm.third_party.flash_linear_attention. This is separate from the
+hardware resident gates. Full bash format.sh ci ran in an isolated worktree and still fails existing
+repository-wide lint/spelling/markdown/import checks outside this change.
+Changed-file hooks are run separately; GitHub Actions remains disabled.
+These tests establish component correctness and
+serving behavior, not model-wide benchmark accuracy or full-window capacity.
+
+This wave uses the existing direct server and its real loaded model. TP4/EP4,
+MTP2, native PLE, queued execution, device-resident drafts and transitions,
+early PLE readback, nonblocking uploads, checkpoint preparation, output overlap,
+score-only QSA dispatch and mixed GDN gather remain required. Pure decode
+ACL graphs remain [3,6,9,12]. Multimodal, flashcomm1 and larger context capacity
+were not changed or requalified by this experiment.
+
+Reproduce and recover
+----------------------
+Use the existing resident Python and serving-source-v2 tools overlay from the
+runtime runbook. All control commands require --run-root RUN and a fresh
+--output OUTPUT. The dated artifacts/qfn-high-end-20261015 scripts preserve the
+experiment sequence. Never overwrite an already loaded binary or its owners.
+
+build-gdn-output.sh BUILD SOURCE_ROOT CATLASS_ROOT COMPILER copies an isolated
+source tree, compiles the direct entry with the existing ACLRTC compiler, and
+records source/binary hashes. The compiled kernel uses the existing qualified
+qwen_checkpoint_preparation_v1 owned bridge, not its checkpoint entry function.
+No generated binary is installed over an OPP package.
+
+For a fresh resident session, run wy-graph-probe.py, wy-control.py install,
+then wy-control.py off. probe-gdn-output.py --binary BINARY retains the direct
+kernel and checks its output; qualify-gdn-output.py --binary BINARY checks the
+shape matrix and the complete GDN/WY path. Inspect all four passed receipts
+before gdn-output-control.py install. This source-hash-gated transition clears
+prefix caches, patches only the chunk output call, preserves resident identity,
+and resumes serving. stress-gdn-output.py adds independent random operands.
+
+WY replay remains independently reversible via wy-control.py on/off. The
+corrected output is reversible with gdn-output-control.py off or restore;
+these clear caches before restoring old output semantics. Restoring the old
+operator also restores the observed numerical defect. All owners stay alive
+through drained transitions. A server restart requires re-admission; these
+resident patches are not assumed to survive restart.

@@ -1,0 +1,992 @@
+{
+  "entry": "qwen_gdn_output_aligned_v1",
+  "architecture": "dav-2002",
+  "compiler_sha256": "2d1d7b2fc24ee066520388f8aaf7d350188fcd6b41755a862c17c166defa644a",
+  "files": [
+    {
+      "path": "arch20/compat_310p.h",
+      "sha256": "d0972eee44b6f8778c68535b40995ea702417dbd272fb92effad154cb0b92126"
+    },
+    {
+      "path": "arch20/epilogue/block/block_epilogue_gdn_fwdo_output.hpp",
+      "sha256": "5e31db83657a8f925cd7854ee151cbd2e2049288198991e44d4ff91490b7040c"
+    },
+    {
+      "path": "arch20/epilogue/block/block_epilogue_gdn_fwdo_qkmask.hpp",
+      "sha256": "e4a2312740a1d405044f8e1dc34f2453e0559407f5faa117ffeec261194a8226"
+    },
+    {
+      "path": "arch20/epilogue/gdn_fwd_o_epilogue_policies.hpp",
+      "sha256": "3d60a10b2840fee77f23719dd6d4904cbed183e8d9c0d279144ee2f763ac8dfc"
+    },
+    {
+      "path": "arch20/gemm/block/block_scheduler_gdn_fwd_o.hpp",
+      "sha256": "5b4149fa87f7351a76dedf478d5d1513af439ec314b4f4e463c75c7ea81161d6"
+    },
+    {
+      "path": "arch20/gemm/kernel/gdn_fwd_o_kernel.hpp",
+      "sha256": "0e3de4faf8886b3184814d98269be7420d7efc343c4770ec39ee387b84980a10"
+    },
+    {
+      "path": "catlass-include/catlass/arch/arch.hpp",
+      "sha256": "f9f730ef9dee785d90fb4a824421a3d514eb44d333abc7ec29efc44e40aa44a1"
+    },
+    {
+      "path": "catlass-include/catlass/arch/cross_core_sync.hpp",
+      "sha256": "b6dbd0a6a13a2a00bc5464406504d1a6f44b61707fb3637f516060eaa71b7609"
+    },
+    {
+      "path": "catlass-include/catlass/arch/local_tensor_buffer.hpp",
+      "sha256": "cb5df38bac9b0fb7c34b75f59bccee1d03cc70404c3bcafdbe9c818a32e2f17d"
+    },
+    {
+      "path": "catlass-include/catlass/arch/resource.hpp",
+      "sha256": "b961e2e4df025d6456e9933d3cf4bdef713ab5f746e77e2e855b0c47df804039"
+    },
+    {
+      "path": "catlass-include/catlass/catlass.hpp",
+      "sha256": "2024be9f431b520c54fb67136341b81e4eed8153775b6c7ac6fb9e1f70b63e60"
+    },
+    {
+      "path": "catlass-include/catlass/conv/block/block_conv.hpp",
+      "sha256": "519ab5c68de71dcba12ef47b163ae4aa04877e94f90c0d78d9629ddeda54d25d"
+    },
+    {
+      "path": "catlass-include/catlass/conv/block/block_conv2d_pingpong.hpp",
+      "sha256": "6476cd8baf3339e4d8e499c807cb11e1dec4aab930858bee8fdcd94836432b8d"
+    },
+    {
+      "path": "catlass-include/catlass/conv/block/block_conv3d_pingpong_bias.hpp",
+      "sha256": "4bde2814e93d686391b8d9559be3fbcf7f3c8bd72be6bb7107e794cec009e34b"
+    },
+    {
+      "path": "catlass-include/catlass/conv/block/block_swizzle.hpp",
+      "sha256": "60a7c4fe9cc729d4df913a1e9094f06d241398b1323171c52052e9940f2599e6"
+    },
+    {
+      "path": "catlass-include/catlass/conv/device/device_conv.hpp",
+      "sha256": "f5ba843d2e3815b40480b22e6f3ca1b4ddf4a6408d61bcfd0558439cc3b1abce"
+    },
+    {
+      "path": "catlass-include/catlass/conv/dispatch_policy.hpp",
+      "sha256": "60879357def9528bdad6494347d1ce7e2e886ba4c0ad7e845111f976baa068b6"
+    },
+    {
+      "path": "catlass-include/catlass/conv/kernel/basic_conv2d.hpp",
+      "sha256": "a1e10a721b9e2986f5757c6193b85614ecc36dbeb5500601f19dfaf8722b3eb3"
+    },
+    {
+      "path": "catlass-include/catlass/conv/kernel/conv3d_bias.hpp",
+      "sha256": "81c6b4a94fb0f9d4d0d5930383e34d368491974e84ac6a7c24fca76b2fe6e144"
+    },
+    {
+      "path": "catlass-include/catlass/conv/tile/copy_gm_to_l1.hpp",
+      "sha256": "726b9816600216c4f98a004876b92137249127ab87bef617da63a006790a382e"
+    },
+    {
+      "path": "catlass-include/catlass/conv/tile/copy_l0c_to_gm.hpp",
+      "sha256": "da0452d76dfe6818ec984420fb0d3a445c17dd1529986c75f30e74df2eb50b18"
+    },
+    {
+      "path": "catlass-include/catlass/conv/tile/copy_l1_to_l0a.hpp",
+      "sha256": "a6ebac90ba42fc8edec25f039f9a0c00bec4e7f136476cc53a7b1fd3b17d59b9"
+    },
+    {
+      "path": "catlass-include/catlass/conv/tile/copy_l1_to_l0b.hpp",
+      "sha256": "497c17a14eea1ccaf0a23b9e81239de11cc95d6cacf11b56b1115930fd80a70b"
+    },
+    {
+      "path": "catlass-include/catlass/conv/tile/tile_copy.hpp",
+      "sha256": "ad528588e70f403608bd4774da6b622ea83d46d21906848662e34a33c497e806"
+    },
+    {
+      "path": "catlass-include/catlass/conv_coord.hpp",
+      "sha256": "c18945ef67c119a55e876e20360c47967de9eacebb7a1156ee86567fa795d533"
+    },
+    {
+      "path": "catlass-include/catlass/coord.hpp",
+      "sha256": "e7920d5ce1f724c3e6335df5ffb4919ad057c08430b00fed6a572528003de425"
+    },
+    {
+      "path": "catlass-include/catlass/debug.hpp",
+      "sha256": "8c1358f4a1bb441630363f3fa6265c01a0908cc7b116a38c9d68d71bcefab7ea"
+    },
+    {
+      "path": "catlass-include/catlass/detail/alignment.hpp",
+      "sha256": "a4bcf1f6306bd83b1e638aa853be849bbc8da4622e0ff2f3476bcda6dd5951c9"
+    },
+    {
+      "path": "catlass-include/catlass/detail/callback.hpp",
+      "sha256": "6913fe6f5b6c9094dab3811ffc2ed6deb8491a2514e84ae799b7add5fda46f94"
+    },
+    {
+      "path": "catlass-include/catlass/detail/dependent_false.hpp",
+      "sha256": "2678c7f4c1b4785bd275e45ac08f089aea153cd20ca94e9175dd455e77b20bb9"
+    },
+    {
+      "path": "catlass-include/catlass/detail/kernel_adapter.hpp",
+      "sha256": "c833fd6018dba02ca951245f5f71811705f095f6c42496bd75294ae887e24213"
+    },
+    {
+      "path": "catlass-include/catlass/detail/macros.hpp",
+      "sha256": "95cc548b250fd7de952e1cc2a557340d1ee62481b9906ceaef2f9ebfb2cf3e33"
+    },
+    {
+      "path": "catlass-include/catlass/detail/tag_to_layout.hpp",
+      "sha256": "c845eea8962e7f5c63d7b8e547fcc81341d79a71bc6166c3e36d26f85e8dc588"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/block/block_epilogue.hpp",
+      "sha256": "13ddd66596e020c79b76980a24ba0f000a3ddd6a45a9ba53895ab162281927f8"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/block/block_epilogue_elemwise_no_source.hpp",
+      "sha256": "7ddc844074cc3fcc915b1e6b83d297cbfa87bb460ca682a5ae14161d88e6338f"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/block/block_epilogue_elemwise_one_source.hpp",
+      "sha256": "df24d2a07ceb55d33d3e3e2889bb6401e6212cf6fc3f780b788628389f7d9c24"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/block/block_epilogue_fa_rescale_o.hpp",
+      "sha256": "bac2437ecf737191d7170e7733228567fd6bac27d87dfaa40e5fd2090da3a30e"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/block/block_epilogue_fa_rescale_o_ascend950.hpp",
+      "sha256": "3a804db6b31bca479cd61c2b5c46f932216ea794f6b5814ce9f15abc429a6d3e"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/block/block_epilogue_fa_softmax.hpp",
+      "sha256": "4f5050b2e6d7bed15c0d054fc0ce240b5d6ebaf7a0f273b5068850ed3e481a91"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/block/block_epilogue_fa_softmax_ascend950.hpp",
+      "sha256": "1dad15ba108e848c3d76118df04ef7c51cc010af6bc1a3e2e430f0c6043133b8"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/block/block_epilogue_fixpipe.hpp",
+      "sha256": "5f0270721fb0b83bc6b48f2444b59bfe684adc99cfb6ebeef8b1f62d973ab7d2"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/block/block_epilogue_gemm.hpp",
+      "sha256": "9a57338ddf1691ed49caf9adfb80c8c7a9a461decd6df6bdfca794c79cc86848"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/block/block_epilogue_gemv.hpp",
+      "sha256": "aa400d439ba513fad083e3b0f9b2e3ada73b048b22ad389860ee9fcafcfe62c8"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/block/block_epilogue_mla_fd_rescale_o.hpp",
+      "sha256": "f4c3f2681c11ce580f9934b35c67e831ff314ff716a452916bb08f90e48c395a"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/block/block_epilogue_mla_rescale_o.hpp",
+      "sha256": "00f293232858dac8e03ac0495a9c5d17bbc510fcde9e0114a2eefb1d51adb5d2"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/block/block_epilogue_mla_softmax.hpp",
+      "sha256": "f2e481d93a40a1f40860762c5f5f168bad928dfd74b5d8c6737c650e9fe92679"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/block/block_epilogue_mla_tp1_rescale_o.hpp",
+      "sha256": "5f4a3c92d9e042274a9a72201dfe9701122aa85a5f47b08704d6294b3401a7fc"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/block/block_epilogue_mla_tp1_softmax.hpp",
+      "sha256": "3793d800496a780e8e5189037754263ccc4dc76f4edc4fe2fe02a7aa1f6c6902"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/block/block_epilogue_online_softmax_no_mask.hpp",
+      "sha256": "cd448681bfbc94aff4d4c296ef5472017e6b06a42c02503b17e64ddd10351c44"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/block/block_epilogue_per_group_per_block.hpp",
+      "sha256": "c433706c918fd20047d3c06f4dd033249b1ba2c2e982bb1e55c4b646899b5680"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/block/block_epilogue_per_token_dequant.hpp",
+      "sha256": "f086071b50869a01e5fb95ee455d3a07ef441573a73a3de77d704e52dfe482e0"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/block/block_epilogue_per_token_dequant_tla.hpp",
+      "sha256": "e0c5870345f19d565d5d8aa70218d65e71e669675af1b1951b64ba7ddcefe0a4"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/block/block_epilogue_rescale_o_no_split_row.hpp",
+      "sha256": "28072305757e21cacff53d3679fbbe85fa8496fae63f50eb37dc60b0ca970779"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/block/block_epilogue_w4a4_per_token_per_channel_dequant.hpp",
+      "sha256": "5111ef0d82faee38fa671406dc149cbfad5e94b724b4a67c4d933d47c2f8ca83"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/dispatch_policy.hpp",
+      "sha256": "889dcd2302bc32374811ac3e94f876981992a0133321abb40f13dfe13281cf0f"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/tile/copy_gm_to_ub.hpp",
+      "sha256": "1fe0e66ec3c674bd3f19f54a6c79224b7dae999cea18d910d02e1eabbe273df0"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/tile/copy_gm_to_ub_tla.hpp",
+      "sha256": "4557a309fd5df0d413142a2336762adb6f770cc5685d94f0861d78af92ffc27a"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/tile/copy_ub_to_gm.hpp",
+      "sha256": "a51835730b1fce2a41161a43b722098f41b9a17474826a4d3f6be89fff5624ec"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/tile/copy_ub_to_gm_tla.hpp",
+      "sha256": "adbb4ead0e045577b311d1337769ce3cd3023e111647a04254090f2967c26a22"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/tile/copy_ub_to_l1_tla.hpp",
+      "sha256": "1c2e8c20f0ae52f52ea0f09ac47e8f4471123dfb7d7931960bbb0b5c59481a2d"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/tile/tile_broadcast_add.hpp",
+      "sha256": "ecccf0a51448297c8571530c9f0990382999ed390fa809a1b1a7cf208e98b13f"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/tile/tile_broadcast_inplace_by_column.hpp",
+      "sha256": "a479c755a9b2309289c98cd69e002e673b5cc1927b4dcf8cc5c44e2b8ace7a8d"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/tile/tile_broadcast_inplace_by_row.hpp",
+      "sha256": "ec6bd7f2f423b27e5f747deaf695d181f5892e4bf912250701d435709ceed571"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/tile/tile_broadcast_mul.hpp",
+      "sha256": "eb4a0ea0cbb73544ae2671883f978537948070e81a0287dc0a5ffc8ccda8c97f"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/tile/tile_broadcast_one_blk.hpp",
+      "sha256": "bd317137814bf89ff8d04657b40ba2aef8a63fcdf66d7472b995e9458b3451fe"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/tile/tile_cast.hpp",
+      "sha256": "a5d2f327922674abadf7b4001693fd24fc0471c4d024706c4e2d23cff51e9bb6"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/tile/tile_copy.hpp",
+      "sha256": "b0d6cbbfd055e558b35624ecb7478d6c1b6c5eb6ecf1dfb5e408c6240423d212"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/tile/tile_elemwise_add.hpp",
+      "sha256": "8e28db05c378c6bacb0718a1fe365c61f1f875730547a7ea124a62a3c198016e"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/tile/tile_elemwise_gelu.hpp",
+      "sha256": "ca63b0dbf65a75f02a83ff3d222db6369f8ca8290ba1dd86610080e806511187"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/tile/tile_elemwise_mul.hpp",
+      "sha256": "56d93d35026e97a064ea1641cff20778406174996819afc6a098f105b220c9d0"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/tile/tile_elemwise_muls.hpp",
+      "sha256": "539ecbbe4996a09076adde8c2b983601550ea2bf0dfe0fbb72dcf85efa27746d"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/tile/tile_elemwise_silu.hpp",
+      "sha256": "073ae071c724882c6fbba0f877aefc6ebb7217fc3fb8748eb4587dc43cbafe7f"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/tile/tile_pertoken_dequant.hpp",
+      "sha256": "5933f9e0e1597cb3ef2c9491d458def97ac4b7e258a3598cb5da458ff6b5d2fe"
+    },
+    {
+      "path": "catlass-include/catlass/epilogue/tile/tile_swizzle.hpp",
+      "sha256": "a2ac4786457998f2353ac13439ec06b4a44d1ec3751e2eea1fc82825f85457bd"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad.hpp",
+      "sha256": "9603ddb45795df6661b028c403148168297ceb3eef4721055d1721c252b2367e"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_dynamic_aiv.hpp",
+      "sha256": "ec049912591aa6f770a3c2e349b76e8ae929f26f75e2f22a728ef9e3ab382c51"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_dynamic_common.hpp",
+      "sha256": "e572a31e145ecbfeec4fe89c76c0d441a164cbf6fc28b01fd00c20f7ff6c13ff"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_dynamic_preload_async_with_callback.hpp",
+      "sha256": "68400f9171e47d86dfdb65d0a3cee13b364eb7a16ffc6ef9b9d022360a9d6b29"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_dynamic_single_core_splitk.hpp",
+      "sha256": "c4c8463ad2b55f7d866925f0c5ede19efa61e41bf4f6b1dccba62b3d8e5e9640"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_dynamic_small.hpp",
+      "sha256": "0577ccb786458d8256979d06f865885d249a6759eb5d68b2a32afbadd9e7dece"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_dynamic_streamk.hpp",
+      "sha256": "2f9580e6bd9d7c703c6487c4eb1cbbbd8e5ca1e4445bf7ef730617c21f62a50d"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_fa_pv.hpp",
+      "sha256": "57fdaf606b5f1255ba4aa7ce4b3df0a8c99fca3b82ffb5bb011650cc22137ed1"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_fa_qk.hpp",
+      "sha256": "6b51e1c8c8066385af7f4200c04a03b1894e482ae94a3334ef9489ed0d4ebe5c"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_fai_pv_head_tail.hpp",
+      "sha256": "1dc4b7a8183ba1a8596d6e27b99abf671de7e138d46cbaf93c4f730a638b9b55"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_fai_pv_head_tail_tla.hpp",
+      "sha256": "86839ba78820d418c975c87026d9acd13d327b54c85d445011197c3195957e6d"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_fai_pv_normal.hpp",
+      "sha256": "9ca115aa98f2e8cd51441989f73807402a2b0d268a1e9b392cf7132e0ce60ca8"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_fai_pv_normal_tla.hpp",
+      "sha256": "df8981c6c9e8fdf9c6274814a040c7e57ce5601cfd83eb8c26ca713a74f7cf98"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_fai_pv_tla.hpp",
+      "sha256": "f281002e9004325b4d86a559721ad152456360a064a6d2910d819db2717cf5fc"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_fai_qk_head_tail.hpp",
+      "sha256": "58e87f3d98e69e3a451a601d28d29eb01727d4a5b413f8c593ce9f5e95ecd1b2"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_fai_qk_head_tail_tla.hpp",
+      "sha256": "87c304335e11f9a7756130ed3bc71303015464532bd2249663806ec79b930111"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_fai_qk_normal.hpp",
+      "sha256": "eada9d9bce8333a3f6d3d1f82f71c1c6916d7963569d4fc48721fba03256ca5f"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_fai_qk_normal_tla.hpp",
+      "sha256": "c02a19d6f69eba3a085902ea4d8c18903ee7e7222c0a8f79c528f967c2c7fe6b"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_fai_qk_tla.hpp",
+      "sha256": "a35678e444a28b156083f51172533eda01f8f68475082d9cddca463f8c77e344"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_gemm.hpp",
+      "sha256": "f9fd7d8292ca2bda41026cd172e8f2c019aa40fa88b013e900c613d91104186e"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_mla_pv.hpp",
+      "sha256": "9d7c0821895f90fe73384a44a47fd5d54e452675727c06d9c740a3717daa0f3c"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_mla_pv_tp1_spec.hpp",
+      "sha256": "c3474749ffc11723b82c8775205e0e6e4a2d08f5f1d77c85157e5d171acb09fc"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_mla_qk.hpp",
+      "sha256": "45e2aac2877c554825f96edcb5368c7e811667baba300cb8848d712ce06d5b53"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_mla_qk_tp1_spec.hpp",
+      "sha256": "c1b2165ba5581554b81e5b1141a2336506dcc06fa8bf1d5c28fa917c49079d2c"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_pingpong.hpp",
+      "sha256": "adef52bb6025eb575cb83e3120fe5e701328d763674d926d73ded8c33b62a1d2"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_pingpong_bias.hpp",
+      "sha256": "92180c7a9d1a20ff2982a9c16184af5d443b7635fbbf79319b08f6ed29b48bdc"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_pingpong_dequant_tla.hpp",
+      "sha256": "2cf51f3a0fabf0e7b3180f847b759bc501043587c79f72248d8820f56fb21e52"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_pingpong_full_loadA.hpp",
+      "sha256": "09c15ecc6553583f80279b1a9f7f3d01d004b46843c6d7034918fab174d25791"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_pingpong_full_loadA_tla.hpp",
+      "sha256": "eaec2dd29a30eb4fe57b6ac6a6177016fc313489234e6e343afc023d1ad9131a"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_pingpong_per_group_per_block_tla.hpp",
+      "sha256": "0d99eaa7157338c6ccedbbfede6f43388bd117ace342b839e9e8975ddd8e846d"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_pingpong_slice_k_with_prologue.hpp",
+      "sha256": "cb0748ef89be1ed22fe11e4f34fc1bedcee43bf1262b4f426e59c9b16ae6289c"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_pingpong_tla.hpp",
+      "sha256": "5939b8d85062c71acc492cb454a1087243d87ebdeec3c6902e42d3dd4e89b2a7"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_pingpong_tla_v2.hpp",
+      "sha256": "d3e47ee681fc4a24e095c6d7345a3de4c5b80cdaa54dde0cbcdce4c14162c8f0"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_pingpong_with_prologue.hpp",
+      "sha256": "24c1b3d1a8433c3673acb0b8e361145390bd5d932c5508cb8343f9b0326e71df"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_preload.hpp",
+      "sha256": "8c2f59cd6a330b25b0b140784c333d095999076790198ffa2dcce8b244221eed"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_preload_async.hpp",
+      "sha256": "cf4150bce627f05699889328e82b1077ff3278b72e210835324ce2faa79327a8"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_preload_async_with_callback.hpp",
+      "sha256": "a2f0302e2e48ff8e3949bac36fc871327f7efaffd5105c507fa3e236fc13a8fd"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_preload_async_with_callback_tla.hpp",
+      "sha256": "a942ab917c7bd8b657787a24853a597e391ce7495e911803d2458b0b62e3f19f"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_preload_tla.hpp",
+      "sha256": "1c82311fda90f70a4ac2bccebab02e096d13b061c8731a65bda3de41fc43289f"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_single_core_splitk.hpp",
+      "sha256": "de940ac965ef946718b9f28463404531be142084e0c3bc74d69b383c0464cb48"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_small.hpp",
+      "sha256": "43143a19d8a2ca42322054e0fa9358a1a40918ea91884ef3bc6f81b27c75b803"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_sparse_tla.hpp",
+      "sha256": "708684b994e228b412efc6feb7c9d5904907b6b0c056e034e9cb29408a97679e"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_streamk.hpp",
+      "sha256": "e23533d4593fa0e964e365f5d12d1342fc4fc1e93114801611750fe702f6453e"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_mmad_w4a4_per_token_per_channel_dequant.hpp",
+      "sha256": "e89c772161eacc9666f3b07e39d03a5b0d0c089c83963cf2e65eec4a63a70dd3"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_scheduler_aswt.hpp",
+      "sha256": "78965d405856516bbd221f9ea67ae56ddf7ad8c55a0a49bb734dda78f5feaa27"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_scheduler_iterateK.hpp",
+      "sha256": "952443b5627d2866055b50d762a53b78b33e64e9a10d6a7df5bdb1f598c45129"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_scheduler_l2_misplace_core.hpp",
+      "sha256": "c0629cf304dbc208f7762cb69eb5a826b3352c0cda846b4ba4330ab8b680014e"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/block/block_swizzle.hpp",
+      "sha256": "5de52948982dcbd074bd2e1427e541e1734a17df1570456f69066ff35dbeb05c"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/device/device_gemm.hpp",
+      "sha256": "2d41a77c39a937d116263456626e85218597ed7af1d7a91020645fd388ee01b9"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/dispatch_policy.hpp",
+      "sha256": "2b2bdc45f352d38f74c6be84a6007dd2608c1c2a0f843f5a0596bf12320849dd"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/gemm_type.hpp",
+      "sha256": "ad15a666a48b610c6e35394a1dc9c4039589dca6149b24942ff3c1277587a468"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/helper.hpp",
+      "sha256": "85e48a3184939beabade25817397199f1705b6b4f2e9ed201a09a5d5bbeec3f3"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/basic_matmul.hpp",
+      "sha256": "ec7c39f87382425537d6691b1e6c80a2cf12b8f40c917d07d0ee58f2d634fab5"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/basic_matmul_preload.hpp",
+      "sha256": "ec4035e0b0a0c78f95495ef07d49d62cb1739e9524b0f87f6b8962b9fe41eb88"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/basic_matmul_tla.hpp",
+      "sha256": "a5b85dd222fc9ea9069aa697b8c2b4bd881709776a2950c7ce59202d7363758d"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/batched_matmul.hpp",
+      "sha256": "5dcd3708b3ef3a64bcb619e84e63b3e48f868f79e2e16ba347d1da4c05fada0b"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/dynamic_aiv_matmul.hpp",
+      "sha256": "388f0dcef870f99815b6f7cf7fb8ee50ac23c8ae6b7adc3d6d07e1fddf36d51e"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/dynamic_common_matmul.hpp",
+      "sha256": "48ba74728afb2f052487c9d427a5e434b60f99d29ed565647334a1a888317ce8"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/dynamic_local_padding_c_padding_common_matmul.hpp",
+      "sha256": "d4301f4d7b6785244d2cd3897879f929e05a57ab5970d674c1cef28275328470"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/dynamic_padding_common_matmul.hpp",
+      "sha256": "ceaef24bfb1450ae4ce2efcad80309c1da328bf8948664b3b42c04fc8625c451"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/dynamic_padding_multi_core_splitk_matmul.hpp",
+      "sha256": "b7e289747e233f24004eb27769004e0c5e510e94cb8ab5e08c85d3656b03b18e"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/dynamic_padding_streamk_matmul.hpp",
+      "sha256": "ec129e485b1c83226f1f89551fdc4cc506d92524369cb112f58d37dbe90a95eb"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/dynamic_single_core_splitk_matmul.hpp",
+      "sha256": "9095e0d654692337f4ad4e3385fe49f7027365185da5b5b3f012e45c7b8d3f90"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/dynamic_small_matmul.hpp",
+      "sha256": "cdb302089a8cf6155c4d2a3df0a641ecb6af74e2935c24fa34d67e5133afcfa1"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/dynamic_w8a8_matmul_per_token_per_channel_dequant.hpp",
+      "sha256": "332f25d8f7c325bc0c69443a22ebf1cc4fdd10503af2cfcc73f892219f09543e"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/fp8_matmul.hpp",
+      "sha256": "1787e7a893a2fa88f5df9729bfa9183fed12ba4865238c8452f138053c78e3a7"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/gemm.hpp",
+      "sha256": "a242bcd1a5be3fc1b09734b2e12f59a5b7106694c2bf524874fe78c9b33621fc"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/group_gemm.hpp",
+      "sha256": "8126e07c6bda210ea37b1d8de1ad2100cf915598590ebe38dd394ecb6c768faf"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/grouped_matmul.hpp",
+      "sha256": "984f63b62c6cce5859df528adf355a70b944fba8fe2c0a5a84fd43910f1322d8"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/grouped_matmul_slice_k.hpp",
+      "sha256": "d8756ac0b3da134120a6bacfdc784c5e078a35cc5d713a538c4cce4e68efdad7"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/grouped_matmul_slice_k_per_token_dequant.hpp",
+      "sha256": "07b4ff7b5b2082f3ea288a9adf680c118f5fff88d3231d6c4b0fd6f8da51caf2"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/grouped_matmul_slice_m.hpp",
+      "sha256": "a7101b027771945dd9b0d9849776fe586ef90a5688fa10549bba9daf8e6e0073"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/grouped_matmul_slice_m_per_tensor_per_channel_dequant_tla.hpp",
+      "sha256": "93ebf98d950ce164f868206674de5157d2cb4dcd8b8abe916eb85a64141476c2"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/grouped_matmul_slice_m_per_token_dequant.hpp",
+      "sha256": "dda7313a620bebca8d73f1a0aa2ee0f8591758f0b809c61e4a243a346b74acbd"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/grouped_matmul_slice_m_per_token_dequant_multistage_workspace.hpp",
+      "sha256": "9b83d099e497a2ca2531a411336499805caec2a3d8ce19a01ee1b3d8e9f516be"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/grouped_matmul_slice_m_per_token_dequant_tla.hpp",
+      "sha256": "5d35c043bf1dafa1565aeeec9eebce28a0c4387c818fa6f16770a8a82f0bb026"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/matmul_activation.hpp",
+      "sha256": "46a59ea63cc878f089fc4ac84919f44fb8166350069ab18bf026d3012729a8e0"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/matmul_bias.hpp",
+      "sha256": "79308945de5d1d0c2af977ec650f431781e50f095d583793b7c969c9e1bc1984"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/matmul_epilogue.hpp",
+      "sha256": "4e53a0062759e70446d637b71932797ec2c988068e9105d59cd71f88de9adcf9"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/matmul_full_loadA.hpp",
+      "sha256": "ce2d7f096912478eaf092669ae20194c0051d6661c2ce9683a36baebd7fa6914"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/matmul_mix_fixpipe_opti.hpp",
+      "sha256": "d1d1d45b2f9a54d18958a1749cb182bcc8fff78253743f28087c266eb6ce607e"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/optimized_matmul.hpp",
+      "sha256": "0f7093754deb686ff7ebb8bda961dd0dcc2356296abd21c8c4affebe6bbe4df9"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/optimized_matmul_tla.hpp",
+      "sha256": "da281bbf4d2c91a5dec3795f563e18c3c5b749af02c5564f252a1eb7d1508cce"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/padding_matmul.hpp",
+      "sha256": "fe3d7fefaf891f95b0127d7f87cce70a8da23a92fb57bc7bd3e68fe1dc45ab8b"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/padding_splitk_matmul.hpp",
+      "sha256": "9ef4ac8067977c1bb276896e98e660b33251a3e2551b7c6a612a5a5a958d81db"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/quant_matmul.hpp",
+      "sha256": "69b17c3b7202d5749148a9da4a45d4bc492e464fc6e6364c8fa6ab77185c5d6f"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/quant_matmul_full_loadA_tla.hpp",
+      "sha256": "1dbb0d04206ab8509be5183868c373de040848361e03f3ec976bcc81d5931fdd"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/quant_matmul_multistage_workspace.hpp",
+      "sha256": "8b91aa917589de3d2626b2c7f057a6827814443d70424df9ce640f520d866e00"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/quant_matmul_per_group_per_block_tla.hpp",
+      "sha256": "d4c013bc9c9bbaf9bc8302aa1fd1e6ec39e41582a3d37a1b3ffc4a14ab24dedc"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/quant_multi_core_splitk_matmul_tla.hpp",
+      "sha256": "13c86ce6ecd9b16e62a87f2131db448ffcb3ce2440d39ff0fb67abc7c6a7cdee"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/quant_optimized_matmul_tla.hpp",
+      "sha256": "164df2fbea6bb92b229704385b9c56ce3a5aeec66a4c2151345f4c597261a3fe"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/single_core_slicek_matmul.hpp",
+      "sha256": "873f2b05722e29d1c3a80005890e369b0218157801b2987d97c8d0404b713a34"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/small_matmul.hpp",
+      "sha256": "4a6543af80fd692c10161c8a5c7621f3ae40c4562f793e1c23bf3a40363ecc6c"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/sparse_matmul_tla.hpp",
+      "sha256": "8eb3a496394060e7b081d2d8a48dcf7b1a9020898293c925578435b890a4c50d"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/splitk_matmul.hpp",
+      "sha256": "37d1c8389e52c0178c1f9f81cb99c5614b2b5aecc527dd744447407ac2f3b310"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/streamk_matmul.hpp",
+      "sha256": "12bdcc39c31d94a5c14284a1137012b5a8798447241faf878d2f512b1a40e5a3"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/strided_batched_matmul_tla.hpp",
+      "sha256": "4faa215e0070dafe2ac72e1b035865c375c26432dd72f43be5550ed52ad2858f"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/w4a4_matmul_per_token_per_channel_dequant.hpp",
+      "sha256": "5b3ba2f7131643241c01638d4d38b4c244580f3f64f28c399a595083906ca01d"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/w4a8_matmul.hpp",
+      "sha256": "4447a0ee0af79e00a9f061b0c8d5333bd3e866cd237a6ffa6cb5e7db7dd4a9ca"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/kernel/w8a16_matmul.hpp",
+      "sha256": "3e964691ee22540a12cb0c85ef77d9ab689f4d413d9b9c5b92a552e093b2f3c2"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/ascend950/copy_gm_to_l1.hpp",
+      "sha256": "c9d5f20e60ee9791dea0a4ff68bb98ad6b2bb9c1b8403bb2f2effe5b94acdb59"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/ascend950/copy_l0c_to_dst.hpp",
+      "sha256": "3a1f039c068a3559caf8769b74b2adfb60d2b266f02c343e63d01b0052686ac8"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/ascend950/copy_l0c_to_gm.hpp",
+      "sha256": "4a61bad15a97a65fb18dd0a5038b3f8d5fdc87bfc3dd42840cf13d4065232137"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/ascend950/copy_l0c_to_ub.hpp",
+      "sha256": "adf47d15aa590b62ea35c9e4c15e6d9709fa0772f7ef1cd6c4d0a926b5b23219"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/ascend950/copy_l1_to_bt.hpp",
+      "sha256": "98b38c9b9bdd941a34d0e6f16e36b41991ed0bf60eb49faa7469e7d656aff776"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/ascend950/copy_l1_to_l0a.hpp",
+      "sha256": "44f207065b9c19ec290b34168eff33a8027c8ad7711b1dd80a080e2012615cb8"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/ascend950/copy_l1_to_l0b.hpp",
+      "sha256": "592c526cba387d36ad708896c7cb336a0fb9bbc212cd99cad7a9b6792afbc0a0"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/atlasa2/cast_fp8_to_fp16.hpp",
+      "sha256": "d336a20935ec66c34451569dd7fb34fe9a8a3dbac6fe38b2608159611a471b9f"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/atlasa2/cast_int4_to_int8.hpp",
+      "sha256": "e628c4de5755aa50e132cbfc72a7b1c22120139aab67b55ea2fe556ce4e89d89"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/atlasa2/cast_int8_to_fp16.hpp",
+      "sha256": "54611e4af42403e9f4c3bf8c3cb5596b7e3d8a73795e7b6f1e2ef9149270364b"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/atlasa2/copy_gm_to_l1.hpp",
+      "sha256": "0bd61bb6071a9e93b4b6218d17d08129f45a8954308805337e945565a7cd5653"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/atlasa2/copy_gm_to_ub.hpp",
+      "sha256": "57f8ff2103508f4846d144256ca482ae97518a85d8e770023186aaceeef7f2f3"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/atlasa2/copy_l0c_to_gm.hpp",
+      "sha256": "647bebdf7ca484fa1d92291379963cc6056cd2d36d07771d8a7554a91151f879"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/atlasa2/copy_l1_to_bt.hpp",
+      "sha256": "0475d707dce054e72951242ebf0f0150fb0b0c60b42e1ab65a8d2c3ff5c028b3"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/atlasa2/copy_l1_to_fp.hpp",
+      "sha256": "dc3f06ffd43881c214ba9377158069aca8a0864fe6af447aa7cd07076cf14b45"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/atlasa2/copy_l1_to_l0a.hpp",
+      "sha256": "fa3100cadb010bc0f09e7bca0a6531390b4487c83f7ad3ff41d6e52ae9023240"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/atlasa2/copy_l1_to_l0b.hpp",
+      "sha256": "74208d291e914e72c96aac81d485f56288a3e04a0ff5a0f0c942572f46b469ca"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/atlasa2/copy_ub_to_gm.hpp",
+      "sha256": "af7ae68ea302a6efaf591cf4d9a7306abd04ae91cc19850e475b0983545e17ef"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/cast_fp8_to_fp16.hpp",
+      "sha256": "a05933aedfd06bd37293953314d6ca4f6264f38a23e64f0fdda3301dc39a67d2"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/cast_int4_to_int8.hpp",
+      "sha256": "e89c098b8df65de1733b80175b93b2908807d1ae275cf5af81caef6bde4107d4"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/cast_int8_to_fp16.hpp",
+      "sha256": "5464c4bba31c96ce3bd085cf4af309513ab0b0471f02bbecc570e7af07916fed"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/copy_gm_to_l1.hpp",
+      "sha256": "0e72281c5e7a2f1e51fc87dfddc3c524139a92d3f4c05ae25e3ef320d6632f9e"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/copy_gm_to_ub.hpp",
+      "sha256": "922733fc178fb898be9c266a2887e0bc7422985598c58430e07366f5b9a7a65b"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/copy_l0c_to_gm.hpp",
+      "sha256": "3b4ba8d2dc9bd77b34efb0dd5042e16ce8a7a00263b7af1d8fcd304134f6277a"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/copy_l0c_to_ub.hpp",
+      "sha256": "2c8a41bb5a8ad412970ddef5103008456f21b02db813caa24b5d9268c0afd5b8"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/copy_l1_to_bt.hpp",
+      "sha256": "0940ecaf5bb4f16a88ff46450ff604465f7cef93900c9f4d055e16e0acba15dc"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/copy_l1_to_fp.hpp",
+      "sha256": "91e660e7d149d38135f6f7c7635426955a4d1ff9aea0b1db7738dbf5332e1dd7"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/copy_l1_to_l0a.hpp",
+      "sha256": "0a8efe150a05fe439058a93a74b43d49370ba0066f2cf8fddee2628bb161530c"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/copy_l1_to_l0b.hpp",
+      "sha256": "6a910fee9c5528d4d9a3be446fcffca86cb80d3998fc7c942f53c9f8ed7d9277"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/copy_ub_to_gm.hpp",
+      "sha256": "f8622d6721a4267673d554bb3d75a93a4bb29483cbda90cb0cb19b6e1e3eb29c"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/tile_copy.hpp",
+      "sha256": "1300e4ad135759504233bcd47c9a877624df6b1a32f0ffd050b357594ca9aef0"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/tile_copy_tla.hpp",
+      "sha256": "263b6fbe4f2194e50ec1ebd24c88ac3bc27c759e26d56e83df2b01d481dc820c"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/tile_mmad.hpp",
+      "sha256": "66bbf9b29a6fa3be3958c7c850f4409591e46f1e96da1070431a1466aadff209"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/tile_muls.hpp",
+      "sha256": "faaae573cf5021cc493c9dd177c76f31a3d612a1280296fa92a1a62d0e02fe32"
+    },
+    {
+      "path": "catlass-include/catlass/gemm/tile/tile_traits.hpp",
+      "sha256": "e73274bd198e08603c45d44cf340cb54b5168a32e5c4de5c07866fedaceace5d"
+    },
+    {
+      "path": "catlass-include/catlass/gemm_coord.hpp",
+      "sha256": "46278eef00e42b0816c37fe18d1f0567febca603b286a24531c59293af8c614f"
+    },
+    {
+      "path": "catlass-include/catlass/gemv/block/block_gemv.hpp",
+      "sha256": "0333f8783e44a5fa46e337d5760ee17c5413f8b41da38a53078b344e4c7f559d"
+    },
+    {
+      "path": "catlass-include/catlass/gemv/block/block_gemv_aic.hpp",
+      "sha256": "b03b2c0b4c06203bd2d317b90ebc951cc15c72bc1e9e6bb3bfe22a89f170a3d8"
+    },
+    {
+      "path": "catlass-include/catlass/gemv/block/block_gemv_aiv.hpp",
+      "sha256": "1265b23fcb1aaae631c1786a2b77af9c6e5dfa3b9ed83f9ee20762b97dac0c6f"
+    },
+    {
+      "path": "catlass-include/catlass/gemv/device/device_gemv.hpp",
+      "sha256": "cef954f1838e2c52e7ba070990235791c90044ec847d1660a315ad332327ba41"
+    },
+    {
+      "path": "catlass-include/catlass/gemv/helper.hpp",
+      "sha256": "32e7849b8f122e19764edd8e3755787edfd52ffce5611454b9ce237aef9804a9"
+    },
+    {
+      "path": "catlass-include/catlass/gemv/kernel/kernel_gemv_aic.hpp",
+      "sha256": "a5c8f347e1f57f97181b11056a2241bd4407233266a1ccecc6d79ffa25ab6077"
+    },
+    {
+      "path": "catlass-include/catlass/gemv/kernel/kernel_gemv_aiv.hpp",
+      "sha256": "d06a6070128037a8e5ef2b9a46047f9c227581f0c22c58c3cb5c2ad5904702bf"
+    },
+    {
+      "path": "catlass-include/catlass/gemv/tile/matrix_copy_gm_to_ub.hpp",
+      "sha256": "26b6e5c10b91ca7075ac88c341952996f623afcae6a7c5f81c91ae75089c76ff"
+    },
+    {
+      "path": "catlass-include/catlass/gemv/tile/tile_copy.hpp",
+      "sha256": "8567d40f70497286460ddcd36f9949172b1a90461b5f745672ca21eb9f8b0534"
+    },
+    {
+      "path": "catlass-include/catlass/gemv/tile/tile_vmad.hpp",
+      "sha256": "e5fd7991ac0ddeb5b6f36447290c9f7ed54340ec56d80d2a97fd431f20aa800b"
+    },
+    {
+      "path": "catlass-include/catlass/gemv/tile/tile_vmuls.hpp",
+      "sha256": "c3a54befdf5d7990b4ae9813313915934b5e52bf1ee5b1f53039beb79bfa82d3"
+    },
+    {
+      "path": "catlass-include/catlass/gemv/tile/vec_copy_gm_to_ub.hpp",
+      "sha256": "2bddbc6ebbaf4a8f2fd9470c9488f365fad7a4f61eb8bd5d992c89598e4c3713"
+    },
+    {
+      "path": "catlass-include/catlass/gemv/tile/vec_copy_ub_to_gm.hpp",
+      "sha256": "f3282c713f5795a3b9103423784ceecc9e18fce8753348c8b8b20dac683a0b60"
+    },
+    {
+      "path": "catlass-include/catlass/gemv_coord.hpp",
+      "sha256": "ff76e6a4bc6777a2569ab07e63f44999a3080f556cc78b440583215bdfcbf449"
+    },
+    {
+      "path": "catlass-include/catlass/layout/layout.hpp",
+      "sha256": "ca8b7b3502d2fe9b81d1030d803d9fd0c95f89d52557fdd92caeb7b59f6c6245"
+    },
+    {
+      "path": "catlass-include/catlass/layout/matrix.hpp",
+      "sha256": "d209976c35180b1f222fa01859c68331badfa76c05994c59258c172fc8bb501c"
+    },
+    {
+      "path": "catlass-include/catlass/layout/tensor.hpp",
+      "sha256": "a8ba4e8fb88b4810eeb24d3fbe3b6264dc9d4f13b256ae123497d6e0bc86fd80"
+    },
+    {
+      "path": "catlass-include/catlass/layout/vector.hpp",
+      "sha256": "9e6db310fe1db2f47a302797b0c47b290c3faf62596e5dc0ef86ce3596dad209"
+    },
+    {
+      "path": "catlass-include/catlass/matrix_coord.hpp",
+      "sha256": "59a528e8948816beb6579356d40637933989f50d00a74d0da378b757309b81d7"
+    },
+    {
+      "path": "catlass-include/catlass/numeric_size.hpp",
+      "sha256": "a30765a54d89aa8792dfd4b5c9eb229ecd77df5857ff50fa576172f84206c760"
+    },
+    {
+      "path": "catlass-include/catlass/status.hpp",
+      "sha256": "aef44674df581fa9f9f24f1006e1a00c6eb675947003020eb337102d358ace4c"
+    },
+    {
+      "path": "catlass-include/tla/int_tuple.hpp",
+      "sha256": "4c855be0bd37bbbb31204efd69b143f5dac5688443d2f69c65f8816d79f66fdc"
+    },
+    {
+      "path": "catlass-include/tla/layout.hpp",
+      "sha256": "75a789648b6f925c8e448bcf5beb964680fc405abe1e71c830f6e6e50f51e166"
+    },
+    {
+      "path": "catlass-include/tla/numeric/integer_sequence.hpp",
+      "sha256": "718f45886d6a54951612081b2aecdd0319f87cf651dc35dde0bce9014fa30ba8"
+    },
+    {
+      "path": "catlass-include/tla/numeric/integral_constant.hpp",
+      "sha256": "6411a698318e18477f955eddeb0cc3f344ccd88202760d6dbf7deebaa2e38ea5"
+    },
+    {
+      "path": "catlass-include/tla/numeric/math.hpp",
+      "sha256": "32deb37000c9a349ee5b9001360869947b5223bfa769635e13eedab5f93a59f1"
+    },
+    {
+      "path": "catlass-include/tla/tensor.hpp",
+      "sha256": "145717a1ed97cad2e5af07bba4e16fa6376a3bb26cd7fbe3ec200990dd4a2ff5"
+    },
+    {
+      "path": "catlass-include/tla/tuple.hpp",
+      "sha256": "fe2c1e546caf6721d96ef09be486d71a6f1e52418c465cc37fee4c8154788089"
+    },
+    {
+      "path": "catlass-include/tla/type_traits.hpp",
+      "sha256": "faae463b953d5a05510c3385beb5f76d946e187dbd0b1876e4065a54245ac03c"
+    },
+    {
+      "path": "kernel_utils/block/block_mmad_pingpong_tla.hpp",
+      "sha256": "2fd4d0a499531cf49fe725c06952cd67567dd3fb614745ebb1a0127191cbee77"
+    },
+    {
+      "path": "kernel_utils/block/block_mmad_pingpong_tla_multi.hpp",
+      "sha256": "e32a3f2010b77221105404cfb4f39616390f850f2964132da56a477fb3cd0bcd"
+    },
+    {
+      "path": "kernel_utils/block/block_mmad_pingpong_tla_preloadA_l1B.hpp",
+      "sha256": "7a3590728beb7f6caa789c004a4cc96a37e803c515bce39d6e31ebb44ce6b886"
+    },
+    {
+      "path": "kernel_utils/tile/copy_l0c_to_ub.hpp",
+      "sha256": "6e869d7e9095834425231d90376614485ae59adacf9e8df3cef5424a65c2e290"
+    },
+    {
+      "path": "kernel_utils/vector/regbase.hpp",
+      "sha256": "86bad9875dca3ac8f591373d9ce1a9e436bd36d188bc03249fb1ab6bda21be1d"
+    },
+    {
+      "path": "native-gdn-output.bin",
+      "sha256": "85787bd1f5494939deb9eb25a1106f050dc8f31e6029e72989560951824068f4"
+    },
+    {
+      "path": "native-gdn-output.cpp",
+      "sha256": "094d2543d5a7dd8e596619c0a2b3ca9624a763dc390548ccb87ccb3a8d5114a7"
+    }
+  ],
+  "note": "Build provenance only; qualification is recorded separately. No OPP packages replaced."
+}

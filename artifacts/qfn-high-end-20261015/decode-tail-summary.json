@@ -1,0 +1,959 @@
+{
+  "source": "/srv/ai/storage/artifacts/qfn-high-end-20261015/decode-tail-v2",
+  "trials": [
+    {
+      "trial": 0,
+      "seconds": 7.842023484998208,
+      "output_tokens_per_second": 32.64463572313039
+    },
+    {
+      "trial": 1,
+      "seconds": 7.98568252500263,
+      "output_tokens_per_second": 32.057372578797285
+    },
+    {
+      "trial": 2,
+      "seconds": 8.131512875002954,
+      "output_tokens_per_second": 31.48245645493207
+    },
+    {
+      "trial": 3,
+      "seconds": 7.9248105570004554,
+      "output_tokens_per_second": 32.30361131773176
+    },
+    {
+      "trial": 4,
+      "seconds": 8.184120931000507,
+      "output_tokens_per_second": 31.280085198924848
+    }
+  ],
+  "spans": {
+    "engine-spans.json": {
+      "total": 1058,
+      "dropped": 0,
+      "labels": {
+        "gc": {
+          "count": 4,
+          "max_ms": 0.043703,
+          "slowest": [
+            {
+              "label": "gc",
+              "start_ns": 27829985399158,
+              "duration_ns": 43703,
+              "generation": 0,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "label": "gc",
+              "start_ns": 27847996013728,
+              "duration_ns": 41719,
+              "generation": 0,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "label": "gc",
+              "start_ns": 27870284696733,
+              "duration_ns": 32201,
+              "generation": 0,
+              "collected": 0,
+              "uncollectable": 0
+            }
+          ]
+        },
+        "schedule": {
+          "count": 526,
+          "max_ms": 0.375173,
+          "slowest": [
+            {
+              "label": "schedule",
+              "start_ns": 27838047041664,
+              "duration_ns": 375173,
+              "failed": false
+            },
+            {
+              "label": "schedule",
+              "start_ns": 27859617031055,
+              "duration_ns": 358752,
+              "failed": false
+            },
+            {
+              "label": "schedule",
+              "start_ns": 27834590197396,
+              "duration_ns": 355506,
+              "failed": false
+            }
+          ]
+        },
+        "engine_step": {
+          "count": 528,
+          "max_ms": 497.813703,
+          "slowest": [
+            {
+              "label": "engine_step",
+              "start_ns": 27830142070092,
+              "duration_ns": 497813703,
+              "failed": false
+            },
+            {
+              "label": "engine_step",
+              "start_ns": 27862100744051,
+              "duration_ns": 475318640,
+              "failed": false
+            },
+            {
+              "label": "engine_step",
+              "start_ns": 27838048508643,
+              "duration_ns": 461934249,
+              "failed": false
+            }
+          ]
+        }
+      }
+    },
+    "rank0-spans.json": {
+      "total": 7865,
+      "dropped": 0,
+      "labels": {
+        "checkpoint_admit": {
+          "count": 4701,
+          "max_ms": 19.167818,
+          "slowest": [
+            {
+              "label": "checkpoint_admit",
+              "start_ns": 27841557288396,
+              "duration_ns": 19167818,
+              "failed": false
+            },
+            {
+              "label": "checkpoint_admit",
+              "start_ns": 27849508698182,
+              "duration_ns": 19034344,
+              "failed": false
+            },
+            {
+              "label": "checkpoint_admit",
+              "start_ns": 27865609797837,
+              "duration_ns": 16797280,
+              "failed": false
+            }
+          ]
+        },
+        "checkpoint_spill_to_host": {
+          "count": 24,
+          "max_ms": 17.865121,
+          "slowest": [
+            {
+              "label": "checkpoint_spill_to_host",
+              "start_ns": 27841557426929,
+              "duration_ns": 17865121,
+              "failed": false
+            },
+            {
+              "label": "checkpoint_spill_to_host",
+              "start_ns": 27849508830964,
+              "duration_ns": 17831387,
+              "failed": false
+            },
+            {
+              "label": "checkpoint_spill_to_host",
+              "start_ns": 27865609924357,
+              "duration_ns": 15848186,
+              "failed": false
+            }
+          ]
+        },
+        "checkpointremap_rows": {
+          "count": 1557,
+          "max_ms": 26.516321,
+          "slowest": [
+            {
+              "label": "checkpointremap_rows",
+              "start_ns": 27838051333625,
+              "duration_ns": 26516321,
+              "failed": false
+            },
+            {
+              "label": "checkpointremap_rows",
+              "start_ns": 27841557230185,
+              "duration_ns": 19254553,
+              "failed": false
+            },
+            {
+              "label": "checkpointremap_rows",
+              "start_ns": 27849508667543,
+              "duration_ns": 19092926,
+              "failed": false
+            }
+          ]
+        },
+        "ple": {
+          "count": 519,
+          "max_ms": 54.195925,
+          "slowest": [
+            {
+              "label": "ple",
+              "start_ns": 27864251039677,
+              "duration_ns": 54195925,
+              "failed": false,
+              "tokens": 3
+            },
+            {
+              "label": "ple",
+              "start_ns": 27830203206193,
+              "duration_ns": 8831734,
+              "failed": false,
+              "tokens": 25
+            },
+            {
+              "label": "ple",
+              "start_ns": 27838110219327,
+              "duration_ns": 8109220,
+              "failed": false,
+              "tokens": 25
+            }
+          ]
+        },
+        "model_forward": {
+          "count": 519,
+          "max_ms": 407.493869,
+          "slowest": [
+            {
+              "label": "model_forward",
+              "start_ns": 27830180078655,
+              "duration_ns": 407493869,
+              "failed": false,
+              "tokens": 25,
+              "mode": "NONE",
+              "requests": [
+                "chatcmpl-a9300fc70a12f5a6-b861126a"
+              ]
+            },
+            {
+              "label": "model_forward",
+              "start_ns": 27862135882889,
+              "duration_ns": 400446768,
+              "failed": false,
+              "tokens": 25,
+              "mode": "NONE",
+              "requests": [
+                "chatcmpl-978d14fd1c8178a9-8a97c56e"
+              ]
+            },
+            {
+              "label": "model_forward",
+              "start_ns": 27838098048675,
+              "duration_ns": 376329599,
+              "failed": false,
+              "tokens": 25,
+              "mode": "NONE",
+              "requests": [
+                "chatcmpl-84749e5e90e6732a-9db2941d"
+              ]
+            }
+          ]
+        },
+        "execute_model": {
+          "count": 526,
+          "max_ms": 445.799218,
+          "slowest": [
+            {
+              "label": "execute_model",
+              "start_ns": 27830142147348,
+              "duration_ns": 445799218,
+              "failed": false,
+              "tokens": {
+                "chatcmpl-a9300fc70a12f5a6-b861126a": 25
+              },
+              "drafts": {}
+            },
+            {
+              "label": "execute_model",
+              "start_ns": 27862100796040,
+              "duration_ns": 435932857,
+              "failed": false,
+              "tokens": {
+                "chatcmpl-978d14fd1c8178a9-8a97c56e": 25
+              },
+              "drafts": {}
+            },
+            {
+              "label": "execute_model",
+              "start_ns": 27838048542387,
+              "duration_ns": 426191323,
+              "failed": false,
+              "tokens": {
+                "chatcmpl-84749e5e90e6732a-9db2941d": 25
+              },
+              "drafts": {}
+            }
+          ]
+        },
+        "gc": {
+          "count": 19,
+          "max_ms": 1.060377,
+          "slowest": [
+            {
+              "label": "gc",
+              "start_ns": 27861461576149,
+              "duration_ns": 1060377,
+              "generation": 1,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "label": "gc",
+              "start_ns": 27836034961888,
+              "duration_ns": 685494,
+              "generation": 1,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "label": "gc",
+              "start_ns": 27831801656372,
+              "duration_ns": 251619,
+              "generation": 0,
+              "collected": 14,
+              "uncollectable": 0
+            }
+          ]
+        }
+      }
+    },
+    "rank1-spans.json": {
+      "total": 7865,
+      "dropped": 0,
+      "labels": {
+        "checkpoint_admit": {
+          "count": 4701,
+          "max_ms": 19.296022,
+          "slowest": [
+            {
+              "label": "checkpoint_admit",
+              "start_ns": 27841558097845,
+              "duration_ns": 19296022,
+              "failed": false
+            },
+            {
+              "label": "checkpoint_admit",
+              "start_ns": 27862103712997,
+              "duration_ns": 17427739,
+              "failed": false
+            },
+            {
+              "label": "checkpoint_admit",
+              "start_ns": 27845222474440,
+              "duration_ns": 16828570,
+              "failed": false
+            }
+          ]
+        },
+        "checkpoint_spill_to_host": {
+          "count": 24,
+          "max_ms": 18.208574,
+          "slowest": [
+            {
+              "label": "checkpoint_spill_to_host",
+              "start_ns": 27841558228914,
+              "duration_ns": 18208574,
+              "failed": false
+            },
+            {
+              "label": "checkpoint_spill_to_host",
+              "start_ns": 27862103828437,
+              "duration_ns": 16127647,
+              "failed": false
+            },
+            {
+              "label": "checkpoint_spill_to_host",
+              "start_ns": 27845222595711,
+              "duration_ns": 15768313,
+              "failed": false
+            }
+          ]
+        },
+        "checkpointremap_rows": {
+          "count": 1557,
+          "max_ms": 26.77298,
+          "slowest": [
+            {
+              "label": "checkpointremap_rows",
+              "start_ns": 27838052241531,
+              "duration_ns": 26772980,
+              "failed": false
+            },
+            {
+              "label": "checkpointremap_rows",
+              "start_ns": 27841558049173,
+              "duration_ns": 19367798,
+              "failed": false
+            },
+            {
+              "label": "checkpointremap_rows",
+              "start_ns": 27862103661579,
+              "duration_ns": 17497953,
+              "failed": false
+            }
+          ]
+        },
+        "ple": {
+          "count": 519,
+          "max_ms": 55.762063,
+          "slowest": [
+            {
+              "label": "ple",
+              "start_ns": 27852952254812,
+              "duration_ns": 55762063,
+              "failed": false,
+              "tokens": 3
+            },
+            {
+              "label": "ple",
+              "start_ns": 27830203950909,
+              "duration_ns": 9668405,
+              "failed": false,
+              "tokens": 25
+            },
+            {
+              "label": "ple",
+              "start_ns": 27838109781445,
+              "duration_ns": 8415822,
+              "failed": false,
+              "tokens": 25
+            }
+          ]
+        },
+        "model_forward": {
+          "count": 519,
+          "max_ms": 421.618157,
+          "slowest": [
+            {
+              "label": "model_forward",
+              "start_ns": 27830180143749,
+              "duration_ns": 421618157,
+              "failed": false,
+              "tokens": 25,
+              "mode": "NONE",
+              "requests": [
+                "chatcmpl-a9300fc70a12f5a6-b861126a"
+              ]
+            },
+            {
+              "label": "model_forward",
+              "start_ns": 27862137018538,
+              "duration_ns": 406706983,
+              "failed": false,
+              "tokens": 25,
+              "mode": "NONE",
+              "requests": [
+                "chatcmpl-978d14fd1c8178a9-8a97c56e"
+              ]
+            },
+            {
+              "label": "model_forward",
+              "start_ns": 27838098947253,
+              "duration_ns": 371652807,
+              "failed": false,
+              "tokens": 25,
+              "mode": "NONE",
+              "requests": [
+                "chatcmpl-84749e5e90e6732a-9db2941d"
+              ]
+            }
+          ]
+        },
+        "execute_model": {
+          "count": 526,
+          "max_ms": 460.020039,
+          "slowest": [
+            {
+              "label": "execute_model",
+              "start_ns": 27830142151005,
+              "duration_ns": 460020039,
+              "failed": false,
+              "tokens": {
+                "chatcmpl-a9300fc70a12f5a6-b861126a": 25
+              },
+              "drafts": {}
+            },
+            {
+              "label": "execute_model",
+              "start_ns": 27862100726348,
+              "duration_ns": 443488744,
+              "failed": false,
+              "tokens": {
+                "chatcmpl-978d14fd1c8178a9-8a97c56e": 25
+              },
+              "drafts": {}
+            },
+            {
+              "label": "execute_model",
+              "start_ns": 27838048879849,
+              "duration_ns": 422140610,
+              "failed": false,
+              "tokens": {
+                "chatcmpl-84749e5e90e6732a-9db2941d": 25
+              },
+              "drafts": {}
+            }
+          ]
+        },
+        "gc": {
+          "count": 19,
+          "max_ms": 0.777498,
+          "slowest": [
+            {
+              "label": "gc",
+              "start_ns": 27848506171064,
+              "duration_ns": 777498,
+              "generation": 1,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "label": "gc",
+              "start_ns": 27831801144168,
+              "duration_ns": 236059,
+              "generation": 0,
+              "collected": 14,
+              "uncollectable": 0
+            },
+            {
+              "label": "gc",
+              "start_ns": 27855179705240,
+              "duration_ns": 156858,
+              "generation": 0,
+              "collected": 0,
+              "uncollectable": 0
+            }
+          ]
+        }
+      }
+    },
+    "rank2-spans.json": {
+      "total": 7865,
+      "dropped": 0,
+      "labels": {
+        "checkpoint_admit": {
+          "count": 4701,
+          "max_ms": 22.501838,
+          "slowest": [
+            {
+              "label": "checkpoint_admit",
+              "start_ns": 27841553963874,
+              "duration_ns": 22501838,
+              "failed": false
+            },
+            {
+              "label": "checkpoint_admit",
+              "start_ns": 27845221013162,
+              "duration_ns": 17388554,
+              "failed": false
+            },
+            {
+              "label": "checkpoint_admit",
+              "start_ns": 27857631897539,
+              "duration_ns": 17255121,
+              "failed": false
+            }
+          ]
+        },
+        "checkpoint_spill_to_host": {
+          "count": 24,
+          "max_ms": 21.364706,
+          "slowest": [
+            {
+              "label": "checkpoint_spill_to_host",
+              "start_ns": 27841554137494,
+              "duration_ns": 21364706,
+              "failed": false
+            },
+            {
+              "label": "checkpoint_spill_to_host",
+              "start_ns": 27845221137227,
+              "duration_ns": 16502360,
+              "failed": false
+            },
+            {
+              "label": "checkpoint_spill_to_host",
+              "start_ns": 27857632070618,
+              "duration_ns": 15646152,
+              "failed": false
+            }
+          ]
+        },
+        "checkpointremap_rows": {
+          "count": 1557,
+          "max_ms": 31.436246,
+          "slowest": [
+            {
+              "label": "checkpointremap_rows",
+              "start_ns": 27838052550880,
+              "duration_ns": 31436246,
+              "failed": false
+            },
+            {
+              "label": "checkpointremap_rows",
+              "start_ns": 27841553919360,
+              "duration_ns": 22571720,
+              "failed": false
+            },
+            {
+              "label": "checkpointremap_rows",
+              "start_ns": 27845220974738,
+              "duration_ns": 17441556,
+              "failed": false
+            }
+          ]
+        },
+        "ple": {
+          "count": 519,
+          "max_ms": 51.639685,
+          "slowest": [
+            {
+              "label": "ple",
+              "start_ns": 27861760273639,
+              "duration_ns": 51639685,
+              "failed": false,
+              "tokens": 3
+            },
+            {
+              "label": "ple",
+              "start_ns": 27830202969092,
+              "duration_ns": 9378113,
+              "failed": false,
+              "tokens": 25
+            },
+            {
+              "label": "ple",
+              "start_ns": 27862149695013,
+              "duration_ns": 8746832,
+              "failed": false,
+              "tokens": 25
+            }
+          ]
+        },
+        "model_forward": {
+          "count": 519,
+          "max_ms": 407.656789,
+          "slowest": [
+            {
+              "label": "model_forward",
+              "start_ns": 27830181499427,
+              "duration_ns": 407656789,
+              "failed": false,
+              "tokens": 25,
+              "mode": "NONE",
+              "requests": [
+                "chatcmpl-a9300fc70a12f5a6-b861126a"
+              ]
+            },
+            {
+              "label": "model_forward",
+              "start_ns": 27862134585211,
+              "duration_ns": 398118021,
+              "failed": false,
+              "tokens": 25,
+              "mode": "NONE",
+              "requests": [
+                "chatcmpl-978d14fd1c8178a9-8a97c56e"
+              ]
+            },
+            {
+              "label": "model_forward",
+              "start_ns": 27838100960451,
+              "duration_ns": 365947217,
+              "failed": false,
+              "tokens": 25,
+              "mode": "NONE",
+              "requests": [
+                "chatcmpl-84749e5e90e6732a-9db2941d"
+              ]
+            }
+          ]
+        },
+        "execute_model": {
+          "count": 526,
+          "max_ms": 447.514198,
+          "slowest": [
+            {
+              "label": "execute_model",
+              "start_ns": 27830142149082,
+              "duration_ns": 447514198,
+              "failed": false,
+              "tokens": {
+                "chatcmpl-a9300fc70a12f5a6-b861126a": 25
+              },
+              "drafts": {}
+            },
+            {
+              "label": "execute_model",
+              "start_ns": 27862100735134,
+              "duration_ns": 432376985,
+              "failed": false,
+              "tokens": {
+                "chatcmpl-978d14fd1c8178a9-8a97c56e": 25
+              },
+              "drafts": {}
+            },
+            {
+              "label": "execute_model",
+              "start_ns": 27838048458939,
+              "duration_ns": 418887624,
+              "failed": false,
+              "tokens": {
+                "chatcmpl-84749e5e90e6732a-9db2941d": 25
+              },
+              "drafts": {}
+            }
+          ]
+        },
+        "gc": {
+          "count": 19,
+          "max_ms": 0.656679,
+          "slowest": [
+            {
+              "label": "gc",
+              "start_ns": 27836034136078,
+              "duration_ns": 656679,
+              "generation": 1,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "label": "gc",
+              "start_ns": 27861460497458,
+              "duration_ns": 626642,
+              "generation": 1,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "label": "gc",
+              "start_ns": 27831800805634,
+              "duration_ns": 268040,
+              "generation": 0,
+              "collected": 14,
+              "uncollectable": 0
+            }
+          ]
+        }
+      }
+    },
+    "rank3-spans.json": {
+      "total": 7865,
+      "dropped": 0,
+      "labels": {
+        "checkpoint_admit": {
+          "count": 4701,
+          "max_ms": 21.570046,
+          "slowest": [
+            {
+              "label": "checkpoint_admit",
+              "start_ns": 27841555340011,
+              "duration_ns": 21570046,
+              "failed": false
+            },
+            {
+              "label": "checkpoint_admit",
+              "start_ns": 27830163451739,
+              "duration_ns": 20645698,
+              "failed": false
+            },
+            {
+              "label": "checkpoint_admit",
+              "start_ns": 27849509092872,
+              "duration_ns": 20350307,
+              "failed": false
+            }
+          ]
+        },
+        "checkpoint_spill_to_host": {
+          "count": 24,
+          "max_ms": 20.318486,
+          "slowest": [
+            {
+              "label": "checkpoint_spill_to_host",
+              "start_ns": 27841555477402,
+              "duration_ns": 20318486,
+              "failed": false
+            },
+            {
+              "label": "checkpoint_spill_to_host",
+              "start_ns": 27830163602105,
+              "duration_ns": 19237220,
+              "failed": false
+            },
+            {
+              "label": "checkpoint_spill_to_host",
+              "start_ns": 27841577385231,
+              "duration_ns": 17426256,
+              "failed": false
+            }
+          ]
+        },
+        "checkpointremap_rows": {
+          "count": 1557,
+          "max_ms": 31.224664,
+          "slowest": [
+            {
+              "label": "checkpointremap_rows",
+              "start_ns": 27838050880313,
+              "duration_ns": 31224664,
+              "failed": false
+            },
+            {
+              "label": "checkpointremap_rows",
+              "start_ns": 27841555290417,
+              "duration_ns": 21643826,
+              "failed": false
+            },
+            {
+              "label": "checkpointremap_rows",
+              "start_ns": 27830163417324,
+              "duration_ns": 20699560,
+              "failed": false
+            }
+          ]
+        },
+        "ple": {
+          "count": 519,
+          "max_ms": 56.061492,
+          "slowest": [
+            {
+              "label": "ple",
+              "start_ns": 27857289143284,
+              "duration_ns": 56061492,
+              "failed": false,
+              "tokens": 3
+            },
+            {
+              "label": "ple",
+              "start_ns": 27830209400842,
+              "duration_ns": 10054299,
+              "failed": false,
+              "tokens": 25
+            },
+            {
+              "label": "ple",
+              "start_ns": 27846071813027,
+              "duration_ns": 8534488,
+              "failed": false,
+              "tokens": 25
+            }
+          ]
+        },
+        "model_forward": {
+          "count": 519,
+          "max_ms": 404.308983,
+          "slowest": [
+            {
+              "label": "model_forward",
+              "start_ns": 27830188018283,
+              "duration_ns": 404308983,
+              "failed": false,
+              "tokens": 25,
+              "mode": "NONE",
+              "requests": [
+                "chatcmpl-a9300fc70a12f5a6-b861126a"
+              ]
+            },
+            {
+              "label": "model_forward",
+              "start_ns": 27862139091961,
+              "duration_ns": 392839273,
+              "failed": false,
+              "tokens": 25,
+              "mode": "NONE",
+              "requests": [
+                "chatcmpl-978d14fd1c8178a9-8a97c56e"
+              ]
+            },
+            {
+              "label": "model_forward",
+              "start_ns": 27846060415644,
+              "duration_ns": 373208074,
+              "failed": false,
+              "tokens": 25,
+              "mode": "NONE",
+              "requests": [
+                "chatcmpl-b4a4d6fa4859e052-872450a6"
+              ]
+            }
+          ]
+        },
+        "execute_model": {
+          "count": 526,
+          "max_ms": 448.43543,
+          "slowest": [
+            {
+              "label": "execute_model",
+              "start_ns": 27830144374944,
+              "duration_ns": 448435430,
+              "failed": false,
+              "tokens": {
+                "chatcmpl-a9300fc70a12f5a6-b861126a": 25
+              },
+              "drafts": {}
+            },
+            {
+              "label": "execute_model",
+              "start_ns": 27862100744923,
+              "duration_ns": 431590439,
+              "failed": false,
+              "tokens": {
+                "chatcmpl-978d14fd1c8178a9-8a97c56e": 25
+              },
+              "drafts": {}
+            },
+            {
+              "label": "execute_model",
+              "start_ns": 27838048522139,
+              "duration_ns": 420124977,
+              "failed": false,
+              "tokens": {
+                "chatcmpl-84749e5e90e6732a-9db2941d": 25
+              },
+              "drafts": {}
+            }
+          ]
+        },
+        "gc": {
+          "count": 19,
+          "max_ms": 0.868712,
+          "slowest": [
+            {
+              "label": "gc",
+              "start_ns": 27850489637700,
+              "duration_ns": 868712,
+              "generation": 1,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "label": "gc",
+              "start_ns": 27831801535001,
+              "duration_ns": 255827,
+              "generation": 0,
+              "collected": 14,
+              "uncollectable": 0
+            },
+            {
+              "label": "gc",
+              "start_ns": 27857405863270,
+              "duration_ns": 200090,
+              "generation": 0,
+              "collected": 0,
+              "uncollectable": 0
+            }
+          ]
+        }
+      }
+    }
+  },
+  "resume": {
+    "status": "resumed"
+  }
+}
