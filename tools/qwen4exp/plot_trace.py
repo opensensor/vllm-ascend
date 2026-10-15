@@ -32,9 +32,9 @@ COLORS = {
 
 def display_category(name: str) -> str:
     compact = name.lower().replace("_", "")
-    if "qwenw4a8int4matmul" in compact:
+    if "qwenw4a8int4matmul" in compact or "qwenw4a8int4downreduce" in compact:
         return "w4a8_native_int4_projection"
-    if "qwenw4a8pack" in compact:
+    if "qwenw4a8pack" in compact or "qwenw4a8swiglupack" in compact:
         return "w4_activation_pack"
     if "moefinalizerouting" in compact:
         return "moe_finalization"
@@ -78,7 +78,7 @@ def load_tasks(trace_root: Path) -> list[tuple[str, list[dict]]]:
     return traces
 
 
-def plot_mix(traces: list[tuple[str, list[dict]]], output: Path) -> None:
+def plot_mix(traces: list[tuple[str, list[dict]]], output: Path, *, phase: str = "cold prefill") -> None:
     fig, ax = plt.subplots(figsize=(12, max(3.4, 0.8 * len(traces) + 1.8)))
     totals = [
         {key: sum(task["duration"] for task in tasks if task["category"] == key) / 1e6 for key in COLORS}
@@ -94,7 +94,7 @@ def plot_mix(traces: list[tuple[str, list[dict]]], output: Path) -> None:
     ax.set_yticks(range(len(traces)), [label for label, _ in traces])
     ax.invert_yaxis()
     ax.set_xlabel("Summed kernel task duration (ms); overlapping work is counted more than once")
-    ax.set_title("Qwen cold prefill: device task mix by NPU")
+    ax.set_title(f"Qwen {phase}: device task mix by NPU")
     ax.grid(axis="x", alpha=0.2)
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=3, fontsize=8, frameon=False)
     fig.tight_layout()
@@ -102,7 +102,9 @@ def plot_mix(traces: list[tuple[str, list[dict]]], output: Path) -> None:
     plt.close(fig)
 
 
-def plot_top(traces: list[tuple[str, list[dict]]], output: Path, limit: int = 18) -> None:
+def plot_top(
+    traces: list[tuple[str, list[dict]]], output: Path, limit: int = 18, *, phase: str = "cold prefill"
+) -> None:
     totals = defaultdict(int)
     counts = defaultdict(int)
     for _, tasks in traces:
@@ -120,14 +122,14 @@ def plot_top(traces: list[tuple[str, list[dict]]], output: Path, limit: int = 18
     labels = [f"{name[:60]}{'…' if len(name) > 60 else ''}  ({counts[name]} calls)" for name in selected]
     ax.set_yticks(range(len(selected)), labels, fontsize=8)
     ax.set_xlabel("Summed kernel task duration across captured NPUs (ms)")
-    ax.set_title("Qwen cold prefill: highest-cost named kernels")
+    ax.set_title(f"Qwen {phase}: highest-cost named kernels")
     ax.grid(axis="x", alpha=0.2)
     fig.tight_layout()
     fig.savefig(output, dpi=170, bbox_inches="tight")
     plt.close(fig)
 
 
-def plot_timeline(traces: list[tuple[str, list[dict]]], output: Path) -> None:
+def plot_timeline(traces: list[tuple[str, list[dict]]], output: Path, *, phase: str = "cold prefill") -> None:
     origin = min(task["start"] for _, tasks in traces for task in tasks)
     fig, ax = plt.subplots(figsize=(15, max(4.2, 1.1 * len(traces) + 1.5)))
     offsets = {key: (i - (len(COLORS) - 1) / 2) * 0.075 for i, key in enumerate(COLORS)}
@@ -148,7 +150,7 @@ def plot_timeline(traces: list[tuple[str, list[dict]]], output: Path) -> None:
     ax.set_yticks(range(len(traces)), [label for label, _ in traces])
     ax.invert_yaxis()
     ax.set_xlabel("Elapsed time from first recorded device task (ms)")
-    ax.set_title("Qwen cold prefill: named task timeline (each line is one device task)")
+    ax.set_title(f"Qwen {phase}: named task timeline (each line is one device task)")
     ax.grid(axis="x", alpha=0.2)
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=3, fontsize=8, frameon=False)
     fig.tight_layout()
@@ -167,7 +169,9 @@ def merge_intervals(tasks: list[dict]) -> list[tuple[int, int]]:
     return merged
 
 
-def plot_occupancy(traces: list[tuple[str, list[dict]]], output: Path, bin_ms: int = 50) -> None:
+def plot_occupancy(
+    traces: list[tuple[str, list[dict]]], output: Path, bin_ms: int = 50, *, phase: str = "cold prefill"
+) -> None:
     """Show whether any device kernel runs in each time bin, across streams."""
     origin = min(task["start"] for _, tasks in traces for task in tasks)
     stop = max(task["start"] + task["duration"] for _, tasks in traces for task in tasks)
@@ -199,7 +203,7 @@ def plot_occupancy(traces: list[tuple[str, list[dict]]], output: Path, bin_ms: i
     )
     ax.set_xlim(0, span_ms)
     ax.set_yticks(range(len(traces)), [label for label, _ in traces])
-    ax.set_title(f"Qwen cold prefill: device occupancy in {bin_ms} ms bins")
+    ax.set_title(f"Qwen {phase}: device occupancy in {bin_ms} ms bins")
     fig.colorbar(image, ax=ax, label="Fraction of bin with any kernel running", pad=0.01)
     idle_ms = [(stop - origin - value) / 1e6 for value in busy_total]
     idle_ax.barh(range(len(traces)), idle_ms, color="#a9afb4", height=0.65)
@@ -216,7 +220,7 @@ def plot_occupancy(traces: list[tuple[str, list[dict]]], output: Path, bin_ms: i
     plt.close(fig)
 
 
-def plot_host_ops(operator_details: Path, output: Path, limit: int = 16) -> None:
+def plot_host_ops(operator_details: Path, output: Path, limit: int = 16, *, phase: str = "cold prefill") -> None:
     totals = defaultdict(float)
     counts = defaultdict(int)
     with operator_details.open(newline="") as source:
@@ -230,14 +234,14 @@ def plot_host_ops(operator_details: Path, output: Path, limit: int = 16) -> None
     ax.barh(range(len(selected)), [totals[name] for name in selected], color="#51778d")
     ax.set_yticks(range(len(selected)), [f"{name[:58]}  ({counts[name]} calls)" for name in selected], fontsize=8)
     ax.set_xlabel("Summed host self duration (ms); sync waits and parallel threads may overlap")
-    ax.set_title("Qwen cold prefill: rank 1 host API work")
+    ax.set_title(f"Qwen {phase}: rank 1 host API work")
     ax.grid(axis="x", alpha=0.2)
     fig.tight_layout()
     fig.savefig(output, dpi=170, bbox_inches="tight")
     plt.close(fig)
 
 
-def plot_host_copy_tail(operator_details: Path, output: Path) -> None:
+def plot_host_copy_tail(operator_details: Path, output: Path, *, phase: str = "cold prefill") -> None:
     """Separate frequent cheap copy calls from rare long host API calls."""
     boundaries_us = (0, 2, 10, 100, 1_000, 10_000, math.inf)
     counts = [0] * (len(boundaries_us) - 1)
@@ -258,7 +262,7 @@ def plot_host_copy_tail(operator_details: Path, output: Path) -> None:
     for bar, count in zip(bars, counts, strict=True):
         ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f"{count:,} calls", ha="center", va="bottom")
     ax.set_ylabel("Summed host self duration (ms)")
-    ax.set_title("Qwen cold prefill: rank 1 aclnnInplaceCopy host call tail")
+    ax.set_title(f"Qwen {phase}: rank 1 aclnnInplaceCopy host call tail")
     ax.grid(axis="y", alpha=0.2)
     fig.tight_layout()
     fig.savefig(output, dpi=170, bbox_inches="tight")
@@ -268,6 +272,7 @@ def plot_host_copy_tail(operator_details: Path, output: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("trace_root", type=Path)
+    parser.add_argument("--phase", choices=("cold prefill", "warm prefill", "decode"), default="cold prefill")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--operator-details", type=Path, help="optional single-rank operator_details.csv")
     args = parser.parse_args()
@@ -281,13 +286,13 @@ def main() -> None:
         parser.error("one or more PNG outputs already exist; preserve prior evidence")
     traces = load_tasks(args.trace_root)
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    plot_mix(traces, outputs[0])
-    plot_top(traces, outputs[1])
-    plot_timeline(traces, outputs[2])
-    plot_occupancy(traces, outputs[3])
+    plot_mix(traces, outputs[0], phase=args.phase)
+    plot_top(traces, outputs[1], phase=args.phase)
+    plot_timeline(traces, outputs[2], phase=args.phase)
+    plot_occupancy(traces, outputs[3], phase=args.phase)
     if args.operator_details:
-        plot_host_ops(args.operator_details, outputs[4])
-        plot_host_copy_tail(args.operator_details, outputs[5])
+        plot_host_ops(args.operator_details, outputs[4], phase=args.phase)
+        plot_host_copy_tail(args.operator_details, outputs[5], phase=args.phase)
     for path in outputs:
         print(path)
 

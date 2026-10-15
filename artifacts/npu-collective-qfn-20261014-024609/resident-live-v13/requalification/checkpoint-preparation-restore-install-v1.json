@@ -1,0 +1,141 @@
+{
+  "source": "\ndef refresh_worker(worker):\n    import importlib\n    import torch\n    from vllm.v1.worker import mamba_utils\n    from vllm_ascend.worker.model_runner_v1 import NPUModelRunner\n    from tools.qwen4exp import decode_preparation_graph, checkpoint_preparation_runtime\n    importlib.reload(decode_preparation_graph)\n    importlib.reload(checkpoint_preparation_runtime)\n    commit=worker._resident_session().native_resources['qfn_mamba_commit_v4']\n    if commit.device_transition_v1.pending is not None or worker.model_runner.execute_model_state is not None:\n        raise RuntimeError('drain before changing checkpoint graphs')\n    torch.npu.synchronize()\n    owner=getattr(commit,'checkpoint_preparation_v1',None)\n    if 'install'=='install':\n        if owner is not None: raise RuntimeError('checkpoint owner already exists')\n        owner=checkpoint_preparation_runtime.CheckpointPreparationGraphs.__new__(checkpoint_preparation_runtime.CheckpointPreparationGraphs)\n        commit.checkpoint_preparation_v1=owner\n        owner.__init__(commit,mamba_utils.preprocess_mamba,NPUModelRunner)\n        owner.construction_complete=True\n        owner.install(mamba_utils)\n        owner.enabled=owner.verify=True\n    elif owner is None or not getattr(owner,'construction_complete',False) or owner.failed:\n        raise RuntimeError('missing or failed owner must remain retained')\n    elif 'install'!='status':\n        if hasattr(owner,'materialize_counts'): owner.materialize_counts()\n        if 'install'=='on' and (not owner.checked or not owner.checked_blocks):\n            raise RuntimeError('real packet and state-copy comparisons required before fast mode')\n        owner.enabled='install'!='off'\n        owner.verify='install'=='verify'\n    return dict(rank=worker.rank,passed=True,owner=owner.status())\nclass Candidate:\n    def validate(self,engine):\n        if not engine._pause_complete() or engine.batch_queue or engine.scheduler.get_num_unfinished_requests():\n            raise RuntimeError('drain before changing checkpoint graphs')\n        return dict(passed=True)\n    def apply(self,engine):\n        self.validate(engine)\n        rows=engine.model_executor.collective_rpc(refresh_worker)\n        return dict(passed=len(rows)==4 and all(row.get('passed') for row in rows),workers=rows)\ndef prepare(engine): return Candidate()\n\n# source sha256: aae77496b6c4e470f6937654be4e82e9c16bf33a8c75efcf5c91e49ff0ad7fb2",
+  "prepared": {
+    "passed": true,
+    "revision": "checkpoint_d4b96ad68b054b8f8315c3a1ce54a2ee",
+    "sha256": "8afca3d7958fa38194811326b5829fcb00a682e407e2b3f555a7de07f7210c0c",
+    "validation": {
+      "passed": true
+    }
+  },
+  "applied": {
+    "passed": true,
+    "applied": {
+      "passed": true,
+      "workers": [
+        {
+          "rank": 0,
+          "passed": true,
+          "owner": {
+            "backend": "tensor",
+            "enabled": true,
+            "verify": true,
+            "failed": false,
+            "replays": 0,
+            "checked": 0,
+            "checked_blocks": 0,
+            "fallbacks": 0,
+            "avoided_syncs": 0,
+            "avoided_uploads": 0,
+            "capture_requests": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "lazy_readback": false,
+            "avoided_readbacks": 0,
+            "materialized_readbacks": 0,
+            "deferred_count_rows": 0,
+            "host_lifecycle_retained": true
+          }
+        },
+        {
+          "rank": 1,
+          "passed": true,
+          "owner": {
+            "backend": "tensor",
+            "enabled": true,
+            "verify": true,
+            "failed": false,
+            "replays": 0,
+            "checked": 0,
+            "checked_blocks": 0,
+            "fallbacks": 0,
+            "avoided_syncs": 0,
+            "avoided_uploads": 0,
+            "capture_requests": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "lazy_readback": false,
+            "avoided_readbacks": 0,
+            "materialized_readbacks": 0,
+            "deferred_count_rows": 0,
+            "host_lifecycle_retained": true
+          }
+        },
+        {
+          "rank": 2,
+          "passed": true,
+          "owner": {
+            "backend": "tensor",
+            "enabled": true,
+            "verify": true,
+            "failed": false,
+            "replays": 0,
+            "checked": 0,
+            "checked_blocks": 0,
+            "fallbacks": 0,
+            "avoided_syncs": 0,
+            "avoided_uploads": 0,
+            "capture_requests": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "lazy_readback": false,
+            "avoided_readbacks": 0,
+            "materialized_readbacks": 0,
+            "deferred_count_rows": 0,
+            "host_lifecycle_retained": true
+          }
+        },
+        {
+          "rank": 3,
+          "passed": true,
+          "owner": {
+            "backend": "tensor",
+            "enabled": true,
+            "verify": true,
+            "failed": false,
+            "replays": 0,
+            "checked": 0,
+            "checked_blocks": 0,
+            "fallbacks": 0,
+            "avoided_syncs": 0,
+            "avoided_uploads": 0,
+            "capture_requests": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "lazy_readback": false,
+            "avoided_readbacks": 0,
+            "materialized_readbacks": 0,
+            "deferred_count_rows": 0,
+            "host_lifecycle_retained": true
+          }
+        }
+      ]
+    },
+    "status": {
+      "passed": true,
+      "failed": false,
+      "current": [
+        "checkpoint_d4b96ad68b054b8f8315c3a1ce54a2ee",
+        "8afca3d7958fa38194811326b5829fcb00a682e407e2b3f555a7de07f7210c0c"
+      ],
+      "pending": null,
+      "paused": true,
+      "async_scheduling": true,
+      "scheduler_type": "QueuedBalanceScheduler",
+      "batch_queue_size": 2,
+      "retained_owners": 20
+    }
+  }
+}

@@ -1,0 +1,14 @@
+def combine(
+    self,
+    block_output: torch.Tensor,
+    residuals: tuple[torch.Tensor, torch.Tensor],
+) -> torch.Tensor:
+    if not self.use_combine:
+        raise RuntimeError("combine disabled for this gated residual")
+    hyper_input, xn = residuals
+    num_tokens = hyper_input.shape[0]
+    residual = hyper_input.view(num_tokens, self.hc_count, self.hidden_size).to(self.compute_dtype)
+    injection = 2.0 * torch.sigmoid(_linear(xn, self.block_inject_weight, self.compute_dtype) / self.hc_count)
+    block = block_output.to(self.compute_dtype).unsqueeze(-2)
+    out = residual + block * injection.unsqueeze(-1)
+    return out.flatten(-2).to(self.params_dtype)

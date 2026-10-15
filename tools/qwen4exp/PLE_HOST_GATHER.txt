@@ -12,7 +12,7 @@ Files:
   benchmark_ple_host_gather_310.py: private hardware correctness/performance gate.
   serve_ple_table.py: independent owner of one sealed table for serving ranks.
   ple_serving.py: opt-in resident eager-boundary integration for <=12 tokens.
-  apply_ple_serving.py: authenticated drain, install, recapture, and resume.
+  apply_ple_serving.py: drained attachment preserving existing resident patches.
 
 The parent loads the FP16 checkpoint table once into a sealed memfd using
 SharedRamSource. Every worker inherits the same FD/inode. Native mappings are
@@ -127,14 +127,22 @@ Serving integration (qualified October 15, 2026):
 
   Verification initially compares each native row ID and returned FP16 value
   against the original host lookup. Disable it only after successful inference
-  using the drained qfn_cpu_profile_stop("native_ple_verify_off") control.
+  using apply_ple_serving --action on. Actions off/on/verify retain the same
+  buffers and graphs; they do not overwrite existing worker control RPCs.
   resident_status includes native_ple counts, verification counts, failures,
   shared inode, and recent lookup/native medians. The lookup median includes
   the Torch join and upstream queued work, not just DMA service time.
 
-  Install once per fresh worker lifetime. Do not switch this resident candidate
-  back to baseline or replace it while its native owners are live. The current
-  adapter retains its buffers until process shutdown; hot uninstall/retirement
-  is not implemented. Graceful API shutdown remains the supported stop path.
+  Restore the complete qualified optimization stack first. The launcher alone
+  omits post-startup patches. Install through the engine control attachment,
+  never a PLE-only resident switch (which removes the previous replacement set).
+  The installer checks unchanged resident patch/weight/collective-graph identity
+  and leaves the server paused on a mismatch. Common decode shapes are admitted
+  before resuming. The worker retains its PLE namespace, manager and tensors
+  independently of method replacement, including failed admission.
+  Install once per worker lifetime. Hot uninstall/resource retirement remains
+  unsupported; use off to retain a baseline comparison without freeing owners.
+  Graceful API shutdown remains the supported stop path.
   No new autostart service, firmware change, or permanent spin setting is made.
-  See SERVING_NATIVE_PLE.txt for the exact deployed configuration and receipts.
+  See SERVING_OPTIMIZED_PLE.txt for current configuration and matched results;
+  SERVING_NATIVE_PLE.txt preserves the superseded initial integration evidence.

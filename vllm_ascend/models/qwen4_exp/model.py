@@ -1268,6 +1268,40 @@ class _GDNAttention(nn.Module, MambaBase):
 
 
 _QSARopeStepCache = dict[tuple[object, ...], tuple[torch.Tensor, torch.Tensor]]
+_QSALogicalPositionStepCache = dict[tuple[object, ...], object]
+
+
+def _host_qsa_logical_positions(metadata: object, num_tokens: int) -> torch.Tensor:
+    """Read scheduler-owned causal boundaries, independently of MRoPE axes."""
+    seq_lens_cpu = getattr(metadata, "seq_lens_cpu", None)
+    query_lens_cpu = getattr(metadata, "query_lens_cpu", None)
+    if seq_lens_cpu is None or query_lens_cpu is None:
+        raise RuntimeError("Qwen4Exp MRoPE requires host query boundaries for QSA causal selection")
+    if seq_lens_cpu.device.type != "cpu" or query_lens_cpu.device.type != "cpu":
+        raise RuntimeError("Qwen4Exp QSA causal boundaries must already be on the host")
+    rows = [
+        torch.arange(sequence_length - query_length, sequence_length, dtype=torch.int64)
+        for sequence_length, query_length in zip(seq_lens_cpu.tolist(), query_lens_cpu.tolist(), strict=True)
+    ]
+    return torch.cat(rows)[:num_tokens]
+
+
+def _step_qsa_logical_positions(
+    metadata: object,
+    num_tokens: int,
+    device: torch.device,
+    rope_positions: torch.Tensor,
+    layer_prefix: str | None,
+    cache: _QSALogicalPositionStepCache | None,
+) -> torch.Tensor:
+    """Baseline dispatch seam for an opt-in resident position-sharing trial.
+
+    The cache is owned by one target forward. The baseline deliberately keeps
+    each layer's established callback until the candidate passes NPU replay.
+    """
+    return _QSAAttention._logical_query_positions(metadata, num_tokens, device, rope_positions, layer_prefix)
+
+
 _QSA_SELECTION_CONFIG_KEY = "ascend_qsa_selection"
 _QSA_PREFILL_CONFIG_KEY = "ascend_qsa_prefill"
 _QSA_PREFILL_BATCHED_GATHER = "batched_gather"
@@ -1584,21 +1618,6 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
         if rope_positions.ndim == 1:
             return rope_positions[:num_tokens]
 
-        def positions_from_host(current_metadata: object) -> torch.Tensor:
-            seq_lens_cpu = getattr(current_metadata, "seq_lens_cpu", None)
-            query_lens_cpu = getattr(current_metadata, "query_lens_cpu", None)
-            if seq_lens_cpu is None or query_lens_cpu is None:
-                raise RuntimeError("Qwen4Exp MRoPE requires host query boundaries for QSA causal selection")
-            sequence_lengths = seq_lens_cpu.tolist()
-            rows = []
-            for sequence_length, query_length in zip(
-                sequence_lengths,
-                query_lens_cpu.tolist(),
-                strict=True,
-            ):
-                rows.append(torch.arange(sequence_length - query_length, sequence_length, dtype=torch.int64))
-            return torch.cat(rows)[:num_tokens]
-
         capture = BreakableCUDAGraphCapture.current()
         if capture is not None and capture._capturing:
             if layer_prefix is None:
@@ -1606,19 +1625,24 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
             from vllm_ascend.utils import weak_ref_tensor
 
             # MRoPE axes can differ from causal positions. The host metadata
-            # must be read on every replay, but its pageable H2D copy cannot
-            # occur inside an NPU graph segment.
+            # must be read on every replay, outside the NPU graph segment.
             output = torch.empty(num_tokens, dtype=torch.int64, device=device)
             weak_output = weak_ref_tensor(output)
 
             def copy_current_positions() -> None:
                 current_metadata = get_forward_context().attn_metadata[layer_prefix]
-                weak_output.copy_(positions_from_host(current_metadata).to(device=device, non_blocking=True))
+                host_positions = _host_qsa_logical_positions(current_metadata, num_tokens)
+                if device.type == "npu":
+                    # Copy directly into the captured buffer without allocating
+                    # an intermediate device tensor. The pinned allocator tracks
+                    # the source allocation until the asynchronous copy finishes.
+                    host_positions = host_positions.pin_memory()
+                weak_output.copy_(host_positions, non_blocking=True)
 
             capture.add_eager(copy_current_positions)
             return output
 
-        return positions_from_host(metadata).to(device=device, non_blocking=True)
+        return _host_qsa_logical_positions(metadata, num_tokens).to(device=device, non_blocking=True)
 
     @staticmethod
     def _dense_prefill_is_exact(metadata: object, token_budget: int) -> bool:
@@ -1791,6 +1815,7 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
         block_input: torch.Tensor,
         positions: torch.Tensor,
         qsa_rope_cache: _QSARopeStepCache | None = None,
+        logical_position_cache: _QSALogicalPositionStepCache | None = None,
     ) -> torch.Tensor:
         metadata_by_layer = get_forward_context().attn_metadata if is_forward_context_available() else None
         metadata = metadata_by_layer.get(self.prefix) if isinstance(metadata_by_layer, dict) else None
@@ -1823,12 +1848,13 @@ class _QSAAttention(nn.Module, AttentionLayerBase):
         seq_len = metadata.num_actual_tokens
         block_input = block_input[:seq_len]
         positions = positions[..., :seq_len]
-        logical_positions = self._logical_query_positions(
+        logical_positions = _step_qsa_logical_positions(
             metadata,
             seq_len,
             block_input.device,
             positions,
             self.prefix,
+            logical_position_cache,
         )
         q = _linear(block_input, self.q_proj, self.compute_dtype).view(seq_len, self.num_heads, self.head_dim)
         k = _linear(block_input, self.k_proj, self.compute_dtype).view(seq_len, self.num_kv_heads, self.head_dim)
@@ -2742,6 +2768,7 @@ class AscendQwen4ExpDecoderLayer(nn.Module):
         input_ids_cpu: torch.Tensor | None = None,
         query_start_loc_cpu: torch.Tensor | None = None,
         ngram_context_cpu: torch.Tensor | None = None,
+        logical_position_cache: _QSALogicalPositionStepCache | None = None,
     ) -> torch.Tensor:
         # PLE injects into the multi-stream state before the attention block.
         if self.ple is not None:
@@ -2757,7 +2784,7 @@ class AscendQwen4ExpDecoderLayer(nn.Module):
 
         block_input, residual = self.attn_hyper_connection.mix(hidden_states)
         if self.uses_qsa:
-            attn_out = self.attention(block_input, positions, qsa_rope_cache)
+            attn_out = self.attention(block_input, positions, qsa_rope_cache, logical_position_cache)
         else:
             attn_out = self.attention(block_input, positions)
         hidden_states = self.attn_hyper_connection.combine(attn_out, residual)
@@ -2950,6 +2977,7 @@ class AscendQwen4ExpModel(nn.Module):
         # All QSA layers use the same positions and RoPE geometry. Keep the
         # table tensors alive only for this forward (and its captured graph).
         qsa_rope_cache: _QSARopeStepCache = {}
+        logical_position_cache: _QSALogicalPositionStepCache = {}
         for layer in self.layers:
             hidden_states = layer(
                 hidden_states,
@@ -2961,6 +2989,7 @@ class AscendQwen4ExpModel(nn.Module):
                 input_ids_cpu,
                 query_start_loc_cpu,
                 ngram_context_cpu,
+                logical_position_cache=logical_position_cache,
             )
 
         # Retain the multi-stream state for the MTP drafter (scheme A). The

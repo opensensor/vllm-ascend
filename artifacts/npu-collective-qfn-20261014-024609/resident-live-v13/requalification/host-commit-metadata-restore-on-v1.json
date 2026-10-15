@@ -1,0 +1,73 @@
+{
+  "source": "\ndef refresh_worker(worker):\n    import hashlib\n    import importlib\n    import inspect\n    from vllm.v1.worker import mamba_utils\n    from vllm_ascend.patch.worker.patch_mamba_utils import _postprocess_mamba_align_gpu_cpu_fallback\n    from tools.qwen4exp import host_commit_metadata\n    from tools.qwen4exp.resident_candidates.qfn_acceptance_snapshot import original_base, QUALIFIED_FALLBACK_SHA256\n    importlib.reload(host_commit_metadata)\n    commit=worker._resident_session().native_resources['qfn_mamba_commit_v4']\n    if worker.model_runner.execute_model_state is not None or commit.device_transition_v1.pending is not None:\n        raise RuntimeError('drain commit metadata consumers')\n    if original_base(mamba_utils.postprocess_mamba_align_gpu) is not _postprocess_mamba_align_gpu_cpu_fallback:\n        raise RuntimeError('legacy consumer is not the qualified host fallback')\n    if hashlib.sha256(inspect.getsource(_postprocess_mamba_align_gpu_cpu_fallback).encode()).hexdigest()!=QUALIFIED_FALLBACK_SHA256:\n        raise RuntimeError('legacy consumer source differs')\n    owner=getattr(commit,'host_commit_metadata_v1',None)\n    if owner is None:\n        owner=host_commit_metadata.HostCommitMetadata(worker.model_runner._mamba_bufs.postprocess_align,\n                                                     mamba_utils.stage_postprocess_inputs_to_gpu)\n        commit.host_commit_metadata_v1=owner\n        mamba_utils.stage_postprocess_inputs_to_gpu=owner.stage\n    if 'on'!='status': owner.enabled='on'!='off'\n    return dict(rank=worker.rank,passed=True,owner=owner.status())\n\nclass Candidate:\n    def validate(self, engine):\n        if not engine._pause_complete() or engine.batch_queue or engine.scheduler.get_num_unfinished_requests():\n            raise RuntimeError('drain engine and workers before changing metadata graphs')\n        return dict(passed=True)\n    def apply(self, engine):\n        self.validate(engine)\n        rows = engine.model_executor.collective_rpc(refresh_worker)\n        return dict(passed=len(rows) == 4 and all(row.get('passed') for row in rows), workers=rows)\ndef prepare(engine):\n    return Candidate()\n\n# source sha256: ffab0ceec9a879bf78fb2188a78a7d8f2df4cd7e96bac42873a75ae6134d9cfe",
+  "prepared": {
+    "passed": true,
+    "revision": "metadata_95bdb37a57a641d4aabdf245b3e63fa2",
+    "sha256": "423d774ab3d2e81e5fd70ea68aba9f1a02a56a600fffd6be1e4f36991b179282",
+    "validation": {
+      "passed": true
+    }
+  },
+  "applied": {
+    "passed": true,
+    "applied": {
+      "passed": true,
+      "workers": [
+        {
+          "rank": 0,
+          "passed": true,
+          "owner": {
+            "enabled": true,
+            "calls": 0,
+            "avoided_uploads": 0,
+            "host_metadata_retained": true
+          }
+        },
+        {
+          "rank": 1,
+          "passed": true,
+          "owner": {
+            "enabled": true,
+            "calls": 0,
+            "avoided_uploads": 0,
+            "host_metadata_retained": true
+          }
+        },
+        {
+          "rank": 2,
+          "passed": true,
+          "owner": {
+            "enabled": true,
+            "calls": 0,
+            "avoided_uploads": 0,
+            "host_metadata_retained": true
+          }
+        },
+        {
+          "rank": 3,
+          "passed": true,
+          "owner": {
+            "enabled": true,
+            "calls": 0,
+            "avoided_uploads": 0,
+            "host_metadata_retained": true
+          }
+        }
+      ]
+    },
+    "status": {
+      "passed": true,
+      "failed": false,
+      "current": [
+        "metadata_95bdb37a57a641d4aabdf245b3e63fa2",
+        "423d774ab3d2e81e5fd70ea68aba9f1a02a56a600fffd6be1e4f36991b179282"
+      ],
+      "pending": null,
+      "paused": true,
+      "async_scheduling": true,
+      "scheduler_type": "QueuedBalanceScheduler",
+      "batch_queue_size": 2,
+      "retained_owners": 18
+    }
+  }
+}

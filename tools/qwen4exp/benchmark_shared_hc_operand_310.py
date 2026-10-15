@@ -10,10 +10,6 @@ import time
 from pathlib import Path
 
 import torch
-import torch_npu
-
-from tools.qwen4exp.resident_candidates.shared_hc_operand import mix
-from vllm_ascend.models.qwen4_exp.model import _GatedResidual
 
 HIDDEN_SIZE = 2560
 HC_COUNT = 4
@@ -66,6 +62,13 @@ def paired_timing(functions, iterations, repeats):
 
 @torch.no_grad()
 def main():
+    # Keep the generic timing helpers free of model/backend initialization.
+    # These imports belong to this isolated hardware process only.
+    import torch_npu
+
+    from tools.qwen4exp.resident_candidates.shared_hc_operand import mix
+    from vllm_ascend.models.qwen4_exp.model import _GatedResidual
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()

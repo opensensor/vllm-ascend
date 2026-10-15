@@ -10,6 +10,8 @@ from statistics import median
 
 import regex as re
 
+from tools.qwen38_decode_study.speculation import round_estimate
+
 TIMING = re.compile(
     r"request (?P<id>\S+) \([^)]*\):.*?decode (?P<tokens>\d+) tokens, "
     r"(?P<gaps>\d+) gaps in (?P<ms>[\d.]+) ms"
@@ -68,11 +70,15 @@ def compare(control, candidate) -> dict:
                 "same_text": before["text_sha256"] == after["text_sha256"],
                 "baseline_acceptance": before["acceptance"],
                 "candidate_acceptance": after["acceptance"],
-                "baseline_estimated_step_ms": 1000 * (1 + before["acceptance"]) / before["server_decode_tok_s"]
-                if before["acceptance"] is not None
+                "baseline_estimated_step_ms": round_estimate(before, before["num_speculative_tokens"])[
+                    "estimated_round_ms"
+                ]
+                if before.get("num_speculative_tokens") is not None and before.get("drafted_delta", 0) > 0
                 else None,
-                "candidate_estimated_step_ms": 1000 * (1 + after["acceptance"]) / after["server_decode_tok_s"]
-                if after["acceptance"] is not None
+                "candidate_estimated_step_ms": round_estimate(after, after["num_speculative_tokens"])[
+                    "estimated_round_ms"
+                ]
+                if after.get("num_speculative_tokens") is not None and after.get("drafted_delta", 0) > 0
                 else None,
             }
         )

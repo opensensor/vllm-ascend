@@ -1,0 +1,141 @@
+{
+  "source": "\ndef refresh_worker(worker):\n    import importlib\n    import torch\n    from vllm.v1.worker import mamba_utils\n    from tools.qwen4exp import checkpoint_preparation_runtime\n    importlib.reload(checkpoint_preparation_runtime)\n    commit=worker._resident_session().native_resources['qfn_mamba_commit_v4']\n    owner=commit.checkpoint_preparation_v1\n    if commit.device_transition_v1.pending is not None or worker.model_runner.execute_model_state is not None:\n        raise RuntimeError('drain checkpoint consumers')\n    if owner.failed or not owner.checked_blocks: raise RuntimeError('qualified checkpoint graphs required')\n    torch.npu.synchronize()\n    if 'on'=='refresh':\n        owner.materialize_counts()\n        owner.__class__=checkpoint_preparation_runtime.CheckpointPreparationGraphs\n        owner.install(mamba_utils)\n    elif 'on'=='upgrade':\n        if hasattr(owner,'lazy_readback'): raise RuntimeError('readback upgrade already installed')\n        owner.__class__=checkpoint_preparation_runtime.CheckpointPreparationGraphs\n        owner.lazy_readback=False\n        owner.deferred_counts=None\n        owner.avoided_readbacks=owner.materialized_readbacks=0\n        owner.original_retire=owner.transition.retire_commit\n        owner.install(mamba_utils)\n    elif 'on'!='status':\n        owner.materialize_counts()\n        if not owner.enabled or owner.verify: raise RuntimeError('normal qualified checkpoint mode required')\n        owner.lazy_readback='on'=='on'\n    return dict(rank=worker.rank,passed=True,owner=owner.status())\nclass Candidate:\n    def validate(self,engine):\n        if not engine._pause_complete() or engine.batch_queue or engine.scheduler.get_num_unfinished_requests():\n            raise RuntimeError('drain before changing readback controls')\n        return dict(passed=True)\n    def apply(self,engine):\n        self.validate(engine)\n        rows=engine.model_executor.collective_rpc(refresh_worker)\n        return dict(passed=len(rows)==4 and all(row.get('passed') for row in rows),workers=rows)\ndef prepare(engine): return Candidate()\n\n# source sha256: aae77496b6c4e470f6937654be4e82e9c16bf33a8c75efcf5c91e49ff0ad7fb2",
+  "prepared": {
+    "passed": true,
+    "revision": "checkpoint_c089a424b12b40ec8f7ac0489d852a4d",
+    "sha256": "9a2ec4bad897d26d262f1e9140250edd6647ba4ef676356123a8c7e3b189dd8f",
+    "validation": {
+      "passed": true
+    }
+  },
+  "applied": {
+    "passed": true,
+    "applied": {
+      "passed": true,
+      "workers": [
+        {
+          "rank": 0,
+          "passed": true,
+          "owner": {
+            "backend": "tensor",
+            "enabled": true,
+            "verify": false,
+            "failed": false,
+            "replays": 195,
+            "checked": 195,
+            "checked_blocks": 216,
+            "fallbacks": 18,
+            "avoided_syncs": 0,
+            "avoided_uploads": 195,
+            "capture_requests": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "lazy_readback": true,
+            "avoided_readbacks": 0,
+            "materialized_readbacks": 0,
+            "deferred_count_rows": 0,
+            "host_lifecycle_retained": true
+          }
+        },
+        {
+          "rank": 1,
+          "passed": true,
+          "owner": {
+            "backend": "tensor",
+            "enabled": true,
+            "verify": false,
+            "failed": false,
+            "replays": 195,
+            "checked": 195,
+            "checked_blocks": 216,
+            "fallbacks": 18,
+            "avoided_syncs": 0,
+            "avoided_uploads": 195,
+            "capture_requests": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "lazy_readback": true,
+            "avoided_readbacks": 0,
+            "materialized_readbacks": 0,
+            "deferred_count_rows": 0,
+            "host_lifecycle_retained": true
+          }
+        },
+        {
+          "rank": 2,
+          "passed": true,
+          "owner": {
+            "backend": "tensor",
+            "enabled": true,
+            "verify": false,
+            "failed": false,
+            "replays": 195,
+            "checked": 195,
+            "checked_blocks": 216,
+            "fallbacks": 18,
+            "avoided_syncs": 0,
+            "avoided_uploads": 195,
+            "capture_requests": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "lazy_readback": true,
+            "avoided_readbacks": 0,
+            "materialized_readbacks": 0,
+            "deferred_count_rows": 0,
+            "host_lifecycle_retained": true
+          }
+        },
+        {
+          "rank": 3,
+          "passed": true,
+          "owner": {
+            "backend": "tensor",
+            "enabled": true,
+            "verify": false,
+            "failed": false,
+            "replays": 195,
+            "checked": 195,
+            "checked_blocks": 216,
+            "fallbacks": 18,
+            "avoided_syncs": 0,
+            "avoided_uploads": 195,
+            "capture_requests": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "lazy_readback": true,
+            "avoided_readbacks": 0,
+            "materialized_readbacks": 0,
+            "deferred_count_rows": 0,
+            "host_lifecycle_retained": true
+          }
+        }
+      ]
+    },
+    "status": {
+      "passed": true,
+      "failed": false,
+      "current": [
+        "checkpoint_c089a424b12b40ec8f7ac0489d852a4d",
+        "9a2ec4bad897d26d262f1e9140250edd6647ba4ef676356123a8c7e3b189dd8f"
+      ],
+      "pending": null,
+      "paused": true,
+      "async_scheduling": true,
+      "scheduler_type": "QueuedBalanceScheduler",
+      "batch_queue_size": 2,
+      "retained_owners": 24
+    }
+  }
+}

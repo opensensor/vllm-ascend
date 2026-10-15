@@ -1,0 +1,15 @@
+def _qsa_position_geometry(
+    positions: torch.Tensor, compress_ratio: int, capacity: int
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Compute visible groups and the causal tail with one integer division.
+
+    Preserve the input integer dtype and floor semantics, including padded
+    negative positions. Serving positions are INT32, which keeps these small
+    bookkeeping operations on AiCore and matches the downstream custom ops.
+    """
+    if positions.dtype not in (torch.int32, torch.int64):
+        raise ValueError("positions must be int32 or int64")
+    next_positions = positions + 1
+    complete_groups = torch.div(next_positions, compress_ratio, rounding_mode="floor")
+    tail_starts = complete_groups * compress_ratio
+    return complete_groups.clamp_max(capacity), tail_starts, next_positions - tail_starts

@@ -1,0 +1,127 @@
+Optimized QFN with shared host PLE, October 15, 2026
+
+The live service is http://192.168.53.187:8001/v1, model qwen38-flash-next.
+The first PLE deployment omitted the post-startup resident optimizations. Its
+28–31 decode tokens/s were not a measurement of the retained optimized stack.
+That server was stopped cleanly and the full stack restored in resident-live-v13.
+
+All retained CPU reductions remain enabled. The final four-rank audit confirms:
+  * QueuedBalanceScheduler with async scheduling, output observation overlap,
+    device-resident drafts, early PLE packet readback, compact-table staging.
+  * Acceptance reuse, device transition/history and consolidated admission.
+  * GDN metadata graphs, decode preparation and unused metadata-upload removal.
+  * Fused checkpoint preparation, deferred count readback and device commit inputs.
+  * General/prefix graph coverage for 3, 6, 9 and 12 tokens; MTP2, TP4 and EP4.
+The qualified W4 finalizer/schedule, HC combine, QSA gather/geometry and custom
+collective stack were restored and validated before attaching native PLE.
+
+Installer correction
+--------------------
+The previous installer used a PLE-only resident switch. Such a switch restores
+previous methods before applying its own patch set, which can remove retained
+optimizations. The new installer uses the drained authenticated engine control
+and attaches only at existing PLE eager and status boundaries. It preserves the
+resident generation, candidate, native resources, weight storage, graph owners
+and other worker control RPCs. Four common decode shapes are admitted first.
+The worker retains the namespace, native managers and buffers for its lifetime,
+including failed admission. A mismatch leaves the engine paused for inspection.
+Actions off/on/verify toggle the existing owner without recapture or retirement.
+
+Matched serving measurements
+----------------------------
+Mode                                      C1 HTTP tok/s   C4 aggregate tok/s
+Restored stack before PLE attachment             32.419               63.674
+Restored stack, native PLE on                     33.601               67.823
+Same stack, native PLE off                        32.925               62.782
+Same stack, native PLE on again                   33.398               67.172
+Additional C4 repeat after cooling                    --               66.717
+
+C1 is median of three 256-output-token requests. C4 is one simultaneous batch
+of four 256-token requests, including prefill and tails. These are short
+sequential trials without confidence intervals or controlled temperature.
+The native PLE C1 increment is small relative to the observed run variation.
+All results, including the lower cooled repeat, are retained.
+
+The earlier scheduling result was 32.056 C1 / 69.179 C4. Its five scheduling
+optimizations are all active and exercised in this service. Requests and
+sampling parameters match the historical C4 benchmark, and graph coverage is
+equivalent. The old run accepted 627/792 draft tokens (79.17%); the first two
+new native-PLE C4 runs accepted 612/824 (74.27%) and 613/828 (74.03%). Generated
+text also differs. This is a concrete workload difference, not proof of the
+entire cause of the remaining C4 gap. Later CPU reductions were retained even
+when their historical short trials did not improve throughput. None were
+disabled to chase the earlier number. Full numerical reproducibility and the
+remaining throughput difference are not established by these receipts.
+
+Validation
+----------
+Real model weights were used. Restored owners passed their component gates,
+model suites including 8K inputs and mixed concurrency, and the retained serving
+gate for small budgets, penalties, logprobs, turnover, structured output and
+abort/recovery. Native PLE passed 53 exact row-ID/value comparisons per rank
+across the C2/C4 checks and request tails; verification is now off, native PLE
+enabled, all four owners healthy. All ranks map sealed memfd inode 16423 with
+102400491520 bytes, one physical host table. Small DMA staging is pinned;
+the full table is not permanently pinned. CPU orchestration remains required.
+
+Local host-only tests cover shared-source ownership, PLE admission and exact
+contract checks, installer preservation, failed attachment and control lifetime.
+The expanded delivery passes 1777 QFN tests, 3890 collective/serving tests and
+17 driver tests. An offline gate/up patch generator was updated to preserve
+the newer metadata-cache template argument; this does not change live kernels.
+The standalone tests use --confcutdir=tests/ut/qwen38_1m to avoid unrelated
+repository-wide NPU conftest initialization. The default conftest fails locally
+because the installed upstream vLLM lacks flash_linear_attention. Broader QFN
+directory collection also hits a missing upstream is_weak_contiguous symbol.
+Scoped implementation/test Ruff check and format pass. Full format.sh ci ran
+in an isolated checkout and reports existing repository and archived experiment
+lint failures; see delivery-validation.json and delivery-format-summary.txt.
+
+The stock device firmware remains unchanged. The deployed profiling/polling
+driver uses dma_query_spin_us=5 at runtime, boot default 0. Trace capture is off.
+The qwen video services rtsp-scene-model and rtsp-scene-log remain disabled.
+This change does not make the experimental inference service start at boot.
+
+Runtime and restoration
+-----------------------
+Host base: /srv/ai/storage/artifacts/npu-collective-qfn-20261014-024609
+Run: BASE/resident-live-v13; log: BASE/server-current.log
+Tools: /srv/ai/storage/artifacts/ple-host-gather-20261015/serving-source-v2
+Python: /srv/ai/venvs/qwen38-w4-test-ce1862/bin/python
+Runtime: BASE/qfn-pinned-position-runtime and /srv/ai/src/vllm-opensensor
+Model: /srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i
+Context configured: 262144; max sequences: 4. Full-context quality is untested.
+
+The launcher is only the first step. On a fresh run, adapt the archived v13
+restore controllers to its new run path, restore and validate the full stack,
+then attach PLE. Historical controllers contain fixed paths and fresh-output
+guards; they must not be rerun unchanged against this live service.
+Keep the independent shared-table owner alive for worker admission. Recreate
+and qualify the table after owner loss or reboot. See PLE_HOST_GATHER.txt.
+
+For an already installed owner, run from the tools directory using the Python
+above (choose a new output directory for each action):
+  python -m tools.qwen4exp.apply_ple_serving \
+    --run-root BASE/resident-live-v13 --action status --output NEW_RECEIPT
+Use off for the original lookup, verify for exact comparisons, on to disable
+verification after successful checks. These actions drain and resume serving.
+Tokens stay on the host. Do not reset the resident patch set while owners live.
+
+Evidence
+--------
+artifacts/ple-host-gather-20261015/restored-delivery-audit.json
+artifacts/ple-host-gather-20261015/serving-v2-delivery-status.json
+artifacts/ple-host-gather-20261015/serving-v2-{verified,c2-verified}.json
+BASE/resident-live-v13/requalification/ and restore-retained-v13-final.log
+BASE/qsa-resident-v1/{decode-benchmark,concurrency}-ple-complete-stack-*.json
+BASE/queued-scheduling-results.md and its original 69.179 tok/s receipt
+
+Source and compact receipts are archived in the repository; large raw traces,
+binary builds, private control tokens and firmware images remain on the host.
+The driver work is committed and pushed as 99c3ee8 in
+https://github.com/opensensor/ascend-310p-host-driver/tree/linux-7-virtualization
+(that repository has no main branch). The commit identifies the complete
+driver source. This delivery does not redeploy the installed driver.
+The exact live attachment is serving-v2-install/candidate.py on the host. A
+subsequent source cleanup removes an unused control_slot option that was false
+in that live attachment; it does not alter the installed three-method behavior.

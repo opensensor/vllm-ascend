@@ -1,0 +1,9 @@
+def native_linear(self, prepared: tuple[torch.Tensor, ...], group_ends: torch.Tensor) -> torch.Tensor:
+    """Consume activations packed once and shared across expert routes."""
+    if self.backend != NATIVE_INT4_BACKEND:
+        raise ValueError("packed activation inputs require native INT4")
+    if not hasattr(torch.ops._C_ascend, "npu_qwen_w4_a8_int4_matmul_310"):
+        raise RuntimeError("native INT4 requires the rebuilt custom operator; refusing silent fallback")
+    return torch.ops._C_ascend.npu_qwen_w4_a8_int4_matmul_310(
+        *prepared, self.weight, self.weight_scale, self.weight_offset, self.weight_sum, group_ends
+    )

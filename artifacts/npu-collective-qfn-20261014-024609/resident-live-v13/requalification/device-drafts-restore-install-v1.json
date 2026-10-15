@@ -1,0 +1,85 @@
+{
+  "source_hashes": {
+    "queued_schedule.py": "b0488e582f72353ba663939c6f82735248e6caadd1b8c6f72cfea18311c7c989",
+    "resident_candidates/qfn_queued_schedule.py": "d3d5011c497cabeeb2d1547669bec93479271f154ee6519cba853ea67da1fcb0"
+  },
+  "source": "\ndef refresh_worker(worker):\n    import importlib\n    import inspect\n    from tools.qwen4exp import queued_schedule\n    from tools.qwen4exp.resident_candidates import qfn_queued_schedule\n    from tools.qwen4exp.resident_candidates.qfn_acceptance_snapshot import RUNNER\n    from tools.qwen4exp.resident_candidates.qfn_mamba_commit import RPC\n    from tools.qwen4exp.resident_candidates.qfn_device_transition import INPUT_TARGET\n    from tools.qwen4exp.resident_candidates.qfn_ple_history import STAGE_TARGET\n    from vllm_ascend.worker.model_runner_v1 import NPUModelRunner\n    from vllm_ascend._310p.model_runner_310p import NPUModelRunner310\n    from vllm_ascend._310p.worker_310p import NPUWorker310\n    importlib.reload(queued_schedule)\n    importlib.reload(qfn_queued_schedule)\n    commit = worker._resident_session().native_resources['qfn_mamba_commit_v4']\n    owner = commit.queued_schedule_v1\n    if worker.model_runner.execute_model_state is not None or commit.device_transition_v1.pending is not None:\n        raise RuntimeError('drain worker state before changing queued packet consumers')\n    control = NPUWorker310.qfn_cpu_profile_stop\n    if control.__module__ == qfn_queued_schedule.__name__:\n        control = inspect.getclosurevars(control).nonlocals['previous_control']\n    inputs = NPUModelRunner310._prepare_input_ids\n    stage = NPUModelRunner310._stage_qwen4exp_ple_inputs\n    if inputs.__module__ == qfn_queued_schedule.__name__:\n        inputs = inputs._qfn_transition_base\n    if stage.__module__ == qfn_queued_schedule.__name__:\n        stage = stage._qfn_transition_base\n    base = {RPC: control, INPUT_TARGET: inputs, STAGE_TARGET: stage}\n    replacements = qfn_queued_schedule.make_replacements(base, owner, NPUModelRunner)\n    owner.transition, owner.history = commit.device_transition_v1, commit.ple_history_v2\n    owner.device_drafts = getattr(owner, 'device_drafts', False)\n    owner.device_draft_steps = getattr(owner, 'device_draft_steps', 0)\n    owner.expected_device_inputs = owner.expected_device_history = None\n    owner.__class__ = queued_schedule.QueuedScheduleBridge\n    NPUModelRunner.execute_model = replacements[RUNNER + '.execute_model']\n    NPUModelRunner310._prepare_input_ids = replacements[INPUT_TARGET]\n    NPUModelRunner310._stage_qwen4exp_ple_inputs = replacements[STAGE_TARGET]\n    NPUWorker310.qfn_cpu_profile_stop = replacements[RPC]\n    # Keep the already-installed observer discoverable by future cold reloads.\n    fn = NPUModelRunner._bookkeeping_sync\n    if fn.__module__ == 'tools.qwen4exp.resident_candidates.qfn_output_observer':\n        fn._qfn_transition_base = inspect.getclosurevars(fn).nonlocals['fallback']\n    return dict(rank=worker.rank, passed=True, **owner.status())\n\nclass Candidate:\n    def validate(self, engine):\n        if not engine._pause_complete() or engine.batch_queue or engine.scheduler.get_num_unfinished_requests():\n            raise RuntimeError('drain engine before changing device packet consumers')\n        return dict(passed=True)\n    def apply(self, engine):\n        self.validate(engine)\n        rows = engine.model_executor.collective_rpc(refresh_worker)\n        return dict(passed=len(rows) == 4 and all(row.get('passed') for row in rows), workers=rows)\ndef prepare(engine):\n    return Candidate()\n\n# {\"queued_schedule.py\": \"b0488e582f72353ba663939c6f82735248e6caadd1b8c6f72cfea18311c7c989\", \"resident_candidates/qfn_queued_schedule.py\": \"d3d5011c497cabeeb2d1547669bec93479271f154ee6519cba853ea67da1fcb0\"}",
+  "prepared": {
+    "passed": true,
+    "revision": "drafts_c3211f79e6684dc7a31102313856d004",
+    "sha256": "2b1b90bbfb8f698e552b43e651629e8f60dbc5a890a13f5f69483c579d6e6e56",
+    "validation": {
+      "passed": true
+    }
+  },
+  "applied": {
+    "passed": true,
+    "applied": {
+      "passed": true,
+      "workers": [
+        {
+          "rank": 0,
+          "passed": true,
+          "enabled": false,
+          "steps": 0,
+          "corrected_rows": 0,
+          "device_drafts": false,
+          "device_draft_steps": 0,
+          "pending_device_inputs": false,
+          "pending_device_history": false,
+          "worker_cpu_bookkeeping_retained": true
+        },
+        {
+          "rank": 1,
+          "passed": true,
+          "enabled": false,
+          "steps": 0,
+          "corrected_rows": 0,
+          "device_drafts": false,
+          "device_draft_steps": 0,
+          "pending_device_inputs": false,
+          "pending_device_history": false,
+          "worker_cpu_bookkeeping_retained": true
+        },
+        {
+          "rank": 2,
+          "passed": true,
+          "enabled": false,
+          "steps": 0,
+          "corrected_rows": 0,
+          "device_drafts": false,
+          "device_draft_steps": 0,
+          "pending_device_inputs": false,
+          "pending_device_history": false,
+          "worker_cpu_bookkeeping_retained": true
+        },
+        {
+          "rank": 3,
+          "passed": true,
+          "enabled": false,
+          "steps": 0,
+          "corrected_rows": 0,
+          "device_drafts": false,
+          "device_draft_steps": 0,
+          "pending_device_inputs": false,
+          "pending_device_history": false,
+          "worker_cpu_bookkeeping_retained": true
+        }
+      ]
+    },
+    "status": {
+      "passed": true,
+      "failed": false,
+      "current": [
+        "drafts_c3211f79e6684dc7a31102313856d004",
+        "2b1b90bbfb8f698e552b43e651629e8f60dbc5a890a13f5f69483c579d6e6e56"
+      ],
+      "pending": null,
+      "paused": true,
+      "async_scheduling": false,
+      "scheduler_type": "BalanceScheduler",
+      "batch_queue_size": 1,
+      "retained_owners": 4
+    }
+  }
+}

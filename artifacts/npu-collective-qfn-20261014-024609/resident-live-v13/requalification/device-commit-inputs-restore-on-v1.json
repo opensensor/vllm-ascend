@@ -1,0 +1,97 @@
+{
+  "source": "\ndef refresh_worker(worker):\n    import importlib\n    import torch\n    from tools.qwen4exp import device_commit_inputs\n    importlib.reload(device_commit_inputs)\n    commit=worker._resident_session().native_resources['qfn_mamba_commit_v4']\n    if commit.device_transition_v1.pending is not None or worker.model_runner.execute_model_state is not None:\n        raise RuntimeError('drain transition consumers')\n    torch.npu.synchronize()\n    owner=getattr(commit,'device_commit_inputs_v1',None)\n    if 'on'=='install':\n        if owner is not None: raise RuntimeError('device input owner already exists')\n        if commit.checkpoint_preparation_v1.backend!='fused': raise RuntimeError('qualified fused checkpoint required')\n        owner=device_commit_inputs.DeviceCommitInputs.__new__(device_commit_inputs.DeviceCommitInputs)\n        commit.device_commit_inputs_v1=owner\n        owner.__init__(commit)\n        owner.construction_complete=True\n        owner.install()\n        owner.enabled=owner.verify=True\n    elif owner is None or not getattr(owner,'construction_complete',False) or owner.failed:\n        raise RuntimeError('failed or missing owner must remain retained')\n    elif 'on'!='status':\n        if 'on'=='on' and (not owner.checked or not owner.checked_blocks): raise RuntimeError('live metadata and bank checks required')\n        owner.enabled='on'!='off'\n        owner.verify='on'=='verify'\n    return dict(rank=worker.rank,passed=True,owner=owner.status())\nclass Candidate:\n    def validate(self,engine):\n        if not engine._pause_complete() or engine.batch_queue or engine.scheduler.get_num_unfinished_requests():\n            raise RuntimeError('drain before changing device commit input controls')\n        return dict(passed=True)\n    def apply(self,engine):\n        self.validate(engine)\n        rows=engine.model_executor.collective_rpc(refresh_worker)\n        return dict(passed=len(rows)==4 and all(row.get('passed') for row in rows),workers=rows)\ndef prepare(engine): return Candidate()\n\n# source sha256: 52291873a45168cf73b756ab39527b40fda6ce710555add0f93ea7eb8c8bb204",
+  "prepared": {
+    "passed": true,
+    "revision": "checkpoint_a0650ad8d8664a09aec1025166af0025",
+    "sha256": "3618c8e5d0b7005ff71eaa08a36d1130a5897f0962990037a7a1a5826febef9f",
+    "validation": {
+      "passed": true
+    }
+  },
+  "applied": {
+    "passed": true,
+    "applied": {
+      "passed": true,
+      "workers": [
+        {
+          "rank": 0,
+          "passed": true,
+          "owner": {
+            "enabled": true,
+            "verify": false,
+            "failed": false,
+            "calls": 200,
+            "checked": 200,
+            "checked_blocks": 216,
+            "fallbacks": 16,
+            "avoided_uploads": 800,
+            "avoided_staging_waits": 200,
+            "host_page_admission_retained": true
+          }
+        },
+        {
+          "rank": 1,
+          "passed": true,
+          "owner": {
+            "enabled": true,
+            "verify": false,
+            "failed": false,
+            "calls": 200,
+            "checked": 200,
+            "checked_blocks": 216,
+            "fallbacks": 16,
+            "avoided_uploads": 800,
+            "avoided_staging_waits": 200,
+            "host_page_admission_retained": true
+          }
+        },
+        {
+          "rank": 2,
+          "passed": true,
+          "owner": {
+            "enabled": true,
+            "verify": false,
+            "failed": false,
+            "calls": 200,
+            "checked": 200,
+            "checked_blocks": 216,
+            "fallbacks": 16,
+            "avoided_uploads": 800,
+            "avoided_staging_waits": 200,
+            "host_page_admission_retained": true
+          }
+        },
+        {
+          "rank": 3,
+          "passed": true,
+          "owner": {
+            "enabled": true,
+            "verify": false,
+            "failed": false,
+            "calls": 200,
+            "checked": 200,
+            "checked_blocks": 216,
+            "fallbacks": 16,
+            "avoided_uploads": 800,
+            "avoided_staging_waits": 200,
+            "host_page_admission_retained": true
+          }
+        }
+      ]
+    },
+    "status": {
+      "passed": true,
+      "failed": false,
+      "current": [
+        "checkpoint_a0650ad8d8664a09aec1025166af0025",
+        "3618c8e5d0b7005ff71eaa08a36d1130a5897f0962990037a7a1a5826febef9f"
+      ],
+      "pending": null,
+      "paused": true,
+      "async_scheduling": true,
+      "scheduler_type": "QueuedBalanceScheduler",
+      "batch_queue_size": 2,
+      "retained_owners": 34
+    }
+  }
+}

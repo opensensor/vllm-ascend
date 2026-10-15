@@ -1755,6 +1755,9 @@ def _is_ascend_config_initialized(config: AscendConfig | None) -> bool:
 
 def init_ascend_config(vllm_config: VllmConfig) -> AscendConfig:
     additional_config = vllm_config.additional_config if vllm_config.additional_config is not None else {}
+    npu_collective = additional_config.get("npu_collective")
+    if npu_collective is not None and type(npu_collective) is not dict:
+        raise ValueError("additional_config.npu_collective must be a dict or None.")
     # Upstream EngineArgs injects --gdn-prefill-backend / --kda-prefill-backend
     # into additional_config. The generic GDN/KDA model layers consume them
     # (qwen_gdn_linear_attn / kimi_gdn_linear_attn), but on non-CUDA platforms
@@ -1820,6 +1823,9 @@ def init_ascend_config(vllm_config: VllmConfig) -> AscendConfig:
         # Consumed in derive_and_validate as the SP MoE switch. Not an
         # AscendConfig field, so strip it before extra="forbid" validation.
         "enable_flashcomm1",
+        # Optional TP communicator input: preserve the original mapping for
+        # its exact schema, pinned-library and eager-only validation at setup.
+        "npu_collective",
         # injected fields (factory passes explicitly; a copy in additional_config would conflict)
         "scheduler_config",
         "sparse_kv_offload_config",

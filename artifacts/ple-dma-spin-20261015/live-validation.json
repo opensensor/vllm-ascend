@@ -1,0 +1,177 @@
+{
+  "loaded": true,
+  "kernel": "7.0.0-38-generic",
+  "boot_id": "ef888a41-e56b-4b9b-b158-c8b7c7055bd9",
+  "loaded_modules_verified": 31,
+  "cpu_tests_passed": 17,
+  "healthy_npus": 4,
+  "firmware_unchanged": true,
+  "live_spin_us": 5,
+  "boot_default_spin_us": 0,
+  "persistent_opt_in_written": false,
+  "profiling_disabled_after_tests": true,
+  "trace_events": 20680,
+  "lost_events": 0,
+  "malformed_events": 0,
+  "trace_dma_errors": 0,
+  "trace_small_copy_behavior_by_spin_us": {
+    "5": {
+      "events": 16528,
+      "completed_in_spin": 16508,
+      "slept": 0
+    },
+    "2": {
+      "events": 4132,
+      "completed_in_spin": 409,
+      "slept": 3312
+    }
+  },
+  "benchmark_cases_with_exact_final_readback": 164,
+  "measured_submit_calls": 164000,
+  "phases": {
+    "baseline": {
+      "cases": 16,
+      "measured_submit_calls": 16000,
+      "median_of_case_p50_ns": 8496.0,
+      "case_p50_ns_range": [
+        8276,
+        9859
+      ],
+      "max_case_p99_ns": 13606,
+      "median_caller_cpu_ns_per_submit": 5610.5,
+      "voluntary_switches": 15988
+    },
+    "spin2": {
+      "cases": 16,
+      "measured_submit_calls": 16000,
+      "median_of_case_p50_ns": 10319.5,
+      "case_p50_ns_range": [
+        3897,
+        10691
+      ],
+      "max_case_p99_ns": 16952,
+      "median_caller_cpu_ns_per_submit": 7196.5,
+      "voluntary_switches": 12096
+    },
+    "spin5": {
+      "cases": 16,
+      "measured_submit_calls": 16000,
+      "median_of_case_p50_ns": 4373.0,
+      "case_p50_ns_range": [
+        3918,
+        5049
+      ],
+      "max_case_p99_ns": 5661,
+      "median_caller_cpu_ns_per_submit": 4934.0,
+      "voluntary_switches": 0
+    },
+    "spin2-repeat": {
+      "cases": 16,
+      "measured_submit_calls": 16000,
+      "median_of_case_p50_ns": 10234.5,
+      "case_p50_ns_range": [
+        3907,
+        10870
+      ],
+      "max_case_p99_ns": 15749,
+      "median_caller_cpu_ns_per_submit": 7295.5,
+      "voluntary_switches": 11626
+    },
+    "baseline-repeat": {
+      "cases": 16,
+      "measured_submit_calls": 16000,
+      "median_of_case_p50_ns": 8581.0,
+      "case_p50_ns_range": [
+        8276,
+        8847
+      ],
+      "max_case_p99_ns": 15810,
+      "median_caller_cpu_ns_per_submit": 5513.5,
+      "voluntary_switches": 15988
+    },
+    "spin5-repeat": {
+      "cases": 16,
+      "measured_submit_calls": 16000,
+      "median_of_case_p50_ns": 4413.5,
+      "case_p50_ns_range": [
+        3998,
+        5020
+      ],
+      "max_case_p99_ns": 5711,
+      "median_caller_cpu_ns_per_submit": 4995.5,
+      "voluntary_switches": 0
+    },
+    "concurrent5": {
+      "cases": 16,
+      "measured_submit_calls": 16000,
+      "median_of_case_p50_ns": 4779.0,
+      "case_p50_ns_range": [
+        4138,
+        5531
+      ],
+      "max_case_p99_ns": 17744,
+      "median_caller_cpu_ns_per_submit": 4997.0,
+      "voluntary_switches": 54
+    },
+    "concurrent-postlease0": {
+      "cases": 16,
+      "measured_submit_calls": 16000,
+      "median_of_case_p50_ns": 8807.0,
+      "case_p50_ns_range": [
+        8596,
+        10339
+      ],
+      "max_case_p99_ns": 19336,
+      "median_caller_cpu_ns_per_submit": 5785.0,
+      "voluntary_switches": 16009
+    },
+    "concurrent-postlease5": {
+      "cases": 16,
+      "measured_submit_calls": 16000,
+      "median_of_case_p50_ns": 4318.0,
+      "case_p50_ns_range": [
+        3908,
+        5190
+      ],
+      "max_case_p99_ns": 13716,
+      "median_caller_cpu_ns_per_submit": 4503.0,
+      "voluntary_switches": 22
+    },
+    "trace5": {
+      "cases": 16,
+      "measured_submit_calls": 16000,
+      "median_of_case_p50_ns": 4694.0,
+      "case_p50_ns_range": [
+        4248,
+        5380
+      ],
+      "max_case_p99_ns": 6021,
+      "median_caller_cpu_ns_per_submit": 4994.5,
+      "voluntary_switches": 0
+    }
+  },
+  "source_registrations_passed": 12,
+  "concurrent_reserved_source_exact_copies": 16,
+  "ascend_kernel_error_lines": [
+    "[   11.542179] [ascend] [dms_module] [ERROR] [get_eventinfo_from_config 331] <modprobe:3594:3594> event config file is not exit."
+  ],
+  "video_services": {
+    "rtsp-scene-model.service": {
+      "is-enabled": "disabled",
+      "is-active": "inactive"
+    },
+    "rtsp-scene-log.service": {
+      "is-enabled": "disabled",
+      "is-active": "inactive"
+    }
+  },
+  "limits": [
+    "Repeated contiguous 320-byte and 5120-byte transfers with reused descriptors; not sixteen scattered PLE rows or a full PLE request/response.",
+    "Payload checked after each 1000-call case, not after every individual call.",
+    "Sequential trials pinned to CPU 8; concurrent trials use CPUs 8,24,40,56. Small microbenchmark samples do not establish loaded-server throughput or worst-case latency.",
+    "Caller-thread CPU accounting excludes work charged to other threads/CPUs.",
+    "Software completion timestamps include host observation delay; tracing affects timings.",
+    "Polling applies only to eligible synchronous query-mode physical DMA up to 8192 bytes; fallback remains original query/sleep, not IRQ.",
+    "Live budget is 5 microseconds; reboot defaults to 0 until broader workload qualification."
+  ]
+}

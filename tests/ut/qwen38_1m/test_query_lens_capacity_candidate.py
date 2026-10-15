@@ -11,21 +11,22 @@ from tools.qwen4exp.resident_candidates.query_lens_capacity import fill_query_le
 
 
 @pytest.mark.parametrize("drafting", [False, True])
-def test_expanded_rows_do_not_resize_an_out_view(drafting):
+@pytest.mark.parametrize("rows", [6, 12])
+def test_expanded_rows_do_not_resize_an_out_view(drafting, rows):
     builder = SimpleNamespace(_query_lens_cpu_buffer=torch.empty(4, dtype=torch.int32))
-    boundaries = torch.arange(13, dtype=torch.int32)
+    boundaries = torch.arange(rows + 1, dtype=torch.int32)
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        result = fill_query_lens_cpu(builder, 12, boundaries, drafting)
-    torch.testing.assert_close(result, torch.ones(12, dtype=torch.int32))
-    assert builder._query_lens_cpu_buffer.numel() == 12
+        result = fill_query_lens_cpu(builder, rows, boundaries, drafting)
+    torch.testing.assert_close(result, torch.ones(rows, dtype=torch.int32))
+    assert builder._query_lens_cpu_buffer.numel() == rows
     assert (result.data_ptr() != builder._query_lens_cpu_buffer.data_ptr()) == drafting
     storage = builder._query_lens_cpu_buffer.data_ptr()
     next_result = fill_query_lens_cpu(builder, 4, torch.arange(5, dtype=torch.int32) * 3, drafting)
     assert builder._query_lens_cpu_buffer.data_ptr() == storage
     torch.testing.assert_close(next_result, torch.full((4,), 3, dtype=torch.int32))
     if drafting:
-        torch.testing.assert_close(result, torch.ones(12, dtype=torch.int32))
+        torch.testing.assert_close(result, torch.ones(rows, dtype=torch.int32))
 
 
 def test_no_buffer_returns_contiguous_lengths():

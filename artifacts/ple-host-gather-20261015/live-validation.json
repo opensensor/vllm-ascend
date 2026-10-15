@@ -1,0 +1,1750 @@
+{
+  "passed": true,
+  "table_bytes": 102400491520,
+  "table_gib": 95.36788940429688,
+  "one_immutable_shared_table_per_run": true,
+  "four_simultaneous_readers_passed": true,
+  "cpu_tests_passed": 75,
+  "benchmark_cases": 120,
+  "measured_requests": 3840,
+  "payload_checked_requests_including_warmups": 4320,
+  "payload_checked_rows": 368640,
+  "invalid_receipt_rejections_with_recovery": 48,
+  "invalid_row_rejections_with_recovery": 24,
+  "stages": {
+    "full-v2": {
+      "shared_inode": 2098,
+      "groups": [
+        {
+          "phase": "baseline",
+          "tokens": 1,
+          "mode": "packed",
+          "metrics": {
+            "producer_graph_and_fence": {
+              "median_of_rank_p50_ns": 141727.25,
+              "rank_p50_ns_range": [
+                133724.0,
+                149965.0
+              ],
+              "max_rank_p95_ns": 160786
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 11016.25,
+              "rank_p50_ns_range": [
+                10480.0,
+                11221.0
+              ],
+              "max_rank_p95_ns": 12724
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 4048.0,
+              "rank_p50_ns_range": [
+                3927.5,
+                4153.0
+              ],
+              "max_rank_p95_ns": 6823
+            },
+            "response": {
+              "median_of_rank_p50_ns": 9372.75,
+              "rank_p50_ns_range": [
+                9237.5,
+                9503.0
+              ],
+              "max_rank_p95_ns": 10179
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 24541.75,
+              "rank_p50_ns_range": [
+                23865.0,
+                24692.0
+              ],
+              "max_rank_p95_ns": 30017
+            },
+            "graph_fence_transport_python": {
+              "median_of_rank_p50_ns": 170834.75,
+              "rank_p50_ns_range": [
+                163486.0,
+                178860.0
+              ],
+              "max_rank_p95_ns": 193928
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 0
+        },
+        {
+          "phase": "baseline",
+          "tokens": 1,
+          "mode": "direct_rows",
+          "metrics": {
+            "producer_graph_and_fence": {
+              "median_of_rank_p50_ns": 142202.75,
+              "rank_p50_ns_range": [
+                133679.5,
+                150401.0
+              ],
+              "max_rank_p95_ns": 170885
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 10981.0,
+              "rank_p50_ns_range": [
+                10655.0,
+                11056.0
+              ],
+              "max_rank_p95_ns": 12313
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 160.0,
+              "rank_p50_ns_range": [
+                141.0,
+                165.5
+              ],
+              "max_rank_p95_ns": 601
+            },
+            "response": {
+              "median_of_rank_p50_ns": 389064.5,
+              "rank_p50_ns_range": [
+                366943.0,
+                418265.0
+              ],
+              "max_rank_p95_ns": 466988
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 400215.75,
+              "rank_p50_ns_range": [
+                378064.0,
+                429431.5
+              ],
+              "max_rank_p95_ns": 478440
+            },
+            "graph_fence_transport_python": {
+              "median_of_rank_p50_ns": 556613.25,
+              "rank_p50_ns_range": [
+                518491.0,
+                570495.0
+              ],
+              "max_rank_p95_ns": 618315
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 0
+        },
+        {
+          "phase": "baseline",
+          "tokens": 3,
+          "mode": "packed",
+          "metrics": {
+            "producer_graph_and_fence": {
+              "median_of_rank_p50_ns": 141484.25,
+              "rank_p50_ns_range": [
+                133794.5,
+                156002.0
+              ],
+              "max_rank_p95_ns": 169111
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 10767.5,
+              "rank_p50_ns_range": [
+                10509.5,
+                11763.0
+              ],
+              "max_rank_p95_ns": 14448
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 11522.0,
+              "rank_p50_ns_range": [
+                11257.0,
+                19848.0
+              ],
+              "max_rank_p95_ns": 22393
+            },
+            "response": {
+              "median_of_rank_p50_ns": 9605.75,
+              "rank_p50_ns_range": [
+                9142.5,
+                9634.0
+              ],
+              "max_rank_p95_ns": 11401
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 31945.75,
+              "rank_p50_ns_range": [
+                30959.0,
+                41438.5
+              ],
+              "max_rank_p95_ns": 46409
+            },
+            "graph_fence_transport_python": {
+              "median_of_rank_p50_ns": 177081.75,
+              "rank_p50_ns_range": [
+                169993.0,
+                202189.5
+              ],
+              "max_rank_p95_ns": 270814
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 0
+        },
+        {
+          "phase": "baseline",
+          "tokens": 3,
+          "mode": "direct_rows",
+          "metrics": {
+            "producer_graph_and_fence": {
+              "median_of_rank_p50_ns": 142664.0,
+              "rank_p50_ns_range": [
+                134445.5,
+                154619.0
+              ],
+              "max_rank_p95_ns": 168681
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 11116.25,
+              "rank_p50_ns_range": [
+                10550.0,
+                11767.5
+              ],
+              "max_rank_p95_ns": 18194
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 315.5,
+              "rank_p50_ns_range": [
+                265.5,
+                331.0
+              ],
+              "max_rank_p95_ns": 831
+            },
+            "response": {
+              "median_of_rank_p50_ns": 1181699.25,
+              "rank_p50_ns_range": [
+                1120108.5,
+                1226051.0
+              ],
+              "max_rank_p95_ns": 1321162
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 1193501.25,
+              "rank_p50_ns_range": [
+                1131425.5,
+                1238344.5
+              ],
+              "max_rank_p95_ns": 1333656
+            },
+            "graph_fence_transport_python": {
+              "median_of_rank_p50_ns": 1341946.25,
+              "rank_p50_ns_range": [
+                1270219.5,
+                1399526.0
+              ],
+              "max_rank_p95_ns": 1483250
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 0
+        },
+        {
+          "phase": "baseline",
+          "tokens": 12,
+          "mode": "packed",
+          "metrics": {
+            "producer_graph_and_fence": {
+              "median_of_rank_p50_ns": 141809.5,
+              "rank_p50_ns_range": [
+                133975.0,
+                149394.0
+              ],
+              "max_rank_p95_ns": 162208
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 10868.5,
+              "rank_p50_ns_range": [
+                10696.0,
+                11041.0
+              ],
+              "max_rank_p95_ns": 12864
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 42626.0,
+              "rank_p50_ns_range": [
+                42370.5,
+                42801.0
+              ],
+              "max_rank_p95_ns": 71125
+            },
+            "response": {
+              "median_of_rank_p50_ns": 10056.5,
+              "rank_p50_ns_range": [
+                9743.5,
+                10160.0
+              ],
+              "max_rank_p95_ns": 11241
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 63511.0,
+              "rank_p50_ns_range": [
+                63120.0,
+                64011.5
+              ],
+              "max_rank_p95_ns": 93167
+            },
+            "graph_fence_transport_python": {
+              "median_of_rank_p50_ns": 210172.0,
+              "rank_p50_ns_range": [
+                202795.5,
+                217353.0
+              ],
+              "max_rank_p95_ns": 245547
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 0
+        },
+        {
+          "phase": "baseline",
+          "tokens": 12,
+          "mode": "direct_rows",
+          "metrics": {
+            "producer_graph_and_fence": {
+              "median_of_rank_p50_ns": 144076.25,
+              "rank_p50_ns_range": [
+                134887.0,
+                150561.5
+              ],
+              "max_rank_p95_ns": 167188
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 10971.0,
+              "rank_p50_ns_range": [
+                10740.5,
+                11532.0
+              ],
+              "max_rank_p95_ns": 20909
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 726.0,
+              "rank_p50_ns_range": [
+                626.5,
+                731.5
+              ],
+              "max_rank_p95_ns": 1213
+            },
+            "response": {
+              "median_of_rank_p50_ns": 4630666.0,
+              "rank_p50_ns_range": [
+                4402319.0,
+                4852174.0
+              ],
+              "max_rank_p95_ns": 6609686
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 4642556.0,
+              "rank_p50_ns_range": [
+                4417623.0,
+                4870739.5
+              ],
+              "max_rank_p95_ns": 6621979
+            },
+            "graph_fence_transport_python": {
+              "median_of_rank_p50_ns": 4802815.75,
+              "rank_p50_ns_range": [
+                4557399.5,
+                5016492.0
+              ],
+              "max_rank_p95_ns": 6768597
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 0
+        },
+        {
+          "phase": "spin5",
+          "tokens": 1,
+          "mode": "packed",
+          "metrics": {
+            "producer_graph_and_fence": {
+              "median_of_rank_p50_ns": 140577.25,
+              "rank_p50_ns_range": [
+                129501.0,
+                148897.5
+              ],
+              "max_rank_p95_ns": 160014
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 5152.0,
+              "rank_p50_ns_range": [
+                4684.0,
+                5561.0
+              ],
+              "max_rank_p95_ns": 6252
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 4017.75,
+              "rank_p50_ns_range": [
+                3902.0,
+                4103.0
+              ],
+              "max_rank_p95_ns": 7214
+            },
+            "response": {
+              "median_of_rank_p50_ns": 4696.75,
+              "rank_p50_ns_range": [
+                4539.0,
+                4805.0
+              ],
+              "max_rank_p95_ns": 5310
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 13981.25,
+              "rank_p50_ns_range": [
+                13440.5,
+                14297.0
+              ],
+              "max_rank_p95_ns": 17644
+            },
+            "graph_fence_transport_python": {
+              "median_of_rank_p50_ns": 157867.5,
+              "rank_p50_ns_range": [
+                147531.0,
+                166767.0
+              ],
+              "max_rank_p95_ns": 178860
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 0
+        },
+        {
+          "phase": "spin5",
+          "tokens": 1,
+          "mode": "direct_rows",
+          "metrics": {
+            "producer_graph_and_fence": {
+              "median_of_rank_p50_ns": 140915.25,
+              "rank_p50_ns_range": [
+                129722.0,
+                149058.5
+              ],
+              "max_rank_p95_ns": 169512
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 5147.5,
+              "rank_p50_ns_range": [
+                4589.0,
+                5495.0
+              ],
+              "max_rank_p95_ns": 6933
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 142.5,
+              "rank_p50_ns_range": [
+                131.0,
+                161.0
+              ],
+              "max_rank_p95_ns": 641
+            },
+            "response": {
+              "median_of_rank_p50_ns": 306394.75,
+              "rank_p50_ns_range": [
+                296754.0,
+                315384.5
+              ],
+              "max_rank_p95_ns": 345978
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 311514.5,
+              "rank_p50_ns_range": [
+                302760.5,
+                320845.0
+              ],
+              "max_rank_p95_ns": 351248
+            },
+            "graph_fence_transport_python": {
+              "median_of_rank_p50_ns": 460575.75,
+              "rank_p50_ns_range": [
+                438258.0,
+                480583.5
+              ],
+              "max_rank_p95_ns": 507024
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 0
+        },
+        {
+          "phase": "spin5",
+          "tokens": 3,
+          "mode": "packed",
+          "metrics": {
+            "producer_graph_and_fence": {
+              "median_of_rank_p50_ns": 140860.25,
+              "rank_p50_ns_range": [
+                130989.0,
+                149319.0
+              ],
+              "max_rank_p95_ns": 164112
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 6061.5,
+              "rank_p50_ns_range": [
+                4904.5,
+                6297.0
+              ],
+              "max_rank_p95_ns": 7574
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 11236.0,
+              "rank_p50_ns_range": [
+                11081.0,
+                11352.0
+              ],
+              "max_rank_p95_ns": 19608
+            },
+            "response": {
+              "median_of_rank_p50_ns": 10567.75,
+              "rank_p50_ns_range": [
+                10435.0,
+                10795.0
+              ],
+              "max_rank_p95_ns": 12493
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 27908.25,
+              "rank_p50_ns_range": [
+                27011.0,
+                28253.5
+              ],
+              "max_rank_p95_ns": 36660
+            },
+            "graph_fence_transport_python": {
+              "median_of_rank_p50_ns": 173189.5,
+              "rank_p50_ns_range": [
+                161838.0,
+                182131.0
+              ],
+              "max_rank_p95_ns": 214678
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 0
+        },
+        {
+          "phase": "spin5",
+          "tokens": 3,
+          "mode": "direct_rows",
+          "metrics": {
+            "producer_graph_and_fence": {
+              "median_of_rank_p50_ns": 141145.75,
+              "rank_p50_ns_range": [
+                130754.0,
+                149178.5
+              ],
+              "max_rank_p95_ns": 160646
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 6066.75,
+              "rank_p50_ns_range": [
+                4919.0,
+                6352.0
+              ],
+              "max_rank_p95_ns": 8176
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 285.5,
+              "rank_p50_ns_range": [
+                261.0,
+                301.0
+              ],
+              "max_rank_p95_ns": 822
+            },
+            "response": {
+              "median_of_rank_p50_ns": 921166.25,
+              "rank_p50_ns_range": [
+                895297.0,
+                943553.0
+              ],
+              "max_rank_p95_ns": 984261
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 927831.75,
+              "rank_p50_ns_range": [
+                900352.0,
+                949775.5
+              ],
+              "max_rank_p95_ns": 990844
+            },
+            "graph_fence_transport_python": {
+              "median_of_rank_p50_ns": 1074557.75,
+              "rank_p50_ns_range": [
+                1037908.0,
+                1105226.5
+              ],
+              "max_rank_p95_ns": 1146129
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 0
+        },
+        {
+          "phase": "spin5",
+          "tokens": 12,
+          "mode": "packed",
+          "metrics": {
+            "producer_graph_and_fence": {
+              "median_of_rank_p50_ns": 141874.5,
+              "rank_p50_ns_range": [
+                131365.0,
+                151753.5
+              ],
+              "max_rank_p95_ns": 163811
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 6439.75,
+              "rank_p50_ns_range": [
+                5971.5,
+                6818.0
+              ],
+              "max_rank_p95_ns": 9448
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 42871.5,
+              "rank_p50_ns_range": [
+                42200.0,
+                75904.5
+              ],
+              "max_rank_p95_ns": 88999
+            },
+            "response": {
+              "median_of_rank_p50_ns": 10963.75,
+              "rank_p50_ns_range": [
+                10720.5,
+                12083.0
+              ],
+              "max_rank_p95_ns": 17965
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 60139.25,
+              "rank_p50_ns_range": [
+                59152.0,
+                95511.5
+              ],
+              "max_rank_p95_ns": 112534
+            },
+            "graph_fence_transport_python": {
+              "median_of_rank_p50_ns": 206820.5,
+              "rank_p50_ns_range": [
+                195035.5,
+                253202.0
+              ],
+              "max_rank_p95_ns": 275283
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 0
+        },
+        {
+          "phase": "spin5",
+          "tokens": 12,
+          "mode": "direct_rows",
+          "metrics": {
+            "producer_graph_and_fence": {
+              "median_of_rank_p50_ns": 141574.0,
+              "rank_p50_ns_range": [
+                131540.0,
+                149629.5
+              ],
+              "max_rank_p95_ns": 178770
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 6545.0,
+              "rank_p50_ns_range": [
+                6096.0,
+                6833.0
+              ],
+              "max_rank_p95_ns": 7734
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 601.0,
+              "rank_p50_ns_range": [
+                581.0,
+                666.0
+              ],
+              "max_rank_p95_ns": 1142
+            },
+            "response": {
+              "median_of_rank_p50_ns": 3643711.75,
+              "rank_p50_ns_range": [
+                3540871.0,
+                3736428.5
+              ],
+              "max_rank_p95_ns": 3821124
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 3650780.25,
+              "rank_p50_ns_range": [
+                3547704.0,
+                3743451.5
+              ],
+              "max_rank_p95_ns": 3830191
+            },
+            "graph_fence_transport_python": {
+              "median_of_rank_p50_ns": 3798498.25,
+              "rank_p50_ns_range": [
+                3684434.5,
+                3901132.0
+              ],
+              "max_rank_p95_ns": 3983583
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 0
+        }
+      ]
+    },
+    "full-v5": {
+      "shared_inode": 4199,
+      "groups": [
+        {
+          "phase": "spin5",
+          "tokens": 1,
+          "mode": "native_packed",
+          "metrics": {
+            "producer_and_fence": {
+              "median_of_rank_p50_ns": 86063.5,
+              "rank_p50_ns_range": [
+                82402.0,
+                89490.0
+              ],
+              "max_rank_p95_ns": 108617
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 4754.0,
+              "rank_p50_ns_range": [
+                4488.5,
+                5005.0
+              ],
+              "max_rank_p95_ns": 5951
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 4044.75,
+              "rank_p50_ns_range": [
+                3792.0,
+                4127.5
+              ],
+              "max_rank_p95_ns": 7234
+            },
+            "response": {
+              "median_of_rank_p50_ns": 4641.25,
+              "rank_p50_ns_range": [
+                4493.5,
+                4879.0
+              ],
+              "max_rank_p95_ns": 5350
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 13403.25,
+              "rank_p50_ns_range": [
+                13064.5,
+                14062.0
+              ],
+              "max_rank_p95_ns": 17864
+            },
+            "producer_fence_transport_python": {
+              "median_of_rank_p50_ns": 104045.5,
+              "rank_p50_ns_range": [
+                100095.5,
+                107129.0
+              ],
+              "max_rank_p95_ns": 126190
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 0
+        },
+        {
+          "phase": "spin5",
+          "tokens": 1,
+          "mode": "native_poll20_packed",
+          "metrics": {
+            "producer_and_fence": {
+              "median_of_rank_p50_ns": 33420.75,
+              "rank_p50_ns_range": [
+                32622.0,
+                34095.0
+              ],
+              "max_rank_p95_ns": 55936
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 4534.0,
+              "rank_p50_ns_range": [
+                4398.0,
+                4609.0
+              ],
+              "max_rank_p95_ns": 5430
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 1510.5,
+              "rank_p50_ns_range": [
+                821.0,
+                2259.0
+              ],
+              "max_rank_p95_ns": 3847
+            },
+            "response": {
+              "median_of_rank_p50_ns": 4581.0,
+              "rank_p50_ns_range": [
+                4549.0,
+                4799.0
+              ],
+              "max_rank_p95_ns": 5350
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 10828.0,
+              "rank_p50_ns_range": [
+                9969.0,
+                11331.5
+              ],
+              "max_rank_p95_ns": 13225
+            },
+            "producer_fence_transport_python": {
+              "median_of_rank_p50_ns": 48311.5,
+              "rank_p50_ns_range": [
+                47575.5,
+                49549.5
+              ],
+              "max_rank_p95_ns": 70033
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 3
+        },
+        {
+          "phase": "spin5",
+          "tokens": 1,
+          "mode": "native_poll40_packed",
+          "metrics": {
+            "producer_and_fence": {
+              "median_of_rank_p50_ns": 31730.5,
+              "rank_p50_ns_range": [
+                31274.0,
+                32296.0
+              ],
+              "max_rank_p95_ns": 46588
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 4478.75,
+              "rank_p50_ns_range": [
+                4393.0,
+                4569.0
+              ],
+              "max_rank_p95_ns": 5119
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 741.25,
+              "rank_p50_ns_range": [
+                696.0,
+                846.0
+              ],
+              "max_rank_p95_ns": 1342
+            },
+            "response": {
+              "median_of_rank_p50_ns": 4568.75,
+              "rank_p50_ns_range": [
+                4463.5,
+                4614.0
+              ],
+              "max_rank_p95_ns": 5240
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 9861.25,
+              "rank_p50_ns_range": [
+                9718.5,
+                9959.0
+              ],
+              "max_rank_p95_ns": 10680
+            },
+            "producer_fence_transport_python": {
+              "median_of_rank_p50_ns": 45664.25,
+              "rank_p50_ns_range": [
+                45226.0,
+                46182.5
+              ],
+              "max_rank_p95_ns": 61056
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 128
+        },
+        {
+          "phase": "spin5",
+          "tokens": 3,
+          "mode": "native_packed",
+          "metrics": {
+            "producer_and_fence": {
+              "median_of_rank_p50_ns": 88493.0,
+              "rank_p50_ns_range": [
+                83624.0,
+                91609.0
+              ],
+              "max_rank_p95_ns": 101102
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 4999.5,
+              "rank_p50_ns_range": [
+                4844.5,
+                5260.0
+              ],
+              "max_rank_p95_ns": 5751
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 11301.5,
+              "rank_p50_ns_range": [
+                10946.0,
+                19301.5
+              ],
+              "max_rank_p95_ns": 20559
+            },
+            "response": {
+              "median_of_rank_p50_ns": 10279.5,
+              "rank_p50_ns_range": [
+                9658.0,
+                10490.0
+              ],
+              "max_rank_p95_ns": 10880
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 26485.5,
+              "rank_p50_ns_range": [
+                26310.5,
+                34670.5
+              ],
+              "max_rank_p95_ns": 35999
+            },
+            "producer_fence_transport_python": {
+              "median_of_rank_p50_ns": 122452.75,
+              "rank_p50_ns_range": [
+                114508.0,
+                125469.0
+              ],
+              "max_rank_p95_ns": 138975
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 0
+        },
+        {
+          "phase": "spin5",
+          "tokens": 3,
+          "mode": "native_poll20_packed",
+          "metrics": {
+            "producer_and_fence": {
+              "median_of_rank_p50_ns": 33485.75,
+              "rank_p50_ns_range": [
+                33107.5,
+                34280.0
+              ],
+              "max_rank_p95_ns": 101994
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 4766.5,
+              "rank_p50_ns_range": [
+                4739.0,
+                4794.5
+              ],
+              "max_rank_p95_ns": 5851
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 5933.5,
+              "rank_p50_ns_range": [
+                5851.0,
+                9117.0
+              ],
+              "max_rank_p95_ns": 10830
+            },
+            "response": {
+              "median_of_rank_p50_ns": 10497.75,
+              "rank_p50_ns_range": [
+                10254.5,
+                10660.0
+              ],
+              "max_rank_p95_ns": 11782
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 21476.0,
+              "rank_p50_ns_range": [
+                21130.5,
+                24331.5
+              ],
+              "max_rank_p95_ns": 26912
+            },
+            "producer_fence_transport_python": {
+              "median_of_rank_p50_ns": 61066.25,
+              "rank_p50_ns_range": [
+                59442.5,
+                62634.0
+              ],
+              "max_rank_p95_ns": 127512
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 1
+        },
+        {
+          "phase": "spin5",
+          "tokens": 3,
+          "mode": "native_poll40_packed",
+          "metrics": {
+            "producer_and_fence": {
+              "median_of_rank_p50_ns": 32218.75,
+              "rank_p50_ns_range": [
+                31620.5,
+                32952.5
+              ],
+              "max_rank_p95_ns": 45577
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 4784.0,
+              "rank_p50_ns_range": [
+                4704.0,
+                4909.5
+              ],
+              "max_rank_p95_ns": 5360
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 3163.75,
+              "rank_p50_ns_range": [
+                2660.0,
+                6678.0
+              ],
+              "max_rank_p95_ns": 8315
+            },
+            "response": {
+              "median_of_rank_p50_ns": 10442.0,
+              "rank_p50_ns_range": [
+                10189.0,
+                10635.0
+              ],
+              "max_rank_p95_ns": 11542
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 18482.75,
+              "rank_p50_ns_range": [
+                17839.0,
+                21957.0
+              ],
+              "max_rank_p95_ns": 23565
+            },
+            "producer_fence_transport_python": {
+              "median_of_rank_p50_ns": 55219.5,
+              "rank_p50_ns_range": [
+                53892.5,
+                59267.5
+              ],
+              "max_rank_p95_ns": 68169
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 128
+        },
+        {
+          "phase": "spin5",
+          "tokens": 12,
+          "mode": "native_packed",
+          "metrics": {
+            "producer_and_fence": {
+              "median_of_rank_p50_ns": 97152.5,
+              "rank_p50_ns_range": [
+                93312.0,
+                100175.5
+              ],
+              "max_rank_p95_ns": 113485
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 5129.5,
+              "rank_p50_ns_range": [
+                4924.0,
+                5455.5
+              ],
+              "max_rank_p95_ns": 6833
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 43200.0,
+              "rank_p50_ns_range": [
+                43051.5,
+                44960.0
+              ],
+              "max_rank_p95_ns": 89160
+            },
+            "response": {
+              "median_of_rank_p50_ns": 10926.0,
+              "rank_p50_ns_range": [
+                10324.5,
+                11066.0
+              ],
+              "max_rank_p95_ns": 12173
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 59059.75,
+              "rank_p50_ns_range": [
+                58701.5,
+                61656.5
+              ],
+              "max_rank_p95_ns": 106092
+            },
+            "producer_fence_transport_python": {
+              "median_of_rank_p50_ns": 160685.25,
+              "rank_p50_ns_range": [
+                158271.0,
+                172382.5
+              ],
+              "max_rank_p95_ns": 216121
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 0
+        },
+        {
+          "phase": "spin5",
+          "tokens": 12,
+          "mode": "native_poll20_packed",
+          "metrics": {
+            "producer_and_fence": {
+              "median_of_rank_p50_ns": 38741.25,
+              "rank_p50_ns_range": [
+                37236.0,
+                39650.5
+              ],
+              "max_rank_p95_ns": 118105
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 4962.0,
+              "rank_p50_ns_range": [
+                4869.5,
+                5074.5
+              ],
+              "max_rank_p95_ns": 6462
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 39059.5,
+              "rank_p50_ns_range": [
+                38598.5,
+                42596.0
+              ],
+              "max_rank_p95_ns": 87346
+            },
+            "response": {
+              "median_of_rank_p50_ns": 10692.75,
+              "rank_p50_ns_range": [
+                10525.0,
+                11001.0
+              ],
+              "max_rank_p95_ns": 12824
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 54711.75,
+              "rank_p50_ns_range": [
+                54388.5,
+                58641.5
+              ],
+              "max_rank_p95_ns": 104429
+            },
+            "producer_fence_transport_python": {
+              "median_of_rank_p50_ns": 98276.75,
+              "rank_p50_ns_range": [
+                97700.0,
+                104964.5
+              ],
+              "max_rank_p95_ns": 182858
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 0
+        },
+        {
+          "phase": "spin5",
+          "tokens": 12,
+          "mode": "native_poll40_packed",
+          "metrics": {
+            "producer_and_fence": {
+              "median_of_rank_p50_ns": 37210.75,
+              "rank_p50_ns_range": [
+                34265.0,
+                38272.5
+              ],
+              "max_rank_p95_ns": 52590
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 4901.75,
+              "rank_p50_ns_range": [
+                4849.5,
+                4989.5
+              ],
+              "max_rank_p95_ns": 5791
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 32151.25,
+              "rank_p50_ns_range": [
+                29881.5,
+                64888.0
+              ],
+              "max_rank_p95_ns": 71596
+            },
+            "response": {
+              "median_of_rank_p50_ns": 10775.75,
+              "rank_p50_ns_range": [
+                10580.0,
+                11697.0
+              ],
+              "max_rank_p95_ns": 17383
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 48695.25,
+              "rank_p50_ns_range": [
+                45412.0,
+                81129.0
+              ],
+              "max_rank_p95_ns": 89741
+            },
+            "producer_fence_transport_python": {
+              "median_of_rank_p50_ns": 89407.25,
+              "rank_p50_ns_range": [
+                86529.5,
+                123414.5
+              ],
+              "max_rank_p95_ns": 144274
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 121
+        }
+      ]
+    },
+    "concurrent-v6": {
+      "shared_inode": 4199,
+      "groups": [
+        {
+          "phase": "spin5",
+          "tokens": 1,
+          "mode": "native_packed",
+          "metrics": {
+            "producer_and_fence": {
+              "median_of_rank_p50_ns": 91706.75,
+              "rank_p50_ns_range": [
+                89044.5,
+                93061.5
+              ],
+              "max_rank_p95_ns": 101403
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 5548.0,
+              "rank_p50_ns_range": [
+                5255.0,
+                5676.0
+              ],
+              "max_rank_p95_ns": 6352
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 7223.75,
+              "rank_p50_ns_range": [
+                6763.0,
+                7614.5
+              ],
+              "max_rank_p95_ns": 9458
+            },
+            "response": {
+              "median_of_rank_p50_ns": 5014.5,
+              "rank_p50_ns_range": [
+                4844.5,
+                5159.5
+              ],
+              "max_rank_p95_ns": 6412
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 17766.5,
+              "rank_p50_ns_range": [
+                16987.5,
+                18415.0
+              ],
+              "max_rank_p95_ns": 40968
+            },
+            "producer_fence_transport_python": {
+              "median_of_rank_p50_ns": 115722.0,
+              "rank_p50_ns_range": [
+                113515.5,
+                118155.0
+              ],
+              "max_rank_p95_ns": 142671
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 0
+        },
+        {
+          "phase": "spin5",
+          "tokens": 1,
+          "mode": "native_poll20_packed",
+          "metrics": {
+            "producer_and_fence": {
+              "median_of_rank_p50_ns": 36053.5,
+              "rank_p50_ns_range": [
+                35568.0,
+                37050.0
+              ],
+              "max_rank_p95_ns": 66166
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 5668.5,
+              "rank_p50_ns_range": [
+                5606.0,
+                5806.0
+              ],
+              "max_rank_p95_ns": 6262
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 5317.75,
+              "rank_p50_ns_range": [
+                4308.0,
+                5771.0
+              ],
+              "max_rank_p95_ns": 7174
+            },
+            "response": {
+              "median_of_rank_p50_ns": 4951.75,
+              "rank_p50_ns_range": [
+                4789.0,
+                5135.0
+              ],
+              "max_rank_p95_ns": 6703
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 15832.75,
+              "rank_p50_ns_range": [
+                14959.0,
+                16346.0
+              ],
+              "max_rank_p95_ns": 18064
+            },
+            "producer_fence_transport_python": {
+              "median_of_rank_p50_ns": 59871.25,
+              "rank_p50_ns_range": [
+                58376.0,
+                60550.5
+              ],
+              "max_rank_p95_ns": 91233
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 2
+        },
+        {
+          "phase": "spin5",
+          "tokens": 1,
+          "mode": "native_poll40_packed",
+          "metrics": {
+            "producer_and_fence": {
+              "median_of_rank_p50_ns": 33330.75,
+              "rank_p50_ns_range": [
+                33052.5,
+                33719.0
+              ],
+              "max_rank_p95_ns": 47791
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 5633.25,
+              "rank_p50_ns_range": [
+                5410.5,
+                5796.5
+              ],
+              "max_rank_p95_ns": 6943
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 2672.5,
+              "rank_p50_ns_range": [
+                1402.5,
+                3972.5
+              ],
+              "max_rank_p95_ns": 6032
+            },
+            "response": {
+              "median_of_rank_p50_ns": 4951.75,
+              "rank_p50_ns_range": [
+                4824.0,
+                5145.0
+              ],
+              "max_rank_p95_ns": 7184
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 13408.25,
+              "rank_p50_ns_range": [
+                12378.0,
+                14537.5
+              ],
+              "max_rank_p95_ns": 16952
+            },
+            "producer_fence_transport_python": {
+              "median_of_rank_p50_ns": 53872.5,
+              "rank_p50_ns_range": [
+                52765.0,
+                55194.5
+              ],
+              "max_rank_p95_ns": 67619
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 128
+        },
+        {
+          "phase": "spin5",
+          "tokens": 3,
+          "mode": "native_packed",
+          "metrics": {
+            "producer_and_fence": {
+              "median_of_rank_p50_ns": 93768.25,
+              "rank_p50_ns_range": [
+                91945.0,
+                95416.5
+              ],
+              "max_rank_p95_ns": 111813
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 5793.5,
+              "rank_p50_ns_range": [
+                5590.5,
+                5906.0
+              ],
+              "max_rank_p95_ns": 6523
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 19850.25,
+              "rank_p50_ns_range": [
+                17413.0,
+                20429.0
+              ],
+              "max_rank_p95_ns": 22182
+            },
+            "response": {
+              "median_of_rank_p50_ns": 11832.75,
+              "rank_p50_ns_range": [
+                11547.0,
+                12038.0
+              ],
+              "max_rank_p95_ns": 13646
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 37914.5,
+              "rank_p50_ns_range": [
+                34485.5,
+                37982.0
+              ],
+              "max_rank_p95_ns": 41789
+            },
+            "producer_fence_transport_python": {
+              "median_of_rank_p50_ns": 138195.25,
+              "rank_p50_ns_range": [
+                134575.5,
+                140282.0
+              ],
+              "max_rank_p95_ns": 153793
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 0
+        },
+        {
+          "phase": "spin5",
+          "tokens": 3,
+          "mode": "native_poll20_packed",
+          "metrics": {
+            "producer_and_fence": {
+              "median_of_rank_p50_ns": 36695.25,
+              "rank_p50_ns_range": [
+                36384.0,
+                37030.5
+              ],
+              "max_rank_p95_ns": 61106
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 5871.25,
+              "rank_p50_ns_range": [
+                5811.0,
+                5981.0
+              ],
+              "max_rank_p95_ns": 6963
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 12734.0,
+              "rank_p50_ns_range": [
+                11482.0,
+                13951.5
+              ],
+              "max_rank_p95_ns": 20398
+            },
+            "response": {
+              "median_of_rank_p50_ns": 13535.75,
+              "rank_p50_ns_range": [
+                13360.0,
+                13786.0
+              ],
+              "max_rank_p95_ns": 14448
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 32464.25,
+              "rank_p50_ns_range": [
+                31349.5,
+                33734.0
+              ],
+              "max_rank_p95_ns": 40858
+            },
+            "producer_fence_transport_python": {
+              "median_of_rank_p50_ns": 76863.75,
+              "rank_p50_ns_range": [
+                76199.5,
+                78664.5
+              ],
+              "max_rank_p95_ns": 96474
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 1
+        },
+        {
+          "phase": "spin5",
+          "tokens": 3,
+          "mode": "native_poll40_packed",
+          "metrics": {
+            "producer_and_fence": {
+              "median_of_rank_p50_ns": 33804.25,
+              "rank_p50_ns_range": [
+                33614.0,
+                34024.5
+              ],
+              "max_rank_p95_ns": 41078
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 5863.5,
+              "rank_p50_ns_range": [
+                5731.0,
+                6021.0
+              ],
+              "max_rank_p95_ns": 7754
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 4105.5,
+              "rank_p50_ns_range": [
+                3461.5,
+                5140.0
+              ],
+              "max_rank_p95_ns": 6502
+            },
+            "response": {
+              "median_of_rank_p50_ns": 13475.5,
+              "rank_p50_ns_range": [
+                13355.0,
+                13556.0
+              ],
+              "max_rank_p95_ns": 17995
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 23467.0,
+              "rank_p50_ns_range": [
+                22808.0,
+                24461.5
+              ],
+              "max_rank_p95_ns": 27633
+            },
+            "producer_fence_transport_python": {
+              "median_of_rank_p50_ns": 64788.25,
+              "rank_p50_ns_range": [
+                63741.0,
+                66330.5
+              ],
+              "max_rank_p95_ns": 75995
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 128
+        },
+        {
+          "phase": "spin5",
+          "tokens": 12,
+          "mode": "native_packed",
+          "metrics": {
+            "producer_and_fence": {
+              "median_of_rank_p50_ns": 101092.0,
+              "rank_p50_ns_range": [
+                99379.0,
+                102935.5
+              ],
+              "max_rank_p95_ns": 123114
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 5876.0,
+              "rank_p50_ns_range": [
+                5736.0,
+                5931.5
+              ],
+              "max_rank_p95_ns": 6713
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 78383.75,
+              "rank_p50_ns_range": [
+                77122.0,
+                80228.0
+              ],
+              "max_rank_p95_ns": 86925
+            },
+            "response": {
+              "median_of_rank_p50_ns": 16298.75,
+              "rank_p50_ns_range": [
+                12914.5,
+                19231.5
+              ],
+              "max_rank_p95_ns": 21481
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 100062.75,
+              "rank_p50_ns_range": [
+                99258.5,
+                101603.0
+              ],
+              "max_rank_p95_ns": 113366
+            },
+            "producer_fence_transport_python": {
+              "median_of_rank_p50_ns": 209042.5,
+              "rank_p50_ns_range": [
+                207970.0,
+                211297.0
+              ],
+              "max_rank_p95_ns": 227964
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 0
+        },
+        {
+          "phase": "spin5",
+          "tokens": 12,
+          "mode": "native_poll20_packed",
+          "metrics": {
+            "producer_and_fence": {
+              "median_of_rank_p50_ns": 41005.25,
+              "rank_p50_ns_range": [
+                40281.0,
+                42490.5
+              ],
+              "max_rank_p95_ns": 119056
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 6019.0,
+              "rank_p50_ns_range": [
+                5996.0,
+                6061.5
+              ],
+              "max_rank_p95_ns": 7144
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 70041.0,
+              "rank_p50_ns_range": [
+                64733.5,
+                70965.0
+              ],
+              "max_rank_p95_ns": 90692
+            },
+            "response": {
+              "median_of_rank_p50_ns": 14472.5,
+              "rank_p50_ns_range": [
+                14442.0,
+                14547.5
+              ],
+              "max_rank_p95_ns": 23304
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 91744.5,
+              "rank_p50_ns_range": [
+                85052.0,
+                92886.5
+              ],
+              "max_rank_p95_ns": 108577
+            },
+            "producer_fence_transport_python": {
+              "median_of_rank_p50_ns": 142395.25,
+              "rank_p50_ns_range": [
+                133083.0,
+                143783.5
+              ],
+              "max_rank_p95_ns": 210690
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 0
+        },
+        {
+          "phase": "spin5",
+          "tokens": 12,
+          "mode": "native_poll40_packed",
+          "metrics": {
+            "producer_and_fence": {
+              "median_of_rank_p50_ns": 38603.5,
+              "rank_p50_ns_range": [
+                35838.0,
+                39385.0
+              ],
+              "max_rank_p95_ns": 55145
+            },
+            "request_readback": {
+              "median_of_rank_p50_ns": 5886.25,
+              "rank_p50_ns_range": [
+                5676.0,
+                6016.5
+              ],
+              "max_rank_p95_ns": 6763
+            },
+            "validation_and_gather": {
+              "median_of_rank_p50_ns": 62163.25,
+              "rank_p50_ns_range": [
+                57729.5,
+                65764.5
+              ],
+              "max_rank_p95_ns": 74923
+            },
+            "response": {
+              "median_of_rank_p50_ns": 14352.5,
+              "rank_p50_ns_range": [
+                14177.0,
+                14643.0
+              ],
+              "max_rank_p95_ns": 16912
+            },
+            "native_transport": {
+              "median_of_rank_p50_ns": 82075.75,
+              "rank_p50_ns_range": [
+                78804.5,
+                85482.5
+              ],
+              "max_rank_p95_ns": 95752
+            },
+            "producer_fence_transport_python": {
+              "median_of_rank_p50_ns": 127737.5,
+              "rank_p50_ns_range": [
+                125824.0,
+                132061.0
+              ],
+              "max_rank_p95_ns": 146648
+            }
+          },
+          "measured_requests": 128,
+          "producer_poll_completions": 121
+        }
+      ]
+    }
+  },
+  "limits": [
+    "Host-assisted gather/DMA; no autonomous device access to host RAM.",
+    "Private experiment, not installed in the live model-serving lookup path.",
+    "Input setup and correctness readbacks are outside timed intervals.",
+    "Fixed mode order and repeated request sequences allow cache warming; whole-call ratios are not cold-cache speedup estimates.",
+    "32 measured requests per case and short concurrency qualification do not establish model throughput or worst-case latency.",
+    "The larger host table is prefaulted but not DMA-pinned; only staging buffers have prepared DMA descriptors.",
+    "Standalone CPU tests isolate framework conftest; ordinary test entry was blocked by missing vllm.third_party.flash_linear_attention."
+  ]
+}

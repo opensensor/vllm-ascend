@@ -7,6 +7,24 @@ graph settings. The paths and measured values below describe the qualified
 development host; they are evidence for this runtime, not general vLLM Ascend
 defaults.
 
+## Restore the resident optimizations after startup
+
+The launcher alone does not restore the optimized serving state. The retained
+W4 finalizer/schedule, HC combine, QSA gather/geometry, general and prefix graph
+coverage `[3,6,9,12]`, queued scheduling, device drafts/history, GDN metadata,
+decode/checkpoint preparation, and device commit inputs are installed afterward.
+Inspect their live owner status and complete the retained restoration gates
+before reporting performance. The initial PLE deployment on October 15 missed
+this step; its 28–31 decode tokens/s were measured on an incomplete stack.
+
+Attach PLE through `tools.qwen4exp.apply_ple_serving`, which preserves the
+resident patch generation, existing control RPCs, weights and graph owners.
+Do not apply a PLE-only `ResidentClient.switch` candidate: that transaction
+restores prior methods before installing its replacement set, removing the
+other resident optimizations. Compare PLE off/on with the same restored stack,
+request budgets and graphs. See `tools/qwen4exp/SERVING_OPTIMIZED_PLE.txt` for
+the restored configuration, receipts and matched measurements.
+
 ## Sources of truth
 
 - Develop changes on the repository's current main branch, then deploy them as
@@ -335,3 +353,76 @@ The report distinguishes exact projection parity on actual serving activations
 from whole-generation reproducibility. Do not infer the latter from component
 parity, request success, or a few output hashes. Code replacement through the
 resident protocol still clears prefix caches and recaptures graphs.
+
+## Optional PCIe DMA reservations
+
+The experimental resident API accepts repeated `--dma-reserve-device ID`
+options before `-- serve MODEL`. These are physical driver device IDs, not
+indices remapped by `ASCEND_RT_VISIBLE_DEVICES`. For the qualified four-NPU
+host, pass IDs 0, 1, 2, and 3. Omit the options for ordinary serving without
+reservations. The launcher forwards the same options:
+
+```bash
+bash start-qfn-engine-control-candidate.sh --run-root /absolute/new/run \
+  --dma-reserve-device 0 --dma-reserve-device 1 \
+  --dma-reserve-device 2 --dma-reserve-device 3
+```
+
+Acquire occurs before ACL initialization. The API holds the lease FDs for its
+lifetime and closes partial acquisitions if admission fails. Startup requires
+`ASCEND_DEVICE_DMA_CAP_HOST_ROUTING_ISOLATED`; the earlier reservation-only
+build lacks this capability and conflicts with fixed-instance HAL copies.
+The deployed node policy is root:`HwHiAiUser`, mode 0660.
+
+The regular driver initially uses its complete host pool. On the first
+successful acquisition, the selected queue must drain before its fixed host
+instances move to a permanent successor. Release removes the lease but keeps
+that routing until device reset: moving back while the successor has queued
+work could reorder a stream. Thus each qualified 310P keeps two host traffic
+channels after first acquisition, even after release. Sysfs `msg/device_dma`
+reports ownership and the retired channel count without a firmware RPC.
+
+The 2026-10-14 v2 driver passed all-four-NPU lease lifecycle checks and 144
+exact page-crossing host DMA transfers before, during, and after leases.
+This validates reservation coexistence. `device_submit=0` remains explicit:
+the reservation does not yet map the queue to a device producer or remove
+host PLE lookup/submission. See the driver fork's `DEVICE_DMA.md` for that
+remaining contract and `ple-driver-dma-coexist-v2.json` in the experiment
+artifacts for the hardware receipt.
+
+The additive v3 capability `CAP_SOURCE_REGISTRATION` allows a lease to pin and
+DMA-map one immutable host source range during startup. The startup client
+provides `register_source(address, length)`, `query_source()`, and
+`release_source()`. Registration charges the caller's locked-memory limit;
+four leases sharing the same physical pages incur four accounting charges,
+without four table copies. A shared sealed memfd is the preferred backing.
+The 128-GiB API bound is not a full-table hardware qualification. The private
+page-crossing probe passed 12 registrations across four NPUs, including limit
+enforcement, stale-handle rejection, and complete locked-memory cleanup.
+Ordinary server startup still holds queue leases only; full PLE registration
+and device submission are separate integration steps. Run the explicit probe
+only while the server has released its leases:
+
+```bash
+python -m tools.qwen4exp.ple_driver_source_probe --devices 0 1 2 3 \
+  --output /absolute/path/source-registration.json
+```
+
+Do not equate a successful device HAL symbol lookup with working DMA. The
+on-device `halMemcpySumbitInner` and `halMemcpyWaitInner` return unsupported,
+and `drvMemcpyInner` calls ordinary `memcpy_s`. The isolated AI CPU probe and
+matching firmware disassembly establish those limitations on this firmware.
+The native device producer still requires an actual queue/control mapping.
+
+For offline device ABI inspection, use `tools.qwen4exp.ple_device_abi_audit`
+with `--rootfs` pointing at the extracted device filesystem and `--output`
+pointing at a new JSON receipt. It requires `pyelftools`; optional repeated
+`--provider-module` arguments add companion `.ko` exports. The original
+26.0.rc1 extraction contains `boot/symvers-<release>.gz` and the kernel config,
+even though its source directory lacks generated kernel build headers. The
+shipped PCIe module's 135 imports match that kernel and the three companion
+modules `ascend_kernel_open_adapt`, `drv_dfm`, and `dbl_runenv_config`.
+These checks establish consistency of the supplied artifacts, not build
+compatibility for a new module. Preserve version checks and verify full type
+definitions before building a device extension. The audit never loads code
+or accesses hardware.

@@ -151,7 +151,7 @@ class ServingPLE:
         self.lookups, self.retained = {}, []
         self.calls, self.fallbacks = Counter(), Counter()
         self.checked = 0
-        self.verify = True
+        self.enabled = self.verify = True
         self.failed = self.busy = False
         self.elapsed = deque(maxlen=1024)
         self.native_elapsed = deque(maxlen=1024)
@@ -161,7 +161,7 @@ class ServingPLE:
             return sorted(values)[len(values) // 2] / 1000 if values else None
 
         return dict(
-            enabled=True,
+            enabled=self.enabled,
             failed=self.failed,
             verify=self.verify,
             checked=self.checked,
@@ -208,17 +208,16 @@ class ServingPLE:
             self.busy = False
 
 
-def make_replacements(config):
+def make_replacements(config, *, manager=None):
     # Lazy model imports: standalone admission/unit tests do not initialize CANN.
     from vllm_ascend._310p.worker_310p import NPUWorker310
     from vllm_ascend.models.qwen4_exp.model import _PLEInjection
     from vllm_ascend.models.qwen4_exp.ple_layer import AscendQwen4ExpPLELayer
 
-    manager = ServingPLE(config)
+    manager = ServingPLE(config) if manager is None else manager
     original = _PLEInjection._forward_eager
     gather_base = AscendQwen4ExpPLELayer.gather_embeddings
     status_base = NPUWorker310.resident_status
-    control_base = NPUWorker310.qfn_cpu_profile_stop
 
     def forward(
         self,
@@ -231,7 +230,11 @@ def make_replacements(config):
         query_start_loc_cpu=None,
         ngram_context_cpu=None,
     ):
-        count = request_count(input_ids.shape[0], query_start_loc, ngram_context, query_start_loc_cpu)
+        count = (
+            request_count(input_ids.shape[0], query_start_loc, ngram_context, query_start_loc_cpu)
+            if manager.enabled
+            else None
+        )
         if count is None:
             manager.fallbacks[str(input_ids.shape[0])] += 1
             return original(
@@ -273,19 +276,8 @@ def make_replacements(config):
         result["native_ple"] = manager.status()
         return result
 
-    def control(worker, output):
-        if output in ("native_ple_verify_on", "native_ple_verify_off"):
-            if worker.model_runner.execute_model_state is not None or manager.busy:
-                raise RuntimeError("drain inference before changing PLE verification")
-            manager.verify = output == "native_ple_verify_on"
-            manager.elapsed.clear()
-            manager.native_elapsed.clear()
-            return dict(rank=worker.rank, native_ple=manager.status())
-        return control_base(worker, output)
-
     return {
         "vllm_ascend.models.qwen4_exp.model:_PLEInjection._forward_eager": forward,
         "vllm_ascend.models.qwen4_exp.ple_layer:AscendQwen4ExpPLELayer.gather_embeddings": gather,
         "vllm_ascend._310p.worker_310p:NPUWorker310.resident_status": status,
-        "vllm_ascend._310p.worker_310p:NPUWorker310.qfn_cpu_profile_stop": control,
     }

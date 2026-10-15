@@ -1,0 +1,229 @@
+{
+  "source": "\ndef refresh_worker(worker):\n    import torch\n    from tools.qwen4exp.checkpoint_preparation_native import load\n    from tools.qwen4exp.checkpoint_preparation_native_gate import gate\n    commit=worker._resident_session().native_resources['qfn_mamba_commit_v4']\n    if worker.model_runner.execute_model_state is not None: raise RuntimeError('drain worker')\n    if hasattr(commit,'checkpoint_native_private_v1'): raise RuntimeError('private owner already exists')\n    commit.checkpoint_native_private_v1={}\n    kernel,launch=load('/srv/ai/storage/artifacts/npu-collective-qfn-20261014-024609/checkpoint-native-build-v1')\n    commit.checkpoint_native_kernel_v1=(kernel,launch)\n    torch.npu.synchronize()\n    result=gate(commit.checkpoint_native_private_v1,kernel,launch,commit,worker.model_runner.device)\n    commit.checkpoint_native_private_result_v1=result\n    return dict(rank=worker.rank,**result)\nclass Candidate:\n    def validate(self,engine):\n        if not engine._pause_complete() or engine.batch_queue or engine.scheduler.get_num_unfinished_requests():\n            raise RuntimeError('drain before private graph gate')\n        return dict(passed=True)\n    def apply(self,engine):\n        self.validate(engine)\n        rows=engine.model_executor.collective_rpc(refresh_worker)\n        return dict(passed=len(rows)==4 and all(row.get('passed') for row in rows),workers=rows)\ndef prepare(engine): return Candidate()\n\n# source sha256: aae77496b6c4e470f6937654be4e82e9c16bf33a8c75efcf5c91e49ff0ad7fb2",
+  "prepared": {
+    "passed": true,
+    "revision": "checkpoint_c0647f56b16240d9a8a46222c19f670c",
+    "sha256": "efd6d3dcd73230378105d3dac88b005138032184fc2d648ba9cd5efeb8263009",
+    "validation": {
+      "passed": true
+    }
+  },
+  "applied": {
+    "passed": true,
+    "applied": {
+      "passed": true,
+      "workers": [
+        {
+          "rank": 0,
+          "passed": true,
+          "exact_bank_checks": 2880,
+          "banks": 72,
+          "slots": 4,
+          "timing": {
+            "no_copy": {
+              "samples_ms": {
+                "tensor_graph": [
+                  0.2774675998807652,
+                  0.1690153996605659,
+                  0.15856960017117672,
+                  0.16072759972303174
+                ],
+                "fused_graph": [
+                  0.044051800068700686,
+                  0.04091379996680189,
+                  0.049000999933923595,
+                  0.044164000064483844
+                ]
+              },
+              "median_ms": {
+                "tensor_graph": 0.16487149969179882,
+                "fused_graph": 0.044107900066592265
+              }
+            },
+            "boundary_copy": {
+              "samples_ms": {
+                "tensor_graph": [
+                  1.1206409999431344,
+                  1.134595400071703,
+                  1.1308383996947668,
+                  1.132711800164543
+                ],
+                "fused_graph": [
+                  1.0017630000220379,
+                  0.998252400313504,
+                  0.999540600241744,
+                  0.9973023999918951
+                ]
+              },
+              "median_ms": {
+                "tensor_graph": 1.131775099929655,
+                "fused_graph": 0.998896500277624
+              }
+            }
+          }
+        },
+        {
+          "rank": 1,
+          "passed": true,
+          "exact_bank_checks": 2880,
+          "banks": 72,
+          "slots": 4,
+          "timing": {
+            "no_copy": {
+              "samples_ms": {
+                "tensor_graph": [
+                  0.2478673999576131,
+                  0.16438060010841582,
+                  0.16795539995655417,
+                  0.1475023997045355
+                ],
+                "fused_graph": [
+                  0.043091800034744665,
+                  0.054457599981105886,
+                  0.05661959985445719,
+                  0.03921860006812494
+                ]
+              },
+              "median_ms": {
+                "tensor_graph": 0.166168000032485,
+                "fused_graph": 0.048774700007925276
+              }
+            },
+            "boundary_copy": {
+              "samples_ms": {
+                "tensor_graph": [
+                  1.108846599890967,
+                  1.1270652001257986,
+                  1.1096480000560405,
+                  1.1124254000606015
+                ],
+                "fused_graph": [
+                  0.9880988000077195,
+                  0.9922487999574514,
+                  0.9886900003039045,
+                  0.982361999922432
+                ]
+              },
+              "median_ms": {
+                "tensor_graph": 1.111036700058321,
+                "fused_graph": 0.988394400155812
+              }
+            }
+          }
+        },
+        {
+          "rank": 2,
+          "passed": true,
+          "exact_bank_checks": 2880,
+          "banks": 72,
+          "slots": 4,
+          "timing": {
+            "no_copy": {
+              "samples_ms": {
+                "tensor_graph": [
+                  0.25415719974262174,
+                  0.16876879999472294,
+                  0.1557261999550974,
+                  0.14905120006005745
+                ],
+                "fused_graph": [
+                  0.05402880015026312,
+                  0.04213199972582515,
+                  0.042675200165831484,
+                  0.043927600199822336
+                ]
+              },
+              "median_ms": {
+                "tensor_graph": 0.16224749997491017,
+                "fused_graph": 0.04330140018282691
+              }
+            },
+            "boundary_copy": {
+              "samples_ms": {
+                "tensor_graph": [
+                  1.1196550000022398,
+                  1.1357195999153191,
+                  1.13330100029998,
+                  1.1394365999876754
+                ],
+                "fused_graph": [
+                  0.9995226002502022,
+                  1.0023419999924954,
+                  1.0067384002468316,
+                  1.0028048000094714
+                ]
+              },
+              "median_ms": {
+                "tensor_graph": 1.1345103001076495,
+                "fused_graph": 1.0025734000009834
+              }
+            }
+          }
+        },
+        {
+          "rank": 3,
+          "passed": true,
+          "exact_bank_checks": 2880,
+          "banks": 72,
+          "slots": 4,
+          "timing": {
+            "no_copy": {
+              "samples_ms": {
+                "tensor_graph": [
+                  0.26684540025598835,
+                  0.16292580003209878,
+                  0.16368520009564236,
+                  0.16138700011651963
+                ],
+                "fused_graph": [
+                  0.05707260024792049,
+                  0.04103800019947812,
+                  0.06600760025321506,
+                  0.05122339971421752
+                ]
+              },
+              "median_ms": {
+                "tensor_graph": 0.16330550006387057,
+                "fused_graph": 0.054147999981069006
+              }
+            },
+            "boundary_copy": {
+              "samples_ms": {
+                "tensor_graph": [
+                  1.1169819998031016,
+                  1.1291150000033667,
+                  1.1243479999393458,
+                  1.1192484002094716
+                ],
+                "fused_graph": [
+                  1.0025603998656152,
+                  0.9912429999531014,
+                  1.0040612000011606,
+                  0.990880199969979
+                ]
+              },
+              "median_ms": {
+                "tensor_graph": 1.1217982000744087,
+                "fused_graph": 0.9969016999093583
+              }
+            }
+          }
+        }
+      ]
+    },
+    "status": {
+      "passed": true,
+      "failed": false,
+      "current": [
+        "checkpoint_c0647f56b16240d9a8a46222c19f670c",
+        "efd6d3dcd73230378105d3dac88b005138032184fc2d648ba9cd5efeb8263009"
+      ],
+      "pending": null,
+      "paused": true,
+      "async_scheduling": true,
+      "scheduler_type": "QueuedBalanceScheduler",
+      "batch_queue_size": 2,
+      "retained_owners": 26
+    }
+  }
+}

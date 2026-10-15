@@ -1,0 +1,113 @@
+{
+  "source": "\ndef refresh_worker(worker):\n    import importlib\n    import torch\n    from tools.qwen4exp import decode_preparation_graph\n    importlib.reload(decode_preparation_graph)\n    commit = worker._resident_session().native_resources['qfn_mamba_commit_v4']\n    if commit.device_transition_v1.pending is not None or worker.model_runner.execute_model_state is not None:\n        raise RuntimeError('drain before changing preparation graphs')\n    torch.npu.synchronize()\n    owner = getattr(commit, 'decode_preparation_v1', None)\n    if 'on' == 'install':\n        if owner is not None:\n            raise RuntimeError('preparation owner already exists')\n        owner = decode_preparation_graph.DecodePreparationGraphs.__new__(decode_preparation_graph.DecodePreparationGraphs)\n        commit.decode_preparation_v1 = owner\n        owner.__init__(commit)\n        owner.construction_complete = True\n        owner.install()\n        owner.enabled = owner.verify = True\n    elif owner is None or not getattr(owner, 'construction_complete', False) or owner.failed:\n        raise RuntimeError('missing or failed owner must remain retained')\n    elif 'on' != 'status':\n        if 'on' == 'on' and (not owner.checked or owner.verification_error):\n            raise RuntimeError('successful real packet comparisons required before enabling fast preparation')\n        owner.enabled = 'on' != 'off'\n        owner.verify = 'on' == 'verify'\n    return dict(rank=worker.rank, passed=True, owner=owner.status())\n\nclass Candidate:\n    def validate(self, engine):\n        if not engine._pause_complete() or engine.batch_queue or engine.scheduler.get_num_unfinished_requests():\n            raise RuntimeError('drain engine and workers before changing metadata graphs')\n        return dict(passed=True)\n    def apply(self, engine):\n        self.validate(engine)\n        rows = engine.model_executor.collective_rpc(refresh_worker)\n        return dict(passed=len(rows) == 4 and all(row.get('passed') for row in rows), workers=rows)\ndef prepare(engine):\n    return Candidate()\n\n# source sha256: b6694f41a2ab0539b9f5e0120a096fa6369009de3cd221968ce7bae18a6936a1",
+  "prepared": {
+    "passed": true,
+    "revision": "preparation_56a47d90bfac4d439aae2352d010e4a1",
+    "sha256": "d217a47f71b084979f45409da9b1894baf83ee40c3766ae1c36f883d2d015c6e",
+    "validation": {
+      "passed": true
+    }
+  },
+  "applied": {
+    "passed": true,
+    "applied": {
+      "passed": true,
+      "workers": [
+        {
+          "rank": 0,
+          "passed": true,
+          "owner": {
+            "enabled": true,
+            "verify": false,
+            "failed": false,
+            "replays": 196,
+            "checked": 196,
+            "fallbacks": 19,
+            "verification_error": null,
+            "capture_requests": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "host_cache_management_retained": true
+          }
+        },
+        {
+          "rank": 1,
+          "passed": true,
+          "owner": {
+            "enabled": true,
+            "verify": false,
+            "failed": false,
+            "replays": 196,
+            "checked": 196,
+            "fallbacks": 19,
+            "verification_error": null,
+            "capture_requests": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "host_cache_management_retained": true
+          }
+        },
+        {
+          "rank": 2,
+          "passed": true,
+          "owner": {
+            "enabled": true,
+            "verify": false,
+            "failed": false,
+            "replays": 196,
+            "checked": 196,
+            "fallbacks": 19,
+            "verification_error": null,
+            "capture_requests": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "host_cache_management_retained": true
+          }
+        },
+        {
+          "rank": 3,
+          "passed": true,
+          "owner": {
+            "enabled": true,
+            "verify": false,
+            "failed": false,
+            "replays": 196,
+            "checked": 196,
+            "fallbacks": 19,
+            "verification_error": null,
+            "capture_requests": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "host_cache_management_retained": true
+          }
+        }
+      ]
+    },
+    "status": {
+      "passed": true,
+      "failed": false,
+      "current": [
+        "preparation_56a47d90bfac4d439aae2352d010e4a1",
+        "d217a47f71b084979f45409da9b1894baf83ee40c3766ae1c36f883d2d015c6e"
+      ],
+      "pending": null,
+      "paused": true,
+      "async_scheduling": true,
+      "scheduler_type": "QueuedBalanceScheduler",
+      "batch_queue_size": 2,
+      "retained_owners": 16
+    }
+  }
+}

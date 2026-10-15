@@ -17,6 +17,7 @@
 
 import torch
 import torch.distributed as dist
+from vllm.config import get_current_vllm_config_or_none
 from vllm.distributed.device_communicators.base_device_communicator import DeviceCommunicatorBase
 
 from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_hardware_profile
@@ -63,6 +64,34 @@ class NPUCommunicator(DeviceCommunicatorBase):
         # FlashInfer PCIe IPC backend on NPU.
         self.fi_pcie_ipc_ar_comm = None
         self.all2all_manager = _NpuAll2AllManager()
+        self.custom_sum = None
+        configuration = get_current_vllm_config_or_none()
+        custom = (configuration.additional_config or {}).get("npu_collective") if configuration is not None else None
+        if custom is not None and unique_name.split(":", 1)[0] == "tp":
+            if configuration.model_config is None or (
+                configuration.model_config.enforce_eager is not True
+                and custom.get("execution_mode", "eager") != "graph"
+            ):
+                raise ValueError("experimental npu_collective requires an explicitly eager model or graph admission")
+            # Optional experimental tooling is loaded only in configured worker
+            # owners. The default installed plugin has no dependency on tools.
+            from tools.sidecard.npu_collective_torch import create
+            from vllm_ascend.utils import current_stream
+
+            try:
+                self.custom_sum = create(
+                    custom,
+                    tuple(self.ranks),
+                    self.global_rank,
+                    cpu_group,
+                    self.device,
+                    torch=torch,
+                    dist=dist,
+                    stream_getter=current_stream,
+                )
+            except BaseException as error:
+                self.custom_sum = getattr(error, "collective_owner", None)
+                raise
         self.pipeline_transport = None
         if unique_name.startswith("pp:") and get_current_hardware_profile().supports(
             HardwareCapability.DISTRIBUTED_COMMUNICATION_ADAPTATION
@@ -87,6 +116,17 @@ class NPUCommunicator(DeviceCommunicatorBase):
         return self.pipeline_transport.recv_tensor_dict(src)
 
     def destroy(self):
+        self.close_custom_collective()
         if self.pipeline_transport is not None:
             self.pipeline_transport.destroy()
         super().destroy()
+
+    def all_reduce(self, input_):
+        if self.custom_sum is not None:
+            return self.custom_sum.all_reduce(input_, lambda value: super(NPUCommunicator, self).all_reduce(value))
+        return super().all_reduce(input_)
+
+    def close_custom_collective(self):
+        """Call on every TP rank after retiring eager work, before PG teardown."""
+        if self.custom_sum is not None and self.custom_sum.state != "closed":
+            self.custom_sum.close(graphs_retired=True)

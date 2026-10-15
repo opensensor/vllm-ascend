@@ -33,6 +33,7 @@ from vllm_ascend._310p.qwen4exp_mtp import (
 )
 from vllm_ascend.ascend_forward_context import _EXTRA_CTX
 from vllm_ascend.compilation.acl_graph import (
+    ACLGraphWrapper,
     get_draft_graph_params,
     get_draft_graph_prefill_params,
     get_graph_params,
@@ -102,7 +103,13 @@ class BreakableACLGraphWrapper(BreakableCUDAGraphWrapper):
             # mutable graph parameters only while this flag is set.
             forward_context.capturing = True
 
-        output = super()._capture(entry, args, kwargs)
+        observer = ACLGraphWrapper._resolve_collective_graph_observer(self)
+        if observer is None:
+            output = super()._capture(entry, args, kwargs)
+        else:
+            from tools.sidecard.npu_collective_breakable import capture_with_collective
+
+            output = capture_with_collective(self, entry, args, kwargs, observer)
 
         if is_full_capture:
             # Keep the same workspace lifetime contract as ACLGraphWrapper.

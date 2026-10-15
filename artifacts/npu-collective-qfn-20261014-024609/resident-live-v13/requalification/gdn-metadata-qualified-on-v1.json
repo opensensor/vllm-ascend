@@ -1,0 +1,237 @@
+{
+  "source": "\ndef refresh_worker(worker):\n    import importlib\n    import torch\n    from tools.qwen4exp import gdn_metadata_graph\n    from vllm.v1.attention.backends.gdn_attn import GDNAttentionMetadata\n    importlib.reload(gdn_metadata_graph)\n    commit = worker._resident_session().native_resources['qfn_mamba_commit_v4']\n    if commit.device_transition_v1.pending is not None or worker.model_runner.execute_model_state is not None:\n        raise RuntimeError('drain worker before changing metadata graph ownership')\n    torch.npu.synchronize()\n    owners = getattr(commit, 'gdn_metadata_graphs_v1', None)\n    if 'on' == 'install':\n        if owners is not None:\n            raise RuntimeError('metadata graph owners already exist')\n        owners = []\n        commit.gdn_metadata_graphs_v1 = owners\n        for gid, groups in enumerate(worker.model_runner.attn_groups):\n            for group in groups:\n                builder = group.get_metadata_builder(0)\n                if type(builder).__name__ != 'GDNAttentionMetadataBuilder310':\n                    continue\n                owner = gdn_metadata_graph.GDNMetadataGraphs.__new__(gdn_metadata_graph.GDNMetadataGraphs)\n                owners.append(owner)\n                owner.__init__(worker.model_runner, gid, builder, GDNAttentionMetadata)\n        if len(owners) != 3:\n            raise RuntimeError('expected three retained GDN metadata owners')\n        for owner in owners:\n            owner.install()\n            owner.enabled = owner.verify = True\n    elif owners is None:\n        raise RuntimeError('install metadata graph owners first')\n    elif 'on' != 'status':\n        for owner in owners:\n            if owner.failed:\n                raise RuntimeError('failed metadata owner must remain retained')\n            owner.enabled = 'on' != 'off'\n            owner.verify = 'on' == 'verify'\n    return dict(rank=worker.rank, passed=True, owners=[owner.status() for owner in owners])\n\nclass Candidate:\n    def validate(self, engine):\n        if not engine._pause_complete() or engine.batch_queue or engine.scheduler.get_num_unfinished_requests():\n            raise RuntimeError('drain engine and workers before changing metadata graphs')\n        return dict(passed=True)\n    def apply(self, engine):\n        self.validate(engine)\n        rows = engine.model_executor.collective_rpc(refresh_worker)\n        return dict(passed=len(rows) == 4 and all(row.get('passed') for row in rows), workers=rows)\ndef prepare(engine):\n    return Candidate()\n\n# source sha256: bfe6aa5bc28c68fe5698c6f8f509786ddbd33555f138112d4100d645da195715",
+  "prepared": {
+    "passed": true,
+    "revision": "metadata_60f9a6aeae9b4229b6a9572da65be028",
+    "sha256": "4b03a383424962c2b0c1b764781be13cbde17b262bbe4e0bc037448863c97723",
+    "validation": {
+      "passed": true
+    }
+  },
+  "applied": {
+    "passed": true,
+    "applied": {
+      "passed": true,
+      "workers": [
+        {
+          "rank": 0,
+          "passed": true,
+          "owners": [
+            {
+              "group": 1,
+              "enabled": true,
+              "verify": false,
+              "failed": false,
+              "replays": 200,
+              "checked": 200,
+              "fallbacks": 13,
+              "capture_requests": [
+                1,
+                2,
+                3,
+                4
+              ]
+            },
+            {
+              "group": 2,
+              "enabled": true,
+              "verify": false,
+              "failed": false,
+              "replays": 200,
+              "checked": 200,
+              "fallbacks": 13,
+              "capture_requests": [
+                1,
+                2,
+                3,
+                4
+              ]
+            },
+            {
+              "group": 3,
+              "enabled": true,
+              "verify": false,
+              "failed": false,
+              "replays": 200,
+              "checked": 200,
+              "fallbacks": 13,
+              "capture_requests": [
+                1,
+                2,
+                3,
+                4
+              ]
+            }
+          ]
+        },
+        {
+          "rank": 1,
+          "passed": true,
+          "owners": [
+            {
+              "group": 1,
+              "enabled": true,
+              "verify": false,
+              "failed": false,
+              "replays": 200,
+              "checked": 200,
+              "fallbacks": 13,
+              "capture_requests": [
+                1,
+                2,
+                3,
+                4
+              ]
+            },
+            {
+              "group": 2,
+              "enabled": true,
+              "verify": false,
+              "failed": false,
+              "replays": 200,
+              "checked": 200,
+              "fallbacks": 13,
+              "capture_requests": [
+                1,
+                2,
+                3,
+                4
+              ]
+            },
+            {
+              "group": 3,
+              "enabled": true,
+              "verify": false,
+              "failed": false,
+              "replays": 200,
+              "checked": 200,
+              "fallbacks": 13,
+              "capture_requests": [
+                1,
+                2,
+                3,
+                4
+              ]
+            }
+          ]
+        },
+        {
+          "rank": 2,
+          "passed": true,
+          "owners": [
+            {
+              "group": 1,
+              "enabled": true,
+              "verify": false,
+              "failed": false,
+              "replays": 200,
+              "checked": 200,
+              "fallbacks": 13,
+              "capture_requests": [
+                1,
+                2,
+                3,
+                4
+              ]
+            },
+            {
+              "group": 2,
+              "enabled": true,
+              "verify": false,
+              "failed": false,
+              "replays": 200,
+              "checked": 200,
+              "fallbacks": 13,
+              "capture_requests": [
+                1,
+                2,
+                3,
+                4
+              ]
+            },
+            {
+              "group": 3,
+              "enabled": true,
+              "verify": false,
+              "failed": false,
+              "replays": 200,
+              "checked": 200,
+              "fallbacks": 13,
+              "capture_requests": [
+                1,
+                2,
+                3,
+                4
+              ]
+            }
+          ]
+        },
+        {
+          "rank": 3,
+          "passed": true,
+          "owners": [
+            {
+              "group": 1,
+              "enabled": true,
+              "verify": false,
+              "failed": false,
+              "replays": 200,
+              "checked": 200,
+              "fallbacks": 13,
+              "capture_requests": [
+                1,
+                2,
+                3,
+                4
+              ]
+            },
+            {
+              "group": 2,
+              "enabled": true,
+              "verify": false,
+              "failed": false,
+              "replays": 200,
+              "checked": 200,
+              "fallbacks": 13,
+              "capture_requests": [
+                1,
+                2,
+                3,
+                4
+              ]
+            },
+            {
+              "group": 3,
+              "enabled": true,
+              "verify": false,
+              "failed": false,
+              "replays": 200,
+              "checked": 200,
+              "fallbacks": 13,
+              "capture_requests": [
+                1,
+                2,
+                3,
+                4
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "status": {
+      "passed": true,
+      "failed": false,
+      "current": [
+        "metadata_60f9a6aeae9b4229b6a9572da65be028",
+        "4b03a383424962c2b0c1b764781be13cbde17b262bbe4e0bc037448863c97723"
+      ],
+      "pending": null,
+      "paused": true,
+      "async_scheduling": true,
+      "scheduler_type": "QueuedBalanceScheduler",
+      "batch_queue_size": 2,
+      "retained_owners": 12
+    }
+  }
+}

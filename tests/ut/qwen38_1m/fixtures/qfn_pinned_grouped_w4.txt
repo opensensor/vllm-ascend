@@ -1,0 +1,33 @@
+def _forward_grouped(self, block_input: torch.Tensor, weights: torch.Tensor, ids: torch.Tensor) -> torch.Tensor:
+    result = torch.empty_like(block_input, dtype=self.compute_dtype)
+    for start in range(0, block_input.shape[0], self.grouped_chunk_tokens):
+        stop = start + self.grouped_chunk_tokens
+        inputs = block_input[start:stop]
+        tokens, hidden = inputs.shape
+        dispatch = build_grouped_expert_dispatch(
+            weights[start:stop],
+            ids[start:stop],
+            num_local_experts=self.num_local_experts,
+            expert_offset=self.expert_offset,
+            weight_dtype=self.compute_dtype,
+        )
+        sorted_tokens = dispatch.token_indices.index_select(0, dispatch.order)
+        group_ends = dispatch.group_list.contiguous()
+        gate_up_bank = self.projections["gate_up_proj"]
+        if self.native_int4 and tokens * self.top_k > self.max_routed_rows:
+            # Quantization belongs to the token, not its top-k copies.
+            # Share it across prefill routes; small decode avoids four
+            # gather launches because its packing work is already tiny.
+            prepared = tuple(value.index_select(0, sorted_tokens) for value in pack_activation_device(inputs))
+            projected = gate_up_bank.native_linear(prepared, group_ends)
+        else:
+            inputs = inputs.index_select(0, sorted_tokens).contiguous()
+            projected = gate_up_bank.grouped_linear(inputs, group_ends)
+        gate, up = projected.to(self.compute_dtype).chunk(2, -1)
+        activation = (F.silu(gate) * up).to(self.params_dtype)
+        output = self.projections["down_proj"].grouped_linear(activation, group_ends).to(self.compute_dtype)
+        output *= dispatch.route_weights.index_select(0, dispatch.order)
+        result[start:stop] = (
+            output.index_select(0, dispatch.inverse_order).reshape(tokens, self.top_k, hidden).sum(1)
+        )
+    return result

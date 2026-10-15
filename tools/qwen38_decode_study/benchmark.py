@@ -102,11 +102,14 @@ def main() -> None:
     parser.add_argument("--lengths", type=int, nargs="+", default=[512, 2048])
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--prompt-prefix-file", type=Path)
+    parser.add_argument("--draft-length", type=int, help="record the known fixed MTP width for offline round estimates")
     args = parser.parse_args()
     if args.output.exists():
         raise SystemExit("Refusing to overwrite existing benchmark evidence")
     if args.repeats < 1 or any(length < 2 for length in args.lengths):
         raise SystemExit("Positive repeats and lengths >= 2 required")
+    if args.draft_length is not None and args.draft_length < 1:
+        raise SystemExit("Draft length must be positive")
     before = metrics(args.base_url)
     if any(before.get(name, 0) for name in ("vllm:num_requests_running", "vllm:num_requests_waiting")):
         raise SystemExit("Benchmark server is busy")
@@ -150,6 +153,8 @@ def main() -> None:
                         "acceptance": accepted / draft if draft else None,
                     }
                 )
+                if args.draft_length is not None:
+                    result["num_speculative_tokens"] = args.draft_length
                 if result["usage"]["completion_tokens"] != length:
                     raise RuntimeError(f"Requested {length} tokens but received {result['usage']}")
                 output.write(json.dumps(result) + "\n")

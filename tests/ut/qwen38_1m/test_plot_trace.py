@@ -5,7 +5,10 @@ import pytest
 
 pytest.importorskip("matplotlib")
 
+from matplotlib.figure import Figure
+
 from tools.qwen4exp.plot_trace import (
+    display_category,
     load_tasks,
     merge_intervals,
     plot_host_copy_tail,
@@ -70,3 +73,23 @@ def test_plot_trace_rejects_mixed_devices_in_one_worker_file(tmp_path):
         file.write("1,QwenW4A8Int4MatmulV310,1000550.000,10.000\n")
     with pytest.raises(ValueError, match="multiple device IDs"):
         load_tasks(tmp_path)
+
+
+def test_decode_figures_label_the_actual_phase(tmp_path, monkeypatch):
+    root = tmp_path / "traces"
+    _write_trace(root / "rank0" / "kernel_details.csv", 0)
+    traces = load_tasks(root)
+    titles = []
+    monkeypatch.setattr(Figure, "savefig", lambda figure, *_args, **_kwargs: titles.append(figure.axes[0].get_title()))
+    for render in (plot_mix, plot_top, plot_timeline, plot_occupancy):
+        render(traces, tmp_path / "unused.png", phase="decode")
+    assert len(titles) == 4
+    assert all(title.startswith("Qwen decode:") for title in titles)
+
+
+@pytest.mark.parametrize(
+    "name, expected",
+    [("QwenW4A8Int4DownReduceV310", "w4a8_native_int4_projection"), ("QwenW4A8SwigluPackV310", "w4_activation_pack")],
+)
+def test_fused_decode_kernels_have_specific_categories(name, expected):
+    assert display_category(name) == expected

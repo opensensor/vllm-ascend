@@ -6,6 +6,7 @@ import weakref
 from collections.abc import Callable
 from contextlib import ExitStack
 from dataclasses import dataclass
+from functools import partial
 from typing import Any
 from unittest.mock import patch
 
@@ -57,6 +58,7 @@ class ACLGraphEntry:
     batch_descriptor: BatchDescriptor
     aclgraph: torch.npu.NPUGraph | None = None
     output: Any | None = None
+    replay_callable: Callable[[], Any] | None = None
 
     # for aclgraph debugging, track the input addresses
     # during capture, and check if they are the same during replay
@@ -127,6 +129,8 @@ class ACLGraphWrapper:
         self.update_stream = update_stream
         self.attn_backend = None
         self.draft_model_metadata: list[dict[str, Any]] = []
+        self._collective_graph_observer = None
+        self._collective_graph_tracking = False
         _acl_graph_wrappers.add(self)
 
     def set_update_stream(self, update_stream):
@@ -152,6 +156,44 @@ class ACLGraphWrapper:
     def unwrap(self) -> Callable:
         # in case we need to access the original runnable.
         return self.runnable
+
+    def _resolve_collective_graph_observer(self):
+        additional = getattr(self.vllm_config, "additional_config", None)
+        custom = additional.get("npu_collective") if type(additional) is dict else None
+        if type(custom) is not dict or custom.get("execution_mode", "eager") != "graph":
+            return None
+        from vllm.distributed import get_tp_group
+
+        collective = get_tp_group().device_communicator.custom_sum
+        observer = getattr(collective, "graph_observer", None)
+        if observer is None:
+            raise RuntimeError("custom collective graph mode requires an explicit lifecycle observer")
+        self._collective_graph_observer = observer
+        self._collective_graph_tracking = observer.track_replays
+        return observer
+
+    def _select_graph_replay(self, graph):
+        if self.__dict__.get("_collective_graph_tracking", False):
+            return partial(self._replay_graph, graph)
+        # Production replay is the bound native launch, without an observer
+        # callback. Worker retirement serializes reset/cache clear after drain;
+        # native graph leases keep collective plans alive until that point.
+        return graph.replay
+
+    def _replay_graph(self, graph, *, admitted=False):
+        observer = self.__dict__.get("_collective_graph_observer")
+        if observer is None:
+            return graph.replay()
+        if not admitted:
+            observer.before_replay(graph)
+        try:
+            result = graph.replay()
+        except BaseException as error:
+            if not admitted:
+                observer.replay_failed(graph, error)
+            raise
+        observer.replayed(graph)
+        return result
 
     def __call__(self, *args, **kwargs):
         forward_context = get_forward_context()
@@ -185,9 +227,12 @@ class ACLGraphWrapper:
 
             input_addresses = [x.data_ptr() for x in args if isinstance(x, torch.Tensor)]
             entry.input_addresses = input_addresses
+            collective_observer = self._resolve_collective_graph_observer()
             aclgraph = UpdatableGraph()
 
             with ExitStack() as stack:
+                if collective_observer is not None:
+                    stack.enter_context(collective_observer.capture_scope(aclgraph))
                 if self.aclgraph_options.gc_disable:
                     # during every model forward for piecewise aclgraph
                     # mode, we will capture many pieces of aclgraphs
@@ -264,6 +309,7 @@ class ACLGraphWrapper:
             # to save memory
             entry.output = weak_ref_tensors(output)
             entry.aclgraph = aclgraph
+            entry.replay_callable = self._select_graph_replay(aclgraph)
 
             compilation_counter.num_cudagraph_captured += 1
 
@@ -294,10 +340,19 @@ class ACLGraphWrapper:
         need_sync = self.runtime_mode == CUDAGraphMode.FULL and not is_draft_eagle
         if not self.enable_enpu and need_sync:
             torch.npu.current_stream().synchronize()
+        if entry.replay_callable is None:
+            entry.replay_callable = self._select_graph_replay(entry.aclgraph)
         if self.runtime_mode == CUDAGraphMode.FULL and use_updatable_graph(self.attn_backend):
-            self._updatable_graph_replay(forward_context, entry.aclgraph)
+            self._updatable_graph_replay(forward_context, entry.aclgraph, replay_callable=entry.replay_callable)
         else:
-            entry.aclgraph.replay()
+            try:
+                entry.replay_callable()
+            except BaseException as error:
+                if not self.__dict__.get("_collective_graph_tracking", False):
+                    observer = self.__dict__.get("_collective_graph_observer")
+                    if observer is not None:
+                        observer.replay_failed(entry.aclgraph, error)
+                raise
         logger.info_once("ACL graph replay is active (logged once).")
         return entry.output
 
@@ -305,18 +360,41 @@ class ACLGraphWrapper:
         self,
         forward_context,
         graph: UpdatableGraph,
+        *,
+        replay_callable=None,
     ):
         assert self.update_stream is not None
-        if _EXTRA_CTX.is_draft_model:
-            resolved_tasks = graph.resolve_tasks(SharedSource(self.draft_model_metadata))
-        else:
-            resolved_tasks = graph.resolve_tasks(ContextSource(forward_context.attn_metadata))
-        if self.enable_enpu:
-            graph.update(self.update_stream, resolved_tasks)
-            graph.replay()
-        else:
-            graph.replay()
-            graph.update(self.update_stream, resolved_tasks)
+        observer = (
+            self.__dict__.get("_collective_graph_observer")
+            if self.__dict__.get("_collective_graph_tracking", False)
+            else None
+        )
+        if observer is not None:
+            # Admission must precede updating native task handles as well as
+            # replay: retirement resets those handles before releasing owners.
+            observer.before_replay(graph)
+        try:
+            if _EXTRA_CTX.is_draft_model:
+                resolved_tasks = graph.resolve_tasks(SharedSource(self.draft_model_metadata))
+            else:
+                resolved_tasks = graph.resolve_tasks(ContextSource(forward_context.attn_metadata))
+            if self.enable_enpu:
+                graph.update(self.update_stream, resolved_tasks)
+                if observer is not None:
+                    self._replay_graph(graph, admitted=True)
+                else:
+                    (replay_callable or graph.replay)()
+            else:
+                if observer is not None:
+                    self._replay_graph(graph, admitted=True)
+                else:
+                    (replay_callable or graph.replay)()
+                graph.update(self.update_stream, resolved_tasks)
+        except BaseException as error:
+            error_observer = observer or self.__dict__.get("_collective_graph_observer")
+            if error_observer is not None:
+                error_observer.replay_failed(graph, error)
+            raise
 
 
 def weak_ref_workspaces(params):
