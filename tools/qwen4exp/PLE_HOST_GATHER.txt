@@ -1,0 +1,140 @@
+Experimental host-assisted PLE gather on Ascend 310P
+
+This diagnostic connects the existing NPU row-selection kernel to one shared,
+immutable host table. The host reads one compact request, validates every row
+and device receipt, gathers the selected rows into pinned staging memory, and
+submits one response DMA. The full table is never copied to device memory.
+CPU involvement remains on every lookup; this is not direct NPU access to RAM.
+
+Files:
+  ple_host_gather.h: allocation-free request validation and CPU row gather.
+  native_ple_host_gather.cpp: HAL descriptor ownership and synchronous transport.
+  benchmark_ple_host_gather_310.py: private hardware correctness/performance gate.
+  serve_ple_table.py: independent owner of one sealed table for serving ranks.
+  ple_serving.py: opt-in resident eager-boundary integration for <=12 tokens.
+  apply_ple_serving.py: authenticated drain, install, recapture, and resume.
+
+The parent loads the FP16 checkpoint table once into a sealed memfd using
+SharedRamSource. Every worker inherits the same FD/inode. Native mappings are
+read-only and populated during admission to avoid first-access page-table
+faults in the timed gather. These mappings share physical pages. Only the small
+request/response buffers are allocated through aclrtMallocHost and converted
+to DMA descriptors. The large table is CPU-readable RAM, not DMA-pinned RAM.
+
+The packet is tokens * 16 INT64 row IDs followed by tokens * 8 INT32 receipt
+words. Receipt word zero must be zero for every token. Validation rejects any
+negative or out-of-bounds row before touching source rows or writing staging.
+The producer computes actual checkpoint n-gram hashes; the benchmark checks
+those independently on CPU and compares every returned payload with shared RAM.
+Additional samples are checked against the admitted checkpoint file reader.
+
+Ownership and ordering:
+  - These C entry points belong to a private, single-caller experiment.
+  - Initialize ACL and select the matching device before admission.
+  - Retain all device tensor allocations through a successful native close.
+  - For ple_host_fetch, finish the producing NPU stream before calling.
+  - Native producer mode uses its own ACL stream and waits for its selector
+    kernel before reading the request. Inputs must already be ready on device.
+  - Synchronous response completion precedes return. A subsequent consumer
+    must be submitted after return; an already-running consumer is unsupported.
+  - Submission errors poison the owner. It retains possibly in-flight buffers
+    and rejects further use/close; the isolated worker terminates instead of
+    attempting to recycle those resources.
+  - Invalid requests do not poison the owner and must preserve prior output.
+
+There are five diagnostic modes:
+  packed: Torch producer graph, explicit device fence, native batched transport.
+  direct_rows: same request readback, but convert/submit/destroy each row.
+  native_packed: native selector launch and stream fence followed by batching.
+  native_poll20_packed: query the producer stream for up to 20 us before fencing.
+  native_poll40_packed: the same producer query with a 40-us budget.
+The producer-query budget is separate from the driver's DMA-completion budget.
+It uses aclrtStreamQuery, preserves preemption, and falls back to the original
+aclrtSynchronizeStream call on expiry. The native entry point rejects budgets
+above 50 us. Elapsed time can exceed the budget under preemption or within a
+query call; this is not a hard real-time deadline. Query/launch/wait failures
+poison the owner rather than permitting a read of an uncertain request.
+The direct-row mode is a comparison of uncached per-row descriptors. It is not
+the current production PLE implementation, so its ratio is not a model speedup.
+Native producer mode is an isolated ACL launch, not an ACL graph or a Torch
+operator. No serving patch or scheduler integration is enabled by this probe.
+
+Build on the accelerator host after sourcing the CANN environment:
+  g++ -std=c++17 -O2 -Wall -Wextra -Werror -shared -fPIC \
+    tools/qwen4exp/native_ple_host_gather.cpp \
+    -I/usr/local/Ascend/cann/include -I/usr/local/Ascend/cann/include/driver \
+    -L/usr/local/Ascend/cann/lib64 -L/usr/local/Ascend/driver/lib64/driver \
+    -Wl,-rpath,/usr/local/Ascend/cann/lib64 \
+    -Wl,-rpath,/usr/local/Ascend/driver/lib64/driver \
+    -lascendcl -lascend_hal -o libple_host_gather.so
+
+Use a provenance-checked selector build from build_ple_request.py. Start with
+--synthetic --devices 0; then use --model with the real checkpoint directory.
+The synthetic table only qualifies transport plumbing, not full-table behavior.
+Example (run from the repository/staged package root with torch_npu installed):
+  python -m tools.qwen4exp.benchmark_ple_host_gather_310 \
+    --model /srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i \
+    --build /absolute/ple-request-build --library /absolute/libple_host_gather.so \
+    --native-producer --output /absolute/new-result-directory
+
+The default matrix compares runtime driver budgets 0 and 5 us, using all four
+NPUs sequentially and shapes 1, 3 and 12 tokens. It restores the incoming budget
+in finally. Do not run this matrix concurrently with other performance tests:
+the driver parameter is host-wide. --native-only --spin-budgets 5 limits the
+matrix to the three native producer comparisons at the already-qualified DMA
+budget. Caller CPU accounting and producer poll completion/query counts are
+recorded alongside latency. CPU accounting covers this calling thread only.
+
+Timing includes separate producer/fence, request DMA, gather, response DMA,
+native transport, and Python-call round-trip distributions. Input updates and
+correctness readbacks are outside the timed interval. Only the caller thread
+is pinned to CPU 8, after initialization; helper processes retain broad affinity.
+Each case has four warmups and 32 measured changing requests. Short trials,
+sequential workers and prefaulted RAM do not establish loaded-server tail
+latency or concurrency. No full-model throughput claim follows from this gate.
+Modes intentionally reuse the same request sequence in a fixed order, so later
+modes can benefit from table cache warming. Producer timing is separated from
+gather timing; whole-call ratios are not a controlled cold-cache speedup claim.
+
+CPU tests:
+  python -m pytest --confcutdir=tests/ut/qwen38_1m -q \
+    tests/ut/qwen38_1m/test_ple_host_gather.py \
+    tests/ut/qwen38_1m/test_ple_request.py \
+    tests/ut/qwen38_1m/test_ple_sources.py \
+    tests/ut/qwen38_1m/test_ple_storage.py
+
+The confcutdir isolates these standalone tests from the repository's framework
+mocking conftest. Hardware receipts, source snapshots and measured results live
+under artifacts/ple-host-gather-20261015. They distinguish experimental transport
+qualification from a deployed model-serving integration.
+
+Serving integration (qualified October 15, 2026):
+  The separate ple_serving adapter is now hardware-validated with real weights,
+  TP4/EP4, MTP2 and FULL_DECODE_ONLY graphs. It opens the same sealed source via
+  the owner process's /proc/PID/fd entry, checking device, inode and size before
+  native admission. The native layer also requires all immutable memfd seals.
+  It synchronizes the Torch producer stream before each native producer call,
+  retains converted INT64 inputs until return, validates the full packet, and
+  completes response DMA before the existing projection/gate/conv is submitted.
+  The device selects the rows; the CPU still gathers and submits their transfer.
+
+  Large prefill batches and unsupported padding layouts retain the existing
+  checkpoint reader. Decode shapes 3/6/9/12 were exercised during real serving;
+  the table is shared across ranks, but each admitted geometry owns descriptors
+  and a separate virtual mapping. First use of a new geometry populates page
+  tables and can take seconds. Warm latency does not include this admission.
+  The full table remains swappable; this integration does not pin 95 GiB.
+
+  Verification initially compares each native row ID and returned FP16 value
+  against the original host lookup. Disable it only after successful inference
+  using the drained qfn_cpu_profile_stop("native_ple_verify_off") control.
+  resident_status includes native_ple counts, verification counts, failures,
+  shared inode, and recent lookup/native medians. The lookup median includes
+  the Torch join and upstream queued work, not just DMA service time.
+
+  Install once per fresh worker lifetime. Do not switch this resident candidate
+  back to baseline or replace it while its native owners are live. The current
+  adapter retains its buffers until process shutdown; hot uninstall/retirement
+  is not implemented. Graceful API shutdown remains the supported stop path.
+  No new autostart service, firmware change, or permanent spin setting is made.
+  See SERVING_NATIVE_PLE.txt for the exact deployed configuration and receipts.

@@ -1,0 +1,148 @@
+Native host-assisted PLE serving qualification, 2026-10-15
+
+Live endpoint: http://192.168.53.187:8001/v1
+Model name: qwen38-flash-next
+Host: matteius-threadripper, Ubuntu kernel 7.0.0-38-generic
+Hardware: four logical Ascend 310P3 devices across two Duo cards
+Checkpoint: /srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i
+
+The real W4 model is serving with native device row selection and host-assisted
+PLE transfers. The single immutable host table is 102400491520 bytes (95.368
+GiB). All four workers reported inode 16423. Stock device firmware is unchanged.
+The previously installed profiling driver is loaded with its runtime 5-us DMA
+query budget; the native producer polls for up to 40 us before blocking.
+
+Runtime architecture and integration
+  The established Qwen model combines attention/state-space blocks, MoE and MTP.
+  PLE hashes current tokens and two preceding tokens into 16 checkpoint rows,
+  each 160 FP16 elements. Existing projection, gate, convolution and residual
+  computation remain in the model. The native selector emits the same row IDs;
+  the CPU reads a compact receipt, gathers rows into pinned staging, then sends
+  one response DMA. The full table is not copied to the NPU.
+  Torch's asynchronous host queue must finish before a private ACL producer can
+  read its inputs. This adapter explicitly joins the Torch stream; the isolated
+  microbenchmark's inputs-ready assumption would be incorrect in serving.
+  Input tokens/history are converted to INT64; packed boundaries remain INT32.
+  Four request groups are supported; an unsupported fifth padding group falls
+  back to the original reader. Prefill >12 tokens also retains the old path.
+
+Real-weight results
+  /v1/models returned HTTP 200 and max_model_len 262144.
+  The real baseline completion succeeded before installing the candidate.
+  Drained installation retained worker PIDs and resident weight digests,
+  retired old custom-collective graphs and recaptured target/draft graphs.
+  Four simultaneous chat requests returned coherent geography, arithmetic,
+  explanation, and Python responses. The initial long responses were truncated
+  at their requested 80-token limit; a subsequent compact code request finished
+  with a complete largest(xs) function.
+  Each worker checked 46 native lookups against original CPU row IDs and FP16
+  embedding values, with exact equality. This includes live inference, not only
+  capture. Native counts include token shapes 3, 6, 9, and 12 on every rank.
+  A 3101-token prompt crossed the 2048-token prefill chunk boundary and returned
+  the correct arithmetic answer, 391. A thinking-enabled request also completed
+  with the correct answer. No new Ascend error was found in dmesg.
+  All four NPUs remained healthy, with approximately 99 GiB host RAM available.
+  The rtsp-scene-model and rtsp-scene-log units remain disabled at startup.
+
+Performance and accuracy limits
+  With verification disabled, warm measured single-request decode was 28.2 and
+  28.9 tokens/s in the first two checks. Later complete code/thinking requests
+  measured 36.6/31.2 tokens/s, illustrating workload/MTP acceptance dependence.
+  The first 128-token explanation completed in 4.707 s including prefill.
+  Per-rank recent lookup medians were 1.41-1.85 ms including the Torch join;
+  native producer-plus-transport medians were 97-115 us. These are serving
+  measurements, distinct from the isolated 40-us producer-poll microbenchmark.
+  No controlled end-to-end speedup over baseline has been established.
+  Two 32-token greedy completion runs differed late in their text across graph
+  recapture, despite exact PLE comparisons. Do not claim token-identical model
+  output across those runs or interpret this smoke gate as an accuracy suite.
+  No new formal benchmark accuracy score was measured or substituted for the
+  existing model evaluation. Exact PLE equality and coherent response checks
+  validate this transport integration, not overall model accuracy.
+  Cold geometry admission took seconds. Only already-admitted shapes have the
+  warm latency above. Hot uninstall is unsupported; retain owners until worker
+  process shutdown. No new production/default model path was enabled globally.
+
+Feature status
+  Real weights: passed; not dummy weights.
+  TP4 + EP4: passed on all four logical devices.
+  FULL_DECODE_ONLY ACL graphs: passed, target/draft capture sizes [3,6].
+  MTP2: passed, with accepted speculative tokens reported by the server.
+  C3/C4: passed with eager execution for shapes outside the captured sizes.
+  Chunked prefill and prefix caching: enabled; 3101-token prompt passed.
+  Thinking parser: passed, nonempty final answer and coherent reasoning output.
+  Flashcomm1: not enabled; preserve the qualified custom collective replacement.
+  Multimodal: not enabled; preserve this language-model-only serving profile.
+  Maximum context: configured 262144; this turn tested 3101 prompt tokens, not
+  a full-context capacity run. The established max_num_seqs is 4; the generic
+  128K/bs16 adapter gate exceeds this admitted four-request PLE layout and was
+  not substituted for the qualified configuration.
+  CPU tests: 88 passed, including malformed packets, unchanged output on error,
+  bounded polling, poisoned-owner retention, shared inode and layout fallback.
+  Native C++ library: compiled with -Wall -Wextra -Werror on the actual host.
+  Driver trace: 4991 complete events, no failure statuses or dropped events.
+  Each rank recorded 49 480-byte request DMAs and 49 15360-byte responses.
+  Request driver medians were 4.37-4.54 us; response medians 12.38-12.57 us.
+  The responses exceed the driver's 8-KiB bounded-spin eligibility limit and
+  correctly retained the normal wait path. Tracing was disabled after capture.
+
+Evidence on the host and in artifacts/ple-host-gather-20261015
+  serving-v1/server.log: actual model loading, recapture and request timings
+  (copied locally as serving-server-v1.log).
+  serving-baseline-v1.json / serving-native-v1.json: initial completions.
+  serving-apply-v1.json: four distinct worker and retained-weight receipts.
+  serving-validation-v1.json: concurrent responses, exact checks, counters.
+  serving-extra-v1.json: chunked prefill, complete code and thinking requests.
+  serving-driver-trace-v1/: driver profiling during an actual serving request.
+  serving-source-v1/: exact staged source and libple_host_gather.so.
+  serving-candidate-v1.py: exact source installed through resident control.
+  Control credentials are host-private and are not included in delivery files.
+
+Runbook (the already qualified host paths are intentional)
+  r=/srv/ai/storage/artifacts/ple-host-gather-20261015
+  old=/srv/ai/storage/artifacts/npu-collective-qfn-20261014-024609
+  py=/srv/ai/venvs/qwen38-w4-test-ce1862/bin/python
+
+  The current API PID is in $r/serving-v1-api.pid. Its private control token is
+  $r/serving-v1/control.token. The shared table owner PID is in
+  $r/serving-table-v1.pid; its ready descriptor is $r/serving-table-v1.json.
+  Leave that process running while admitting workers. Existing native mappings
+  retain their own table references, but a dead owner cannot admit new shapes.
+
+  To stop serving, send SIGTERM to the recorded API PID. The existing shutdown
+  guard drains inference and closes custom collectives before worker teardown.
+  Do not unload the driver or hot-uninstall the native PLE candidate.
+
+  For a fresh start after shutdown, use a NEW absolute run directory:
+    nohup bash "$old/start-qfn-engine-control-candidate.sh" \
+      --tools-root "$r/serving-source-v1" --run-root "$r/serving-v2" \
+      > "$r/serving-v2-launch.log" 2>&1 </dev/null &
+  Wait for /v1/models and a successful baseline completion, then install:
+    cd "$r/serving-source-v1"
+    PYTHONPATH="$PWD" "$py" -m tools.qwen4exp.apply_ple_serving \
+      --run-root "$r/serving-v2" --table "$r/serving-table-v1.json" \
+      --library "$r/serving-source-v1/libple_host_gather.so" \
+      --selector-build "$old/ple-request-build-v1" \
+      --output "$r/serving-v2-apply"
+  This pauses/drains requests, recaptures graphs and resumes. It initially
+  enables exact PLE verification. After successful requests, use the local
+  QfnResidentClient to pause, call qfn_cpu_profile_stop with argument
+  native_ple_verify_off, and resume; see validate-serving.py for the exact flow.
+  Source/build paths are experimental overlays, not an upstream installation.
+
+  After a reboot, first reload the source in the background from the overlay:
+    "$py" -m tools.qwen4exp.serve_ple_table \
+      --model /srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-300i \
+      --ready "$r/NEW-table.json"
+  Use its new readiness file in apply_ple_serving; never reuse stale PID/FD
+  metadata. The loader enforces a 48-GiB host reserve. The driver spin setting
+  returns to its default zero after reboot unless separately set to 5.
+
+  Public smoke:
+    curl http://192.168.53.187:8001/v1/models
+    curl http://192.168.53.187:8001/v1/chat/completions \
+      -H 'Content-Type: application/json' \
+      -d '{"model":"qwen38-flash-next","messages":[{"role":"user","content":"What is 17 times 23?"}],"max_tokens":32,"temperature":0,"chat_template_kwargs":{"enable_thinking":false}}'
+
+  No startup service was enabled for this experiment. The conflicting video
+  services remain disabled. No firmware repackaging is part of this workflow.
