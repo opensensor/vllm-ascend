@@ -1,0 +1,151 @@
+Mixed prefill/decode profiling, October 15, 2026
+
+The existing queued, asynchronously scheduled server still stalls a decoding
+request while processing a second request's long prefill. This is reproduced
+on real Qwen3.8 Flash-Next W4 weights with all retained CPU reductions, native
+PLE, MTP2, TP4/EP4 and decode graphs still installed. No driver, firmware,
+model, graph owner or launcher was replaced. GitHub Actions is disabled on
+opensensor/vllm-ascend, verified through the repository permissions API.
+
+Measured behavior
+-----------------
+Case                         Long prompt   Prefill TTFT   Max decode update gap
+Decode alone                         --             --                  0.091 s
+Default mixed scheduling         20,757         76.411 s                12.512 s
+Temporary prefill limit 256       20,760        100.225 s                 2.174 s
+
+The long requests have zero prefix-cache hits. Each test starts a 512-output-
+token decoder and submits the long request after eight content updates. The
+long request emits 16 tokens. Unique leading nonces prevent a warm-prefix
+comparison; token counts vary slightly with the nonce. Each row is one trial,
+not a statistically controlled benchmark or a reconstruction of KiloCode's
+actual prompt. A content update can contain multiple speculative tokens;
+these gaps must not be described as individual token latencies.
+
+Default mixed scheduling produced only 14 decoder content updates during the
+76.4-second prefill interval. The 256 limit produced 84 during 100.2 seconds.
+Their median overlapping update gaps were 5.363 and 1.036 seconds respectively.
+Smaller chunks reduced the maximum gap by 82.6%, but increased prefill TTFT by
+31.2%. The limit was restored to its original zero (no separate long-prefill
+cap); it is not retained as a serving optimization.
+
+What is serialized
+------------------
+The scheduler is QueuedBalanceScheduler, async scheduling is enabled, the
+batch queue size is two, and max scheduled/batched tokens is 2048. Default
+large mixed iterations contain 1920 prefill tokens plus three decode tokens.
+Block alignment accounts for the gap below the 2048 budget. These large
+forwards use graph mode NONE, while ordinary small decode uses FULL graphs.
+Rank 0's large mixed execute_model host calls take approximately 4.2--11.0
+seconds each. These calls include existing waits; the instrumentation adds
+no device synchronization. Nested spans and ranks overlap and cannot be summed.
+
+The decoder participates in the same large forward pass and cannot emit its
+next result until that work reaches the output boundary. CPU queuing and
+multiple active device streams do not establish independently progressing
+prefill and decode requests. This experiment does not show that adding another
+stream would remove the dependency or safely share graph/Mamba/collective state.
+
+Checkpoint spills are not the primary cause in this reproduction. Across the
+entire default mixed trial, recorded spill calls total 84, 313, 157 and 261 ms
+on ranks 0--3, with a largest individual call of 12.9 ms. PLE eager host spans
+total about 2.7--2.9 seconds per rank. These are inclusive host timings, not
+isolated DMA bandwidth measurements, but neither explains the 76-second stall.
+
+Native trace attribution
+------------------------
+The successful native capture is mixed-native-v2: an 8,337-token uncached
+prefill while another request decodes. All four rank recorders started once,
+stopped once and released ownership. The bounded two-iteration capture spans
+the final pure-decode iteration and first large mixed iteration, not two
+complete prefill chunks. Ranks 0 and 3 were parsed offline. Their exported
+task spans are 6.953 and 6.951 seconds; the following numbers are summed kernel
+durations per rank, not predicted end-to-end savings:
+
+Operation                                  Rank 0       Rank 3
+QsaIndexerScoreV310                         1.705 s      1.699 s
+QsaSparseAttentionV310                      0.841 s      0.841 s
+qwen_prefill_local_count_v1                 1.089 s      1.187 s
+hcom_allReduce_                             0.600 s      0.496 s
+Cast                                       0.327 s      0.327 s
+Mul                                        0.264 s      0.264 s
+MatMulV2                                   0.230 s      0.226 s
+
+Despite its name, qwen_prefill_local_count_v1 is the grouped W4 expert matrix
+multiplication schedule; it is not a standalone routing-count operation.
+There are 13 large QSA score calls with 1923-row inputs and 13 large sparse
+attention calls in each parsed trace. The score calls take roughly 130 ms
+each; sparse attention roughly 65 ms. Thousands of small eager operations
+also remain: around 4,805 Cast and 2,375 Mul kernels, and about 19,700 host-args
+kernel launch API calls. Host launch durations include waits/backpressure
+and nested API time, so their sum does not establish CPU-only overhead.
+
+The union of recorded compute/copy/reduce tasks is 6.323 seconds on rank 0
+and 6.248 seconds on rank 3. All-task unions are 6.626 and 6.606 seconds.
+Multiple streams overlap. Unrecorded intervals do not prove device idleness,
+and this early-chunk sample does not establish later long-context attribution.
+
+The first native attempt, mixed-native-v1, armed the profiler on WorkerWrapperBase
+rather than its underlying worker and recorded no device iterations. It is
+retained as failed-capture evidence, not a valid native profile. The controller
+now unwraps the worker before assigning profiler ownership and requires both
+recorded=true and ownership_released=true at stop.
+
+Next implementation targets
+---------------------------
+1. Mixed-prefill QSA dispatch and kernels. Current _dense_prefill_is_exact
+   explicitly rejects batches containing decode rows. Investigate per-request
+   exact dense dispatch inside mixed batches where every visible token is
+   selected, then vectorize the remaining long-context score/sparse path.
+   This is a source-backed candidate, not a validated patch or permission to
+   substitute dense attention after QSA begins selecting a strict subset.
+2. Reduce eager per-layer launch overhead while preserving the existing decode
+   graphs. Profile a later prefill chunk before generalizing this early trace.
+3. Revisit smaller/adaptive prefill chunks once per-chunk cost is lower. Any
+   independent-stream design must define request state, graph-buffer and
+   collective ownership and prove correctness under mixed requests.
+
+Validation and final state
+--------------------------
+The temporary recorder has host-only tests for bounded storage, inherited
+instance-method restoration, exact class-method restoration, exception
+propagation, and detection of changed hook ownership without partial restore.
+Three tests pass; scoped Ruff check and formatting pass. Real hardware trials
+returned the requested output counts, preserved resident generation/candidate,
+weight and native resources and graph identities, restored scheduler limit 0,
+removed all instrumentation and native profilers, and resumed serving.
+These are performance diagnostics, not new model-quality or full-context tests.
+The existing 262144-token configuration and four-request limit are unchanged;
+multimodal, flashcomm1 and a 128K/batch16 capacity gate were not rerun here.
+Full-repository lint results are recorded separately; unrelated archived
+experiments and GLM/sidecard work are excluded from this delivery.
+
+Reproduction and evidence
+-------------------------
+Local evidence: artifacts/qfn-mixed-prefill-20261015/
+  profile-live.py             Bounded authenticated live experiment controller.
+  analyze.py                 Host/native summary, retaining overlap caveats.
+  parse-native.py             Offline parser for representative ranks 0 and 3.
+  plot-progress.py            Streaming-gap plot from the recorded receipts.
+  summary.json               Machine-readable per-rank and request findings.
+  streaming-gaps.png          Default versus temporary smaller-chunk behavior.
+  */receipt.json             Before/after identity, scheduler and profiler state.
+  */{decode,prefill}-stream.json   Streaming arrival times and usage.
+Large host spans, raw native captures and parsed timelines remain on the host
+under /srv/ai/storage/artifacts/qfn-mixed-prefill-20261015. Hashes are archived
+in evidence-manifest.json. No control tokens or prompt text are exported.
+
+The controller is specific to the existing resident-live-v13 deployment, not
+a general launch script. Run only on an idle server, from its qualified tools
+overlay, with /srv/ai/venvs/qwen38-w4-test-ce1862/bin/python. Choose a fresh label:
+  profile-live.py --label NEW_LABEL --paragraphs 450
+  profile-live.py --label NEW_LABEL --paragraphs 450 --prefill-limit 256
+  profile-live.py --label NEW_LABEL --paragraphs 180 --mode native
+The optional limit is temporary and restored after draining the trial. Native
+mode delays ten steps, captures two, and checks that recording actually ran.
+It pauses/drains briefly for hook installation and removal; do not overlap
+another benchmark or debugger. A failed control/ownership check may require
+inspection while paused; never blindly resume or reset resident owners.
+
+The service remains http://192.168.53.187:8001/v1, qwen38-flash-next. Startup
+and full-stack restoration are documented in SERVING_OPTIMIZED_PLE.txt.
