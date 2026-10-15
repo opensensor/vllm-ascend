@@ -34,6 +34,15 @@ streams remain private to each lookup. See `tools/qwen4exp/DEVICE_TARGET_PROFILE
 for the four-rank gates, QSA block-table cache experiment, measured results,
 and the retained resident owner inventory.
 
+The subsequent HC epilogue pass retains exact gated-mean fusion for eager
+prefill batches of 256..2048 rows, adding affine/conversion fusion at 1024 rows.
+Short batches and decode graphs keep their original path. Attach through
+`tools.qwen4exp.apply_hc_epilogues` after restoring the existing owners, and
+verify real serving outputs before disabling comparisons. See
+`tools/qwen4exp/HC_EPILOGUES_PROFILE.txt` for the measured sub-1% serving gains,
+four-rank equivalence checks, v15 recovery, and the unresolved queued-draft
+failure that stopped v14 before this experiment.
+
 ## Sources of truth
 
 - Develop changes on the repository's current main branch, then deploy them as

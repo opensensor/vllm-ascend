@@ -1,0 +1,123 @@
+HC conversion and activation epilogues, October 15, 2026
+
+Scope
+  Real Qwen3.8 Flash-Next W4, TP4/EP4/MTP2 on four Ascend 310P devices.
+  API: http://192.168.53.187:8001/v1, model qwen38-flash-next.
+  Current instance: resident-live-v15. This is an eager prefill optimization;
+  decode graphs, weights, firmware, drivers and installed OPP packages are
+  unchanged by the fusion. The previous optimization stack was restored and
+  audited before the comparisons, including graph sizes [3,6,9,12].
+
+Implementation
+  The prominent [515,10240] conversion chain belongs to four-stream
+  hyperconnection normalization/mixing. Two private vector kernels replace:
+    1. FP32 affine multiply followed by FP16 projection-operand conversion.
+       Both the exact FP32 result and its narrowed FP16 copy are produced.
+    2. FP16 gate conversion, FP32 multiplication, four-stream mean, and FP16
+       output conversion. The existing SiLU and sigmoid calls are preserved.
+
+  Preserve separate FP32 products, the qualified left-to-right reduction
+  starting from positive zero, and the existing 310P saturating conversion
+  behavior, including exceptional values. No FMA or lower-precision activation
+  approximation is introduced. Preserve the original saved-residual dtype
+  policy and fall back during gradient execution, graph capture, or unsupported
+  geometry. Each newly computed output owns its storage. Descriptors cover all
+  2048 supported row counts without eviction; native submission uses the existing owned eager
+  bridge. The large RMS intermediate is released after same-stream submission.
+
+  Final admission: gated mean at 256..2048 rows; affine fusion at 1024..2048.
+  Short batches retain the original path because their isolated timings were
+  slower or inconsistent. The prior experimental native gated mean was not
+  serving-qualified; this owner uses the current bridge and restored runtime.
+
+Component evidence
+  On one NPU, isolated synchronized 515-row gated mean fell from 0.461 to
+  0.256 ms. Affine plus conversion fell from 0.411 to 0.362 ms. At 2048 rows,
+  the corresponding measurements were 1.778 -> 0.868 and 1.520 -> 1.350 ms.
+  These include host submission and synchronization, not just device execution.
+
+  Complete real-weight mix calls were checked on early attention/MLP, late MLP,
+  and MTP hyperconnections. At 515 rows, mean-only fusion reduced roughly
+  1.90-1.99 ms to 1.68-1.74 ms. Affine fusion was inconsistent at this size.
+  At 2048 rows, both fusions reduced 6.84-6.88 ms to 5.78-5.81 ms.
+  The private sweep used broader admission to select the final thresholds;
+  these component reductions are not model-wide throughput claims.
+
+Serving measurements
+  Unique uncached approximately 20.8K-token prompts, with an overlapping
+  512-output-token decode request. All other optimizations stayed enabled.
+  Both sides used the same host-span instrumentation and restored instance.
+
+                      Prefill TTFT       Maximum decoder content gap
+    Original A          66.586 s                    1.776 s
+    Fused A             65.960 s                    1.759 s
+    Original B          67.180 s                    1.803 s
+    Fused B             66.893 s                    1.794 s
+
+  Mean TTFT: 66.883 -> 66.427 seconds, a 0.68% reduction. Both pairs improved,
+  but this small sample does not establish a confidence interval.
+  A separate prefill-only pair exercised 2048-row chunks and both fusions:
+  54.497 -> 54.054 seconds, a 0.81% reduction. This is one pair.
+  Retain the exact fusions for their demonstrated component savings and modest
+  serving improvement; most of the request time remains elsewhere.
+
+  Final C1 HTTP output rate: median 32.756 tokens/s across three trials.
+  C4 initially measured 63.337 aggregate tokens/s. A direct off/on follow-up
+  measured 66.057 / 67.849. All four HC call counters remained at 13230 before
+  and after both C4 runs: no fused kernel executed. Preserve this variability;
+  the follow-up is not evidence that HC fusion improves decode throughput.
+  Both final retained-owner audits passed and the server resumed. All earlier
+  CPU reductions, native resources and decode graph coverage remain enabled.
+
+Validation and ownership
+  An initial private kernel reused a gate buffer for an output store. Multiple
+  tasks exposed corruption before serving admission. The final kernel uses
+  distinct input/output buffers and explicit producer/consumer events.
+  Final binary: four-rank private gates covered random inputs, signed zero,
+  subnormal values, saturation, NaN and infinity at five row counts, twice.
+  The initial real serving shadow checked 4018 mix calls per rank exactly.
+  A separate 1437-token prefill checked the large affine branch after the RMS
+  lifetime improvement: 4116 exact calls per rank in total, 16464 across four
+  NPUs. Verification returns the reference and disables on a mismatch.
+  Verification is off in retained serving; mismatches remain zero.
+  No task accuracy benchmark, multimodal gate, or new context-capacity claim
+  is made. Prior configured 262144 context / four-request limits are unchanged.
+  No dummy-model run was used. Isolated operator gates used synthetic inputs;
+  the complete HC and serving gates used real checkpoint weights.
+
+  Focused host suite: 85 tests passed. Changed-file manual pre-commit checks
+  pass. Full format.sh ci was also run in an isolated worktree and remains
+  blocked by existing repository-wide lint, spelling and formatting issues.
+  Fork GitHub Actions remains disabled.
+
+Server recovery and remaining issue
+  The previous v14 engine had already failed at 21:12:18 UTC, before this work,
+  with "queued decode requires actual worker-owned draft tokens" during a
+  mixed prefill/decode transition. Hardware was healthy and idle on arrival.
+  The service was restarted as v15 and its retained owners were restored:
+  queued scheduling, device drafts/history, CPU preparation reductions,
+  shared native PLE, W4 schedules, HC combine, QSA gathering/geometry and table
+  caching, score-only QSA, mixed GDN assembly, corrected GDN output, and the
+  conditional 512-token mixed-prefill budget. WY graph replay remains absent.
+  Recovery passed long/short inputs, concurrency, structured output, turnover,
+  and abort/recovery tests. The missing-draft edge case itself is NOT fixed
+  here; passing the recovery suite does not establish that it cannot recur.
+
+Artifacts and controls
+  Local compact evidence: artifacts/qfn-hc-epilogues-20261015.
+  Remote originals: /srv/ai/storage/artifacts/qfn-hc-epilogues-20261015.
+  Native source and binary hashes are in provenance.json. The frozen v3 source
+  matches the committed native_hc_epilogues.cpp. build.sh accepts a fresh build
+  directory and the qualified compile_reconstruction compiler. It reuses the
+  owned HC-combine bridge; it does not install an OPP package.
+
+  From the qualified serving tools overlay, with its Python and CANN environment:
+    python -m tools.qwen4exp.apply_hc_epilogues ACTION \
+      --run-root BASE/resident-live-v15 --output NEW_RECEIPT \
+      --module /absolute/hc_epilogues.py --binary /absolute/native_hc_epilogues.bin \
+      --bridge /absolute/qwen_hc_combine_v1.so
+  ACTION is install, verify, on, off or status. Installation runs private
+  four-rank gates and starts verification. "on" requires successful real
+  serving comparisons. Use a fresh receipt directory for each transaction.
+  All controls drain/pause, preserve resident identities and resume on success.
+  Never replace the resident patch set merely to attach or toggle this fusion.

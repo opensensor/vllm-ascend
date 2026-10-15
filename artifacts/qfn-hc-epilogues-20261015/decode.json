@@ -1,0 +1,2192 @@
+{
+  "decode-benchmark": {
+    "request": {
+      "model": "qwen38-flash-next",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Explain how a hash table works and discuss collision resolution strategies."
+        }
+      ],
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      },
+      "temperature": 0,
+      "max_tokens": 256,
+      "min_tokens": 256,
+      "ignore_eos": true
+    },
+    "scope": "C1 HTTP output tokens/s includes short prefill and API overhead; not pure device TPOT",
+    "trials": [
+      {
+        "trial": 0,
+        "seconds": 7.68885081299959,
+        "output_tokens_per_second": 33.29496256673093,
+        "response": {
+          "id": "chatcmpl-afca4a0593f54e38",
+          "object": "chat.completion",
+          "created": 1792101253,
+          "model": "qwen38-flash-next",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "# Hash Tables: Mechanics and Collision Resolution\n\n## Core Concept\n\nA **hash table** (or hash map) is a data structure that implements an associative array \u2014 a mapping between **keys** and **values**. It achieves average-case **O(1)** time complexity for insertions, deletions, and lookups by using a **hash function** to convert keys into array indices.\n\n---\n\n## How It Works: Step by Step\n\n### 1. The Hash Function\nA hash function takes an arbitrary key and produces a fixed-size integer (the **hash code**).\n\n```\nhash(\"apple\") \u2192 123456789\nhash(\"banana\") \u2192 987654321\n```\n\n### 2. Index Calculation\nThe hash code is mapped to a valid array index using modulo arithmetic:\n\n```\nindex = hash(key) % table_size\n```\n\n### 3. Storage and Retrieval\n- **Insert**: Compute index \u2192 store key-value pair at that index.\n- **Lookup**: Compute index \u2192 retrieve value at that index.\n- **Delete**: Compute index \u2192 remove entry at that index.\n\n### Visual Example\n\n```\nTable Size = 7\n\nKey",
+                "refusal": null,
+                "annotations": null,
+                "audio": null,
+                "function_call": null,
+                "reasoning": null
+              },
+              "logprobs": null,
+              "finish_reason": "length",
+              "stop_reason": null,
+              "token_ids": null,
+              "routed_experts": null
+            }
+          ],
+          "service_tier": null,
+          "system_fingerprint": "vllm-0.1.dev1+g3ab5dda29-tp4-ep-aacdec87",
+          "usage": {
+            "prompt_tokens": 25,
+            "total_tokens": 281,
+            "completion_tokens": 256,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "created_cache_tokens": 0,
+              "multimodal_tokens": null
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "prompt_logprobs": null,
+          "prompt_token_ids": null,
+          "prompt_text": null,
+          "kv_transfer_params": null,
+          "ec_transfer_params": null,
+          "metrics": null
+        }
+      },
+      {
+        "trial": 1,
+        "seconds": 7.8153161160007585,
+        "output_tokens_per_second": 32.756192609519154,
+        "response": {
+          "id": "chatcmpl-9571d5fd81446332",
+          "object": "chat.completion",
+          "created": 1792101261,
+          "model": "qwen38-flash-next",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "# Hash Tables: Mechanics and Collision Resolution\n\n## Core Concept\n\nA **hash table** (or hash map) is a data structure that implements an associative array, mapping **keys** to **values** using a **hash function**. It provides average-case **O(1)** time complexity for insert, delete, and lookup operations.\n\n### How It Works\n\n```\nKey \u2192 Hash Function \u2192 Hash Value \u2192 Index \u2192 Bucket \u2192 Value\n```\n\n1. **Hash Function**: Takes a key and produces a fixed-size integer (hash code).\n2. **Index Calculation**: The hash code is mapped to an array index, typically via modulo:\n   ```\n   index = hash(key) % table_size\n   ```\n3. **Storage**: The key-value pair is stored at the computed index (bucket).\n4. **Retrieval**: The same process is repeated to locate the bucket, then the key is compared to confirm a match.\n\n### Simple Example\n\n```python\n# Conceptual illustration\nhash_table = [None] * 10\n\ndef hash_function(key):\n    return sum(ord(c) for c in key) % 10\n\n# Insert\nkey = \"apple\"\nindex = hash_function(key) ",
+                "refusal": null,
+                "annotations": null,
+                "audio": null,
+                "function_call": null,
+                "reasoning": null
+              },
+              "logprobs": null,
+              "finish_reason": "length",
+              "stop_reason": null,
+              "token_ids": null,
+              "routed_experts": null
+            }
+          ],
+          "service_tier": null,
+          "system_fingerprint": "vllm-0.1.dev1+g3ab5dda29-tp4-ep-aacdec87",
+          "usage": {
+            "prompt_tokens": 25,
+            "total_tokens": 281,
+            "completion_tokens": 256,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "created_cache_tokens": 0,
+              "multimodal_tokens": null
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "prompt_logprobs": null,
+          "prompt_token_ids": null,
+          "prompt_text": null,
+          "kv_transfer_params": null,
+          "ec_transfer_params": null,
+          "metrics": null
+        }
+      },
+      {
+        "trial": 2,
+        "seconds": 8.06558408899582,
+        "output_tokens_per_second": 31.73979679280394,
+        "response": {
+          "id": "chatcmpl-84aa63602c2cef01",
+          "object": "chat.completion",
+          "created": 1792101269,
+          "model": "qwen38-flash-next",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "# Hash Tables: Mechanics and Collision Resolution\n\n## Core Concept\n\nA **hash table** (or hash map) is a data structure that implements an associative array, mapping **keys** to **values** using a **hash function**. It provides average-case **O(1)** time complexity for insert, lookup, and delete operations.\n\n### How It Works\n\n```\nKey \u2192 Hash Function \u2192 Hash Value \u2192 Index \u2192 Bucket \u2192 Value\n```\n\n1. **Hash Function**: Takes a key and produces a fixed-size integer (hash code).\n2. **Index Calculation**: The hash code is mapped to an array index, typically via modulo:\n   ```\n   index = hash(key) % table_size\n   ```\n3. **Storage**: The key-value pair is stored at the computed index (bucket).\n4. **Retrieval**: The same process is repeated to locate the bucket, then the key is compared to confirm a match.\n\n### Simple Example\n\n```python\n# Conceptual hash table with size 8\ntable = [None] * 8\n\ndef hash_function(key):\n    return sum(ord(c) for c in key) % 8\n\n# Insert \"apple\" -> 42\nidx = hash_function",
+                "refusal": null,
+                "annotations": null,
+                "audio": null,
+                "function_call": null,
+                "reasoning": null
+              },
+              "logprobs": null,
+              "finish_reason": "length",
+              "stop_reason": null,
+              "token_ids": null,
+              "routed_experts": null
+            }
+          ],
+          "service_tier": null,
+          "system_fingerprint": "vllm-0.1.dev1+g3ab5dda29-tp4-ep-aacdec87",
+          "usage": {
+            "prompt_tokens": 25,
+            "total_tokens": 281,
+            "completion_tokens": 256,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "created_cache_tokens": 0,
+              "multimodal_tokens": null
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "prompt_logprobs": null,
+          "prompt_token_ids": null,
+          "prompt_text": null,
+          "kv_transfer_params": null,
+          "ec_transfer_params": null,
+          "metrics": null
+        }
+      }
+    ],
+    "median_output_tokens_per_second": 32.756192609519154
+  },
+  "concurrency": {
+    "concurrency": 4,
+    "tokens_per_request": 256,
+    "metrics_before": {
+      "vllm:num_requests_running": 0.0,
+      "vllm:num_requests_waiting": 0.0,
+      "vllm:request_success_total": 87.0,
+      "vllm:spec_decode_num_draft_tokens_total": 6595.0,
+      "vllm:spec_decode_num_accepted_tokens_total": 5294.0
+    },
+    "graph_inventory": [
+      {
+        "rank": 0,
+        "graphs": [
+          {
+            "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 4,
+            "eager_breaks": 3,
+            "segments": [
+              "NPUGraph.replay",
+              "_QSAAttention._logical_query_positions.<locals>.copy_current_positions",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "make_forward.<locals>.forward.<locals>.dispatch_routed_experts",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 4,
+            "eager_breaks": 3,
+            "segments": [
+              "NPUGraph.replay",
+              "_QSAAttention._logical_query_positions.<locals>.copy_current_positions",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "make_forward.<locals>.forward.<locals>.dispatch_routed_experts",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 4,
+            "eager_breaks": 3,
+            "segments": [
+              "NPUGraph.replay",
+              "_QSAAttention._logical_query_positions.<locals>.copy_current_positions",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "make_forward.<locals>.forward.<locals>.dispatch_routed_experts",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 4,
+            "eager_breaks": 3,
+            "segments": [
+              "NPUGraph.replay",
+              "_QSAAttention._logical_query_positions.<locals>.copy_current_positions",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "make_forward.<locals>.forward.<locals>.dispatch_routed_experts",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 14,
+            "eager_breaks": 13,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 2,
+            "eager_breaks": 1,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 14,
+            "eager_breaks": 13,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 2,
+            "eager_breaks": 1,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 14,
+            "eager_breaks": 13,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 2,
+            "eager_breaks": 1,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 14,
+            "eager_breaks": 13,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 2,
+            "eager_breaks": 1,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay"
+            ]
+          }
+        ],
+        "graph_parameters": {
+          "target": {
+            "initialized": true,
+            "sizes": {
+              "3": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              },
+              "6": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              },
+              "9": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              },
+              "12": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              }
+            }
+          },
+          "draft": {
+            "initialized": true,
+            "sizes": {
+              "3": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              },
+              "6": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              },
+              "9": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              },
+              "12": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              }
+            }
+          },
+          "draft_prefill": {
+            "initialized": false,
+            "sizes": {}
+          }
+        },
+        "qsa_cold_variants": [
+          {
+            "model": "AscendQwen4ExpForConditionalGeneration",
+            "failed": false,
+            "capture_sizes": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "prefix_sizes": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "prefix_pool_retained": true,
+            "variants": [
+              {
+                "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "general",
+                "native_graphs": 14,
+                "eager_breaks": 13,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "prefix",
+                "native_graphs": 2,
+                "eager_breaks": 1,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "general",
+                "native_graphs": 14,
+                "eager_breaks": 13,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "prefix",
+                "native_graphs": 2,
+                "eager_breaks": 1,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "general",
+                "native_graphs": 14,
+                "eager_breaks": 13,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "prefix",
+                "native_graphs": 2,
+                "eager_breaks": 1,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "general",
+                "native_graphs": 14,
+                "eager_breaks": 13,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "prefix",
+                "native_graphs": 2,
+                "eager_breaks": 1,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              }
+            ],
+            "variant_metadata_separation": [
+              {
+                "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                "shared_metadata_objects": 0,
+                "shared_gdn_tensor_storages": 0,
+                "prefix_gdn_tensor_storages": 6,
+                "general_gdn_tensor_storages": 6
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                "shared_metadata_objects": 0,
+                "shared_gdn_tensor_storages": 0,
+                "prefix_gdn_tensor_storages": 6,
+                "general_gdn_tensor_storages": 6
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                "shared_metadata_objects": 0,
+                "shared_gdn_tensor_storages": 0,
+                "prefix_gdn_tensor_storages": 6,
+                "general_gdn_tensor_storages": 6
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                "shared_metadata_objects": 0,
+                "shared_gdn_tensor_storages": 0,
+                "prefix_gdn_tensor_storages": 6,
+                "general_gdn_tensor_storages": 6
+              }
+            ]
+          }
+        ],
+        "capture_coverage": {
+          "rank": 0,
+          "runner_sizes": [
+            3,
+            6,
+            9,
+            12
+          ],
+          "configured_sizes": [
+            3,
+            6,
+            9,
+            12
+          ],
+          "maximum": 12,
+          "gdn_capacities": [
+            12,
+            12,
+            12
+          ],
+          "descriptors": [
+            "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+            "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+            "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+            "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)"
+          ]
+        }
+      },
+      {
+        "rank": 1,
+        "graphs": [
+          {
+            "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 14,
+            "eager_breaks": 13,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 2,
+            "eager_breaks": 1,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 14,
+            "eager_breaks": 13,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 2,
+            "eager_breaks": 1,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 14,
+            "eager_breaks": 13,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 2,
+            "eager_breaks": 1,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 14,
+            "eager_breaks": 13,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 2,
+            "eager_breaks": 1,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 4,
+            "eager_breaks": 3,
+            "segments": [
+              "NPUGraph.replay",
+              "_QSAAttention._logical_query_positions.<locals>.copy_current_positions",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "make_forward.<locals>.forward.<locals>.dispatch_routed_experts",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 4,
+            "eager_breaks": 3,
+            "segments": [
+              "NPUGraph.replay",
+              "_QSAAttention._logical_query_positions.<locals>.copy_current_positions",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "make_forward.<locals>.forward.<locals>.dispatch_routed_experts",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 4,
+            "eager_breaks": 3,
+            "segments": [
+              "NPUGraph.replay",
+              "_QSAAttention._logical_query_positions.<locals>.copy_current_positions",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "make_forward.<locals>.forward.<locals>.dispatch_routed_experts",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 4,
+            "eager_breaks": 3,
+            "segments": [
+              "NPUGraph.replay",
+              "_QSAAttention._logical_query_positions.<locals>.copy_current_positions",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "make_forward.<locals>.forward.<locals>.dispatch_routed_experts",
+              "NPUGraph.replay"
+            ]
+          }
+        ],
+        "graph_parameters": {
+          "target": {
+            "initialized": true,
+            "sizes": {
+              "3": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              },
+              "6": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              },
+              "9": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              },
+              "12": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              }
+            }
+          },
+          "draft": {
+            "initialized": true,
+            "sizes": {
+              "3": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              },
+              "6": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              },
+              "9": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              },
+              "12": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              }
+            }
+          },
+          "draft_prefill": {
+            "initialized": false,
+            "sizes": {}
+          }
+        },
+        "qsa_cold_variants": [
+          {
+            "model": "AscendQwen4ExpForConditionalGeneration",
+            "failed": false,
+            "capture_sizes": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "prefix_sizes": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "prefix_pool_retained": true,
+            "variants": [
+              {
+                "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "general",
+                "native_graphs": 14,
+                "eager_breaks": 13,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "prefix",
+                "native_graphs": 2,
+                "eager_breaks": 1,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "general",
+                "native_graphs": 14,
+                "eager_breaks": 13,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "prefix",
+                "native_graphs": 2,
+                "eager_breaks": 1,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "general",
+                "native_graphs": 14,
+                "eager_breaks": 13,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "prefix",
+                "native_graphs": 2,
+                "eager_breaks": 1,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "general",
+                "native_graphs": 14,
+                "eager_breaks": 13,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "prefix",
+                "native_graphs": 2,
+                "eager_breaks": 1,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              }
+            ],
+            "variant_metadata_separation": [
+              {
+                "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                "shared_metadata_objects": 0,
+                "shared_gdn_tensor_storages": 0,
+                "prefix_gdn_tensor_storages": 6,
+                "general_gdn_tensor_storages": 6
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                "shared_metadata_objects": 0,
+                "shared_gdn_tensor_storages": 0,
+                "prefix_gdn_tensor_storages": 6,
+                "general_gdn_tensor_storages": 6
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                "shared_metadata_objects": 0,
+                "shared_gdn_tensor_storages": 0,
+                "prefix_gdn_tensor_storages": 6,
+                "general_gdn_tensor_storages": 6
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                "shared_metadata_objects": 0,
+                "shared_gdn_tensor_storages": 0,
+                "prefix_gdn_tensor_storages": 6,
+                "general_gdn_tensor_storages": 6
+              }
+            ]
+          }
+        ],
+        "capture_coverage": {
+          "rank": 1,
+          "runner_sizes": [
+            3,
+            6,
+            9,
+            12
+          ],
+          "configured_sizes": [
+            3,
+            6,
+            9,
+            12
+          ],
+          "maximum": 12,
+          "gdn_capacities": [
+            12,
+            12,
+            12
+          ],
+          "descriptors": [
+            "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+            "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+            "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+            "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)"
+          ]
+        }
+      },
+      {
+        "rank": 2,
+        "graphs": [
+          {
+            "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 4,
+            "eager_breaks": 3,
+            "segments": [
+              "NPUGraph.replay",
+              "_QSAAttention._logical_query_positions.<locals>.copy_current_positions",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "make_forward.<locals>.forward.<locals>.dispatch_routed_experts",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 4,
+            "eager_breaks": 3,
+            "segments": [
+              "NPUGraph.replay",
+              "_QSAAttention._logical_query_positions.<locals>.copy_current_positions",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "make_forward.<locals>.forward.<locals>.dispatch_routed_experts",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 4,
+            "eager_breaks": 3,
+            "segments": [
+              "NPUGraph.replay",
+              "_QSAAttention._logical_query_positions.<locals>.copy_current_positions",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "make_forward.<locals>.forward.<locals>.dispatch_routed_experts",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 4,
+            "eager_breaks": 3,
+            "segments": [
+              "NPUGraph.replay",
+              "_QSAAttention._logical_query_positions.<locals>.copy_current_positions",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "make_forward.<locals>.forward.<locals>.dispatch_routed_experts",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 14,
+            "eager_breaks": 13,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 2,
+            "eager_breaks": 1,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 14,
+            "eager_breaks": 13,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 2,
+            "eager_breaks": 1,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 14,
+            "eager_breaks": 13,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 2,
+            "eager_breaks": 1,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 14,
+            "eager_breaks": 13,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 2,
+            "eager_breaks": 1,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay"
+            ]
+          }
+        ],
+        "graph_parameters": {
+          "target": {
+            "initialized": true,
+            "sizes": {
+              "3": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              },
+              "6": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              },
+              "9": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              },
+              "12": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              }
+            }
+          },
+          "draft": {
+            "initialized": true,
+            "sizes": {
+              "3": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              },
+              "6": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              },
+              "9": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              },
+              "12": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              }
+            }
+          },
+          "draft_prefill": {
+            "initialized": false,
+            "sizes": {}
+          }
+        },
+        "qsa_cold_variants": [
+          {
+            "model": "AscendQwen4ExpForConditionalGeneration",
+            "failed": false,
+            "capture_sizes": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "prefix_sizes": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "prefix_pool_retained": true,
+            "variants": [
+              {
+                "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "general",
+                "native_graphs": 14,
+                "eager_breaks": 13,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "prefix",
+                "native_graphs": 2,
+                "eager_breaks": 1,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "general",
+                "native_graphs": 14,
+                "eager_breaks": 13,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "prefix",
+                "native_graphs": 2,
+                "eager_breaks": 1,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "general",
+                "native_graphs": 14,
+                "eager_breaks": 13,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "prefix",
+                "native_graphs": 2,
+                "eager_breaks": 1,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "general",
+                "native_graphs": 14,
+                "eager_breaks": 13,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "prefix",
+                "native_graphs": 2,
+                "eager_breaks": 1,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              }
+            ],
+            "variant_metadata_separation": [
+              {
+                "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                "shared_metadata_objects": 0,
+                "shared_gdn_tensor_storages": 0,
+                "prefix_gdn_tensor_storages": 6,
+                "general_gdn_tensor_storages": 6
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                "shared_metadata_objects": 0,
+                "shared_gdn_tensor_storages": 0,
+                "prefix_gdn_tensor_storages": 6,
+                "general_gdn_tensor_storages": 6
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                "shared_metadata_objects": 0,
+                "shared_gdn_tensor_storages": 0,
+                "prefix_gdn_tensor_storages": 6,
+                "general_gdn_tensor_storages": 6
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                "shared_metadata_objects": 0,
+                "shared_gdn_tensor_storages": 0,
+                "prefix_gdn_tensor_storages": 6,
+                "general_gdn_tensor_storages": 6
+              }
+            ]
+          }
+        ],
+        "capture_coverage": {
+          "rank": 2,
+          "runner_sizes": [
+            3,
+            6,
+            9,
+            12
+          ],
+          "configured_sizes": [
+            3,
+            6,
+            9,
+            12
+          ],
+          "maximum": 12,
+          "gdn_capacities": [
+            12,
+            12,
+            12
+          ],
+          "descriptors": [
+            "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+            "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+            "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+            "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)"
+          ]
+        }
+      },
+      {
+        "rank": 3,
+        "graphs": [
+          {
+            "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 4,
+            "eager_breaks": 3,
+            "segments": [
+              "NPUGraph.replay",
+              "_QSAAttention._logical_query_positions.<locals>.copy_current_positions",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "make_forward.<locals>.forward.<locals>.dispatch_routed_experts",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 4,
+            "eager_breaks": 3,
+            "segments": [
+              "NPUGraph.replay",
+              "_QSAAttention._logical_query_positions.<locals>.copy_current_positions",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "make_forward.<locals>.forward.<locals>.dispatch_routed_experts",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 4,
+            "eager_breaks": 3,
+            "segments": [
+              "NPUGraph.replay",
+              "_QSAAttention._logical_query_positions.<locals>.copy_current_positions",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "make_forward.<locals>.forward.<locals>.dispatch_routed_experts",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 4,
+            "eager_breaks": 3,
+            "segments": [
+              "NPUGraph.replay",
+              "_QSAAttention._logical_query_positions.<locals>.copy_current_positions",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "make_forward.<locals>.forward.<locals>.dispatch_routed_experts",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 14,
+            "eager_breaks": 13,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 2,
+            "eager_breaks": 1,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 14,
+            "eager_breaks": 13,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 2,
+            "eager_breaks": 1,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 14,
+            "eager_breaks": 13,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 2,
+            "eager_breaks": 1,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 14,
+            "eager_breaks": 13,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay",
+              "forward.<locals>.select_current_groups",
+              "NPUGraph.replay"
+            ]
+          },
+          {
+            "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+            "graphs": 2,
+            "eager_breaks": 1,
+            "segments": [
+              "NPUGraph.replay",
+              "_PLEInjection.forward.<locals>.run_ple_eager",
+              "NPUGraph.replay"
+            ]
+          }
+        ],
+        "graph_parameters": {
+          "target": {
+            "initialized": true,
+            "sizes": {
+              "3": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              },
+              "6": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              },
+              "9": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              },
+              "12": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              }
+            }
+          },
+          "draft": {
+            "initialized": true,
+            "sizes": {
+              "3": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              },
+              "6": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              },
+              "9": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              },
+              "12": {
+                "events": 0,
+                "handles": 0,
+                "attn_params": 0,
+                "workspace": false
+              }
+            }
+          },
+          "draft_prefill": {
+            "initialized": false,
+            "sizes": {}
+          }
+        },
+        "qsa_cold_variants": [
+          {
+            "model": "AscendQwen4ExpForConditionalGeneration",
+            "failed": false,
+            "capture_sizes": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "prefix_sizes": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "prefix_pool_retained": true,
+            "variants": [
+              {
+                "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "general",
+                "native_graphs": 14,
+                "eager_breaks": 13,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "prefix",
+                "native_graphs": 2,
+                "eager_breaks": 1,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "general",
+                "native_graphs": 14,
+                "eager_breaks": 13,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "prefix",
+                "native_graphs": 2,
+                "eager_breaks": 1,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "general",
+                "native_graphs": 14,
+                "eager_breaks": 13,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "prefix",
+                "native_graphs": 2,
+                "eager_breaks": 1,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "general",
+                "native_graphs": 14,
+                "eager_breaks": 13,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                "variant": "prefix",
+                "native_graphs": 2,
+                "eager_breaks": 1,
+                "metadata_objects": 4,
+                "gdn_tensor_storages": 6,
+                "gdn_cache_objects": 3
+              }
+            ],
+            "variant_metadata_separation": [
+              {
+                "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                "shared_metadata_objects": 0,
+                "shared_gdn_tensor_storages": 0,
+                "prefix_gdn_tensor_storages": 6,
+                "general_gdn_tensor_storages": 6
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                "shared_metadata_objects": 0,
+                "shared_gdn_tensor_storages": 0,
+                "prefix_gdn_tensor_storages": 6,
+                "general_gdn_tensor_storages": 6
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                "shared_metadata_objects": 0,
+                "shared_gdn_tensor_storages": 0,
+                "prefix_gdn_tensor_storages": 6,
+                "general_gdn_tensor_storages": 6
+              },
+              {
+                "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                "shared_metadata_objects": 0,
+                "shared_gdn_tensor_storages": 0,
+                "prefix_gdn_tensor_storages": 6,
+                "general_gdn_tensor_storages": 6
+              }
+            ]
+          }
+        ],
+        "capture_coverage": {
+          "rank": 3,
+          "runner_sizes": [
+            3,
+            6,
+            9,
+            12
+          ],
+          "configured_sizes": [
+            3,
+            6,
+            9,
+            12
+          ],
+          "maximum": 12,
+          "gdn_capacities": [
+            12,
+            12,
+            12
+          ],
+          "descriptors": [
+            "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+            "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+            "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+            "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)"
+          ]
+        }
+      }
+    ],
+    "scope": "Synchronized finite C requests; HTTP aggregate includes prefill and tails. SSE decode uses N-1 estimate.",
+    "requests": [
+      {
+        "index": 0,
+        "started": 38158.684533504,
+        "finished": 38174.546071168,
+        "request": {
+          "model": "qwen38-flash-next",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Explain how a hash table works and discuss collision resolution strategies."
+            }
+          ],
+          "temperature": 0,
+          "seed": 42,
+          "max_tokens": 256,
+          "min_tokens": 256,
+          "ignore_eos": true,
+          "chat_template_kwargs": {
+            "enable_thinking": false
+          },
+          "stream": true,
+          "stream_options": {
+            "include_usage": true
+          }
+        },
+        "request_id": "chatcmpl-a60adeb3c4df5386",
+        "usage": {
+          "prompt_tokens": 25,
+          "total_tokens": 281,
+          "completion_tokens": 256,
+          "prompt_tokens_details": {
+            "cached_tokens": 0,
+            "created_cache_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "length",
+        "ttft_s": 1.8771892180011491,
+        "decode_s": 13.983951309994154,
+        "client_decode_tok_s": 18.23518935007695,
+        "e2e_s": 15.86139363899565,
+        "text_sha256": "c1ed9d428beec623d6b770dfd5141262661f545ec9a4f6452dba39dcd0965e76",
+        "text": "# Hash Tables: Mechanics and Collision Resolution\n\n## Core Concept\n\nA **hash table** (or hash map) is a data structure that implements an associative array \u2014 it maps **keys** to **values** using a **hash function**. The goal is to achieve **average-case O(1)** time complexity for insertions, deletions, and lookups.\n\n### How It Works (Step by Step)\n\n```\nKey \u2192 Hash Function \u2192 Hash Value \u2192 Modulo Table Size \u2192 Index \u2192 Bucket\n```\n\n1. **Hash Function**: Takes a key and produces a fixed-size integer (hash code).\n   ```\n   hash(\"apple\") \u2192 123456789\n   ```\n\n2. **Index Calculation**: The hash value is mapped to a valid array index.\n   ```\n   index = hash(key) % table_size\n   ```\n\n3. **Storage**: The key-value pair is stored at that index (bucket).\n\n4. **Lookup**: The same process retrieves the value.\n\n### Simple Example\n\n```python\n# Conceptual hash table with size 7\ntable = [None] * 7\n\ndef hash_function(key):\n    return sum(ord(c) for c in key)"
+      },
+      {
+        "index": 1,
+        "started": 38158.684944656,
+        "finished": 38174.550408015,
+        "request": {
+          "model": "qwen38-flash-next",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Explain how a database index works and discuss its performance tradeoffs."
+            }
+          ],
+          "temperature": 0,
+          "seed": 42,
+          "max_tokens": 256,
+          "min_tokens": 256,
+          "ignore_eos": true,
+          "chat_template_kwargs": {
+            "enable_thinking": false
+          },
+          "stream": true,
+          "stream_options": {
+            "include_usage": true
+          }
+        },
+        "request_id": "chatcmpl-8095d9a4e636520f",
+        "usage": {
+          "prompt_tokens": 26,
+          "total_tokens": 282,
+          "completion_tokens": 256,
+          "prompt_tokens_details": {
+            "cached_tokens": 0,
+            "created_cache_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "length",
+        "ttft_s": 1.8770394440070959,
+        "decode_s": 13.984134036996693,
+        "client_decode_tok_s": 18.234951075652386,
+        "e2e_s": 15.865368158003548,
+        "text_sha256": "50e5b504d7e943efd8c1d4af4fc28563b4094a909293805e8abea5c687369667",
+        "text": "# Database Indexes: How They Work and Performance Tradeoffs\n\n## What Is a Database Index?\n\nA database index is a **data structure** that improves the speed of data retrieval operations on a database table at the cost of additional writes and storage space. Think of it like the index at the back of a textbook: instead of scanning every page (full table scan), you look up a topic in the index and jump directly to the relevant page.\n\n---\n\n## How Indexes Work\n\n### 1. Core Concept: Mapping Keys to Locations\n\nAn index stores **sorted copies of one or more columns** along with pointers to the actual rows in the table. When a query filters on an indexed column, the database can:\n\n1. Search the index (fast, because it's sorted and structured)\n2. Follow pointers to retrieve the actual rows\n\n### 2. Common Index Structures\n\n#### B-Tree / B+Tree (Most Common)\n```\n        [ 10 | 20 | 30 ]          \u2190 Root node\n       /      |       \\\n  [5|10]  [15|20]  [25|30]       \u2190 Internal nodes\n  /  |"
+      },
+      {
+        "index": 2,
+        "started": 38158.684748533,
+        "finished": 38174.772980129,
+        "request": {
+          "model": "qwen38-flash-next",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Explain how TCP provides reliable delivery and handles lost packets."
+            }
+          ],
+          "temperature": 0,
+          "seed": 42,
+          "max_tokens": 256,
+          "min_tokens": 256,
+          "ignore_eos": true,
+          "chat_template_kwargs": {
+            "enable_thinking": false
+          },
+          "stream": true,
+          "stream_options": {
+            "include_usage": true
+          }
+        },
+        "request_id": "chatcmpl-848b4826b742dba0",
+        "usage": {
+          "prompt_tokens": 24,
+          "total_tokens": 280,
+          "completion_tokens": 256,
+          "prompt_tokens_details": {
+            "cached_tokens": 0,
+            "created_cache_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "length",
+        "ttft_s": 0.3998464719988988,
+        "decode_s": 15.688212325003406,
+        "client_decode_tok_s": 16.25424202052573,
+        "e2e_s": 16.088165790002677,
+        "text_sha256": "223556f4e010003216e29258a86d4822ad3df14258a18ad3c073a7b661e8fcc6",
+        "text": "TCP (Transmission Control Protocol) provides reliable, ordered, and error-checked delivery of a stream of bytes between applications running on hosts communicating over an IP network. It achieves this through several key mechanisms:\n\n### 1. Sequence Numbers\n- Every byte of data sent over a TCP connection is assigned a unique **sequence number**.\n- This allows the receiver to:\n  - Reassemble data in the correct order.\n  - Detect missing or duplicate segments.\n  - Acknowledge specific bytes received.\n\n### 2. Acknowledgments (ACKs)\n- The receiver sends an **acknowledgment** for each segment it successfully receives.\n- The ACK number indicates the **next expected sequence number**.\n  - Example: If a receiver gets bytes 1\u20131000, it sends an ACK for byte 1001.\n- This confirms successful delivery and allows the sender to advance its window.\n\n### 3. Retransmission of Lost Packets\nTCP uses two primary mechanisms to detect and retransmit lost packets:\n\n#### a. Timeout-Based Retransmission\n- When a segment is sent, TCP starts a **retransmission timer**.\n- If an ACK for that segment is not received before the"
+      },
+      {
+        "index": 3,
+        "started": 38158.684228805,
+        "finished": 38174.851659045,
+        "request": {
+          "model": "qwen38-flash-next",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Explain how an LRU cache works and discuss a practical implementation."
+            }
+          ],
+          "temperature": 0,
+          "seed": 42,
+          "max_tokens": 256,
+          "min_tokens": 256,
+          "ignore_eos": true,
+          "chat_template_kwargs": {
+            "enable_thinking": false
+          },
+          "stream": true,
+          "stream_options": {
+            "include_usage": true
+          }
+        },
+        "request_id": "chatcmpl-940414c9bdca5134",
+        "usage": {
+          "prompt_tokens": 26,
+          "total_tokens": 282,
+          "completion_tokens": 256,
+          "prompt_tokens_details": {
+            "cached_tokens": 0,
+            "created_cache_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "length",
+        "ttft_s": 1.8776163899965468,
+        "decode_s": 14.289533857001516,
+        "client_decode_tok_s": 17.845228721373324,
+        "e2e_s": 16.16728339099791,
+        "text_sha256": "07eed1db261bcf44b2b546d85c2c635babe6d4fcff70db6d97d818537b6854ef",
+        "text": "# LRU Cache: Explanation and Implementation\n\n## What is an LRU Cache?\n\n**LRU (Least Recently Used)** is a cache eviction policy that discards the least recently used items first when the cache reaches its capacity. It operates on the principle of **temporal locality** \u2014 recently accessed data is likely to be accessed again soon.\n\n### Core Operations\n| Operation | Description | Time Complexity |\n|-----------|-------------|-----------------|\n| `get(key)` | Retrieve value; mark as recently used | O(1) |\n| `put(key, value)` | Insert/update value; evict LRU if full | O(1) |\n\n### How It Works\n1. **On `get`**: If the key exists, move it to the \"most recently used\" position.\n2. **On `put`**: \n   - If the key exists, update its value and move to \"most recently used.\"\n   - If the key doesn't exist, insert it as \"most recently used.\"\n   - If capacity is exceeded, evict the \"least recently used\" item.\n\n## Data Structure Choice\n\nThe optimal implementation combines two structures:\n\n```\n\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+      }
+    ],
+    "metrics_after": {
+      "vllm:num_requests_running": 0.0,
+      "vllm:num_requests_waiting": 0.0,
+      "vllm:request_success_total": 91.0,
+      "vllm:spec_decode_num_draft_tokens_total": 7433.0,
+      "vllm:spec_decode_num_accepted_tokens_total": 5902.0
+    },
+    "makespan_s": 16.167430239998794,
+    "start_spread_s": 0.0007158509979490191,
+    "aggregate_http_output_tok_s": 63.337214684037285,
+    "median_client_decode_tok_s": 18.040089898512853
+  }
+}
