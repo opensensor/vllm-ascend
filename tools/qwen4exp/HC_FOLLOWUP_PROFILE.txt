@@ -1,6 +1,14 @@
 HC operand reuse and queued decode transitions, October 15, 2026
 
-Current service state
+Recovery update, October 16 UTC
+  The user rebooted the host. A fresh resident-live-v16 now serves the full
+  retained stack, with a newly owned shared PLE table. The final draft guard
+  and pending-sample budget passed hardware integration checks. Exact W4
+  activation epilogues passed real-model shadows and serving comparisons.
+  See ACTIVATION_EPILOGUE_PROFILE.txt for current state and measurements.
+  The findings below preserve the evidence available before that recovery.
+
+Service state at the close of the October 15 pass
   resident-live-v15 at 192.168.53.187:8001 is unavailable. Admissions are
   paused after device 2 lost its heartbeat (ACL 507010) at 22:30 UTC.
   Kernel management-channel IRQ timeouts began at 22:29 UTC. Device 2 had

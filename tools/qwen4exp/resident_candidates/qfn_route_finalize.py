@@ -26,16 +26,24 @@ REPLACEMENT = """        output = self.projections["down_proj"].grouped_linear(a
         result[start:stop] = ordered.reshape(tokens, self.top_k, hidden).sum(1)"""
 
 
-def build_forward(original, resource, *, source=None, eager_only=False):
+def build_forward(original, resource, *, source=None, eager_only=False, activation=None):
     original = getattr(original, "_qfn_route_finalize_base", original)
     source = textwrap.dedent(inspect.getsource(original)) if source is None else source
     if hashlib.sha256(source.encode()).hexdigest() != QUALIFIED_SOURCE_SHA256 or source.count(ORIGINAL) != 1:
         raise RuntimeError("route finalization requires exact qualified grouped W4 source")
     body = source.replace(ORIGINAL, REPLACEMENT)
-    factory = "def factory(_finalize):\n" + textwrap.indent(body, "    ") + "    return _forward_grouped\n"
+    if activation is not None:
+        seam = (
+            "        gate, up = projected.to(self.compute_dtype).chunk(2, -1)\n"
+            "        activation = (F.silu(gate) * up).to(self.params_dtype)"
+        )
+        if body.count(seam) != 1:
+            raise RuntimeError("activation fusion requires the qualified grouped W4 activation seam")
+        body = body.replace(seam, "        activation = _activation(projected, self.compute_dtype, self.params_dtype)")
+    factory = "def factory(_finalize, _activation):\n" + textwrap.indent(body, "    ") + "    return _forward_grouped\n"
     namespace = dict(original.__globals__)
     exec(compile(factory, "<qfn-qualified-route-finalize>", "exec"), namespace)
-    compiled = namespace["factory"](resource)
+    compiled = namespace["factory"](resource, activation)
     implementation = FunctionType(
         compiled.__code__, original.__globals__, compiled.__name__, compiled.__defaults__, compiled.__closure__
     )

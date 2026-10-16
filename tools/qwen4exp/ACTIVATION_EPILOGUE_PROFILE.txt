@@ -1,0 +1,133 @@
+Exact W4 activation epilogues and serving recovery, October 16, 2026 UTC
+
+Serving state
+  http://192.168.53.187:8001/v1, model qwen38-flash-next, resident-live-v16.
+  Real Qwen3.8 Flash-Next W4 weights, TP4/EP4/MTP2, queue depth 2, graph sizes
+  [3,6,9,12]. All retained CPU reductions, W4 finalizer/local-count scheduling,
+  HC combine/epilogues, QSA optimizations, GDN output/merge, native shared PLE,
+  and final queued-draft guards passed the four-rank audit. Shared HC operands
+  and the WY graph candidate remain disabled. No profiler remains attached.
+
+  After the user's reboot, all model/collective owners were recreated. Slowest
+  rank weight loading took 200.11 seconds. The independent PLE owner recreated
+  its 102400491520-byte sealed table; descriptor: serving-table-v16.json.
+  Do not reuse the old v15 control token, collective owners, or PLE descriptor.
+  The earlier lost-heartbeat context was not resumed.
+
+Implementation and qualification
+  The pinned W4 path converts both gate/up operands to FP32, computes SiLU,
+  multiplies, and narrows to FP16. The new path splits before conversion,
+  retains the original FP32 SiLU, and uses an owned native vector kernel for
+  up conversion, FP32 multiply, and FP16 narrowing. It preserves the qualified
+  310P saturation/NaN conversion behavior and does not approximate SiLU.
+  At 20480 routed rows it avoids materializing a 50-MiB FP32 up operand and a
+  50-MiB FP32 product. These are tensor payloads, not measured allocator savings.
+
+  Admission: eager dense-ND contiguous FP16 [2560..20480,1280], FP32 compute,
+  FP16 output, no gradients. Short batches, capture and unsupported geometry,
+  layout or dtype use the original expression. Descriptors are reused without
+  eviction. Failed launches retain their exception/resources and block reuse.
+  Shadow mismatch returns the reference and disables the candidate.
+
+  qfn_route_finalize.build_forward composes the optional activation with its
+  existing exact-source-guarded finalizer. Its default behavior is unchanged.
+  The live installer preserves the finalizer object captured by the current
+  method. An initial admission expected a separate native-resource entry;
+  inspection showed the owner lives in the method closure. No serving method
+  changed during that failed preparation; corrected admission checked both
+  closure references before installation.
+
+  Four-rank native gate: six row counts (1,3,30,2590,5150,20480), three input
+  patterns, 72 cases total. Random, wide/saturating, signed-zero, subnormal,
+  infinity and NaN cases were bit-identical. Changed inputs and repeated
+  submissions also completed. Real-model shadow: 384 admitted calls per rank,
+  1536 total, zero byte mismatches. Verification returns the reference; normal
+  candidate serving began only after that gate. Final audit: 1776 candidate
+  calls/rank, zero mismatches, 9 descriptors/rank, all owners healthy.
+
+  Binary SHA256:
+    dede5ef01f1ce3516f822710a23d0f87823441f58171e4010cab4c9e2e642703
+  Existing owned queue-draining qwen_hc_combine_v1 bridge; unchanged OPP and
+  device firmware. The new binary was compiled with ACLRTC for dav-2002.
+
+Component measurements
+  Complete activation sequence, synchronized wall-time medians across ranks:
+    2590 rows: baseline 0.509..0.559 ms -> fused 0.328..0.383 ms
+    5150 rows: baseline 1.047..1.144 ms -> fused 0.572..0.629 ms
+   20480 rows: baseline 3.911..3.938 ms -> fused 2.362..2.369 ms
+  Tiny shapes were slower and remain outside serving admission. Splitting
+  before conversion alone helped, but the native epilogue was faster.
+  FP32 built-in SwiGLU failed bit parity on all four ranks at the first small
+  random shape (1..4 differing FP16 values); it was never installed.
+
+Serving comparison
+  Unique uncached approximately 3737-token prompts, 16 output tokens, all
+  other owners fixed. Off/on/on/off ordering, 15-second gaps between trials:
+    Off A 8.863159 s; On A 8.553125 s
+    On B  8.559850 s; Off B 8.746121 s
+  Mean TTFT 8.804640 -> 8.556487 s: 2.82% improvement. Both pairs improved.
+  Sampled temperatures were 64..76 C; no thermal admission rejection occurred.
+  This is two pairs on a short prefill workload, not a confidence interval or
+  evidence for long-context quality, sustained thermal behavior, or decode gains.
+
+Pending-first-sample fairness
+  Final queued_schedule.py and mixed_prefill_budget.py hashes were verified
+  in the running workers/engine. The restored shadow exercised one pending-
+  decoder cap. Draft snapshot hits remained zero: hardware validates integration;
+  the omitted-request failure branch remains covered by the host regression.
+
+  An initial simultaneous comparison reversed request admission order, so it
+  is inconclusive. The repeat started the 100-paragraph request about 0.22 s
+  after the 80-paragraph request, after receiving its HTTP response headers.
+  Both variants used the retained activation fusion and returned 64 tokens
+  per request, with zero cached prompt tokens:
+                              Old output-only cap   Pending-sample cap
+    First request max gap            4.918 s              1.627 s
+    First request TTFT              15.055 s             15.031 s
+    Second request TTFT             22.763 s             23.769 s
+    Second request elapsed          25.753 s             26.423 s
+  The decoder gap fell about 67%, trading roughly one second of second-request
+  TTFT for fairness. This is one controlled pair; no aggregate throughput gain
+  is claimed. The pending-sample cap remains enabled at 512 tokens.
+
+Final serving checks and driver state
+  C1, two 256-token responses: 33.088 and 33.170 HTTP output tokens/s,
+  median 33.129. C4, 256 tokens each: 70.588 aggregate HTTP output tokens/s.
+  These include short prefill/API overhead and verify retained serving; the
+  activation optimization does not accelerate the existing decode graphs.
+  The full retained-owner audit passed afterward and admissions resumed.
+  Final sampled temperatures were 77,76,82,80 C, all health OK.
+
+  Reboot had reset drv_pcie_host.dma_query_spin_us to 0. Activation and fairness
+  comparisons kept that value fixed. After those comparisons, restored the
+  previously retained runtime value 5 before final C1/C4 checks. No module
+  reload, OPP, firmware, clock or fan change. rtsp-scene-model/rtsp-scene-log
+  remain disabled. This work does not add inference startup at boot.
+
+Validation and evidence
+  121 focused host tests pass: activation admission, output ownership, shadow
+  failure, autograd/capture fallback, finalizer composition, queued drafts,
+  mixed-prefill budgets and thermal guard. Real checkpoint serving gates above
+  passed on all four 310P devices; no dummy-only or task-accuracy claim.
+  Full format.sh ci still reports pre-existing repository-wide formatting,
+  spelling and forbidden-import failures in an isolated checkout. Scoped
+  delivery checks are recorded with the final commit. Fork Actions stays off.
+
+  Local compact receipts and exact experiment scripts:
+    artifacts/qfn-recovery-20261016/
+  Remote originals:
+    /srv/ai/storage/artifacts/qfn-recovery-20261016/
+  Runtime base:
+    /srv/ai/storage/artifacts/npu-collective-qfn-20261014-024609/
+  Tools overlay:
+    /srv/ai/storage/artifacts/ple-host-gather-20261015/serving-source-v2/
+
+  Start with a new run directory using the qualified launcher. Restore all
+  retained owners, rebuild/requalify a new shared-table descriptor after reboot,
+  run restore-later.py and serving shadow gates, then enable-retained.py.
+  Private activation qualification precedes activation-control.py install;
+  real serving shadow precedes on. The scripts are archived v16 transactions
+  with fresh-output guards: adapt paths for another instance, do not rerun
+  installations against live owners. on/off/status use a new receipt label.
+  run.sh selects the qualified Python/environment without losing CANN paths.
+  Private tokens, large native traces and binary builds remain on the host.

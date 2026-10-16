@@ -131,7 +131,8 @@ def test_build_rejects_newer_header_before_copy(tmp_path):
         "eager_only",
     ],
 )
-def test_qualified_loop_preserves_chunking_math_and_local_routes(monkeypatch, config_state):
+@pytest.mark.parametrize("fuse_activation", [False, True])
+def test_qualified_loop_preserves_chunking_math_and_local_routes(monkeypatch, config_state, fuse_activation):
     resource, calls = make_resource(monkeypatch)
     source = (Path(__file__).parent / "fixtures/qfn_pinned_grouped_w4.txt").read_text()
 
@@ -158,7 +159,20 @@ def test_qualified_loop_preserves_chunking_math_and_local_routes(monkeypatch, co
     namespace = {"torch": torch, "F": torch.nn.functional, "build_grouped_expert_dispatch": dispatch}
     exec(source, namespace)
     original = namespace["_forward_grouped"]
-    forward = binding.build_forward(original, resource, source=source, eager_only=config_state.startswith("eager_only"))
+    activation_calls = []
+
+    def activation(projected, compute_dtype, params_dtype):
+        activation_calls.append(projected.shape[0])
+        gate, up = projected.to(compute_dtype).chunk(2, -1)
+        return (torch.nn.functional.silu(gate) * up).to(params_dtype)
+
+    forward = binding.build_forward(
+        original,
+        resource,
+        source=source,
+        eager_only=config_state.startswith("eager_only"),
+        activation=activation if fuse_activation else None,
+    )
     module = SimpleNamespace(
         native_int4=True,
         compute_dtype=torch.float32,
@@ -187,8 +201,10 @@ def test_qualified_loop_preserves_chunking_math_and_local_routes(monkeypatch, co
     assert torch.equal(actual.view(torch.int32), expected.view(torch.int32))
     if config_state in ("room", "full_existing", "eager_only"):
         assert [int(config[0]) for config in calls] == [20, 20, 10]
+        assert activation_calls == ([20, 20, 10] if fuse_activation else [])
     else:
         assert not calls
+        assert not activation_calls
         assert resource._configs == prior_configs
 
 

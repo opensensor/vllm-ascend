@@ -43,14 +43,30 @@ verify real serving outputs before disabling comparisons. See
 four-rank equivalence checks, v15 recovery, and the unresolved queued-draft
 failure that stopped v14 before this experiment.
 
-At October 15, 22:30 UTC, v15 became unavailable after device 2 reported lost
-heartbeat (`507010`), following a 102 C reading. Admissions are paused; an alive
-API process does not establish serving health. See
-`tools/qwen4exp/HC_FOLLOWUP_PROFILE.txt` for thermal samples, IRQ timeout logs,
-the draft-snapshot fix, and the pending-sample fairness candidate. Shared HC
-operands passed component and serving equivalence gates but remain opt-in:
-the longer performance comparison was inconclusive as temperatures rose.
-The final scheduler refinements still need hardware qualification after recovery.
+After the user's reboot, October 16 recovery created `resident-live-v16` and
+recreated the shared PLE table as `serving-table-v16.json`. Serving requests and
+the complete retained-owner audit passed. The final queued-draft snapshot code
+and pending-first-sample prefill cap are now hardware-qualified. The existing
+driver's `dma_query_spin_us` runtime value was restored from its boot default 0
+to the previously retained 5; no module reload or firmware change was needed.
+
+The new exact W4 activation epilogue retains FP32 SiLU and fuses the subsequent
+up-operand conversion, multiplication, and output narrowing. It is enabled only
+for eager, dense FP16 `[2560..20480,1280]` projected tensors. Short batches,
+graph capture, gradient execution, and unsupported inputs retain the reference.
+Compose it through the qualified W4 finalizer; do not replace that finalizer
+with the original model method. The real serving shadow passed 384 calls per
+rank with zero mismatches. See `tools/qwen4exp/ACTIVATION_EPILOGUE_PROFILE.txt`
+and `artifacts/qfn-recovery-20261016` for restoration, gates, controls, and the
+measured 2.8% prefill TTFT improvement. Final C1/C4 HTTP rates were 33.13/70.59
+tokens/s; these are serving checks, not decode gains from a prefill fusion.
+
+The v15 lost-heartbeat fault (`507010`) followed a 102 C reading; its cause
+remains unproven. Historical evidence is in `tools/qwen4exp/HC_FOLLOWUP_PROFILE.txt`.
+Use bounded temperature checks before benchmarks and allow cooling between
+trials. Temperature alone does not identify memory traffic as the cause.
+Shared HC operands remain opt-in because their serving comparison was
+inconclusive; they are disabled in the retained v16 configuration.
 
 ## Sources of truth
 
