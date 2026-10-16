@@ -64,6 +64,7 @@ def _load_wrapper(context_holder, extra_context):
         "fields": fields,
         "BatchDescriptor": Descriptor,
         "BreakableCUDAGraphWrapper": GraphWrapper,
+        "ACLGraphWrapper": SimpleNamespace(_resolve_collective_graph_observer=lambda wrapper: None),
         "get_forward_context": lambda: context_holder[0],
         "is_forward_context_available": lambda: context_holder[0] is not None,
         "_EXTRA_CTX": extra_context,

@@ -2190,13 +2190,12 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
             self.slot_mapping_group[draft_index][batch_size:].fill_(PADDING_SLOT_ID)
             common_attn_metadata.slot_mapping = self.slot_mapping_group[draft_index]
         else:
-            # NOTE: In vllm, `block_size = attn_metadata_builder.kv_cache_spec.block_size`.
-            # However, in vllm-ascend, the above value can be multiple of `kernel_block_size`,
-            # which is not correct for computing `slot_mapping` below.
-            if self.has_gdn:
-                block_size = self.kernel_block_size
-            else:
-                block_size = self.block_size
+            # initialize_attn_backend selects the block size used by the
+            # actual draft block table. The backend's first supported size
+            # (kernel_block_size) may differ: 310P QSA advertises 128 first,
+            # but its 256-wide heads use 64-token pages. Using 128 here can
+            # write draft KV beyond its allocation and corrupt other caches.
+            block_size = self.block_size
 
             # Compute the slot mapping.
             # When sliding window is enabled, block_table_tensor may be cropped

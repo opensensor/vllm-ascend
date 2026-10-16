@@ -306,6 +306,30 @@ Decode graph capture must also exercise the FP32 recurrent state successfully.
 An error saying that `params.state` supports only FP16 indicates an incoherent
 host API/kernel package, not a reason to cast the model state down to FP16.
 
+## Draft KV addressing and corrupted prefix recovery
+
+Draft slot calculations must use the block size selected for the actual block
+table. The 310P QSA backend advertises `[128, 64]`, but the 256-wide heads in
+this service select 64-token pages. Taking the first advertised size for GDN
+models made later MTP steps use 128-token addressing. With sufficiently high
+physical block IDs, these writes exceeded the draft KV allocation and damaged
+other layers' cached recurrent states. The TP6 investigation reproduced changed
+checkpoint bytes on all six NPUs and repetitive output from an unchanged cached
+prompt sent directly to the API, without Kilo conversation compaction.
+
+Use `self.block_size`, which this fork's `initialize_attn_backend` sets from
+the selected `kernel_block_sizes`, for the draft block-table lookup and slot
+stride. The metadata calculation runs before graph replay, so its correction
+can retain existing graphs and persistent operand addresses. See the
+[coherence investigation](../../../../artifacts/qfn-coherence-20261016/REPORT.md)
+for the live validation and executable regression tests.
+
+Applying the fix does not repair already overwritten cache contents. Drain the
+service, reset the scheduler prefix cache and the worker KV/Mamba tiers together
+with `tools.qwen4exp.resident_reset`, then recompute prefixes. This discards
+server-side cached context; it retains weights and graph allocations. Do not
+reset only worker tensors while the scheduler still advertises cache hits.
+
 ## Validation sequence
 
 Run the following gates in order and retain the logs:
