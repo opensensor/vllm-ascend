@@ -131,7 +131,7 @@ def test_build_rejects_newer_header_before_copy(tmp_path):
         "eager_only",
     ],
 )
-@pytest.mark.parametrize("fuse_activation", [False, True])
+@pytest.mark.parametrize("fuse_activation", [False, True, "packed"])
 def test_qualified_loop_preserves_chunking_math_and_local_routes(monkeypatch, config_state, fuse_activation):
     resource, calls = make_resource(monkeypatch)
     source = (Path(__file__).parent / "fixtures/qfn_pinned_grouped_w4.txt").read_text()
@@ -166,12 +166,16 @@ def test_qualified_loop_preserves_chunking_math_and_local_routes(monkeypatch, co
         gate, up = projected.to(compute_dtype).chunk(2, -1)
         return (torch.nn.functional.silu(gate) * up).to(params_dtype)
 
+    def packed_down(projected, projection, ends, compute_dtype, params_dtype):
+        return projection.grouped_linear(activation(projected, compute_dtype, params_dtype), ends)
+
     forward = binding.build_forward(
         original,
         resource,
         source=source,
         eager_only=config_state.startswith("eager_only"),
-        activation=activation if fuse_activation else None,
+        activation=activation if fuse_activation is True else None,
+        packed_down=packed_down if fuse_activation == "packed" else None,
     )
     module = SimpleNamespace(
         native_int4=True,
@@ -214,3 +218,9 @@ def test_build_requires_cpu_only_backend_selection(monkeypatch):
     monkeypatch.delenv("TORCH_DEVICE_BACKEND_AUTOLOAD", raising=False)
     with pytest.raises(RuntimeError, match="AUTOLOAD=0"):
         build(None, None, None, None, None)
+
+
+def test_packed_down_rejects_two_activation_owners():
+    source = (Path(__file__).parent / "fixtures/qfn_pinned_grouped_w4.txt").read_text()
+    with pytest.raises(ValueError, match="own its retained activation fallback"):
+        binding.build_forward(lambda: None, None, source=source, activation=object(), packed_down=object())

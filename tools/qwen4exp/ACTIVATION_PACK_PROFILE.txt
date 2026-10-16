@@ -1,0 +1,128 @@
+Exact activation packing and shared HC operands, October 16, 2026 UTC
+
+Scope
+  Continued on resident-live-v16 at 192.168.53.187:8001, using the existing
+  real Qwen3.8 Flash-Next W4 checkpoint, TP4/EP4/MTP2 and [3,6,9,12] graphs.
+  No server restart, weight replacement, driver/firmware/OPP change, or new
+  environment variable. The prior activation epilogue is the fallback.
+
+Fresh native profile
+  Two pure-prefill iterations for a unique approximately 3737-token prompt.
+  Rank 0 / rank 3 summed task durations:
+    W4 local-count projection     2054.4 / 2291.5 ms, 192 tasks
+    AllReduce                     1345.5 / 1130.0 ms, 200 tasks
+    Cast                           456.8 /  453.3 ms
+    MatMulV2                       392.3 /  386.7 ms
+    BatchMatMulV2                  328.1 /  327.4 ms
+    W4 activation pack             323.8 /  324.2 ms, 192 tasks
+  These are diagnostic task totals, not independent latency percentages.
+  This capture uses larger pure-prefill batches than the previous mixed trace;
+  their absolute totals must not be interpreted as a performance regression.
+  Collective durations may include arrival skew. W4 execution remains the
+  largest measured target. Raw traces stay on the host; native-summary.json
+  records kernel counts, shapes and source paths. Profiling hooks were removed.
+
+Exact activation-to-pack fusion
+  Preserve the existing FP32 F.silu. A native kernel then widens the up operand,
+  multiplies, applies the qualified saturation/NaN handling and FP16 rounding,
+  and directly quantizes/packs the result. Low/high INT4 limbs, FP32 scales,
+  and replicated quantized sums retain the existing packer's arithmetic.
+  The intermediate FP16 tensor is no longer materialized in global memory.
+  At 20480 routed rows its payload is 25 MiB; avoiding its write and subsequent
+  read removes 50 MiB of logical tensor traffic, not measured PCIe traffic or
+  an assertion about physical allocator release.
+
+  The first 8-group kernel passed exactness and improved large-shape component
+  time about 8%. Coalescing the strided input copies did not materially change
+  that result. Increasing the tile to 16 groups improved it about 27%, and
+  32 groups about 36%. The retained 32-group kernel uses 144 KiB of local
+  workspace and preserves the eight-lane metadata layout. There is no new
+  activation approximation. Earlier custom SwiGLU arithmetic was not reused.
+
+  Complete activation plus packing, synchronized wall-time medians across ranks:
+     2590 rows: 0.654..0.664 -> 0.478..0.480 ms
+     5150 rows: 1.263..1.284 -> 0.817..0.822 ms
+    20480 rows: 5.132..5.183 -> 3.268..3.289 ms
+  The serving owner admits eager dense-ND contiguous FP16 [2560..20480,1280],
+  FP32 compute and FP16 output. Other inputs, short batches, gradients and
+  graph capture use the retained activation and grouped projection. No device
+  value is read by the host in the normal path; descriptors remain owned.
+  Launch failure retains its resources and prevents reuse. Shadow verification
+  intentionally synchronizes, returns reference-packed operands and disables
+  the candidate if any packed value, scale or sum differs.
+
+  qfn_route_finalize.build_forward accepts an optional packed_down callback.
+  Its original-source hash guard, local-count projections, route finalizer and
+  route reduction are preserved. The packing owner explicitly owns the old
+  activation fallback; passing two competing activation callbacks is rejected.
+
+Qualification
+  All four tile/copy variants passed 72 private cases each on four NPUs:
+  six row counts, random/wide/exceptional patterns, and all four packed outputs
+  compared byte-for-byte. The final kernel additionally passed 96 boundary
+  cases: 2559,2560,2561,5119,5120,5121,20479,20480 rows with zero, tiny/subnormal
+  and wide inputs. The formatted final source rebuild is byte-identical to
+  the qualified 32-group binary. Hashes are in source-hashes.json.
+  The final packing shadow checked 432 calls/rank, 1728 total, with zero
+  mismatches, covering both pure prefill and prefill overlapping a decoder.
+  Final owner counts: 624 candidate calls/rank, 432 checked, zero mismatches,
+  three descriptors/rank. The full retained-owner audit passed on all ranks;
+  shared HC operands and packing are enabled, live verification is disabled.
+  Real serving shadow and final owner counts are recorded in gates.json.
+
+Unprofiled packing comparison
+  Approximately 3737 uncached prompt tokens, 16 output tokens; shared HC
+  operands disabled in both arms. Off/on/on/off ordering, cooling intervals:
+    Off A 8.684969 s; On A 8.439955 s
+    On B  8.499215 s; Off B 8.727612 s
+  Mean TTFT: 8.706290 -> 8.469585 seconds, 2.72% lower; both pairs improved.
+  This is two pairs on one short-prefill workload, not a confidence interval,
+  sustained thermal test, long-context quality evaluation or decode gain.
+  The earlier 8-group serving comparison improved mean TTFT 1.15%; all trial
+  values are preserved, including those superseded by the larger tile.
+
+Shared HC operands
+  Requalified complete real-weight HC mix/combine across four ranks, then
+  verified 196 actual serving calls per rank before candidate timing, 784 total.
+  No byte mismatches.
+  Two counterbalanced sets, baseline/on/on/baseline then on/baseline/baseline/on:
+    Baseline: 8.691162, 8.713325, 8.564843, 8.642286 seconds
+    Shared:   8.730351, 8.553789, 8.508720, 8.527745 seconds
+  Means 8.652904 -> 8.580151 seconds: 0.84% lower TTFT, three of four pairs
+  improved. This modest short-workload result supports enabling the exact
+  reuse alongside its halved retained operand payload, but does not establish
+  a general throughput gain. These trials used the prior activation epilogue;
+  do not add their percentage to the packing percentage as a measured total.
+
+Validation and delivery
+  Focused host tests: 110 passed, covering packing admission/fallback,
+  descriptor ownership, all four mismatch types, launch failure, finalizer
+  composition, shared HC operands and benchmark thermal admission.
+  Host tests use --confcutdir=tests/ut/qwen38_1m because the repository-wide
+  conftest imports an unavailable upstream flash_linear_attention package.
+  Hardware evidence uses the actual serving weights, not a dummy checkpoint.
+  No broad model-quality, multimodal or larger-capacity claim is made.
+  See artifacts/qfn-pack-followup-20261016 for controls, receipts and results.
+
+Final serving checks
+  C1 two 256-output-token trials: 34.444 and 33.361 HTTP output tokens/s,
+  median 33.903. C4 four 256-token requests: 68.277 aggregate HTTP tokens/s.
+  These are readiness/regression samples, not demonstrated decode gains.
+  Both candidate call counters remained unchanged during these short-prompt
+  C1/C4 checks: the new fusions did not execute. C4 is below the preceding
+  recovery sample of 70.59; isolated samples do not establish its cause or
+  exclude variability. No higher C4 result was selected in its place.
+  All devices were healthy, final benchmark temperatures 73..79 C.
+  The existing driver polling setting remained 5 microseconds throughout.
+  Admissions resumed, the API served an arithmetic smoke, and no profiler
+  remains attached. Combined independent percentage gains are not claimed.
+  An initial 32-token arithmetic smoke stopped during its explanatory preamble
+  before reaching the answer. The corrected concise smoke returned 391 and
+  finish_reason=stop in four tokens; the truncated response is retained in
+  smoke-budget-limited.json. This was a smoke-budget issue, not evidence of
+  a numerical difference from these fusions.
+  Changed-file manual pre-commit checks passed, including C++ formatting,
+  Markdown, spelling and import checks. Full format.sh ci was run in an
+  isolated worktree and remains blocked by existing repository-wide lint,
+  spelling and forbidden-import findings. Unrelated work was not modified.
+  Fork GitHub Actions is disabled. This pass uses one signed-off commit.

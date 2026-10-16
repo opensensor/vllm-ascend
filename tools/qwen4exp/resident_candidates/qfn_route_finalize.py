@@ -26,24 +26,38 @@ REPLACEMENT = """        output = self.projections["down_proj"].grouped_linear(a
         result[start:stop] = ordered.reshape(tokens, self.top_k, hidden).sum(1)"""
 
 
-def build_forward(original, resource, *, source=None, eager_only=False, activation=None):
+def build_forward(original, resource, *, source=None, eager_only=False, activation=None, packed_down=None):
     original = getattr(original, "_qfn_route_finalize_base", original)
     source = textwrap.dedent(inspect.getsource(original)) if source is None else source
     if hashlib.sha256(source.encode()).hexdigest() != QUALIFIED_SOURCE_SHA256 or source.count(ORIGINAL) != 1:
         raise RuntimeError("route finalization requires exact qualified grouped W4 source")
     body = source.replace(ORIGINAL, REPLACEMENT)
-    if activation is not None:
+    if activation is not None and packed_down is not None:
+        raise ValueError("packed down projection must own its retained activation fallback")
+    if activation is not None or packed_down is not None:
         seam = (
             "        gate, up = projected.to(self.compute_dtype).chunk(2, -1)\n"
             "        activation = (F.silu(gate) * up).to(self.params_dtype)"
         )
+        if packed_down is not None:
+            seam += '\n        output = self.projections["down_proj"].grouped_linear(activation, group_ends)'
         if body.count(seam) != 1:
             raise RuntimeError("activation fusion requires the qualified grouped W4 activation seam")
-        body = body.replace(seam, "        activation = _activation(projected, self.compute_dtype, self.params_dtype)")
-    factory = "def factory(_finalize, _activation):\n" + textwrap.indent(body, "    ") + "    return _forward_grouped\n"
+        replacement = "        activation = _activation(projected, self.compute_dtype, self.params_dtype)"
+        if packed_down is not None:
+            replacement = (
+                '        output = _packed_down(projected, self.projections["down_proj"], '
+                "group_ends, self.compute_dtype, self.params_dtype)"
+            )
+        body = body.replace(seam, replacement)
+    factory = (
+        "def factory(_finalize, _activation, _packed_down):\n"
+        + textwrap.indent(body, "    ")
+        + "    return _forward_grouped\n"
+    )
     namespace = dict(original.__globals__)
     exec(compile(factory, "<qfn-qualified-route-finalize>", "exec"), namespace)
-    compiled = namespace["factory"](resource, activation)
+    compiled = namespace["factory"](resource, activation, packed_down)
     implementation = FunctionType(
         compiled.__code__, original.__globals__, compiled.__name__, compiled.__defaults__, compiled.__closure__
     )

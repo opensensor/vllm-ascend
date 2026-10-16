@@ -65,8 +65,26 @@ The v15 lost-heartbeat fault (`507010`) followed a 102 C reading; its cause
 remains unproven. Historical evidence is in `tools/qwen4exp/HC_FOLLOWUP_PROFILE.txt`.
 Use bounded temperature checks before benchmarks and allow cooling between
 trials. Temperature alone does not identify memory traffic as the cause.
-Shared HC operands remain opt-in because their serving comparison was
-inconclusive; they are disabled in the retained v16 configuration.
+The subsequent October 16 pass requalified shared HC operands at stable
+temperatures and enabled them after eight counterbalanced requests measured
+0.84% lower mean prefill TTFT. This is a modest short-workload result; the
+earlier thermally confounded comparison remains in the historical report.
+
+Exact activation packing now composes through the same W4 finalizer. It
+retains FP32 SiLU and FP16 rounding, then directly produces the INT4 limbs,
+scales and sums without materializing the intermediate FP16 activation.
+The 32-group kernel admits eager dense FP16 `[2560..20480,1280]` inputs;
+other cases use the retained activation epilogue and grouped projection.
+Private byte-equivalence gates and real serving shadows passed on all four
+ranks. A short counterbalanced comparison measured another 2.72% lower
+prefill TTFT with HC operand reuse held off in both arms. Do not sum these
+separate improvements as a measured combined gain. See
+`tools/qwen4exp/ACTIVATION_PACK_PROFILE.txt` and
+`artifacts/qfn-pack-followup-20261016` for the exact controls and evidence.
+Restore the activation epilogue before composing the packing callback, retain
+its fallback owner and the current finalizer, and verify mixed-request shadows
+before enabling the candidate. The prior qualified runtime remains the
+fallback; no graph or custom OPP replacement is required.
 
 ## Sources of truth
 
