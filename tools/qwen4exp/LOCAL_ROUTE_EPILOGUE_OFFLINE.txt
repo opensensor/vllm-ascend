@@ -1,0 +1,135 @@
+Local-route projection and fused finalization: offline candidates
+October 16, 2026
+
+Scope and status
+  Requested development while the user continues using the server. No SSH,
+  API call, resident RPC, device probe, server drain, restart, deployment or NPU
+  workload was performed. All new runtime code lives in tools/qwen4exp and is
+  opt-in; no existing serving source, launcher, graph, OPP or driver changed.
+  These candidates are CPU-tested only. The local machine has no CANN SDK;
+  there is no ACLRTC binary, NPU correctness result or measured speedup.
+
+Variant 2 first: avoid inactive output writes and reads
+  native_local_down_projection.cpp uses the qualified local-count M32,N160 /
+  M128 schedule for down projections only: E128,N2560,K640, INT4 operands,
+  INT64 boundaries, eight metadata lanes, non-routed mode, broadcast factor 1.
+  The all-peer case returns without initializing the private output tensor.
+  build_local_route_epilogue.py recovers the exact qualified header from local
+  git revision 456e1ebcd, checks its SHA256, and removes exactly its grouped
+  output-tail zeroing block. It does not modify the installed header, matrix
+  arithmetic, expert iteration, output precision, route layout or schedule.
+  Gate/up, routed decode, other layouts and newer headers are excluded.
+
+  qwen_local_route_finalize_v1 reads only rows below group_ends[127]. For other
+  rows it creates +0 in local storage, then performs the original separate
+  FP32 multiplication by the route weight. This preserves zero signs and
+  0 * NaN/Inf behavior rather than silently discarding those weights. It writes
+  weighted rows in original route order. The existing backend .sum(1) remains.
+  Original-order weights must be paired with inverse_order, not sorted weights.
+
+  The ordered variant retains whole-row transfers, avoiding ten repeated
+  metadata reads per row. Its local buffers total 25 KiB. It still materializes
+  the 200 MiB FP32 route tensor at the largest supported shape.
+
+Variant 1: fuse finalization with reduction
+  Two explicit kernels produce [tokens,2560] FP32 output directly:
+    sequential: start at +0, then add ten separately rounded weighted terms;
+    pairwise: adjacent pairs, then recursively combine pairs and carry odd nodes.
+  Multiplication and addition remain separate vector operations. There are no
+  atomics and no scatter races: one task owns each token/column tile. Fused
+  kernels tile 256 columns and use 11.5 KiB of local buffers. They never write
+  the full global FP32 route tensor or read the inactive FP16 projection tail.
+
+  Neither reduction order is asserted to match CANN's torch.sum. An offline
+  cancellation case with valid finite half values and weights in [0,1] gives
+  2^-10 for the sequential order and zero for the pairwise order. CPU torch.sum
+  cannot identify the NPU's order. Do not promote either fused variant until
+  it matches the actual retained NPU reduction in private and real-model gates.
+  If neither matches, retain ordered local finalization and investigate the
+  backend tree; do not relax the numerical gate to force a promotion.
+
+Producer/consumer ownership
+  LocalDownEpilogue preflights both descriptor pools, dtypes, shapes, contiguity,
+  device identity, eager execution and inference mode before the no-zero
+  projection. Existing cached descriptors remain valid at capacity. Unwritten
+  tensors stay private to the pair; no fallback is permitted after submission.
+  A submission error retains the resources, inputs and intermediate output and
+  prevents reuse. Device-side asynchronous errors still require hardware checks.
+
+  PackedLocalDownEpilogue provides the future model integration seam. It defaults
+  to disabled and creates a separate activation-packing adapter borrowing the
+  retained kernels and activation fallback. Its local-pack guard admits the
+  paired projection/consumer together. A failed admission uses full packing and
+  the retained projection/finalizer. Short or unsupported packing shapes use
+  the retained grouped projection. No existing owner is mutated.
+  The entire candidate shadows against the actual retained pack, projection,
+  finalizer and backend sum, returning reference output and disabling on a
+  mismatch. Comparing two instances of the new reduction would not qualify it.
+  A future source-guarded model adapter must replace the whole down-projection,
+  finalization and sum block with one call returning [tokens,2560]. It must
+  preserve the current grouped dispatch and guard eager FP32-compute/FP16-output
+  mode, TP4/EP4, top-k 10 and width 2560. No such live binding is installed here.
+
+Traffic budget, not measured performance
+  At 20480 routes, 5120 local routes and width 2560, per rank and invocation:
+    no-zero projection: avoid 75 MiB of FP16 tail writes;
+    local finalization: avoid 75 MiB of FP16 tail reads;
+    fused reduction: eliminate a 200 MiB FP32 intermediate allocation and its
+                     200 MiB write plus 200 MiB read;
+    final FP32 token output remains 20 MiB.
+  Thus the two stages could avoid 550 MiB of logical payload movement combined.
+  This excludes metadata, cache behavior, allocator reuse and physical DMA.
+  Projection output capacity remains allocated; no-zero does not shrink it.
+  Fused kernels add tiling, scalar addressing and explicit reduction work, so
+  these byte counts cannot be converted into a latency or PCIe-bandwidth claim.
+
+Offline tests
+  266 focused tests passed, including 108 new candidate tests. Scoped manual
+  lint passed. The full unit suite is blocked by the local environment missing
+  vllm.third_party.flash_linear_attention; the full formatter reports unrelated
+  repository failures. No CANN compilation or NPU test has been performed.
+  Actual epilogue C++ runs through a bounds-aware CPU shim. Any DMA read of the
+  poisoned inactive tail raises an error; every output element must be written
+  once. Local-buffer bounds and balanced event ownership are checked, but event
+  timing, vector instruction behavior and hardware stream ordering are not.
+  Cases cover 130,650,2590,5150,20480 rows, zero/one/quarter/almost/all ownership,
+  permutations, subnormals, signed zero, nonfinite weights and cancellation.
+  Finite values are compared bytewise to explicit CPU oracles. NaNs are checked
+  by position; CPU tests make no claim about NPU NaN payload preservation.
+  Projection entry C++ compiles against the exact descriptor and a recording
+  Schedule test double. This verifies ABI admission, empty-rank handling and
+  M32/M128 selection, not INT4 matrix arithmetic. The header transformation is
+  independently checked to differ only in the removed zero-tail block.
+  Tests also exercise descriptor capacity, whole-pipeline fallback before
+  submission, poisoning on failure, default-off integration, and shadows that
+  reject a deliberately incorrect consumer. No runtime route-count CPU readback
+  is added; readbacks occur only in explicit private qualification functions.
+
+Reproduction and deferred hardware steps
+  CPU tests:
+    python -m pytest --confcutdir=tests/ut/qwen38_1m -q \
+      tests/ut/qwen38_1m/test_local_route_epilogue.py
+  Stage from local git objects without importing torch or discovering devices:
+    python -m tools.qwen4exp.build_local_route_epilogue --output /tmp/qfn-local-epilogue-build
+  An optional explicit --compiler PATH --cann-root PATH compiles with an
+  existing ACLRTC compiler. This was not run. Source and binary hash manifests
+  do not constitute numerical qualification. The retained queue-v3 bridge and
+  kernel owners will still need explicit private loading in an available window.
+
+  When hardware is available, first compile and validate the ordered variant:
+  poison the private output tail and compare local weighted rows; exercise zero,
+  skewed and full ownership on real first/last down banks for all four ranks.
+  benchmark_local_route_epilogue.validate_pair prepares private inputs and
+  compares each full pair with the retained projection and actual backend sum.
+  It has no server controller, automatic loader or CLI. It never enables serving.
+  The fused variants must pass the same gates plus cancellation/stress inputs.
+  Next qualify the complete packed adapter with real projected activations.
+  Only then prepare a source-guarded model binding and return-reference serving
+  shadows, followed by counterbalanced timing and C1/C4 regression checks.
+  Keep current local packing, CPU reductions, PLE/HC optimizations, finalizer
+  fallback and graph owners. Do not substitute a generic no-zero native_linear.
+
+Evidence
+  artifacts/qfn-local-epilogue-offline-20261016 contains the staged source hashes,
+  exact header patch, CPU test receipt and validation limitations. All numerical
+  and performance claims about the existing live server remain in earlier reports.

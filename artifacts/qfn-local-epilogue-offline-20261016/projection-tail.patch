@@ -1,0 +1,19 @@
+--- qualified/native_int4_schedule.h
++++ candidate/native_int4_local_output.h
+@@ -108,15 +108,7 @@
+           SetFlag<HardEvent::MTE1_MTE2>(EVENT_ID0);
+           WaitFlag<HardEvent::MTE1_MTE2>(EVENT_ID0);
+         }
+-        if (expert + 1 == experts_) {
+-          auto out = output_.Get<half>();
+-          Duplicate(out, static_cast<half>(0), ELEMENTS);
+-          SetFlag<HardEvent::V_MTE3>(EVENT_ID0);
+-          WaitFlag<HardEvent::V_MTE3>(EVENT_ID0);
+-          for (int64_t row = end; row < rows_; row += M) Store(out, tile, row, Min(M, rows_ - row));
+-          SetFlag<HardEvent::MTE3_V>(EVENT_ID0);
+-          WaitFlag<HardEvent::MTE3_V>(EVENT_ID0);
+-        }
++        // Inactive rows are private to the paired local epilogue.
+       }
+     }
+   }
