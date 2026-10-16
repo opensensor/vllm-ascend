@@ -12,8 +12,9 @@ constexpr int64_t MAX_ROUTES = 20480;
 template <int ORDER>
 class LocalEpilogue {
   // The unfused variant keeps the qualified finalizer's whole-row transfers.
-  // Fused reductions tile columns to bound the ten weighted terms in UB.
-  static constexpr uint32_t TILE = ORDER == 0 ? WIDTH : 256, COLUMNS = WIDTH / TILE;
+  // Sequential reduction streams one whole weighted row into the sum.
+  // Only the pairwise tree needs ten resident terms and column tiling.
+  static constexpr uint32_t TILE = ORDER == 2 ? 256 : WIDTH, COLUMNS = WIDTH / TILE;
 
  public:
   __aicore__ inline void Run(GM_ADDR routed, GM_ADDR inverse, GM_ADDR weights, GM_ADDR ends, GM_ADDR output,
@@ -28,7 +29,8 @@ class LocalEpilogue {
       ASCENDC_ASSERT(false, { KERNEL_LOG(KERNEL_ERROR, "invalid local epilogue boundary"); });
       return;
     }
-    constexpr uint32_t TERMS = ORDER == 0 ? 1 : TOP_K;
+    constexpr uint32_t TERMS = ORDER == 2 ? TOP_K : 1;
+    constexpr uint32_t ROUTES = ORDER == 0 ? 1 : TOP_K;
     pipe_.InitBuffer(inputBuffer_, TILE * sizeof(half));
     pipe_.InitBuffer(termsBuffer_, TERMS * TILE * sizeof(float));
     pipe_.InitBuffer(sumBuffer_, TILE * sizeof(float));
@@ -44,14 +46,18 @@ class LocalEpilogue {
       // The output of the previous task may alias terms or sum. Drain that
       // store before reusing either buffer, including the all-peer case.
       WaitFlag<HardEvent::MTE3_V>(EVENT_ID0);
-      for (uint32_t term = 0; term < TERMS; ++term) {
+      if constexpr (ORDER == 1) {
+        Duplicate(sum, 0.0f, TILE);
+        PipeBarrier<PIPE_V>();
+      }
+      for (uint32_t term = 0; term < ROUTES; ++term) {
         const int64_t route = ORDER == 0 ? outputRow : outputRow * TOP_K + term;
         const int64_t source = inverse_.GetValue(route);
         if (source < 0 || source >= rows) {
           ASCENDC_ASSERT(false, { KERNEL_LOG(KERNEL_ERROR, "invalid local epilogue inverse index"); });
           return;
         }
-        auto weighted = terms[term * TILE];
+        auto weighted = terms[(ORDER == 2 ? term : 0) * TILE];
         WaitFlag<HardEvent::V_MTE2>(EVENT_ID0);
         if (source < active) {
           DataCopy(input, input_[source * WIDTH + column], TILE);
@@ -70,15 +76,13 @@ class LocalEpilogue {
         PipeBarrier<PIPE_V>();
         Muls(weighted, weighted, weight, TILE);
         PipeBarrier<PIPE_V>();
+        if constexpr (ORDER == 1) {
+          Add(sum, sum, weighted, TILE);
+          PipeBarrier<PIPE_V>();
+        }
       }
       auto result = terms;
       if constexpr (ORDER == 1) {
-        Duplicate(sum, 0.0f, TILE);
-        PipeBarrier<PIPE_V>();
-        for (uint32_t term = 0; term < TOP_K; ++term) {
-          Add(sum, sum, terms[term * TILE], TILE);
-          PipeBarrier<PIPE_V>();
-        }
         result = sum;
       } else if constexpr (ORDER == 2) {
         // Keep nodes at their original offsets; no overlapping tensor copy.

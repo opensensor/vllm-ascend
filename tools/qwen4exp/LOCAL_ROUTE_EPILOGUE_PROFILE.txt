@@ -1,0 +1,112 @@
+Local down projection and fused route reduction, October 16, 2026 UTC
+
+Qualified implementation
+  The paired eager path skips zeroing the down projection's inactive output
+  rows and never reads them in finalization. It preserves the existing local
+  activation packing, frozen M32/M128 projection schedule, FP16 projection
+  output, FP32 multiplication and original route order. Kernels read the final
+  expert boundary on device; normal execution adds no route-count readback.
+  No generic native_linear consumer receives an uninitialized output tail.
+
+  CANN compiled both sources for dav-2002. The initial sequential reduction
+  matched the retained NPU sum, but its 256-column tiles repeated scalar
+  addressing and transfers. The revised kernel streams whole 2560-column
+  weighted rows into an FP32 sum, starting at +0. Multiply and add remain
+  separate. Its local storage is 25 KiB; no 200 MiB weighted-route tensor is
+  materialized at 20480 routes. The pairwise tree failed exact equivalence and
+  is rejected. Its presence in the private binary does not enable it in service.
+
+  The opt-in paired_down callback in qfn_route_finalize replaces the complete
+  activation/down/finalization/sum block through the existing source-hash guard.
+  It requires eager-only execution and excludes other activation callbacks.
+  The private adapter preserves the retained local pack, activation fallback,
+  projection and finalizer for unsupported cases, short batches and graphs.
+  Descriptors for both producer and consumer are admitted before submission.
+  Failure after submission retains resources and forbids reuse or fallback.
+
+Hardware correctness
+  Four resident v16 workers borrowed their loaded model weights read-only.
+  Requests were drained for private gates, with prefix caches, weights,
+  graph owners and the resident patch generation preserved. No server restart,
+  driver, firmware, launcher, OPP package or graph configuration changed.
+
+  Each kernel revision passed 64 ordered and 68 sequential epilogue cases
+  across four ranks: 130/650/5150/20480 routes, zero/one/quarter/full ownership,
+  permutations, signed zero, half subnormals, large finite values and explicit
+  cancellation. Inactive input tails were filled with NaNs. Pairwise passed
+  only 32 of 68 cases and is not qualified. Numerical mismatch did not mutate
+  model execution; the healthy workers resumed after each private gate.
+
+  Both revisions passed 240 complete projection/finalization comparisons with
+  first- and last-layer real down banks across all four ranks. Cases included
+  zero, one, quarter, all-local and quarter-local skewed ownership at capacities
+  650/5150/20480. Both revisions also passed 256 complete activation/packing/
+  projection/finalization comparisons, including the short-batch fallback.
+
+  Revised sequential serving shadows passed 624 comparisons per rank, 2496
+  total, with zero mismatches. Workloads included pure prefill and an additional
+  prefill while another request decoded. Shadows returned reference outputs.
+  Shadow timings include duplicate computation/readbacks and are not speedups.
+
+Component timings
+  Complete activation/packing/down/finalization pipeline, quarter-local routes,
+  first real down bank, synchronized wall-time medians across four ranks:
+      routes     retained             revised sequential
+        2590     4.21..4.27 ms         3.76..3.82 ms
+        5150     6.61..6.74 ms         5.64..5.75 ms
+       20480    15.90..15.99 ms       12.15..12.24 ms
+  At the largest shape this is about 23% less component latency. Each timing
+  used three alternating-order repetitions, two calls per sample, plus device
+  event measurements. These private-input results are not full-server gains.
+  The initial tiled sequential version was slower than ordered local
+  finalization; its separate receipts are preserved, not combined with v2.
+
+Unprofiled serving comparison
+  Eight counterbalanced fresh requests, approximately 3731..3736 prompt tokens
+  and 16 generated tokens each; all reported zero cached prompt tokens.
+  Baseline preserves the already-enabled local packing and shared HC operands.
+  Candidate adds only the paired no-zero projection and sequential reduction.
+    order: off/on/on/off/on/off/off/on
+    TTFT: 8.38462, 8.41263, 8.17995, 8.46168,
+          8.36658, 8.49337, 9.04495, 8.47139 seconds.
+  Mean TTFT: 8.596155 -> 8.357637 seconds, 2.77% lower.
+  Median TTFT: 8.477526 -> 8.389603 seconds, 1.04% lower.
+  Three of four adjacent counterbalanced pairs improved. One slow baseline
+  increases the mean benefit; this is a modest short-prefill gain on one host,
+  not a long-context benchmark or a statistical confidence interval.
+  Temperatures remained 65..78 C during these serving trials.
+
+Final serving state
+  Revised sequential fusion is enabled, with verification disabled after the
+  successful shadows. The pairwise variant remains excluded. C1/C4 checks
+  measured baseline 34.21/63.11 and candidate 33.31/67.94 output tokens/s.
+  Paired-kernel call counters were unchanged during both decode arms; these
+  short checks show rate variation, not a decode speedup from prefill fusion.
+  All retained-owner checks passed. HTTP health is 200, the server is unpaused,
+  and the arithmetic smoke returned 391 with finish_reason=stop. Final NPU
+  temperatures were 68..74 C, all devices healthy. No profiler remains attached.
+
+  This is a resident attachment to the running v16 process. After a restart,
+  restore the prior optimized stack and explicitly repeat the private gates
+  before attaching the new callback; launching alone does not install it.
+  For a drained rollback, run serving-control.py off with a fresh receipt label
+  through the retained qfn-local-pack-20261016/run.sh environment wrapper.
+  That restores the previous grouped method and keeps all previous optimizations.
+
+Validation and reproducibility
+  274 focused CPU tests passed, including actual C++ execution through checked
+  CPU stubs, inactive-tail bounds, reduction order, descriptor capacity,
+  chunking, whole-pipeline fallback and eager-only binding. Scoped source lint
+  passed. Full unit collection remains blocked by the local environment's
+  missing vllm.third_party.flash_linear_attention. Full format.sh ci was run
+  in an isolated worktree and reports existing unrelated repository failures.
+
+  artifacts/qfn-local-epilogue-hardware-20261016 contains the scripts, exact
+  JSON results, thermal readings and build hashes. build and build-v2 identify
+  the initial tiled and revised streaming kernels respectively. The initial
+  epilogue source is also preserved by commit bb388806e. Source headers
+  come from the exact frozen revision recorded by the offline staging tool.
+  The original offline report remains historical preparation evidence.
+  Native resources remain worker-owned for lifetime safety. No profiler was
+  attached during the serving comparison. See final validation receipts for
+  the final enabled state, owner audit and HTTP/decode checks.

@@ -71,7 +71,7 @@ def native(tmp_path_factory):
             assert result == 1
         else:
             assert result == 0
-            assert local_bytes.value <= (32 if mode == "ordered" else 12) * 1024
+            assert local_bytes.value <= (12 if mode == "pairwise" else 32) * 1024
         return output, reads.value
 
     return launch

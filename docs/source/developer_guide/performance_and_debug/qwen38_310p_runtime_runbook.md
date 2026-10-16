@@ -100,6 +100,22 @@ on large batches and remains disabled. See
 `tools/qwen4exp/LOCAL_ROUTE_PACK_PROFILE.txt` and
 `artifacts/qfn-local-pack-20261016` for controls, results, and final checks.
 
+The subsequent local-epilogue pass pairs a down projection that skips inactive
+output zeroing with finalization that never reads those rows. Its sequential
+FP32 reduction matched the retained NPU sum and now streams whole rows,
+eliminating the global weighted-route intermediate. The alternative pairwise
+tree failed exact equivalence and remains excluded. Compose through the
+source-guarded `paired_down` callback in `qfn_route_finalize.build_forward`,
+with eager-only admission and the existing local pack/activation fallback.
+The adapter defaults off; qualify private real-bank gates and complete serving
+shadows before enabling it. The v16 deployment passed 2,496 serving shadow
+comparisons without mismatches. Eight counterbalanced requests measured 2.77%
+lower mean prefill TTFT and 1.04% lower median TTFT; a slow baseline sample
+widens the mean gain. See `tools/qwen4exp/LOCAL_ROUTE_EPILOGUE_PROFILE.txt` and
+`artifacts/qfn-local-epilogue-hardware-20261016` for exact controls, numerical
+limits, build hashes, and final runtime checks. Existing graph owners, CPU
+reductions, local packing, shared HC operands and PLE remain in place.
+
 ## Sources of truth
 
 - Develop changes on the repository's current main branch, then deploy them as

@@ -26,14 +26,18 @@ REPLACEMENT = """        output = self.projections["down_proj"].grouped_linear(a
         result[start:stop] = ordered.reshape(tokens, self.top_k, hidden).sum(1)"""
 
 
-def build_forward(original, resource, *, source=None, eager_only=False, activation=None, packed_down=None):
+def build_forward(
+    original, resource, *, source=None, eager_only=False, activation=None, packed_down=None, paired_down=None
+):
     original = getattr(original, "_qfn_route_finalize_base", original)
     source = textwrap.dedent(inspect.getsource(original)) if source is None else source
     if hashlib.sha256(source.encode()).hexdigest() != QUALIFIED_SOURCE_SHA256 or source.count(ORIGINAL) != 1:
         raise RuntimeError("route finalization requires exact qualified grouped W4 source")
     body = source.replace(ORIGINAL, REPLACEMENT)
-    if activation is not None and packed_down is not None:
+    if sum(owner is not None for owner in (activation, packed_down, paired_down)) > 1:
         raise ValueError("packed down projection must own its retained activation fallback")
+    if paired_down is not None and not eager_only:
+        raise ValueError("paired down projection requires eager-only binding")
     if activation is not None or packed_down is not None:
         seam = (
             "        gate, up = projected.to(self.compute_dtype).chunk(2, -1)\n"
@@ -50,14 +54,26 @@ def build_forward(original, resource, *, source=None, eager_only=False, activati
                 "group_ends, self.compute_dtype, self.params_dtype)"
             )
         body = body.replace(seam, replacement)
+    if paired_down is not None:
+        seam = (
+            "        gate, up = projected.to(self.compute_dtype).chunk(2, -1)\n"
+            "        activation = (F.silu(gate) * up).to(self.params_dtype)\n" + REPLACEMENT
+        )
+        if body.count(seam) != 1:
+            raise RuntimeError("paired reduction requires the complete qualified activation/finalization seam")
+        body = body.replace(
+            seam,
+            '        result[start:stop] = _paired_down(projected, self.projections["down_proj"], '
+            "group_ends, dispatch.inverse_order, dispatch.route_weights, self.compute_dtype, self.params_dtype)",
+        )
     factory = (
-        "def factory(_finalize, _activation, _packed_down):\n"
+        "def factory(_finalize, _activation, _packed_down, _paired_down):\n"
         + textwrap.indent(body, "    ")
         + "    return _forward_grouped\n"
     )
     namespace = dict(original.__globals__)
     exec(compile(factory, "<qfn-qualified-route-finalize>", "exec"), namespace)
-    compiled = namespace["factory"](resource, activation, packed_down)
+    compiled = namespace["factory"](resource, activation, packed_down, paired_down)
     implementation = FunctionType(
         compiled.__code__, original.__globals__, compiled.__name__, compiled.__defaults__, compiled.__closure__
     )

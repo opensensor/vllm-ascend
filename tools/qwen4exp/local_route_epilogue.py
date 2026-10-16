@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Offline-only paired projection/finalization candidates; no automatic binding.
+"""Explicit paired projection/finalization candidates; no automatic binding.
 
 An unwritten projection tail is private to this pair. Never return it to a
 caller that can select the generic finalizer after the producer has run.
-The fused reductions have explicit arithmetic orders, not established CANN
-parity. Resource construction and CPU tests confer no hardware qualification.
+The fused reductions have explicit arithmetic orders; hardware qualification
+is scoped to separately recorded gates. Resource construction and CPU tests
+confer no hardware qualification.
 """
 
 import torch
@@ -158,10 +159,10 @@ def _admit_paired_projection(projection, prepared, ends):
 
 
 class PackedLocalDownEpilogue:
-    """Offline integration seam retaining existing local activation packing.
+    """Explicit integration seam retaining existing local activation packing.
 
     Disabled by default. Own a separate pack adapter, borrowing immutable
-    kernels and the retained activation fallback. A future model binding would
+    kernels and the retained activation fallback. The source-guarded model binding can
     replace the down-projection/finalization/sum block with this one call.
     Whole-pipeline shadows compare with the original pack/projection/finalizer
     and backend sum, so a fused reduction cannot validate itself.

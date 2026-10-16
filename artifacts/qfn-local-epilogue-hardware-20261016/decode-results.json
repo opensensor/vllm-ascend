@@ -1,0 +1,2964 @@
+{
+  "off": {
+    "decode-benchmark": {
+      "before": [
+        {
+          "rank": 0,
+          "pid": 30127,
+          "weight_storage_digest": "051aff184fe172a87436ec754ab9ee086a1f467364979adeeba2ed1780ac5056",
+          "graphs_dirty": false,
+          "native_failed": false
+        },
+        {
+          "rank": 1,
+          "pid": 30128,
+          "weight_storage_digest": "03b8ccfe2e6e467ad3b5245092742614e89c57ff0c697f27263de40f905b30b6",
+          "graphs_dirty": false,
+          "native_failed": false
+        },
+        {
+          "rank": 2,
+          "pid": 30129,
+          "weight_storage_digest": "51d5effdb7041099812cf0c35192f3f0b3b532c383ad7ab503aae70bba01bebe",
+          "graphs_dirty": false,
+          "native_failed": false
+        },
+        {
+          "rank": 3,
+          "pid": 30130,
+          "weight_storage_digest": "57fdd284e078b7eb94c9dac1c0953d2837446062f49836d29a360695eae689ad",
+          "graphs_dirty": false,
+          "native_failed": false
+        }
+      ],
+      "request": {
+        "model": "qwen38-flash-next",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Explain how a hash table works and discuss collision resolution strategies."
+          }
+        ],
+        "chat_template_kwargs": {
+          "enable_thinking": false
+        },
+        "temperature": 0,
+        "max_tokens": 256,
+        "min_tokens": 256,
+        "ignore_eos": true
+      },
+      "scope": "C1 HTTP output tokens/s includes short prefill and API overhead; not pure device TPOT",
+      "trials": [
+        {
+          "trial": 0,
+          "seconds": 7.744472676000441,
+          "output_tokens_per_second": 33.05583358739523
+        },
+        {
+          "trial": 1,
+          "seconds": 7.240516743000626,
+          "output_tokens_per_second": 35.35659250390851
+        }
+      ],
+      "after": [
+        {
+          "rank": 0,
+          "pid": 30127,
+          "weight_storage_digest": "051aff184fe172a87436ec754ab9ee086a1f467364979adeeba2ed1780ac5056",
+          "graphs_dirty": false,
+          "native_failed": false
+        },
+        {
+          "rank": 1,
+          "pid": 30128,
+          "weight_storage_digest": "03b8ccfe2e6e467ad3b5245092742614e89c57ff0c697f27263de40f905b30b6",
+          "graphs_dirty": false,
+          "native_failed": false
+        },
+        {
+          "rank": 2,
+          "pid": 30129,
+          "weight_storage_digest": "51d5effdb7041099812cf0c35192f3f0b3b532c383ad7ab503aae70bba01bebe",
+          "graphs_dirty": false,
+          "native_failed": false
+        },
+        {
+          "rank": 3,
+          "pid": 30130,
+          "weight_storage_digest": "57fdd284e078b7eb94c9dac1c0953d2837446062f49836d29a360695eae689ad",
+          "graphs_dirty": false,
+          "native_failed": false
+        }
+      ],
+      "median_output_tokens_per_second": 34.206213045651864
+    },
+    "concurrency": {
+      "concurrency": 4,
+      "tokens_per_request": 256,
+      "before": [
+        {
+          "rank": 0,
+          "pid": 30127,
+          "weight_storage_digest": "051aff184fe172a87436ec754ab9ee086a1f467364979adeeba2ed1780ac5056",
+          "graphs_dirty": false,
+          "native_failed": false
+        },
+        {
+          "rank": 1,
+          "pid": 30128,
+          "weight_storage_digest": "03b8ccfe2e6e467ad3b5245092742614e89c57ff0c697f27263de40f905b30b6",
+          "graphs_dirty": false,
+          "native_failed": false
+        },
+        {
+          "rank": 2,
+          "pid": 30129,
+          "weight_storage_digest": "51d5effdb7041099812cf0c35192f3f0b3b532c383ad7ab503aae70bba01bebe",
+          "graphs_dirty": false,
+          "native_failed": false
+        },
+        {
+          "rank": 3,
+          "pid": 30130,
+          "weight_storage_digest": "57fdd284e078b7eb94c9dac1c0953d2837446062f49836d29a360695eae689ad",
+          "graphs_dirty": false,
+          "native_failed": false
+        }
+      ],
+      "metrics_before": {
+        "vllm:num_requests_running": 0.0,
+        "vllm:num_requests_waiting": 0.0,
+        "vllm:request_success_total": 248.0,
+        "vllm:spec_decode_num_draft_tokens_total": 41689.0,
+        "vllm:spec_decode_num_accepted_tokens_total": 29342.0
+      },
+      "graph_inventory": [
+        {
+          "rank": 0,
+          "graphs": [
+            {
+              "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            }
+          ],
+          "graph_parameters": {
+            "target": {
+              "initialized": true,
+              "sizes": {
+                "3": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "6": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "9": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "12": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                }
+              }
+            },
+            "draft": {
+              "initialized": true,
+              "sizes": {
+                "3": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "6": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "9": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "12": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                }
+              }
+            },
+            "draft_prefill": {
+              "initialized": false,
+              "sizes": {}
+            }
+          },
+          "qsa_cold_variants": [
+            {
+              "model": "AscendQwen4ExpForConditionalGeneration",
+              "failed": false,
+              "capture_sizes": [
+                3,
+                6,
+                9,
+                12
+              ],
+              "prefix_sizes": [
+                3,
+                6,
+                9,
+                12
+              ],
+              "prefix_pool_retained": true,
+              "variants": [
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                }
+              ],
+              "variant_metadata_separation": [
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                }
+              ]
+            }
+          ],
+          "capture_coverage": {
+            "rank": 0,
+            "runner_sizes": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "configured_sizes": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "maximum": 12,
+            "gdn_capacities": [
+              12,
+              12,
+              12
+            ],
+            "descriptors": [
+              "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "graphs": [
+            {
+              "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            }
+          ],
+          "graph_parameters": {
+            "target": {
+              "initialized": true,
+              "sizes": {
+                "3": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "6": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "9": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "12": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                }
+              }
+            },
+            "draft": {
+              "initialized": true,
+              "sizes": {
+                "3": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "6": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "9": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "12": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                }
+              }
+            },
+            "draft_prefill": {
+              "initialized": false,
+              "sizes": {}
+            }
+          },
+          "qsa_cold_variants": [
+            {
+              "model": "AscendQwen4ExpForConditionalGeneration",
+              "failed": false,
+              "capture_sizes": [
+                3,
+                6,
+                9,
+                12
+              ],
+              "prefix_sizes": [
+                3,
+                6,
+                9,
+                12
+              ],
+              "prefix_pool_retained": true,
+              "variants": [
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                }
+              ],
+              "variant_metadata_separation": [
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                }
+              ]
+            }
+          ],
+          "capture_coverage": {
+            "rank": 1,
+            "runner_sizes": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "configured_sizes": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "maximum": 12,
+            "gdn_capacities": [
+              12,
+              12,
+              12
+            ],
+            "descriptors": [
+              "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "graphs": [
+            {
+              "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            }
+          ],
+          "graph_parameters": {
+            "target": {
+              "initialized": true,
+              "sizes": {
+                "3": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "6": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "9": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "12": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                }
+              }
+            },
+            "draft": {
+              "initialized": true,
+              "sizes": {
+                "3": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "6": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "9": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "12": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                }
+              }
+            },
+            "draft_prefill": {
+              "initialized": false,
+              "sizes": {}
+            }
+          },
+          "qsa_cold_variants": [
+            {
+              "model": "AscendQwen4ExpForConditionalGeneration",
+              "failed": false,
+              "capture_sizes": [
+                3,
+                6,
+                9,
+                12
+              ],
+              "prefix_sizes": [
+                3,
+                6,
+                9,
+                12
+              ],
+              "prefix_pool_retained": true,
+              "variants": [
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                }
+              ],
+              "variant_metadata_separation": [
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                }
+              ]
+            }
+          ],
+          "capture_coverage": {
+            "rank": 2,
+            "runner_sizes": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "configured_sizes": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "maximum": 12,
+            "gdn_capacities": [
+              12,
+              12,
+              12
+            ],
+            "descriptors": [
+              "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "graphs": [
+            {
+              "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            }
+          ],
+          "graph_parameters": {
+            "target": {
+              "initialized": true,
+              "sizes": {
+                "3": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "6": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "9": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "12": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                }
+              }
+            },
+            "draft": {
+              "initialized": true,
+              "sizes": {
+                "3": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "6": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "9": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "12": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                }
+              }
+            },
+            "draft_prefill": {
+              "initialized": false,
+              "sizes": {}
+            }
+          },
+          "qsa_cold_variants": [
+            {
+              "model": "AscendQwen4ExpForConditionalGeneration",
+              "failed": false,
+              "capture_sizes": [
+                3,
+                6,
+                9,
+                12
+              ],
+              "prefix_sizes": [
+                3,
+                6,
+                9,
+                12
+              ],
+              "prefix_pool_retained": true,
+              "variants": [
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                }
+              ],
+              "variant_metadata_separation": [
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                }
+              ]
+            }
+          ],
+          "capture_coverage": {
+            "rank": 3,
+            "runner_sizes": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "configured_sizes": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "maximum": 12,
+            "gdn_capacities": [
+              12,
+              12,
+              12
+            ],
+            "descriptors": [
+              "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)"
+            ]
+          }
+        }
+      ],
+      "scope": "Synchronized finite C requests; HTTP aggregate includes prefill and tails. SSE decode uses N-1 estimate.",
+      "requests": [
+        {
+          "index": 0,
+          "started": 21172.993015385,
+          "finished": 21189.218027498,
+          "request": {
+            "model": "qwen38-flash-next",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Explain how a hash table works and discuss collision resolution strategies."
+              }
+            ],
+            "temperature": 0,
+            "seed": 42,
+            "max_tokens": 256,
+            "min_tokens": 256,
+            "ignore_eos": true,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            },
+            "stream": true,
+            "stream_options": {
+              "include_usage": true
+            }
+          },
+          "request_id": "chatcmpl-982c63b04c03c663",
+          "usage": {
+            "prompt_tokens": 25,
+            "total_tokens": 281,
+            "completion_tokens": 256,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "created_cache_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "ttft_s": 1.9564490299999306,
+          "decode_s": 14.268326473000343,
+          "client_decode_tok_s": 17.87175254803226,
+          "e2e_s": 16.22487470100168,
+          "text_sha256": "ba97d61ca2eab31a72e5037e5ad15303730843033faa89cb9cb79d7342020a36",
+          "text": "# Hash Tables: Mechanics and Collision Resolution\n\n## Core Concept\n\nA **hash table** (or hash map) is a data structure that implements an associative array, mapping **keys** to **values** using a **hash function**. It provides average-case **O(1)** time complexity for insertions, deletions, and lookups.\n\n### How It Works\n\n```\nKey \u2192 Hash Function \u2192 Index \u2192 Bucket (Array Slot) \u2192 Value\n```\n\n1. **Hash Function**: Takes a key and computes an integer hash code.\n2. **Index Calculation**: Maps the hash code to a valid array index (typically via modulo: `index = hash(key) % array_size`).\n3. **Storage**: The key-value pair is stored at that index.\n4. **Retrieval**: The same process is repeated to find the bucket, then the key is compared to confirm a match.\n\n### Simple Example\n\n```python\n# Conceptual hash table with array size 7\nhash_table = [None] * 7\n\ndef hash_function(key):\n    return hash(key) % 7\n\n# Insert\nkey = \"apple\"\nindex = hash_function(key)  # e.g., index = 3\nhash_table"
+        },
+        {
+          "index": 1,
+          "started": 21172.993557837,
+          "finished": 21188.489087097,
+          "request": {
+            "model": "qwen38-flash-next",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Explain how a database index works and discuss its performance tradeoffs."
+              }
+            ],
+            "temperature": 0,
+            "seed": 42,
+            "max_tokens": 256,
+            "min_tokens": 256,
+            "ignore_eos": true,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            },
+            "stream": true,
+            "stream_options": {
+              "include_usage": true
+            }
+          },
+          "request_id": "chatcmpl-9a99748fea4af36b",
+          "usage": {
+            "prompt_tokens": 26,
+            "total_tokens": 282,
+            "completion_tokens": 256,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "created_cache_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "ttft_s": 1.9560273770002823,
+          "decode_s": 13.539281163000851,
+          "client_decode_tok_s": 18.83408704864223,
+          "e2e_s": 15.495415634002711,
+          "text_sha256": "3bfc634ac7a91c93f3300aab4a4382c663ed69374bd6103898014f1403307746",
+          "text": "# Database Indexes: How They Work and Performance Tradeoffs\n\n## What Is a Database Index?\n\nA database index is a **data structure** that improves the speed of data retrieval operations on a database table at the cost of additional writes and storage space. Think of it like the index at the back of a textbook: instead of scanning every page to find a topic, you look up the topic in the index and go directly to the relevant page.\n\n---\n\n## How Indexes Work\n\n### 1. Core Concept: Avoiding Full Table Scans\n\nWithout an index, finding a specific row requires a **full table scan** \u2014 reading every row sequentially until a match is found. This is O(n) complexity.\n\nWith an index, the database uses a structured lookup mechanism to find rows in **O(log n)** or even **O(1)** time.\n\n### 2. Common Index Data Structures\n\n#### B-Tree / B+Tree (Most Common)\n```\n        [ 10 | 20 | 30 ]          \u2190 Root node\n       /      |       \\\n[5|8]  [12|15|18]  [22|25|28]  "
+        },
+        {
+          "index": 2,
+          "started": 21172.993257877,
+          "finished": 21188.622303545,
+          "request": {
+            "model": "qwen38-flash-next",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Explain how TCP provides reliable delivery and handles lost packets."
+              }
+            ],
+            "temperature": 0,
+            "seed": 42,
+            "max_tokens": 256,
+            "min_tokens": 256,
+            "ignore_eos": true,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            },
+            "stream": true,
+            "stream_options": {
+              "include_usage": true
+            }
+          },
+          "request_id": "chatcmpl-8e62231ecebe943a",
+          "usage": {
+            "prompt_tokens": 24,
+            "total_tokens": 280,
+            "completion_tokens": 256,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "created_cache_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "ttft_s": 0.39046590099678724,
+          "decode_s": 15.238309612999728,
+          "client_decode_tok_s": 16.73413957821547,
+          "e2e_s": 15.628945486998418,
+          "text_sha256": "f1a01828e49942bd329c08e7f94a4eb75280a3d326aaada20c855d6799fbe6d0",
+          "text": "TCP (Transmission Control Protocol) provides reliable, ordered, and error-checked delivery of a stream of bytes between applications running on hosts communicating over an IP network. It achieves this through several key mechanisms working in concert.\n\nHere is a step-by-step explanation of how TCP ensures reliability and handles lost packets:\n\n### 1. Sequence Numbers\nEvery byte of data sent over a TCP connection is assigned a unique **sequence number**.\n- **Purpose:** This allows the receiver to:\n  - Reassemble data in the correct order (even if packets arrive out of order).\n  - Detect duplicate packets.\n  - Identify missing data.\n\n### 2. Acknowledgments (ACKs)\nTCP uses a **positive acknowledgment** mechanism.\n- When the receiver successfully receives a segment, it sends back an **ACK** packet to the sender.\n- The ACK number indicates the **next expected sequence number**.\n  - *Example:* If a sender sends bytes 1\u20131000, and the receiver gets them all, it sends an ACK for byte 1001.\n- **Cumulative ACKs:** TCP typically uses cumulative acknowledgments. If the receiver gets packets 1, 2, and 4, but not"
+        },
+        {
+          "index": 3,
+          "started": 21172.9925287,
+          "finished": 21189.146408216,
+          "request": {
+            "model": "qwen38-flash-next",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Explain how an LRU cache works and discuss a practical implementation."
+              }
+            ],
+            "temperature": 0,
+            "seed": 42,
+            "max_tokens": 256,
+            "min_tokens": 256,
+            "ignore_eos": true,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            },
+            "stream": true,
+            "stream_options": {
+              "include_usage": true
+            }
+          },
+          "request_id": "chatcmpl-914150257fd2acb2",
+          "usage": {
+            "prompt_tokens": 26,
+            "total_tokens": 282,
+            "completion_tokens": 256,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "created_cache_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "ttft_s": 1.9566445519994886,
+          "decode_s": 14.196797132000938,
+          "client_decode_tok_s": 17.96179783573899,
+          "e2e_s": 16.15355992900004,
+          "text_sha256": "7f60fb7128f48267182084c23b82f33331e6f0252fc86429eb9db2e026df8e18",
+          "text": "# LRU Cache: Explanation and Implementation\n\n## What is an LRU Cache?\n\nAn **LRU (Least Recently Used)** cache is a fixed-size cache that evicts the **least recently accessed** item when it reaches capacity. It operates on the principle of **temporal locality** \u2014 recently accessed data is likely to be accessed again soon.\n\n### Core Operations\n| Operation | Description | Time Complexity |\n|-----------|-------------|-----------------|\n| `get(key)` | Retrieve value; mark as recently used | O(1) |\n| `put(key, value)` | Insert/update; evict LRU if full | O(1) |\n\n### How It Works\n1. **On `get`**: If the key exists, move it to the \"most recently used\" position.\n2. **On `put`**: \n   - If the key exists, update its value and move to \"most recently used.\"\n   - If the key doesn't exist, insert it as \"most recently used.\"\n   - If capacity is exceeded, evict the \"least recently used\" item.\n\n## Data Structure Choice\n\nThe optimal implementation combines two structures:\n\n```\n\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        }
+      ],
+      "after": [
+        {
+          "rank": 0,
+          "pid": 30127,
+          "weight_storage_digest": "051aff184fe172a87436ec754ab9ee086a1f467364979adeeba2ed1780ac5056",
+          "graphs_dirty": false,
+          "native_failed": false
+        },
+        {
+          "rank": 1,
+          "pid": 30128,
+          "weight_storage_digest": "03b8ccfe2e6e467ad3b5245092742614e89c57ff0c697f27263de40f905b30b6",
+          "graphs_dirty": false,
+          "native_failed": false
+        },
+        {
+          "rank": 2,
+          "pid": 30129,
+          "weight_storage_digest": "51d5effdb7041099812cf0c35192f3f0b3b532c383ad7ab503aae70bba01bebe",
+          "graphs_dirty": false,
+          "native_failed": false
+        },
+        {
+          "rank": 3,
+          "pid": 30130,
+          "weight_storage_digest": "57fdd284e078b7eb94c9dac1c0953d2837446062f49836d29a360695eae689ad",
+          "graphs_dirty": false,
+          "native_failed": false
+        }
+      ],
+      "metrics_after": {
+        "vllm:num_requests_running": 0.0,
+        "vllm:num_requests_waiting": 0.0,
+        "vllm:request_success_total": 252.0,
+        "vllm:spec_decode_num_draft_tokens_total": 42529.0,
+        "vllm:spec_decode_num_accepted_tokens_total": 29945.0
+      },
+      "makespan_s": 16.225498797997716,
+      "start_spread_s": 0.0010291369981132448,
+      "aggregate_http_output_tok_s": 63.110540560168495,
+      "median_client_decode_tok_s": 17.916775191885627
+    }
+  },
+  "on": {
+    "decode-benchmark": {
+      "before": [
+        {
+          "rank": 0,
+          "pid": 30127,
+          "weight_storage_digest": "051aff184fe172a87436ec754ab9ee086a1f467364979adeeba2ed1780ac5056",
+          "graphs_dirty": false,
+          "native_failed": false
+        },
+        {
+          "rank": 1,
+          "pid": 30128,
+          "weight_storage_digest": "03b8ccfe2e6e467ad3b5245092742614e89c57ff0c697f27263de40f905b30b6",
+          "graphs_dirty": false,
+          "native_failed": false
+        },
+        {
+          "rank": 2,
+          "pid": 30129,
+          "weight_storage_digest": "51d5effdb7041099812cf0c35192f3f0b3b532c383ad7ab503aae70bba01bebe",
+          "graphs_dirty": false,
+          "native_failed": false
+        },
+        {
+          "rank": 3,
+          "pid": 30130,
+          "weight_storage_digest": "57fdd284e078b7eb94c9dac1c0953d2837446062f49836d29a360695eae689ad",
+          "graphs_dirty": false,
+          "native_failed": false
+        }
+      ],
+      "request": {
+        "model": "qwen38-flash-next",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Explain how a hash table works and discuss collision resolution strategies."
+          }
+        ],
+        "chat_template_kwargs": {
+          "enable_thinking": false
+        },
+        "temperature": 0,
+        "max_tokens": 256,
+        "min_tokens": 256,
+        "ignore_eos": true
+      },
+      "scope": "C1 HTTP output tokens/s includes short prefill and API overhead; not pure device TPOT",
+      "trials": [
+        {
+          "trial": 0,
+          "seconds": 7.749917478002317,
+          "output_tokens_per_second": 33.03260979573536
+        },
+        {
+          "trial": 1,
+          "seconds": 7.6223629169980995,
+          "output_tokens_per_second": 33.58538589511558
+        }
+      ],
+      "after": [
+        {
+          "rank": 0,
+          "pid": 30127,
+          "weight_storage_digest": "051aff184fe172a87436ec754ab9ee086a1f467364979adeeba2ed1780ac5056",
+          "graphs_dirty": false,
+          "native_failed": false
+        },
+        {
+          "rank": 1,
+          "pid": 30128,
+          "weight_storage_digest": "03b8ccfe2e6e467ad3b5245092742614e89c57ff0c697f27263de40f905b30b6",
+          "graphs_dirty": false,
+          "native_failed": false
+        },
+        {
+          "rank": 2,
+          "pid": 30129,
+          "weight_storage_digest": "51d5effdb7041099812cf0c35192f3f0b3b532c383ad7ab503aae70bba01bebe",
+          "graphs_dirty": false,
+          "native_failed": false
+        },
+        {
+          "rank": 3,
+          "pid": 30130,
+          "weight_storage_digest": "57fdd284e078b7eb94c9dac1c0953d2837446062f49836d29a360695eae689ad",
+          "graphs_dirty": false,
+          "native_failed": false
+        }
+      ],
+      "median_output_tokens_per_second": 33.308997845425466
+    },
+    "concurrency": {
+      "concurrency": 4,
+      "tokens_per_request": 256,
+      "before": [
+        {
+          "rank": 0,
+          "pid": 30127,
+          "weight_storage_digest": "051aff184fe172a87436ec754ab9ee086a1f467364979adeeba2ed1780ac5056",
+          "graphs_dirty": false,
+          "native_failed": false
+        },
+        {
+          "rank": 1,
+          "pid": 30128,
+          "weight_storage_digest": "03b8ccfe2e6e467ad3b5245092742614e89c57ff0c697f27263de40f905b30b6",
+          "graphs_dirty": false,
+          "native_failed": false
+        },
+        {
+          "rank": 2,
+          "pid": 30129,
+          "weight_storage_digest": "51d5effdb7041099812cf0c35192f3f0b3b532c383ad7ab503aae70bba01bebe",
+          "graphs_dirty": false,
+          "native_failed": false
+        },
+        {
+          "rank": 3,
+          "pid": 30130,
+          "weight_storage_digest": "57fdd284e078b7eb94c9dac1c0953d2837446062f49836d29a360695eae689ad",
+          "graphs_dirty": false,
+          "native_failed": false
+        }
+      ],
+      "metrics_before": {
+        "vllm:num_requests_running": 0.0,
+        "vllm:num_requests_waiting": 0.0,
+        "vllm:request_success_total": 254.0,
+        "vllm:spec_decode_num_draft_tokens_total": 42937.0,
+        "vllm:spec_decode_num_accepted_tokens_total": 30253.0
+      },
+      "graph_inventory": [
+        {
+          "rank": 0,
+          "graphs": [
+            {
+              "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            }
+          ],
+          "graph_parameters": {
+            "target": {
+              "initialized": true,
+              "sizes": {
+                "3": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "6": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "9": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "12": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                }
+              }
+            },
+            "draft": {
+              "initialized": true,
+              "sizes": {
+                "3": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "6": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "9": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "12": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                }
+              }
+            },
+            "draft_prefill": {
+              "initialized": false,
+              "sizes": {}
+            }
+          },
+          "qsa_cold_variants": [
+            {
+              "model": "AscendQwen4ExpForConditionalGeneration",
+              "failed": false,
+              "capture_sizes": [
+                3,
+                6,
+                9,
+                12
+              ],
+              "prefix_sizes": [
+                3,
+                6,
+                9,
+                12
+              ],
+              "prefix_pool_retained": true,
+              "variants": [
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                }
+              ],
+              "variant_metadata_separation": [
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                }
+              ]
+            }
+          ],
+          "capture_coverage": {
+            "rank": 0,
+            "runner_sizes": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "configured_sizes": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "maximum": 12,
+            "gdn_capacities": [
+              12,
+              12,
+              12
+            ],
+            "descriptors": [
+              "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "graphs": [
+            {
+              "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            }
+          ],
+          "graph_parameters": {
+            "target": {
+              "initialized": true,
+              "sizes": {
+                "3": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "6": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "9": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "12": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                }
+              }
+            },
+            "draft": {
+              "initialized": true,
+              "sizes": {
+                "3": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "6": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "9": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "12": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                }
+              }
+            },
+            "draft_prefill": {
+              "initialized": false,
+              "sizes": {}
+            }
+          },
+          "qsa_cold_variants": [
+            {
+              "model": "AscendQwen4ExpForConditionalGeneration",
+              "failed": false,
+              "capture_sizes": [
+                3,
+                6,
+                9,
+                12
+              ],
+              "prefix_sizes": [
+                3,
+                6,
+                9,
+                12
+              ],
+              "prefix_pool_retained": true,
+              "variants": [
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                }
+              ],
+              "variant_metadata_separation": [
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                }
+              ]
+            }
+          ],
+          "capture_coverage": {
+            "rank": 1,
+            "runner_sizes": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "configured_sizes": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "maximum": 12,
+            "gdn_capacities": [
+              12,
+              12,
+              12
+            ],
+            "descriptors": [
+              "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "graphs": [
+            {
+              "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            }
+          ],
+          "graph_parameters": {
+            "target": {
+              "initialized": true,
+              "sizes": {
+                "3": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "6": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "9": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "12": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                }
+              }
+            },
+            "draft": {
+              "initialized": true,
+              "sizes": {
+                "3": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "6": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "9": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "12": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                }
+              }
+            },
+            "draft_prefill": {
+              "initialized": false,
+              "sizes": {}
+            }
+          },
+          "qsa_cold_variants": [
+            {
+              "model": "AscendQwen4ExpForConditionalGeneration",
+              "failed": false,
+              "capture_sizes": [
+                3,
+                6,
+                9,
+                12
+              ],
+              "prefix_sizes": [
+                3,
+                6,
+                9,
+                12
+              ],
+              "prefix_pool_retained": true,
+              "variants": [
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                }
+              ],
+              "variant_metadata_separation": [
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                }
+              ]
+            }
+          ],
+          "capture_coverage": {
+            "rank": 2,
+            "runner_sizes": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "configured_sizes": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "maximum": 12,
+            "gdn_capacities": [
+              12,
+              12,
+              12
+            ],
+            "descriptors": [
+              "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "graphs": [
+            {
+              "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 4,
+              "eager_breaks": 3
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 14,
+              "eager_breaks": 13
+            },
+            {
+              "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+              "graphs": 2,
+              "eager_breaks": 1
+            }
+          ],
+          "graph_parameters": {
+            "target": {
+              "initialized": true,
+              "sizes": {
+                "3": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "6": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "9": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "12": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                }
+              }
+            },
+            "draft": {
+              "initialized": true,
+              "sizes": {
+                "3": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "6": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "9": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                },
+                "12": {
+                  "events": 0,
+                  "handles": 0,
+                  "attn_params": 0,
+                  "workspace": false
+                }
+              }
+            },
+            "draft_prefill": {
+              "initialized": false,
+              "sizes": {}
+            }
+          },
+          "qsa_cold_variants": [
+            {
+              "model": "AscendQwen4ExpForConditionalGeneration",
+              "failed": false,
+              "capture_sizes": [
+                3,
+                6,
+                9,
+                12
+              ],
+              "prefix_sizes": [
+                3,
+                6,
+                9,
+                12
+              ],
+              "prefix_pool_retained": true,
+              "variants": [
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "general",
+                  "native_graphs": 14,
+                  "eager_breaks": 13,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                  "variant": "prefix",
+                  "native_graphs": 2,
+                  "eager_breaks": 1,
+                  "metadata_objects": 4,
+                  "gdn_tensor_storages": 6,
+                  "gdn_cache_objects": 3
+                }
+              ],
+              "variant_metadata_separation": [
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                },
+                {
+                  "descriptor": "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)",
+                  "shared_metadata_objects": 0,
+                  "shared_gdn_tensor_storages": 0,
+                  "prefix_gdn_tensor_storages": 6,
+                  "general_gdn_tensor_storages": 6
+                }
+              ]
+            }
+          ],
+          "capture_coverage": {
+            "rank": 3,
+            "runner_sizes": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "configured_sizes": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "maximum": 12,
+            "gdn_capacities": [
+              12,
+              12,
+              12
+            ],
+            "descriptors": [
+              "BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True, has_lora=False, num_active_loras=0)",
+              "BatchDescriptor(num_tokens=9, num_reqs=3, uniform=True, has_lora=False, num_active_loras=0)",
+              "BatchDescriptor(num_tokens=6, num_reqs=2, uniform=True, has_lora=False, num_active_loras=0)",
+              "BatchDescriptor(num_tokens=3, num_reqs=1, uniform=True, has_lora=False, num_active_loras=0)"
+            ]
+          }
+        }
+      ],
+      "scope": "Synchronized finite C requests; HTTP aggregate includes prefill and tails. SSE decode uses N-1 estimate.",
+      "requests": [
+        {
+          "index": 0,
+          "started": 21248.990093081,
+          "finished": 21263.748364909,
+          "request": {
+            "model": "qwen38-flash-next",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Explain how a hash table works and discuss collision resolution strategies."
+              }
+            ],
+            "temperature": 0,
+            "seed": 42,
+            "max_tokens": 256,
+            "min_tokens": 256,
+            "ignore_eos": true,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            },
+            "stream": true,
+            "stream_options": {
+              "include_usage": true
+            }
+          },
+          "request_id": "chatcmpl-824fad7677b45ef6",
+          "usage": {
+            "prompt_tokens": 25,
+            "total_tokens": 281,
+            "completion_tokens": 256,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "created_cache_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "ttft_s": 0.3877480850023858,
+          "decode_s": 14.37032092699883,
+          "client_decode_tok_s": 17.744906414783564,
+          "e2e_s": 14.758201474000089,
+          "text_sha256": "b74190b8016240deb6295c631f4c731c3e5befa4a744badc60ce4b52df63cf2d",
+          "text": "# Hash Tables: Mechanics and Collision Resolution\n\n## Core Concept\n\nA **hash table** (or hash map) is a data structure that implements an associative array \u2014 a mapping between **keys** and **values**. It achieves average-case **O(1)** time complexity for insertions, deletions, and lookups by using a **hash function** to convert keys into array indices.\n\n---\n\n## How It Works: Step by Step\n\n### 1. The Hash Function\nA hash function takes an arbitrary key and produces a fixed-size integer (the **hash code**).\n\n```\nhash(\"apple\") \u2192 1234567890\nhash(\"banana\") \u2192 9876543210\n```\n\n### 2. Index Calculation\nThe hash code is mapped to a valid array index using modulo arithmetic:\n\n```\nindex = hash(key) % table_size\n```\n\n### 3. Storage and Retrieval\n- **Insert**: Compute index \u2192 store key-value pair at that index.\n- **Lookup**: Compute index \u2192 retrieve value at that index.\n- **Delete**: Compute index \u2192 remove entry at that index.\n\n### Visual Example\n\n```\nTable Size = 7"
+        },
+        {
+          "index": 1,
+          "started": 21248.990232727,
+          "finished": 21263.527099743,
+          "request": {
+            "model": "qwen38-flash-next",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Explain how a database index works and discuss its performance tradeoffs."
+              }
+            ],
+            "temperature": 0,
+            "seed": 42,
+            "max_tokens": 256,
+            "min_tokens": 256,
+            "ignore_eos": true,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            },
+            "stream": true,
+            "stream_options": {
+              "include_usage": true
+            }
+          },
+          "request_id": "chatcmpl-890d8d766c27458a",
+          "usage": {
+            "prompt_tokens": 26,
+            "total_tokens": 282,
+            "completion_tokens": 256,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "created_cache_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "ttft_s": 1.313422138999158,
+          "decode_s": 13.223171407000336,
+          "client_decode_tok_s": 19.284329919901303,
+          "e2e_s": 14.5368103289984,
+          "text_sha256": "73d2ebcfd0f13ec755f5589bf28d70b8110b9208b39016001b95d391a25bf9c1",
+          "text": "# Database Indexes: How They Work and Performance Tradeoffs\n\n## What Is a Database Index?\n\nA database index is a **data structure** that improves the speed of data retrieval operations on a database table at the cost of additional writes and storage space. Think of it like the index at the back of a textbook: instead of scanning every page to find a topic, you look up the topic in the index and go directly to the relevant page.\n\n---\n\n## How Indexes Work\n\n### 1. Core Concept: Avoiding Full Table Scans\n\nWithout an index, finding a specific row requires a **full table scan** \u2014 reading every row sequentially until a match is found. This is O(n) complexity.\n\nWith an index, the database can use a structured lookup mechanism to find rows in **O(log n)** or even **O(1)** time.\n\n### 2. Common Index Data Structures\n\n#### B-Tree / B+Tree (Most Common)\n```\n        [ 10 | 20 | 30 ]          \u2190 Root node\n       /      |       \\\n[1-9]  [11-19]  [21-29]  [31-4"
+        },
+        {
+          "index": 2,
+          "started": 21248.990364277,
+          "finished": 21263.526985145,
+          "request": {
+            "model": "qwen38-flash-next",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Explain how TCP provides reliable delivery and handles lost packets."
+              }
+            ],
+            "temperature": 0,
+            "seed": 42,
+            "max_tokens": 256,
+            "min_tokens": 256,
+            "ignore_eos": true,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            },
+            "stream": true,
+            "stream_options": {
+              "include_usage": true
+            }
+          },
+          "request_id": "chatcmpl-96dcc306b567fd78",
+          "usage": {
+            "prompt_tokens": 24,
+            "total_tokens": 280,
+            "completion_tokens": 256,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "created_cache_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "ttft_s": 1.3130790159993921,
+          "decode_s": 13.22322411800269,
+          "client_decode_tok_s": 19.284253047850225,
+          "e2e_s": 14.536479788999713,
+          "text_sha256": "72d00220903ad1ee2d73e8f177983191233cef3acec465fef78b76c32d42ddf2",
+          "text": "TCP (Transmission Control Protocol) provides reliable, ordered, and error-checked delivery of a stream of bytes between applications running on hosts communicating over an IP network. It achieves this through several key mechanisms:\n\n### 1. Sequence Numbers\n- Every byte of data sent over a TCP connection is assigned a **sequence number**.\n- This allows the receiver to:\n  - Reassemble data in the correct order.\n  - Detect missing or duplicate segments.\n- Example: If a sender transmits bytes 1\u20131000, the next segment starts with sequence number 1001.\n\n### 2. Acknowledgments (ACKs)\n- The receiver sends an **acknowledgment** for successfully received data.\n- The ACK number indicates the **next expected sequence number**.\n  - Example: If the receiver has successfully received bytes 1\u20131000, it sends an ACK for 1001.\n- This confirms that all data up to (but not including) the ACK number has been received correctly.\n\n### 3. Retransmission of Lost Packets\n- TCP uses a **retransmission timer** for each unacknowledged segment.\n- If an ACK is not received"
+        },
+        {
+          "index": 3,
+          "started": 21248.989668304,
+          "finished": 21264.062612956,
+          "request": {
+            "model": "qwen38-flash-next",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Explain how an LRU cache works and discuss a practical implementation."
+              }
+            ],
+            "temperature": 0,
+            "seed": 42,
+            "max_tokens": 256,
+            "min_tokens": 256,
+            "ignore_eos": true,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            },
+            "stream": true,
+            "stream_options": {
+              "include_usage": true
+            }
+          },
+          "request_id": "chatcmpl-a34b3f27038fa0af",
+          "usage": {
+            "prompt_tokens": 26,
+            "total_tokens": 282,
+            "completion_tokens": 256,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "created_cache_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "ttft_s": 1.313711628998135,
+          "decode_s": 13.758876816002157,
+          "client_decode_tok_s": 18.533489572595357,
+          "e2e_s": 15.07268887600003,
+          "text_sha256": "72a7cec9e9e2786a74707127e3851502c512d405c1e14caeaffdb700daa80ca8",
+          "text": "# LRU Cache: Explanation and Implementation\n\n## What is an LRU Cache?\n\n**LRU (Least Recently Used)** is a cache eviction policy that discards the least recently accessed items first when the cache reaches its capacity. It operates on the principle of **temporal locality** \u2014 recently accessed data is likely to be accessed again soon.\n\n### Core Behavior\n- **On access (get/put)**: The accessed item is moved to the \"most recently used\" position.\n- **On eviction**: When capacity is exceeded, the item that hasn't been accessed for the longest time is removed.\n\n---\n\n## Data Structure Requirements\n\nAn efficient LRU cache needs **O(1)** time complexity for:\n1. **Lookup** by key\n2. **Insertion** of new items\n3. **Deletion** of arbitrary items\n4. **Reordering** (moving an item to the front)\n\nThe classic solution combines two data structures:\n\n| Structure | Purpose |\n|-----------|---------|\n| **Hash Map** | O(1) lookup by key \u2192 node reference |\n| **Doubly Linked List** | O(1) insertion/deletion/reordering; maintains access order |\n\n```\n"
+        }
+      ],
+      "after": [
+        {
+          "rank": 0,
+          "pid": 30127,
+          "weight_storage_digest": "051aff184fe172a87436ec754ab9ee086a1f467364979adeeba2ed1780ac5056",
+          "graphs_dirty": false,
+          "native_failed": false
+        },
+        {
+          "rank": 1,
+          "pid": 30128,
+          "weight_storage_digest": "03b8ccfe2e6e467ad3b5245092742614e89c57ff0c697f27263de40f905b30b6",
+          "graphs_dirty": false,
+          "native_failed": false
+        },
+        {
+          "rank": 2,
+          "pid": 30129,
+          "weight_storage_digest": "51d5effdb7041099812cf0c35192f3f0b3b532c383ad7ab503aae70bba01bebe",
+          "graphs_dirty": false,
+          "native_failed": false
+        },
+        {
+          "rank": 3,
+          "pid": 30130,
+          "weight_storage_digest": "57fdd284e078b7eb94c9dac1c0953d2837446062f49836d29a360695eae689ad",
+          "graphs_dirty": false,
+          "native_failed": false
+        }
+      ],
+      "metrics_after": {
+        "vllm:num_requests_running": 0.0,
+        "vllm:num_requests_waiting": 0.0,
+        "vllm:request_success_total": 258.0,
+        "vllm:spec_decode_num_draft_tokens_total": 43749.0,
+        "vllm:spec_decode_num_accepted_tokens_total": 30870.0
+      },
+      "makespan_s": 15.072944652001752,
+      "start_spread_s": 0.0006959730017115362,
+      "aggregate_http_output_tok_s": 67.9362940448407,
+      "median_client_decode_tok_s": 18.908871310222793
+    }
+  }
+}

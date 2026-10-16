@@ -131,7 +131,7 @@ def test_build_rejects_newer_header_before_copy(tmp_path):
         "eager_only",
     ],
 )
-@pytest.mark.parametrize("fuse_activation", [False, True, "packed"])
+@pytest.mark.parametrize("fuse_activation", [False, True, "packed", "paired"])
 def test_qualified_loop_preserves_chunking_math_and_local_routes(monkeypatch, config_state, fuse_activation):
     resource, calls = make_resource(monkeypatch)
     source = (Path(__file__).parent / "fixtures/qfn_pinned_grouped_w4.txt").read_text()
@@ -169,13 +169,18 @@ def test_qualified_loop_preserves_chunking_math_and_local_routes(monkeypatch, co
     def packed_down(projected, projection, ends, compute_dtype, params_dtype):
         return projection.grouped_linear(activation(projected, compute_dtype, params_dtype), ends)
 
+    def paired_down(projected, projection, ends, inverse, route_weights, compute_dtype, params_dtype):
+        routed = packed_down(projected, projection, ends, compute_dtype, params_dtype)
+        return resource(routed, inverse, route_weights).reshape(-1, 10, 2560).sum(1)
+
     forward = binding.build_forward(
         original,
         resource,
         source=source,
-        eager_only=config_state.startswith("eager_only"),
+        eager_only=config_state.startswith("eager_only") or fuse_activation == "paired",
         activation=activation if fuse_activation is True else None,
         packed_down=packed_down if fuse_activation == "packed" else None,
+        paired_down=paired_down if fuse_activation == "paired" else None,
     )
     module = SimpleNamespace(
         native_int4=True,
@@ -203,7 +208,9 @@ def test_qualified_loop_preserves_chunking_math_and_local_routes(monkeypatch, co
     expected = original(module, inputs, weights, ids)
     actual = forward(module, inputs, weights, ids)
     assert torch.equal(actual.view(torch.int32), expected.view(torch.int32))
-    if config_state in ("room", "full_existing", "eager_only"):
+    if config_state in ("room", "full_existing", "eager_only") and not (
+        fuse_activation == "paired" and config_state == "full_existing"
+    ):
         assert [int(config[0]) for config in calls] == [20, 20, 10]
         assert activation_calls == ([20, 20, 10] if fuse_activation else [])
     else:
@@ -224,3 +231,13 @@ def test_packed_down_rejects_two_activation_owners():
     source = (Path(__file__).parent / "fixtures/qfn_pinned_grouped_w4.txt").read_text()
     with pytest.raises(ValueError, match="own its retained activation fallback"):
         binding.build_forward(lambda: None, None, source=source, activation=object(), packed_down=object())
+
+
+def test_paired_down_requires_eager_and_exclusive_owner():
+    source = (Path(__file__).parent / "fixtures/qfn_pinned_grouped_w4.txt").read_text()
+    with pytest.raises(ValueError, match="eager-only"):
+        binding.build_forward(lambda: None, None, source=source, paired_down=object())
+    with pytest.raises(ValueError, match="own its retained activation fallback"):
+        binding.build_forward(
+            lambda: None, None, source=source, eager_only=True, paired_down=object(), packed_down=object()
+        )
