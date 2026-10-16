@@ -1,0 +1,55 @@
+{
+  "profile": "TP6/EP6, six 262144-token request slots, MTP2",
+  "endpoint": "http://192.168.53.187:8001/v1",
+  "model": "qwen38-flash-next",
+  "run_root": "/srv/ai/storage/artifacts/qfn-tp6-scaleout-20261016/resident-v5",
+  "api_pid": 212798,
+  "planned_cache_tokens": 1710425,
+  "six_full_256k_contexts_validated": false,
+  "baseline_before_pacing_hc_ple": {
+    "c1_median_decode_tok_s": 30.88972825766842,
+    "c6_128_token_aggregate_e2e_tok_s": 73.97720923815943
+  },
+  "retained": {
+    "c1_median_decode_tok_s_trials": [
+      33.95755112777315,
+      32.692771456037164
+    ],
+    "c6_128_token_aggregate_e2e_tok_s": 69.25833288393588,
+    "c6_512_token_aggregate_e2e_tok_s": 79.85779019345523
+  },
+  "comparison_scope": "Baseline preceded pacing; complete profile comparison, not isolated PLE or HC A/B.",
+  "mixed_prefill": {
+    "uncached_prompt_tokens": 8192,
+    "serial_decode_tok_s": 32.33,
+    "mixed_decode_tok_s": 19.99,
+    "maximum_post_arrival_chunk_gap_s": 0.59,
+    "long_prompt_ttft_s": 37.5
+  },
+  "prefix_gate": {
+    "cold_tokens": 5704,
+    "concurrent_branches": 6,
+    "correct_branches": 6,
+    "cached_tokens_each": 5632
+  },
+  "cpu_tests": {
+    "sidecard": 77,
+    "ple": 58
+  },
+  "lint": {
+    "scoped_hooks": "passed (generated-text benchmark logs retained on host; compact timing evidence committed)",
+    "format_sh_ci": "fails on historical files; same baseline failures observed in clean HEAD scratch checkout"
+  },
+  "limits": [
+    "Full six by 256K context occupancy and accuracy are not validated.",
+    "The TP4 queued scheduler and local expert native fusions are not yet qualified for TP6.",
+    "Baseline word-reversal smoke was wrong; this is not a comprehensive accuracy certification.",
+    "PLE remains host-assisted DMA, with explicit Torch stream joins."
+  ],
+  "final_audit_passed": true,
+  "final_smoke": {
+    "passed": 6,
+    "total": 7
+  },
+  "ple_full_batch_shadow_checks_per_rank": 98
+}

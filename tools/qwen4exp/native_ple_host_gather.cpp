@@ -99,7 +99,8 @@ static int create_owner(int device, std::shared_ptr<ple_host::SharedTable> table
                         void* output_device, void** result) {
   if (!result) return -EINVAL;
   *result = nullptr;
-  if (device < 0 || device > 3 || !tokens || tokens > ple_host::kMaxTokens || !packet_device || !output_device)
+  if (device < 0 || device >= ple_host::kDeviceCount || !tokens || tokens > ple_host::kMaxTokens || !packet_device ||
+      !output_device)
     return -EINVAL;
   int current;
   int status = aclrtGetDevice(&current);
@@ -137,7 +138,8 @@ extern "C" int ple_host_create(int device, int fd, size_t tokens, void* packet_d
                                void** result) {
   if (!result) return -EINVAL;
   *result = nullptr;
-  if (device < 0 || device > 3 || !tokens || tokens > ple_host::kMaxTokens || !packet_device || !output_device)
+  if (device < 0 || device >= ple_host::kDeviceCount || !tokens || tokens > ple_host::kMaxTokens || !packet_device ||
+      !output_device)
     return -EINVAL;
   int current;
   int status = aclrtGetDevice(&current);

@@ -11,7 +11,7 @@ from tools.qwen4exp.ple_storage import integer
 HEADS = 16
 ROW_BYTES = 320
 MAX_TOKENS = 2048
-MAX_REQUESTS = 4
+MAX_REQUESTS = 6
 SIGNED_MAX = (1 << 63) - 1
 
 

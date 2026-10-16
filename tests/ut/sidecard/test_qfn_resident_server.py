@@ -166,8 +166,16 @@ def test_loop_thread_cannot_block_waiting_for_itself(tmp_path):
 
 @pytest.mark.parametrize("workers", [[], closed_workers()[:3], [closed_workers()[0]] * 4])
 def test_requires_four_distinct_close_receipts(workers):
-    with pytest.raises(RuntimeError, match="four distinct"):
+    with pytest.raises(RuntimeError, match="4 distinct"):
         server.validate_closed_workers(workers)
+
+
+def test_six_rank_close_receipts_require_every_rank():
+    workers = [dict(rank=rank, enabled=True, state="closed") for rank in range(6)]
+    server.validate_closed_workers(workers, expected_ranks=6)
+    for invalid in (workers[:4], workers[:5] + [workers[0]]):
+        with pytest.raises(RuntimeError, match="6 distinct"):
+            server.validate_closed_workers(invalid, expected_ranks=6)
 
 
 def test_factory_retirement_precedes_inner_shutdown_and_proxy_headers_disabled(tmp_path):

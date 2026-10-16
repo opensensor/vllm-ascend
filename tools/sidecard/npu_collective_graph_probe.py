@@ -2,7 +2,7 @@
 """Explicit fixed-handshake Torch graph gate, separate from model qualification.
 
 Use the pinned facade configuration with execution_mode="graph" and algorithm
-"recursive-doubling-fixed". One separate stream owns eager warmup, capture,
+"recursive-doubling-fixed" or "binomial". One separate stream owns eager warmup, capture,
 changed-input replay and interleaved eager calls. Failed workers retain graphs,
 streams, tensors and native owners without automatic recovery or process kills.
 """
@@ -37,9 +37,9 @@ def validate(config):
     if (
         type(config) is not dict
         or config.get("execution_mode") != "graph"
-        or config.get("algorithm") != "recursive-doubling-fixed"
+        or config.get("algorithm") not in ("recursive-doubling-fixed", "binomial")
     ):
-        raise ValueError("graph probe requires explicit graph mode and recursive-doubling-fixed")
+        raise ValueError("graph probe requires explicit graph mode and a fixed-address handshake algorithm")
     return eager.validate(config)
 
 
@@ -365,6 +365,7 @@ def comparisons(config, ranks):
     if type(ranks) is not list or len(ranks) != len(config["physical_devices"]):
         raise ValueError("one graph report per assigned rank is required")
     result = []
+    expected_history = json.dumps(final_history(config), sort_keys=True, allow_nan=False)
     geometries = [dict(**geometry, operations=count) for geometry in config["geometries"] for count in CAPTURE_COUNTS]
     for index, geometry in enumerate(geometries):
         samples = []
@@ -388,9 +389,7 @@ def comparisons(config, ranks):
                 )
             ):
                 raise ValueError("graph rank identity, ownership or retirement differs")
-            if json.dumps(report["final_recapture_history"], sort_keys=True, allow_nan=False) != json.dumps(
-                final_history(config), sort_keys=True, allow_nan=False
-            ):
+            if json.dumps(report["final_recapture_history"], sort_keys=True, allow_nan=False) != expected_history:
                 raise ValueError("final graph recapture replay order, coverage or numerical result differs")
             captures = report["captures"]
             if type(captures) is not list or len(captures) != len(geometries):

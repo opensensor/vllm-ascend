@@ -56,7 +56,7 @@ def geometry():
         {"tokens": 0},
         {"tokens": 2049},
         {"requests": 0},
-        {"requests": 5},
+        {"requests": 7},
         {"tokens": True},
         {"requests": 1.5},
         {"eos": -1},

@@ -125,23 +125,26 @@ class QfnResidentClient(ResidentClient):
         return json.loads(data) if data else None
 
 
-def validate_closed_workers(workers):
+def validate_closed_workers(workers, expected_ranks=EXPECTED_RANKS):
+    if type(expected_ranks) is not int or expected_ranks < 1:
+        raise ValueError("expected_ranks must be a positive integer")
     if (
         not isinstance(workers, list)
-        or len(workers) != EXPECTED_RANKS
+        or len(workers) != expected_ranks
         or any(not isinstance(worker, dict) for worker in workers)
-        or {worker.get("rank") for worker in workers} != set(range(EXPECTED_RANKS))
+        or {worker.get("rank") for worker in workers} != set(range(expected_ranks))
         or any(worker.get("enabled") is not True or worker.get("state") != "closed" for worker in workers)
     ):
-        raise RuntimeError("custom collective shutdown requires four distinct closed worker receipts")
+        raise RuntimeError(f"custom collective shutdown requires {expected_ranks} distinct closed worker receipts")
 
 
 class CollectiveShutdownGuard:
     """Drain/retire peers before any upstream synchronous engine shutdown."""
 
-    def __init__(self, engine, receipt_path):
+    def __init__(self, engine, receipt_path, *, expected_ranks=EXPECTED_RANKS):
         self.engine = engine
         self.receipt_path = Path(receipt_path)
+        self.expected_ranks = expected_ranks
         self.loop = asyncio.get_running_loop()
         self.loop_thread = threading.get_ident()
         self.original_shutdown = engine.shutdown
@@ -158,7 +161,7 @@ class CollectiveShutdownGuard:
                 # instead uses the existing clear-cache/reset/capture workflow.
                 await self.engine.pause_generation(mode="wait", clear_cache=False)
                 workers = await self.engine.collective_rpc("npu_collective_close", timeout=CLOSE_TIMEOUT_SECONDS)
-                validate_closed_workers(workers)
+                validate_closed_workers(workers, self.expected_ranks)
                 self.receipt_path.write_text(json.dumps({"workers": workers, "closed": True}, indent=2) + "\n")
                 self.closed = True
             except Exception as error:
@@ -176,7 +179,7 @@ class CollectiveShutdownGuard:
         return self.original_shutdown(timeout=timeout)
 
 
-def install_server_hooks(entry, *, token, receipt_path, engine_control=False):
+def install_server_hooks(entry, *, token, receipt_path, engine_control=False, expected_ranks=EXPECTED_RANKS):
     """Patch one API process before construction; preserve public HTTP routing."""
     original_factory = entry.build_async_engine_client_from_engine_args
     original_build_app = entry.build_app
@@ -189,7 +192,7 @@ def install_server_hooks(entry, *, token, receipt_path, engine_control=False):
     @asynccontextmanager
     async def factory(*args, **kwargs):
         async with original_factory(*args, **kwargs) as engine:
-            guard = CollectiveShutdownGuard(engine, receipt_path)
+            guard = CollectiveShutdownGuard(engine, receipt_path, expected_ranks=expected_ranks)
             engine.shutdown = guard.shutdown
             try:
                 yield engine
@@ -232,6 +235,7 @@ def main():
     parser.add_argument("--control-token-file", type=Path, required=True)
     parser.add_argument("--close-receipt", type=Path, required=True)
     parser.add_argument("--engine-control", action="store_true", help="Enable authenticated, drained engine updates")
+    parser.add_argument("--expected-ranks", type=int, default=EXPECTED_RANKS)
     parser.add_argument(
         "--dma-reserve-device",
         type=int,
@@ -242,6 +246,8 @@ def main():
     )
     parser.add_argument("server_args", nargs=argparse.REMAINDER)
     args = parser.parse_args()
+    if args.expected_ranks < 1:
+        parser.error("--expected-ranks must be positive")
     server_args = args.server_args
     if server_args and server_args[0] == "--":
         server_args = server_args[1:]
@@ -262,7 +268,13 @@ def main():
         # import vLLM/Torch or initialize the NPU runtime.
         from vllm.entrypoints.launchers.api_server import entry
 
-        install_server_hooks(entry, token=token, receipt_path=args.close_receipt, engine_control=args.engine_control)
+        install_server_hooks(
+            entry,
+            token=token,
+            receipt_path=args.close_receipt,
+            engine_control=args.engine_control,
+            expected_ranks=args.expected_ranks,
+        )
         # Invoke the in-process API entry directly. CLI ServeSubcommand may spawn
         # frontends (e.g. Rust/multi-API mode), which would lose these cold hooks.
         # EngineCore and TP workers still use the qualified subprocess executor.

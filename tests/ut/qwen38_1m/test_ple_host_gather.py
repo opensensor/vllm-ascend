@@ -49,7 +49,7 @@ extern "C" int gather(const void* table, size_t bytes, const void* packet, size_
     return function
 
 
-@pytest.mark.parametrize("tokens", [1, 3, 12])
+@pytest.mark.parametrize("tokens", [1, 3, 12, 15, 18])
 def test_scattered_duplicates_and_page_crossing(native, tokens):
     rows = [12, 0, 63, 12, *range(20, 32)] * tokens
     table = bytes((i * 17 + 13) % 251 for i in range(64 * 320))
@@ -75,7 +75,7 @@ def test_rejects_entire_request_before_writing(native, bad):
         receipts = ctypes.cast(ctypes.byref(packet, tokens * 16 * 8), ctypes.POINTER(ctypes.c_int32))
         receipts[2 * 8] = 2
     output = ctypes.create_string_buffer(b"x" * (tokens * 5120), tokens * 5120)
-    count = 0 if bad == "zero_tokens" else 13 if bad == "too_many" else tokens
+    count = 0 if bad == "zero_tokens" else 19 if bad == "too_many" else tokens
     size = 63 if bad == "unaligned_table" else len(table)
     assert native(table, size, packet, count, output) != 0
     assert output.raw == b"x" * len(output)

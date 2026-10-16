@@ -14,10 +14,11 @@ import time
 from collections import Counter, deque
 from pathlib import Path
 
+from tools.qwen4exp.ple_request import MAX_REQUESTS as MAX_NATIVE_REQUESTS
 from tools.qwen4exp.ple_request import PLERequestGeometry
 
-MAX_DECODE_TOKENS = 12
 MAX_REQUESTS = 4
+TOKENS_PER_REQUEST = 3
 PRODUCER_POLL_US = 40
 
 
@@ -30,11 +31,13 @@ def open_table(metadata):
     return fd
 
 
-def request_count(tokens, starts, history, starts_cpu):
-    """Admit metadata without a device readback; reject a fifth padding group."""
-    if not 1 <= tokens <= MAX_DECODE_TOKENS or starts is None or history is None or starts_cpu is None:
+def request_count(tokens, starts, history, starts_cpu, *, max_requests=MAX_REQUESTS):
+    """Admit metadata without a device readback; reject excess padding groups."""
+    if type(max_requests) is not int or not 1 <= max_requests <= MAX_NATIVE_REQUESTS:
+        raise ValueError("native PLE supports one to six requests")
+    if not 1 <= tokens <= TOKENS_PER_REQUEST * max_requests or starts is None or history is None or starts_cpu is None:
         return None
-    count = min(MAX_REQUESTS, history.shape[0])
+    count = min(max_requests, history.shape[0])
     if history.ndim != 2 or history.shape[1] != 2 or starts.numel() < count + 1:
         return None
     if int(starts_cpu[count]) != tokens:
@@ -151,6 +154,9 @@ class Lookup:
 
 class ServingPLE:
     def __init__(self, config):
+        self.max_requests = config.get("max_requests", MAX_REQUESTS)
+        if type(self.max_requests) is not int or not 1 <= self.max_requests <= MAX_NATIVE_REQUESTS:
+            raise ValueError("native PLE supports one to six requests")
         self.metadata = json.loads(Path(config["table"]).read_text())
         self.fd = open_table(self.metadata)
         self.lib = load_library(config["library"], config["library_sha256"])
@@ -242,7 +248,13 @@ def make_replacements(config, *, manager=None):
         ngram_context_cpu=None,
     ):
         count = (
-            request_count(input_ids.shape[0], query_start_loc, ngram_context, query_start_loc_cpu)
+            request_count(
+                input_ids.shape[0],
+                query_start_loc,
+                ngram_context,
+                query_start_loc_cpu,
+                max_requests=manager.max_requests,
+            )
             if manager.enabled
             else None
         )

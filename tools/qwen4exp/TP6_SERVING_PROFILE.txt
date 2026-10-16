@@ -1,0 +1,160 @@
+QFN on three Ascend cards / six 310P3 devices — October 16, 2026
+================================================================
+
+Scope
+-----
+The previous resident-live-v16 used TP4/EP4, four request slots and a
+262,144-token per-request limit, with roughly 1M tokens of aggregate cache.
+It was not a validated single 1M-token context. The selected TP6 profile keeps
+262,144 tokens per request and increases concurrency to six. It does not add
+YaRN or claim accuracy at a single 1M-token context.
+
+Host: matteius@192.168.53.187
+Endpoint: http://192.168.53.187:8001/v1
+Model ID: qwen38-flash-next
+Checkpoint: /srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-TP6-MTP-20261010
+Profile root: /srv/ai/storage/artifacts/qfn-tp6-scaleout-20261016
+Runtime root: <profile root>/runtime
+
+Configuration
+-------------
+* TP6/EP6 across devices 0..5, paired cards [0,1], [2,3], [4,5].
+* FP16 activations; native W4 target experts; grouped W8 draft experts;
+  dynamic W8 head; FP16 PLE projection; two MTP draft tokens.
+* Six sequences; max model length 262144; batch token ceiling 2048;
+  memory utilization .955; KV cache fraction .95.
+* Profiled cache allocation, not the old TP4 fixed-byte allocation.
+* Bounded prefix-state retention: 32 checkpoints plus working windows.
+* QwenPrefillPacedScheduler: 200 ms target, 128-token initial/minimum,
+  640-token maximum chunks, eight decode-only steps, smoothing .25.
+* Qualified custom binomial collective, graph replay tracking off, 16
+  geometries; decode graph sizes [3,6,12,18]. MTP and EP remain enabled.
+* Exact HC residual and shared operands for admitted eager prefill shapes.
+* Native PLE device hashing plus host-assisted gather/DMA, six requests and
+  up to 18 tokens. One sealed 95.37 GiB host table is shared by all ranks.
+  Each rank shares its populated mapping across lookup shapes.
+* Existing driver DMA query spin budget 5 us; no driver or firmware replacement.
+* Six CPU worker masks and authenticated thermal holds at 94 C, resume 85 C.
+* Language-model-only. Multimodal disabled; FlashComm1 disabled in favor of
+  the qualified custom collective. This profile does not validate those paths.
+
+The planner reports 1,710,425 cache tokens, equivalent to 6.52 full 256K
+requests. Six simultaneous fully populated 256K contexts have NOT been tested.
+This is cache capacity, not a six-session long-context accuracy certification.
+
+Do not blindly restore the TP4 resident owner bundle. Its queued scheduler,
+device Mamba commit inputs and local expert packing/finalization assume TP4
+slot/head/expert geometry. The TP6 profile retains compatible cold runtime
+optimizations and separately qualified HC/PLE owners. It is not a claim that
+every October 16 TP4 optimization has been ported to six devices.
+
+Restore on this host
+--------------------
+Use a fresh run directory for every launch; never reuse collective owners.
+The qualified runtime contains both the committed Python tree and coherent
+operator binaries. An archive of the Python repository alone replaces the
+packaged OPP symlink with an empty directory: preserve the actual package.
+The launch scripts validate required package directories and use the prior
+qualified TP6 native extension. No transformers or CANN upgrade is needed.
+
+From the profile root:
+  python3 launch.py NEW_VERSION
+  # Wait for /health and /v1/models, then:
+  bash run.sh restore.py resident-NEW_VERSION
+
+restore.py qualifies exact HC against loaded weights, installs it through the
+resident transaction, attaches PLE without replacing existing graph/patch
+owners, runs a real shared-prefix six-request verification, then disables
+shadow comparisons. It stops on failure and preserves ownership for inspection.
+Do not run it twice against the same session.
+
+The PLE table owner must already be alive. After a host restart, create a fresh
+owner with tools.qwen4exp.serve_ple_table using the base 300i checkpoint and
+ple-table-source.json, then run prepare-ple.py. It verifies that the TP6 overlay
+resolves to identical PLE checkpoint files before binding table metadata to the
+overlay. Old /proc/PID/fd paths are invalid after the owner exits. Keep the owner
+alive across server restarts; do not allocate six separate copies of the table.
+
+Build the native host library using PLE_HOST_GATHER.txt, then run
+ple-transport-gate.py --rank N separately for each N in 0..5. The selector build
+must include max_requests=6 and the current native source; build it with the
+CANN installation root, not its x86_64-linux subdirectory. launch.py checks
+all six transport receipts against the exact host-library digest.
+
+Validation and rejected candidates
+----------------------------------
+* Custom collective: changed inputs, FP16/FP32, all 16 geometries, multiple
+  capture counts, eager interleave, opposite replay order, graph retirement,
+  and clean six-worker process exits passed the full private gate. An earlier
+  small probe passed math but failed process teardown; it was rejected and
+  followed by a clean repeated gate and full gate.
+* QSA CPU-reference gate passed TP6 widths/heads and rows 3,18,65.
+* Selector: real checkpoint hash parameters, one through six request groups,
+  18-token decode, 2048-token prefill hashing, empty groups, EOS, malformed
+  boundaries and invalid tokens passed. Hashing alone does not validate DMA.
+* Transport: all six devices passed exact real-table row/payload comparisons
+  at 1,3,6,9,12,15,18 tokens, four/six groups and three input revisions; all 14
+  private owners per device closed successfully. CPU tests cover rejection
+  beyond 18 tokens and invalid packet receipts.
+* Joined HC projection failed exactness at 12 tokens (max abs difference
+  .00390625). Excluded. The replacement preserves original projection math;
+  real HC weights at 3,6,12,18,256 rows and native edge cases passed exactly.
+* The first PLE attachment used an old host library bounded to four devices
+  and 12 tokens. It failed before method replacement. All collective ranks
+  were explicitly retired before terminating that paused session. Worker
+  admission errors now return receipts instead of leaving unread RPC replies
+  that interfere with shutdown. The fresh session uses the qualified library.
+* Shared-prefix retrieval passed cold at 5704 tokens, then all six concurrent
+  branches returned the correct passphrase and reused 5632 prefix tokens.
+  Six additional 256-token completions exercised the full 18-token decode
+  shape under live PLE shadow comparisons on all ranks.
+* Baseline HTTP smoke passed arithmetic, counting, indexing, capital and tool
+  calling. One word-reversal question was wrong (DNESCA instead of DNECSA).
+  This is not a comprehensive accuracy evaluation.
+
+Measurements
+------------
+Baseline before pacing and resident HC/PLE restoration, fixed prompt budgets:
+C1 median streaming decode: 30.89 tokens/s (three 256-token completions).
+C6 aggregate end-to-end: 73.98 tokens/s (six 128-token completions).
+Restored paced profile with the same prompt/output budgets:
+C1 median streaming decode: 33.96 tokens/s.
+C6 aggregate end-to-end: 69.26 tokens/s.
+A longer six-by-512-token trial reached 79.86 aggregate end-to-end tokens/s;
+its repeated C1 median was 32.69 tokens/s. Budgets differ: do not compare
+79.86 directly with the 128-token baseline.
+The earlier baseline preceded pacing: this is a complete-profile comparison,
+not an isolated HC/PLE A/B. Pacing protects existing decoders but delays new
+admissions, reducing the short C6 end-to-end rate in this sample.
+
+An uncached 8192-token prompt arriving during a 512-token generation reduced
+that generation from 32.33 to 19.99 tokens/s; the maximum post-arrival chunk
+gap was 0.59 seconds. The long request TTFT was 37.50 seconds. This validates
+one overlapping long prefill, not six simultaneous full-context prefills.
+
+C6 includes prefill time. Do not compare it directly to historical C4 rates,
+and do not attribute prefill fusion changes to decode speed.
+
+Current serving results and retained owner audit are recorded in the adjacent
+artifact summary. Full raw logs remain on the host under the profile root.
+
+Host memory and swap
+--------------------
+The 256 GiB /srv/ai/storage/swapfile on the 4 TB drive is persistent at priority
+10; total swap is approximately 360 GiB including the two existing swap files.
+The loaded shared PLE table does not require swapping under the measured short
+workloads. Swap capacity is an emergency buffer, not fast model cache.
+
+Repository validation
+---------------------
+77 targeted sidecard tests and 58 PLE tests passed. Scoped manual pre-commit
+hooks passed for every delivered file, including native formatting and docs.
+The required bash format.sh ci was run in an isolated checkout; it fails on
+historical artifact formatting/spelling and forbidden imports outside this
+change. A clean-HEAD run reproduced those baseline failures. The ordinary
+local pytest root also cannot collect with this environment's missing
+vllm.third_party.flash_linear_attention dependency; targeted tests use
+--confcutdir to avoid that unrelated root fixture. Hardware qualification uses
+the actual TP6 checkpoint, not dummy weights. Full benchmark output and large
+owner receipts remain on the host; compact committed evidence identifies their
+SHA256 hashes. Fork Actions remain disabled.

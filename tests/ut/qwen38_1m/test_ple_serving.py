@@ -32,6 +32,15 @@ def test_missing_host_layout_falls_back():
     assert request_count(3, None, None, None) is None
 
 
+@pytest.mark.parametrize("tokens", [3, 6, 12, 15, 18])
+def test_six_request_layout_and_excess_padding(tokens):
+    history = SimpleNamespace(shape=(7, 2), ndim=2)
+    starts = SimpleNamespace(numel=lambda: 8)
+    assert request_count(tokens, starts, history, [0] + [tokens] * 7, max_requests=6) == 6
+    assert request_count(tokens, starts, history, [0] * 7 + [tokens], max_requests=6) is None
+    assert request_count(19, starts, history, [0] + [19] * 7, max_requests=6) is None
+
+
 def test_shared_mapping_survives_owner_descriptor_close():
     original = os.memfd_create("ple-test", os.MFD_ALLOW_SEALING)
     try:
@@ -105,7 +114,8 @@ def test_attachment_preserves_resident_stack_and_never_recaptures(tmp_path, chan
     assert (tmp_path / "receipt/receipt.json").exists()
 
 
-def test_engine_attachment_retains_owners_and_existing_rpc(monkeypatch):
+@pytest.mark.parametrize("max_requests", [4, 6])
+def test_engine_attachment_retains_owners_and_existing_rpc(monkeypatch, max_requests):
     target = ModuleType("ple_attachment_test")
     original = lambda: "original"
     target.forward = original
@@ -132,10 +142,10 @@ def make_replacements(config, *, manager):
         qfn_cpu_profile_stop=original,
     )
     namespace = {}
-    exec(engine_source("install", adapter, {}), namespace)
+    exec(engine_source("install", adapter, {"max_requests": max_requests}), namespace)
     assert namespace["operation"](worker)["passed"]
     state = worker._qfn_native_ple_serving
-    assert len(state["manager"].lookups) == 4
+    assert len(state["manager"].lookups) == max_requests
     assert state["originals"][0][2] is original
     assert worker.qfn_cpu_profile_stop is original
     assert target.forward() == "native"
@@ -146,9 +156,12 @@ def make_replacements(config, *, manager):
         assert status["verify"] == (action == "verify")
         assert worker._qfn_native_ple_serving is state
         assert worker.qfn_cpu_profile_stop is original
-    exec(engine_source("install", adapter, {}), namespace)
-    with pytest.raises(RuntimeError, match="already exists"):
-        namespace["operation"](worker)
+    exec(engine_source("install", adapter, {"max_requests": max_requests}), namespace)
+    receipt = namespace["operation"](worker)
+    assert receipt["passed"] is False
+    assert receipt["rank"] == 0
+    assert "already exists" in receipt["error"]
+    assert worker._qfn_native_ple_serving is state
 
 
 def test_lookup_shapes_reuse_admitted_mapping_and_retain_failed_owner(monkeypatch):

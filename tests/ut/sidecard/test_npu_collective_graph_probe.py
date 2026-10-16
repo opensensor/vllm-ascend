@@ -35,6 +35,17 @@ def config(tmp_path):
     return result
 
 
+def test_six_rank_binomial_graph_config(config):
+    config.update(algorithm="binomial", physical_devices=list(range(6)), link_groups=[[0, 1], [2, 3], [4, 5]])
+    assert probe.validate(config) == config
+    config["algorithm"] = "recursive-doubling-fixed"
+    with pytest.raises(ValueError, match="power"):
+        probe.validate(config)
+    config["algorithm"] = "recursive-doubling"
+    with pytest.raises(ValueError, match="fixed-address"):
+        probe.validate(config)
+
+
 class Tensor:
     def __init__(self, env, raw, dtype, case, device="cpu"):
         self.env, self.raw, self.dtype, self.case, self.device = env, raw, dtype, case, device

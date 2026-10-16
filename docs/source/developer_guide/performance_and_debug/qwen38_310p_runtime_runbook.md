@@ -116,6 +116,18 @@ widens the mean gain. See `tools/qwen4exp/LOCAL_ROUTE_EPILOGUE_PROFILE.txt` and
 limits, build hashes, and final runtime checks. Existing graph owners, CPU
 reductions, local packing, shared HC operands and PLE remain in place.
 
+## Three-card serving profile
+
+The October 16 six-device profile keeps a 262,144-token per-request limit and
+six request slots. Its cache planner reports 1,710,425 tokens (6.52 full 256K
+requests); filling all six windows remains unvalidated. This is separate from
+the older single-context YaRN experiment. See
+`tools/qwen4exp/TP6_SERVING_PROFILE.txt` and
+`artifacts/qfn-tp6-scaleout-20261016` for the qualified TP6 collective, expanded
+native PLE transport, exact HC restoration, benchmark evidence and launch steps.
+The TP4 queued scheduler and local expert fusion bundle require separate TP6
+geometry qualification; do not install them unchanged into this profile.
+
 ## Sources of truth
 
 - Develop changes on the repository's current main branch, then deploy them as

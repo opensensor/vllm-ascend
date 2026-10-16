@@ -8,6 +8,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from tools.qwen4exp.ple_request import MAX_REQUESTS
+
 ENTRY = "qwen_ple_request_v1"
 
 
@@ -70,6 +72,7 @@ def build(root, output, cann, bridge_build):
     )
     manifest = dict(
         entry=ENTRY,
+        max_requests=MAX_REQUESTS,
         namespace=previous["namespace"],
         sources=files,
         bridge=dict(path=str(bridge), sha256=digest(bridge)),

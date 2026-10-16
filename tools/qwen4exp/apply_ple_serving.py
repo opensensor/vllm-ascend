@@ -9,6 +9,14 @@ from pathlib import Path
 
 ENGINE_SOURCE = """
 def operation(worker):
+    # Collect every rank receipt even when admission fails. Raising here leaves
+    # unread replies in the executor and breaks later drain/close RPCs.
+    try:
+        return apply_worker(worker)
+    except Exception as error:
+        return dict(rank=worker.rank, passed=False, error=str(error))
+
+def apply_worker(worker):
     import importlib
     import torch
     if worker.model_runner.execute_model_state is not None:
@@ -25,9 +33,10 @@ def operation(worker):
         replacements = ns["make_replacements"](CONFIG, manager=manager)
         torch.npu.synchronize()
         device = worker.model_runner.device
-        for tokens in (3, 6, 9, 12):
-            key = (tokens, 4, device.index)
-            manager.lookups[key] = ns["Lookup"](manager, tokens, 4, device)
+        requests = CONFIG.get("max_requests", 4)
+        for tokens in range(3, 3 * requests + 1, 3):
+            key = (tokens, requests, device.index)
+            manager.lookups[key] = ns["Lookup"](manager, tokens, requests, device)
         # Leave scheduler, resident PatchSession, RPC controls and graphs live.
         for target, replacement in replacements.items():
             module, attributes = target.split(":")
@@ -60,7 +69,9 @@ class Candidate:
     def apply(self, engine):
         self.validate(engine)
         workers = engine.model_executor.collective_rpc(operation)
-        return dict(passed=len(workers) == 4 and all(w.get("passed") for w in workers), workers=workers)
+        expected = engine.vllm_config.parallel_config.tensor_parallel_size
+        passed = len(workers) == expected and {w.get("rank") for w in workers} == set(range(expected))
+        return dict(passed=passed and all(w.get("passed") for w in workers), workers=workers)
 
 def prepare(engine):
     return Candidate()
@@ -134,12 +145,16 @@ def main():
         parser.add_argument(f"--{option}", type=Path)
     parser.add_argument("--action", choices=("install", "on", "off", "verify", "status"), default="install")
     parser.add_argument("--url", default="http://127.0.0.1:8001")
+    parser.add_argument("--expected-workers", type=int, default=4)
+    parser.add_argument("--max-requests", type=int, choices=range(1, 7), default=4)
     args = parser.parse_args()
     config, adapter = None, ""
     if args.action == "install":
         if any(value is None for value in (args.table, args.library, args.selector_build)):
             parser.error("install requires --table, --library and --selector-build")
         manifest = json.loads((args.selector_build / "provenance.json").read_text())
+        if args.max_requests > manifest.get("max_requests", 4):
+            raise ValueError("selector build does not admit the requested concurrency")
         binary = Path(manifest["binary"]["path"]).resolve(strict=True)
         if binary.parent != args.selector_build.resolve() or manifest["entry"] != "qwen_ple_request_v1":
             raise ValueError("selector build differs from expected contract")
@@ -147,6 +162,7 @@ def main():
             raise ValueError("selector binary differs from provenance")
         library = args.library.resolve(strict=True)
         config = dict(
+            max_requests=args.max_requests,
             table=str(args.table.resolve(strict=True)),
             library=str(library),
             library_sha256=hashlib.sha256(library.read_bytes()).hexdigest(),
@@ -155,7 +171,9 @@ def main():
         )
         adapter = Path(__file__).with_name("ple_serving.py").read_text()
     source = engine_source(args.action, adapter, config)
-    client = QfnResidentClient(args.url, args.run_root / "control.token", timeout=1800)
+    client = QfnResidentClient(
+        args.url, args.run_root / "control.token", expected_workers=args.expected_workers, timeout=1800
+    )
     result = apply(client, source, args.output)
     print(json.dumps(result["applied"], indent=2))
 
