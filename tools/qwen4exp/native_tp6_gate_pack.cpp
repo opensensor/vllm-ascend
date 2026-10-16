@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Offline candidate. Pair one gate/up quantization group per core; preserve the
+// Offline candidate. Distribute expert/group pairs across all cores; preserve the
 // original grouped accumulation and FP16 projection/activation boundaries.
 #include "tp6_local_schedule.h"
 #include "tp6_local_pack.h"
@@ -31,16 +31,11 @@ class GatePack : public native_int4::Schedule<M, N> {
     for (uint32_t group = GetBlockIdx(); group < GROUPS; group += GetBlockNum()) {
       // Every output byte is initialized, including all-peer routes. Down
       // projection can use its ordinary consumer without a private tail ABI.
-      auto gate = gate_.Get<half>();
-      auto up = output_.Get<half>();
-      Duplicate(gate, static_cast<half>(0), M * N);
-      Duplicate(up, static_cast<half>(0), M * N);
-      PipeBarrier<PIPE_V>();
       if (routed_) {
         auto cached = routeCache_.Get<int32_t>();
         for (int64_t row = 0; row < rows_; ++row) {
           const int32_t expert = cached.GetValue(row);
-          if (expert < 0 || expert >= experts_) pack_.Emit(gate, up, group, row, 1, nullptr, false);
+          if (expert < 0 || expert >= experts_) pack_.EmitZero(group, row, 1);
         }
       } else {
         const int64_t active = ends_.GetValue(experts_ - 1);
@@ -48,40 +43,46 @@ class GatePack : public native_int4::Schedule<M, N> {
           ASCENDC_ASSERT(false, { KERNEL_LOG(KERNEL_ERROR, "invalid gate-pack tail"); });
           return;
         }
-        for (int64_t row = active; row < rows_; row += M)
-          pack_.Emit(gate, up, group, row, Min(M, rows_ - row), nullptr, false);
+        if (active < rows_) pack_.EmitZero(group, active, rows_ - active);
       }
-      const uint32_t groups = routed_ ? routeGroups : experts_;
-      for (uint32_t g = 0; g < groups; ++g) {
-        const int64_t expert = routed_ ? expertIds[g] : g;
-        const int64_t begin = routed_ ? starts[g] : (g == 0 ? 0 : ends_.GetValue(g - 1));
-        const int64_t end = routed_ ? starts[g + 1] : ends_.GetValue(g);
-        if (begin < 0 || end < begin || end > rows_) {
-          ASCENDC_ASSERT(false, { KERNEL_LOG(KERNEL_ERROR, "invalid gate-pack boundaries"); });
-          return;
-        }
-        for (int64_t row = begin; row < end; row += M) {
-          const uint32_t count = Min(M, end - row);
-          ProjectHalf(expert, group, row, count);
-          auto output = output_.Get<half>();
-          Adds(gate, output, static_cast<half>(0), M * N);
-          PipeBarrier<PIPE_V>();
-          ProjectHalf(expert, group + GROUPS, row, count);
-          pack_.Emit(gate, output, group, row, count, routeRows_, routed_);
-        }
+    }
+    const uint32_t groups = routed_ ? routeGroups : experts_;
+    // Five quantization groups alone leave three of eight cores idle. Each
+    // expert/group pair owns disjoint output bytes, so distribute their cross
+    // product without introducing a reduction or cross-core synchronization.
+    for (uint32_t task = GetBlockIdx(); task < groups * GROUPS; task += GetBlockNum()) {
+      const uint32_t g = task / GROUPS, group = task % GROUPS;
+      const int64_t expert = routed_ ? expertIds[g] : g;
+      const int64_t begin = routed_ ? starts[g] : (g == 0 ? 0 : ends_.GetValue(g - 1));
+      const int64_t end = routed_ ? starts[g + 1] : ends_.GetValue(g);
+      if (begin < 0 || end < begin || end > rows_) {
+        ASCENDC_ASSERT(false, { KERNEL_LOG(KERNEL_ERROR, "invalid gate-pack boundaries"); });
+        return;
       }
+      if (begin == end) continue;
+      const uint32_t bankBytes = N * k_ / 2;
+      DataCopy(b1_.Get<int8_t>(), codes_[(expert * n_ + group * N) * k_ / 2], bankBytes);
+      DataCopy(b1_.Get<int8_t>()[bankBytes], codes_[(expert * n_ + (group + GROUPS) * N) * k_ / 2], bankBytes);
+      SetFlag<HardEvent::MTE2_MTE1>(EVENT_ID0);
+      WaitFlag<HardEvent::MTE2_MTE1>(EVENT_ID0);
+      auto gate = gate_.Get<half>();
+      for (int64_t row = begin; row < end; row += M) {
+        const uint32_t count = Min(M, end - row);
+        weightBankOffset_ = 0;
+        Project(expert, group, row, count);
+        auto output = output_.Get<half>();
+        Adds(gate, output, static_cast<half>(0), M * N);
+        PipeBarrier<PIPE_V>();
+        weightBankOffset_ = bankBytes;
+        Project(expert, group + GROUPS, row, count);
+        pack_.Emit(gate, output, group, row, count, routeRows_, routed_);
+      }
+      SetFlag<HardEvent::MTE1_MTE2>(EVENT_ID0);
+      WaitFlag<HardEvent::MTE1_MTE2>(EVENT_ID0);
     }
   }
 
  private:
-  __aicore__ inline void ProjectHalf(int64_t expert, int64_t tile, int64_t row, uint32_t count) {
-    DataCopy(b1_.Get<int8_t>(), codes_[(expert * n_ + tile * N) * k_ / 2], N * k_ / 2);
-    SetFlag<HardEvent::MTE2_MTE1>(EVENT_ID0);
-    WaitFlag<HardEvent::MTE2_MTE1>(EVENT_ID0);
-    Project(expert, tile, row, count);
-    SetFlag<HardEvent::MTE1_MTE2>(EVENT_ID0);
-    WaitFlag<HardEvent::MTE1_MTE2>(EVENT_ID0);
-  }
   TBuf<TPosition::VECCALC> gate_;
   tp6_pack::LocalPack pack_;
 };

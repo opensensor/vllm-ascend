@@ -35,6 +35,18 @@ def private_schedule(source):
         "      Store(out, tile, row, count);",
         "      // Paired gate/up consumes output_ in UB; no GM intermediate.",
     )
+    # The paired projection needs both 128-column halves for every M tile.
+    # Keep them in separate L1 banks instead of fetching both for every row
+    # tile. The frozen projection arithmetic and K accumulation stay intact.
+    text = replace_once(text, "pipe_.InitBuffer(b1_, N * MAX_K / 2);", "pipe_.InitBuffer(b1_, N * MAX_K);")
+    text = replace_once(
+        text,
+        "b1_.Get<int8_t>()[(group * GROUP + kb * K0) * BLOCK / 2]",
+        "b1_.Get<int8_t>()[weightBankOffset_ + (group * GROUP + kb * K0) * BLOCK / 2]",
+    )
+    text = replace_once(
+        text, "  TBuf<TPosition::B1> b1_;", "  uint32_t weightBankOffset_ = 0;\n  TBuf<TPosition::B1> b1_;"
+    )
     return text
 
 
@@ -101,6 +113,29 @@ class LocalPack {
         + math
         + """
     }
+  }
+  __aicore__ inline void EmitZero(int64_t group, int64_t row, int64_t count) {
+    // Exact pack(0): low nibble -8, high nibble 0, scale 1, sum +0.
+    // Avoid running exp, reductions and quantization on known peer zeros.
+    auto low = storage_.Get<int16_t>();
+    auto high = low[HALF_GROUP / sizeof(int16_t)];
+    auto scale = storage_.Get<float>()[2 * HALF_GROUP / sizeof(float)];
+    auto sum = scale[LANES];
+    Duplicate(low, static_cast<int16_t>(0x8888), HALF_GROUP / sizeof(int16_t));
+    Duplicate(high, static_cast<int16_t>(0), HALF_GROUP / sizeof(int16_t));
+    Duplicate(scale, 1.0f, LANES);
+    Duplicate(sum, 0.0f, LANES);
+    SetFlag<HardEvent::V_MTE3>(EVENT_ID0);
+    WaitFlag<HardEvent::V_MTE3>(EVENT_ID0);
+    for (int64_t current = row; current < row + count; ++current) {
+      const int64_t dst = current * 5 + group;
+      DataCopy(low_[dst * HALF_GROUP], low.ReinterpretCast<int8_t>(), HALF_GROUP);
+      DataCopy(high_[dst * HALF_GROUP], high.ReinterpretCast<int8_t>(), HALF_GROUP);
+      DataCopy(scale_[dst * LANES], scale, LANES);
+      DataCopy(sum_[dst * LANES], sum, LANES);
+    }
+    SetFlag<HardEvent::MTE3_V>(EVENT_ID0);
+    WaitFlag<HardEvent::MTE3_V>(EVENT_ID0);
   }
  private:
   TBuf<TPosition::VECCALC> storage_;

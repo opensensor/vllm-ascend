@@ -158,6 +158,50 @@ def test_native_nz_to_pack_group_mapping():
         assert torch.equal(actual, dense[:count])
 
 
+@pytest.fixture(scope="module")
+def zero_native(tmp_path_factory):
+    compiler = shutil.which("c++")
+    if compiler is None:
+        pytest.skip("host C++ compiler unavailable")
+    root = tmp_path_factory.mktemp("tp6-zero")
+    # Exercise the real generated EmitZero body with bounds/event checking.
+    # Omit the unrelated activation math, which this fixture does not model.
+    source = sources(ROOT)["tp6_local_pack.h"].decode()
+    start = source.index("  __aicore__ inline void Emit(")
+    stop = source.index("  __aicore__ inline void EmitZero(")
+    (root / "tp6_zero_local_pack.h").write_text(source[:start] + source[stop:])
+    binary = root / "zero.so"
+    subprocess.run(
+        [
+            compiler,
+            "-std=c++17",
+            "-O2",
+            "-shared",
+            "-fPIC",
+            f"-I{root}",
+            f"-I{STUBS.parent / 'streaming_cpu_stubs'}",
+            str(STUBS / "tp6_zero_harness.cpp"),
+            "-o",
+            str(binary),
+        ],
+        check=True,
+    )
+    function = ctypes.CDLL(str(binary)).run_tp6_zero
+    function.argtypes = [ctypes.c_int64, ctypes.c_int64, *([ctypes.c_void_p] * 4)]
+    function.restype = ctypes.c_int
+    return function
+
+
+@pytest.mark.parametrize("rows,active", [(1, 0), (13, 1), (65, 32), (2560, 2560), (20480, 19001)])
+def test_native_zero_pack_initializes_only_peer_tail(zero_native, rows, active):
+    low, high = (torch.full((rows, 320), 17, dtype=torch.int8) for _ in range(2))
+    scale, total = (torch.full((rows, 5, 8), 17.0) for _ in range(2))
+    assert zero_native(rows, active, *(t.data_ptr() for t in (low, high, scale, total))) == 0
+    for tensor, packed_zero in ((low, -120), (high, 0), (scale, 1), (total, 0)):
+        assert bool((tensor[:active] == 17).all())
+        assert bool((tensor[active:] == packed_zero).all())
+
+
 def test_eager_launch_failure_retains_and_poisons(monkeypatch):
     monkeypatch.setattr(native_prefill, "_on_npu", lambda device: False)
     sentinel = torch.ones(3)
