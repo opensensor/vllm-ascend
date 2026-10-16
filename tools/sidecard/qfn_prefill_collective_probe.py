@@ -14,6 +14,7 @@ import secrets
 import time
 from pathlib import Path
 
+from tools.sidecard.npu_collective_schedule import BinomialSchedule
 from tools.sidecard.qfn_allocator_diagnostic import P2P_MEMORY_CATEGORIES, read_p2p_pools
 
 HIDDEN_SIZE = 2560
@@ -70,15 +71,15 @@ def private_config(live_config, elements, dtype, output_root):
     return result
 
 
-def require_p2p_capacity(pools, elements, dtype):
+def require_p2p_capacity(pools, elements, dtype, *, peers=2):
     """Reject known-insufficient policy-3 pools; passing cannot prove allocation.
 
     The installed SDK specifies 32-byte alignment plus 32-byte padding. Physical
     page rounding, fragmentation, handles and concurrent consumers can require
     more. Only P2P huge/normal pools count toward these policy-3 owner buffers.
     """
-    budget = memory_budget(elements, dtype)
-    # N4 fixed recursive doubling: two work buffers, two inboxes per two peers.
+    budget = memory_budget(elements, dtype, peers=peers)
+    # Two work buffers plus two inboxes per schedule peer.
     payload_buffers = (budget["owner_bytes"] - WORKSPACE_BYTES) // budget["payload_bytes"]
     sizes = [budget["payload_bytes"]] * payload_buffers + [WORKSPACE_BYTES]
     padded = [
@@ -320,7 +321,7 @@ def _exercise(live, group, private, retained, geometry):
     return dict(geometry=geometry, correctness=correctness, timings=samples)
 
 
-def run_probe(worker):
+def run_probe(worker, *, members=(0, 1, 2, 3), algorithm="recursive-doubling-fixed", cases=PREFILL_CASES):
     """All ranks must call together, with suspended requests already drained."""
     from vllm.distributed import get_tp_group
 
@@ -330,10 +331,17 @@ def run_probe(worker):
         raise RuntimeError("prior private benchmark still owns resources; do not retry")
     group = get_tp_group()
     live = group.device_communicator.custom_sum
-    if live is None or live.state != "active" or tuple(live.members) != (0, 1, 2, 3):
-        raise RuntimeError("requires the qualified active four-rank serving collective")
-    if live.config["algorithm"] != "recursive-doubling-fixed":
-        raise RuntimeError("this gate targets the qualified fixed recursive-doubling schedule")
+    if live is None or live.state != "active" or tuple(live.members) != tuple(members):
+        raise RuntimeError("requires the requested active serving collective")
+    if live.config["algorithm"] != algorithm:
+        raise RuntimeError("serving algorithm differs from the requested private gate")
+    # Validate every requested shape and derive this rank's actual degree before
+    # acquiring resources. TP6 binomial roots need more inboxes than TP4 RD.
+    schedules = [
+        BinomialSchedule(tuple(members), dtype, rows * HIDDEN_SIZE, algorithm=algorithm) for rows, dtype, _ in cases
+    ]
+    if not schedules:
+        raise ValueError("at least one private geometry is required")
     retained = dict(private=None, tensors=[], events=[], state="running", completed=[])
     worker._qfn_prefill_collective_probe = retained
     try:
@@ -342,18 +350,19 @@ def run_probe(worker):
         _checked(live, retained, "initial-drain", lambda: live.torch.npu.synchronize(live.device_index))
         nonce = _exchange(live, "nonce", secrets.token_hex(16) if live.rank == live.members[0] else None)[0]
         root = Path(live.config["output_root"]) / "private-prefill-probe" / nonce
-        for index, (rows, dtype, calls) in enumerate(PREFILL_CASES):
+        for index, (rows, dtype, calls) in enumerate(cases):
             geometry = dict(dtype=dtype, elements=rows * HIDDEN_SIZE, rows=rows, observed_calls=calls)
-            budget = memory_budget(geometry["elements"], dtype)
+            peers = len(schedules[index].peers(live.rank))
+            budget = memory_budget(geometry["elements"], dtype, peers=peers)
 
-            def capacity_check(budget=budget, geometry=geometry):
+            def capacity_check(budget=budget, geometry=geometry, peers=peers):
                 free, _ = live.torch.npu.mem_get_info(live.device_index)
                 if free < budget["required_free_bytes"]:
                     raise RuntimeError("insufficient free device memory for bounded private benchmark")
                 pools = read_p2p_pools(live)
                 admission = dict(geometry=geometry, aggregate_free_bytes=int(free), p2p_pools=pools)
                 retained.setdefault("admission", []).append(admission)
-                admission.update(require_p2p_capacity(pools, geometry["elements"], geometry["dtype"]))
+                admission.update(require_p2p_capacity(pools, geometry["elements"], geometry["dtype"], peers=peers))
                 return admission
 
             _checked(live, retained, f"memory-{index}", capacity_check)

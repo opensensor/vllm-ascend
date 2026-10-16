@@ -1,0 +1,49 @@
+{
+  "host_tests": {
+    "qfn": 26,
+    "private_collective": 61,
+    "total": 87,
+    "passed": true
+  },
+  "hardware": {
+    "private_ple_comparisons": 96,
+    "exact": true,
+    "live_shadow_comparisons": 24,
+    "shadow_failed": false,
+    "smoke_requests": 4,
+    "ab_prefill_trials_per_path": 6,
+    "ab_mixed_pairs_per_path": 3
+  },
+  "full_ut_collection": "Blocked by missing vllm.third_party.flash_linear_attention in the local UT conftest",
+  "repository_lint": {
+    "command": "bash format.sh ci",
+    "passed": false,
+    "failures": [
+      "ruff check",
+      "ruff format",
+      "codespell",
+      "typos",
+      "clang-format",
+      "markdownlint",
+      "forbidden imports"
+    ],
+    "unrelated_formatter_edits_restored": 222
+  },
+  "retained": {
+    "shared_prefill_ple": true,
+    "collective_chunks": false,
+    "new_peer_buffers": false,
+    "restart": false,
+    "cache_clear": false,
+    "graph_recapture": false
+  },
+  "limitations": [
+    "Component and short-prompt performance only; not a 256K accuracy or scaling gate",
+    "Mixed-prefill timing ranges overlap",
+    "Private collective general random sums change floating-point rounding"
+  ],
+  "changed_file_checks": {
+    "command": "pre-commit run --hook-stage manual --files <all changed files>",
+    "passed": true
+  }
+}

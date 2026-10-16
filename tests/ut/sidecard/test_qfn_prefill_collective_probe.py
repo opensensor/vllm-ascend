@@ -394,3 +394,23 @@ def test_rpc_delegation_success_and_profiler_rejection():
     result = function(worker)
     assert not result["prefill_collectives"]["passed"]
     assert "finish profiling" in result["prefill_collectives"]["error"]
+
+
+def test_tp6_binomial_capacity_counts_actual_inboxes():
+    from tools.sidecard.npu_collective_schedule import BinomialSchedule
+    from tools.sidecard.qfn_prefill_collective_probe import memory_budget
+
+    schedule = BinomialSchedule(tuple(range(6)), "float32", 131 * 2560, algorithm="binomial")
+    degrees = [len(schedule.peers(rank)) for rank in schedule.members]
+    assert max(degrees) == 3
+    root = memory_budget(schedule.elements, schedule.dtype, peers=degrees[0])
+    leaf = memory_budget(schedule.elements, schedule.dtype, peers=min(degrees))
+    assert root["owner_bytes"] - leaf["owner_bytes"] == 2 * (degrees[0] - min(degrees)) * root["payload_bytes"]
+
+
+def test_tp6_root_capacity_rejects_pool_sufficient_for_tp4():
+    elements = 131 * 2560
+    pools = p2p_pools(0, 6_000_000)
+    probe.require_p2p_capacity(pools, elements, "float16", peers=2)
+    with pytest.raises(RuntimeError, match="insufficient P2P pool capacity"):
+        probe.require_p2p_capacity(pools, elements, "float16", peers=3)
