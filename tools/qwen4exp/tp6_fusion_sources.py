@@ -114,7 +114,18 @@ class LocalPack {
 
 def sources(root):
     root = Path(root)
-    headers = {name: (root / HEADER_ROOT / name).read_bytes() for name in HASHES if name != "pack"}
+    headers = {}
+    for name in HASHES:
+        if name == "pack":
+            continue
+        # Keep this experiment's compiled arithmetic independent of newer
+        # optional schedules. The byte-exact snapshot is from 139f20832.
+        path = (
+            Path("tools/qwen4exp/tp6_frozen") / f"{name}.txt"
+            if name == "native_int4_schedule.h"
+            else HEADER_ROOT / name
+        )
+        headers[name] = (root / path).read_bytes()
     for name, data in headers.items():
         if digest(data) != HASHES[name]:
             raise ValueError(f"changed pinned header: {name}")

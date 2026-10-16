@@ -36,8 +36,21 @@ class GatePack : public native_int4::Schedule<M, N> {
       Duplicate(gate, static_cast<half>(0), M * N);
       Duplicate(up, static_cast<half>(0), M * N);
       PipeBarrier<PIPE_V>();
-      for (int64_t row = 0; row < rows_; row += M)
-        pack_.Emit(gate, up, group, row, Min(M, rows_ - row), nullptr, false);
+      if (routed_) {
+        auto cached = routeCache_.Get<int32_t>();
+        for (int64_t row = 0; row < rows_; ++row) {
+          const int32_t expert = cached.GetValue(row);
+          if (expert < 0 || expert >= experts_) pack_.Emit(gate, up, group, row, 1, nullptr, false);
+        }
+      } else {
+        const int64_t active = ends_.GetValue(experts_ - 1);
+        if (active < 0 || active > rows_) {
+          ASCENDC_ASSERT(false, { KERNEL_LOG(KERNEL_ERROR, "invalid gate-pack tail"); });
+          return;
+        }
+        for (int64_t row = active; row < rows_; row += M)
+          pack_.Emit(gate, up, group, row, Min(M, rows_ - row), nullptr, false);
+      }
       const uint32_t groups = routed_ ? routeGroups : experts_;
       for (uint32_t g = 0; g < groups; ++g) {
         const int64_t expert = routed_ ? expertIds[g] : g;

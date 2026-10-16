@@ -9,6 +9,39 @@ from pathlib import Path
 from tools.qwen4exp.tp6_fusion_sources import digest, sources
 
 KERNELS = ("native_tp6_gate_pack.cpp", "native_tp6_finalize.cpp")
+ENTRIES = dict(
+    gate_pack="qwen_tp6_gate_pack_v1",
+    ordered="qwen_tp6_route_finalize_v1",
+    sequential="qwen_tp6_route_reduce_sequential_v1",
+    pairwise="qwen_tp6_route_reduce_pairwise_v1",
+)
+
+
+def verify_build(directory):
+    directory = Path(directory).resolve(strict=True)
+    receipt = json.loads((directory / "provenance.json").read_text())
+    if receipt.get("schema_version") != 1:
+        raise ValueError("unsupported TP6 fusion manifest")
+    if receipt.get("entries") != ENTRIES:
+        raise ValueError("unexpected TP6 fusion entry points")
+    required = {"native_tp6_gate_pack.bin", "native_tp6_finalize.bin"}
+    if set(receipt["binaries"]) != required:
+        raise ValueError("both compiled fusion binaries are required")
+    if set(receipt["sources"]) != {
+        *KERNELS,
+        "native_int4_schedule.h",
+        "native_int4_route_groups.h",
+        "qwen_w4_a8_int4_matmul_v310_tiling_data.h",
+        "tp6_local_schedule.h",
+        "tp6_local_pack.h",
+    }:
+        raise ValueError("incomplete fusion source manifest")
+    for section in ("sources", "binaries"):
+        for name, checksum in receipt[section].items():
+            path = directory / name
+            if Path(name).name != name or path.is_symlink() or digest(path.read_bytes()) != checksum:
+                raise ValueError("fusion artifact identity changed")
+    return receipt
 
 
 def stage(root, destination):
@@ -25,12 +58,7 @@ def stage(root, destination):
         hardware_validated=False,
         device_opened=False,
         server_modified=False,
-        entries=dict(
-            gate_pack="qwen_tp6_gate_pack_v1",
-            ordered="qwen_tp6_route_finalize_v1",
-            sequential="qwen_tp6_route_reduce_sequential_v1",
-            pairwise="qwen_tp6_route_reduce_pairwise_v1",
-        ),
+        entries=ENTRIES,
     )
     (destination / "provenance.json").write_text(json.dumps(receipt, indent=2) + "\n")
     return receipt
@@ -45,6 +73,7 @@ def compile_staged(destination, compiler, cann):
     if receipt["binaries"] or any((destination / Path(n).with_suffix(".bin")).exists() for n in KERNELS):
         raise ValueError("preserve existing binary evidence; stage a fresh directory")
     target = cann / "tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0"
+    receipt["compiler"] = dict(path=str(compiler), sha256=digest(compiler.read_bytes()), cann_root=str(cann))
     for name in KERNELS:
         binary = destination / Path(name).with_suffix(".bin")
         subprocess.run(

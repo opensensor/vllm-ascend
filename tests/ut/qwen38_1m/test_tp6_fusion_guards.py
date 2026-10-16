@@ -8,6 +8,7 @@ import pytest
 import torch
 
 from tools.qwen4exp import tp6_fusion_sources, tp6_fusions, tp6_operand_reuse
+from tools.qwen4exp.build_tp6_fusions import ENTRIES
 
 
 def test_failed_submission_keeps_operands_and_blocks_reuse():
@@ -39,7 +40,20 @@ def test_build_identity_rejects_modified_binary(tmp_path):
         data = name.encode()
         (tmp_path / name).write_bytes(data)
         binaries[name] = tp6_fusion_sources.digest(data)
-    receipt = {"schema_version": 1, "sources": {}, "binaries": binaries}
+    names = (
+        "native_tp6_gate_pack.cpp",
+        "native_tp6_finalize.cpp",
+        "native_int4_schedule.h",
+        "native_int4_route_groups.h",
+        "qwen_w4_a8_int4_matmul_v310_tiling_data.h",
+        "tp6_local_schedule.h",
+        "tp6_local_pack.h",
+    )
+    sources = {}
+    for name in names:
+        (tmp_path / name).write_bytes(b"identity-test-fixture")
+        sources[name] = tp6_fusion_sources.digest(b"identity-test-fixture")
+    receipt = {"schema_version": 1, "sources": sources, "binaries": binaries, "entries": ENTRIES}
     (tmp_path / "provenance.json").write_text(json.dumps(receipt))
     assert tp6_fusions.verify_build(tmp_path) == receipt
     (tmp_path / "native_tp6_finalize.bin").write_bytes(b"changed")

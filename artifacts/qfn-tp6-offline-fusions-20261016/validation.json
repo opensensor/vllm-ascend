@@ -1,0 +1,66 @@
+{
+  "status": "offline candidates; hardware and serving qualification pending",
+  "base_commit": "139f20832",
+  "hardware_executed": false,
+  "server_modified": false,
+  "native_compile": {
+    "passed": true,
+    "architecture": "dav-2002",
+    "device_opened": false,
+    "directory": "/srv/ai/storage/artifacts/qfn-tp6-fusions-offline-stage-v1/final-build"
+  },
+  "bridge": {
+    "path": "/srv/ai/storage/artifacts/qfn-tp6-scaleout-20261016/hc-producer-v3/qwen_hc_residual_producer_v1.so",
+    "sha256": "9a6ae09b97983205b0e874dd6fa3bbbd8484f04e254bb1f47667132202c7270e"
+  },
+  "tests": {
+    "passed": 163,
+    "new_tests": 49,
+    "scope": "TP6 candidates and admission guards, retained local finalizer and native INT4 route groups"
+  },
+  "full_test_collection": {
+    "passed": false,
+    "missing_dependencies": [
+      "modelscope",
+      "vllm.third_party.flash_attn"
+    ]
+  },
+  "scoped_lint_passed": true,
+  "full_format_check": {
+    "passed": false,
+    "command": "bash format.sh ci",
+    "scope": "isolated full checkout",
+    "existing_failures": [
+      "ruff",
+      "formatting",
+      "spelling",
+      "markdownlint",
+      "forbidden imports"
+    ],
+    "new_files_modified": false,
+    "integration_base": "9b383dd85b8eee1265256a9a6b478f161dba3328"
+  },
+  "ci_actions_enabled": false,
+  "measured_speedup": null,
+  "limitations": [
+    "Gate/pack native arithmetic is compiled but not executed; CPU coverage checks layout only.",
+    "Native finalizer CPU harness does not simulate asynchronous device scheduling.",
+    "Five gate/pack cores participate; N=128 and repeated weight loads may regress speed.",
+    "Fused FP32 sums may differ from retained backend order.",
+    "Quick hardware matrix excludes large prefill and is not a serving gate.",
+    "Real-weight, graph, all-rank and end-to-end serving qualification remain pending."
+  ],
+  "evidence_sha256": {
+    "compile-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tests-final.log": "25e6c7e8bbb25ff2219ad699b1d6bf8817f4744ad9d21a030cd5ac79a6028cc6",
+    "full-test-collection.log": "d3bb93afd3fa4260f88678e3f6ab7362badd877998cd9e6ea2a3f4da2f5fd113",
+    "full-lint.log": "e827225b1badac1dae72ff6c09155547f59bcc9667fc38ddf8391d4f7ad15bf5",
+    "integrated-tests.log": "39e9a5124295120477150a5b450ef90fbdb8bb45b575c14963ccb0f5e3b8c42a",
+    "integrated-tests-final.log": "470c57f33477676ff9f3fda5a17f97f2168d09c34fdc9c086beb98a79a7751f7",
+    "integrated-full-lint.log": "fe0c1b5af7481b6253a079f0a2ac3503c16741f11821573e72f38196efcec6d3",
+    "integrated-lint.log": "f564b4b24139cc0be8a909e17b7c6fe72a670a495047cae0b4ca56e96206ea2b"
+  },
+  "integration_base": "9b383dd85b8eee1265256a9a6b478f161dba3328",
+  "frozen_int4_schedule": "tools/qwen4exp/tp6_frozen/native_int4_schedule.h.txt",
+  "compiled_sources_identical_after_integration": true
+}

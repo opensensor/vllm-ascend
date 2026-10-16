@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 """Private eager TP6 operators. Importing never loads a library or patches a model."""
 
-import json
 from pathlib import Path
 
 import torch
 
+from tools.qwen4exp.build_tp6_fusions import verify_build
 from tools.qwen4exp.native_prefill import NativeResource, _capturing, _tensors_on_one_device
 from tools.qwen4exp.tp6_fusion_sources import digest
 
@@ -14,22 +14,6 @@ TOP_K = 10
 WIDTH = 2560
 MODES = ("ordered", "sequential", "pairwise")
 NAMESPACE = "qwen_hc_residual_producer_v1"
-
-
-def verify_build(directory):
-    directory = Path(directory).resolve(strict=True)
-    receipt = json.loads((directory / "provenance.json").read_text())
-    if receipt.get("schema_version") != 1:
-        raise ValueError("unsupported TP6 fusion manifest")
-    required = {"native_tp6_gate_pack.bin", "native_tp6_finalize.bin"}
-    if set(receipt["binaries"]) != required:
-        raise ValueError("both compiled fusion binaries are required")
-    for section in ("sources", "binaries"):
-        for name, checksum in receipt[section].items():
-            path = directory / name
-            if Path(name).name != name or path.is_symlink() or digest(path.read_bytes()) != checksum:
-                raise ValueError("fusion artifact identity changed")
-    return receipt
 
 
 class EagerResource(NativeResource):
@@ -62,6 +46,8 @@ class GatePack(EagerResource):
         if len(prepared) != 4 or bank.weight.ndim != 3:
             raise ValueError("require four packed operands and a TP6 gate bank")
         low, high, scale, total = prepared
+        if low.ndim != 2:
+            raise ValueError("packed activations must have two dimensions")
         device = low.device
         self.preflight(device)
         experts = bank.weight.shape[0]
@@ -112,6 +98,8 @@ class Finalize(EagerResource):
 
     def __call__(self, routed, inverse, weights, ends):
         self.preflight(routed.device)
+        if routed.ndim != 2:
+            raise ValueError("routed projection must have two dimensions")
         rows = routed.shape[0]
         if (
             not 0 < rows <= MAX_ROUTES
