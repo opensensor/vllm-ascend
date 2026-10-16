@@ -99,9 +99,11 @@ def setup_runner(*, pipeline=1):
     return SimpleNamespace(**locals())
 
 
-def test_exact_source_fingerprint_and_single_early_proposer():
+@pytest.mark.parametrize("tp", [4, 6])
+def test_exact_source_fingerprint_and_single_early_proposer(tp):
     assert hashlib.sha256(SOURCE.encode()).hexdigest() == candidate.QUALIFIED_SOURCE_SHA256
     gate = setup_runner()
+    gate.runner.parallel_config.tensor_parallel_size = tp
     result = gate.patched(gate.runner, None)
     assert gate.events == ["propose", "copy_draft", "bookkeeping", "finalize"]
     assert gate.runner.execute_model_state is None

@@ -552,6 +552,16 @@ def qsa_indexer_select_groups_310(
         query_start_loc.numel(),
         max_matmul_decode_tokens,
     )
+    if 0 < capacity <= block_topk:
+        # Every visible group fits. The repair step below always replaces the
+        # sorted scores with this ascending prefix, even for NaN/Inf scores.
+        # Avoid reading keys and launching score/sort/repair operators whose
+        # results would be discarded. Keep the original width and tail types.
+        # Native repair promotes indices with positions; GEMM stores INT32.
+        selected_dtype = torch.int32 if use_matmul_score else positions.dtype
+        selected = torch.arange(selected_width, dtype=selected_dtype, device=positions.device)
+        selected = selected.expand(query.shape[0], -1).contiguous()
+        return QSAGroupSelection(selected, visible_groups.clamp_max(selected_width), tail_starts, tail_counts)
     if use_matmul_score:
         # Reuse the paged-key GEMM for long prefills and wide single-request
         # decode. At 7K visible groups and two decode queries on 310P, it

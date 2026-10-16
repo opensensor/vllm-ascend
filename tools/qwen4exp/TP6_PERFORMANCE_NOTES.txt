@@ -1,0 +1,110 @@
+TP6 performance investigation, October 16, 2026
+==============================================
+
+Profile root: /srv/ai/storage/artifacts/qfn-tp6-scaleout-20261016/perf-v8
+Endpoint: http://192.168.53.187:8001/v1
+Model: qwen38-flash-next, TP6/EP6, two MTP draft tokens.
+The 262144-token request limit and six-request concurrency are unchanged.
+
+Fresh profiling
+---------------
+A 100 Hz CPU sample and bounded eight-step NPU trace were collected from the
+qualified producer-owned HC/PLE server, before the new candidates. Profilers
+were stopped and their owners released before throughput measurements.
+Rank 0 spent 8.27 of 26.38 sampled seconds at sampled.cpu(). This includes
+waiting for device work; it is not 8.27 seconds of avoidable CPU computation.
+The NPU trace contained 66336 kernels, with summed durations of 425534 us.
+MatMulV2 accounted for 148692 us, TransData 39856 us and Cast 31651 us.
+Summed kernel duration is not critical-path latency or unprofiled throughput.
+Compact profiles and source hashes are in artifacts/qfn-tp6-perf-20261016.
+
+Candidates
+----------
+The QSA shortcut returns the ascending complete prefix when all available
+compression groups fit in the selection budget. The original repair step
+already discards every score/sort result in this case. Geometry, output width,
+causal tail, and original integer dtype are preserved. Over-budget requests
+continue through the original scored selection. This is a short-context
+optimization, not a claim of faster sparse selection at 256K context.
+
+The first live shadow check caught an INT64 draft-position promotion missing
+from the candidate. The fail-closed check stopped resident-v7 before enabling
+fast mode. resident-v8 was launched, qualified HC/PLE owners restored, and the
+candidate corrected. CPU regression tests cover both position dtypes and the
+GEMM path's explicit INT32 output. The corrected path passed exact comparisons
+of all four selection fields on every rank, at concurrency 1, 2, 4 and 6, and
+on a prompt beyond the complete-prefix budget.
+
+The early-draft candidate extends the existing pinned TP4 admission to TP6.
+It submits padded MTP draft work before synchronous output bookkeeping, using
+the runner's existing early-PP branch. Unsupported request shapes retain their
+original ordering. It does not enable asynchronous scheduling or queue depth 2.
+
+Reproduction
+------------
+Use benchmark_tp6_overlap.py with --output pointing to a new file. It warms up
+with 32 tokens, runs each of the three fixed prompts for 512 tokens, and then
+runs six requests with that same output budget. --prefix-file and
+--skip-concurrent support matched longer-context measurements. Compare serial
+decode throughput separately from aggregate end-to-end throughput.
+
+apply_tp6_overlap.py controls the two candidates independently on the frozen
+runtime used here. It verifies the original source hash, drains the engine,
+checks six worker receipts and retains all control owners. --prefix --verify
+performs exact live shadow checks; --prefix without --verify is rejected until
+actual outputs have been checked. --early independently enables draft ordering.
+Omitting both flags restores the original functions through the retained owner.
+The tool targets the pre-change frozen runtime; a cold import of the updated
+core QSA helper already includes the complete-prefix optimization.
+
+Validation
+----------
+183 focused CPU tests passed, covering QSA selection, tiling, padded queries,
+workspace bounds, causal chunking, sparse attention and candidate admission.
+Scoped manual pre-commit hooks passed. The required full format.sh ci check was
+run in a disposable checkout and remains blocked by existing formatting,
+spelling and forbidden-import failures outside these changes. Fork Actions
+remain disabled. Real checkpoint validation used all six Ascend 310P devices.
+
+Retained serving measurements
+-----------------------------
+Two short-context passes per arm, three fixed prompts per pass, 512 generated
+tokens per request, temperature 0, two MTP draft tokens:
+  Original: median serial decode 33.75 tok/s; mean C6 end-to-end 81.62 tok/s.
+  Both changes: median serial decode 35.22 tok/s; mean C6 84.25 tok/s.
+This is approximately +4.3% serial decode and +3.2% aggregate end-to-end.
+These are small repeated samples, not confidence intervals or a universal gain.
+
+The shortcut alone reached medians 34.31 and 34.08 tok/s; C6 82.53 and 83.19.
+Early draft alone reached a 35.73 tok/s median and C6 81.19 in one pass.
+Independent selection microbenchmarks at 3/18 rows and INT32/INT64 positions
+passed on all six ranks. Rank 0 changed from roughly .65-.72 ms per call to
+.24-.31 ms. These eager operator times do not predict full-server speedups.
+
+With a roughly 2800-token prompt prefix, one three-prompt 256-token decode
+pass changed from a 30.39 tok/s median to 31.48 tok/s. The complete-prefix
+shortcut is ineligible there; this tests early submission plus unchanged scored
+QSA. One prompt produced identical full output in this comparison. Across
+short runs, both the original and candidate produce differing output text,
+so greedy output hashes alone are not a valid bitwise-equivalence gate here.
+The exact selection shadow comparisons remain the direct numerical evidence.
+
+The retained session is resident-v8. The previous resident-v7 stopped at the
+intentional fail-closed numerical check described above. The canonical host
+restore.py now restores HC/PLE, enables both candidates with shadow checks,
+runs verify_tp6_overlap.py, and enables fast mode only after all six ranks
+report healthy exact comparisons. restore-before-perf-v8.py preserves the
+prior restore script. The unchanged frozen runtime remains the controller's
+source-hash baseline. No new firmware, driver, OPP build or library upgrade
+was introduced in this investigation.
+
+The retained configuration also completed a 25139-token uncached inventory
+prompt alongside a 512-token decoder. After a 20-second idle interval, six
+concurrent branches all retrieved the correct passphrase and reused 25088
+cached tokens. This checks completion, prefix correctness and idle resumption;
+it is not a maximum-token-gap guarantee or a 256K accuracy qualification.
+
+A full local pytest invocation was also attempted: collection stopped with
+13 errors because this CPU environment lacks torch_npu, modelscope, required
+custom operator registrations and vllm.third_party.flash_linear_attention.
+It does not replace the passing focused tests or the remote real-weight gates.
