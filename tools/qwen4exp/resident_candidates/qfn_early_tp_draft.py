@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Offline candidate: submit qualified TP4/TP6 QFN draft before host bookkeeping.
+"""Offline candidate: submit qualified TP2/TP4/TP6 QFN draft before host bookkeeping.
 
 Only the pinned runner's existing early-PP predicate changes. Its source hash
 and exact seam must match; all unsupported requests retain original ordering.
@@ -40,7 +40,7 @@ def eligible(runner, spec_metadata, batch_descriptor, scheduler):
         or getattr(scheduler, "num_spec_tokens_to_schedule", None) != 2
         or getattr(runner, "use_async_scheduling", True)
         or getattr(config, "disable_padded_drafter_batch", True)
-        or getattr(parallel, "tensor_parallel_size", None) not in (4, 6)
+        or getattr(parallel, "tensor_parallel_size", None) not in (2, 4, 6)
         or getattr(parallel, "pipeline_parallel_size", None) != 1
         or getattr(parallel, "data_parallel_size", None) != 1
         or getattr(runner, "use_dcp", True)

@@ -10,6 +10,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+from tools.sidecard.qfn_resident_server import QfnResidentClient
+
 PROMPTS = (
     "Write a detailed Python implementation of an LRU cache with unit tests. Explain thread safety and complexity.",
     "Review a producer-consumer queue design. Explain bounded capacity, cancellation, shutdown "
@@ -27,8 +29,14 @@ def request_json(base: str, path: str, body=None):
         return json.load(response)
 
 
-def metrics(base: str) -> dict[str, float]:
-    with urllib.request.urlopen(base + "/metrics", timeout=10) as response:
+def metrics(base: str, control_token_file: Path | None = None) -> dict[str, float]:
+    headers = {}
+    if control_token_file is not None:
+        # Reuse the controller's strict loopback-origin and token-file checks.
+        client = QfnResidentClient(base, control_token_file)
+        headers["x-qfn-resident-token"] = client.token
+    request = urllib.request.Request(base + "/metrics", headers=headers)
+    with urllib.request.urlopen(request, timeout=10) as response:
         lines = response.read().decode().splitlines()
     values = {}
     names = (
@@ -99,6 +107,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default="http://127.0.0.1:8002")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--control-token-file", type=Path, help="local resident token for authenticated metrics")
     parser.add_argument("--lengths", type=int, nargs="+", default=[512, 2048])
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--prompt-prefix-file", type=Path)
@@ -110,7 +119,7 @@ def main() -> None:
         raise SystemExit("Positive repeats and lengths >= 2 required")
     if args.draft_length is not None and args.draft_length < 1:
         raise SystemExit("Draft length must be positive")
-    before = metrics(args.base_url)
+    before = metrics(args.base_url, args.control_token_file)
     if any(before.get(name, 0) for name in ("vllm:num_requests_running", "vllm:num_requests_waiting")):
         raise SystemExit("Benchmark server is busy")
     model = request_json(args.base_url, "/v1/models")["data"][0]["id"]
@@ -119,7 +128,7 @@ def main() -> None:
     with args.output.open("x") as output:
         for length in [32, *args.lengths]:
             for repeat in range(1 if length == 32 else args.repeats):
-                before = metrics(args.base_url)
+                before = metrics(args.base_url, args.control_token_file)
                 body = {
                     "model": model,
                     "messages": [{"role": "user", "content": prefix + PROMPTS[repeat % len(PROMPTS)]}],
@@ -135,7 +144,7 @@ def main() -> None:
                 # Stats are published by the engine periodically. Wait only
                 # outside measured latency and identically for every arm.
                 time.sleep(1)
-                after = metrics(args.base_url)
+                after = metrics(args.base_url, args.control_token_file)
                 draft = after.get("vllm:spec_decode_num_draft_tokens_total", 0) - before.get(
                     "vllm:spec_decode_num_draft_tokens_total", 0
                 )

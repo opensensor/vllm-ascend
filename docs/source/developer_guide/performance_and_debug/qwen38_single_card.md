@@ -11,20 +11,21 @@ Read the [runtime runbook](qwen38_310p_runtime_runbook.md) for source and operat
 package coherence. A successful import or health response is insufficient:
 the first inference request, cold prefill, prefix reuse and decode must pass.
 
-## Jouh: recommended profile as of October 16, 2026
+## Josh: recommended profile as of October 16, 2026
 
 For one Ascend 310P3 Duo (two devices), use the October 11 **qualified TP2
-runtime bundle**, with the current preflight below. This is the best measured
-single-card long-context profile in this repository. It completed a 131,072-token
-input/output window and measured 20.94 tokens/s median short-context decode.
-These are measurements on our qualification host, not a performance guarantee
-for another machine.
+runtime bundle**, with the current preflight and mandatory draft-KV fix below.
+The original qualification completed a 131,072-token input/output window and
+measured 20.94 tokens/s median short-context decode. The October 16 refresh
+measurements and optional resident trials are recorded below. These are
+measurements on our qualification host, not a performance guarantee for
+another machine.
 
 Our October 16 live service runs on **three Duos / six devices**. Its exact
 [launch and resident status snapshot](../../../../artifacts/glm-qwen-main-sync-20261016/running-server.json)
 is useful for comparison, but it is not a single-card launch recipe:
 
-| Setting | Jouh's qualified one-Duo profile | October 16 live service |
+| Setting | Josh's qualified one-Duo profile | October 16 live service |
 | --- | --- | --- |
 | Tensor/expert parallelism | TP2 / EP2 | TP6 / EP6 |
 | Checkpoint | Original published W4 G128 `300i` | Separate TP6 MTP overlay |
@@ -41,16 +42,16 @@ The newer sources and tests are on `main` starting at `d253adb02`. Updating the
 clone updates the tools; it does **not** replace the bundle's frozen Python,
 compiled binding, or four operator packages. `--updated` is the single-card
 profile's named optimization option, not an updater to the live TP6 modules.
-The newer TP6 resident owners and native fusion candidates have not been
-qualified on TP2. Do not copy the TP6 checkpoint, `restore.py`, six-device
-collective configuration, or individual live modules into this bundle.
-An updated TP2 runtime matching those modules needs a separate full-model
-qualification; this guide does not claim that work has been done.
+The specific single-card resident changes below were tested separately.
+The other TP6 owners and native fusion candidates remain unqualified on TP2.
+Do not copy the TP6 checkpoint, `restore.py`, six-device collective
+configuration, or individual live modules into this bundle.
 
 The commands below were checked against a fresh download of the release on
 October 16: the archive SHA-256 and all 5,274 frozen file hashes matched, the
-pinned model configuration remained downloadable, and 62 single-card tooling
-tests passed. No new single-card NPU run was performed for this guide.
+pinned model configuration remained downloadable. The later refresh used
+that same frozen runtime and operators with the draft-addressing correction;
+it did not upgrade packages or re-quantize the checkpoint.
 
 ## Download and run the exact qualified profile
 
@@ -77,7 +78,9 @@ and swap during startup.
 git clone https://github.com/opensensor/vllm-ascend.git
 cd vllm-ascend
 # Pin current tooling; the downloaded runtime remains the qualified release.
-git checkout d253adb02968a7b0fd562c387c6541a78bbf2fce
+git checkout main
+git pull --ff-only
+git rev-parse HEAD  # Save the tooling revision with your benchmark receipts.
 qwen_repo=$(pwd)
 mkdir -p single-card-release
 cd single-card-release
@@ -111,8 +114,33 @@ Continue only after preflight reports `passed`. It does not install missing
 SDK components or repair incompatible package versions. Keep
 `VLLM_USE_V2_MODEL_RUNNER=1` exported for the following launch: the immutable
 archive's launcher predates the source fix that sets it automatically.
+The Qwen MTP compatibility patch then selects the **v1** runner; the environment
+variable alone does not prove that v2 is executing.
 
-Reuse the existing checkpoint if Jouh already downloaded it. Otherwise download
+Before starting the server, apply the October 16 draft-KV correctness fix:
+
+```bash
+PYTHONPATH="$qwen_repo:$PYTHONPATH" "$qwen_python" \
+  -m tools.qwen4exp.single_card_kv_fix "$qwen_bundle"
+PYTHONPATH="$qwen_repo:$PYTHONPATH" "$qwen_python" \
+  -m tools.qwen4exp.single_card_kv_fix "$qwen_bundle" --check
+```
+
+The old proposer used the backend's first advertised page size (128) instead
+of the selected draft block-table page size (64 for these QSA heads). That can
+write beyond the draft cache. The fix changes only this addressing choice;
+it is a correctness prerequisite, not a throughput optimization. Apply it to
+a stopped bundle and restart; earlier prefix caches must be discarded.
+
+The tool checks every frozen file, accepts only the exact reviewed proposer
+change, and writes `draft-kv-fix.json`. It preserves `files.sha256.json`.
+Consequently the original `verify.py` reports one expected proposer mismatch
+after this patch; use `single_card_kv_fix --check` for the corrected bundle,
+before an optional native gate updates its own receipts. Run the original
+preflight before applying the fix. Do not replace whole
+runtime directories or update CANN/transformers to obtain this correction.
+
+Reuse the existing checkpoint if Josh already downloaded it. Otherwise download
 [the published W4 G128 checkpoint](https://huggingface.co/matteiuspi/Qwen3.8-Flash-Next-W4A16-G128-300i)
 at the qualified revision. It has the same `config.json` SHA-256 as the test host.
 Do not substitute the W8 checkpoint or a generic AWQ/GPTQ export.
@@ -132,29 +160,33 @@ tail -f qwen-single-card.log
 
 The log is in the current bundle directory. Leave the service running; pressing
 Ctrl-C in `tail` stops only the log viewer. Once automatic memory profiling,
-weight loading and graph capture complete, run the native gate from a second
-terminal in the same bundle directory. Define `qwen_python` there too:
+weight loading and graph capture complete, check real inference from a second
+terminal in the same bundle directory:
 
 ```bash
 qwen_python=/path/to/existing/matched/venv/bin/python
 curl -f http://127.0.0.1:8002/health
-bash native.sh "$qwen_python"
 curl -s http://127.0.0.1:8002/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{"model":"qwen38-single-card","messages":[{"role":"user","content":"Reply with only the integer: 17 * 23"}],"max_tokens":128,"temperature":0,"chat_template_kwargs":{"enable_thinking":false}}'
 ```
 
-`native.sh` performs the worker numerical gates, installs the residual fusion
-and histogram dispatch, and recaptures target and draft graphs. Run it after
-each service restart; the server command alone omits those two optimizations.
-Check for `391` in the arithmetic response and retain `native-qualification.json`.
+Check for `391` in the arithmetic response. `native.sh "$qwen_python"` remains
+an optional A/B candidate: it performs numerical gates, installs residual
+fusion and histogram dispatch, and recaptures target and draft graphs. Josh's
+October 16 same-session medians were 22.7 → 23.2 tokens/s for 512-token output
+and 25.8 → 24.7 for 2,048-token output, with smoke 6/7 in both arms. Those
+user-reported results do not establish a speedup; it is no longer a mandatory
+serve-checklist step. Keep `native-qualification.json` if evaluating it. The
+resident overlap trials below replace an existing resident candidate, so do
+not assume their combination with `native.sh` has been qualified.
 The default API is `http://127.0.0.1:8002/v1`, model `qwen38-single-card`.
 For a remote coding client, forward that port over SSH; resident development
 controls remain on loopback.
 
 ```bash
-# Run on the client computer; replace jouh-server with the Duo host.
-ssh -N -L 8002:127.0.0.1:8002 jouh@jouh-server
+# Run on the client computer; replace josh-server with the Duo host.
+ssh -N -L 8002:127.0.0.1:8002 jouh@josh-server
 ```
 
 Set the client's OpenAI-compatible base URL to `http://127.0.0.1:8002/v1`
@@ -167,6 +199,220 @@ sequential QSA gathers and decode graph `[3]`. Images and video are disabled.
 If chip IDs differ, append `--devices 2,3` only after checking `npu-smi info`.
 Automatic memory profiling stays enabled. A lower-memory host may need a
 smaller context; do not bypass a failed admission check.
+
+## October 16 same-precision refresh
+
+The corrected bundle was tested on one physical Duo, devices 0/1, with the
+same 131,072-token configuration and FP16 output head/PLE projection. No
+`native.sh` fusion was installed. Each median below covers the same three
+short prompts with fixed 512- or 2,048-token output, temperature zero and MTP2.
+Profiling and shadow-verification requests are excluded.
+
+| Resident configuration | 512-token median | 2,048-token median |
+| --- | ---: | ---: |
+| Corrected baseline, first run | 22.30 tok/s | 24.16 tok/s |
+| Corrected baseline, return run | 23.07 tok/s | 24.64 tok/s |
+| Early draft before bookkeeping | 23.67 tok/s | Not measured |
+| Complete-prefix QSA shortcut | 23.13 tok/s | Not measured |
+| Early draft + QSA shortcut | 23.13 tok/s | 25.28 tok/s |
+| Direct pinned position copies | 23.03 tok/s | Not measured |
+| All three | 23.38 tok/s | 25.73 tok/s |
+
+With an approximately 8K shared prefix, 512-token decode medians were 21.67
+for baseline and 22.44 for all three. Exact 8,192-token cold prefill was
+275 tok/s for baseline; its replay reused 8,064 tokens with 0.815-second TTFT.
+The early-draft/QSA pair measured 277 tok/s cold and 0.861-second replay TTFT.
+Both recalled the passcode correctly. Every smoke arm retained 6/7, including
+the same reverse-word miss. Sampled live QSA selection tensors matched the
+original exactly on both workers, including shapes beyond the shortcut's
+complete-prefix boundary.
+
+These small throughput deltas overlap the observed baseline drift and changing
+MTP acceptance. They do not establish a large portable improvement or justify
+adding three mandatory startup steps. The controls remain optional experiments:
+
+```bash
+# Use the current checkout's tools, with the frozen server already running.
+# This drains requests, clears prefix caches and recaptures graphs.
+# Run before opening client sessions; weights remain loaded.
+PYTHONPATH="$qwen_repo:$PYTHONPATH" "$qwen_python" \
+  -m tools.qwen4exp.single_card_overlap --early --prefix --positions \
+  --output single-card-trial.json
+
+# Remove the resident candidate and return to the corrected baseline.
+PYTHONPATH="$qwen_repo:$PYTHONPATH" "$qwen_python" \
+  -m tools.qwen4exp.single_card_overlap --output single-card-baseline.json
+```
+
+Select individual flags for an isolated A/B. `--prefix --verify` enables
+sampled exact shadow comparisons and must be excluded from timing. The tool
+pins the original and replacement function sources and rejects source drift.
+It replaces an existing resident candidate; combination with `native.sh` is
+not qualified. These trials keep dense arithmetic and checkpoint weights
+unchanged. Their 8K tests do not independently certify the full context limit.
+
+## Retained shared PLE RAM option
+
+The frozen runtime reads PLE rows from checkpoint shard mappings and relies on
+the OS page cache. The shared-RAM candidate gathers those same FP16 rows from
+one immutable table shared by both workers, preserving hashing, pinned staging,
+transfer and projection. This is separate from native PLE DMA and from the
+custom collective. The test below retained HCCL.
+
+| Measurement | Corrected baseline | Shared PLE RAM |
+| --- | ---: | ---: |
+| 512-token decode median | 22.58 before / 22.71 after | 23.04 tok/s |
+| 2,048-token decode median | 24.64 earlier return | 24.94 tok/s |
+| ~8K prefix, 512-token decode | 21.67 earlier baseline | 21.94 tok/s |
+| Exact 8K cold prefill | 275 tok/s | 281 tok/s |
+| Exact 8K first replay TTFT | 0.815 s | 0.802 s |
+
+Retain this as a small measured improvement: approximately 1.5% higher
+512-token throughput against the subsequent return baseline, with three timed
+prompts per arm. It is not a guarantee of the same gain on another host.
+Both workers passed eight exact live row comparisons before timing; smoke
+remained 6/7 and cold/replay passcode recall passed. No arithmetic precision or
+checkpoint weights changed.
+
+The full table is **95.37 GiB**, shared once across workers. Creation requires
+that table plus a 48 GiB reserve and bounded temporary buffers to fit in
+currently available host RAM. This is not a validated minimum system-RAM
+specification: model loading and other services also need memory. Keep the
+checkpoint-backed reader on hosts that cannot satisfy admission; do not remove
+the reserve or rely on swapping the table for this throughput result.
+
+With the corrected server running and before opening client sessions:
+
+```bash
+# Separate terminal: keep this table-owner process alive while serving uses it.
+PYTHONPATH="$qwen_repo:$PYTHONPATH" "$qwen_python" \
+  -m tools.qwen4exp.serve_ple_table --model "$qwen_model" \
+  --ready /path/to/new-ple-table.json
+
+# Wait for the owner to report ready, then use another terminal.
+# This drains requests, clears prefix caches and recaptures graphs.
+PYTHONPATH="$qwen_repo:$PYTHONPATH" "$qwen_python" \
+  -m tools.qwen4exp.single_card_ple --table /path/to/new-ple-table.json \
+  --output single-card-ple-switch.json
+```
+
+Run the smoke/recall probes below before timing. Each worker's
+`resident_status.single_card_shared_ple` must report eight checked comparisons,
+zero remaining and `failed=false`. Its `installed=false` field is expected
+between calls: the adapter restores the temporary instance binding after every
+forward, while its resident forward wrapper remains active. Return to the
+original reader with `single_card_overlap` and no optimization flags. This
+candidate replaces other resident candidates; combinations with `native.sh` or
+the overlap flags are not covered by the RAM-only numbers above. The table
+owner may exit only after restoring the reader or stopping all its consumers.
+
+## One-card custom SUM experiment
+
+The October 16 follow-up also tests the custom local SUM implementation on
+one Duo, individually and together with shared PLE RAM. It replaces admitted
+TP SUM geometries; other collectives and unsupported shapes still use HCCL.
+This is separate from the generic `--disable-custom-all-reduce` switch, which
+remains in the qualified profile.
+
+| One-card arm | 512 output tokens | 2,048 output tokens | ~8K prefix, 512 output tokens |
+| --- | ---: | ---: | ---: |
+| HCCL + shared RAM | 23.04 | 24.94 | 21.94 |
+| Custom SUM | 21.88 | 23.60 | 22.21 |
+| Custom SUM + shared RAM | 22.22 | 24.60 | 22.09 |
+| Custom SUM return, RAM removed | 22.43 | Not repeated | Not repeated |
+
+These are three-prompt medians in tok/s. Retain **HCCL plus shared RAM** on
+hosts that satisfy the RAM admission check. The custom collective is functional
+but did not provide a dependable one-card speedup. Its combined short-output
+gain over the first custom baseline disappeared against the return baseline.
+Both custom arms retained 6/7 smoke and correct cold/replay recall; the combined
+arm passed eight exact PLE row comparisons on each worker. Both workers retired
+graphs and released collective ownership cleanly at shutdown. This does not
+change the separately qualified TP6 configuration or establish broad model
+accuracy for the custom arm.
+
+The isolated backport keeps the corrected frozen model, drafter, cache,
+operators and weights. Only the communicator, two graph lifecycle files and
+collective configuration admission change. Prepare a fresh experiment copy:
+
+```bash
+PYTHONPATH="$qwen_repo:$PYTHONPATH" "$qwen_python" \
+  -m tools.qwen4exp.single_card_collective_bundle \
+  "$qwen_bundle" /path/to/fresh-tp2-collective-experiment
+```
+
+This prepares source and tooling; it does not start or qualify a server.
+Follow the [native build and ownership guide](../../../../tools/sidecard/NPU_COLLECTIVES.md)
+for matching private libraries and a fresh owner directory. The tested config
+uses `physical_devices=[0,1]`, `link_groups=[[0,1]]`, `algorithm=binomial`,
+`execution_mode=graph`, and `graph_replay_tracking=false`. Register both FP16
+and FP32 for 2,560, 5,120, 7,680, 10,240, 12,800, 15,360, 30,720 and 46,080
+elements. Supply actual library paths and SHA-256 digests from that build;
+do not copy the six-device config.
+
+Keep the prepared bundle's environment and inherited CANN Python paths, with
+its separate `tooling` directory first on `PYTHONPATH`. Run
+`tools.sidecard.npu_collective_graph_probe --config CONFIG --output FRESH_GATE`
+with the matched Python and those two visible devices. Require a passing gate,
+retired graphs and released ownership on both ranks before serving. The
+qualification host passed changed-input, replay-order and lifetime checks on
+all 16 geometries.
+
+Serving must use `tools.sidecard.qfn_resident_server --expected-ranks 2` with
+its private token/close-receipt paths and `QfnResidentWorkerExtension`, adding
+`npu_collective` to the existing `additional_config` while preserving seven
+prefix slots. The controller must retire all graphs and close both owners
+before process shutdown. Use the token file with the benchmark's
+`--control-token-file` option and with `single_card_ple --run-root` when testing
+the combined arm. These controls are authenticated and require loopback. The recorded
+[host command](../../../../artifacts/qfn-single-card-refresh-20261016/collective-command.json)
+and [environment wrapper](../../../../artifacts/qfn-single-card-refresh-20261016/collective-environment.sh)
+show the exact tested setup; replace host-specific paths and generate
+fresh private owner and control directories on another host.
+
+## Optional W8 output-head trial
+
+A separate restart tested dynamic W8 target/draft output heads while retaining
+the original W4 experts and FP16 PLE projection. This changes arithmetic and
+is a separate candidate, not an exact fusion. Actual loaded target heads were
+INT8 on both workers; startup verified and shared those heads with the draft.
+No resident overlap candidate or `native.sh` fusion was active during timing.
+
+| Same three prompts | FP16 return baseline | W8 head |
+| --- | ---: | ---: |
+| 512-token decode median | 23.07 tok/s | 22.14 tok/s |
+| 2,048-token decode median | 24.64 tok/s | 24.79 tok/s |
+| Approximately 8K prefix, 512-token decode | 21.67 tok/s | 22.66 tok/s |
+| Exact 8K cold prefill | 275 tok/s | 275 tok/s |
+| Exact 8K first replay TTFT | 0.815 s | 0.801 s |
+
+The fixed 228-question held-out MMLU sample scored 204/228 for FP16 and
+207/228 for W8, with zero invalid answers in either arm. Three answers improved
+and none regressed on this sample. This is not a full MMLU score or broad
+accuracy certification. Smoke remained 6/7 with the same reverse-word miss.
+Changing head precision also changed MTP acceptance; these results do not
+establish a dependable decode improvement. **Keep FP16 as the default.**
+
+For a separate local experiment, start from the stopped, preflight-checked
+bundle with the mandatory draft-KV fix already applied:
+
+```bash
+PYTHONPATH="$qwen_repo:$PYTHONPATH" "$qwen_python" \
+  -m tools.qwen4exp.single_card_lm_head_launcher "$qwen_bundle"
+bash "$qwen_bundle/serve-w8-head.sh" "$qwen_model" "$qwen_python" --show
+bash "$qwen_bundle/serve-w8-head.sh" "$qwen_model" "$qwen_python"
+```
+
+This creates a new launcher and leaves `serve.sh` unchanged. Its receipt records
+the current profile tool's absolute path and SHA-256; retain that checkout at
+the recorded revision while using the launcher. Compare the printed command
+with the original: only `lm_head_execution=w8a8_dynamic` should change. Do not
+use `--quantize-dense-projections`, which also changes PLE arithmetic. Returning
+to `serve.sh` requires a restart and restores FP16. The W8 trial covered short
+and 8K requests; it did not independently validate the full 131K window.
+
+The [October 16 test report](../../../../artifacts/qfn-single-card-refresh-20261016/REPORT.md)
+records the measurements, correctness gates and limitations for both trials.
 
 ## Environment and launch
 

@@ -99,7 +99,7 @@ def setup_runner(*, pipeline=1):
     return SimpleNamespace(**locals())
 
 
-@pytest.mark.parametrize("tp", [4, 6])
+@pytest.mark.parametrize("tp", [2, 4, 6])
 def test_exact_source_fingerprint_and_single_early_proposer(tp):
     assert hashlib.sha256(SOURCE.encode()).hexdigest() == candidate.QUALIFIED_SOURCE_SHA256
     gate = setup_runner()
@@ -157,7 +157,7 @@ def test_unaudited_cases_preserve_original_order(case):
     elif case == "dp":
         gate.runner.parallel_config.data_parallel_size = 2
     elif case == "tp":
-        gate.runner.parallel_config.tensor_parallel_size = 2
+        gate.runner.parallel_config.tensor_parallel_size = 3
     elif case == "prefill":
         gate.batch.uniform = False
     elif case == "wrong_model":

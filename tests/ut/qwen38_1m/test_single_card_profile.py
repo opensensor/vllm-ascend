@@ -80,6 +80,16 @@ def test_updated_fusions_preserve_w4_contract_and_dense_precision(profile):
     )
 
 
+def test_head_only_quantization_leaves_ple_and_expert_precision_unchanged(profile):
+    command = build_command(replace(profile, updated=True, quantize_lm_head=True))
+    metadata = json.loads(option(command, "--hf-overrides"))["text_config"]["ascend_expert_quantization"]
+    assert metadata["lm_head_execution"] == "w8a8_dynamic"
+    assert "ple_projection_execution" not in metadata
+    assert metadata["bits"] == 4 and metadata["group_size"] == 128 and metadata["scale_dtype"] == "float16"
+    with pytest.raises(ValueError, match="requires the updated"):
+        build_command(replace(profile, quantize_lm_head=True))
+
+
 def test_dense_quantization_is_explicit_and_images_are_optional(profile):
     candidate = replace(profile, updated=True, quantize_dense_projections=True, images=True)
     command = build_command(candidate)

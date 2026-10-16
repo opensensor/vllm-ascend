@@ -43,8 +43,8 @@ PREVIEW_ENVIRONMENT_KEYS = (
 
 def build_environment(profile: "SingleCardProfile", inherited):
     environment = dict(inherited, ASCEND_RT_VISIBLE_DEVICES=",".join(map(str, profile.devices)))
-    # The launcher requests FULL_DECODE_ONLY, which the 310P v1 runner cannot
-    # capture. Select the runner explicitly instead of inheriting shell state.
+    # Select explicitly instead of inheriting shell state. The frozen Qwen MTP
+    # compatibility patch can still choose v1; verify the actual startup log.
     environment["VLLM_USE_V2_MODEL_RUNNER"] = "1"
     if profile.resident_experiments:
         environment.update(VLLM_SERVER_DEV_MODE="1", VLLM_USE_BREAKABLE_CUDAGRAPH="1")
@@ -63,6 +63,7 @@ class SingleCardProfile:
     memory_utilization: float = 0.965
     updated: bool = False
     quantize_dense_projections: bool = False
+    quantize_lm_head: bool = False
     images: bool = False
     resident_experiments: bool = False
     prefix_slots: int = SINGLE_CARD_PREFIX_SLOTS
@@ -90,7 +91,7 @@ class SingleCardProfile:
             raise ValueError("batch token budget must accommodate speculative verification")
         if not math.isfinite(self.memory_utilization) or not 0.8 <= self.memory_utilization <= 0.965:
             raise ValueError("memory utilization must be finite and between 0.8 and 0.965")
-        if self.quantize_dense_projections and not self.updated:
+        if (self.quantize_dense_projections or self.quantize_lm_head) and not self.updated:
             raise ValueError("dense projection quantization requires the updated profile")
         if self.resident_experiments and not self.updated:
             raise ValueError("resident experiments require the updated profile")
@@ -127,6 +128,8 @@ def build_command(profile: SingleCardProfile, python: str = sys.executable):
         )
     if profile.quantize_dense_projections:
         metadata.update(lm_head_execution="w8a8_dynamic", ple_projection_execution="w8a8_dynamic")
+    elif profile.quantize_lm_head:
+        metadata.update(lm_head_execution="w8a8_dynamic")
     text_overrides = {"ascend_expert_quantization": metadata}
     if profile.updated:
         text_overrides["ascend_qsa_prefill"] = {"parallel_gather": profile.parallel_gather}
@@ -204,6 +207,7 @@ def main():
     parser.add_argument("--memory-utilization", default=0.965, type=float)
     parser.add_argument("--updated", action="store_true")
     parser.add_argument("--quantize-dense-projections", action="store_true")
+    parser.add_argument("--quantize-lm-head", action="store_true", help="W8 output head with unchanged PLE projection")
     parser.add_argument("--images", action="store_true")
     parser.add_argument("--resident-experiments", action="store_true")
     parser.add_argument("--prefix-slots", default=SINGLE_CARD_PREFIX_SLOTS, type=int)
@@ -223,6 +227,7 @@ def main():
             memory_utilization=args.memory_utilization,
             updated=args.updated,
             quantize_dense_projections=args.quantize_dense_projections,
+            quantize_lm_head=args.quantize_lm_head,
             images=args.images,
             resident_experiments=args.resident_experiments,
             prefix_slots=args.prefix_slots,
