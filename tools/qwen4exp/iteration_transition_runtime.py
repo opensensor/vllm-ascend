@@ -64,8 +64,8 @@ class ResidentDeviceTransition:
         self.checked_steps = self.checked_inputs = self.checked_banks = 0
         self.host_inputs = torch.zeros_like(commit.host_inputs, pin_memory=True)
         self.inputs = torch.zeros_like(commit.inputs)
-        self.samples = torch.full((4, 3), -1, dtype=torch.int64, device=self.inputs.device)
-        self.drafts = torch.zeros((4, 2), dtype=torch.int64, device=self.inputs.device)
+        self.samples = torch.full((commit.max_requests, 3), -1, dtype=torch.int64, device=self.inputs.device)
+        self.drafts = torch.zeros((commit.max_requests, 2), dtype=torch.int64, device=self.inputs.device)
         self.host_tables = {key: torch.zeros_like(value, pin_memory=True) for key, value in commit.host_tables.items()}
         self.tables = {key: torch.zeros_like(value) for key, value in commit.tables.items()}
         self.records = {}
@@ -77,7 +77,7 @@ class ResidentDeviceTransition:
         stream = torch.npu.Stream(device=self.inputs.device)
         stream.wait_stream(torch.npu.current_stream())
         with torch.npu.stream(stream):
-            for n in range(1, 5):
+            for n in sorted(commit.records):
                 group = MambaCommitGroup(
                     commit.records[n][0].kernel,
                     commit.records[n][0].launch,
@@ -173,7 +173,7 @@ class ResidentDeviceTransition:
             )
         ]
         try:
-            packed = admit_all_acceptances(columns, mapped, block_size=self.commit.block_size, slots=64)
+            packed = admit_all_acceptances(columns, mapped, block_size=self.commit.block_size, slots=self.commit.slots)
         except ValueError:
             return False
         record = self.records[n]
@@ -185,7 +185,7 @@ class ResidentDeviceTransition:
             if accepted.error.any():
                 raise RuntimeError("sampler violates contiguous MTP2 acceptance")
             _, _, copies = admit_commit(
-                columns, accepted.counts.numpy(), mapped, block_size=self.commit.block_size, slots=64
+                columns, accepted.counts.numpy(), mapped, block_size=self.commit.block_size, slots=self.commit.slots
             )
             expected = self.commit.expected_blocks(mapped, copies)
         # Once submission starts, no fallback may replay writes on uncertainty.

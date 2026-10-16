@@ -7,7 +7,7 @@ import torch
 from tools.qwen4exp.gdn_metadata_graph import fill_uniform_metadata, uniform_decode_rows
 
 
-@pytest.mark.parametrize("n", [1, 2, 3, 4])
+@pytest.mark.parametrize("n", [1, 2, 3, 4, 5, 6])
 @pytest.mark.parametrize("length", [3, 127, 128, 129, 255, 256, 257])
 def test_changing_sequence_and_acceptance_matches_scalar_mamba_mapping(n, length):
     table = torch.arange(n * 12, dtype=torch.int32).reshape(n, 12) + 100

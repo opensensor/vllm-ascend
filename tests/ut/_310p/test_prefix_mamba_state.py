@@ -420,3 +420,19 @@ def test_over_capacity_or_invalid_rows_fail_before_evicting_existing_states():
         tier.remap_rows(np.array([[201, 202], [301, 0]], dtype=np.int32), [2, 1], [(0,), (1,)])
     assert dict(tier._resident) == resident
     torch.testing.assert_close(states, before)
+
+
+def test_six_request_queued_state_reservation():
+    assert prefix_mamba_slot_count(6, 2, bounded_checkpoints=True, queue_depth=2) == 177
+    assert prefix_mamba_slot_count(6, 2, bounded_checkpoints=True) == 105
+
+
+@pytest.mark.parametrize("depth", [0, 3, True, 2.0])
+def test_invalid_queue_depth_rejected(depth):
+    with pytest.raises(ValueError, match="Queued Mamba"):
+        prefix_mamba_slot_count(6, 2, bounded_checkpoints=True, queue_depth=depth)
+
+
+def test_unbounded_scheduler_cannot_reserve_queued_states():
+    with pytest.raises(ValueError, match="Queued Mamba"):
+        prefix_mamba_slot_count(6, 2, queue_depth=2)

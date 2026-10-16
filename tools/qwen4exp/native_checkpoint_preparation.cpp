@@ -11,13 +11,14 @@ constexpr uint32_t TILE_WORDS = 4096;
 constexpr int64_t ALIGN_WORDS = 8;
 }  // namespace
 
-__aicore__ inline void PrecopyState(GM_ADDR previous, GM_ADDR computed, GM_ADDR accepted,
-                                  const __gm__ int64_t* cfg, GM_ADDR output) {
+__aicore__ inline void PrecopyState(GM_ADDR previous, GM_ADDR computed, GM_ADDR accepted, const __gm__ int64_t* cfg,
+                                    GM_ADDR output) {
   const int64_t rows = cfg[2], columns = cfg[3], blocks = cfg[4];
   const int64_t words = cfg[5], conv_width = cfg[6], block_size = cfg[7];
   // Immutable geometry is checked by the owner before any submission.
-  if (rows < 1 || rows > 4 || columns < 1 || blocks < 1 || words < ALIGN_WORDS || words % ALIGN_WORDS ||
-      conv_width < 0 || conv_width % ALIGN_WORDS || block_size < 1) return;
+  if (rows < 1 || rows > 6 || columns < 1 || blocks < 1 || words < ALIGN_WORDS || words % ALIGN_WORDS ||
+      conv_width < 0 || conv_width % ALIGN_WORDS || block_size < 1)
+    return;
   GlobalTensor<int32_t> sources, positions, counts, table, result;
   sources.SetGlobalBuffer(reinterpret_cast<__gm__ int32_t*>(previous));
   positions.SetGlobalBuffer(reinterpret_cast<__gm__ int32_t*>(computed));
@@ -73,15 +74,15 @@ __aicore__ inline void PrecopyState(GM_ADDR previous, GM_ADDR computed, GM_ADDR 
   WaitFlag<HardEvent::MTE3_S>(EVENT_ID0);
 }
 
-extern "C" __global__ __aicore__ void qwen_checkpoint_preparation_v1(
-    GM_ADDR previous, GM_ADDR computed, GM_ADDR accepted, GM_ADDR descriptors, GM_ADDR output, GM_ADDR config) {
+extern "C" __global__ __aicore__ void qwen_checkpoint_preparation_v2(GM_ADDR previous, GM_ADDR computed,
+                                                                     GM_ADDR accepted, GM_ADDR descriptors,
+                                                                     GM_ADDR output, GM_ADDR config) {
   KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AICORE);
   InitSocState();
   const int64_t states = reinterpret_cast<__gm__ int64_t*>(config)[0];
   if (states < 1 || states > 256) return;
   auto records = reinterpret_cast<__gm__ int64_t*>(descriptors);
   for (int64_t index = GetBlockIdx(); index < states; index += GetBlockNum()) {
-    PrecopyState(previous, computed, accepted, records + index * 8,
-                 output + index * 2 * PADDED_ROWS * sizeof(int32_t));
+    PrecopyState(previous, computed, accepted, records + index * 8, output + index * 2 * PADDED_ROWS * sizeof(int32_t));
   }
 }

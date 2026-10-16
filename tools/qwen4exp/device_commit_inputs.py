@@ -15,7 +15,7 @@ from tools.qwen4exp.iteration_transition_runtime import admit_all_acceptances
 from tools.qwen4exp.mamba_commit import MambaCommitGroup
 from tools.qwen4exp.mamba_commit_runtime import admit_commit
 
-QUALIFIED_BEGIN_SHA256 = "7c519614cba9a66d9ef3161dcf94c1ac04e8f9ce91ec3094a3072e85635845d0"
+QUALIFIED_BEGIN_SHA256 = "f4d2d41314257c6b34540e4cb632fd739c928238bb919ec329a531165fe613e7"
 METADATA_FIELDS = ("mamba_state_idx_buf", "num_computed_tokens_buf", "num_scheduled_tokens_buf", "num_draft_tokens_buf")
 
 
@@ -131,7 +131,7 @@ class DeviceCommitInputs:
             return self.original(sampled, schedule)
         columns = [getattr(ctx, field).np[:n] for field in METADATA_FIELDS]
         try:
-            packed = admit_all_acceptances(columns, mapped, block_size=self.commit.block_size, slots=64)
+            packed = admit_all_acceptances(columns, mapped, block_size=self.commit.block_size, slots=self.commit.slots)
         except ValueError:
             self.fallbacks += 1
             return self.original(sampled, schedule)
@@ -143,7 +143,7 @@ class DeviceCommitInputs:
             if accepted.error.any():
                 raise RuntimeError("sampler violates admitted acceptance")
             _, _, copies = admit_commit(
-                columns, accepted.counts.numpy(), mapped, block_size=self.commit.block_size, slots=64
+                columns, accepted.counts.numpy(), mapped, block_size=self.commit.block_size, slots=self.commit.slots
             )
             expected = self.commit.expected_blocks(mapped, copies)
         self.failed = transition.failed = True

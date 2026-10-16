@@ -206,6 +206,18 @@ class TestAscendConfig(TestBase):
             with self.subTest(value=value), self.assertRaisesRegex(ValueError, "positive integer"):
                 AscendConfig(sparse_kv_offload_config=SimpleNamespace(enabled=False), qwen_prefix_mamba_min_slots=value)
 
+    def test_qwen_queued_state_reservation_is_explicit_and_strict(self):
+        for depth in (1, 2):
+            config = AscendConfig(
+                sparse_kv_offload_config=SimpleNamespace(enabled=False), qwen_prefix_mamba_queue_depth=depth
+            )
+            self.assertEqual(config.qwen_prefix_mamba_queue_depth, depth)
+        for invalid in (0, 3, True, 2.0, "2", None):
+            with self.subTest(value=invalid), self.assertRaisesRegex(ValueError, "must be 1 or 2"):
+                AscendConfig(
+                    sparse_kv_offload_config=SimpleNamespace(enabled=False), qwen_prefix_mamba_queue_depth=invalid
+                )
+
     def test_eplb_load_collection_phase_defaults_to_all(self):
         self.assertEqual(EplbConfig().load_collection_phase, "all")
 

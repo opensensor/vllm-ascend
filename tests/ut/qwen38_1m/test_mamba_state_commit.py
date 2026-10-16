@@ -2,7 +2,7 @@
 import pytest
 import torch
 
-from tools.qwen4exp.benchmark_mamba_commit_group_310 import host_group_copy
+from tools.qwen4exp.benchmark_mamba_commit_group_310 import geometry_cases, host_group_copy
 from tools.qwen4exp.benchmark_mamba_state_commit_310 import cases, host_driven_copy
 from tools.qwen4exp.mamba_commit import geometry, group_geometry, reference
 
@@ -85,6 +85,21 @@ def test_group_baseline_decides_once_and_skips_all_banks_when_idle():
     values[1, :4] = 10
     # Any bank access would fail: no-copy path must inspect request metadata only.
     host_group_copy([None] * 72, [True, False] * 36, values, table)
+
+
+@pytest.mark.parametrize("requests", [1, 4, 5, 6])
+@pytest.mark.parametrize("slots", [4, 64, 105, 177])
+def test_expanded_gate_preserves_invalid_cases_and_reaches_pool_end(requests, slots):
+    matrix = list(geometry_cases(requests, slots))
+    assert len(matrix) == 20
+    for revision, (values, table) in enumerate(matrix):
+        assert values.shape == (5, 8) and not values[:, requests:].any()
+        assert table.shape == (requests, 8)
+        if revision == 16:
+            assert (table == -1).all()
+        else:
+            assert int(table.max()) == slots - 1
+            assert int(table.min()) == slots - 4
 
 
 def test_group_baseline_matches_independent_bank_reference():

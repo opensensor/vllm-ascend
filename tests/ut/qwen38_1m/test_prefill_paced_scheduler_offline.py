@@ -80,12 +80,30 @@ def paced():
     instance.max_num_scheduled_tokens = 2560
     instance._prefill_pacing = PrefillPacingPolicy(PrefillPacingConfig())
     instance._prefill_pending_step = None
+    instance._prefill_queued_steps = {}
+    instance._qfn_queued_prefix_enabled = False
     instance._prefill_decode_steps_remaining = 0
     instance.prefill_capacity_bound = False
     instance.running = [request("prefill", True), request("decode", False)]
     instance.waiting = []
     instance.fail = False
     return instance
+
+
+def test_two_inflight_pacing_observations_are_matched_to_outputs(paced):
+    paced._qfn_queued_prefix_enabled = True
+    paced._prefill_pacing.observe = Mock()
+    first = paced.schedule()
+    second = paced.schedule()
+    assert len(paced._prefill_queued_steps) == 2
+    assert paced.update_from_output(first, None) == "parent_update"
+    assert id(first) not in paced._prefill_queued_steps
+    assert id(second) in paced._prefill_queued_steps
+    paced.update_from_output(second, None)
+    assert not paced._prefill_queued_steps
+    assert paced._prefill_pacing.observe.call_count == 2
+    with pytest.raises(RuntimeError, match="matching in-flight"):
+        paced.update_from_output(first, None)
 
 
 def test_decoder_first_aggregate_budget_and_fcfs_order_restored(paced):

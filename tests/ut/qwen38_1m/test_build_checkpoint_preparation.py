@@ -44,7 +44,7 @@ def test_build_freezes_explicit_sources_and_no_drain_contract(monkeypatch, tmp_p
 
     monkeypatch.setattr(builder.subprocess, "run", compile_mock)
     report = builder.build(destination, tmp_path, root)
-    assert report["namespace"] == report["entry"] == "qwen_checkpoint_preparation_v1"
+    assert report["namespace"] == report["entry"] == "qwen_checkpoint_preparation_v2"
     assert report["eager_only"] is report["flush_host_queue"] is False
     assert report["hardware_validated"] is report["server_modified"] is False
     assert report["bridge_source"] == "native_owned_bridge.cpp"
@@ -53,7 +53,7 @@ def test_build_freezes_explicit_sources_and_no_drain_contract(monkeypatch, tmp_p
         assert (destination / Path(path).name).read_bytes() == (root / path).read_bytes()
         assert report["sources"][Path(path).name] == builder.digest(destination / Path(path).name)
     assert "-DQWEN_NATIVE_FLUSH_HOST_QUEUE=0" in calls[-1]
-    assert "-DGLM_RECONSTRUCTION_NAMESPACE=qwen_checkpoint_preparation_v1" in calls[-1]
+    assert "-DGLM_RECONSTRUCTION_NAMESPACE=qwen_checkpoint_preparation_v2" in calls[-1]
     assert str(destination / "native_owned_bridge.cpp") in calls[-1]
     assert calls[1][1] == str(destination / "native_checkpoint_preparation.cpp")
     assert json.loads((destination / "provenance.json").read_text()) == report

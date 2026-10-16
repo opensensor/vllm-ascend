@@ -6,6 +6,14 @@ import torch
 from tools.qwen4exp import direct_hc_residual as candidate
 
 
+def test_producer_bridge_rejects_capture_before_launch(monkeypatch):
+    monkeypatch.setattr(candidate, "_is_capturing", lambda device: True)
+    op = candidate.ProducerHCResidual.__new__(candidate.ProducerHCResidual)
+    tensor = torch.empty(1)
+    with pytest.raises(RuntimeError, match="eager execution"):
+        op(tensor, tensor, tensor)
+
+
 def make_op(monkeypatch):
     monkeypatch.setattr(candidate, "_supports_device", lambda device: True)
     calls = []

@@ -111,6 +111,8 @@ def test_unworkable_checkpoint_budget_is_rejected(requests, depth):
 def test_schedule_protects_unowned_cow_source_and_snapshot_survives_worker_ipc(monkeypatch):
     pool, blocks, _ = pool_with_cached_blocks()
     scheduler = object.__new__(mod.PrefixMambaBoundedScheduler)
+    scheduler._qfn_queued_prefix_enabled = False
+    scheduler._prefix_mamba_step_leases = mod.PrefixMambaStepLeases(pool, 1)
     scheduler.kv_cache_manager = SimpleNamespace(block_pool=pool)
     scheduler._prefix_mamba_managers = {1: SimpleNamespace(req_to_blocks={})}
     scheduler._prefix_mamba_checkpoint_limit = 1
@@ -297,7 +299,10 @@ def test_scheduler_constructor_preserves_parent_setup_and_tracks_mamba_groups(mo
 
     def parent(self, cfg, *args, **kwargs):
         assert cfg is config and args == ("kv-config",) and kwargs == {"log_stats": True}
-        self.kv_cache_manager = SimpleNamespace(coordinator=SimpleNamespace(single_type_managers=[object(), manager]))
+        self.kv_cache_manager = SimpleNamespace(
+            block_pool=BlockPool(32, True, 128, False),
+            coordinator=SimpleNamespace(single_type_managers=[object(), manager]),
+        )
 
     monkeypatch.setattr(mod.Scheduler, "__init__", parent)
     scheduler = mod.PrefixMambaBoundedScheduler(config, "kv-config", log_stats=True)
@@ -338,3 +343,24 @@ def test_scheduler_rejects_unsupported_serving_before_initializing(monkeypatch, 
     with pytest.raises(ValueError):
         mod.PrefixMambaBoundedScheduler(config)
     parent.assert_not_called()
+
+
+def test_queued_leases_use_real_pool_cow_and_survive_abort():
+    pool = BlockPool(16, True, 128, False)
+    block = pool.get_new_blocks(1)[0]
+    leases = mod.PrefixMambaStepLeases(pool, 2)
+    first, second = object(), object()
+    assert pool.is_block_writable(block)
+    leases.acquire(first, {1: [block.block_id]})
+    assert not pool.is_block_writable(block)
+    leases.acquire(second, {1: [block.block_id]})
+    pool.free_blocks([block])  # request abort; both submitted uses still own it
+    available = pool.get_num_free_blocks()
+    leases.release(first)
+    assert block.ref_cnt == 1 and pool.get_num_free_blocks() == available
+    leases.release(second)
+    assert block.ref_cnt == 0 and pool.get_num_free_blocks() == available + 1
+
+
+def test_queued_checkpoint_budget_retains_history_after_two_step_reservation():
+    assert mod.prefix_mamba_checkpoint_limit(6, 2, queue_depth=2) == 32

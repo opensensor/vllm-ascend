@@ -33,7 +33,7 @@ class Schedule:
 
 
 @pytest.mark.parametrize("accepted", [1, 2, 3])
-@pytest.mark.parametrize("n", [1, 2, 3, 4])
+@pytest.mark.parametrize("n", [1, 2, 3, 4, 5, 6])
 def test_rejection_corrects_only_worker_copy_and_preserves_allocations(accepted, n):
     ids = [str(i) for i in range(n)]
     schedule = Schedule(Cached(ids, [131] * n, [4] * n), {i: [-1, -1] for i in ids}, {i: 3 for i in ids})
@@ -231,7 +231,9 @@ def test_engine_queue_keeps_scheduler_and_cache_ownership_and_restores_drained()
     assert engine.batch_queue is None and engine.batch_queue_size == 1 and not engine.async_scheduling
 
 
-@pytest.mark.parametrize("case", ["queued", "unfinished", "unpaused", "recycling", "connector", "dp"])
+@pytest.mark.parametrize(
+    "case", ["queued", "unfinished", "unpaused", "recycling", "private_recycling", "connector", "dp"]
+)
 def test_engine_switch_rejects_unaudited_lifetimes(case):
     engine = engine_fixture()
     if case == "queued":
@@ -242,6 +244,8 @@ def test_engine_switch_rejects_unaudited_lifetimes(case):
         engine._pause_complete = lambda: False
     elif case == "recycling":
         engine.scheduler.kv_cache_manager.coordinator.single_type_managers[0].max_admission_blocks_per_request = 32
+    elif case == "private_recycling":
+        engine.scheduler.kv_cache_manager.coordinator.single_type_managers[0]._max_admission_blocks_per_request = 32
     elif case == "connector":
         engine.scheduler.connector = object()
     else:
@@ -331,3 +335,88 @@ def test_missing_device_consumer_cannot_silently_hash_reservations(monkeypatch):
     monkeypatch.setattr(candidate, "uniform_history_rows", lambda *args: True)
     assert functions[STAGE_TARGET](runner, 3) == "stage"
     assert bridge.expected_device_history is None
+
+
+class QwenPrefillPacedScheduler(BalanceScheduler):
+    pass
+
+
+def prefix_engine_fixture():
+    engine = engine_fixture()
+    scheduler = engine.scheduler
+    scheduler.__class__ = QwenPrefillPacedScheduler
+    scheduler._prefix_mamba_queue_depth = 2
+    scheduler._prefix_mamba_step_leases = SimpleNamespace(drained=True)
+    scheduler._prefill_queued_steps = {}
+    scheduler._qfn_queued_prefix_enabled = False
+    scheduler.max_num_scheduled_tokens = 2048
+    config = engine.vllm_config
+    config.scheduler_config.max_num_batched_tokens = 2048
+    config.scheduler_config.max_num_seqs = 6
+    config.model_config = SimpleNamespace(max_model_len=262144)
+    manager = scheduler.kv_cache_manager.coordinator.single_type_managers[0]
+    manager._max_admission_blocks_per_request = 17
+    manager.kv_cache_spec = SimpleNamespace(
+        max_admission_blocks_per_request=lambda tokens, maximum: (tokens + 127) // 128 + 1
+    )
+    return engine
+
+
+def test_queued_prefix_preserves_cold_kv_reservation_and_restores_budget():
+    engine = prefix_engine_fixture()
+    scheduler = engine.scheduler
+    owner = QueuedEngineControl(engine, enabled=True, async_scheduler_class=AsyncScheduler)
+    assert owner.validate(engine)["step_token_budget"] == 1024
+    assert scheduler.max_num_scheduled_tokens == 2048
+    owner.apply(engine)
+    assert scheduler._qfn_queued_prefix_enabled
+    assert scheduler.max_num_scheduled_tokens == 1024
+    assert engine.vllm_config.scheduler_config.max_num_batched_tokens * engine.batch_queue_size == 2048
+    output = []
+    scheduler._update_after_schedule(output)
+    assert output == ["scheduler", "placeholders"]
+    restore = QueuedEngineControl(engine, enabled=False, async_scheduler_class=AsyncScheduler)
+    restore.apply(engine)
+    assert type(scheduler) is QwenPrefillPacedScheduler
+    assert not scheduler._qfn_queued_prefix_enabled
+    assert scheduler.max_num_scheduled_tokens == 2048
+    assert engine.vllm_config.scheduler_config.max_num_batched_tokens == 2048
+
+
+@pytest.mark.parametrize("case", ["depth", "leases", "pacing", "budget", "cap", "missing_spec"])
+def test_queued_prefix_rejects_unreserved_or_pending_state(case):
+    engine = prefix_engine_fixture()
+    scheduler = engine.scheduler
+    manager = scheduler.kv_cache_manager.coordinator.single_type_managers[0]
+    if case == "depth":
+        scheduler._prefix_mamba_queue_depth = 1
+    elif case == "leases":
+        scheduler._prefix_mamba_step_leases.drained = False
+    elif case == "pacing":
+        scheduler._prefill_queued_steps[1] = object()
+    elif case == "budget":
+        engine.vllm_config.scheduler_config.max_num_batched_tokens = 32
+    elif case == "cap":
+        manager._max_admission_blocks_per_request = 16
+    elif case == "missing_spec":
+        del manager.kv_cache_spec
+    owner = QueuedEngineControl(engine, enabled=True, async_scheduler_class=AsyncScheduler)
+    with pytest.raises(ValueError):
+        owner.apply(engine)
+    assert type(scheduler) is QwenPrefillPacedScheduler
+    assert not scheduler._qfn_queued_prefix_enabled
+    assert scheduler.max_num_scheduled_tokens == 2048
+
+
+@pytest.mark.parametrize("case", ["leases", "pacing"])
+def test_queued_prefix_restore_requires_retired_outputs(case):
+    engine = prefix_engine_fixture()
+    QueuedEngineControl(engine, enabled=True, async_scheduler_class=AsyncScheduler).apply(engine)
+    if case == "leases":
+        engine.scheduler._prefix_mamba_step_leases.drained = False
+    else:
+        engine.scheduler._prefill_queued_steps[1] = object()
+    restore = QueuedEngineControl(engine, enabled=False, async_scheduler_class=AsyncScheduler)
+    with pytest.raises(ValueError, match="retire all"):
+        restore.apply(engine)
+    assert engine.scheduler._qfn_queued_prefix_enabled and engine.batch_queue_size == 2

@@ -58,3 +58,23 @@ class DirectHCResidual:
         coefficients = injection.float()
         self.launch(self.kernel, [hyper, block, coefficients, output, tiling], 8)
         return output
+
+
+class ProducerHCResidual(DirectHCResidual):
+    """Eager-only residual with tensor retirement on the submitting thread.
+
+    The separate namespace prevents a legacy callback-owned bridge from being
+    silently reused. Decode graphs continue through the candidate's fallback.
+    """
+
+    def __init__(self, binary_path):
+        super().__init__(
+            binary_path,
+            kernel=torch.classes.qwen_hc_residual_producer_v1.Kernel(binary_path, "qwen_hc_residual_v3"),
+            launch=torch.ops.qwen_hc_residual_producer_v1.launch,
+        )
+
+    def __call__(self, hyper, block, injection):
+        if _is_capturing(hyper.device):
+            raise RuntimeError("producer-owned HC residual requires eager execution")
+        return super().__call__(hyper, block, injection)

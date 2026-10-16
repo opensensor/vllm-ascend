@@ -59,7 +59,7 @@ def test_native_load_rejects_binary_drift_before_loading(tmp_path, monkeypatch):
     binary = tmp_path / "binary.bin"
     binary.write_bytes(b"changed binary")
     manifest = dict(
-        namespace="qwen_checkpoint_preparation_v1",
+        namespace="qwen_checkpoint_preparation_v2",
         flush_host_queue=False,
         sources={source.name: hashlib.sha256(source.read_bytes()).hexdigest()},
         bridge=dict(path=str(binary), sha256=hashlib.sha256(b"original binary").hexdigest()),

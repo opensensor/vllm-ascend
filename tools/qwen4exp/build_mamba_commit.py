@@ -25,7 +25,9 @@ def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def build(directory, cann, root):
+def build(directory, cann, root, *, namespace=NAMESPACE):
+    if namespace not in (NAMESPACE, "qwen_mamba_commit_v2"):
+        raise ValueError("unsupported versioned Mamba namespace")
     # CPU compilation needs torch headers, never torch_npu device initialization.
     if os.environ.get("TORCH_DEVICE_BACKEND_AUTOLOAD") != "0":
         raise RuntimeError("CPU-only compilation requires upstream TORCH_DEVICE_BACKEND_AUTOLOAD=0")
@@ -79,7 +81,7 @@ def build(directory, cann, root):
     npu = Path(spec.origin).parent
     includes = [*include_paths(), str(npu / "include"), str(cann / "include"), sysconfig.get_path("include")]
     libraries = [*library_paths(), str(npu / "lib"), str(cann / "lib64")]
-    bridge = directory / f"{NAMESPACE}.so"
+    bridge = directory / f"{namespace}.so"
     subprocess.run(
         [
             "c++",
@@ -87,7 +89,7 @@ def build(directory, cann, root):
             "-fPIC",
             "-std=c++20",
             "-O2",
-            f"-DGLM_RECONSTRUCTION_NAMESPACE={NAMESPACE}",
+            f"-DGLM_RECONSTRUCTION_NAMESPACE={namespace}",
             "-DQWEN_NATIVE_FLUSH_HOST_QUEUE=0",
             f"-D_GLIBCXX_USE_CXX11_ABI={int(torch._C._GLIBCXX_USE_CXX11_ABI)}",
             *[f"-I{path}" for path in includes],
@@ -106,7 +108,7 @@ def build(directory, cann, root):
         check=True,
     )
     provenance = {
-        "namespace": NAMESPACE,
+        "namespace": namespace,
         "entry": NAMESPACE,
         "bridge_source": "native_owned_bridge.cpp",
         "flush_host_queue": False,
@@ -126,5 +128,6 @@ if __name__ == "__main__":
     parser.add_argument("--build-dir", type=Path, required=True)
     parser.add_argument("--cann-root", type=Path, required=True)
     parser.add_argument("--source-root", type=Path, required=True)
+    parser.add_argument("--namespace", choices=(NAMESPACE, "qwen_mamba_commit_v2"), default=NAMESPACE)
     args = parser.parse_args()
-    print(json.dumps(build(args.build_dir, args.cann_root, args.source_root), indent=2))
+    print(json.dumps(build(args.build_dir, args.cann_root, args.source_root, namespace=args.namespace), indent=2))

@@ -100,6 +100,7 @@ def runtime_fixture():
     events = []
     resource = ResidentMambaCommit.__new__(ResidentMambaCommit)
     resource.failed = resource.verify = resource.all_steps = resource.staging_pending = False
+    resource.slots = 64
     resource.groups, resource.block_size, resource.capacity = (1,), 128, {1: 4}
     resource.host_inputs = torch.zeros(5, 8, dtype=torch.int32)
     resource.inputs = torch.zeros_like(resource.host_inputs)

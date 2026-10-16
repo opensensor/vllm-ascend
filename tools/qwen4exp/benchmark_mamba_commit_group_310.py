@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Private 72-bank graph gate with live QFN inner shapes, four slots per bank.
+"""Private grouped graph gate for TP4 and uneven TP6 state geometries.
 
-The serving model uses 64 slots per bank. This gate uses four to bound private
-memory while testing all 36 convolution/recurrent pairs in one native launch.
-No model banks, collective resources or serving graphs are touched.
+The default uses 72 banks with four slots to bound memory. Use one bank pair
+with 105/177 slots to exercise actual pool bounds. No live model banks,
+collective resources or serving graphs are touched.
 """
 
 import argparse
@@ -16,6 +16,20 @@ import torch
 
 from tools.qwen4exp.benchmark_mamba_state_commit_310 import cases, load
 from tools.qwen4exp.mamba_commit import MambaCommitGroup, reference
+from tools.qwen4exp.runtime_geometry import MAX_REQUESTS, STATE_GEOMETRIES
+
+
+def geometry_cases(requests, slots):
+    if not 1 <= requests <= MAX_REQUESTS or slots < 4:
+        raise ValueError("gate requires one through six requests and at least four slots")
+    indices = torch.arange(requests) % 4
+    for original, mapping in cases():
+        inputs = torch.zeros_like(original)
+        inputs[:, :requests] = original[:, indices]
+        table = mapping[indices].clone()
+        # Exercise the high end of the actual state pool. Preserve invalid IDs.
+        table = torch.where(table >= 0, table % 4 + slots - 4, table)
+        yield inputs, table
 
 
 def host_group_copy(banks, convolution, host_inputs, host_table):
@@ -41,28 +55,32 @@ def host_group_copy(banks, convolution, host_inputs, host_table):
 
 
 @torch.inference_mode()
-def gate(build, device, emit):
+def gate(build, device, emit, *, requests=4, slots=4, width=2560, heads=12, pairs=36):
+    if (width, heads) not in STATE_GEOMETRIES or pairs not in (1, 36):
+        raise ValueError("unsupported private QFN state geometry")
+    test_cases = list(geometry_cases(requests, slots))
     load(build)  # verifies frozen sources and bridge before loading either entry
     binary = Path(build) / "native_mamba_commit.bin"
     kernel = torch.classes.qwen_mamba_commit_v1.Kernel(str(binary), "qwen_mamba_commit_group_v1")
     launch = torch.ops.qwen_mamba_commit_v1.launch
     generator = torch.Generator().manual_seed(1416)
     host_banks, convolution = [], []
-    for _ in range(36):
+    for _ in range(pairs):
         host_banks.extend(
             (
-                torch.randint(-32768, 32767, (4, 5, 2560), dtype=torch.int16, generator=generator).view(torch.float16),
+                torch.randint(-32768, 32767, (slots, 5, width), dtype=torch.int16, generator=generator).view(
+                    torch.float16
+                ),
                 torch.randint(
-                    -(1 << 31), (1 << 31) - 1, (4, 12, 128, 128), dtype=torch.int32, generator=generator
+                    -(1 << 31), (1 << 31) - 1, (slots, heads, 128, 128), dtype=torch.int32, generator=generator
                 ).view(torch.float32),
             )
         )
         convolution.extend((True, False))
     banks = [value.to(device) for value in host_banks]
-    host_inputs, host_table = list(cases())[3]
-    host_table %= 4
+    host_inputs, host_table = test_cases[3]
     inputs, table = host_inputs.to(device), host_table.to(device)
-    resource = MambaCommitGroup(kernel, launch, banks, [table] * 72, convolution, block_size=128)
+    resource = MambaCommitGroup(kernel, launch, banks, [table] * len(banks), convolution, block_size=128)
     stream = torch.npu.Stream()
     stream.wait_stream(torch.npu.current_stream())
     with torch.npu.stream(stream):
@@ -75,13 +93,11 @@ def gate(build, device, emit):
         resource(inputs)
     torch.npu.current_stream().wait_stream(stream)
     torch.npu.synchronize()
-    emit(dict(stage="captured", banks=72, device=str(device), launches_per_replay=1))
+    emit(dict(stage="captured", banks=len(banks), device=str(device), launches_per_replay=1))
     try:
         checked = 0
         for revision in (0, 1, 2, 3, 16, 17, 18, 19):
-            host_inputs, host_table = list(cases())[revision]
-            # Keep invalid physical IDs invalid; reduce only admitted IDs.
-            host_table = torch.where(host_table >= 0, host_table % 4, host_table)
+            host_inputs, host_table = test_cases[revision]
             inputs.copy_(host_inputs)
             table.copy_(host_table)
             for bank, host in zip(banks, host_banks):
@@ -96,10 +112,9 @@ def gate(build, device, emit):
         emit(dict(stage="parity_passed", exact_bank_checks=checked, arbitrary_fp_bits=True))
         timing = {}
         for mode in ("no_copy", "boundary_copy"):
-            host_inputs, host_table = list(cases())[3]
-            host_table %= 4
+            host_inputs, host_table = (value.clone() for value in test_cases[3])
             if mode == "no_copy":
-                host_inputs[1, :4] = 10
+                host_inputs[1, :requests] = 10
             inputs.copy_(host_inputs)
             table.copy_(host_table)
 
@@ -121,8 +136,11 @@ def gate(build, device, emit):
             dict(
                 stage="passed",
                 exact_bank_checks=checked,
-                banks=72,
-                slots_per_bank=4,
+                banks=len(banks),
+                slots_per_bank=slots,
+                requests=requests,
+                width=width,
+                heads=heads,
                 launches_per_replay=1,
                 timing=timing,
                 scope="private_group_not_model_throughput",
@@ -138,6 +156,11 @@ def main():
     parser.add_argument("--device", type=int, required=True)
     parser.add_argument("--build", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--requests", type=int, default=4)
+    parser.add_argument("--slots", type=int, default=4)
+    parser.add_argument("--width", type=int, default=2560)
+    parser.add_argument("--heads", type=int, default=12)
+    parser.add_argument("--pairs", type=int, choices=(1, 36), default=36)
     args = parser.parse_args()
     if args.output.exists():
         parser.error("use a new output path")
@@ -158,7 +181,16 @@ def main():
             output.flush()
             print(line, flush=True)
 
-        gate(args.build, f"npu:{args.device}", emit)
+        gate(
+            args.build,
+            f"npu:{args.device}",
+            emit,
+            requests=args.requests,
+            slots=args.slots,
+            width=args.width,
+            heads=args.heads,
+            pairs=args.pairs,
+        )
 
 
 if __name__ == "__main__":

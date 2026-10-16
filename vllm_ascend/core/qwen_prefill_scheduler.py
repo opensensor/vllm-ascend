@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Explicit synchronous Qwen scheduler with bounded prefixes and prefill work.
+"""Qwen scheduler with bounded prefixes and paced prefill work.
 
 Select with --scheduler-cls; configuration lives in additional_config under
 qwen_prefill_pacing. This does not poll sensors or replace the 94/85 thermal
-controller. No request or encoder tokens are discarded.
+controller. Startup is synchronous; the guarded resident queue controller can
+activate reserved two-step execution. No request or encoder tokens are discarded.
 """
 
 import time
@@ -23,6 +24,7 @@ class QwenPrefillPacedScheduler(PrefixMambaBoundedScheduler):
         if not vllm_config.scheduler_config.enable_chunked_prefill:
             raise ValueError("Qwen prefill pacing requires chunked prefill")
         self._prefill_pending_step = None
+        self._prefill_queued_steps = {}
         self._prefill_decode_steps_remaining = 0
         super().__init__(vllm_config, *args, **kwargs)
 
@@ -99,12 +101,20 @@ class QwenPrefillPacedScheduler(PrefixMambaBoundedScheduler):
             tokens for request_id, tokens in output.num_scheduled_tokens.items() if request_id in prefill_ids
         )
         self._prefill_pending_step = (output, started, prefill_tokens, decode_only)
+        if self._qfn_queued_prefix_enabled:
+            self._prefill_queued_steps[id(output)] = self._prefill_pending_step
         return output
 
     def update_from_output(self, scheduler_output, model_runner_output):
         pending = self._prefill_pending_step
+        if self._qfn_queued_prefix_enabled:
+            pending = self._prefill_queued_steps.get(id(scheduler_output))
+            if pending is None or pending[0] is not scheduler_output:
+                raise RuntimeError("prefill pacing requires the matching in-flight output")
         self._prefill_pending_step = None
         result = super().update_from_output(scheduler_output, model_runner_output)
+        if self._qfn_queued_prefix_enabled:
+            del self._prefill_queued_steps[id(scheduler_output)]
         if pending is not None and pending[0] is scheduler_output:
             self._prefill_pacing.observe(pending[2], (time.monotonic() - pending[1]) * 1000)
             if pending[2]:

@@ -11,7 +11,7 @@ import subprocess
 import sysconfig
 from pathlib import Path
 
-NAMESPACE = "qwen_checkpoint_preparation_v1"
+NAMESPACE = "qwen_checkpoint_preparation_v2"
 SOURCES = (
     "tools/glm_perf/compile_reconstruction.cpp",
     "tools/qwen4exp/native_checkpoint_preparation.cpp",

@@ -11,8 +11,8 @@ import numpy as np
 import torch
 
 from tools.qwen4exp.mamba_commit import PADDED_ROWS, MambaCommitGroup
+from tools.qwen4exp.runtime_geometry import MAX_REQUESTS, request_capacity, state_geometry
 
-MAX_REQUESTS = 4
 MAX_TOKEN_VALUE = (1 << 31) - 1
 
 
@@ -73,6 +73,8 @@ class ResidentMambaCommit:
         if runner.use_async_scheduling or is_conv_state_dim_first():
             raise ValueError("resident commit requires synchronous SD-layout Mamba")
         self.runner = runner
+        self.max_requests = request_capacity(runner)
+        self.slots = None
         self.enabled, self.verify, self.all_steps = False, False, False
         self.failed = False
         self.checked_calls = self.checked_blocks = self.native_calls = 0
@@ -92,11 +94,11 @@ class ResidentMambaCommit:
                 states = runner.compilation_config.static_forward_context[name].kv_cache
                 if len(states) != 2:
                     raise ValueError("expected one convolution/recurrent pair")
+                slots = state_geometry(*states)
+                if self.slots is not None and slots != self.slots:
+                    raise ValueError("resident state banks require matching slot capacities")
+                self.slots = slots
                 for bank, conv in zip(states, (True, False)):
-                    if (conv and tuple(bank.shape) != (64, 5, 2560)) or (
-                        not conv and tuple(bank.shape) != (64, 12, 128, 128)
-                    ):
-                        raise ValueError("live state differs from qualified inner geometry")
                     self.banks.append(bank)
                     self.convolution.append(conv)
                     self.bank_groups.append(group)
@@ -110,7 +112,7 @@ class ResidentMambaCommit:
         self.host_inputs[4].fill_(1)
         self.inputs = self.host_inputs.to(device)
         self.host_tables = {
-            group: torch.zeros((MAX_REQUESTS, size), dtype=torch.int32, pin_memory=True)
+            group: torch.zeros((self.max_requests, size), dtype=torch.int32, pin_memory=True)
             for group, size in self.capacity.items()
         }
         self.tables = {group: value.to(device) for group, value in self.host_tables.items()}
@@ -122,7 +124,7 @@ class ResidentMambaCommit:
         # Invalid or boundary-crossing warmup inputs could mutate live state.
         # These valid inputs align below running=11, so every bank is skipped.
         with torch.npu.stream(stream):
-            for n in range(1, MAX_REQUESTS + 1):
+            for n in range(1, self.max_requests + 1):
                 resource = MambaCommitGroup(
                     kernel,
                     launch,
@@ -207,7 +209,7 @@ class ResidentMambaCommit:
         ]
         try:
             packed, next_counts, copies = admit_commit(
-                columns, counts.numpy(), mapped, block_size=self.block_size, slots=64
+                columns, counts.numpy(), mapped, block_size=self.block_size, slots=self.slots
             )
         except ValueError as error:
             if self.verify:
@@ -235,7 +237,7 @@ class ResidentMambaCommit:
             if self.verify:
                 receipt = resource.receipt.cpu()
                 torch.testing.assert_close(
-                    receipt[:, 0, :n], torch.from_numpy(next_counts).int().expand(72, n), rtol=0, atol=0
+                    receipt[:, 0, :n], torch.from_numpy(next_counts).int().expand(len(self.banks), n), rtol=0, atol=0
                 )
                 if receipt[:, 1].count_nonzero():
                     raise RuntimeError("native commit rejected an admitted row")

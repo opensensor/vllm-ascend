@@ -16,9 +16,10 @@ import numpy as np
 import torch
 
 from tools.qwen4exp.queued_schedule import can_use_device_drafts
+from tools.qwen4exp.runtime_geometry import request_capacity
 
 MTP_WIDTH = 3
-MAX_REQUESTS = 4
+
 QUALIFIED_SOURCE_SHA256 = "3925a317d984fbe22146416068fe4d3729df152cdbdee261e2990ca26761dea7"
 SPEC_FIELDS = (
     "draft_token_ids",
@@ -179,7 +180,7 @@ class DecodePreparationGraphs:
         stream = torch.npu.Stream(device=runner.device)
         stream.wait_stream(torch.npu.current_stream())
         with torch.npu.stream(stream):
-            for n in range(1, MAX_REQUESTS + 1):
+            for n in range(1, request_capacity(runner) + 1):
                 count = n * MTP_WIDTH
                 self.host[n] = fixed_host_geometry(n)
                 req_indices, query_pos, cu_tokens = (

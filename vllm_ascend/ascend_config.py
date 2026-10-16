@@ -447,6 +447,7 @@ class AscendConfig:
             "weight_nz_mode": 1,
             "qwen_prefill_pacing": {},
             "qwen_prefix_mamba_min_slots": 64,
+            "qwen_prefix_mamba_queue_depth": 1,
             "enable_shared_expert_dp": false,
             "enable_sparse_sfa_c8": false,
             "enable_sparse_li_c8": false,
@@ -613,6 +614,17 @@ class AscendConfig:
     # Resident recurrent-state floor. Live windows always fit; excess prefix
     # checkpoints can spill to host. Used only by Qwen's compact prefix tier.
     qwen_prefix_mamba_min_slots: int = 64
+
+    # Cold reservation only. Depth two does not enable engine/worker async
+    # execution; the drained resident queue controller qualifies that change.
+    qwen_prefix_mamba_queue_depth: int = 1
+
+    @field_validator("qwen_prefix_mamba_queue_depth", mode="before")
+    @classmethod
+    def _validate_qwen_prefix_mamba_queue_depth(cls, value):
+        if type(value) is not int or value not in (1, 2):
+            raise ValueError("qwen_prefix_mamba_queue_depth must be 1 or 2")
+        return value
 
     @field_validator("qwen_prefix_mamba_min_slots", mode="before")
     @classmethod

@@ -295,6 +295,7 @@ class NPUModelRunner310(NPUModelRunner):
                 bounded_checkpoints=uses_bounded_prefix_mamba_scheduler(
                     getattr(self.scheduler_config, "scheduler_cls", None)
                 ),
+                queue_depth=self.vllm_config.additional_config.get("qwen_prefix_mamba_queue_depth", 1),
             )
             if self.supports_prefix_mamba_state_tier
             else (1 + self.speculative_config.num_speculative_tokens if self._qwen4exp_mtp_ple else 1)

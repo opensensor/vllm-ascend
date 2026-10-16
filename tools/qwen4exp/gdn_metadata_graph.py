@@ -13,8 +13,10 @@ from types import MethodType
 import numpy as np
 import torch
 
+from tools.qwen4exp.runtime_geometry import MAX_REQUESTS, request_capacity
+
 MTP_WIDTH = 3
-MAX_REQUESTS = 4
+
 COMPARE_FIELDS = (
     "spec_query_start_loc",
     "spec_state_indices_tensor",
@@ -91,14 +93,14 @@ class GDNMetadataGraphs:
         self.records = {}
         table = runner.input_batch.block_table.block_tables[group].block_table.gpu
         self.table = table
-        self.lengths = torch.full((MAX_REQUESTS,), 3, dtype=torch.int32, device=table.device)
+        self.lengths = torch.full((request_capacity(runner),), 3, dtype=torch.int32, device=table.device)
         self.accepted = torch.ones_like(self.lengths)
         self.stream = torch.npu.Stream(device=table.device)
         self.stream.wait_stream(torch.npu.current_stream())
         # Retain all owners before submission; failed capture must not release
         # memory still referenced by the runtime.
         with torch.npu.stream(self.stream):
-            for n in range(1, MAX_REQUESTS + 1):
+            for n in range(1, request_capacity(runner) + 1):
                 metadata = metadata_type(
                     num_prefills=0,
                     num_prefill_tokens=0,

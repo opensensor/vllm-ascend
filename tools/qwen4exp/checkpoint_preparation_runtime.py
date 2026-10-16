@@ -108,7 +108,7 @@ class CheckpointPreparationGraphs:
         stream = torch.npu.Stream(device=self.runner.device)
         stream.wait_stream(torch.npu.current_stream())
         with torch.npu.stream(stream):
-            for n in range(1, MAX_REQUESTS + 1):
+            for n in sorted(commit.records):
                 transition = self.transition.records[n]
                 values = (
                     self.transition.inputs[0, :n],
@@ -254,7 +254,9 @@ class CheckpointPreparationGraphs:
                 key not in mapped or mapped[key].shape != (n, self.commit.capacity[key]) for key in self.commit.groups
             ):
                 raise ValueError("missing compact checkpoint tables")
-            current, copied = admit_precopy(previous, computed, mapped, block_size=self.commit.block_size, slots=64)
+            current, copied = admit_precopy(
+                previous, computed, mapped, block_size=self.commit.block_size, slots=self.commit.slots
+            )
         except ValueError:
             self.restore_counts(n)
             self.armed = None

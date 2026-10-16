@@ -14,7 +14,7 @@ from tools.qwen4exp.mamba_commit import PADDED_ROWS, group_geometry
 def load(build):
     root = Path(build).resolve(strict=True)
     manifest = json.loads((root / "provenance.json").read_text())
-    namespace = "qwen_checkpoint_preparation_v1"
+    namespace = "qwen_checkpoint_preparation_v2"
     if manifest["namespace"] != namespace or manifest["flush_host_queue"] is not False:
         raise ValueError("checkpoint native bridge contract differs")
     for name, digest in manifest["sources"].items():
@@ -35,7 +35,7 @@ class CheckpointPrecopyGroup:
     def __init__(self, kernel, launch, banks, tables, convolution, *, block_size):
         configs = group_geometry(banks, tables, convolution, block_size=block_size)
         device = banks[0].device
-        if device.type != "npu" or torch.npu.is_current_stream_capturing() or not 1 <= configs[0][0] <= 4:
+        if device.type != "npu" or torch.npu.is_current_stream_capturing() or not 1 <= configs[0][0] <= 6:
             raise ValueError("construct admitted checkpoint group before capture")
         self.kernel, self.launch = kernel, launch
         self.banks, self.tables = tuple(banks), tuple(tables)
@@ -78,7 +78,7 @@ def install_fused_graphs(owner, kernel, launch):
     stream.wait_stream(torch.npu.current_stream())
     with torch.npu.stream(stream):
         saved_normalized = owner.normalized.clone()
-        for n in range(1, 5):
+        for n in sorted(owner.records):
             values = owner.tensor_records[n]["values"]
             saved = tuple(value.clone() for value in values)
             group = CheckpointPrecopyGroup(

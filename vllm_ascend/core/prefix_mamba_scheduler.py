@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Opt-in bounded prefix checkpoints for synchronous Qwen serving on 310P."""
+"""Opt-in bounded prefix checkpoints and reserved in-flight state on 310P."""
 
 from collections.abc import Mapping
 
@@ -14,6 +14,7 @@ from vllm_ascend._310p.prefix_mamba_state import (
     PREFIX_MAMBA_WORKING_WINDOWS,
     prefix_mamba_slot_count,
 )
+from vllm_ascend.core.prefix_mamba_leases import PrefixMambaStepLeases
 
 
 def _is_310p() -> bool:
@@ -25,13 +26,19 @@ def _is_310p() -> bool:
 
 
 def prefix_mamba_checkpoint_limit(
-    max_requests: int, speculative_tokens: int, *, minimum_slots: int = PREFIX_MAMBA_MIN_SLOTS
+    max_requests: int, speculative_tokens: int, *, minimum_slots: int = PREFIX_MAMBA_MIN_SLOTS, queue_depth: int = 1
 ) -> int:
     primary_slots = (
-        prefix_mamba_slot_count(max_requests, speculative_tokens, bounded_checkpoints=True, minimum_slots=minimum_slots)
+        prefix_mamba_slot_count(
+            max_requests,
+            speculative_tokens,
+            bounded_checkpoints=True,
+            minimum_slots=minimum_slots,
+            queue_depth=queue_depth,
+        )
         - 1
     )
-    limit = primary_slots - max_requests * PREFIX_MAMBA_WORKING_WINDOWS * (1 + speculative_tokens)
+    limit = primary_slots - max_requests * PREFIX_MAMBA_WORKING_WINDOWS * queue_depth * (1 + speculative_tokens)
     if limit < 1:
         raise ValueError("Bounded Mamba checkpoints need more compact slots or fewer requests/speculative tokens")
     return limit
@@ -112,10 +119,13 @@ class PrefixMambaBoundedScheduler(Scheduler):
             raise ValueError("Bounded prefix Mamba scheduler requires align-mode prefix caching")
         speculative = vllm_config.speculative_config
         speculative_tokens = speculative.num_speculative_tokens if speculative is not None else 0
+        self._prefix_mamba_queue_depth = vllm_config.additional_config.get("qwen_prefix_mamba_queue_depth", 1)
+        self._qfn_queued_prefix_enabled = False
         self._prefix_mamba_checkpoint_limit = prefix_mamba_checkpoint_limit(
             vllm_config.scheduler_config.max_num_seqs,
             speculative_tokens,
             minimum_slots=vllm_config.additional_config.get("qwen_prefix_mamba_min_slots", PREFIX_MAMBA_MIN_SLOTS),
+            queue_depth=self._prefix_mamba_queue_depth,
         )
         super().__init__(vllm_config, *args, **kwargs)
         self._prefix_mamba_managers = {
@@ -126,6 +136,9 @@ class PrefixMambaBoundedScheduler(Scheduler):
         if not self._prefix_mamba_managers:
             raise ValueError("Bounded prefix Mamba scheduler found no Mamba cache groups")
         self._prefix_mamba_tracked = {group_id: {} for group_id in self._prefix_mamba_managers}
+        self._prefix_mamba_step_leases = PrefixMambaStepLeases(
+            self.kv_cache_manager.block_pool, self._prefix_mamba_queue_depth
+        )
         logger.info(
             "Bounded prefix Mamba retention: %d cached checkpoints per group; "
             "request-owned and pending CoW states are preserved separately.",
@@ -133,6 +146,8 @@ class PrefixMambaBoundedScheduler(Scheduler):
         )
 
     def schedule(self, throttle_prefills: bool = False):
+        if self._qfn_queued_prefix_enabled:
+            self._prefix_mamba_step_leases.check_capacity()
         output = super().schedule(throttle_prefills=throttle_prefills)
         retained = bounded_prefix_mamba_blocks(
             self.kv_cache_manager.block_pool,
@@ -143,7 +158,27 @@ class PrefixMambaBoundedScheduler(Scheduler):
         # CoW sources can already be unowned by the time the output is sent.
         # Keep them through this step; the next snapshot can retire them.
         copies = {block_id for copy in (output.kv_cache_block_copies or ()) for block_id in copy if block_id > 0}
+        if self._qfn_queued_prefix_enabled:
+            owned = {
+                group: {
+                    block.block_id for blocks in manager.req_to_blocks.values() for block in blocks if not block.is_null
+                }
+                | copies
+                for group, manager in self._prefix_mamba_managers.items()
+            }
+            self._prefix_mamba_step_leases.acquire(output, owned)
         output.ascend_prefix_mamba_block_ids = {
-            group_id: sorted(set(block_ids) | copies) for group_id, block_ids in retained.items()
+            group_id: sorted(
+                set(block_ids)
+                | copies
+                | (self._prefix_mamba_step_leases.retained(group_id) if self._qfn_queued_prefix_enabled else set())
+            )
+            for group_id, block_ids in retained.items()
         }
         return output
+
+    def update_from_output(self, scheduler_output, model_runner_output):
+        result = super().update_from_output(scheduler_output, model_runner_output)
+        if self._qfn_queued_prefix_enabled:
+            self._prefix_mamba_step_leases.release(scheduler_output)
+        return result

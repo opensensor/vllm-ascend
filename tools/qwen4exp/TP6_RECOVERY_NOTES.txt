@@ -1,0 +1,130 @@
+TP6 hang recovery and state-commit qualification — October 16, 2026
+=================================================================
+
+Retained service
+----------------
+Host 192.168.53.187, port 8001, model qwen38-flash-next.
+Artifact root: /srv/ai/storage/artifacts/qfn-tp6-scaleout-20261016
+Current run: resident-v7; API 441803; engine 442929.
+TP6/EP6, MTP2, six requests, 262144 tokens per request. The engine remains
+synchronous with paced prefill and 105 compact Mamba slots. Grouped state
+commits remain loaded but DISABLED after the serving A/B below. Existing native
+PLE, custom collective, HC math, and CPU acceptance reuse are preserved.
+
+Hang and repair
+---------------
+The resident-v5 shared-memory broadcast warning was a downstream symptom.
+Rank zero's producer held the torch_npu allocator lock while waiting for its
+host task queue to record an event. The HC launch callback running in that
+queue cleared a captured tensor vector and waited for the same allocator
+lock. Other ranks waited for the next command. Native/Python stacks were
+saved under hang-v5 before terminating that deadlocked session.
+
+native_producer_bridge.cpp retains tensor arguments until successful host
+queue drain, then releases them on the submitting thread. It records the
+consumer stream for every allocation before enqueueing. Failed submissions
+retain their owners. ProducerHCResidual rejects graph capture; this bridge
+is for eager HC prefill, not captured decode. Kernel arithmetic is unchanged.
+
+The retained build is hc-producer-v3 with qwen_hc_residual_producer_v1.
+An earlier build used a mismatched kernel entry and was rejected before launch;
+its session was retired and replaced. No firmware or driver was changed.
+The host's canonical restore.py now selects install-hc-producer.py. The old
+restore script is archived as restore-before-hc-producer.py.
+
+Hardware evidence
+-----------------
+Every rank passed HC special values, six-chip geometry, 490 loaded-weight
+cases at rows 3/6/12/18/256, and 64 cross-stream allocation-churn cases.
+resident-v7/stability.jsonl records three uncached ~22.5K prompt / cached
+~27.5K continuation / 20-second idle / resumed-generation cycles, followed by
+six concurrent requests. All completed. This is a bounded stress test, not
+proof against every long-running workload or long-context accuracy validation.
+
+Private Mamba gates passed on all six devices: 576 exact bank comparisons
+for a 72-bank six-row fixture plus 16 comparisons addressing the actual
+105-slot pool per rank (3552 total). The observed first bank on every rank
+was padded to convolution width 1920 and nine recurrent heads. Private state
+was used; the gate did not overwrite live model state. The implementation also
+admits paired widths/heads 2560/12 and 1280/6 under offline tests.
+
+The native grouped state-commit owner then captured one through six requests
+against the actual 72 live banks. Serving six 256-token completions verified
+120 steps and 864 destination-bank comparisons per rank, with no admission
+fallbacks. Observed live request counts were 1, 2, 5, and 6. It consumes the
+cold runner's existing acceptance snapshot; it adds no acceptance readback in
+fast mode. Diagnostic verification reads state and must be disabled for timing.
+
+State installation initially rejected the already-registered private operator
+namespace, then rejected an obsolete CPU-fallback source guard. Both were
+preparation failures before changing serving methods. The retained installer
+uses a separately versioned bridge and the reviewed current cold snapshot.
+
+Serving A/B
+-----------
+Two off/on pairs, each three 256-token C1 prompts after a 32-token warmup:
+CPU copies: 34.61 tokens/s median over six completions (mean 34.39).
+Grouped commits: 33.08 median (mean 33.44), about 4.4% lower by median.
+Prompt identities and budgets were matched; prefix caches were cleared per arm.
+Generated text varied even between repetitions of the same arm, so these are
+small serving samples, not an isolated kernel-speed claim or a text-equality
+accuracy gate. Real bank comparisons supplied the correctness check.
+The candidate is disabled in resident-v7; canonical restore retains CPU copies.
+The native boundary-copy microbenchmark improvement did not translate into a
+whole-model gain without the rest of the device transition/queue pipeline.
+
+Reproduction and controls
+-------------------------
+Run commands through the profile's run.sh to retain the qualified CANN, Python
+and OPP environment. Use a fresh service run directory and collective owners.
+
+  python3 launch.py NEW_VERSION
+  bash run.sh restore.py resident-NEW_VERSION
+
+The HC/PLE restore includes loaded-weight and six-request checks. The grouped
+state optimization is a separate qualified opt-in after that restore:
+
+  bash run.sh -m tools.qwen4exp.apply_tp6_state \
+    --run-root <root>/resident-NEW_VERSION --build <root>/mamba-resident-v2 \
+    --output <root>/resident-NEW_VERSION/state-install.json
+
+Installation starts in verification mode. Run six concurrent completions that
+cross 128-token checkpoint boundaries, then use the same command with
+--action on and a fresh --output path (no --build needed). Fast mode rejects
+activation without six-row and real boundary-copy verification. --action off
+restores CPU copy dispatch; it retains graph and kernel owners for safety.
+The already-loaded private v1 operator must not be re-registered; the resident
+v2 bridge uses the same kernel ABI under a separate operator namespace.
+
+Offline work, not deployed
+-------------------------
+The transition, PLE history, checkpoint preparation, device commit-input and
+metadata/decode-preparation owners now admit six requests and actual compact
+pool capacities. Native checkpoint preparation has a v2 ABI so an old four-row
+kernel cannot silently accept new six-row inputs. These additional owners are
+not claimed to be live-qualified merely because the state-copy gate passed.
+
+Queue-depth-two support reserves 177 slots at cold startup, pins per-output
+block leases through cancellation and completion, and keeps a separate pacing
+record for each output. Its controller halves the per-step token budget so two
+queued steps stay within the cold recycling-cache admission bound. Defaults
+remain depth one. Unit tests cover real BlockPool copy-on-write/refcounts,
+abort lifetimes, reservation rejection and restore. It has NOT been enabled or
+hardware-qualified. It also requires the worker queued-schedule bridge first.
+
+85/86-expert local packing/finalization and the remaining TP4 owner bundle are
+still outside this live qualification. This is not full TP6 optimization parity.
+
+Repository validation
+---------------------
+803 targeted runtime/build/CPU contract tests passed, plus four TP6 state
+adapter tests; 91 prefix-state/scheduler tests passed against the local fork
+of upstream vLLM, including real BlockPool ownership. The configuration test
+passed with six invalid-input subtests. Scoped manual pre-commit hooks passed.
+The full unit-suite attempt stops in the existing root fixture because this
+local environment lacks vllm.third_party.flash_linear_attention. Required
+format.sh ci was run in an isolated checkout; it still fails on existing
+repository spelling, markdown, lint and forbidden-import findings.
+Raw host receipts and compact hashes are indexed by
+artifacts/qfn-tp6-recovery-20261016/recovery-summary.json.
+Fork Actions were verified disabled before pushing.

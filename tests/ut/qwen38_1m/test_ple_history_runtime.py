@@ -13,7 +13,7 @@ from tools.qwen4exp.resident_candidates.qfn_mamba_commit import RPC
 from tools.qwen4exp.resident_candidates.qfn_ple_history import make_replacements
 
 
-@pytest.mark.parametrize("n", [1, 2, 3, 4])
+@pytest.mark.parametrize("n", [1, 2, 3, 4, 5, 6])
 def test_admission_requires_exact_mtp2_segments(n):
     runner = SimpleNamespace(
         input_batch=SimpleNamespace(num_reqs=n),

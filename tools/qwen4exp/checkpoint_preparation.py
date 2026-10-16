@@ -10,9 +10,10 @@ from typing import NamedTuple
 import torch
 
 from tools.qwen4exp.mamba_commit import PADDED_ROWS
+from tools.qwen4exp.runtime_geometry import MAX_REQUESTS
 
 MTP_WIDTH = 3
-MAX_REQUESTS = 4
+
 NO_COPY_COMPUTED = 10
 
 

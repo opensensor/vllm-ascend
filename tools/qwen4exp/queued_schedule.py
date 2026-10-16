@@ -9,6 +9,8 @@ removes the engine round trip; it does not remove worker CPU bookkeeping.
 
 from dataclasses import replace
 
+from tools.qwen4exp.runtime_geometry import MAX_REQUESTS
+
 
 def can_use_device_drafts(runner, schedule, transition, history):
     """Admit an unchanged MTP2 batch whose input/history packets are on device.
@@ -23,7 +25,7 @@ def can_use_device_drafts(runner, schedule, transition, history):
     ids = tuple(batch.req_ids)
     pending = transition.next_pending
     return (
-        1 <= len(ids) <= 4
+        1 <= len(ids) <= MAX_REQUESTS
         and transition.enabled
         and history.enabled
         and not transition.failed

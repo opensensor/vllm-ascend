@@ -10,6 +10,7 @@ import numpy as np
 import torch
 
 from tools.qwen4exp.iteration_transition import advance_ple_history
+from tools.qwen4exp.runtime_geometry import MAX_REQUESTS
 
 
 def uniform_history_rows(runner, padded):
@@ -17,7 +18,7 @@ def uniform_history_rows(runner, padded):
     batch = runner.input_batch
     n = batch.num_reqs
     return (
-        1 <= n <= 4
+        1 <= n <= MAX_REQUESTS
         and not runner.with_prefill
         and padded == n * 3
         and np.array_equal(runner.query_start_loc.np[: n + 1], np.arange(n + 1) * 3)
@@ -32,11 +33,15 @@ class ResidentPLEHistory:
         self.enabled = self.verify = self.failed = False
         self.staged = self.pending = self.continuation = None
         self.checked_histories = 0
-        self.history = torch.full_like(self.runner._ple_context_gpu[:4], self.runner._ple_eos_token_id)
+        self.history = torch.full_like(
+            self.runner._ple_context_gpu[: transition.commit.max_requests], self.runner._ple_eos_token_id
+        )
         self.history_width = self.history.shape[1]
-        self.packet = torch.zeros((4, self.history_width + 3), dtype=torch.int64, device=self.history.device)
+        self.packet = torch.zeros(
+            (transition.commit.max_requests, self.history_width + 3), dtype=torch.int64, device=self.history.device
+        )
         self.host_packet = torch.empty(self.packet.shape, dtype=torch.int64, pin_memory=True)
-        self.first_input = torch.zeros(4, dtype=torch.int64, device=self.history.device)
+        self.first_input = torch.zeros(transition.commit.max_requests, dtype=torch.int64, device=self.history.device)
         self.graphs = {}
         self.done = torch.npu.Event()
         self.early_readback = False

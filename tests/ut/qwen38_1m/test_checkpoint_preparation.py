@@ -8,7 +8,7 @@ from tools.qwen4exp.checkpoint_preparation import prepare_checkpoint
 from tools.qwen4exp.mamba_commit import PADDED_ROWS, reference
 
 
-@pytest.mark.parametrize("n", range(1, 5))
+@pytest.mark.parametrize("n", range(1, 7))
 @pytest.mark.parametrize("computed", [0, 1, 124, 125, 126, 127, 128, 129, 253, 254, 255, 256, 8190])
 @pytest.mark.parametrize("accepted", [1, 2, 3])
 def test_device_decision_matches_scalar_precopy(n, computed, accepted):

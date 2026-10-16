@@ -47,6 +47,7 @@ def prefix_mamba_slot_count(
     *,
     bounded_checkpoints: bool = False,
     minimum_slots: int = PREFIX_MAMBA_MIN_SLOTS,
+    queue_depth: int = 1,
 ) -> int:
     """Size the shared null/live pool, including bounded scheduler ownership.
 
@@ -61,9 +62,11 @@ def prefix_mamba_slot_count(
         raise ValueError("Bounded checkpoint allocation must be a boolean")
     if type(minimum_slots) is not int or minimum_slots < 1:
         raise ValueError("Compact Mamba minimum slots must be a positive integer")
+    if type(queue_depth) is not int or queue_depth not in (1, 2) or (queue_depth != 1 and not bounded_checkpoints):
+        raise ValueError("Queued Mamba allocation requires bounded checkpoints and depth one or two")
     windows = PREFIX_MAMBA_WORKING_WINDOWS if bounded_checkpoints else 2
     retained = PREFIX_MAMBA_MIN_RETAINED_CHECKPOINTS if bounded_checkpoints else 0
-    return max(minimum_slots, 1 + max_num_reqs * windows * (1 + num_speculative_tokens) + retained)
+    return max(minimum_slots, 1 + max_num_reqs * windows * queue_depth * (1 + num_speculative_tokens) + retained)
 
 
 def prefix_mamba_state_bytes_per_slot(layer_states: Sequence[Sequence[torch.Tensor]]) -> int:
