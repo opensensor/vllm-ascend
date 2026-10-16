@@ -1,0 +1,531 @@
+{
+  "schema_version": 1,
+  "acceptance_cases": [
+    {
+      "name": "arithmetic-17-25",
+      "tier": "quality",
+      "category": "arithmetic",
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "What is 17 + 25? Return only the integer, without explanation."
+          }
+        ],
+        "temperature": 0,
+        "max_tokens": 8192
+      },
+      "score": {
+        "kind": "exact",
+        "expected": "42"
+      },
+      "request_sha256": "55acee9de1e6ac7b908b85f09e465c6b1ec3bd9c8fa63ac9fc6c31c0c3ef83ce"
+    },
+    {
+      "name": "arithmetic-19-4",
+      "tier": "quality",
+      "category": "arithmetic",
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "What is 19 + 4? Return only the integer, without explanation."
+          }
+        ],
+        "temperature": 0,
+        "max_tokens": 8192
+      },
+      "score": {
+        "kind": "exact",
+        "expected": "23"
+      },
+      "request_sha256": "96fc5fc8f06e02080e4c333885ef8927d90ae0faefbf96de7041012b571849b3"
+    },
+    {
+      "name": "arithmetic-13-7",
+      "tier": "quality",
+      "category": "arithmetic",
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "What is 13 + 7? Return only the integer, without explanation."
+          }
+        ],
+        "temperature": 0,
+        "max_tokens": 8192
+      },
+      "score": {
+        "kind": "exact",
+        "expected": "20"
+      },
+      "request_sha256": "04247d950b2b04858754caa1d67a92571446d78741c41ef188e2f6db0f84a2f2"
+    },
+    {
+      "name": "arithmetic-48-12",
+      "tier": "quality",
+      "category": "arithmetic",
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "What is 48 + 12? Return only the integer, without explanation."
+          }
+        ],
+        "temperature": 0,
+        "max_tokens": 8192
+      },
+      "score": {
+        "kind": "exact",
+        "expected": "60"
+      },
+      "request_sha256": "f480b3206cf3baf7089e395fc199a4836dc66e52f48c5be484cc24f5c3402997"
+    },
+    {
+      "name": "instruction-uppercase",
+      "tier": "quality",
+      "category": "instruction",
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Return only HELLO in uppercase."
+          }
+        ],
+        "temperature": 0,
+        "max_tokens": 8192
+      },
+      "score": {
+        "kind": "exact",
+        "expected": "HELLO"
+      },
+      "request_sha256": "0195c25e59bcfd4820ae4968976fe076855db3a3a7efeeb6412c509b0e9d4936"
+    },
+    {
+      "name": "instruction-reverse",
+      "tier": "quality",
+      "category": "instruction",
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Reverse abcdef. Return only the reversed string."
+          }
+        ],
+        "temperature": 0,
+        "max_tokens": 8192
+      },
+      "score": {
+        "kind": "exact",
+        "expected": "fedcba"
+      },
+      "request_sha256": "3cfee9d4adf00fd480ad0ef6aa44b37cd71e1dd9b7e6f7511417b47adde68f92"
+    },
+    {
+      "name": "instruction-sort",
+      "tier": "quality",
+      "category": "instruction",
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Sort 9, 2, 5 in ascending order. Return only a JSON array."
+          }
+        ],
+        "temperature": 0,
+        "max_tokens": 8192
+      },
+      "score": {
+        "kind": "json",
+        "expected": [
+          2,
+          5,
+          9
+        ]
+      },
+      "request_sha256": "dc1507bb5e02c9cf0dc8d7ce90de39960d3a83e6182c8747f0196f6c78a8ba0b"
+    },
+    {
+      "name": "instruction-json",
+      "tier": "quality",
+      "category": "instruction",
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Return exactly a JSON object with key status and value ready."
+          }
+        ],
+        "temperature": 0,
+        "max_tokens": 8192
+      },
+      "score": {
+        "kind": "json",
+        "expected": {
+          "status": "ready"
+        }
+      },
+      "request_sha256": "9b8a12aa728c02ef15c4cf20a39e31293b0335c34157c4e6363d21a69179dac2"
+    },
+    {
+      "name": "code-add",
+      "tier": "quality",
+      "category": "code",
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Write only a Python function add(a, b) returning a + b."
+          }
+        ],
+        "temperature": 0,
+        "max_tokens": 8192
+      },
+      "score": {
+        "kind": "code",
+        "expected": "def add(a, b):\n    return a + b"
+      },
+      "request_sha256": "755323e718b141d978116cff53603b778b813cf54ababd26e9720b607484dc68"
+    },
+    {
+      "name": "code-square",
+      "tier": "quality",
+      "category": "code",
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Write only a Python function square(x) returning x * x."
+          }
+        ],
+        "temperature": 0,
+        "max_tokens": 8192
+      },
+      "score": {
+        "kind": "code",
+        "expected": "def square(x):\n    return x * x"
+      },
+      "request_sha256": "83c224189bd1e10c371e77a200d42d9df4245279bbb5259594f468c86e663bf6"
+    },
+    {
+      "name": "code-first",
+      "tier": "quality",
+      "category": "code",
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Write only a Python function first(xs) returning xs[0]."
+          }
+        ],
+        "temperature": 0,
+        "max_tokens": 8192
+      },
+      "score": {
+        "kind": "code",
+        "expected": "def first(xs):\n    return xs[0]"
+      },
+      "request_sha256": "e84055513b9199d57a0203ca7059ddcb03f9377cf3743c2c0184aa57730c4070"
+    },
+    {
+      "name": "code-length",
+      "tier": "quality",
+      "category": "code",
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Write only a Python function size(xs) returning len(xs)."
+          }
+        ],
+        "temperature": 0,
+        "max_tokens": 8192
+      },
+      "score": {
+        "kind": "code",
+        "expected": "def size(xs):\n    return len(xs)"
+      },
+      "request_sha256": "6b9776bf554d8ba788618024be9ee47e2355c682173a337b04a7ed28dfa67fcb"
+    },
+    {
+      "name": "retrieval-0",
+      "tier": "quality",
+      "category": "retrieval",
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Records: red=alpha0, blue=bravo0, green=charlie0. Return only the value for blue."
+          }
+        ],
+        "temperature": 0,
+        "max_tokens": 8192
+      },
+      "score": {
+        "kind": "exact",
+        "expected": "bravo0"
+      },
+      "request_sha256": "55b46965879b45ffef93330d50798f48eaa96ca2f8a301ce5eaf2bd7f5983364"
+    },
+    {
+      "name": "retrieval-1",
+      "tier": "quality",
+      "category": "retrieval",
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Records: red=alpha1, blue=bravo1, green=charlie1. Return only the value for blue."
+          }
+        ],
+        "temperature": 0,
+        "max_tokens": 8192
+      },
+      "score": {
+        "kind": "exact",
+        "expected": "bravo1"
+      },
+      "request_sha256": "9a82e4153f992f33d683e8c0c5e1fc0fdecc64fbdabed94ba7c105166a6d7c43"
+    },
+    {
+      "name": "retrieval-2",
+      "tier": "quality",
+      "category": "retrieval",
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Records: red=alpha2, blue=bravo2, green=charlie2. Return only the value for blue."
+          }
+        ],
+        "temperature": 0,
+        "max_tokens": 8192
+      },
+      "score": {
+        "kind": "exact",
+        "expected": "bravo2"
+      },
+      "request_sha256": "800d7cbee8edd66b5baa6e9ed8e8ccf3f4d9c9e03c02123eacab88351dcfaa1e"
+    },
+    {
+      "name": "retrieval-3",
+      "tier": "quality",
+      "category": "retrieval",
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Records: red=alpha3, blue=bravo3, green=charlie3. Return only the value for blue."
+          }
+        ],
+        "temperature": 0,
+        "max_tokens": 8192
+      },
+      "score": {
+        "kind": "exact",
+        "expected": "bravo3"
+      },
+      "request_sha256": "0ca8f9a5ad052520d0a29fd88120702eaf61726bc287960f9522c68ed8fcf5f5"
+    },
+    {
+      "name": "tool-0",
+      "tier": "quality",
+      "category": "tool",
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Call record_value with name sample0 and value 11."
+          }
+        ],
+        "temperature": 0,
+        "max_tokens": 8192,
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "record_value",
+              "description": "Record a named integer.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "name",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ],
+        "tool_choice": "required"
+      },
+      "score": {
+        "kind": "tool",
+        "name": "record_value",
+        "arguments": {
+          "name": "sample0",
+          "value": 11
+        }
+      },
+      "request_sha256": "9312a640a7e1778432e6ebc51cae00fe6e29c3523465d90466edf2a243745675"
+    },
+    {
+      "name": "tool-1",
+      "tier": "quality",
+      "category": "tool",
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Call record_value with name sample1 and value 12."
+          }
+        ],
+        "temperature": 0,
+        "max_tokens": 8192,
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "record_value",
+              "description": "Record a named integer.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "name",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ],
+        "tool_choice": "required"
+      },
+      "score": {
+        "kind": "tool",
+        "name": "record_value",
+        "arguments": {
+          "name": "sample1",
+          "value": 12
+        }
+      },
+      "request_sha256": "9471ee9236b1ab052894d66ddf42b729ecf312c1ea156337fd83be7d5a838e41"
+    },
+    {
+      "name": "tool-2",
+      "tier": "quality",
+      "category": "tool",
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Call record_value with name sample2 and value 13."
+          }
+        ],
+        "temperature": 0,
+        "max_tokens": 8192,
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "record_value",
+              "description": "Record a named integer.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "name",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ],
+        "tool_choice": "required"
+      },
+      "score": {
+        "kind": "tool",
+        "name": "record_value",
+        "arguments": {
+          "name": "sample2",
+          "value": 13
+        }
+      },
+      "request_sha256": "4f5426dac9d81338d82c4fa227584428dacced32d4bbd93b9c763a60960798b7"
+    },
+    {
+      "name": "tool-3",
+      "tier": "quality",
+      "category": "tool",
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Call record_value with name sample3 and value 14."
+          }
+        ],
+        "temperature": 0,
+        "max_tokens": 8192,
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "record_value",
+              "description": "Record a named integer.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "name",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ],
+        "tool_choice": "required"
+      },
+      "score": {
+        "kind": "tool",
+        "name": "record_value",
+        "arguments": {
+          "name": "sample3",
+          "value": 14
+        }
+      },
+      "request_sha256": "1c4387c5e72ded6b67771a5533fb46cb392277cb73f9d5316b5ae9ae44fec41e"
+    }
+  ]
+}

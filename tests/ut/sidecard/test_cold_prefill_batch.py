@@ -167,3 +167,30 @@ def test_failed_window_poisons_coordinator_and_cancellation_is_at_window_boundar
     with pytest.raises(RuntimeError, match="native"):
         engine.prefill(list(range(64)))
     assert engine.failed and engine.position == 64
+
+
+def test_diagnostic_windows_observe_every_original_chunk_without_changing_execution():
+    candidate, _ = make_engine()
+    baseline, _ = make_engine()
+    candidate.prefill_window_size = baseline.prefill_window_size = 64
+    events = []
+    observer = SimpleNamespace(
+        writer=True,
+        begin_window=lambda position, rows: events.append(("begin", position, rows)),
+        vocabulary=lambda logits, **geometry: events.append(("vocabulary", geometry["position"], geometry["rows"])),
+        end_window=lambda: events.append(("end",)),
+    )
+    candidate.execution_diagnostics = SimpleNamespace(observer=observer)
+    tokens = list(range(99))
+    assert torch.equal(candidate.prefill(tokens), baseline.prefill(tokens))
+    assert candidate.fingerprints == baseline.fingerprints
+    assert events == [
+        ("begin", 0, 64),
+        ("vocabulary", 0, 32),
+        ("vocabulary", 32, 32),
+        ("end",),
+        ("begin", 64, 35),
+        ("vocabulary", 64, 32),
+        ("vocabulary", 96, 3),
+        ("end",),
+    ]

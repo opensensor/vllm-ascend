@@ -29,7 +29,7 @@ import torch
 import torch.nn as nn
 import torch_npu
 from vllm.config import CUDAGraphMode
-from vllm.forward_context import get_forward_context
+from vllm.forward_context import ForwardContext, get_forward_context
 from vllm.logger import logger
 from vllm.sequence import IntermediateTensors
 from vllm.utils.math_utils import cdiv
@@ -1129,6 +1129,20 @@ class NPUModelRunner310(NPUModelRunner):
                 )
             finally:
                 self._spec_dummy_capture = False
+
+    def _update_full_graph_params_if_needed(
+        self,
+        forward_context: ForwardContext,
+        num_tokens_padded: int,
+    ) -> None:
+        # Native torch NPU graphs consume the persistent device metadata
+        # bound by the 310P builder. They have no ACL attention task groups:
+        # the parent initializes GraphParams only when use_aclgraph is true.
+        # Calling its updater for a native graph selects the FIA path and
+        # dereferences that uninitialized state on the first image request.
+        if not self.use_aclgraph:
+            return
+        super()._update_full_graph_params_if_needed(forward_context, num_tokens_padded)
 
     def _model_forward(
         self,

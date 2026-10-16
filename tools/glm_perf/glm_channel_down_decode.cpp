@@ -2,6 +2,7 @@
 // Decode only: down projection and stable original-slot combine stay in UB.
 #define GLM_CHANNEL_FUSED_GATE_UP
 #include "glm_channel_projection.cpp"
+#include "glm_channel_dma.h"
 namespace {
 constexpr uint32_t DECODE_TOKENS = 16, TOP_K = 8, FLOAT_LANES = 64;
 class FusedDownDecode : public Projection {
@@ -45,7 +46,7 @@ class FusedDownDecode : public Projection {
         auto accum = value[N];
         Duplicate(accum, 0.0f, N);
         DataCopy(factors_.Get<float>(), routeWeights_[token * LANES], LANES);
-        PipeBarrier<PIPE_ALL>();
+        GlmChannelDma::Fence();
         Brcb(factors_.Get<float>()[LANES], factors_.Get<float>(), 1, {1, LANES});
         PipeBarrier<PIPE_V>();
         for (int64_t slot = 0; slot < topK_; ++slot) {
@@ -57,8 +58,9 @@ class FusedDownDecode : public Projection {
           Add(accum, accum, value, N);
           PipeBarrier<PIPE_V>();
         }
+        GlmChannelDma::WriteReady();
         DataCopy(outputFloat_[token * n_ + tile * N], accum, N);
-        PipeBarrier<PIPE_ALL>();
+        GlmChannelDma::Fence();
       }
     }
   }

@@ -9,6 +9,8 @@ from pathlib import Path
 from .cold_decode_graph import ColdDecodeGraphs
 from .cold_dispatch import create_dispatch
 from .cold_placement import cuda_keys, load
+from .execution_diagnostic_runtime import validate_runtime as validate_diagnostics
+from .execution_options import validate_options
 from .indexer_projection_graph import IndexerProjectionGraph
 from .indexer_projection_graph import enabled as projection_graph_enabled
 from .layer_decode_graph import DecodeGraphs
@@ -27,6 +29,8 @@ class ExpertCoordinator:
 
         self.torch = torch
         self.spec = json.loads(Path(config_path).read_bytes())
+        validate_options(self.spec)
+        diagnostic_mode = validate_diagnostics(config_path, allow_expert=True)
         fused_cuda_indexer = cuda_rotation_enabled(self.spec)
         indexer_graphs = projection_graph_enabled(self.spec)
         self.root, self.output = Path(self.spec["checkpoint"]), Path(self.spec["output"])
@@ -83,6 +87,16 @@ class ExpertCoordinator:
                 )
                 for index in range(45)
             }
+            self.execution_diagnostics = None
+            if diagnostic_mode is not None:
+                from .expert_diagnostics import ExpertCoordinatorDiagnostic
+
+                self.execution_diagnostics = ExpertCoordinatorDiagnostic(
+                    config_path, self.layers, self.diagnostic_command, torch.cuda.synchronize
+                )
+                self.experts.execution_diagnostics = self.execution_diagnostics
+                for layer in self.layers.values():
+                    layer.execution_diagnostic = self.execution_diagnostics.observer
             self.prefix_graphs = self.suffix_graphs = self.middle_graphs = None
             if indexer_graphs:
                 with torch.inference_mode():
@@ -136,6 +150,15 @@ class ExpertCoordinator:
             if not layer.linear:
                 layer.sparse_enabled = self.request_context_limit > self.config["index_topk"]
 
+    def diagnostic_command(self, owner, command):
+        if owner not in ("npu-rank0", "npu-rank1") or not hasattr(self.experts, "diagnostic_command"):
+            raise ValueError("expert diagnostics require the authenticated direct-DMA rank control")
+        return self.experts.diagnostic_command(int(owner[-1]), command)
+
+    def diagnostic_observer(self):
+        adapter = getattr(self, "execution_diagnostics", None)
+        return adapter.observer if adapter is not None and adapter.observer.writer is not None else None
+
     def forward(self, tokens):
         if (
             self.stopping
@@ -144,6 +167,9 @@ class ExpertCoordinator:
         ):
             raise ValueError("token chunk exceeds expert runtime admission")
         t = self.torch
+        observer = self.diagnostic_observer()
+        if observer is not None:
+            observer.begin_chunk(self.position, len(tokens))
         try:
             with t.inference_mode():
                 begin = time.perf_counter()
@@ -166,6 +192,9 @@ class ExpertCoordinator:
                         state = self.layers[index].forward(*state)
                 normalized = rms_norm(state[0][-1:], self.globals["norm"], self.config["rms_norm_eps"], t)
                 logits = t.nn.functional.linear(normalized, self.globals["head"]).float()
+                if observer is not None:
+                    observer.vocabulary(logits)
+                    observer.end_chunk()
                 if not bool(t.isfinite(logits).all().cpu()):
                     raise FloatingPointError("expert model produced nonfinite logits")
                 t.cuda.synchronize()
@@ -214,6 +243,9 @@ class ExpertCoordinator:
         ):
             raise ValueError("token window exceeds expert runtime admission")
         t = self.torch
+        observer = self.diagnostic_observer()
+        if observer is not None:
+            observer.begin_window(self.position, len(tokens))
         try:
             with t.inference_mode():
                 begin = time.perf_counter()
@@ -247,6 +279,8 @@ class ExpertCoordinator:
                 for chunk, state in zip(chunks, states, strict=True):
                     normalized = rms_norm(state[0][-1:], self.globals["norm"], self.config["rms_norm_eps"], t)
                     logits = t.nn.functional.linear(normalized, self.globals["head"]).float()
+                    if observer is not None:
+                        observer.vocabulary(logits, position=self.position, rows=len(chunk))
                     if not bool(t.isfinite(logits).all().cpu()):
                         raise FloatingPointError("expert model produced nonfinite logits")
                     if self.fingerprints is not None:
@@ -258,6 +292,8 @@ class ExpertCoordinator:
                         )
                     self.position += len(chunk)
                     self.sequence += 1
+                if observer is not None:
+                    observer.end_window()
                 t.cuda.synchronize()
                 self.metrics["cuda_backbone_ms"].append((time.perf_counter() - begin) * 1000)
                 return logits[0]

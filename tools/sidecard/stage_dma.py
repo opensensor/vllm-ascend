@@ -24,6 +24,8 @@ from types import SimpleNamespace
 from .completion_protocol import RemoteResult, receive_fd, send_fd
 from .dma_protocol import AdmittedCudaSource, CudaByteView, CudaSourceEvent, receive_control, send_control
 from .dma_worker import GUARD_POISON, TensorAllocation, TorchSourceEvent
+from .execution_trace import ExecutionTrace
+from .layer_stage_profile import forward_traced
 from .layer_weights import MAX_CHUNK
 from .pcie.peer import ASCEND_TO_CUDA, CUDA_TO_ASCEND, Driver, KernelPeer
 from .pcie.runtime import Runtime
@@ -98,11 +100,12 @@ def preserve(output, name, reason):
 class StageDMA:
     """Coordinator-owned buffers; invocations remain serialized by Generation."""
 
-    def __init__(self, config, torch):
+    def __init__(self, config, torch, trace=None):
         self.spec = json.loads(Path(config).read_bytes())
         if not enabled(self.spec):
             raise ValueError("complete-stage DMA is not enabled")
         self.torch, self.output = torch, Path(self.spec["output"])
+        self.trace = trace or ExecutionTrace(self.spec, self.output, "cuda", torch.cuda)
         self.nonce = secrets.token_hex(32)
         self.connections, self.processes, self.logs = [], [], []
         self.registered = set()
@@ -201,20 +204,36 @@ class StageDMA:
         torch = self.torch
         packet = metadata(state[0].shape[0], sequence, self.spec["checkpoint_sha256"], request_context_limit=context)
         validate_packet(packet, self.spec, sequence, position, context)
+        self.trace.begin(sequence, position, state[0].shape[0])
         positions = torch.arange(position, position + state[0].shape[0], device="cuda", dtype=torch.int64)
-        pack(self.buffers[0], state, positions, torch)
-        self.source_event.record(torch.cuda.current_stream())
-        self.source_event.wait()
+        with self.trace.span("input_packing", device=True):
+            pack(self.buffers[0], state, positions, torch)
+        with self.trace.span("input_completion_wait"):
+            self.source_event.record(torch.cuda.current_stream())
+            self.source_event.wait()
         message = dict(state=packet, first_position=position)
         for connection in self.connections:
             send_control(connection, message)
-        for connection in self.connections:
-            if receive_control(connection) != message:
-                raise ValueError("complete-stage DMA completion sequence differs")
+        with self.trace.span("middle_acknowledgement_wait"):
+            for connection in self.connections:
+                if receive_control(connection) != message:
+                    raise ValueError("complete-stage DMA completion sequence differs")
         # DMA is complete on both ranks. Flush in the CUDA allocation owner's
         # context before enqueuing its consumer or reusing the input slot.
-        self.driver.flush()
+        with self.trace.span("cuda_visibility_flush"):
+            self.driver.flush()
+        self.trace.collect_ready()
         return views(self.buffers[1], state[0].shape[0], torch)[:4]
+
+    def diagnostic_command(self, rank, command):
+        if type(rank) is not int or rank not in self.registered or self.closed:
+            raise ValueError("diagnostic command requires a live registered rank")
+        message = {"execution_diagnostic": command, "nonce": self.nonce}
+        send_control(self.connections[rank], message)
+        reply = receive_control(self.connections[rank])
+        if set(reply) != {"execution_diagnostic", "nonce"} or reply["nonce"] != self.nonce:
+            raise ValueError("diagnostic control reply belongs to another stage owner")
+        return reply["execution_diagnostic"]
 
     def close(self):
         if self.closed:
@@ -249,7 +268,7 @@ class StageDMA:
         self.closed = True
 
 
-def serve(args, layers, graphs, torch):
+def serve(args, layers, graphs, torch, *, diagnostic=None):
     """Privileged HBM owner runs all fifteen layers before publishing a result.
 
     Keep this loop explicit so every completion and resource release follows
@@ -272,6 +291,7 @@ def serve(args, layers, graphs, torch):
     sequence, expected_position, context, calls = 0, 0, None, 0
     registered = released = False
     timings = []
+    trace = ExecutionTrace(spec, spec["output"], f"npu-rank{args.rank}", torch.npu)
     connection = socket.socket(socket.AF_UNIX)
     try:
         connection.connect(args.socket)
@@ -289,6 +309,12 @@ def serve(args, layers, graphs, torch):
         with torch.inference_mode():
             while True:
                 message = receive_control(connection)
+                if set(message) == {"execution_diagnostic", "nonce"}:
+                    if diagnostic is None or message["nonce"] != args.nonce:
+                        raise ValueError("unexpected or unauthenticated diagnostic command")
+                    reply = diagnostic.handle_command(message["execution_diagnostic"])
+                    send_control(connection, {"execution_diagnostic": reply, "nonce": args.nonce})
+                    continue
                 if message == {"close": args.nonce}:
                     torch.npu.synchronize()
                     peer.close()
@@ -302,6 +328,7 @@ def serve(args, layers, graphs, torch):
                 if set(message) != {"state", "first_position"}:
                     raise ValueError("unexpected complete-stage DMA command")
                 packet, position = message["state"], message["first_position"]
+                trace.begin(packet["sequence"], position, packet["rows"])
                 reservation = validate_packet(packet, spec, sequence, position, context)
                 if position != 0 and position != expected_position:
                     raise ValueError("complete-stage positions disagree with cache state")
@@ -311,37 +338,51 @@ def serve(args, layers, graphs, torch):
                         layer.reset()
                         if not layer.linear:
                             layer.sparse_enabled = context > layer.config["index_topk"]
+                observing = diagnostic is not None and diagnostic.writer is not None
+                if observing:
+                    diagnostic.begin_chunk(position, packet["rows"])
                 source.admitted = True
                 start = time.perf_counter()
-                peer.copy(CUDA_TO_ASCEND, exports[0], endpoint, guard, packet["payload_bytes"], source_ready=source)
+                with trace.span("input_dma", attribution="synchronous driver completion"):
+                    peer.copy(CUDA_TO_ASCEND, exports[0], endpoint, guard, packet["payload_bytes"], source_ready=source)
                 uploaded = time.perf_counter()
                 state = views(packed, packet["rows"], torch)[:4]
-                if graphs is None:
-                    for layer in layers:
-                        state = layer.forward(*state)
-                else:
-                    state = graphs.forward(state)
+                if observing:
+                    diagnostic.boundary("input", state)
+                with trace.span("stage_execution", device=True, layers=[layer.index for layer in layers]):
+                    state = forward_traced(layers, graphs, state, trace)
+                if observing:
+                    diagnostic.boundary("output", state)
                 # Separate packet input and result storage prevents overwriting
                 # a deferred residual view while packing the result.
                 positions = torch.arange(position, position + packet["rows"], device=packed.device, dtype=torch.int64)
-                pack(output, state, positions, torch)
-                event = torch.npu.Event()
-                event.record()
-                event.synchronize()
+                with trace.span(
+                    "result_packing", device=True, attribution="rank1 output currently unused" if args.rank else None
+                ):
+                    pack(output, state, positions, torch)
+                with trace.span("final_completion_wait"):
+                    event = torch.npu.Event()
+                    event.record()
+                    event.synchronize()
+                trace.collect_ready()
+                if observing:
+                    diagnostic.end_chunk()
                 computed = time.perf_counter()
                 if args.rank == 0:
                     returned = TensorAllocation(ascend, output)
-                    peer.copy(
-                        ASCEND_TO_CUDA,
-                        exports[1],
-                        returned,
-                        guard,
-                        packet["payload_bytes"],
-                        source_ready=TorchSourceEvent(ascend, event),
-                    )
+                    with trace.span("result_dma", attribution="synchronous driver completion"):
+                        peer.copy(
+                            ASCEND_TO_CUDA,
+                            exports[1],
+                            returned,
+                            guard,
+                            packet["payload_bytes"],
+                            source_ready=TorchSourceEvent(ascend, event),
+                        )
                     returned.close()
                 source.admitted = False
-                send_control(connection, message)
+                with trace.span("host_acknowledgement", attribution="host control only; no rank1 output DMA"):
+                    send_control(connection, message)
                 if len(timings) < PROFILE_RECORD_LIMIT:
                     timings.append(
                         dict(
@@ -368,6 +409,7 @@ def serve(args, layers, graphs, torch):
             endpoint.close()
             guard.close()
             connection.close()
+            trace.close()
             (Path(spec["output"]) / f"stage-dma-rank{args.rank}.json").write_text(
                 json.dumps(
                     dict(
@@ -427,6 +469,7 @@ def main():
             stage_profile=False,
             native_bf16_round=spec.get("npu_native_bf16_round", False),
             stage_dma=args.config,
+            execution_config=args.config,
         )
     )
 

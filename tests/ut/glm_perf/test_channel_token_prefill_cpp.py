@@ -26,6 +26,7 @@ def test_token_owned_prefill_route_order_peer_nan_tails_and_no_gm_route_writes(t
             "-ffp-contract=off",
             f"-I{tmp_path}",
             f"-I{stubs}",
+            f"-I{root / 'tools/glm_perf'}",
             str(stubs / "check_token_prefill.cpp"),
             "-o",
             str(binary),

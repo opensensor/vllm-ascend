@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: Apache-2.0
+// Explicit whole-K variant; existing projection entries keep their old recipe.
+#include "native_int8_projection_probe.cpp"
+
+extern "C" __global__ __aicore__ void qwen_channel_int8_lean_m32_v1(GM_ADDR x, GM_ADDR weight, GM_ADDR scale,
+                                                                    GM_ADDR xs, GM_ADDR ends, GM_ADDR y,
+                                                                    GM_ADDR descriptor) {
+  KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AICORE);
+  AscendC::InitSocState();
+  Int8ProjectionProbe<false, 32, false, true, false, true, 160, false, true> operation;
+  operation.Run(x, weight, scale, xs, y, descriptor, nullptr, nullptr, nullptr, nullptr, ends);
+}
+
+extern "C" __global__ __aicore__ void qwen_channel_int8_lean_m16_v1(GM_ADDR x, GM_ADDR weight, GM_ADDR scale,
+                                                                    GM_ADDR xs, GM_ADDR ends, GM_ADDR y,
+                                                                    GM_ADDR descriptor) {
+  KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AICORE);
+  AscendC::InitSocState();
+  Int8ProjectionProbe<false, 16, false, true, false, true, 160, false, true> operation;
+  operation.Run(x, weight, scale, xs, y, descriptor, nullptr, nullptr, nullptr, nullptr, ends);
+}

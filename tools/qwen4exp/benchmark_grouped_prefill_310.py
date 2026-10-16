@@ -18,10 +18,11 @@ import torch
 from tools.qwen4exp.benchmark_int8_projection_probe_310 import server_activity
 from tools.qwen4exp.benchmark_prefill_next_310 import load_resources
 from tools.qwen4exp.benchmark_w4_prefill_batching_310 import route_geometry
+from tools.qwen4exp.native_hybrid_prefill import NativeHybridPrefill
 from tools.qwen4exp.native_prefill import NativeGroupedPrefill
 
 
-def load_grouped_resources(build):
+def load_grouped_resources(build, device=None, cache_metadata=False, paired_limbs=False):
     resources = load_resources(build)
     manifest = json.loads((build / "provenance.json").read_text())
     entry = manifest["binaries"]["native_grouped_prefill"]
@@ -31,6 +32,27 @@ def load_grouped_resources(build):
     launch = getattr(torch.ops, manifest["namespace"]).launch
     for mode in ("local", "global"):
         resources[mode] = NativeGroupedPrefill(kernel(entry["path"], f"qwen_grouped_{mode}_prefill_v1"), launch)
+    if paired_limbs:
+        resources["paired"] = NativeGroupedPrefill(kernel(entry["path"], "qwen_grouped_paired_prefill_v1"), launch)
+    if cache_metadata:
+        resources["cached"] = NativeGroupedPrefill(kernel(entry["path"], "qwen_grouped_cached_prefill_v1"), launch)
+    if "native_hybrid_prefill" in manifest["binaries"]:
+        entry = manifest["binaries"]["native_hybrid_prefill"]
+        if hashlib.sha256(Path(entry["path"]).read_bytes()).hexdigest() != entry["sha256"]:
+            raise ValueError("hybrid binary digest mismatch")
+        resources["hybrid"] = NativeHybridPrefill(
+            kernel(entry["path"], "qwen_hybrid_small_prefill_v1"),
+            kernel(entry["path"], "qwen_hybrid_large_prefill_v1"),
+            launch,
+            device,
+        )
+        resources["hybrid_a8"] = NativeHybridPrefill(
+            kernel(entry["path"], "qwen_hybrid_small_prefill_v1"),
+            kernel(entry["path"], "qwen_hybrid_a8_prefill_v1"),
+            launch,
+            device,
+            kernel(entry["path"], "qwen_unpack_a8_prefill_v1"),
+        )
     return resources
 
 
@@ -43,6 +65,8 @@ def main():
     the live model, loaded weights, and prefix caches are never mutated here.
     """
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--paired-limbs", action="store_true", help="requires a binary exporting the paired entry")
+    parser.add_argument("--cached-metadata", action="store_true", help="requires a binary exporting the cached entry")
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--build", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -71,7 +95,7 @@ def main():
     torch_npu.npu.set_compile_mode(jit_compile=False)
     enable_custom_op()
     layer = load_layer(args.model, args.layer, args.rank, 6, NATIVE_INT4_BACKEND)
-    resources = load_grouped_resources(args.build)
+    resources = load_grouped_resources(args.build, layer.gate.device, args.cached_metadata, args.paired_limbs)
     banks = list(layer.projections.values())
     originals = [bank.native_linear for bank in banks]
     local = SimpleNamespace(gather=resources["route_gather"], swiglu=resources["local_swiglu"])
@@ -90,7 +114,19 @@ def main():
 
         def run(mode, inputs=inputs, weights=weights, ids=ids):
             schedule = (
-                "local" if mode in ("local_schedule", "both") else "global" if mode == "global_schedule" else None
+                "paired"
+                if mode == "paired_limbs"
+                else "cached"
+                if mode == "cached_metadata"
+                else "hybrid_a8"
+                if mode == "hybrid_a8"
+                else "hybrid"
+                if mode == "hybrid_int8"
+                else "local"
+                if mode in ("local_schedule", "both")
+                else "global"
+                if mode == "global_schedule"
+                else None
             )
             for bank, original in zip(banks, originals):
                 bank.native_linear = (
@@ -108,6 +144,12 @@ def main():
 
         reference = run("installed").cpu()
         modes = ("installed", "global_schedule", "local_schedule", "local_gather", "both")
+        if "paired" in resources:
+            modes += ("paired_limbs",)
+        if "cached" in resources:
+            modes += ("cached_metadata",)
+        if "hybrid" in resources:
+            modes += ("hybrid_int8", "hybrid_a8")
         parity = {}
         for mode in modes:
             actual = run(mode).cpu()

@@ -154,6 +154,8 @@ class TextLayer:
         *,
         native_sinkhorn=None,
         native_round=None,
+        native_kda=None,
+        native_mhc=None,
         tp_rank=None,
         vectorized_prefill_conv=False,
         fused_cuda_indexer=False,
@@ -162,6 +164,7 @@ class TextLayer:
         self.device, self.torch, self.experts = device, torch, experts
         self.max_context, self.native_sinkhorn = max_context, native_sinkhorn
         self.native_round = native_round
+        self.native_kda, self.native_mhc = native_kda, native_mhc
         self.tp_rank = tp_rank
         self.vectorized_prefill_conv = vectorized_prefill_conv
         self.fused_cuda_indexer = fused_cuda_indexer
@@ -170,6 +173,14 @@ class TextLayer:
         self.state, self.conv, self.cache = None, None, None
         self.length = 0
         self.prepare()
+        self.mhc_weights = {}
+        if native_mhc is not None:
+            from .npu_mhc import prepare_weights
+
+            self.mhc_weights = {
+                kind: prepare_weights(weights, kind, norm)
+                for kind, norm in (("attn", "input_layernorm.weight"), ("ffn", "post_attention_layernorm.weight"))
+            }
 
     def prepare(self):
         t, w = self.torch, self.weights
@@ -237,6 +248,15 @@ class TextLayer:
             from .cuda_layer_ops import recurrent
 
             output = recurrent(q, k, v, gate, t.sigmoid(b.float()), self.state)
+        elif getattr(self, "native_kda", None) is not None and q.shape[0] == 1:
+            output = self.native_kda(
+                q.contiguous(),
+                k.contiguous(),
+                v.contiguous(),
+                gate.contiguous(),
+                t.sigmoid(b.float()).contiguous(),
+                self.state,
+            )
         else:
             output = recurrent_kda(q, k, v, gate, t.sigmoid(b.float()), self.state, t)
         g = self.project(ga, "self_attn.g_b_proj.weight").reshape(-1, heads, HEAD_DIM)
@@ -276,6 +296,9 @@ class TextLayer:
             raise ValueError("owner-local DSA cache capacity exceeded")
         self.cache[self.length : self.length + count].copy_(kv)
         selected = self.indexer.select(x, qr, self.length) if getattr(self, "sparse_enabled", False) else None
+        diagnostic = getattr(self, "execution_diagnostic", None)
+        if diagnostic is not None:
+            diagnostic.selection(self, selected, rows=count)
         if selected is None:
             keys = self.cache[: self.length + count]
             scores = t.matmul(qlatent.float(), keys.float().t()) * (c["qk_nope_head_dim"] ** -0.5)
@@ -315,28 +338,63 @@ class TextLayer:
         return self.project((t.nn.functional.silu(gate.float()) * up.float()).to(x.dtype), f"{prefix}.down_proj.weight")
 
     def prepare_attention(self, hidden, residual=None, post=None, comb=None):
-        t, w, c = self.torch, self.weights, self.config
         if post is None:
             if self.index != 0:
                 raise ValueError("noninitial layer requires complete deferred mHC state")
             residual = hidden[:, None, :].expand(-1, STREAMS, -1).float().contiguous()
         else:
-            residual = mhc_post(hidden, residual, post, comb, t, self.native_round)
-        post, comb, x = mhc_pre(
-            residual, w, "attn", "input_layernorm.weight", c, t, self.native_sinkhorn, self.native_round
-        )
+            residual = self.mix_post(hidden, residual, post, comb)
+        post, comb, x = self.mix_pre(residual, "attn", "input_layernorm.weight")
         return x, residual, post, comb
 
+    def mix_pre(self, residual, kind, norm_name):
+        native = getattr(self, "native_mhc", None)
+        if native is None:
+            return mhc_pre(
+                residual,
+                self.weights,
+                kind,
+                norm_name,
+                self.config,
+                self.torch,
+                self.native_sinkhorn,
+                self.native_round,
+            )
+        return native.pre(
+            residual,
+            self.mhc_weights[kind],
+            self.config["rms_norm_eps"],
+            self.config["hc_eps"],
+            self.config["hc_sinkhorn_iters"],
+            self.torch,
+            lambda: mhc_pre(
+                residual,
+                self.weights,
+                kind,
+                norm_name,
+                self.config,
+                self.torch,
+                self.native_sinkhorn,
+                self.native_round,
+            ),
+        )
+
+    def mix_post(self, x, residual, post, comb):
+        native = getattr(self, "native_mhc", None)
+        if native is None:
+            return mhc_post(x, residual, post, comb, self.torch, self.native_round)
+        return native.post(
+            x, residual, post, comb, lambda: mhc_post(x, residual, post, comb, self.torch, self.native_round)
+        )
+
     def finish_attention(self, x, residual, post, comb):
-        t, w, c = self.torch, self.weights, self.config
+        t = self.torch
         if self.tp_rank is not None:
             x = x.float()
             t.distributed.all_reduce(x)
             x = x.to(t.float16)
-        residual = mhc_post(x, residual, post, comb, t, self.native_round)
-        post, comb, x = mhc_pre(
-            residual, w, "ffn", "post_attention_layernorm.weight", c, t, self.native_sinkhorn, self.native_round
-        )
+        residual = self.mix_post(x, residual, post, comb)
+        post, comb, x = self.mix_pre(residual, "ffn", "post_attention_layernorm.weight")
         return x, residual, post, comb
 
     def prepare_forward(self, hidden, residual=None, post=None, comb=None):
@@ -357,6 +415,9 @@ class TextLayer:
         ids = t.topk(scores + w["mlp.gate.e_score_correction_bias"], TOP_K, -1).indices
         route_weights = scores.gather(-1, ids)
         route_weights = route_weights / route_weights.sum(-1, keepdim=True) * c["routed_scaling_factor"]
+        diagnostic = getattr(self, "execution_diagnostic", None)
+        if diagnostic is not None:
+            diagnostic.route(self, ids, route_weights)
         return ids, route_weights
 
     def finish_forward(self, x, residual, post, comb, ids=None, route_weights=None):
@@ -382,6 +443,9 @@ class TextLayer:
     def finish_mlp(self, x, residual, post, comb):
         t, c = self.torch, self.config
         if self.index == c["num_hidden_layers"] - 1:
+            diagnostic = getattr(self, "execution_diagnostic", None)
+            if diagnostic is not None:
+                diagnostic.suffix_state((x, residual, post, comb))
             # Normalize the contracted residual in FP32 before converting the
             # bounded normalized result to the head dtype. FP16 here would
             # overflow valid BF16-range residuals before RMSNorm can act.

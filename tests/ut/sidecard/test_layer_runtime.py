@@ -6,11 +6,13 @@ import json
 import os
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from tools.sidecard import layer_runtime
+from tools.sidecard.execution_options import BuildReference
 from tools.sidecard.layer_runtime import prepare, stop
 
 
@@ -56,6 +58,9 @@ def test_snapshot_excludes_environment_and_dirty_glm_experiments(tmp_path):
         source / "tools/sidecard/cuda_oracle.cu"
     ).read_bytes()
     assert (output / "source/tools/sidecard/pcie/__init__.py").is_file()
+    public_fixture = layer_runtime.ACCEPTANCE_FIXTURE
+    assert (output / "source" / public_fixture).read_bytes() == (source / public_fixture).read_bytes()
+    assert str(public_fixture) in json.loads((output / "source-sha256.json").read_text())
     with pytest.raises(FileExistsError):
         prepare(output, specification, source)
 
@@ -63,6 +68,74 @@ def test_snapshot_excludes_environment_and_dirty_glm_experiments(tmp_path):
 def test_snapshot_rejects_output_inside_source(tmp_path):
     with pytest.raises(ValueError, match="outside"):
         prepare(tmp_path / "artifacts", {}, tmp_path)
+
+
+@pytest.mark.parametrize("transport", ["stage_transport", "expert_transport"])
+def test_snapshot_rejects_overlong_unix_path_before_creating_output(tmp_path, transport):
+    source = Path(__file__).resolve().parents[3]
+    output = tmp_path / ("x" * layer_runtime.UNIX_SOCKET_PATH_BYTES)
+    with pytest.raises(ValueError, match="too long"):
+        prepare(output, {transport: "direct-dma"}, source)
+    assert not output.exists()
+
+
+def test_snapshot_missing_acceptance_fixture_fails_without_partial_output(tmp_path):
+    source = tmp_path / "source"
+    (source / "tools/sidecard").mkdir(parents=True)
+    (source / "tools/sidecard/execution_acceptance.py").write_text("# fixture required\n")
+    output = tmp_path / "run"
+    with pytest.raises(ValueError, match="public acceptance fixture"):
+        prepare(output, {}, source)
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("kind", ["native", "multi-route"])
+def test_runtime_snapshot_retains_authenticated_native_source_bytes(tmp_path, monkeypatch, kind):
+    source = Path(__file__).resolve().parents[3]
+    build = tmp_path / "build"
+    build.mkdir()
+
+    def write(relative, content):
+        path = build / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        return hashlib.sha256(content).hexdigest()
+
+    native_source = b"// Frozen candidate kernel; live research is excluded.\n"
+    if kind == "native":
+        receipt_name, option, prefix = "execution-build.json", "native_build", "execution-source"
+        manifest = {
+            "source_files": {"csrc/candidate.cpp": write("source/csrc/candidate.cpp", native_source)},
+            "source_manifest_sha256": write("source-manifest.json", b"source inventory"),
+            "abi_manifest_sha256": write("abi-manifest.json", b"ABI inventory"),
+        }
+        manifest["source_files"]["tools/protoc"] = write("source/tools/protoc", b"executable fixture")
+        (build / "source/tools/protoc").chmod(0o750)
+    else:
+        receipt_name, option, prefix = "multi-route-build.json", "multi_route", "multi-route-source"
+        manifest = {
+            "source_sha256": {"csrc/candidate.cpp": write("csrc/candidate.cpp", native_source)},
+            "patch_sha256": write("candidate.patch", b"patch"),
+            "provenance_sha256": write("provenance.json", b"provenance"),
+        }
+    checksum = write(receipt_name, json.dumps(manifest).encode())
+    options = layer_runtime.validate_options({})
+    monkeypatch.setattr(
+        layer_runtime, "validate_options", lambda spec: replace(options, **{option: BuildReference(build, checksum)})
+    )
+    output = tmp_path / "frozen"
+    prepare(output, {}, source)
+    relative = f"native-inputs/{prefix}/csrc/candidate.cpp"
+    assert (output / "source" / relative).read_bytes() == native_source
+    if kind == "native":
+        executable = output / "source/native-inputs/execution-source/tools/protoc"
+        assert executable.stat().st_mode & 0o777 == 0o750
+    assert (
+        json.loads((output / "source-sha256.json").read_bytes())[relative] == hashlib.sha256(native_source).hexdigest()
+    )
+    (build / ("source/csrc/candidate.cpp" if kind == "native" else "csrc/candidate.cpp")).write_bytes(b"changed")
+    with pytest.raises(ValueError, match="source changed"):
+        list(layer_runtime.native_inputs(BuildReference(build, checksum), receipt_name))
 
 
 def test_stop_rejects_a_pid_that_has_been_reused(tmp_path):

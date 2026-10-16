@@ -1,0 +1,42 @@
+GLM and Qwen source consolidation, October 16, 2026
+
+Base: 139f20832 (origin/main at inspection).
+Scope: current working-tree GLM streaming, sidecard execution, Qwen3-VL camera
+and GPQA tooling; October 11 GLM next-math worktree changes; source, tests and
+documentation from perf/qwen-hybrid-int8-prefill-20261011; October 16 private
+TP6 fusion candidates. Raw experiment artifacts and temporary files excluded.
+September historical branches were not merged into the newer serving stack.
+
+This is source consolidation, not a hardware promotion. The existing Qwen
+resident-v8 service was inspected read-only and was not restarted or changed.
+The private TP6 fusion generator requires its pinned pre-integration source
+headers (139f20832); it intentionally rejects newer or altered inputs. It has
+not been hardware-qualified by this delivery. GLM streaming plan records its
+failed serving promotion separately from successful native gates.
+
+Validation of the integrated checkout:
+- GLM/sidecard/GPQA/vision plus TP6 guards: 12037 passed, 2344 skipped,
+  1 failure, 6 subtests passed. Frozen v984 tests skip without external T22
+  source/binary inputs. Initial run with local inputs: 14322 passed,
+  48 skipped, the same 1 failure.
+- The failing test is test_offline_qsa_softmax.py::
+  test_builder_freezes_softmax_helper_and_compiles_only_the_selected_variant.
+  The identical QSA qualified-parent SHA256 failure was reproduced on clean
+  origin/main. No source identity guard was weakened.
+- Qwen INT8 integration: 120 passed.
+- Native schedule/TP6 admission regression selection: 123 passed.
+- Changed-file manual pre-commit hooks: all passed.
+- bash format.sh ci: seven failed hooks, also reproduced on clean origin/main
+  (ruff check/format, codespell, typos, clang-format, markdownlint,
+  forbidden imports). Unrelated automatic formatting was discarded.
+- Full pytest tests: collection blocked by missing modelscope and
+  vllm.third_party.flash_attn. Full Qwen unit collection is also blocked by
+  installed vLLM lacking is_weak_contiguous. These runs did not pass.
+- No new NPU execution or performance qualification was attempted.
+
+running-server.json records launch arguments, selected nonsecret environment,
+HTTP health/model identity, and compact authenticated resident status.
+All six workers reported clean graphs and no native failure. Live engine
+status confirms synchronous QwenPrefillPacedScheduler with batch queue size 1.
+Runtime source overlays and resident replacements mean Git HEAD alone does
+not identify loaded code. Credentials and control-token contents are omitted.

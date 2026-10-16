@@ -1,19 +1,22 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
+from contextlib import contextmanager, nullcontext
 from types import SimpleNamespace
 
 import pytest
 import torch
 
+from tools.sidecard.layer_decode_graph import DecodeGraphs
 from tools.sidecard.layer_math import TextLayer
-from tools.sidecard.layer_stage_profile import StageProfile
+from tools.sidecard.layer_stage_profile import StageProfile, forward_traced
 
 
 @pytest.mark.parametrize("rows", [1, 4])
 @pytest.mark.parametrize("linear", [True, False])
 @pytest.mark.parametrize("reduce", [True, False])
-def test_profile_preserves_complete_middle_layer_math(tmp_path, monkeypatch, rows, linear, reduce):
+@pytest.mark.parametrize("candidate_mhc", [False, True])
+def test_profile_preserves_complete_middle_layer_math(tmp_path, monkeypatch, rows, linear, reduce, candidate_mhc):
     torch.manual_seed(319)
     width = 8
     weights = {}
@@ -29,6 +32,21 @@ def test_profile_preserves_complete_middle_layer_math(tmp_path, monkeypatch, row
     layer.torch, layer.weights, layer.device = torch, weights, "npu:0"
     layer.index, layer.linear, layer.tp_rank = 18 if linear else 19, linear, 0 if reduce else None
     layer.native_sinkhorn = layer.native_round = None
+    candidate_calls = []
+    if candidate_mhc:
+
+        def pre(*args):
+            candidate_calls.append("pre")
+            return args[-1]()
+
+        def post(*args):
+            candidate_calls.append("post")
+            return args[-1]()
+
+        layer.native_mhc = SimpleNamespace(pre=pre, post=post)
+        layer.mhc_weights = {"attn": (), "ffn": ()}
+    observations = []
+    layer.execution_diagnostic = SimpleNamespace(route=lambda *fields: observations.append(fields))
     layer.config = dict(
         num_hidden_layers=45, rms_norm_eps=1e-5, hc_eps=1e-6, hc_sinkhorn_iters=20, routed_scaling_factor=2.5
     )
@@ -58,6 +76,10 @@ def test_profile_preserves_complete_middle_layer_math(tmp_path, monkeypatch, row
     expected = layer.forward(*state)
     reference_sums = list(sums)
     reference_routes = list(routes)
+    reference_candidates = list(candidate_calls)
+    assert len(observations) == 1
+    observations.clear()
+    candidate_calls.clear()
     sums.clear()
     routes.clear()
     syncs = []
@@ -69,11 +91,17 @@ def test_profile_preserves_complete_middle_layer_math(tmp_path, monkeypatch, row
         torch.testing.assert_close(value, golden, rtol=0, atol=0)
     assert sums == reference_sums
     assert routes == reference_routes
+    assert candidate_calls == reference_candidates
+    assert len(observations) == 1
     record = json.loads(profile.output.read_text())
     assert record["layers"][0]["expert_ids"] == reference_routes[0][0]
     assert all(value >= 0 for value in record["layers"][0]["components_ms"].values())
     assert len(syncs) == len(record["layers"][0]["components_ms"]) * 2
     assert profile.packet is None
+    async_trace = SimpleNamespace(enabled=True, span=lambda *args, **kwargs: nullcontext())
+    traced = forward_traced([layer], None, state, async_trace)
+    for value, golden in zip(traced, expected, strict=True):
+        torch.testing.assert_close(value, golden, rtol=0, atol=0)
 
 
 def test_profile_rejects_incomplete_or_nonmiddle_state(tmp_path):
@@ -84,3 +112,56 @@ def test_profile_rejects_incomplete_or_nonmiddle_state(tmp_path):
     layer = SimpleNamespace(index=18, torch=None, weights={}, config={})
     with pytest.raises(ValueError, match="complete"):
         profile.forward(layer, (None,) * 4)
+
+
+@pytest.mark.parametrize("rows", [1, 4])
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("dsa_capture", [False, True])
+def test_async_trace_preserves_graph_replay_and_eager_math(rows, enabled, dsa_capture):
+    calls, spans = [], []
+
+    @contextmanager
+    def span(name, **kwargs):
+        spans.append((name, kwargs))
+        yield
+
+    trace = SimpleNamespace(enabled=enabled, span=span)
+
+    def layer(index, linear):
+        def forward(hidden, *deferred):
+            calls.append(("eager", index))
+            return hidden + index + 1, *deferred
+
+        return SimpleNamespace(index=index, linear=linear, forward=forward)
+
+    layers = [layer(0, True), layer(1, True), layer(2, False)]
+    graphs = object.__new__(DecodeGraphs)
+    graphs.spans = ((layers[0], layers[1]), (layers[2],))
+    inputs = (torch.zeros(1, 8), None, None, None)
+    outputs = (torch.zeros(1, 8), None, None, None)
+
+    def replay():
+        calls.append(("replay", 0))
+        outputs[0].copy_(inputs[0] + 3)
+
+    graphs.graphs = {0: (SimpleNamespace(replay=replay), inputs, outputs)}
+    graphs.dsa_graphs = {2: SimpleNamespace(forward=lambda state: layers[2].forward(*state))} if dsa_capture else {}
+    state = (torch.arange(rows * 8).reshape(rows, 8).float(), None, None, None)
+    expected = graphs.forward(state)[0].clone()
+    expected_calls = calls[:]
+    calls.clear()
+    actual = forward_traced(layers, graphs, state, trace)[0]
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    assert calls == expected_calls
+    if enabled:
+        if rows == 1:
+            assert [name for name, _ in spans] == [
+                "graph_inputs",
+                "kda_graph",
+                "dsa_graph" if dsa_capture else "eager_span",
+            ]
+            assert spans[1][1]["attribution"] == "internal collectives unattributed"
+        else:
+            assert [name for name, _ in spans] == ["eager_layer"] * 3
+    else:
+        assert not spans

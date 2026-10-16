@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Stable original top-k order; all weighting and accumulation stays vector FP32.
 #include "kernel_operator.h"
+#include "glm_channel_dma.h"
 namespace {
 using namespace AscendC;
 constexpr uint32_t N = 128, LANES = 8, FLOAT_LANES = 64;
@@ -25,14 +26,15 @@ class Combine {
       const int64_t token = task / (hidden / N), column = task % (hidden / N) * N;
       Duplicate(accum_.Get<float>(), 0.0f, N);
       DataCopy(scale_.Get<float>(), weights_[token * LANES], LANES);
-      PipeBarrier<PIPE_ALL>();
+      GlmChannelDma::Fence();
       Brcb(scale_.Get<float>()[LANES], scale_.Get<float>(), 1, {1, LANES});
       PipeBarrier<PIPE_V>();
       for (int64_t slot = 0; slot < topK; ++slot) {
         const int64_t row = ranks_.GetValue(token * topK + slot);
         if (row < 0 || row >= valid) continue;
+        GlmChannelDma::BeforeRead();
         DataCopy(half_.Get<half>(), routed_[row * hidden + column], N);
-        PipeBarrier<PIPE_ALL>();
+        GlmChannelDma::Fence();
         Cast(value_.Get<float>(), half_.Get<half>(), RoundMode::CAST_NONE, N);
         PipeBarrier<PIPE_V>();
         Mul(value_.Get<float>(), value_.Get<float>(), scale_.Get<float>()[LANES + slot * LANES],
@@ -41,8 +43,9 @@ class Combine {
         Add(accum_.Get<float>(), accum_.Get<float>(), value_.Get<float>(), N);
         PipeBarrier<PIPE_V>();
       }
+      GlmChannelDma::WriteReady();
       DataCopy(output_[token * hidden + column], accum_.Get<float>(), N);
-      PipeBarrier<PIPE_ALL>();
+      GlmChannelDma::Fence();
     }
   }
 

@@ -78,6 +78,7 @@ def build(
     direct_compact_down_scales=False,
     group_major_input_scales=False,
     group_major_down_scales=False,
+    streaming_pipeline=False,
 ):
     """Freeze helper sources and compile a unique, append-only native version."""
     if type(version) is not int or version < 1 or output_columns not in (16, 32, 64, 128):
@@ -116,6 +117,7 @@ def build(
             direct_compact_down_scales,
             group_major_input_scales,
             group_major_down_scales,
+            streaming_pipeline,
         )
     ):
         raise ValueError("prefill experiment flags must be boolean")
@@ -255,6 +257,50 @@ def build(
         raise ValueError("direct W4 L1 requires prepared projection cache allocation")
     if prepared_offset_tables and not (fused_moe and prepared_weight_layout):
         raise ValueError("prepared offsets require prepared fused MoE")
+    if streaming_pipeline:
+        required = (
+            tile_pipeline,
+            all_bits,
+            fused_moe,
+            prepared_weight_layout,
+            pair_scale_groups,
+            pair_prefill_scale_groups,
+            prefill_rows_32,
+            vector_scale_products,
+            prefill_weight_cache,
+            share_gate_up_input,
+            cache_gate_up_activations,
+            route_packed_input,
+            route_packed_down,
+            route_compact_down_scales,
+            raw_input_scales,
+            raw_hidden_scales,
+            quad_hidden_quant,
+            fp16_weight_scales,
+            fp16_route_workspace,
+            compact_w4_scratch,
+            direct_w4_l1,
+            prepared_offset_tables,
+            product_pipe_events,
+            group_major_down_scales,
+        )
+        incompatible = (
+            include_w3,
+            wide_cube_k,
+            weight_decode_lut,
+            fp16_swiglu,
+            pair_hidden_quant,
+            strided_product_copy,
+            repeat_product_cast,
+            gather_product_matrix,
+            nz_prefill_accumulator,
+            prefill_product_cast,
+            active_cube_rows,
+            fused_scale_accumulation,
+            direct_compact_down_scales,
+        )
+        if output_columns != 128 or not all(required) or any(incompatible):
+            raise ValueError("streaming pipeline requires the frozen compatible M32/K32 native layout")
     namespace = f"glm_reconstruction_v{version}"
     build_dir = build_dir.resolve()
     if product_pipe_events and not fused_moe:
@@ -266,6 +312,12 @@ def build(
     if fused_scale_accumulation and nz_prefill_accumulator:
         raise ValueError("fused scale accumulation requires the row accumulator")
     build_dir.mkdir(parents=True, exist_ok=False)
+    native_here = HERE
+    if streaming_pipeline:
+        native_here = build_dir / "native_sources"
+        native_here.mkdir()
+        for source in sorted((*HERE.glob("*.cpp"), *HERE.glob("*.h"))):
+            shutil.copy2(source, native_here / source.name)
     helper_package = namespace + "_helpers"
     helper_root = build_dir / helper_package
     helper_root.mkdir()
@@ -284,7 +336,7 @@ def build(
             "c++",
             "-std=c++17",
             "-O2",
-            str(HERE / "compile_reconstruction.cpp"),
+            str(native_here / "compile_reconstruction.cpp"),
             f"-I{cann_root / 'include'}",
             f"-L{cann_root / 'lib64'}",
             "-lacl_rtc",
@@ -309,6 +361,7 @@ def build(
     provenance = {
         "_build": {
             "namespace": namespace,
+            "streaming_pipeline": streaming_pipeline,
             "version": version,
             "output_columns": output_columns,
             "helper_package": helper_package,
@@ -365,9 +418,13 @@ def build(
             "pair_prefill_scale_groups": pair_prefill_scale_groups,
         }
     }
+    if streaming_pipeline:
+        provenance["_streaming_sources"] = {
+            str(path.relative_to(build_dir)): sha256(path) for path in sorted(native_here.iterdir())
+        }
     provenance["_helpers"] = {p.name: sha256(p) for p in helper_root.glob("*.py")}
     for name in sources:
-        source = HERE / name
+        source = native_here / name
         output = build_dir / ("glm_w4a8_matmul.bin" if name == matrix_source else source.stem + ".bin")
         subprocess.run(
             [
@@ -382,7 +439,7 @@ def build(
         )
         provenance[name] = {"source_sha256": sha256(source), "binary_sha256": sha256(output)}
     if fused_moe:
-        source = HERE / "glm_fused_moe.cpp"
+        source = native_here / "glm_fused_moe.cpp"
         stages = [(stage, None) for stage in ("gate_up", "down")]
         if specialize_w3:
             stages.extend((stage, 3) for stage in ("gate_up", "down"))
@@ -397,7 +454,8 @@ def build(
                     str(source),
                     str(output),
                     *options,
-                    f"-I{HERE}",
+                    f"-I{native_here}",
+                    *(["-DGLM_STREAMING_PIPELINE"] if streaming_pipeline else []),
                     *(["-DGLM_PREPARED_WEIGHT_LAYOUT"] if prepared_weight_layout else []),
                     *(["-DGLM_PREROUNDED_WEIGHT_SCALES"] if prerounded_weight_scales else []),
                     *(["-DGLM_FP16_WEIGHT_SCALES"] if fp16_weight_scales else []),
@@ -452,14 +510,22 @@ def build(
                 check=True,
             )
             provenance[output.name] = {"source_sha256": sha256(source), "binary_sha256": sha256(output)}
-        provenance["glm_fused_scratch.h"] = {"source_sha256": sha256(HERE / "glm_fused_scratch.h")}
-        provenance["glm_fused_compact_scales.h"] = {"source_sha256": sha256(HERE / "glm_fused_compact_scales.h")}
-        provenance["glm_fused_route_cache.h"] = {"source_sha256": sha256(HERE / "glm_fused_route_cache.h")}
-        provenance["glm_fused_down_scales.h"] = {"source_sha256": sha256(HERE / "glm_fused_down_scales.h")}
-        provenance["glm_fused_input_scales.h"] = {"source_sha256": sha256(HERE / "glm_fused_input_scales.h")}
-        provenance["glm_route_input_layout.h"] = {"source_sha256": sha256(HERE / "glm_route_input_layout.h")}
+        if streaming_pipeline:
+            for name in (
+                "glm_streaming_contract.h",
+                "glm_streaming_operands.h",
+                "glm_streaming_products.h",
+                "glm_streaming_epilogue.h",
+            ):
+                provenance[name] = {"source_sha256": sha256(native_here / name)}
+        provenance["glm_fused_scratch.h"] = {"source_sha256": sha256(native_here / "glm_fused_scratch.h")}
+        provenance["glm_fused_compact_scales.h"] = {"source_sha256": sha256(native_here / "glm_fused_compact_scales.h")}
+        provenance["glm_fused_route_cache.h"] = {"source_sha256": sha256(native_here / "glm_fused_route_cache.h")}
+        provenance["glm_fused_down_scales.h"] = {"source_sha256": sha256(native_here / "glm_fused_down_scales.h")}
+        provenance["glm_fused_input_scales.h"] = {"source_sha256": sha256(native_here / "glm_fused_input_scales.h")}
+        provenance["glm_route_input_layout.h"] = {"source_sha256": sha256(native_here / "glm_route_input_layout.h")}
         if route_packed_input:
-            source = HERE / "glm_fused_route_input.cpp"
+            source = native_here / "glm_fused_route_input.cpp"
             output = build_dir / "glm_fused_route_input.bin"
             subprocess.run(
                 [
@@ -467,14 +533,14 @@ def build(
                     str(source),
                     str(output),
                     *options,
-                    f"-I{HERE}",
+                    f"-I{native_here}",
                     *(["-DGLM_RAW_INPUT_SCALES"] if raw_input_scales else []),
                     *(["-DGLM_GROUP_MAJOR_INPUT_SCALES"] if group_major_input_scales else []),
                 ],
                 check=True,
             )
             provenance[output.name] = {"source_sha256": sha256(source), "binary_sha256": sha256(output)}
-        source = HERE / "glm_fused_pack.cpp"
+        source = native_here / "glm_fused_pack.cpp"
         output = build_dir / "glm_fused_pack.bin"
         subprocess.run(
             [
@@ -482,14 +548,14 @@ def build(
                 str(source),
                 str(output),
                 *options,
-                f"-I{HERE}",
+                f"-I{native_here}",
                 *(["-DGLM_RAW_INPUT_SCALES"] if raw_input_scales else []),
             ],
             check=True,
         )
         provenance[output.name] = {"source_sha256": sha256(source), "binary_sha256": sha256(output)}
-        provenance["glm_fused_quantize.h"] = {"source_sha256": sha256(HERE / "glm_fused_quantize.h")}
-        source = HERE / "glm_fused_reduce.cpp"
+        provenance["glm_fused_quantize.h"] = {"source_sha256": sha256(native_here / "glm_fused_quantize.h")}
+        source = native_here / "glm_fused_reduce.cpp"
         output = build_dir / "glm_fused_reduce.bin"
         subprocess.run(
             [
@@ -498,14 +564,16 @@ def build(
                 str(output),
                 *options,
                 *(["-DGLM_FP16_ROUTE_WORKSPACE"] if fp16_route_workspace else []),
-                f"-I{HERE}",
+                f"-I{native_here}",
                 *(["-DGLM_NATIVE_ROUTE_COLUMNS"] if native_route_columns else []),
                 *(["-DGLM_PREFILL_REDUCE_META_CACHE"] if prefill_reduce_meta_cache else []),
             ],
             check=True,
         )
         provenance[output.name] = {"source_sha256": sha256(source), "binary_sha256": sha256(output)}
-        provenance["glm_fused_reduce_schedule.h"] = {"source_sha256": sha256(HERE / "glm_fused_reduce_schedule.h")}
+        provenance["glm_fused_reduce_schedule.h"] = {
+            "source_sha256": sha256(native_here / "glm_fused_reduce_schedule.h")
+        }
     if include_w3:
         csrc = source_root / "csrc" if (source_root / "csrc").is_dir() else source_root
         kernel = csrc / "gmm/w2_blocked_dequant_matmul_v310/op_kernel"
@@ -519,7 +587,7 @@ def build(
             (snapshot / name).write_bytes(data)
             provenance[name] = {"source_sha256": hashlib.sha256(data).hexdigest()}
         extra = [f"-I{snapshot}", f"-I{common}", f"-I{catlass}", *[f"-D{name}" for name in W3_DEFINES]]
-        source = HERE / "reconstruction_kernel.cpp"
+        source = native_here / "reconstruction_kernel.cpp"
         output = build_dir / "reconstruction_kernel.bin"
         subprocess.run([str(compiler), str(source), str(output), *options, *extra], check=True)
         provenance[source.name] = {"source_sha256": sha256(source), "binary_sha256": sha256(output)}
@@ -540,7 +608,7 @@ def build(
             f"-DGLM_RECONSTRUCTION_NAMESPACE={namespace}",
             f"-D_GLIBCXX_USE_CXX11_ABI={int(torch._C._GLIBCXX_USE_CXX11_ABI)}",
             *[f"-I{path}" for path in includes],
-            str(HERE / "reconstruction_bridge.cpp"),
+            str(native_here / "reconstruction_bridge.cpp"),
             *[f"-L{path}" for path in libraries],
             *[f"-Wl,-rpath,{path}" for path in libraries],
             "-ltorch_npu",
@@ -555,7 +623,7 @@ def build(
         check=True,
     )
     provenance["reconstruction_bridge.cpp"] = {
-        "source_sha256": sha256(HERE / "reconstruction_bridge.cpp"),
+        "source_sha256": sha256(native_here / "reconstruction_bridge.cpp"),
         "binary_sha256": sha256(bridge),
     }
     (build_dir / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
@@ -574,6 +642,7 @@ def main():
     parser.add_argument("--tile-pipeline", action="store_true")
     parser.add_argument("--all-bits", action="store_true")
     parser.add_argument("--fused-moe", action="store_true")
+    parser.add_argument("--streaming-pipeline", action="store_true")
     parser.add_argument("--prepared-weight-layout", action="store_true")
     parser.add_argument("--pair-scale-groups", action="store_true")
     parser.add_argument("--fp16-swiglu", action="store_true", help="quality-gated FP16 SwiGLU experiment")
@@ -777,6 +846,7 @@ def main():
             direct_compact_down_scales=args.direct_compact_down_scales,
             group_major_input_scales=args.group_major_input_scales,
             group_major_down_scales=args.group_major_down_scales,
+            **({"streaming_pipeline": True} if args.streaming_pipeline else {}),
         )
     )
 

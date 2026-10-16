@@ -99,6 +99,7 @@ def run(overlay, bundle, layer, first, stop, tokens, device_index=0, samples=5, 
     report["cases"] = []
     generator = torch.Generator().manual_seed(1010)
     for count in tokens:
+        print(f"Real-bank case starting: tokens={count}, namespace={report['namespace']}", flush=True)
         bits = decode_bits if count <= DECODE_ROWS else prefill_bits
         x = torch.randn(count, gate.shape[-1], generator=generator).half()
         ids = torch.randint(first, stop, (count, 8), generator=generator)
@@ -119,6 +120,8 @@ def run(overlay, bundle, layer, first, stop, tokens, device_index=0, samples=5, 
         if not torch.isfinite(result).all().item() or error > 0.02:
             raise AssertionError(f"real-bank implementation parity failed: T={count}, NRMSE={error}")
         durations = []
+        initial = result.cpu()
+        repeat_error = 0.0
         for _ in range(samples):
             start, end = torch.npu.Event(enable_timing=True), torch.npu.Event(enable_timing=True)
             start.record()
@@ -126,6 +129,14 @@ def run(overlay, bundle, layer, first, stop, tokens, device_index=0, samples=5, 
             end.record()
             torch.npu.synchronize()
             durations.append(float(start.elapsed_time(end)))
+            repeated = result.cpu()
+            if not torch.isfinite(repeated).all():
+                raise AssertionError(f"repeated real-bank output is nonfinite: T={count}")
+            repeat_error = max(repeat_error, float((repeated - initial).abs().max()))
+        if repeat_error != 0:
+            raise AssertionError(
+                f"identical-input output changed across repetitions: T={count}, max_abs={repeat_error}"
+            )
         replay_error = None
         if count <= 4:
             graph = torch.npu.NPUGraph()
@@ -160,6 +171,7 @@ def run(overlay, bundle, layer, first, stop, tokens, device_index=0, samples=5, 
                 "changed_input_graph_nrmse": replay_error,
                 "median_device_ms": statistics.median(durations),
                 "device_samples_ms": durations,
+                "repeatability_max_abs": repeat_error,
                 "arena_live_bytes": arena.allocated_bytes,
                 "physical_cube_rows_from_routes": sorted(
                     {
@@ -178,6 +190,11 @@ def run(overlay, bundle, layer, first, stop, tokens, device_index=0, samples=5, 
                     }
                 ),
             }
+        )
+        print(
+            f"Real-bank case passed: tokens={count}, nrmse={error:.6g}, "
+            f"median_device_ms={statistics.median(durations):.3f}, graph_nrmse={replay_error}",
+            flush=True,
         )
     report["status"] = "real-bank operator implementation gate only; full-model quality/throughput pending"
     report["completed_at_unix"] = time.time()

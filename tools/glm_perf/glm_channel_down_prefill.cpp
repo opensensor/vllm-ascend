@@ -2,6 +2,7 @@
 // Core-owned route tiles: contiguous stores and stable combine before reuse.
 #define GLM_CHANNEL_FUSED_GATE_UP
 #include "glm_channel_projection.cpp"
+#include "glm_channel_dma.h"
 namespace {
 constexpr uint32_t FLOAT_LANES = 64;
 class FusedDownPrefill : public Projection {
@@ -25,7 +26,7 @@ class FusedDownPrefill : public Projection {
     if (cachedRoutes) {
       DataCopy(rankCache_.Get<int32_t>(), ranks_, tokens_ * LANES);
       DataCopy(weightCache_.Get<float>(), routeWeights_, tokens_ * LANES);
-      PipeBarrier<PIPE_ALL>();
+      GlmChannelDma::Fence();
     }
 #endif
     const uint32_t maxRows = bits_ == 8 ? ROWS / 2 : ROWS;
@@ -41,7 +42,7 @@ class FusedDownPrefill : public Projection {
           const uint32_t count = end - row < maxRows ? end - row : maxRows;
           ProjectBlock(row, count, expert, tile);
           DataCopy(tiles_[tileBase + row * N], outputUb_.Get<half>(), count * N);
-          PipeBarrier<PIPE_ALL>();
+          GlmChannelDma::Fence();
         }
         first = end;
       }
@@ -57,7 +58,7 @@ class FusedDownPrefill : public Projection {
         } else {
 #endif
           DataCopy(factors_.Get<float>(), routeWeights_[token * LANES], LANES);
-          PipeBarrier<PIPE_ALL>();
+          GlmChannelDma::Fence();
           Brcb(factors_.Get<float>()[LANES], factors_.Get<float>(), 1, {1, LANES});
 #ifdef GLM_CHANNEL_CACHE_PREFILL_ROUTES
         }
@@ -71,8 +72,9 @@ class FusedDownPrefill : public Projection {
           const int64_t row = ranks_.GetValue(token * topK_ + slot);
 #endif
           if (row < 0 || row >= valid) continue;
+          GlmChannelDma::BeforeRead();
           DataCopy(outputUb_.Get<half>(), tiles_[tileBase + row * N], N);
-          PipeBarrier<PIPE_ALL>();
+          GlmChannelDma::Fence();
           Cast(value, outputUb_.Get<half>(), RoundMode::CAST_NONE, N);
           PipeBarrier<PIPE_V>();
           Mul(value, value, factors_.Get<float>()[LANES + slot * LANES], static_cast<uint64_t>(FLOAT_LANES),
@@ -81,8 +83,9 @@ class FusedDownPrefill : public Projection {
           Add(accum, accum, value, N);
           PipeBarrier<PIPE_V>();
         }
+        GlmChannelDma::WriteReady();
         DataCopy(outputFloat_[token * n_ + tile * N], accum, N);
-        PipeBarrier<PIPE_ALL>();
+        GlmChannelDma::Fence();
       }
     }
   }

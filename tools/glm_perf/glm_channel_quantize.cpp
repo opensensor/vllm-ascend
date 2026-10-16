@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // One quantization per activation group; optional SwiGLU and expert smoothing.
 #include "kernel_operator.h"
+#include "glm_channel_dma.h"
 namespace {
 using namespace AscendC;
 constexpr uint32_t MAX_K = 4096, LANES = 8, FLOAT_LANES = 64;
@@ -32,8 +33,8 @@ class ChannelQuantizer {
     pipe_.InitBuffer(packed_, MAX_K);
     auto indices = indices_.Get<uint32_t>();
     offsets_.SetGlobalBuffer(reinterpret_cast<__gm__ uint32_t*>(offsets));
-    DataCopy(indices, offsets_, MAX_K / FLOAT_LANES + LANES);
-    PipeBarrier<PIPE_ALL>();
+    GlmChannelDma::CopyIn(indices, offsets_, MAX_K / FLOAT_LANES + LANES);
+    GlmChannelDma::Fence();
     const int64_t groups = k / group;
     // Device metadata only. Peer/zero routes never read unwritten gate output.
     const int64_t validRows = hidden ? ends_.GetValue(experts - 1) : rows;
@@ -59,12 +60,12 @@ class ChannelQuantizer {
         auto up = value[2 * MAX_K];
         auto diagonal = value[3 * MAX_K];
         auto quant = value[4 * MAX_K];
-        DataCopy(inputHalf, input_[(hidden ? row * 2 * k : row * k) + first], group);
+        GlmChannelDma::CopyIn(inputHalf, input_[(hidden ? row * 2 * k : row * k) + first], group);
 #ifndef GLM_CHANNEL_IDENTITY_SMOOTHING
-        DataCopy(diagonal, smoothing_[owner * k + first], group);
+        GlmChannelDma::CopyIn(diagonal, smoothing_[owner * k + first], group);
 #endif
-        if (hidden) DataCopy(upHalf, input_[row * 2 * k + k + first], group);
-        PipeBarrier<PIPE_ALL>();
+        if (hidden) GlmChannelDma::CopyIn(upHalf, input_[row * 2 * k + k + first], group);
+        GlmChannelDma::Fence();
         Cast(value, inputHalf, RoundMode::CAST_NONE, group);
         PipeBarrier<PIPE_V>();
         if (hidden) {
@@ -147,9 +148,9 @@ class ChannelQuantizer {
           Cast(limb, temporary, RoundMode::CAST_NONE, group);
           PipeBarrier<PIPE_V>();
           Cast(packed.ReinterpretCast<int4b_t>(), limb, RoundMode::CAST_NONE, group);
-          PipeBarrier<PIPE_ALL>();
+          GlmChannelDma::Fence();
           DataCopy(high_[row * k / 2 + first / 2], packed, group / 2);
-          PipeBarrier<PIPE_ALL>();
+          GlmChannelDma::Fence();
           Muls(temporary, temporary, -16.0f, group);
           PipeBarrier<PIPE_V>();
           Add(quant, quant, temporary, group);
@@ -160,10 +161,10 @@ class ChannelQuantizer {
         Cast(limb, quant, RoundMode::CAST_NONE, group);
         PipeBarrier<PIPE_V>();
         Cast(packed.ReinterpretCast<int4b_t>(), limb, RoundMode::CAST_NONE, group);
-        PipeBarrier<PIPE_ALL>();
+        GlmChannelDma::Fence();
         DataCopy(low_[row * k / 2 + first / 2], packed, group / 2);
         DataCopy(scales_[(row * groups + groupIndex) * LANES], scale, LANES);
-        PipeBarrier<PIPE_ALL>();
+        GlmChannelDma::Fence();
       }
     }
   }

@@ -3,6 +3,7 @@
 #define GLM_CHANNEL_FUSED_GATE_UP
 #define GLM_CHANNEL_TOKEN_PREFILL
 #include "glm_channel_projection.cpp"
+#include "glm_channel_dma.h"
 namespace {
 constexpr uint32_t TOKEN_WINDOW = 16, WINDOW_ROUTES = TOKEN_WINDOW * LANES, FLOAT_LANES = 64;
 class TokenDown : public Projection {
@@ -39,7 +40,7 @@ class TokenDown : public Projection {
         DataCopy(factors_.Get<float>(), routeWeights[firstToken * LANES], tokenCount * LANES);
         Duplicate(slots_.Get<half>(), static_cast<half>(0), tokenCount * LANES * N);
         Duplicate(validSlots_.Get<int32_t>(), static_cast<int32_t>(0), WINDOW_ROUTES);
-        PipeBarrier<PIPE_ALL>();
+        GlmChannelDma::Fence();
         uint32_t cursor = 0;
         while (cursor < tokenCount * LANES) {
           const int64_t globalRow = tokenRowsUb_.Get<int32_t>().GetValue(cursor);
@@ -81,8 +82,9 @@ class TokenDown : public Projection {
             Add(accum, accum, value, N);
             PipeBarrier<PIPE_V>();
           }
+          GlmChannelDma::WriteReady();
           DataCopy(result[(firstToken + token) * n_ + tile * N], accum, N);
-          PipeBarrier<PIPE_ALL>();
+          GlmChannelDma::Fence();
         }
       }
     }

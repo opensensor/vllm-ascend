@@ -1,0 +1,10 @@
+def pytest_addoption(parser):
+    group = parser.getgroup("scene dense kernels")
+    group.addoption("--scene-dense-model", help="Local Qwen3-VL text INT8 checkpoint")
+    group.addoption("--scene-dense-build", help="Frozen RTC build directory")
+    group.addoption("--scene-active-epilogue-build", help="Frozen optional active-row matrix epilogue build")
+    group.addoption("--scene-input-quant-build", help="Frozen optional input quantization build")
+    group.addoption("--scene-image-prepare-build", help="Frozen optional exact image preparation build")
+    group.addoption("--scene-image-serving-endpoint", help="Opt-in local worker image serving regression")
+    group.addoption("--scene-image-serving-root", help="Allowed private shared media root on the serving host")
+    group.addoption("--scene-dense-rank", type=int, default=0, choices=(0, 1))

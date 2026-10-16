@@ -236,31 +236,55 @@ if (BUILD_OPEN_PROJECT)
 
         string(REPLACE ";" "::" EP_ASCEND_OP_NAME "${ASCEND_OP_NAME}")
 
-        execute_process(COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/cmake/scripts/prepare.sh
-                -s ${CMAKE_CURRENT_SOURCE_DIR}
-                -b ${CMAKE_CURRENT_BINARY_DIR}/prepare_build
-                -p ${ASCEND_CANN_PACKAGE_PATH}
-                --autogen-dir ${ASCEND_AUTOGEN_DIR}
-                --build-open-project ${BUILD_OPEN_PROJECT}
-                --binary-out-dir ${ASCEND_BINARY_OUT_DIR}
-                --impl-out-dir ${ASCEND_IMPL_OUT_DIR}
-                --op-build-tool ${OP_BUILD_TOOL}
-                --ascend-cmake-dir ${ASCEND_CMAKE_DIR}
-                --tiling-key ${EP_TILING_KEY}
-                --ops-compile-options ${EP_OPS_COMPILE_OPTIONS}
-                --check-compatible ${CHECK_COMPATIBLE}
-                --ascend-compute_unit ${EP_ASCEND_COMPUTE_UNIT}
-                --ascend-op_name ${EP_ASCEND_OP_NAME}
-                --op_debug_config ${OP_DEBUG_CONFIG}
-                --build_ops_rty_kernel ${BUILD_OPS_RTY_KERNEL}
-                --enable_built_in ${ENABLE_BUILT_IN}
-                --enable_static ${ENABLE_STATIC}
-                --enable_experimental ${ENABLE_EXPERIMENTAL}
-                --enable_ccache ${ENABLE_CCACHE}
-                --cann_3rd_lib_path ${CANN_3RD_LIB_PATH}
-                --build_type ${BUILD_TYPE}
-                --version ${VERSION}
-                --enable_oom ${ENABLE_OOM}
+        # Optional authenticated cache/profile for private execution operators.
+        # Normal builds add neither argument and retain the existing defaults.
+        set(SIDECARD_EXECUTION_INITIAL_CACHE "" CACHE FILEPATH "Initial cache for nested execution-op preparation")
+        set(SIDECARD_EXECUTION_PREPARE_JOBS "" CACHE STRING "Optional nested prepare jobs, 1 through 16")
+        set(_sidecard_prepare_args)
+        if (SIDECARD_EXECUTION_INITIAL_CACHE)
+            get_filename_component(_sidecard_initial_cache "${SIDECARD_EXECUTION_INITIAL_CACHE}" ABSOLUTE
+                BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+            if (NOT EXISTS "${_sidecard_initial_cache}" OR IS_DIRECTORY "${_sidecard_initial_cache}")
+                message(FATAL_ERROR "Sidecard execution initial cache is not a file")
+            endif()
+            list(APPEND _sidecard_prepare_args --initial-cache "${_sidecard_initial_cache}")
+        endif()
+        if (NOT "${SIDECARD_EXECUTION_PREPARE_JOBS}" STREQUAL "")
+            if (NOT "${SIDECARD_EXECUTION_PREPARE_JOBS}" MATCHES "^[1-9][0-9]*$")
+                message(FATAL_ERROR "Sidecard execution prepare jobs must be an integer from 1 through 16")
+            endif()
+            if (SIDECARD_EXECUTION_PREPARE_JOBS GREATER 16)
+                message(FATAL_ERROR "Sidecard execution prepare jobs exceed 16")
+            endif()
+            list(APPEND _sidecard_prepare_args --jobs "${SIDECARD_EXECUTION_PREPARE_JOBS}")
+        endif()
+
+        execute_process(COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/cmake/scripts/prepare.sh"
+                -s "${CMAKE_CURRENT_SOURCE_DIR}"
+                -b "${CMAKE_CURRENT_BINARY_DIR}/prepare_build"
+                -p "${ASCEND_CANN_PACKAGE_PATH}"
+                --autogen-dir "${ASCEND_AUTOGEN_DIR}"
+                --build-open-project "${BUILD_OPEN_PROJECT}"
+                --binary-out-dir "${ASCEND_BINARY_OUT_DIR}"
+                --impl-out-dir "${ASCEND_IMPL_OUT_DIR}"
+                --op-build-tool "${OP_BUILD_TOOL}"
+                --ascend-cmake-dir "${ASCEND_CMAKE_DIR}"
+                --tiling-key "${EP_TILING_KEY}"
+                --ops-compile-options "${EP_OPS_COMPILE_OPTIONS}"
+                --check-compatible "${CHECK_COMPATIBLE}"
+                --ascend-compute_unit "${EP_ASCEND_COMPUTE_UNIT}"
+                --ascend-op_name "${EP_ASCEND_OP_NAME}"
+                --op_debug_config "${OP_DEBUG_CONFIG}"
+                --build_ops_rty_kernel "${BUILD_OPS_RTY_KERNEL}"
+                --enable_built_in "${ENABLE_BUILT_IN}"
+                --enable_static "${ENABLE_STATIC}"
+                --enable_experimental "${ENABLE_EXPERIMENTAL}"
+                --enable_ccache "${ENABLE_CCACHE}"
+                --cann_3rd_lib_path "${CANN_3RD_LIB_PATH}"
+                --build_type "${BUILD_TYPE}"
+                --version "${VERSION}"
+                --enable_oom "${ENABLE_OOM}"
+                ${_sidecard_prepare_args}
                 RESULT_VARIABLE result
                 OUTPUT_STRIP_TRAILING_WHITESPACE
                 OUTPUT_VARIABLE PREPARE_BUILD_OUTPUT_VARIABLE)

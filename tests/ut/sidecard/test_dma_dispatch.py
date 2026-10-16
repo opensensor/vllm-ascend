@@ -17,6 +17,7 @@ from tools.sidecard.dma_protocol import (
     CAPACITY,
     CLOSE_TAG,
     COMMAND,
+    DIAGNOSTIC_TAG,
     INPUT_ROW_BYTES,
     LENGTH,
     MAX_CONTROL_BYTES,
@@ -31,7 +32,7 @@ from tools.sidecard.dma_protocol import (
     validate_descriptor,
     validate_identity,
 )
-from tools.sidecard.dma_worker import WorkerSlots, validate_routes
+from tools.sidecard.dma_worker import WorkerSlots, diagnostic_control, validate_routes
 from tools.sidecard.pcie.peer import ASCEND_TO_CUDA
 from tools.sidecard.single_route_graph import SingleRouteDecodeGraphs
 
@@ -67,7 +68,10 @@ def test_worker_metadata_does_not_read_past_buffer():
 
 @pytest.mark.parametrize("rank", [0, 1])
 @pytest.mark.parametrize("route_count", [0, 1, 2, 8])
-def test_native_completion_event_is_fresh_and_fast_selection_counts_owned_contributions(monkeypatch, rank, route_count):
+@pytest.mark.parametrize("observing", [False, True])
+def test_native_completion_event_is_fresh_and_fast_selection_counts_owned_contributions(
+    monkeypatch, rank, route_count, observing
+):
     slots = object.__new__(WorkerSlots)
     slots.max_chunk = 32
     slots.rank = rank
@@ -115,12 +119,64 @@ def test_native_completion_event_is_fresh_and_fast_selection_counts_owned_contri
 
     monkeypatch.setattr(SingleRouteDecodeGraphs, "__call__", execute)
     actor = object.__new__(SingleRouteDecodeGraphs)
+    observed = []
+    diagnostic = SimpleNamespace(writer=True, observe_compute=lambda *args, **kwargs: observed.append((args, kwargs)))
     for sequence in range(2):
-        slots.compute(actor, sequence, 18, 1)
+        slots.compute(actor, sequence, 18, 1, diagnostic=diagnostic if observing else None)
     assert len(completions) == 2 and completions[0] is not completions[1]
     single = rank == 0 and route_count == 1
     assert selections == ([1, 1] if single else [None, None])
     assert slots.single_route_calls == (2 if single else 0)
+    if observing:
+        assert [values[0][0] for values in observed] == [0, 1]
+        assert all(values[0][-1] is output for values in observed)
+        assert all(
+            values[1]["execution"] == ("single-route-graph" if single else "decode-graph") for values in observed
+        )
+    else:
+        assert observed == []
+
+
+def test_expert_gate_control_uses_reserved_frame_and_owner_bound_roundtrip():
+    coordinator, native = socket.socketpair()
+    seen, errors = [], []
+    observer = SimpleNamespace(handle_command=lambda command: seen.append(command) or {"passed": True})
+    command = {"action": "phase", "nonce": "fixture", "plan_sha256": "p" * 64}
+
+    def serve():
+        try:
+            assert native.recv(COMMAND.size) == DIAGNOSTIC_TAG
+            diagnostic_control(native, observer, "exact-owner")
+        except BaseException as error:
+            errors.append(error)
+
+    dispatch = object.__new__(DmaDispatch)
+    dispatch.lock = threading.RLock()
+    dispatch.closed = dispatch.failed = False
+    dispatch.nonce = "exact-owner"
+    dispatch.connections = [coordinator, None]
+    dispatch.execution_diagnostics = object()
+    with coordinator, native:
+        coordinator.settimeout(2)
+        native.settimeout(2)
+        worker = threading.Thread(target=serve)
+        worker.start()
+        assert dispatch.diagnostic_command(0, command) == {"passed": True}
+        worker.join(timeout=2)
+        assert not worker.is_alive() and not errors
+    assert seen == [command]
+
+
+@pytest.mark.parametrize("enabled,nonce", [(False, "owner"), (True, "stale-owner")])
+def test_expert_gate_control_rejects_disabled_or_other_owner(monkeypatch, enabled, nonce):
+    seen = []
+    observer = SimpleNamespace(handle_command=lambda command: seen.append(command)) if enabled else None
+    monkeypatch.setattr(
+        "tools.sidecard.dma_worker.receive_control", lambda connection: {"execution_diagnostic": {}, "nonce": nonce}
+    )
+    with pytest.raises(ValueError, match="unauthenticated"):
+        diagnostic_control(object(), observer, "owner")
+    assert not seen
 
 
 def test_private_control_roundtrip_and_budget():

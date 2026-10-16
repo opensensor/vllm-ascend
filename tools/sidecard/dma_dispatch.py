@@ -21,6 +21,7 @@ from .dma_pack_graph import DmaPackGraphs
 from .dma_protocol import (
     CLOSE_TAG,
     COMMAND,
+    DIAGNOSTIC_TAG,
     INPUT_ROW_BYTES,
     OUTPUT_ROW_BYTES,
     RELEASE,
@@ -204,6 +205,21 @@ class DmaDispatch:
     def __call__(self, layer, x, ids, weights):
         return self.compute(layer, x, ids, weights)[0]
 
+    def diagnostic_command(self, rank, command):
+        """Exchange gate-only metadata while this exact native owner is idle."""
+        with self.lock:
+            if self.closed or self.failed or type(rank) is not int or rank not in (0, 1):
+                raise ValueError("diagnostic command requires a live assigned expert owner")
+            if getattr(self, "execution_diagnostics", None) is None:
+                raise ValueError("expert diagnostic control was not enabled at startup")
+            connection = self.connections[rank]
+            connection.sendall(DIAGNOSTIC_TAG)
+            send_control(connection, {"execution_diagnostic": command, "nonce": self.nonce})
+            reply = receive_control(connection)
+            if set(reply) != {"execution_diagnostic", "nonce"} or reply["nonce"] != self.nonce:
+                raise ValueError("diagnostic reply belongs to another expert owner")
+            return reply["execution_diagnostic"]
+
     def prepare_layers(self, layers):
         if self.spec.get("direct_dma", {}).get("cuda_hot_graphs", False):
             if self.hot_graphs is not None:
@@ -274,6 +290,17 @@ class DmaDispatch:
         if completion is not None:
             completion.retire()
         x_bytes, id_bytes = rows * WIDTH * 2, rows * TOP_K * 4
+        diagnostic = getattr(self, "execution_diagnostics", None)
+        if diagnostic is not None and diagnostic.observer.writer is not None:
+            if captured:
+                # Observe the actual packing graph outputs, including wire
+                # dtype/rounding, before any imported slot can be overwritten.
+                slot = self.inputs[0]
+                wire_ids = slot[x_bytes : x_bytes + id_bytes].view(t.int32).reshape(rows, TOP_K)
+                wire_weights = slot[x_bytes + id_bytes : rows * INPUT_ROW_BYTES].view(t.float32).reshape(rows, TOP_K)
+            else:
+                wire_ids, wire_weights = ids.to(t.int32), cold_weights
+            diagnostic.dispatch_call(layer, x, wire_ids, wire_weights, active, self.sequences)
         pending = []
         for rank in range(2):
             if not active[rank]:

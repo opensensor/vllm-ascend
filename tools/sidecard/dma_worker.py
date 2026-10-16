@@ -34,6 +34,7 @@ from .completion_protocol import (
 from .dma_protocol import (
     CLOSE_TAG,
     COMMAND,
+    DIAGNOSTIC_TAG,
     INPUT_ROW_BYTES,
     OUTPUT_ROW_BYTES,
     PROTOCOL,
@@ -44,6 +45,7 @@ from .dma_protocol import (
     send_control,
     validate_command,
 )
+from .execution_options import make_multi_route, validate_options
 from .expert_decode_graph import ExpertDecodeGraphs, prefill_graph_rows
 from .expert_prefill_gate import validate as validate_prefill_graphs
 from .layer_weights import MAX_CHUNK, NPU_LAYERS, TOP_K, WIDTH, NpuExperts, expert_batch_size
@@ -218,7 +220,7 @@ class WorkerSlots:
             "completion_input_record": self.input_record,
         }
 
-    def compute(self, actor, sequence, layer, rows):
+    def compute(self, actor, sequence, layer, rows, *, diagnostic=None):
         """Transfer directly into Torch HBM and out of the native output tensor."""
         t = self.torch
         input_contract = getattr(self, "input_record", False)
@@ -276,6 +278,16 @@ class WorkerSlots:
         complete = t.npu.Event()
         complete.record()
         complete.synchronize()
+        if diagnostic is not None and diagnostic.writer is not None:
+            if single:
+                execution = "single-route-graph"
+            elif isinstance(actor, ExpertDecodeGraphs) and rows == 1:
+                execution = "decode-graph"
+            elif isinstance(actor, ExpertDecodeGraphs) and rows == actor.prefill_rows:
+                execution = "prefill-graph"
+            else:
+                execution = "eager"
+            diagnostic.observe_compute(sequence, layer, x, ids, weights, partial, execution=execution)
         native_end = time.perf_counter()
         packed_result = contract and not input_contract
         returned = TensorAllocation(self.ascend, self.result_packet[:length] if packed_result else partial)
@@ -374,12 +386,28 @@ def quarantine(slots, output, rank, error):
         time.sleep(1)
 
 
+def diagnostic_control(connection, diagnostic, nonce):
+    """Handle a reserved gate frame without advancing native COMMAND sequence."""
+    packet = receive_control(connection)
+    if diagnostic is None or set(packet) != {"execution_diagnostic", "nonce"} or packet["nonce"] != nonce:
+        raise ValueError("unexpected or unauthenticated expert diagnostic command")
+    reply = diagnostic.handle_command(packet["execution_diagnostic"])
+    send_control(connection, {"execution_diagnostic": reply, "nonce": nonce})
+
+
 def worker(args, spec):
     """Authenticate the private owner, gate banks, and serialize DMA invocations."""
     if os.geteuid() != 0 or os.environ.get("ASCEND_RT_VISIBLE_DEVICES") != "2,3":
         raise ValueError("direct expert worker requires root and assigned physical chips 2,3")
     prefill_rows = prefill_graph_rows(spec)
     single_route = single_route_enabled(spec)
+    execution = validate_options(spec)
+    if execution.multi_route is not None and single_route:
+        raise ValueError("multi-route execution cannot use the separate single-contribution graph")
+    from .execution_diagnostic_runtime import validate_runtime
+    from .expert_diagnostics import ExpertOwner
+
+    diagnostic_mode = validate_runtime(args.config, allow_expert=True)
     import torch
     import torch_npu
 
@@ -398,6 +426,7 @@ def worker(args, spec):
         reduce_results=False,
         layers=layers,
     )
+    actor.multi_route = make_multi_route(actor, execution)
     actor.validate_repeat(output / f"expert-repeat-rank{args.rank}.json", combine_results=False)
     if spec.get("direct_dma", {}).get("npu_expert_graphs", False):
         with torch.inference_mode():
@@ -411,6 +440,11 @@ def worker(args, spec):
                     actor.actor, actor, torch, output=output / f"expert-prefill-parity-rank{args.rank}.json"
                 )
     slots = WorkerSlots(spec, args.rank, torch)
+    diagnostic = (
+        ExpertOwner(args.config, args.rank, slots.hot_ids, torch.npu.synchronize)
+        if diagnostic_mode is not None
+        else None
+    )
     # Ordinary termination is deferred to private socket EOF; never abandon in-flight DMA.
     signal.signal(signal.SIGTERM, lambda signum, frame: None)
     signal.signal(signal.SIGINT, lambda signum, frame: None)
@@ -452,6 +486,9 @@ def worker(args, spec):
                     if slots.calls:
                         raise RuntimeError("CUDA IPC owner disappeared without a mapping-release acknowledgement")
                     break
+                if tag == DIAGNOSTIC_TAG:
+                    diagnostic_control(connection, diagnostic, args.nonce)
+                    continue
                 if tag == CLOSE_TAG:
                     if slots.completion_contract:
                         # Release foreign mappings/fd before the GPU owner is
@@ -466,7 +503,7 @@ def worker(args, spec):
                     break
                 sequence, layer, rows = validate_command(tag, expected, layers, max_chunk=slots.max_chunk)
                 slots.source_event.admitted = True
-                slots.compute(actor, sequence, layer, rows)
+                slots.compute(actor, sequence, layer, rows, diagnostic=diagnostic)
                 connection.sendall(tag)
                 expected += 1
                 if expected % RECEIPT_INTERVAL == 0:

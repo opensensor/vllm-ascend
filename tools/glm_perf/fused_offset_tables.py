@@ -12,6 +12,17 @@ GROUP = 32
 MAX_GROUPS = 128
 LANES = 8
 BULK_TOKENS = 16
+STREAMING_ROWS = 32
+
+
+def _validate_tables(tables, *, streaming_pipeline):
+    expected_count = 6 if streaming_pipeline else 5
+    if len(tables) != expected_count:
+        raise ValueError("invalid projection offset table count")
+    if any(len(t) % LANES or any(not 0 <= v < 2**32 for v in t) for t in tables):
+        raise ValueError("unaligned or overflowing projection offset table")
+    if streaming_pipeline and tables[-1] != tuple(row * 4 for row in range(STREAMING_ROWS)):
+        raise ValueError("invalid streaming scale row offset suffix")
 
 
 def projection_offset_tables(header, *, gate_up, options):
@@ -62,14 +73,17 @@ def projection_offset_tables(header, *, gate_up, options):
             for c in range(2 * GROUP)
         ) + tuple(g * 2 * 4 for g in range(batch))
     tables = (output, products, scales, activation, quant)
-    if any(len(t) % LANES or any(not 0 <= v < 2**32 for v in t) for t in tables):
-        raise ValueError("unaligned or overflowing projection offset table")
+    streaming_pipeline = options.get("streaming_pipeline", False)
+    if streaming_pipeline:
+        tables += (tuple(row * 4 for row in range(STREAMING_ROWS)),)
+    _validate_tables(tables, streaming_pipeline=streaming_pipeline)
     return tables
 
 
 def projection_descriptor(header, *, gate_up, options):
     """Pack the qualified table payload into an aligned INT64 config tensor."""
     tables = projection_offset_tables(header, gate_up=gate_up, options=options)
+    _validate_tables(tables, streaming_pipeline=options.get("streaming_pipeline", False))
     payload = sum(tables, ())
     packed = tuple(payload[i] | payload[i + 1] << 32 for i in range(0, len(payload), 2))
     return (*header, LAYOUT_TAG, len(payload), 0, 0, *packed)

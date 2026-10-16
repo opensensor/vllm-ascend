@@ -19,14 +19,17 @@ import struct
 import subprocess
 import time
 from datetime import timedelta
+from functools import partial
 from pathlib import Path
 
+from .execution_options import load_native, make_mhc, make_multi_route, validate_options
+from .execution_trace import ExecutionTrace
 from .indexer_projection_graph import IndexerProjectionGraph
 from .indexer_projection_graph import enabled as projection_graph_enabled
 from .layer_decode_graph import DecodeGraphs
 from .layer_indexer import cuda_rotation_enabled
 from .layer_math import TextLayer, rms_norm, validate_config
-from .layer_stage_profile import StageProfile
+from .layer_stage_profile import StageProfile, forward_traced
 from .layer_tp_gate import validate_tp
 from .layer_weights import GPU_LAYERS, MAX_CHUNK, NPU_LAYERS, CudaExperts, NpuExperts, load_dense
 from .stage_options import enabled as stage_dma_enabled
@@ -90,6 +93,12 @@ def npu_worker(args):
     """Load and qualify the complete middle stage before serving private packets."""
     if os.environ.get("ASCEND_RT_VISIBLE_DEVICES") != "2,3":
         raise ValueError("layer stage requires assigned physical NPU devices 2,3")
+    config_path = getattr(args, "execution_config", None) or getattr(args, "stage_dma", None)
+    specification = json.loads(Path(config_path).read_bytes()) if config_path else {}
+    execution = validate_options(specification)
+    from .execution_diagnostic_runtime import OwnerDiagnostic, validate_runtime
+
+    diagnostic_mode = validate_runtime(config_path) if config_path else None
     import torch
     import torch_npu
 
@@ -103,6 +112,13 @@ def npu_worker(args):
         native_sinkhorn = torch.ops._C_ascend.mhc_sinkhorn_310
         if getattr(args, "native_bf16_round", False):
             native_round = torch.ops._C_ascend.mhc_bf16_round_310
+    execution, _ = load_native(specification, torch)
+    native_kda = None
+    if execution.kda_decode:
+        from .npu_kda import native
+
+        native_kda = partial(native, torch=torch, operator=torch.ops._C_ascend.sidecard_kda_decode_310)
+    native_mhc = make_mhc(execution, torch)
     torch.distributed.init_process_group(
         "hccl", init_method=args.init_method, rank=args.rank, world_size=2, timeout=timedelta(seconds=STARTUP_TIMEOUT)
     )
@@ -123,6 +139,7 @@ def npu_worker(args):
     experts = NpuExperts(
         root, args.identity, args.rank, torch, gate_override=args.native_gate_override, reduce_results=False
     )
+    experts.multi_route = make_multi_route(experts, execution)
     experts.validate_repeat(Path(args.output) / f"expert-repeat-rank{args.rank}.json")
     weights, _ = load_dense(root, NPU_LAYERS, device, torch, tp_rank=args.rank)
     layers = [
@@ -136,21 +153,39 @@ def npu_worker(args):
             args.max_context,
             native_sinkhorn=native_sinkhorn,
             native_round=native_round,
+            native_kda=native_kda,
+            native_mhc=native_mhc,
             tp_rank=args.rank,
         )
         for layer in NPU_LAYERS
     ]
+    diagnostic = None
+    if diagnostic_mode is not None:
+        diagnostic = OwnerDiagnostic(config_path, f"npu-rank{args.rank}", layers, torch.npu.synchronize)
+        for layer in layers:
+            layer.execution_diagnostic = diagnostic
     validate_tp(layers, root, args.rank, torch, Path(args.output) / f"tp-rank{args.rank}-gate.json")
     decode_graphs = None
     if args.decode_graphs:
+
+        def agree_dsa(index, ready):
+            # Startup-only rendezvous, outside capture. Keep the already
+            # qualified FP32 SUM boundary; no per-token CPU observation.
+            status = torch.tensor([float(index), float(ready)], device=device, dtype=torch.float32)
+            torch.distributed.all_reduce(status)
+            return status.cpu().tolist() == [2.0 * index, 2.0]
+
         with torch.inference_mode():
-            decode_graphs = DecodeGraphs(layers, torch, device)
+            decode_graphs = DecodeGraphs(
+                layers, torch, device, dsa_graphs=execution.dsa_decode_graphs, dsa_agree=agree_dsa
+            )
         (Path(args.output) / f"decode-graphs-rank{args.rank}.json").write_text(
             json.dumps(
                 {
                     "spans": [[layer.index for layer in span] for span in decode_graphs.spans],
                     "captured": list(decode_graphs.graphs),
-                    "scope": "single-token KDA spans; DSA eager",
+                    "scope": "single-token KDA spans; optional partial Ascend DSA capture",
+                    "dsa_capture": {str(index): adapter.enabled for index, adapter in decode_graphs.dsa_graphs.items()},
                 },
                 indent=2,
             )
@@ -160,7 +195,7 @@ def npu_worker(args):
         from .stage_dma import serve
 
         try:
-            serve(args, layers, decode_graphs, torch)
+            serve(args, layers, decode_graphs, torch, diagnostic=diagnostic)
         finally:
             if decode_graphs is not None:
                 decode_graphs.close()
@@ -186,6 +221,14 @@ def npu_worker(args):
         raise ValueError("synchronized component attribution requires eager Ascend layers")
     expected_position = 0
     active_context_limit = None
+    trace_spec = (
+        json.loads(Path(args.execution_trace_config).read_bytes())
+        if getattr(args, "execution_trace_config", None)
+        else {}
+    )
+    trace = ExecutionTrace(trace_spec, args.output, f"npu-rank{args.rank}", torch.npu)
+    if trace.enabled and profile is not None:
+        raise ValueError("asynchronous execution tracing cannot use synchronized StageProfile")
     try:
         with torch.inference_mode():
             while True:
@@ -213,6 +256,7 @@ def npu_worker(args):
                     rows, first_position, context_limit = receive_control(control_connection)
                 if rows < 0:
                     break
+                trace.begin(sequence, first_position, rows)
                 if (
                     not 1 <= rows <= MAX_CHUNK
                     or not 0 <= first_position < args.max_context
@@ -243,9 +287,12 @@ def npu_worker(args):
                         for field in descriptors(rows)[0][:4]
                     ]
 
-                state = (
-                    upload() if profile is None else profile.measure(profile.packet["transport_ms"], "upload", upload)
-                )
+                with trace.span("socket_upload", device=True):
+                    state = (
+                        upload()
+                        if profile is None
+                        else profile.measure(profile.packet["transport_ms"], "upload", upload)
+                    )
 
                 def broadcast(state=state):
                     for value in state:
@@ -255,19 +302,26 @@ def npu_worker(args):
                     profile.measure(profile.packet["transport_ms"], "broadcast", broadcast)
                     for layer in layers:
                         state = profile.forward(layer, state)
-                elif decode_graphs is None:
-                    broadcast()
-                    for layer in layers:
-                        state = layer.forward(*state)
                 else:
-                    broadcast()
-                    state = decode_graphs.forward(state)
+                    with trace.span(
+                        "socket_broadcast", device=True, attribution="byte AllGather including arrival wait"
+                    ):
+                        broadcast()
+                    with trace.span("stage_execution", device=True, layers=[layer.index for layer in layers]):
+                        state = forward_traced(layers, decode_graphs, state, trace)
                 if args.rank == 0:
                     if not all(bool(torch.isfinite(value).all().cpu()) for value in state):
                         raise FloatingPointError("Ascend stage produced nonfinite mHC state")
                     positions = torch.arange(first_position, first_position + rows, dtype=torch.int64)
-                    body = pack_state(state, positions, torch)
-                    send(connection, metadata(rows, sequence, args.identity, request_context_limit=context_limit), body)
+                    with trace.span("socket_result_pack_and_readback", attribution="legacy host payload staging"):
+                        body = pack_state(state, positions, torch)
+                    with trace.span("socket_result_send"):
+                        send(
+                            connection,
+                            metadata(rows, sequence, args.identity, request_context_limit=context_limit),
+                            body,
+                        )
+                trace.collect_ready()
                 if profile is not None:
                     profile.finish()
                 sequence += 1
@@ -277,10 +331,16 @@ def npu_worker(args):
         if connection is not None:
             connection.close()
         torch.distributed.destroy_process_group()
+        trace.close()
 
 
 class Coordinator:
     def __init__(self, config_path):
+        self.spec = json.loads(Path(config_path).read_bytes())
+        validate_options(self.spec)
+        from .execution_diagnostic_runtime import CoordinatorDiagnostic, validate_runtime
+
+        diagnostic_mode = validate_runtime(config_path)
         import torch
 
         self.torch = torch
@@ -289,7 +349,6 @@ class Coordinator:
         torch.backends.cuda.matmul.allow_tf32 = False
         torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
         torch.use_deterministic_algorithms(True)
-        self.spec = json.loads(Path(config_path).read_bytes())
         direct_stage = stage_dma_enabled(self.spec)
         fused_indexer = cuda_rotation_enabled(self.spec)
         indexer_graphs = projection_graph_enabled(self.spec)
@@ -313,6 +372,7 @@ class Coordinator:
         self.failed = False
         self.stopping = False
         self.fingerprints = None
+        self.trace = ExecutionTrace(self.spec, self.output, "cuda", torch.cuda)
         try:
             self.start_npu(config_path)
             self.experts = CudaExperts(self.root, self.identity, self.spec["cuda_backend"], torch)
@@ -331,6 +391,13 @@ class Coordinator:
                 )
                 for layer in GPU_LAYERS
             }
+            self.execution_diagnostics = None
+            if diagnostic_mode is not None:
+                self.execution_diagnostics = CoordinatorDiagnostic(
+                    config_path, self.layers, self.diagnostic_command, torch.cuda.synchronize
+                )
+                for layer in self.layers.values():
+                    layer.execution_diagnostic = self.execution_diagnostics.observer
             self.prefix_graphs, self.suffix_graphs = None, None
             if indexer_graphs:
                 with torch.inference_mode():
@@ -401,7 +468,7 @@ class Coordinator:
             # Lazy import breaks the existing expert-probe/actor import cycle.
             from .stage_dma import StageDMA
 
-            self.stage_dma = StageDMA(config_path, self.torch)
+            self.stage_dma = StageDMA(config_path, self.torch, trace=self.trace)
             self.processes = self.stage_dma.processes
             return
         environment = dict(os.environ)
@@ -440,6 +507,7 @@ class Coordinator:
                 "--parent-pid",
                 str(os.getpid()),
             ]
+            command.extend(("--execution-config", str(Path(config_path).resolve())))
             if self.spec.get("npu_ops_library"):
                 command.extend(("--ops-library", self.spec["npu_ops_library"]))
             if self.spec.get("npu_decode_graphs", False):
@@ -448,6 +516,8 @@ class Coordinator:
                 command.append("--native-bf16-round")
             if self.spec.get("stage_profile", False):
                 command.append("--stage-profile")
+            if self.trace.enabled:
+                command.extend(("--execution-trace-config", str(Path(config_path).resolve())))
             process = subprocess.Popen(
                 command,
                 cwd=source,
@@ -475,46 +545,66 @@ class Coordinator:
         self.position = 0
         self.request_context_limit = context_limit or self.max_context
 
+    def diagnostic_command(self, owner, command):
+        if self.stage_dma is None or owner not in ("npu-rank0", "npu-rank1"):
+            raise ValueError("diagnostics require the authenticated direct-DMA rank control")
+        return self.stage_dma.diagnostic_command(int(owner[-1]), command)
+
     def forward(self, tokens):
         t = self.torch
         if self.stopping:
             raise RuntimeError("coordinator is shutting down")
         if not 1 <= len(tokens) <= MAX_CHUNK or self.position + len(tokens) > self.max_context:
             raise ValueError("token chunk exceeds stage or context admission")
+        self.trace.begin(self.sequence, self.position, len(tokens))
+        adapter = getattr(self, "execution_diagnostics", None)
+        observer = adapter.observer if adapter is not None and adapter.observer.writer is not None else None
+        if observer is not None:
+            observer.begin_chunk(self.position, len(tokens))
         try:
-            with t.inference_mode():
+            with t.inference_mode(), self.trace.span("iteration"):
                 begin = time.perf_counter()
-                hidden = t.nn.functional.embedding(t.tensor(tokens, device="cuda"), self.globals["embedding"])
-                state = (hidden, None, None, None)
-                if self.prefix_graphs is not None:
-                    state = self.prefix_graphs.forward(state)
-                else:
-                    for index in range(18):
-                        state = self.layers[index].forward(*state)
-                t.cuda.synchronize()
+                with self.trace.span("prefix"):
+                    with self.trace.span("prefix_execution", device=True):
+                        hidden = t.nn.functional.embedding(t.tensor(tokens, device="cuda"), self.globals["embedding"])
+                        state = (hidden, None, None, None)
+                        state = forward_traced(
+                            [self.layers[i] for i in range(18)], self.prefix_graphs, state, self.trace
+                        )
+                    with self.trace.span("prefix_completion_wait"):
+                        t.cuda.synchronize()
                 prefix_end = time.perf_counter()
+                if observer is not None:
+                    observer.boundary("prefix", state)
                 positions = t.arange(self.position, self.position + len(tokens), dtype=t.int64)
                 prefix_body = pack_state(state, positions, t) if self.fingerprints is not None else None
-                if self.stage_dma is not None:
-                    state = self.stage_dma.compute(state, self.position, self.sequence, self.request_context_limit)
-                    middle_hash = (
-                        hashlib.sha256(pack_state(state, positions, t)).hexdigest()
-                        if self.fingerprints is not None
-                        else None
-                    )
-                else:
-                    state, middle_hash = self.socket_middle(state, positions, prefix_body)
+                with self.trace.span("middle"):
+                    if self.stage_dma is not None:
+                        state = self.stage_dma.compute(state, self.position, self.sequence, self.request_context_limit)
+                        middle_hash = (
+                            hashlib.sha256(pack_state(state, positions, t)).hexdigest()
+                            if self.fingerprints is not None
+                            else None
+                        )
+                    else:
+                        state, middle_hash = self.socket_middle(state, positions, prefix_body)
                 middle_end = time.perf_counter()
-                if self.suffix_graphs is not None:
-                    state = self.suffix_graphs.forward(state)
-                else:
-                    for index in range(33, 45):
-                        state = self.layers[index].forward(*state)
-                hidden = rms_norm(state[0][-1:], self.globals["norm"], self.config["rms_norm_eps"], t)
-                logits = t.nn.functional.linear(hidden, self.globals["head"]).float()
-                if not bool(t.isfinite(logits).all().cpu()):
-                    raise FloatingPointError("full-model logits contain nonfinite values")
-                t.cuda.synchronize()
+                with self.trace.span("suffix"):
+                    with self.trace.span("suffix_execution", device=True):
+                        state = forward_traced(
+                            [self.layers[i] for i in range(33, 45)], self.suffix_graphs, state, self.trace
+                        )
+                        hidden = rms_norm(state[0][-1:], self.globals["norm"], self.config["rms_norm_eps"], t)
+                        logits = t.nn.functional.linear(hidden, self.globals["head"]).float()
+                    if observer is not None:
+                        observer.vocabulary(logits)
+                        observer.end_chunk()
+                    with self.trace.span("logits_validation_readback"):
+                        if not bool(t.isfinite(logits).all().cpu()):
+                            raise FloatingPointError("full-model logits contain nonfinite values")
+                    with self.trace.span("suffix_completion_wait"):
+                        t.cuda.synchronize()
+                self.trace.collect_ready()
                 end = time.perf_counter()
                 if self.fingerprints is not None:
                     self.fingerprints.append(
@@ -582,31 +672,41 @@ class Coordinator:
             raise ValueError("prefill pipeline requires a fresh admitted request")
         t = self.torch
 
-        def prefix(chunk):
+        def prefix(chunk, position, sequence):
+            self.trace.begin(sequence, position, len(chunk))
             start = time.perf_counter()
-            hidden = t.nn.functional.embedding(t.tensor(chunk, device="cuda"), self.globals["embedding"])
-            state = (hidden, None, None, None)
-            for index in range(18):
-                state = self.layers[index].forward(*state)
-            t.cuda.synchronize()
+            with self.trace.span("prefix"):
+                with self.trace.span("prefix_execution", device=True):
+                    hidden = t.nn.functional.embedding(t.tensor(chunk, device="cuda"), self.globals["embedding"])
+                    state = (hidden, None, None, None)
+                    state = forward_traced([self.layers[i] for i in range(18)], None, state, self.trace)
+                with self.trace.span("prefix_completion_wait"):
+                    t.cuda.synchronize()
+            self.trace.collect_ready()
             self.metrics["prefix_ms"].append((time.perf_counter() - start) * 1000)
             return state
 
         def submit(state, position, sequence):
+            self.trace.begin(sequence, position, state[0].shape[0])
             positions = t.arange(position, position + state[0].shape[0], dtype=t.int64)
             started = time.perf_counter()
-            send(
-                self.connection,
-                metadata(state[0].shape[0], sequence, self.identity, request_context_limit=self.request_context_limit),
-                pack_state(state, positions, t),
-            )
+            with self.trace.span("socket_input_pack_and_send", attribution="legacy host payload staging"):
+                send(
+                    self.connection,
+                    metadata(
+                        state[0].shape[0], sequence, self.identity, request_context_limit=self.request_context_limit
+                    ),
+                    pack_state(state, positions, t),
+                )
             return (state[0].shape[0], position, sequence, started)
 
         def receive(pending):
             rows, position, sequence, started = pending
-            packet = receive_into(
-                self.connection, memoryview(self.receive_buffer), checkpoint_sha256=self.identity, sequence=sequence
-            )
+            self.trace.begin(sequence, position, rows)
+            with self.trace.span("socket_result_wait"):
+                packet = receive_into(
+                    self.connection, memoryview(self.receive_buffer), checkpoint_sha256=self.identity, sequence=sequence
+                )
             if packet["rows"] != rows or packet.get("request_context_limit") != self.request_context_limit:
                 raise ValueError("prefill reply changed its geometry or cache reservation")
             values = unpack_state(memoryview(self.receive_buffer), rows, "cuda", t)
@@ -615,33 +715,41 @@ class Coordinator:
             self.metrics["middle_roundtrip_ms"].append((time.perf_counter() - started) * 1000)
             return values[:4]
 
-        def suffix(state, *, emit_logits):
+        def suffix(state, pending, *, emit_logits):
+            rows, position, sequence, _ = pending
+            self.trace.begin(sequence, position, rows)
             start = time.perf_counter()
-            for index in range(33, 45):
-                state = self.layers[index].forward(*state)
-            logits = None
-            if emit_logits:
-                hidden = rms_norm(state[0][-1:], self.globals["norm"], self.config["rms_norm_eps"], t)
-                logits = t.nn.functional.linear(hidden, self.globals["head"]).float()[0]
-                if not bool(t.isfinite(logits).all().cpu()):
-                    raise FloatingPointError("prefill logits contain nonfinite values")
-            t.cuda.synchronize()
+            with self.trace.span("suffix"):
+                with self.trace.span("suffix_execution", device=True):
+                    state = forward_traced([self.layers[i] for i in range(33, 45)], None, state, self.trace)
+                    logits = None
+                    if emit_logits:
+                        hidden = rms_norm(state[0][-1:], self.globals["norm"], self.config["rms_norm_eps"], t)
+                        logits = t.nn.functional.linear(hidden, self.globals["head"]).float()[0]
+                if emit_logits:
+                    with self.trace.span("logits_validation_readback"):
+                        if not bool(t.isfinite(logits).all().cpu()):
+                            raise FloatingPointError("prefill logits contain nonfinite values")
+                with self.trace.span("suffix_completion_wait"):
+                    t.cuda.synchronize()
+            self.trace.collect_ready()
             self.metrics["suffix_ms"].append((time.perf_counter() - start) * 1000)
             return logits
 
         try:
             with t.inference_mode():
                 sequence = self.sequence
-                pending = submit(prefix(tokens[:MAX_CHUNK]), 0, sequence)
+                pending = submit(prefix(tokens[:MAX_CHUNK], 0, sequence), 0, sequence)
                 sequence += 1
                 for offset in range(MAX_CHUNK, len(tokens), MAX_CHUNK):
                     if self.stopping:
                         raise RuntimeError("prefill interrupted by coordinator shutdown")
-                    next_state = prefix(tokens[offset : offset + MAX_CHUNK])
+                    next_state = prefix(tokens[offset : offset + MAX_CHUNK], offset, sequence)
+                    previous_pending = pending
                     previous = receive(pending)
                     pending = submit(next_state, offset, sequence)
                     sequence += 1
-                    suffix(previous, emit_logits=False)
+                    suffix(previous, previous_pending, emit_logits=False)
                     processed = offset
                     if processed % PREFILL_PROGRESS_TOKENS == 0:
                         print(
@@ -654,7 +762,7 @@ class Coordinator:
                             ),
                             flush=True,
                         )
-                logits = suffix(receive(pending), emit_logits=True)
+                logits = suffix(receive(pending), pending, emit_logits=True)
                 self.sequence = sequence
                 self.position = len(tokens)
                 return logits
@@ -697,6 +805,9 @@ class Coordinator:
         getattr(self, "globals", {}).clear()
         for log in self.logs:
             log.close()
+        trace = getattr(self, "trace", None)
+        if trace is not None:
+            trace.close()
 
 
 def main():
@@ -715,6 +826,8 @@ def main():
     parser.add_argument("--decode-graphs", action="store_true")
     parser.add_argument("--stage-profile", action="store_true")
     parser.add_argument("--native-bf16-round", action="store_true")
+    parser.add_argument("--execution-trace-config")
+    parser.add_argument("--execution-config")
     args = parser.parse_args()
     guard_parent(args.parent_pid)
     npu_worker(args)

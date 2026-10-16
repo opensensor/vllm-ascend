@@ -4,6 +4,7 @@
 import hashlib
 import json
 
+from tools.glm_perf.build_streaming import admit_candidate
 from tools.glm_perf.glm_fused_moe import (
     DOWN_SCALE_MIN_ROWS,
     FUSED_KERNEL_CORES,
@@ -13,12 +14,17 @@ from tools.glm_perf.glm_fused_moe import (
     REDUCE_CACHE_MIN_TOKENS,
 )
 from tools.glm_perf.resident_native import NativeManifest
+from tools.glm_perf.streaming_protocol import native_case_ids, validate_evidence
 
 
-def manifest(build_dir, gate_report):
+def manifest(build_dir, gate_report, *, streaming_gate_report=None):
     root = build_dir.resolve(strict=True)
     provenance = json.loads((root / "provenance.json").read_text())
     options = provenance["_build"]
+    if options.get("streaming_pipeline"):
+        # Standalone construction needs only immutable build proof. Publishing
+        # a live resource manifest also requires the complete native matrix.
+        admit_candidate(root, native_evidence_path=streaming_gate_report, live=True)
     gates = json.loads(gate_report.read_text())
     required = {(weight, activation) for weight in (2, 3, 4) for activation in (4, 8)}
     if gates.get("complete") is not True or gates.get("build_options") != options:
@@ -144,6 +150,53 @@ def manifest(build_dir, gate_report):
         }
         if covered != required:
             raise ValueError("prefill memory experiments require real-weight multibatch gates")
+    return _resource_manifest(root, provenance, gates["binaries"])
+
+
+def experimental_manifest(build_dir, diagnostic_report):
+    """Admit an explicitly requested experiment; never certify full native gates.
+
+    Loading still runs all six small precision/replay cases on every rank.
+    The caller must hold maintenance and verify full-model parity before timing.
+    """
+    root = build_dir.resolve(strict=True)
+    identity = admit_candidate(root, live=False)
+    path = diagnostic_report.resolve(strict=True)
+    report = validate_evidence(
+        json.loads(path.read_text()),
+        kind="native_gates",
+        bindings=identity,
+        require_complete=False,
+        artifact_root=path.parent,
+    )
+    if (
+        report["state"] != "pending"
+        or report["errors"]
+        or not report["coverage"]
+        or not set(report["coverage"]).issubset(native_case_ids())
+    ):
+        raise ValueError("experimental loading requires successful pending diagnostic evidence")
+    records = []
+    for artifact in report["artifacts"]:
+        if artifact["path"].endswith("-records.json"):
+            records.extend(json.loads((path.parent / artifact["path"]).read_text()))
+    if {row.get("id") for row in records} != set(report["coverage"]) or not records:
+        raise ValueError("experimental evidence lacks actual diagnostic comparisons")
+    if any(
+        row.get("passed") is not True
+        or row.get("same_input_bitwise") is not True
+        or row.get("finite") is not True
+        or row.get("padding_poison_independent") is not True
+        or row.get("all_peer_zero") is not True
+        or row.get("changed_replays", 0) < 3
+        for row in records
+    ):
+        raise ValueError("experimental native diagnostic failed parity/replay")
+    return _resource_manifest(root, json.loads((root / "provenance.json").read_text()), identity["binaries"])
+
+
+def _resource_manifest(root, provenance, expected_binaries):
+    options = provenance["_build"]
     namespace = options["namespace"]
     package = options["helper_package"]
     package_root = root / package
@@ -161,7 +214,7 @@ def manifest(build_dir, gate_report):
     if options.get("compact_w4_scratch"):
         binaries += (root / "glm_fused_gate_up_w4.bin", root / "glm_fused_down_w4.bin")
     for path in binaries:
-        if gates.get("binaries", {}).get(path.name) != hashlib.sha256(path.read_bytes()).hexdigest():
+        if expected_binaries.get(path.name) != hashlib.sha256(path.read_bytes()).hexdigest():
             raise ValueError("fused gates do not identify these exact binaries")
     helpers = {name: hashlib.sha256((package_root / name).read_bytes()).hexdigest() for name in provenance["_helpers"]}
     if helpers != provenance["_helpers"]:

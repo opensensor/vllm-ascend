@@ -12,8 +12,9 @@ using namespace AscendC;
 // The direct lookup improved high fan-out operator cases but did not improve
 // the paired serving gate. Keep it available for explicit specializations.
 template <uint32_t M, uint32_t N = 64, bool COMBINE_ROUTES = false, bool PIPELINE_EXPERT_WEIGHTS = false,
-          bool ENABLE_DIRECT_LOOKUP = false, bool CACHE_GROUP_METADATA = false>
+          bool ENABLE_DIRECT_LOOKUP = false, bool CACHE_GROUP_METADATA = false, uint32_t MAX_GROUP_ROWS = 0, bool FUSE_DENSE_LIMBS = false>
 class Schedule {
+  static_assert(!FUSE_DENSE_LIMBS || M <= 32, "paired dense products require bounded M<=32 storage");
   static constexpr uint32_t GROUP = 128, BLOCK = 16, K0 = 64, LANES = 8;
   static constexpr uint32_t A_BYTES = M * GROUP / 2, B_BYTES = N * GROUP / 2;
   static constexpr uint32_t ELEMENTS = M * N, COLUMN_ELEMENTS = M * BLOCK;
@@ -65,7 +66,15 @@ class Schedule {
     pipe_.InitBuffer(integers_, (M <= 32 ? 2 : 1) * ELEMENTS * sizeof(int32_t));
     pipe_.InitBuffer(result_, 3 * ELEMENTS * sizeof(float));
     pipe_.InitBuffer(metadata_, 3 * N * sizeof(half) + 3 * N * sizeof(float));
-    if constexpr (CACHE_GROUP_METADATA) pipe_.InitBuffer(metadataCache_, 3 * N * MAX_GROUPS * sizeof(half));
+    if constexpr (CACHE_GROUP_METADATA) {
+      pipe_.InitBuffer(metadataCache_, 3 * N * MAX_GROUPS * sizeof(half));
+      pipe_.InitBuffer(metadataIndices_, N * sizeof(uint32_t));
+      auto indices = metadataIndices_.Get<uint32_t>();
+      for (uint32_t pair = 0; pair < N / 2; ++pair)
+        indices.SetValue(pair, ((pair / (BLOCK / 2)) * groups_ * BLOCK + pair % (BLOCK / 2) * 2) * sizeof(half));
+      SetFlag<HardEvent::S_V>(EVENT_ID1);
+      WaitFlag<HardEvent::S_V>(EVENT_ID1);
+    }
     pipe_.InitBuffer(activation_, 2 * M * LANES * sizeof(float));
     pipe_.InitBuffer(output_, ELEMENTS * sizeof(half));
     pipe_.InitBuffer(endCache_, END_CACHE_SIZE * sizeof(int64_t));
@@ -103,7 +112,7 @@ class Schedule {
       previousEnd = end;
       if (begin == end && expert + 1 != experts_) continue;
       for (int64_t tile = GetBlockIdx(); tile < n_ / N; tile += GetBlockNum()) {
-        if (begin < end) {
+        if (begin < end && (MAX_GROUP_ROWS == 0 || end - begin < MAX_GROUP_ROWS)) {
           // Contiguous packed N=16 strips, each containing every K group.
           DataCopy(b1_.Get<int8_t>(), codes_[(expert * n_ + tile * N) * k_ / 2], N * k_ / 2);
           SetFlag<HardEvent::MTE2_MTE1>(EVENT_ID0);
@@ -481,7 +490,8 @@ class Schedule {
   // Both INT4 activation limbs share the same packed weight tile. For
   // sparse rows, one M=2M Cube operation computes both integer products.
   __aicore__ inline void ProductPair(uint32_t weightBuffer, int64_t prefetchGroup = -1, int64_t prefetchExpert = -1,
-                                     int64_t prefetchTile = 0, int64_t streamedGroup = 0, uint32_t streamedBuffer = 0) {
+                                     int64_t prefetchTile = 0, int64_t streamedGroup = 0, uint32_t streamedBuffer = 0,
+                                     bool denseLayout = false) {
     SetFlag<HardEvent::MTE1_M>(EVENT_ID0);
     WaitFlag<HardEvent::MTE1_M>(EVENT_ID0);
     MmadParams mm;
@@ -503,10 +513,18 @@ class Schedule {
     }
     SetFlag<HardEvent::M_V>(EVENT_ID0);
     WaitFlag<HardEvent::M_V>(EVENT_ID0);
-    DataCopyParams copy{N / BLOCK, 2 * M / BLOCK, 0, 0};
     DataCopyEnhancedParams enhanced;
     enhanced.blockMode = BlockMode::BLOCK_MODE_MATRIX;
-    DataCopy(integers_.Get<int32_t>(), c_.Get<int32_t>(), copy, enhanced);
+    if (denseLayout) {
+      // One Cube instruction, two disjoint UB planes. Preserve the dense
+      // epilogue layout instead of traversing each row in scalar control.
+      DataCopyParams copy{N / BLOCK, M / BLOCK, M / BLOCK, 0};
+      DataCopy(integers_.Get<int32_t>(), c_.Get<int32_t>(), copy, enhanced);
+      DataCopy(integers_.Get<int32_t>()[ELEMENTS], c_.Get<int32_t>()[M * BLOCK], copy, enhanced);
+    } else {
+      DataCopyParams copy{N / BLOCK, 2 * M / BLOCK, 0, 0};
+      DataCopy(integers_.Get<int32_t>(), c_.Get<int32_t>(), copy, enhanced);
+    }
     PipeBarrier<PIPE_V>();
     Cast(result_.Get<float>(), integers_.Get<int32_t>(), RoundMode::CAST_NONE, 2 * ELEMENTS);
     SetFlag<HardEvent::V_M>(EVENT_ID0);
@@ -595,8 +613,12 @@ class Schedule {
             ProductPair(group % 2, group + 1 < groups_ ? group + 1 : -1);
           }
         } else {
-          Product(0, group % 2, low, group + 1 < groups_ ? group + 1 : -1);
-          Product(1, group % 2, high);
+          if constexpr (FUSE_DENSE_LIMBS)
+            ProductPair(group % 2, group + 1 < groups_ ? group + 1 : -1, -1, 0, 0, 0, true);
+          else {
+            Product(0, group % 2, low, group + 1 < groups_ ? group + 1 : -1);
+            Product(1, group % 2, high);
+          }
         }
       } else {
         Product(0, group % 2, low, group + 1 < groups_ ? group + 1 : -1);
@@ -608,10 +630,17 @@ class Schedule {
       WaitFlag<HardEvent::MTE2_V>(EVENT_ID0);
       if constexpr (CACHE_GROUP_METADATA) {
         auto cached = metadataCache_.Get<half>();
+        auto indices = metadataIndices_.Get<uint32_t>();
+        auto groupIndices = indices[N / 2];
+        Adds(groupIndices.template ReinterpretCast<int32_t>(), indices.template ReinterpretCast<int32_t>(),
+             static_cast<int32_t>(group * BLOCK * sizeof(half)), N / 2);
+        PipeBarrier<PIPE_V>();
         for (uint32_t bank = 0; bank < 3; ++bank)
-          for (uint32_t nb = 0; nb < N / BLOCK; ++nb)
-            Cast(sw[bank * N + nb * BLOCK], cached[bank * N * MAX_GROUPS + (nb * groups_ + group) * BLOCK],
-                 RoundMode::CAST_NONE, BLOCK);
+          Gather(metadata[bank * N].template ReinterpretCast<float>(),
+                 cached[bank * N * MAX_GROUPS].template ReinterpretCast<float>(), groupIndices,
+                 static_cast<uint32_t>(0), N / 2);
+        PipeBarrier<PIPE_V>();
+        Cast(sw, metadata, RoundMode::CAST_NONE, 3 * N);
       } else {
         Cast(sw, metadata, RoundMode::CAST_NONE, 3 * N);
       }
@@ -700,7 +729,7 @@ class Schedule {
   TBuf<TPosition::B2> b2_;
   TBuf<TPosition::CO1> c_;
   TBuf<TPosition::VECCALC> packing_, integers_, result_, metadata_, activation_, output_, endCache_, routeCache_,
-      routeOutput_, metadataCache_;
+      routeOutput_, metadataCache_, metadataIndices_;
   GlobalTensor<int8_t> low_, high_, codes_;
   GlobalTensor<float> xs_, sums_;
   GlobalTensor<half> sw_, zw_, ws_, y_;

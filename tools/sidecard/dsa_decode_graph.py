@@ -10,13 +10,16 @@ class DsaDecodeGraph:
         if layer.linear or layer.device != "cuda" or layer.tp_rank is not None:
             raise ValueError("DSA capture requires an unsharded CUDA DSA layer")
         self.layer, self.cold = layer, cold
+        self.diagnostic = getattr(layer, "execution_diagnostic", None)
         inputs = (
             torch.zeros((1, HIDDEN), dtype=torch.float16, device="cuda"),
             torch.zeros((1, STREAMS, HIDDEN), dtype=torch.float32, device="cuda"),
             torch.ones((1, STREAMS, 1), dtype=torch.float32, device="cuda"),
             torch.eye(STREAMS, dtype=torch.float32, device="cuda")[None].contiguous(),
         )
-        self.before = self.capture(torch, self.prepare, inputs)
+        self.before_key = f"cuda-dsa:{layer.index}:before" if self.diagnostic is not None else None
+        self.after_key = f"cuda-dsa:{layer.index}:after" if self.diagnostic is not None else None
+        self.before = self.capture(torch, self.prepare, inputs, diagnostic=self.diagnostic, key=self.before_key)
         inputs = (
             torch.zeros(
                 (1, layer.config["num_attention_heads"], layer.config["kv_lora_rank"]),
@@ -25,16 +28,22 @@ class DsaDecodeGraph:
             ),
             *inputs[1:],
         )
-        self.after = self.capture(torch, self.finish, inputs)
+        self.after = self.capture(torch, self.finish, inputs, diagnostic=self.diagnostic, key=self.after_key)
 
     @staticmethod
-    def capture(torch, operation, inputs):
+    def capture(torch, operation, inputs, *, diagnostic=None, key=None):
         for _ in range(CAPTURE_WARMUP_STEPS):
             operation(inputs)
         torch.cuda.synchronize()
         graph = torch.cuda.CUDAGraph()
-        with torch.cuda.graph(graph):
-            outputs = operation(inputs)
+        if diagnostic is not None:
+            diagnostic.capture_begin(key)
+        try:
+            with torch.cuda.graph(graph):
+                outputs = operation(inputs)
+        finally:
+            if diagnostic is not None:
+                diagnostic.capture_end(key)
         torch.cuda.synchronize()
         return graph, inputs, outputs
 
@@ -61,6 +70,12 @@ class DsaDecodeGraph:
         if state[0].shape[0] != 1:
             raise ValueError("DSA graph requires one decode row")
         x, residual, post, comb, qlatent, qr, kv = self.replay(self.before, state)
+        diagnostic = getattr(self, "diagnostic", None)
+        if diagnostic is not None:
+            diagnostic.replayed(self.before_key)
         # Cache append, sparse indexer, causal masking and length mutation stay eager.
         latent = self.layer.dsa_attend(x, qlatent, qr, kv)
-        return self.replay(self.after, (latent, residual, post, comb))
+        output = self.replay(self.after, (latent, residual, post, comb))
+        if diagnostic is not None:
+            diagnostic.replayed(self.after_key)
+        return output

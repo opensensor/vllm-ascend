@@ -11,6 +11,7 @@
 
 CPU_NUM=$(($(cat /proc/cpuinfo | grep "^processor" | wc -l)*2))
 JOB_NUM="-j${CPU_NUM}"
+INITIAL_CACHE=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -107,7 +108,27 @@ while [[ $# -gt 0 ]]; do
         shift 2
         ;;
     --cann_3rd_lib_path)
-        CANN_3RD_LIB_PATH="$(realpath $2)"
+        CANN_3RD_LIB_PATH="$(realpath "$2")"
+        shift 2
+        ;;
+    --initial-cache)
+        if [[ $# -lt 2 || ! -f "$2" ]]; then
+            echo "Initial cache must be an existing file" >&2
+            exit 2
+        fi
+        INITIAL_CACHE="$(realpath "$2")"
+        shift 2
+        ;;
+    --jobs)
+        if [[ $# -lt 2 || ! "$2" =~ ^[1-9][0-9]*$ || ${#2} -gt 2 ]]; then
+            echo "Prepare jobs must be an integer from 1 through 16" >&2
+            exit 2
+        fi
+        if (( $2 > 16 )); then
+            echo "Prepare jobs must be an integer from 1 through 16" >&2
+            exit 2
+        fi
+        JOB_NUM="-j$2"
         shift 2
         ;;
     *)
@@ -118,55 +139,63 @@ done
 
 function clean() {
     if [ -n "${PATH_TO_BUILD}" ];then
-        rm -rf ${PATH_TO_BUILD}
-        mkdir -p ${PATH_TO_BUILD}
+        rm -rf -- "${PATH_TO_BUILD}"
+        mkdir -p -- "${PATH_TO_BUILD}"
     fi
 }
 
 function convert_string() {
-    local _input=$1
-    _output=$(echo $_input | sed 's/::/;/g')
-    echo "${_output}"
+    local _input="$1"
+    printf '%s\n' "${_input//::/;}"
 }
 
 function set_env() {
-    CONVERT_TILING_KEY="$(convert_string ${TILING_KEY})"
+    CONVERT_TILING_KEY="$(convert_string "${TILING_KEY}")"
 
-    CONVERT_OPS_COMPILE_OPTIONS="$(convert_string ${OPS_COMPILE_OPTIONS})"
+    CONVERT_OPS_COMPILE_OPTIONS="$(convert_string "${OPS_COMPILE_OPTIONS}")"
 
-    CONVERT_ASCEND_COMPUTE_UNIT="$(convert_string ${ASCEND_COMPUTE_UNIT})"
+    CONVERT_ASCEND_COMPUTE_UNIT="$(convert_string "${ASCEND_COMPUTE_UNIT}")"
 
-    CONVERT_ASCEND_OP_NAME="$(convert_string ${ASCEND_OP_NAME})"
+    CONVERT_ASCEND_OP_NAME="$(convert_string "${ASCEND_OP_NAME}")"
 }
 
 function build() {
-    cd ${PATH_TO_BUILD}
-    cmake ${PATH_TO_SOURCE} \
-        -DBUILD_OPEN_PROJECT=${BUILD_OPEN_PROJECT} \
-        -DPREPARE_BUILD=ON \
-        -DCUSTOM_ASCEND_CANN_PACKAGE_PATH=${ASCEND_CANN_PACKAGE_PATH} \
-        -DASCEND_AUTOGEN_DIR=${ASCEND_AUTOGEN_DIR} \
-        -DASCEND_BINARY_OUT_DIR=${ASCEND_BINARY_OUT_DIR} \
-        -DASCEND_IMPL_OUT_DIR=${ASCEND_IMPL_OUT_DIR} \
-        -DOP_BUILD_TOOL=${OP_BUILD_TOOL} \
-        -DASCEND_CMAKE_DIR=${ASCEND_CMAKE_DIR} \
-        -DCHECK_COMPATIBLE=${CHECK_COMPATIBLE} \
-        -DTILING_KEY="${CONVERT_TILING_KEY}" \
-        -DOPS_COMPILE_OPTIONS="${CONVERT_OPS_COMPILE_OPTIONS}" \
-        -DASCEND_COMPUTE_UNIT=${CONVERT_ASCEND_COMPUTE_UNIT} \
-        -DASCEND_OP_NAME=${CONVERT_ASCEND_OP_NAME} \
-        -DENABLE_CCACHE=${ENABLE_CCACHE} \
-        -DBUILD_OPS_RTY_KERNEL=${BUILD_OPS_RTY_KERNEL} \
-        -DENABLE_BUILT_IN=${ENABLE_BUILT_IN} \
-        -DENABLE_STATIC=${ENABLE_STATIC} \
-        -DENABLE_EXPERIMENTAL=${ENABLE_EXPERIMENTAL} \
-        -DOP_DEBUG_CONFIG=${OP_DEBUG_CONFIG} \
-        -DCANN_3RD_LIB_PATH=${CANN_3RD_LIB_PATH} \
-        -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
-        -DVERSION=${VERSION} \
-        -DENABLE_OOM=${ENABLE_OOM}
-        
-    make ${JOB_NUM} prepare_build
+    cd "${PATH_TO_BUILD}" || return
+    local cache_args=()
+    if [[ -n "${INITIAL_CACHE}" ]]; then
+        cache_args=(-C "${INITIAL_CACHE}")
+    fi
+    local type_args=()
+    # An empty legacy BUILD_TYPE must not erase Release from an explicit cache.
+    if [[ -n "${BUILD_TYPE}" || -z "${INITIAL_CACHE}" ]]; then
+        type_args=("-DCMAKE_BUILD_TYPE=${BUILD_TYPE}")
+    fi
+    cmake "${cache_args[@]}" "${PATH_TO_SOURCE}" \
+        "-DBUILD_OPEN_PROJECT=${BUILD_OPEN_PROJECT}" \
+        "-DPREPARE_BUILD=ON" \
+        "-DCUSTOM_ASCEND_CANN_PACKAGE_PATH=${ASCEND_CANN_PACKAGE_PATH}" \
+        "-DASCEND_AUTOGEN_DIR=${ASCEND_AUTOGEN_DIR}" \
+        "-DASCEND_BINARY_OUT_DIR=${ASCEND_BINARY_OUT_DIR}" \
+        "-DASCEND_IMPL_OUT_DIR=${ASCEND_IMPL_OUT_DIR}" \
+        "-DOP_BUILD_TOOL=${OP_BUILD_TOOL}" \
+        "-DASCEND_CMAKE_DIR=${ASCEND_CMAKE_DIR}" \
+        "-DCHECK_COMPATIBLE=${CHECK_COMPATIBLE}" \
+        "-DTILING_KEY=${CONVERT_TILING_KEY}" \
+        "-DOPS_COMPILE_OPTIONS=${CONVERT_OPS_COMPILE_OPTIONS}" \
+        "-DASCEND_COMPUTE_UNIT=${CONVERT_ASCEND_COMPUTE_UNIT}" \
+        "-DASCEND_OP_NAME=${CONVERT_ASCEND_OP_NAME}" \
+        "-DENABLE_CCACHE=${ENABLE_CCACHE}" \
+        "-DBUILD_OPS_RTY_KERNEL=${BUILD_OPS_RTY_KERNEL}" \
+        "-DENABLE_BUILT_IN=${ENABLE_BUILT_IN}" \
+        "-DENABLE_STATIC=${ENABLE_STATIC}" \
+        "-DENABLE_EXPERIMENTAL=${ENABLE_EXPERIMENTAL}" \
+        "-DOP_DEBUG_CONFIG=${OP_DEBUG_CONFIG}" \
+        "-DCANN_3RD_LIB_PATH=${CANN_3RD_LIB_PATH}" \
+        "${type_args[@]}" \
+        "-DVERSION=${VERSION}" \
+        "-DENABLE_OOM=${ENABLE_OOM}" || return
+
+    make "${JOB_NUM}" prepare_build
 }
 
 function main() {

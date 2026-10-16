@@ -15,6 +15,7 @@ LENGTH = struct.Struct("!I")
 COMMAND = struct.Struct("!III")
 RELEASE = b"RELEASE\n"
 CLOSE_TAG = COMMAND.pack(2**32 - 1, 0, 0)
+DIAGNOSTIC_TAG = COMMAND.pack(2**32 - 2, 0, 0)
 INPUT_ROW_BYTES = WIDTH * 2 + TOP_K * 8
 OUTPUT_ROW_BYTES = WIDTH * 4
 

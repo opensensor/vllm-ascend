@@ -160,6 +160,38 @@ class NativeFusedMoE:
                 raise ValueError("route workspace dtype differs from compiled bundle")
         elif fp16_route_workspace:
             raise ValueError("FP16 route workspace requires build provenance")
+        streaming = options.get("streaming_pipeline", False)
+        if type(streaming) is not bool:
+            raise ValueError("streaming pipeline flag must be boolean")
+        if streaming and (
+            not all(
+                options.get(name)
+                for name in (
+                    "fused_moe",
+                    "prepared_weight_layout",
+                    "prefill_rows_32",
+                    "prefill_weight_cache",
+                    "vector_scale_products",
+                    "pair_prefill_scale_groups",
+                    "fp16_weight_scales",
+                    "route_packed_input",
+                    "route_packed_down",
+                    "quad_hidden_quant",
+                    "group_major_down_scales",
+                )
+            )
+            or any(
+                options.get(name)
+                for name in (
+                    "nz_prefill_accumulator",
+                    "fused_scale_accumulation",
+                    "active_cube_rows",
+                    "prefill_product_cast",
+                )
+            )
+        ):
+            raise ValueError("streaming requires the frozen M32 paired FP16-scale pipeline")
+        self.streaming_pipeline = streaming
         nz_min_rows = options.get("nz_prefill_min_rows", 0)
         if type(nz_min_rows) is not int or nz_min_rows not in (0, *range(17, ROUTE_INPUT_ROWS)):
             raise ValueError("NZ prefill minimum rows must be 0 (legacy) or 17 through 31")

@@ -367,6 +367,16 @@ class NpuExperts:
     def __call__(self, layer, x, ids, weights):
         t = self.torch
         original_rows = x.shape[0]
+        candidate = getattr(self, "multi_route", None)
+        if (
+            original_rows == 1
+            and candidate is not None
+            and tuple(x.shape) == (1, WIDTH)
+            and tuple(ids.shape) == tuple(weights.shape) == (1, TOP_K)
+        ):
+            if self.reduce_results:
+                raise ValueError("multi-route candidate requires an unreduced owner")
+            return candidate(layer, x, ids, weights)
         if original_rows < self.stable_rows:
             # The small decode path adds expert outputs atomically. Select the
             # bundle's fixed-slot reducer with zero-weight padding instead;

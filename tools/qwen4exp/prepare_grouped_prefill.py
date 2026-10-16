@@ -9,7 +9,7 @@ from pathlib import Path
 from tools.glm_perf.resident_native import NativeManifest
 
 
-def prepare(build, resource_source):
+def prepare(build, resource_source, paired_limbs=False):
     build = Path(build)
     provenance = json.loads((build / "provenance.json").read_text())
     torch_classes = provenance["namespace"]
@@ -21,7 +21,12 @@ def prepare(build, resource_source):
     kernel = getattr(torch.classes, torch_classes).Kernel
     launch = getattr(torch.ops, torch_classes).launch
     entries = (
-        ("projection", "NativeGroupedPrefill", "native_grouped_prefill", "qwen_grouped_local_prefill_v1"),
+        (
+            "projection",
+            "NativeGroupedPrefill",
+            "native_grouped_prefill",
+            "qwen_grouped_paired_prefill_v1" if paired_limbs else "qwen_grouped_local_prefill_v1",
+        ),
         ("gather", "NativeLocalRouteGather", "native_route_gather", "qwen_local_route_gather_v1"),
     )
     return {
@@ -77,7 +82,7 @@ def validate(resources):
     return {"passed": True, "cases": cases, "exact_bytes": True, "real_weight_serving_gate": False}
 
 
-def make_manifest(build, resource_source, validation_source):
+def make_manifest(build, resource_source, validation_source, paired_limbs=False):
     provenance = json.loads((build / "provenance.json").read_text())
 
     def entry(path):
@@ -100,7 +105,8 @@ def make_manifest(build, resource_source, validation_source):
         "def definitions():\n    scope = {'__name__': 'qwen_grouped_prefill_validation'}\n"
         f"    exec(compile(Path({str(validation_source)!r}).read_text(), {str(validation_source)!r}, 'exec'), scope)\n"
         "    return scope\n"
-        f"def prepare():\n    return definitions()['prepare']({str(build)!r}, {str(resource_source)!r})\n"
+        "def prepare():\n    return definitions()['prepare']("
+        f"{str(build)!r}, {str(resource_source)!r}, {paired_limbs!r})\n"
         "def validate(resources):\n    return definitions()['validate'](resources)\n"
     )
     value = {
@@ -119,7 +125,10 @@ if __name__ == "__main__":
     parser.add_argument("--build", type=Path, required=True)
     parser.add_argument("--resource-source", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--paired-limbs", action="store_true")
     args = parser.parse_args()
-    value = make_manifest(args.build.resolve(), args.resource_source.resolve(), Path(__file__).resolve())
+    value = make_manifest(
+        args.build.resolve(), args.resource_source.resolve(), Path(__file__).resolve(), args.paired_limbs
+    )
     with args.output.open("x") as output:
         output.write(json.dumps(value, indent=2) + "\n")

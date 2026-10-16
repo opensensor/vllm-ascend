@@ -163,10 +163,17 @@ def validate_profile(name, *, tensor_parallel_size, pipeline_parallel_size, mtp_
     selected = next((candidate for candidate in candidates if candidate.name == name), None)
     if selected is None:
         raise ValueError("unknown GLM deployment profile")
-    if (tensor_parallel_size, pipeline_parallel_size, mtp_tokens) != (
-        selected.tensor_parallel_size,
-        selected.pipeline_parallel_size,
-        selected.mtp_tokens,
+    # A checkpoint containing draft weights can also run target-only. Keep the
+    # topology and precision checks; disabling the draft does not repartition
+    # any target tensors. Rank-ownership candidates require this isolation.
+    if (
+        (tensor_parallel_size, pipeline_parallel_size)
+        != (
+            selected.tensor_parallel_size,
+            selected.pipeline_parallel_size,
+        )
+        or type(mtp_tokens) is not int
+        or mtp_tokens not in (0, selected.mtp_tokens)
     ):
         raise ValueError("runtime topology or MTP differs from checkpoint deployment profile")
     if layer_bits is not None:

@@ -9,6 +9,23 @@
 #include "glm_route_input_layout.h"
 #include "glm_fused_input_scales.h"
 #include "glm_fused_down_scales.h"
+#ifdef GLM_STREAMING_PIPELINE
+  #define GLM_STREAMING_DEVICE_API
+  #include "glm_streaming_contract.h"
+  #include "glm_streaming_operands.h"
+  #include "glm_streaming_products.h"
+  #include "glm_streaming_products_pointer.h"
+  #include "glm_streaming_epilogue.h"
+  #if !defined(GLM_PREFILL_ROWS_32) || !defined(GLM_PREFILL_WEIGHT_CACHE) || !defined(GLM_VECTOR_SCALE_PRODUCTS) || \
+      !defined(GLM_PAIR_PREFILL_SCALE_GROUPS) || !defined(GLM_FP16_WEIGHT_SCALES) ||                                \
+      !defined(GLM_ROUTE_PACKED_DOWN) || !defined(GLM_PREPARED_OFFSET_TABLES)
+    #error "streaming requires the frozen prepared M32 paired FP16-scale route pipeline"
+  #endif
+  #if defined(GLM_NZ_PREFILL_ACCUMULATOR) || defined(GLM_FUSED_SCALE_ACCUMULATION) || defined(GLM_ACTIVE_CUBE_ROWS) || \
+      defined(GLM_PREFILL_PRODUCT_CAST)
+    #error "streaming preserves the qualified independent K32 FP32 arithmetic"
+  #endif
+#endif
 #if defined(GLM_GROUP_MAJOR_INPUT_SCALES) &&                                                             \
     (!defined(GLM_ROUTE_PACKED_INPUT) || !defined(GLM_FUSED_GATE_UP) || !defined(GLM_PREFILL_ROWS_32) || \
      !defined(GLM_VECTOR_SCALE_PRODUCTS) || !defined(GLM_PREPARED_WEIGHT_LAYOUT))
@@ -209,6 +226,16 @@ constexpr uint32_t PRODUCT_LAYOUT_COUNT = 2;
 #endif
 constexpr uint32_t PRODUCT_OFFSET_BYTES = PRODUCT_LAYOUT_COUNT * N * sizeof(uint32_t);
 constexpr uint32_t QUANT_OFFSET_BYTES = (2 * GlmFusedQuant::ELEMENTS + GlmFusedQuant::BATCH) * sizeof(uint32_t);
+#ifdef GLM_STREAMING_PIPELINE
+constexpr uint32_t STREAMING_UB_BYTES = GlmStreamingContract::CONVERTED_BYTES;
+static_assert(M == GlmStreamingContract::ROWS && N == GlmStreamingContract::COLUMNS &&
+                  RAW_BYTES == 4 * GlmStreamingContract::OPERAND_B_SLOT_BYTES,
+              "streaming internal tiles must preserve the external projection ABI");
+static_assert(GlmStreamingContract::PRODUCT_STORAGE_BYTES <= Scratch::DECODED_BYTES,
+              "streaming raw slots exceed dead reconstruction scratch");
+#else
+constexpr uint32_t STREAMING_UB_BYTES = 0;
+#endif
 #ifdef GLM_NZ_PREFILL_ACCUMULATOR
 constexpr uint32_t NZ_SCALE_BLOCKS = N / GROUP;
 constexpr uint32_t NZ_SCALAR_FACTORS_OFFSET = ELEMENTS;
@@ -239,7 +266,7 @@ constexpr uint32_t PRODUCT_SCRATCH_BYTES = 7 * ELEMENTS * sizeof(float);
 constexpr uint32_t COMMON_UB_BYTES =
     Scratch::RAW_BYTES + Scratch::DECODED_BYTES + N * NZ_K / 2 + Scratch::GATHERED_BYTES + N * NZ_K +
     SCALE_CACHE_BYTES + (M + LANES + 1) * MAX_K_GROUPS * sizeof(float) + N * sizeof(uint32_t) + PRODUCT_OFFSET_BYTES +
-    N * sizeof(half) + 2 * A_BYTES + PRODUCT_SCRATCH_BYTES + ELEMENTS * sizeof(half);
+    N * sizeof(half) + 2 * A_BYTES + PRODUCT_SCRATCH_BYTES + ELEMENTS * sizeof(half) + STREAMING_UB_BYTES;
 #ifdef GLM_FUSED_GATE_UP
 static_assert(COMMON_UB_BYTES + QUANT_OFFSET_BYTES <= TOTAL_VEC_LOCAL_SIZE, "gate/up exceeds usable UB");
 #else
@@ -419,16 +446,32 @@ class Projection {
 #ifdef GLM_CACHE_GATE_UP_ACTIVATIONS
     pipe_.InitBuffer(a1_, L1_ACTIVATION_CACHE_BYTES);
 #else
-    pipe_.InitBuffer(a1_, L1_A_BYTES);
+    pipe_.InitBuffer(a1_, L1_A_BYTES +
+  #ifdef GLM_STREAMING_PIPELINE
+                              GlmStreamingContract::OPERAND_A_SLOT_BYTES
+  #else
+                              0
+  #endif
+    );
 #endif
+#ifdef GLM_STREAMING_PIPELINE
+    pipe_.InitBuffer(a2_, GlmStreamingContract::SLOTS * GlmStreamingContract::OPERAND_A_SLOT_BYTES);
+#else
     pipe_.InitBuffer(a2_, L1_A_BYTES);
+#endif
 #ifdef GLM_PREFILL_WEIGHT_CACHE
     pipe_.InitBuffer(b1_, L1_WEIGHT_BYTES);
 #else
     pipe_.InitBuffer(b1_, WIDE_K_SEGMENTS * B_BYTES);
 #endif
+#ifdef GLM_STREAMING_PIPELINE
+    pipe_.InitBuffer(b2_, GlmStreamingContract::SLOTS * GlmStreamingContract::OPERAND_B_SLOT_BYTES);
+    pipe_.InitBuffer(c_, GlmStreamingContract::PRODUCT_STORAGE_BYTES);
+    pipe_.InitBuffer(streamConverted_, GlmStreamingContract::CONVERTED_BYTES);
+#else
     pipe_.InitBuffer(b2_, WIDE_K_SEGMENTS * B_BYTES);
     pipe_.InitBuffer(c_, 2 * ELEMENTS * sizeof(int32_t));
+#endif
     pipe_.InitBuffer(raw_, Scratch::RAW_BYTES);
     pipe_.InitBuffer(decoded_, Scratch::DECODED_BYTES);
     pipe_.InitBuffer(packedB_, N * NZ_K / 2);
@@ -474,6 +517,11 @@ class Projection {
     offset += MAX_K_GROUPS;
   #ifdef GLM_FUSED_GATE_UP
     DataCopy(quantOffsets_.Get<uint32_t>(), offsetTables_[offset], QUANT_OFFSET_BYTES / sizeof(uint32_t));
+    offset += QUANT_OFFSET_BYTES / sizeof(uint32_t);
+  #endif
+  #ifdef GLM_STREAMING_PIPELINE
+    DataCopy(mask_.Get<uint32_t>()[GlmStreamingScaleGather::GROUP_SOURCE_OFFSET / sizeof(uint32_t)],
+             offsetTables_[offset], M);
   #endif
     PipeBarrier<PIPE_ALL>();
     return;
@@ -1266,6 +1314,96 @@ class Projection {
     cacheActive_ = true;
   }
 #endif
+#ifdef GLM_STREAMING_PIPELINE
+  __aicore__ inline void ConsumeStreamingProducts(uint32_t slot, uint32_t inner, int64_t kTile, uint32_t count,
+                                                  uint32_t physicalRows, const LocalTensor<float>& sx,
+                                                  const LocalTensor<float>& weightVectors, bool groupMajorScales) {
+    const uint32_t group = kTile * (NZ_K / GROUP) + inner;
+    const uint32_t scaleOffset = groupMajorScales ? group * M : group;
+    const uint32_t rawOffset = slot * GlmStreamingContract::PRODUCT_SLOT_BYTES / sizeof(int32_t);
+    // Borrow descriptors individually rather than returning and materializing
+    // a ten-field aggregate for each pair of results.
+    GlmStreamingProductsPointer::ConsumeDirect(
+        decoded_.Get<int32_t>()[rawOffset], streamConverted_.Get<float>(), mask_.Get<float>(),
+        mask_.Get<float>()[ELEMENTS], Accumulator(), sx[scaleOffset], sx[scaleOffset + (groupMajorScales ? M : 1)],
+        weightVectors[inner * N], weightVectors[(inner + 1) * N],
+        mask_.Get<uint32_t>()[GlmStreamingScaleGather::EXPANDED_OFFSET / sizeof(uint32_t)], count, physicalRows,
+        groupMajorScales);
+  }
+  __aicore__ inline void StreamKTile(int64_t kTile, uint32_t count, const LocalTensor<float>& sx,
+                                     const LocalTensor<float>& weightVectors, bool groupMajorScales) {
+    // Reconstruction and scale-vector producers have finished. Two raw UB
+    // slots alias decoded_; the conversion plane is separate from both slots.
+    if (!cacheActive_
+  #ifdef GLM_DIRECT_W4_L1
+        && bits_ != 4
+  #endif
+    ) {
+      DataCopy(b1_.Get<int8_t>(), packedB_.Get<int8_t>(), RAW_BYTES);
+      PipeBarrier<PIPE_ALL>();
+    }
+    const uint32_t physicalRows = count > M / 2 ? 2 * M : M;
+    bool used[GlmStreamingContract::SLOTS] = {false, false};
+    uint32_t previousInner = 0, previousSlot = 0;
+    for (uint32_t inner = 0; inner < NZ_K / GROUP; inner += 2) {
+      const uint32_t slot = (inner / 2) % GlmStreamingContract::SLOTS;
+      const uint32_t group = kTile * (NZ_K / GROUP) + inner;
+      GlmStreamingOperands::WaitReusable(slot, used[slot]);
+      GlmStreamingProducts::WaitReusable(slot, used[slot]);
+      const uint32_t bOffset =
+          (cacheActive_ ? cacheProjection_ * CACHED_PROJECTION_BYTES + kTile * RAW_BYTES : 0) + inner / 2 * B_BYTES;
+  #ifdef GLM_FUSED_GATE_UP
+      const uint32_t aOffset = group * ACTIVATION_CACHE_SLOT_BYTES;
+      const bool copiedActivation = !reuseActivations_;
+      if (copiedActivation)
+        GlmStreamingOperands::StageActivation(
+            a1_.Get<int8_t>()[aOffset], inputHigh_,
+            (prepackedBatch_ * (k_ / GROUP / 2) + group / 2) * GlmRouteInput::PAIR_BYTES, slot);
+  #else
+        const uint32_t aOffset = slot * GlmStreamingContract::OPERAND_A_SLOT_BYTES;
+        const bool copiedActivation = true;
+        GlmStreamingOperands::StageActivation(
+            a1_.Get<int8_t>()[aOffset], low_,
+            (prepackedBatch_ * (k_ / GROUP / 2) + group / 2) * GlmRouteInput::PAIR_BYTES, slot);
+  #endif
+      // L0 descriptors also serve the Cube issue. Borrow them across the
+      // load/issue pair without copying all four views into an aggregate.
+      const auto& l0a = a2_.Get<int8_t>()[slot * GlmStreamingContract::OPERAND_A_SLOT_BYTES];
+      const auto& l0b = b2_.Get<int8_t>()[slot * GlmStreamingContract::OPERAND_B_SLOT_BYTES];
+      GlmStreamingOperands::LoadDirect(a1_.Get<int8_t>()[aOffset], l0a, b1_.Get<int8_t>()[bOffset], l0b, physicalRows,
+                                       slot, copiedActivation);
+      const event_t event = slot == 0 ? EVENT_ID0 : EVENT_ID1;
+      WaitFlag<HardEvent::MTE1_M>(event);
+      auto co1 = c_.Get<int32_t>()[slot * GlmStreamingContract::PRODUCT_SLOT_BYTES / sizeof(int32_t)];
+      MmadParams mm;
+      mm.m = physicalRows;
+      mm.n = N;
+      mm.k = K0;
+      mm.cmatrixInitVal = true;
+      Mmad(co1, l0a.ReinterpretCast<int4b_t>(), l0b.ReinterpretCast<int4b_t>(), mm);
+      GlmStreamingOperands::ReleaseOperands(slot);
+      SetFlag<HardEvent::M_V>(event);
+      used[slot] = true;
+      // Issue the next Cube pair before consuming the previous result. V_M
+      // releases CO1 only; Consume must finish before overwriting its UB slot.
+      if (inner)
+        ConsumeStreamingProducts(previousSlot, previousInner, kTile, count, physicalRows, sx, weightVectors,
+                                 groupMajorScales);
+      GlmStreamingProducts::ReadBack(
+          decoded_.Get<int32_t>()[slot * GlmStreamingContract::PRODUCT_SLOT_BYTES / sizeof(int32_t)], co1, physicalRows,
+          slot);
+      previousInner = inner;
+      previousSlot = slot;
+    }
+    ConsumeStreamingProducts(previousSlot, previousInner, kTile, count, physicalRows, sx, weightVectors,
+                             groupMajorScales);
+    GlmStreamingOperands::Drain(used[0], used[1]);
+    GlmStreamingProducts::Drain(used[0], used[1]);
+    // Shared reconstruction, scales and nonlinear scratch are reused only
+    // across this explicit K256 drain boundary, never in the pair issue loop.
+    PipeBarrier<PIPE_ALL>();
+  }
+#endif
   __aicore__ inline void Accumulate(int64_t expert, int64_t tile, int64_t row, uint32_t count
 #ifdef GLM_SHARE_GATE_UP_INPUT
                                     ,
@@ -1392,6 +1530,18 @@ class Projection {
 #else
     const uint32_t factorRows = count;
 #endif
+#ifdef GLM_STREAMING_PIPELINE
+    if (tokens_ > BULK_TOKENS && activationBits_ == 4 && !cachedFactors) {
+      // Drain previous batch readers, then retain 256 Gather offsets across
+      // both raw slots and every K pair. Literal group-major padded rows use
+      // a fixed table loaded at Init; row-major indices clamp invalid rows.
+      const uint32_t sourceOffset =
+          groupMajorScales ? GlmStreamingScaleGather::GROUP_SOURCE_OFFSET : SCALE_ROW_INDEX_OFFSET;
+      GlmStreamingScaleGather::Prepare(
+          mask_.Get<uint32_t>()[GlmStreamingScaleGather::EXPANDED_OFFSET / sizeof(uint32_t)],
+          mask_.Get<uint32_t>()[sourceOffset / sizeof(uint32_t)]);
+    }
+#endif
     auto scaleProducts = gathered_.Get<float>()[SCALE_PRODUCTS_OFFSET / sizeof(float)];
     if (cachedFactors) {
       for (uint32_t m = 0; m < count; ++m)
@@ -1452,6 +1602,12 @@ class Projection {
           Gather(weightVectors[inner * N], cachedWeights[kTile * (NZ_K / GROUP) + inner], scaleIndices,
                  static_cast<uint32_t>(0), N);
       PipeBarrier<PIPE_V>();
+#ifdef GLM_STREAMING_PIPELINE
+      if (tokens_ > BULK_TOKENS && activationBits_ == 4 && !cachedFactors) {
+        StreamKTile(kTile, count, sx, weightVectors, groupMajorScales);
+        continue;
+      }
+#endif
       for (uint32_t inner = 0; inner < NZ_K / GROUP; inner += wideGroups ? wideGroups : (paired ? 2 : 1)) {
         const int64_t group = kTile * (NZ_K / GROUP) + inner;
         if (inner % 2 == 0) Weight(inner, wideGroups);
@@ -1579,8 +1735,15 @@ class Projection {
     DataCopy(xs_[offset * LANES], scales[sourceGroup * LANES], LANES);
   }
   __aicore__ inline void GateUp(int64_t expert, int64_t tile, int64_t row, uint32_t count) {
+#ifdef GLM_STREAMING_PIPELINE
+    const bool streamingHandoff = tokens_ > BULK_TOKENS && activationBits_ == 4 && count > MAX_CACHED_SCALE_ROWS;
+#endif
 #ifdef GLM_ROUTE_PACKED_DOWN
-    if (tokens_ > BULK_TOKENS && activationBits_ == 4) {
+    if (tokens_ > BULK_TOKENS && activationBits_ == 4
+  #ifdef GLM_STREAMING_PIPELINE
+        && !streamingHandoff
+  #endif
+    ) {
       // Each output tile owns two paired groups. Clear unused rows on every
       // launch so a graph replay with different expert counts cannot leak data.
       auto zero = packedA_.Get<int8_t>();
@@ -1651,6 +1814,11 @@ class Projection {
     Cast(output_.Get<half>(), low, RoundMode::CAST_NONE, activeElements);
 #endif
     PipeBarrier<PIPE_ALL>();
+#ifdef GLM_STREAMING_PIPELINE
+    // Products are drained, and nonlinear output now lives in output_. The
+    // independent conversion plane becomes a retained compact handoff tile.
+    if (streamingHandoff) GlmStreamingEpilogue::Clear(streamConverted_.Get<int8_t>());
+#endif
 #ifdef GLM_GROUP_MAJOR_DOWN_SCALES
     const bool groupMajorDown = tokens_ > BULK_TOKENS && activationBits_ == 4 && GlmFusedDownScales::GroupMajor(count);
     if (groupMajorDown) GlmFusedDownScales::Prepare(activationScales_.Get<float>());
@@ -1702,11 +1870,17 @@ class Projection {
   #endif
       auto packed = ProductTemporary<int8_t>()[24 * GlmFusedQuant::ELEMENTS];
       auto scales = ProductTemporary<float>()[GlmFusedQuant::BROADCAST_OFFSET];
+  #ifdef GLM_STREAMING_PIPELINE
+      if (streamingHandoff) GlmStreamingEpilogue::Stage(streamConverted_.Get<int8_t>(), packed, m, count);
+  #endif
       for (uint32_t part = 0; part < QUANT_ROWS_PER_BATCH && m + part < count; ++part)
         for (uint32_t group = 0; group < N / GROUP; ++group) {
           const int64_t offset = ((row + m + part) * (n_ / 2 / GROUP) + tile * N / GROUP + group);
           const uint32_t sourceGroup = part * (N / GROUP) + group;
-          StoreHiddenCodes(packed, sourceGroup, offset, tile, group, m + part, count);
+  #ifdef GLM_STREAMING_PIPELINE
+          if (!streamingHandoff)
+  #endif
+            StoreHiddenCodes(packed, sourceGroup, offset, tile, group, m + part, count);
           if (activationBits_ == 8)
             DataCopy(high_[offset * K0 / 2], packed[GlmFusedQuant::ELEMENTS + sourceGroup * GROUP], K0 / 2);
           StoreHiddenScales(scales, sourceGroup, offset, tile, group, m + part);
@@ -1740,6 +1914,14 @@ class Projection {
         StoreHiddenScales(scales, group, offset, tile, group, m);
       }
       PipeBarrier<PIPE_ALL>();
+    }
+#endif
+#ifdef GLM_STREAMING_PIPELINE
+    if (streamingHandoff) {
+      const int64_t firstPairOffset =
+          (prepackedBatch_ * (n_ / 2 / GROUP / 2) + tile * N / GROUP / 2) * GlmRouteInput::PAIR_BYTES;
+      GlmStreamingEpilogue::Store(low_, streamConverted_.Get<int8_t>(), firstPairOffset,
+                                  firstPairOffset + GlmRouteInput::PAIR_BYTES);
     }
 #endif
 #ifdef GLM_GROUP_MAJOR_DOWN_SCALES
@@ -1857,6 +2039,9 @@ class Projection {
 #endif
   TBuf<TPosition::VECCALC> gathered_, packedB_, packedA_, products_, results_, output_;
   TBuf<TPosition::VECCALC> productFloat_, reduction_;
+#ifdef GLM_STREAMING_PIPELINE
+  TBuf<TPosition::VECCALC> streamConverted_;
+#endif
   GlobalTensor<int8_t> low_, high_;
   GlobalTensor<uint8_t> codes_;
   GlobalTensor<float> xs_;
@@ -1922,6 +2107,9 @@ extern "C" __global__ __aicore__ void GLM_FUSED_ENTRY(GM_ADDR low, GM_ADDR high,
 #ifdef GLM_PREPARED_OFFSET_TABLES
   constexpr int64_t OFFSET_LAYOUT_TAG = 0x474C4D4F464631;
   const int64_t expectedOffsetElements = 3 * N + PRODUCT_LAYOUT_COUNT * N
+  #ifdef GLM_STREAMING_PIPELINE
+                                         + GlmStreamingScaleGather::ROWS
+  #endif
   #ifdef GLM_FUSED_GATE_UP
                                          + QUANT_OFFSET_BYTES / sizeof(uint32_t)
   #endif

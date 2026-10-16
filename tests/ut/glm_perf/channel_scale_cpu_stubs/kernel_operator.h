@@ -15,6 +15,12 @@ using GM_ADDR = unsigned char*;
 #define GetBlockIdx() currentCore_
 #define GetBlockNum() 8
 inline void InitSocState() {}
+enum class HardEvent { V_MTE2, MTE2_V, V_MTE3, MTE3_V };
+constexpr unsigned EVENT_ID0 = 0;
+template <HardEvent>
+void SetFlag(unsigned) {}
+template <HardEvent>
+void WaitFlag(unsigned) {}
 enum Pipe { PIPE_V, PIPE_ALL };
 template <Pipe>
 void PipeBarrier() {}

@@ -1,0 +1,344 @@
+{
+  "captured_utc": "2026-10-16T17:19:26.543237+00:00",
+  "host": "matteius-threadripper",
+  "ssh_host": "matteius@192.168.53.187",
+  "pid": 605287,
+  "cwd": "/srv/ai/storage/artifacts/qfn-tp6-scaleout-20261016/runtime",
+  "argv": [
+    "/srv/ai/venvs/qwen38-w4-test-ce1862/bin/python",
+    "-u",
+    "-m",
+    "tools.sidecard.qfn_resident_server",
+    "--engine-control",
+    "--expected-ranks",
+    "6",
+    "--dma-reserve-device",
+    "0",
+    "--dma-reserve-device",
+    "1",
+    "--dma-reserve-device",
+    "2",
+    "--dma-reserve-device",
+    "3",
+    "--dma-reserve-device",
+    "4",
+    "--dma-reserve-device",
+    "5",
+    "--control-token-file",
+    "/srv/ai/storage/artifacts/qfn-tp6-scaleout-20261016/resident-v8/control.token",
+    "--close-receipt",
+    "/srv/ai/storage/artifacts/qfn-tp6-scaleout-20261016/resident-v8/collective-close.json",
+    "--",
+    "serve",
+    "/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-TP6-MTP-20261010",
+    "--served-model-name",
+    "qwen38-flash-next",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    "8001",
+    "--dtype",
+    "float16",
+    "--tensor-parallel-size",
+    "6",
+    "--no-async-scheduling",
+    "--disable-custom-all-reduce",
+    "--max-model-len",
+    "262144",
+    "--max-num-batched-tokens",
+    "2048",
+    "--max-num-seqs",
+    "6",
+    "--gpu-memory-utilization",
+    "0.955",
+    "--scheduler-cls",
+    "vllm_ascend.core.qwen_prefill_scheduler.QwenPrefillPacedScheduler",
+    "--language-model-only",
+    "--mm-encoder-tp-mode",
+    "data",
+    "--enable-expert-parallel",
+    "--enable-ep-weight-filter",
+    "--enable-auto-tool-choice",
+    "--tool-call-parser",
+    "qwen3_xml",
+    "--reasoning-parser",
+    "qwen3",
+    "--mamba-cache-mode",
+    "align",
+    "--enable-chunked-prefill",
+    "--enable-prefix-caching",
+    "--enable-prompt-tokens-details",
+    "--seed",
+    "0",
+    "--speculative-config",
+    "{\"method\":\"mtp\",\"num_speculative_tokens\":2}",
+    "--compilation-config",
+    "{\"mode\":0,\"cudagraph_mode\":\"FULL_DECODE_ONLY\",\"cudagraph_capture_sizes\":[3,6,12,18]}",
+    "--limit-mm-per-prompt",
+    "{\"image\":0,\"video\":0}",
+    "--worker-extension-cls",
+    "tools.sidecard.qfn_resident_worker.QfnResidentWorkerExtension",
+    "--additional-config",
+    "{\"npu_collective\":{\"acl_library\":\"/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/libascendcl.so\",\"acl_sha256\":\"67ef83d7878072f24e04a59db02fcf6c99ca6a6dcd288d7bb6aae7e8b437c0aa\",\"native_library\":\"/srv/ai/storage/artifacts/npu-collective-qfn-20261014-024609/native-graph-v2/libsidecard_npu_collective.so\",\"native_sha256\":\"5f045878ec00961851c25d8f57f5eb511c2ffcdaeba9dd75828a99011b16e530\",\"algorithm\":\"binomial\",\"schema_version\":1,\"torch_library\":\"/srv/ai/storage/artifacts/npu-collective-qfn-20261014-024609/native-graph-v2/libsidecard_npu_torch.so\",\"physical_devices\":[0,1,2,3,4,5],\"link_groups\":[[0,1],[2,3],[4,5]],\"geometries\":[{\"dtype\":\"float16\",\"elements\":2560},{\"dtype\":\"float32\",\"elements\":2560},{\"dtype\":\"float16\",\"elements\":5120},{\"dtype\":\"float32\",\"elements\":5120},{\"dtype\":\"float16\",\"elements\":7680},{\"dtype\":\"float32\",\"elements\":7680},{\"dtype\":\"float16\",\"elements\":10240},{\"dtype\":\"float32\",\"elements\":10240},{\"dtype\":\"float16\",\"elements\":12800},{\"dtype\":\"float32\",\"elements\":12800},{\"dtype\":\"float16\",\"elements\":15360},{\"dtype\":\"float32\",\"elements\":15360},{\"dtype\":\"float16\",\"elements\":30720},{\"dtype\":\"float32\",\"elements\":30720},{\"dtype\":\"float16\",\"elements\":46080},{\"dtype\":\"float32\",\"elements\":46080}],\"output_root\":\"/srv/ai/storage/artifacts/qfn-tp6-scaleout-20261016/resident-v8/owners\",\"torch_sha256\":\"041e102e254c519c42ae4d96b916b0db28a7b3afd450ceed701048ff8c85ca23\",\"execution_mode\":\"graph\",\"graph_replay_tracking\":false},\"qwen_prefill_pacing\":{\"target_step_ms\":200,\"min_tokens\":128,\"initial_tokens\":128,\"max_tokens\":640,\"alignment\":128,\"smoothing\":0.25,\"decode_only_steps\":8}}"
+  ],
+  "environment": {
+    "PYTHONUNBUFFERED": "1",
+    "ASCEND_RT_VISIBLE_DEVICES": "0,1,2,3,4,5",
+    "VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS": "3000",
+    "VLLM_USE_BREAKABLE_CUDAGRAPH": "1",
+    "ASCEND_TOOLKIT_HOME": "/usr/local/Ascend/cann-9.1.0",
+    "PYTHONPATH": "/srv/ai/storage/artifacts/qfn-tp6-scaleout-20261016/runtime:/srv/ai/storage/artifacts/qfn-tp6-scaleout-20261016/runtime:/srv/ai/src/vllm-opensensor:/srv/ai/src/qwen38-w4-ce1862e52:/srv/ai/src/vllm-opensensor:/usr/local/Ascend/cann-9.1.0/python/site-packages:/usr/local/Ascend/cann-9.1.0/opp/built-in/op_impl/ai_core/tbe:",
+    "ASCEND_CUSTOM_OPP_PATH": "/srv/ai/storage/artifacts/qfn-tp6-scaleout-20261016/runtime/gdn-unified-v5-opp/vendors/qwen_gdn_unified_v5_transformer:/srv/ai/src/qwen38-prefill-batch256-coherent-opp-20261005/vendors/qwen38_batch256_coherent_transformer:/srv/ai/storage/artifacts/qfn-tp6-scaleout-20261016/runtime/vllm_ascend/_cann_ops_custom/vendors/custom_transformer:/srv/ai/src/native-int4-w4a8.KiuhBN/opp-retained-good-20260928",
+    "VLLM_ASCEND_ENABLE_310P": "1",
+    "PYTHONFAULTHANDLER": "1",
+    "ASCEND_OPP_PATH": "/usr/local/Ascend/cann-9.1.0/opp",
+    "VLLM_SERVER_DEV_MODE": "1",
+    "LD_LIBRARY_PATH": "/srv/ai/storage/artifacts/qfn-tp6-scaleout-20261016/runtime/gdn-unified-v5-opp/vendors/qwen_gdn_unified_v5_transformer/op_api/lib:/srv/ai/src/qwen38-prefill-batch256-coherent-opp-20261005/vendors/qwen38_batch256_coherent_transformer/op_api/lib:/srv/ai/storage/artifacts/qfn-tp6-scaleout-20261016/runtime/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_api/lib:/srv/ai/src/native-int4-w4a8.KiuhBN/opp-retained-good-20260928/op_api/lib:/usr/local/Ascend/nnal/atb/latest/atb/cxx_abi_1/lib:/usr/local/Ascend/nnal/atb/latest/atb/cxx_abi_1/examples:/usr/local/Ascend/nnal/atb/latest/atb/cxx_abi_1/tests/atbopstest:/usr/local/Ascend/cann-9.1.0/lib64:/usr/local/Ascend/cann-9.1.0/lib64/plugin/opskernel:/usr/local/Ascend/cann-9.1.0/lib64/plugin/nnengine:/usr/local/Ascend/cann-9.1.0/opp/built-in/op_impl/ai_core/tbe/op_tiling/lib/linux/x86_64:/usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64/common:/usr/local/Ascend/driver/lib64/driver",
+    "ASCEND_AICPU_PATH": "/usr/local/Ascend/cann-9.1.0",
+    "OMP_NUM_THREADS": "1",
+    "VLLM_ASCEND_LOG_REQUEST_TIMINGS": "1",
+    "ASCEND_HOME_PATH": "/usr/local/Ascend/cann-9.1.0",
+    "VLLM_ASCEND_KV_CACHE_FRACTION": "0.95"
+  },
+  "stdout": "/srv/ai/storage/artifacts/qfn-tp6-scaleout-20261016/resident-v8/server.log",
+  "health_http_status": 200,
+  "models": {
+    "object": "list",
+    "data": [
+      {
+        "id": "qwen38-flash-next",
+        "object": "model",
+        "created": 1792171166,
+        "owned_by": "vllm",
+        "root": "/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-TP6-MTP-20261010",
+        "parent": null,
+        "max_model_len": 262144,
+        "permission": [
+          {
+            "id": "modelperm-a99144fd19773fd7",
+            "object": "model_permission",
+            "created": 1792171166,
+            "allow_create_engine": false,
+            "allow_sampling": true,
+            "allow_logprobs": true,
+            "allow_search_indices": false,
+            "allow_view": true,
+            "allow_fine_tuning": false,
+            "organization": "*",
+            "group": null,
+            "is_blocking": false
+          }
+        ]
+      }
+    ]
+  },
+  "resident_status": {
+    "/qfn_engine_control": {
+      "passed": true,
+      "failed": false,
+      "current": [
+        "tp6_overlap_4629d3caf0174c86864a6dcc22826d5a",
+        "a51655db32a00c965f6ec90a80b0210fd5efe2882b391aca43d531d28f726dfa"
+      ],
+      "pending": null,
+      "paused": false,
+      "async_scheduling": false,
+      "scheduler_type": "QwenPrefillPacedScheduler",
+      "batch_queue_size": 1,
+      "retained_owners": 36
+    },
+    "workers": [
+      {
+        "rank": 0,
+        "pid": 606977,
+        "generation": "ac16f83a9b9b49aea310b4dba2526e1a",
+        "mode": "graph",
+        "candidate": "tp6_exact_native_hc",
+        "digest": "49b4b03496e69be3f4a0b17ff8d770ef4ef1f58d2c11a0aa4e4f1e7ee8ef453f",
+        "graphs_dirty": false,
+        "native_failed": false,
+        "custom_collective": {
+          "enabled": true,
+          "state": "active",
+          "members": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "config_sha256": "85ced13163125ca42ac0c57b4b62177f043ea9192031c4e95a180d86e7745242"
+        },
+        "native_ple": {
+          "enabled": true,
+          "failed": false,
+          "verify": false,
+          "shared_mapping": true,
+          "host_assisted": true,
+          "torch_stream_join": true
+        }
+      },
+      {
+        "rank": 1,
+        "pid": 606978,
+        "generation": "ac16f83a9b9b49aea310b4dba2526e1a",
+        "mode": "graph",
+        "candidate": "tp6_exact_native_hc",
+        "digest": "49b4b03496e69be3f4a0b17ff8d770ef4ef1f58d2c11a0aa4e4f1e7ee8ef453f",
+        "graphs_dirty": false,
+        "native_failed": false,
+        "custom_collective": {
+          "enabled": true,
+          "state": "active",
+          "members": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "config_sha256": "85ced13163125ca42ac0c57b4b62177f043ea9192031c4e95a180d86e7745242"
+        },
+        "native_ple": {
+          "enabled": true,
+          "failed": false,
+          "verify": false,
+          "shared_mapping": true,
+          "host_assisted": true,
+          "torch_stream_join": true
+        }
+      },
+      {
+        "rank": 2,
+        "pid": 606979,
+        "generation": "ac16f83a9b9b49aea310b4dba2526e1a",
+        "mode": "graph",
+        "candidate": "tp6_exact_native_hc",
+        "digest": "49b4b03496e69be3f4a0b17ff8d770ef4ef1f58d2c11a0aa4e4f1e7ee8ef453f",
+        "graphs_dirty": false,
+        "native_failed": false,
+        "custom_collective": {
+          "enabled": true,
+          "state": "active",
+          "members": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "config_sha256": "85ced13163125ca42ac0c57b4b62177f043ea9192031c4e95a180d86e7745242"
+        },
+        "native_ple": {
+          "enabled": true,
+          "failed": false,
+          "verify": false,
+          "shared_mapping": true,
+          "host_assisted": true,
+          "torch_stream_join": true
+        }
+      },
+      {
+        "rank": 3,
+        "pid": 606980,
+        "generation": "ac16f83a9b9b49aea310b4dba2526e1a",
+        "mode": "graph",
+        "candidate": "tp6_exact_native_hc",
+        "digest": "49b4b03496e69be3f4a0b17ff8d770ef4ef1f58d2c11a0aa4e4f1e7ee8ef453f",
+        "graphs_dirty": false,
+        "native_failed": false,
+        "custom_collective": {
+          "enabled": true,
+          "state": "active",
+          "members": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "config_sha256": "85ced13163125ca42ac0c57b4b62177f043ea9192031c4e95a180d86e7745242"
+        },
+        "native_ple": {
+          "enabled": true,
+          "failed": false,
+          "verify": false,
+          "shared_mapping": true,
+          "host_assisted": true,
+          "torch_stream_join": true
+        }
+      },
+      {
+        "rank": 4,
+        "pid": 606981,
+        "generation": "ac16f83a9b9b49aea310b4dba2526e1a",
+        "mode": "graph",
+        "candidate": "tp6_exact_native_hc",
+        "digest": "49b4b03496e69be3f4a0b17ff8d770ef4ef1f58d2c11a0aa4e4f1e7ee8ef453f",
+        "graphs_dirty": false,
+        "native_failed": false,
+        "custom_collective": {
+          "enabled": true,
+          "state": "active",
+          "members": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "config_sha256": "85ced13163125ca42ac0c57b4b62177f043ea9192031c4e95a180d86e7745242"
+        },
+        "native_ple": {
+          "enabled": true,
+          "failed": false,
+          "verify": false,
+          "shared_mapping": true,
+          "host_assisted": true,
+          "torch_stream_join": true
+        }
+      },
+      {
+        "rank": 5,
+        "pid": 606982,
+        "generation": "ac16f83a9b9b49aea310b4dba2526e1a",
+        "mode": "graph",
+        "candidate": "tp6_exact_native_hc",
+        "digest": "49b4b03496e69be3f4a0b17ff8d770ef4ef1f58d2c11a0aa4e4f1e7ee8ef453f",
+        "graphs_dirty": false,
+        "native_failed": false,
+        "custom_collective": {
+          "enabled": true,
+          "state": "active",
+          "members": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "config_sha256": "85ced13163125ca42ac0c57b4b62177f043ea9192031c4e95a180d86e7745242"
+        },
+        "native_ple": {
+          "enabled": true,
+          "failed": false,
+          "verify": false,
+          "shared_mapping": true,
+          "host_assisted": true,
+          "torch_stream_join": true
+        }
+      }
+    ]
+  },
+  "notes": [
+    "Read-only process, health, model-list and resident status inspection; no service restart or configuration mutation.",
+    "Runtime uses a frozen source overlay plus resident replacements; Git HEAD alone does not identify loaded behavior.",
+    "No GLM HTTP listener was present at inspection. All six Ascend 310P3 devices reported healthy."
+  ]
+}

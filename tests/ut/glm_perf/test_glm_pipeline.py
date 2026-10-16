@@ -222,6 +222,28 @@ def test_profile_admission_rejects_tp6_mtp_and_precision_mismatches():
         validate_profile("bad-profile", tensor_parallel_size=2, pipeline_parallel_size=3, mtp_tokens=0)
 
 
+@pytest.mark.parametrize("draft", [0, 1])
+def test_two_card_export_admits_target_only_without_changing_partition_or_precision(draft):
+    from tools.glm_perf.deployment_profiles import validate_profile
+
+    selected = validate_profile(
+        "two-card-selective-w2",
+        tensor_parallel_size=4,
+        pipeline_parallel_size=1,
+        mtp_tokens=draft,
+        layer_bits={"3": 4, "8": 3, "33": 2},
+    )
+    assert selected.cards == 2
+    for invalid in (-1, 2, True):
+        with pytest.raises(ValueError, match="topology"):
+            validate_profile(
+                selected.name,
+                tensor_parallel_size=4,
+                pipeline_parallel_size=1,
+                mtp_tokens=invalid,
+            )
+
+
 def test_parameter_ledger_uses_stage_ownership_and_excludes_disabled_draft():
     from tools.glm_perf.card_memory_plan import parameter_ledger
 

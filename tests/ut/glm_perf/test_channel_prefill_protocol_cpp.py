@@ -28,6 +28,7 @@ def test_production_prefill_tile_protocol_and_guard_bytes(tmp_path, cached):
             *(["-DGLM_CHANNEL_CACHE_PREFILL_ROUTES"] if cached else []),
             f"-I{tmp_path}",
             f"-I{stubs}",
+            f"-I{root / 'tools/glm_perf'}",
             str(stubs / "check_prefill.cpp"),
             "-o",
             str(binary),

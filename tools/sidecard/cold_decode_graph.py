@@ -2,7 +2,7 @@
 """Capture CUDA attention/routing while keeping cold expert IPC outside graphs."""
 
 from .dsa_decode_graph import DsaDecodeGraph
-from .layer_decode_graph import CAPTURE_WARMUP_STEPS
+from .layer_decode_graph import CAPTURE_WARMUP_STEPS, diagnostic_owner
 from .layer_math import HIDDEN, STREAMS
 
 
@@ -14,6 +14,7 @@ def prepare_routes(layer, state):
 class ColdDecodeGraphs:
     def __init__(self, layers, torch, *, dsa_graphs=False):
         self.layers = tuple(layers)
+        self.diagnostic = diagnostic_owner(self.layers)
         self.graphs = {}
         self.dsa_graphs = {}
         for layer in self.layers:
@@ -31,8 +32,15 @@ class ColdDecodeGraphs:
                 prepare_routes(layer, inputs)
             torch.cuda.synchronize()
             graph = torch.cuda.CUDAGraph()
-            with torch.cuda.graph(graph):
-                outputs = prepare_routes(layer, inputs)
+            key = f"cold-layer:{layer.index}"
+            if self.diagnostic is not None:
+                self.diagnostic.capture_begin(key)
+            try:
+                with torch.cuda.graph(graph):
+                    outputs = prepare_routes(layer, inputs)
+            finally:
+                if self.diagnostic is not None:
+                    self.diagnostic.capture_end(key)
             torch.cuda.synchronize()
             self.graphs[layer.index] = (graph, inputs, outputs)
         for layer in self.layers:
@@ -50,6 +58,9 @@ class ColdDecodeGraphs:
                 for target, source in zip(inputs, state, strict=True):
                     target.copy_(source)
                 graph.replay()
+                diagnostic = getattr(self, "diagnostic", None)
+                if diagnostic is not None:
+                    diagnostic.replayed(f"cold-layer:{layer.index}")
                 # Socket calls and both native cold experts execute here,
                 # after capture; GPU hot/shared work overlaps those calls.
                 state = layer.finish_forward(*outputs)

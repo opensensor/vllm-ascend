@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // New channel-scale contract: accumulate INT32 across K, read back once/group.
 #include "kernel_operator.h"
+#include "glm_channel_dma.h"
 #include "glm_channel_broadcast.h"
 #ifdef GLM_CHANNEL_INTEGER_RECONSTRUCT
   #include "glm_channel_integer.h"
@@ -36,7 +37,7 @@ class Projection {
           const DataCopyParams store{static_cast<uint16_t>(count), N * sizeof(half) / 32, 0,
                                      static_cast<uint16_t>((n_ - N) * sizeof(half) / 32)};
           DataCopy(output_[row * n_ + tile * N], outputUb_.Get<half>(), store);
-          PipeBarrier<PIPE_ALL>();
+          GlmChannelDma::Fence();
         }
         first = end;
       }
@@ -96,7 +97,7 @@ class Projection {
 #ifdef GLM_CHANNEL_CACHE_SOURCE_ROWS
     if (originalTokens_) {
       GlmChannelRowCache::Prepare(order_, sourceRows_.Get<int32_t>(), row, count, topK_);
-      PipeBarrier<PIPE_ALL>();
+      GlmChannelDma::Fence();
     }
 #endif
     const uint32_t productRows = ((count * (bits_ == 8 ? 2 : 1) + NZ_N - 1) / NZ_N) * NZ_N;
@@ -122,7 +123,8 @@ class Projection {
 #else
         const int64_t codeOffset = ((expert * (n_ / N) + tile) * (k_ / K) + k0 / K) * B_BYTES;
         DataCopy(b1_.Get<int8_t>(), codes_[codeOffset], B_BYTES);
-        PipeBarrier<PIPE_ALL>();
+        SetFlag<HardEvent::MTE2_MTE1>(EVENT_ID0);
+        WaitFlag<HardEvent::MTE2_MTE1>(EVENT_ID0);
 #endif
         LoadData2DParams load;
         load.repeatTimes = (K / K_FRAGMENT) * N / NZ_N;
@@ -136,7 +138,8 @@ class Projection {
         WaitFlag<HardEvent::MTE1_M>(EVENT_ID0);
 #else
         LoadData(b2_.Get<int8_t>().ReinterpretCast<int4b_t>(), b1_.Get<int8_t>().ReinterpretCast<int4b_t>(), load);
-        PipeBarrier<PIPE_ALL>();
+        SetFlag<HardEvent::MTE1_M>(EVENT_ID0);
+        WaitFlag<HardEvent::MTE1_M>(EVENT_ID0);
 #endif
         MmadParams mm;
         mm.m = productRows;
@@ -153,9 +156,11 @@ class Projection {
 #else
         Mmad(c_.Get<int32_t>(), a2_.Get<int8_t>().ReinterpretCast<int4b_t>(),
              b2_.Get<int8_t>().ReinterpretCast<int4b_t>(), mm);
+        SetFlag<HardEvent::M_MTE1>(EVENT_ID0);
+        WaitFlag<HardEvent::M_MTE1>(EVENT_ID0);
         // Conservative operand lifetime fence. No cast, scale, FP32 sum,
         // or CO1 readback is performed in this K loop.
-        PipeBarrier<PIPE_ALL>();
+        GlmChannelDma::Fence();
 #endif
       }
       Readback(row, count, productRows, expert, tile, group);
@@ -168,7 +173,7 @@ class Projection {
     }
 #endif
     Cast(outputUb_.Get<half>(), accum_.Get<float>(), RoundMode::CAST_NONE, count * N);
-    PipeBarrier<PIPE_ALL>();
+    GlmChannelDma::Fence();
   }
 
   __aicore__ inline int64_t SourceRow(int64_t row) {
@@ -197,7 +202,7 @@ class Projection {
     SetFlag<HardEvent::V_MTE2>(EVENT_ID0);
     WaitFlag<HardEvent::V_MTE2>(EVENT_ID0);
 #else
-    PipeBarrier<PIPE_ALL>();
+    GlmChannelDma::Fence();
 #endif
     for (uint32_t m = 0; m < count; ++m) {
       const int64_t sourceRow = RowAddress(row, m) * (k_ / 2) + k0 / 2;
@@ -212,7 +217,8 @@ class Projection {
     SetFlag<HardEvent::MTE2_MTE3>(EVENT_ID0);
     WaitFlag<HardEvent::MTE2_MTE3>(EVENT_ID0);
 #else
-    PipeBarrier<PIPE_ALL>();
+    SetFlag<HardEvent::MTE2_MTE3>(EVENT_ID0);
+    WaitFlag<HardEvent::MTE2_MTE3>(EVENT_ID0);
 #endif
     DataCopy(a1_.Get<int8_t>(), packed, productRows * K / 2);
 #ifdef GLM_CHANNEL_STREAM_WEIGHTS
@@ -220,7 +226,8 @@ class Projection {
     WaitFlag<HardEvent::MTE3_MTE1>(EVENT_ID0);
     WaitFlag<HardEvent::M_MTE1>(EVENT_ID2);
 #else
-    PipeBarrier<PIPE_ALL>();
+    SetFlag<HardEvent::MTE3_MTE1>(EVENT_ID0);
+    WaitFlag<HardEvent::MTE3_MTE1>(EVENT_ID0);
 #endif
     LoadData2DParams load;
     load.repeatTimes = (K / K_FRAGMENT) * productRows / NZ_N;
@@ -232,7 +239,10 @@ class Projection {
     SetFlag<HardEvent::MTE1_V>(EVENT_ID0);
     WaitFlag<HardEvent::MTE1_V>(EVENT_ID0);
 #else
-    PipeBarrier<PIPE_ALL>();
+    SetFlag<HardEvent::MTE1_M>(EVENT_ID0);
+    WaitFlag<HardEvent::MTE1_M>(EVENT_ID0);
+    SetFlag<HardEvent::MTE1_V>(EVENT_ID0);
+    WaitFlag<HardEvent::MTE1_V>(EVENT_ID0);
 #endif
   }
 #ifdef GLM_CHANNEL_STREAM_WEIGHTS
@@ -248,31 +258,29 @@ class Projection {
     const DataCopyParams copy{N / NZ_N, static_cast<uint16_t>(productRows / NZ_N), 0, 0};
     DataCopyEnhancedParams enhanced;
     enhanced.blockMode = BlockMode::BLOCK_MODE_MATRIX;
-#ifdef GLM_CHANNEL_STREAM_WEIGHTS
     SetFlag<HardEvent::M_V>(EVENT_ID0);
     WaitFlag<HardEvent::M_V>(EVENT_ID0);
-#endif
     DataCopy(raw_.Get<int32_t>(), c_.Get<int32_t>(), copy, enhanced);
-    PipeBarrier<PIPE_ALL>();
+    GlmChannelDma::Fence();
     auto low = products_.Get<float>();
     auto high = low[ELEMENTS / 2];
     const uint32_t slot = (productRows / NZ_N - 1) * 4 + (bits_ == 8 ? 2 : 0);
-    DataCopy(indices_.Get<uint32_t>(), offsets_[slot * ELEMENTS], count * N);
-    PipeBarrier<PIPE_ALL>();
+    GlmChannelDma::CopyIn(indices_.Get<uint32_t>(), offsets_[slot * ELEMENTS], count * N);
+    GlmChannelDma::Fence();
     Gather(low.ReinterpretCast<int32_t>(), raw_.Get<int32_t>(), indices_.Get<uint32_t>(), static_cast<uint32_t>(0),
            count * N);
     PipeBarrier<PIPE_V>();
     const int64_t scaleOffset = ((expert * (n_ / N) + tile) * (k_ / group_) + group) * N;
     auto weights = weights_.Get<float>();
     auto correction = weights[N];
-    DataCopy(weights, scales_[scaleOffset], N);
+    GlmChannelDma::CopyIn(weights, scales_[scaleOffset], N);
     if (bits_ == 8) {
-      DataCopy(indices_.Get<uint32_t>(), offsets_[(slot + 1) * ELEMENTS], count * N);
-      PipeBarrier<PIPE_ALL>();
+      GlmChannelDma::CopyIn(indices_.Get<uint32_t>(), offsets_[(slot + 1) * ELEMENTS], count * N);
+      GlmChannelDma::Fence();
       Gather(high.ReinterpretCast<int32_t>(), raw_.Get<int32_t>(), indices_.Get<uint32_t>(), static_cast<uint32_t>(0),
              count * N);
-      DataCopy(correction.ReinterpretCast<int32_t>(), sums_[scaleOffset], N);
-      PipeBarrier<PIPE_ALL>();
+      GlmChannelDma::CopyIn(correction.ReinterpretCast<int32_t>(), sums_[scaleOffset], N);
+      GlmChannelDma::Fence();
 #ifdef GLM_CHANNEL_INTEGER_RECONSTRUCT
       GlmChannelInteger::ReconstructA8(low.ReinterpretCast<int32_t>(), high.ReinterpretCast<int32_t>(),
                                        correction.ReinterpretCast<int32_t>(), count);
@@ -292,8 +300,9 @@ class Projection {
     }
     PipeBarrier<PIPE_V>();
     for (uint32_t m = 0; m < count; ++m)
-      DataCopy(sx_.Get<float>()[m * LANES], xs_[(RowAddress(row, m) * (k_ / group_) + group) * LANES], LANES);
-    PipeBarrier<PIPE_ALL>();
+      GlmChannelDma::CopyIn(sx_.Get<float>()[m * LANES], xs_[(RowAddress(row, m) * (k_ / group_) + group) * LANES],
+                            LANES);
+    GlmChannelDma::Fence();
 #ifdef GLM_CHANNEL_INTEGER_RECONSTRUCT
     // A8 bias has already been added exactly before the product conversion.
     GlmChannelBroadcast::ScaleRows(low, weights, correction, sx_.Get<float>(), count, 4);
@@ -302,6 +311,8 @@ class Projection {
 #endif
     Add(accum_.Get<float>(), accum_.Get<float>(), low, count * N);
     PipeBarrier<PIPE_V>();
+    SetFlag<HardEvent::V_M>(EVENT_ID0);
+    WaitFlag<HardEvent::V_M>(EVENT_ID0);
   }
   TPipe pipe_;
 #ifdef GLM_CHANNEL_TOKEN_PREFILL

@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 """Validate complete-layer options before device allocations or worker launch."""
 
+from .execution_options import validate_options
+
 
 def enabled(spec):
+    validate_options(spec)
     value = spec.get("stage_transport", "socket")
     if value not in ("socket", "direct-dma"):
         raise ValueError("unknown complete-layer stage transport")

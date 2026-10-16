@@ -2,6 +2,7 @@
 // True UB gate/up -> SwiGLU -> hidden quant; no full gate/up route tensor.
 #define GLM_CHANNEL_FUSED_GATE_UP
 #include "glm_channel_projection.cpp"
+#include "glm_channel_dma.h"
 namespace {
 constexpr uint32_t HIDDEN_GROUP = 256, FLOAT_LANES = 64;
 class FusedGateUp : public Projection {
@@ -54,11 +55,12 @@ class FusedGateUp : public Projection {
   __aicore__ inline void QuantizeHidden(int64_t row, uint32_t count, int64_t expert, int64_t groupIndex) {
     const uint32_t group = HIDDEN_GROUP, bits = bits_;
     auto indices = indices_.Get<uint32_t>();
-    DataCopy(indices, quantOffsets_, 72);
+    GlmChannelDma::CopyIn(indices, quantOffsets_, 72);
 #ifndef GLM_CHANNEL_IDENTITY_SMOOTHING
-    DataCopy(products_.Get<float>()[3 * group], smoothing_[expert * intermediate_ + groupIndex * group], group);
+    GlmChannelDma::CopyIn(products_.Get<float>()[3 * group], smoothing_[expert * intermediate_ + groupIndex * group],
+                          group);
 #endif
-    PipeBarrier<PIPE_ALL>();
+    GlmChannelDma::Fence();
     for (uint32_t m = 0; m < count; ++m) {
       auto inputHalf = hidden_.Get<half>()[m * 2 * group];
       auto upHalf = inputHalf[group];
@@ -148,9 +150,9 @@ class FusedGateUp : public Projection {
         Cast(limb, temporary, RoundMode::CAST_NONE, group);
         PipeBarrier<PIPE_V>();
         Cast(packed.ReinterpretCast<int4b_t>(), limb, RoundMode::CAST_NONE, group);
-        PipeBarrier<PIPE_ALL>();
+        GlmChannelDma::Fence();
         DataCopy(hiddenHigh_[(row + m) * intermediate_ / 2 + groupIndex * group / 2], packed, group / 2);
-        PipeBarrier<PIPE_ALL>();
+        GlmChannelDma::Fence();
         Muls(temporary, temporary, -16.0f, group);
         PipeBarrier<PIPE_V>();
         Add(quant, quant, temporary, group);
@@ -161,10 +163,10 @@ class FusedGateUp : public Projection {
       Cast(limb, quant, RoundMode::CAST_NONE, group);
       PipeBarrier<PIPE_V>();
       Cast(packed.ReinterpretCast<int4b_t>(), limb, RoundMode::CAST_NONE, group);
-      PipeBarrier<PIPE_ALL>();
+      GlmChannelDma::Fence();
       DataCopy(hiddenLow_[(row + m) * intermediate_ / 2 + groupIndex * group / 2], packed, group / 2);
       DataCopy(hiddenScales_[((row + m) * (intermediate_ / group) + groupIndex) * LANES], scale, LANES);
-      PipeBarrier<PIPE_ALL>();
+      GlmChannelDma::Fence();
     }
   }
   TBuf<TPosition::VECCALC> hidden_, selectMask_;

@@ -10,6 +10,15 @@ from .layer_math import HIDDEN, STREAMS
 CAPTURE_WARMUP_STEPS = 2
 
 
+def diagnostic_owner(layers):
+    owners = {
+        id(value): value for layer in layers if (value := getattr(layer, "execution_diagnostic", None)) is not None
+    }
+    if len(owners) > 1:
+        raise ValueError("one graph cannot cross diagnostic owners")
+    return next(iter(owners.values()), None)
+
+
 def linear_spans(layers):
     spans = []
     pending = []
@@ -33,7 +42,9 @@ def forward_span(layers, state):
 
 
 class DecodeGraphs:
-    def __init__(self, layers, torch, device, *, dsa_graphs=False):
+    def __init__(self, layers, torch, device, *, dsa_graphs=False, dsa_agree=None):
+        layers = tuple(layers)
+        self.diagnostic = diagnostic_owner(layers)
         self.spans = linear_spans(layers)
         self.graphs = {}
         self.dsa_graphs = {}
@@ -42,10 +53,14 @@ class DecodeGraphs:
         for span in self.spans:
             if not span[0].linear:
                 if dsa_graphs:
-                    # Load the CUDA-only helper after graph constants are initialized.
-                    from .dsa_decode_graph import DsaDecodeGraph
+                    if device == "cuda":
+                        from .dsa_decode_graph import DsaDecodeGraph
 
-                    self.dsa_graphs[span[0].index] = DsaDecodeGraph(span[0], torch, cold=False)
+                        self.dsa_graphs[span[0].index] = DsaDecodeGraph(span[0], torch, cold=False)
+                    else:
+                        from .npu_dsa_decode_graph import NpuDsaDecodeGraph
+
+                        self.dsa_graphs[span[0].index] = NpuDsaDecodeGraph(span[0], torch, agree=dsa_agree)
                 continue
             inputs = (
                 torch.zeros((1, HIDDEN), dtype=torch.float16, device=device),
@@ -59,8 +74,15 @@ class DecodeGraphs:
                 forward_span(span, inputs)
             backend.synchronize()
             graph = graph_type()
-            with backend.graph(graph):
-                outputs = forward_span(span, inputs)
+            key = f"layer-span:{span[0].index}"
+            if self.diagnostic is not None:
+                self.diagnostic.capture_begin(key)
+            try:
+                with backend.graph(graph):
+                    outputs = forward_span(span, inputs)
+            finally:
+                if self.diagnostic is not None:
+                    self.diagnostic.capture_end(key)
             backend.synchronize()
             self.graphs[span[0].index] = (graph, inputs, outputs)
         for layer in layers:
@@ -86,9 +108,18 @@ class DecodeGraphs:
                     else:
                         target.copy_(source)
                 graph.replay()
+                self.observe_replay(span[0].index)
                 state = outputs
         return state
 
+    def observe_replay(self, index):
+        diagnostic = getattr(self, "diagnostic", None)
+        if diagnostic is not None:
+            diagnostic.replayed(f"layer-span:{index}")
+
     def close(self):
+        for graph in getattr(self, "dsa_graphs", {}).values():
+            if hasattr(graph, "close"):
+                graph.close()
         self.graphs.clear()
         self.dsa_graphs.clear()

@@ -33,6 +33,7 @@ constexpr unsigned B_BYTES=N*K/2, ELEMENTS=ROWS*N;
 constexpr unsigned EVENT_ID0=0, EVENT_ID2=2;
 using half=float;
 using int4b_t=int8_t;
+namespace GlmChannelDma { void Fence() {} }
 enum class HardEvent { MTE1_MTE2, M_MTE1, MTE2_MTE1, MTE1_M };
 bool events[4][8]{};
 template<HardEvent E> void SetFlag(unsigned slot) {

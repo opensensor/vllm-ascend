@@ -80,6 +80,7 @@ def build(
         "compile_reconstruction.cpp",
         "channel_scale_bridge.cpp",
         "glm_channel_broadcast.h",
+        "glm_channel_dma.h",
         "glm_channel_integer.h",
         "glm_channel_row_cache.h",
         "glm_channel_down_token.cpp",
