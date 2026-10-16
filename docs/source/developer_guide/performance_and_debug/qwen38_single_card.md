@@ -11,7 +11,48 @@ Read the [runtime runbook](qwen38_310p_runtime_runbook.md) for source and operat
 package coherence. A successful import or health response is insufficient:
 the first inference request, cold prefill, prefix reuse and decode must pass.
 
-## Josh: clone and run the exact qualified profile
+## Jouh: recommended profile as of October 16, 2026
+
+For one Ascend 310P3 Duo (two devices), use the October 11 **qualified TP2
+runtime bundle**, with the current preflight below. This is the best measured
+single-card long-context profile in this repository. It completed a 131,072-token
+input/output window and measured 20.94 tokens/s median short-context decode.
+These are measurements on our qualification host, not a performance guarantee
+for another machine.
+
+Our October 16 live service runs on **three Duos / six devices**. Its exact
+[launch and resident status snapshot](../../../../artifacts/glm-qwen-main-sync-20261016/running-server.json)
+is useful for comparison, but it is not a single-card launch recipe:
+
+| Setting | Jouh's qualified one-Duo profile | October 16 live service |
+| --- | --- | --- |
+| Tensor/expert parallelism | TP2 / EP2 | TP6 / EP6 |
+| Checkpoint | Original published W4 G128 `300i` | Separate TP6 MTP overlay |
+| Total context per request | 131,072 | 262,144 |
+| Concurrent sequences | 1 | 6 |
+| Prefill token ceiling | 512 | 2,048, with paced chunks up to 640 |
+| MTP draft tokens | 2 | 2 |
+| Decode graph sizes | `[3]` | `[3,6,12,18]` |
+| Recurrent-state residency | Seven FP32 slots | Separate TP6 cache/retention policy |
+| Collective / PLE path | Frozen TP2 release implementation | Custom binomial collective and shared host PLE |
+| Runtime source | October 11 frozen bundle | Frozen overlay plus resident replacements |
+
+The newer sources and tests are on `main` starting at `d253adb02`. Updating the
+clone updates the tools; it does **not** replace the bundle's frozen Python,
+compiled binding, or four operator packages. `--updated` is the single-card
+profile's named optimization option, not an updater to the live TP6 modules.
+The newer TP6 resident owners and native fusion candidates have not been
+qualified on TP2. Do not copy the TP6 checkpoint, `restore.py`, six-device
+collective configuration, or individual live modules into this bundle.
+An updated TP2 runtime matching those modules needs a separate full-model
+qualification; this guide does not claim that work has been done.
+
+The commands below were checked against a fresh download of the release on
+October 16: the archive SHA-256 and all 5,274 frozen file hashes matched, the
+pinned model configuration remained downloadable, and 62 single-card tooling
+tests passed. No new single-card NPU run was performed for this guide.
+
+## Download and run the exact qualified profile
 
 The [single-card release](https://github.com/opensensor/vllm-ascend/releases/tag/qwen38-single-card-20261011)
 contains the frozen runtime, matching compiled operators, native residual
@@ -19,7 +60,7 @@ kernel and validation receipts. Clone the repository for the source and tests;
 use the release bundle for the qualified runtime. Building whatever operator
 packages happen to be installed does not reproduce this configuration.
 
-Use Josh's existing matching Python environment: Python 3.12.13 on x86_64,
+Use an existing matching Python environment: Python 3.12.13 on x86_64,
 CANN 9.1.0 with ATB, torch 2.13.0+cpu, torch_npu 2.13.0rc1 and
 transformers 5.17.0. Keep the working OpenSensor vLLM and registered Ascend
 plugin installation in that environment; the bundle overrides their source
@@ -35,7 +76,9 @@ and swap during startup.
 ```bash
 git clone https://github.com/opensensor/vllm-ascend.git
 cd vllm-ascend
-git checkout qwen38-single-card-20261011
+# Pin current tooling; the downloaded runtime remains the qualified release.
+git checkout d253adb02968a7b0fd562c387c6541a78bbf2fce
+qwen_repo=$(pwd)
 mkdir -p single-card-release
 cd single-card-release
 curl -fLO https://github.com/opensensor/vllm-ascend/releases/download/qwen38-single-card-20261011/qwen38-single-card-runtime-20261011.tar.gz
@@ -46,7 +89,30 @@ cd single-card-runtime-bundle
 python3 verify.py .
 ```
 
-Reuse the existing checkpoint if Josh already downloaded it. Otherwise download
+Prepare the pristine bundle **before** loading weights. Keep this terminal in
+`single-card-runtime-bundle`; set the interpreter to the matching environment,
+not the system Python. The original archive omitted generated build metadata
+and inherited runner selection from the shell. The current preflight verifies
+the original manifest, adds only the missing `_310P` metadata with a receipt,
+and checks the environment without opening an NPU:
+
+```bash
+qwen_bundle=$(pwd)
+qwen_python=/path/to/existing/matched/venv/bin/python
+source "$qwen_bundle/environment.sh"
+export VLLM_USE_V2_MODEL_RUNNER=1
+PYTHONPATH="$qwen_repo:$PYTHONPATH" "$qwen_python" \
+  -m tools.qwen4exp.single_card_preflight \
+  --bundle "$qwen_bundle" --prepare-build-info \
+  --output "$qwen_bundle/qwen-preflight.json"
+```
+
+Continue only after preflight reports `passed`. It does not install missing
+SDK components or repair incompatible package versions. Keep
+`VLLM_USE_V2_MODEL_RUNNER=1` exported for the following launch: the immutable
+archive's launcher predates the source fix that sets it automatically.
+
+Reuse the existing checkpoint if Jouh already downloaded it. Otherwise download
 [the published W4 G128 checkpoint](https://huggingface.co/matteiuspi/Qwen3.8-Flash-Next-W4A16-G128-300i)
 at the qualified revision. It has the same `config.json` SHA-256 as the test host.
 Do not substitute the W8 checkpoint or a generic AWQ/GPTQ export.
@@ -59,7 +125,7 @@ hf download matteiuspi/Qwen3.8-Flash-Next-W4A16-G128-300i \
 qwen_python=/path/to/existing/matched/venv/bin/python
 qwen_model=/path/to/Qwen3.8-Flash-Next-W4A16-G128-300i
 bash serve.sh "$qwen_model" "$qwen_python" --show
-bash serve.sh "$qwen_model" "$qwen_python" > qwen-single-card.log 2>&1 &
+nohup bash serve.sh "$qwen_model" "$qwen_python" > qwen-single-card.log 2>&1 &
 echo $! > qwen-single-card.pid
 tail -f qwen-single-card.log
 ```
@@ -85,6 +151,15 @@ Check for `391` in the arithmetic response and retain `native-qualification.json
 The default API is `http://127.0.0.1:8002/v1`, model `qwen38-single-card`.
 For a remote coding client, forward that port over SSH; resident development
 controls remain on loopback.
+
+```bash
+# Run on the client computer; replace jouh-server with the Duo host.
+ssh -N -L 8002:127.0.0.1:8002 jouh@jouh-server
+```
+
+Set the client's OpenAI-compatible base URL to `http://127.0.0.1:8002/v1`
+and model to `qwen38-single-card`. The local inference endpoint does not require
+an API key; a client that requires a nonempty value can use a placeholder.
 
 The exact profile is TP2/EP on one physical dual-chip card, 131,072 total
 tokens, 512-token chunks, one sequence, MTP2, seven FP32 resident state slots,
