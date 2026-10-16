@@ -1,0 +1,107 @@
+Local-route activation packing and W4 schedule experiment, October 16, 2026 UTC
+
+Retained change
+  The existing exact 32-group activation pack now has an optional local-route
+  entry. It reads group_ends[127] on the NPU and packs only that EP rank's live
+  prefix. At quarter-local ownership it avoids packing about 75% of allocated
+  rows. FP32 SiLU still runs at full capacity, and allocation sizes are unchanged.
+  This is a reduction in kernel work and logical tensor traffic, not evidence
+  of reduced host PCIe transfers or physical allocator release.
+
+  The guard requires the privately qualified PackedExpertBank.native_linear
+  identity, its tensor metadata eligibility, eager execution and an available
+  descriptor slot (or an existing descriptor). A failed guard keeps the full
+  32-group pack. Short/unsupported inputs retain the activation fallback.
+  No route count is copied to the host outside shadow verification. The retained
+  grouped projection ignores inactive inputs and zeros its own inactive output.
+  Uninitialized packed tails must never be handed to another consumer.
+
+  Existing W4 finalization, local-count projection, shared HC operands, CPU
+  reductions, PLE mapping, mixed-prefill cap 512, queue size 2, TP4/EP4/MTP2 and
+  graphs [3,6,9,12] are preserved. No server restart or firmware, driver or OPP
+  changes. The resident v16 server remains at 192.168.53.187:8001.
+
+Hardware gates
+  Private tests covered capacities 2590,5150,20480 and active counts 0,1,
+  capacity/4,capacity-1,capacity on all four ranks. Packed live prefixes were
+  byte-exact. Inactive packed limbs were poisoned with 101 and metadata with
+  NaN; both first-layer and last-layer real down projections still matched the
+  full-pack reference byte-for-byte and zeroed all inactive output rows.
+  Result: 60 prefix/tail cases, 120 real-weight projection comparisons passed.
+
+  Pure-prefill and overlapping decode/prefill shadows checked 432 calls/rank,
+  1728 total, without a mismatch. Shadows also compared complete downstream
+  projections and returned reference outputs. Their timing includes readbacks
+  and duplicate projections and must not be used as candidate latency.
+  Verification is disabled for the retained serving candidate.
+
+  Complete activation plus packing, quarter-local ownership, synchronized
+  wall-time median ranges across four ranks (full 32-group -> local 32-group):
+      2590 rows: 0.473..0.481 -> 0.314..0.319 ms
+      5150 rows: 0.789..0.822 -> 0.501..0.511 ms
+     20480 rows: 3.239..3.270 -> 1.938..1.974 ms
+  The large-shape stage improves about 40%; end-to-end gains are much smaller.
+
+Unprofiled serving comparison
+  Approximately 3737 fresh prompt tokens, 16 output tokens, no prefix hits.
+  Full 32-group packing is the baseline. Shared HC operands are enabled in
+  both arms. All previous optimizations remain installed throughout.
+  First order off/on/on/off:
+    off 8.312583, on 8.177342, on 8.300640, off 8.326790 seconds TTFT.
+    Means 8.319686 -> 8.238991 seconds, 0.97% lower.
+  Repeat order on/off/off/on/off/on/on/off:
+    on 8.231519, off 8.422767, off 8.370732, on 8.315905,
+    off 8.399887, on 8.261949, on 8.323232, off 8.529346 seconds.
+    Means 8.430683 -> 8.283151 seconds, 1.75% lower.
+  Combined means 8.393684 -> 8.268431 seconds, 1.49% lower; six of six
+  adjacent counterbalanced pairs improved. Temperatures were 58..77 C.
+  This is a modest short-prefill result on one host, not a confidence interval,
+  long-context quality evaluation, sustained thermal test or decode gain.
+  Preserve the exact JSON measurements over the rounded values here.
+
+W4 scheduling investigation: not promoted
+  Real pure-prefill shadows counted 412108..474057 local rows/rank, against
+  capacity 1781760/rank. About one third of expert invocations had zero rows.
+  Modeling uniform M32 padding from the observed expert-row histogram gives
+  35..40% overhead; M16 would reduce that estimate to 16..18%. This modeled
+  padding does not include launch, weight-transfer or per-tile vector costs,
+  nor does it represent measured execution time or the large-count M128 branch.
+
+  Compiled an M16 variant against the frozen qualified queue-v3 header
+  cebf66752cfe9a9606a584dab07a25dbf8a4f8a8d4057ad0a372dfb65c7a7f70.
+  Only the small local-count branch changes from M32,N160 to M16,N160.
+  Both real gate/up and down banks passed all 96 exact comparisons: three
+  capacities, zero/quarter/full ownership and quarter-local skew, four ranks.
+  At 650 rows, quarter-local M16 improved projection time about 7..15%.
+  At 5150 it regressed about 1..6%; at 20480 it regressed about 20..34%.
+  Extra tile work outweighs padding savings on the important large shapes.
+  Keep M32/M128 in service. Smaller tiles alone are not a useful broad upgrade;
+  any future per-expert policy needs real-route replay and serving comparisons.
+
+Validation
+  188 focused host tests passed, including admission/fallback, descriptor
+  capacity, changed consumer, graph capture, poisoned tails, no serving CPU
+  readback, failure ownership, activation, finalization and shared HC operands.
+  Full unit suite could not collect: installed vLLM lacks
+  vllm.third_party.flash_linear_attention. Full format.sh ci reproduces existing
+  unrelated lint failures on the unchanged parent as well as this change.
+  Final scoped manual pre-commit checks passed for every delivered file.
+  The final named-constant rebuild is byte-identical to the qualified native
+  binary. Source and binary hashes are recorded in source-hashes.json.
+
+  Initial C1/C4 HTTP checks: 33.06 / 66.35 tokens/s. A direct decode comparison
+  then measured full/local packing C1 33.80 / 32.98, C4 68.93 / 68.39 tokens/s.
+  Neither mode invoked the packing candidate during these short requests;
+  counters were unchanged. These bounded samples show rate variation and do
+  not establish a decode gain. The previous snapshot was 33.90 / 68.28.
+  All worker identities, weights, graph inventories and retained owners passed.
+  Public health is 200, the service is unpaused, and the arithmetic smoke
+  returned 391 with finish_reason=stop. No profiler remains attached.
+  See delivery-validation.json and public-state.json for the final receipt.
+
+Evidence and controls
+  artifacts/qfn-local-pack-20261016 contains the frozen-header build command,
+  private gate scripts/results, drained install and local-only on/off controls,
+  shadow receipts, repeated comparisons, source hashes and final audit.
+  local-control.py off preserves full packing; it does not disable previous
+  activation or CPU optimizations. Runtime private resources remain owned.

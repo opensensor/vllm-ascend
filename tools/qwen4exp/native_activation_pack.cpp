@@ -8,6 +8,7 @@ constexpr uint32_t GROUP = 128, BATCH = 32, LANES = 8, HALF_GROUP = GROUP / 2;
 constexpr uint32_t ELEMENTS = GROUP * BATCH, STORAGE_BYTES = 144 * 1024;
 constexpr int64_t WIDTH = 640, GROUPS_PER_ROW = WIDTH / GROUP;
 constexpr float FP16_MAX = 65504.0f;
+constexpr int64_t LOCAL_EXPERTS = 128, MAX_ROWS = 20480;
 
 class PackActivation {
  public:
@@ -171,7 +172,27 @@ extern "C" __global__ __aicore__ void qwen_activation_pack_v1(GM_ADDR activated,
   KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AICORE);
   InitSocState();
   const int64_t rows = reinterpret_cast<__gm__ int64_t*>(config)[0];
-  if (rows < 1 || rows > 20480) return;
+  if (rows < 1 || rows > MAX_ROWS) return;
+  PackActivation op;
+  op.Run(activated, projected, low, high, scale, sum, rows * GROUPS_PER_ROW);
+}
+
+extern "C" __global__ __aicore__ void qwen_local_activation_pack_v1(GM_ADDR activated, GM_ADDR projected, GM_ADDR low,
+                                                                    GM_ADDR high, GM_ADDR scale, GM_ADDR sum,
+                                                                    GM_ADDR ends, GM_ADDR config) {
+  KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AICORE);
+  InitSocState();
+  const int64_t capacity = reinterpret_cast<__gm__ int64_t*>(config)[0];
+  if (capacity < 1 || capacity > MAX_ROWS) return;
+  GlobalTensor<int64_t> boundaries;
+  boundaries.SetGlobalBuffer(reinterpret_cast<__gm__ int64_t*>(ends));
+  const int64_t rows = boundaries.GetValue(LOCAL_EXPERTS - 1);
+  if (rows < 0 || rows > capacity) {
+    ASCENDC_ASSERT(false, { KERNEL_LOG(KERNEL_ERROR, "invalid local packing boundary"); });
+    return;
+  }
+  // The qualified grouped projection never consumes the unwritten tail.
+  if (rows == 0) return;
   PackActivation op;
   op.Run(activated, projected, low, high, scale, sum, rows * GROUPS_PER_ROW);
 }

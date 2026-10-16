@@ -86,6 +86,20 @@ its fallback owner and the current finalizer, and verify mixed-request shadows
 before enabling the candidate. The prior qualified runtime remains the
 fallback; no graph or custom OPP replacement is required.
 
+The subsequent local-route packing pass reads the final expert boundary on the
+NPU and packs only the prefix owned by that EP rank. It requires the exact
+qualified local-count projection, including descriptor-capacity admission;
+a changed consumer or failed admission uses full packing. Unwritten tail rows
+must never reach an unqualified consumer. FP32 SiLU and allocation sizes remain
+unchanged, and normal serving does not read route counts on the CPU.
+Private poisoned-tail gates and 1,728 real serving shadow checks passed.
+Twelve counterbalanced requests measured 1.49% lower mean prefill TTFT with
+shared HC operands enabled in both arms. This is a modest short-workload gain,
+not a decode-throughput claim. The private M16 W4 schedule was exact but slower
+on large batches and remains disabled. See
+`tools/qwen4exp/LOCAL_ROUTE_PACK_PROFILE.txt` and
+`artifacts/qfn-local-pack-20261016` for controls, results, and final checks.
+
 ## Sources of truth
 
 - Develop changes on the repository's current main branch, then deploy them as

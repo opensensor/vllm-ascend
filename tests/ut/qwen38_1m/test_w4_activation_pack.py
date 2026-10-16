@@ -144,3 +144,126 @@ def test_launch_failure_retains_owner_and_prevents_reuse(setup):
     assert owner.failed and owner.failure is failure and owner.configs
     with pytest.raises(RuntimeError, match="retain native resources"):
         owner(value, projection, None, torch.float32, torch.float16)
+
+
+@pytest.fixture
+def local_setup(setup):
+    owner, projection, launches, projections = setup
+    full_launch = owner.launch
+    local_kernel = object()
+
+    def launch(kernel, tensors, blocks):
+        if kernel is not local_kernel:
+            return full_launch(kernel, tensors, blocks)
+        activated, projected, *outputs, ends, descriptor = tensors
+        launches.append(tensors)
+        active = int(ends[-1])
+        expected = pack_reference((activated * projected[:, 640:].float()).half())
+        for output, values in zip(outputs, expected):
+            output.fill_(101 if output.dtype == torch.int8 else float("nan"))
+            output[:active].copy_(values[:active])
+
+    def native(prepared, ends):
+        projections.append((prepared, ends))
+        result = torch.zeros((prepared[0].shape[0], 320))
+        active = int(ends[-1])
+        result[:active] = prepared[0][:active].float()
+        return result
+
+    projection.native_linear = native
+    owner.launch = launch
+    owner.local_kernel = local_kernel
+    owner.local_projection = lambda bank, prepared, ends: bank is projection
+    owner.local_routes = True
+    return owner, projection, launches, projections
+
+
+@pytest.mark.parametrize("active", [0, 1, 3])
+@torch.no_grad()
+def test_local_prefix_poisoned_tail_and_reference_projection(local_setup, active, monkeypatch):
+    owner, projection, launches, projections = local_setup
+    value = torch.randn(3, 1280).half()
+    ends = torch.tensor([(i + 1) * active // 128 for i in range(128)])
+    expected = projection.native_linear(
+        pack_reference(packing.epilogue.reference(value, torch.float32, torch.float16)), ends
+    )
+    actual = owner(value, projection, ends, torch.float32, torch.float16)
+    assert torch.equal(actual, expected)
+    assert (launches[-1][2][active:] == 101).all() and torch.isnan(launches[-1][4][active:]).all()
+    assert owner.checked == owner.local_calls == 1 and owner.mismatches == 0
+    assert owner.checked_capacity_rows == 3 and owner.checked_local_rows == active
+    assert sum(owner.expert_row_histogram.values()) == 128
+    assert actual is not launches[-1][2]
+    before = len(projections)
+    owner.verify = False
+
+    def no_readback(*args, **kwargs):
+        raise AssertionError("serving must not read device route counts on the host")
+
+    monkeypatch.setattr(torch.Tensor, "cpu", no_readback)
+    actual = owner(value, projection, ends, torch.float32, torch.float16)
+    assert torch.equal(actual, expected) and len(projections) == before + 1
+    assert owner.checked == 1 and owner.local_calls == 2
+
+
+@pytest.mark.parametrize("case", ["off", "consumer", "dtype", "shape", "stride"])
+@torch.no_grad()
+def test_local_contract_failure_keeps_full_pack(local_setup, case):
+    owner, projection, launches, _ = local_setup
+    ends = torch.full((128,), 3, dtype=torch.int64)
+    if case == "off":
+        owner.local_routes = False
+    elif case == "consumer":
+        owner.local_projection = lambda *args: False
+    elif case == "dtype":
+        ends = ends.int()
+    elif case == "shape":
+        ends = ends[:64]
+    else:
+        ends = torch.full((256,), 3, dtype=torch.int64)[::2]
+    owner.verify = False
+    owner(torch.randn(3, 1280).half(), projection, ends, torch.float32, torch.float16)
+    assert len(launches[-1]) == 7 and owner.local_calls == 0 and owner.calls == 1
+
+
+@torch.no_grad()
+def test_local_shadow_rejects_consumer_that_reads_poisoned_tail(local_setup):
+    owner, projection, _, _ = local_setup
+    projection.native_linear = lambda prepared, ends: prepared[2].clone()
+    actual = owner(
+        torch.randn(3, 1280).half(), projection, torch.ones(128, dtype=torch.int64), torch.float32, torch.float16
+    )
+    assert torch.isfinite(actual).all()
+    assert owner.mismatches == 1 and not owner.enabled
+
+
+def test_local_kernel_requires_explicit_consumer_contract():
+    with pytest.raises(ValueError, match="qualified consumer"):
+        packing.W4ActivationPack(None, None, None, None, local_kernel=object())
+
+
+@pytest.mark.parametrize("condition", ["ready", "changed", "ineligible", "capture", "full", "cached"])
+def test_local_projection_admission_matches_consumer_fallback(monkeypatch, condition):
+    class Bank:
+        def native_linear(self, prepared, ends):
+            raise AssertionError("metadata admission must not execute projection")
+
+    bank = Bank()
+    bank.weight = torch.empty((128, 2560, 320), device="meta")
+    consumer = Bank.native_linear
+    prepared = (torch.empty((2560, 320)),)
+    key = ((2560, 128, 2560, 640, 8, 0, 1), prepared[0].device)
+    resource = SimpleNamespace(_configs={})
+    monkeypatch.setattr(packing.qfn_prefill_schedule, "eligible", lambda *a: condition != "ineligible")
+    monkeypatch.setattr(packing.native_prefill, "_capturing", lambda _: condition == "capture")
+    monkeypatch.setattr(packing.native_prefill, "MAX_CONFIGS", 1)
+    if condition == "changed":
+        Bank.native_linear = lambda *a: None
+    if condition == "full":
+        resource._configs["another shape"] = object()
+    if condition == "cached":
+        resource._configs[key] = object()
+    before = dict(resource._configs)
+    guard = packing.local_projection_guard(consumer, resource, "native")
+    assert guard(bank, prepared, None) == (condition in ("ready", "cached"))
+    assert resource._configs == before
