@@ -42,11 +42,14 @@ Configuration
   Each rank shares its populated mapping across lookup shapes.
 * Existing driver DMA query spin budget 5 us; no driver or firmware replacement.
 * Six CPU worker masks and authenticated thermal holds at 94 C, resume 85 C.
-* Language-model-only. Multimodal disabled; FlashComm1 disabled in favor of
-  the qualified custom collective. This profile does not validate those paths.
+* One image per request, no video; data-parallel vision encoder, processor
+  min_pixels=65536 and max_pixels=1048576. MTP2 and decode graphs remain enabled.
+  See artifacts/qfn-tp6-images-20261016 for real-image validation.
+* FlashComm1 remains disabled in favor of the qualified custom collective.
 
-The planner reports 1,710,425 cache tokens, equivalent to 6.52 full 256K
-requests. Six simultaneous fully populated 256K contexts have NOT been tested.
+The original text-only planner reported 1,710,425 cache tokens, equivalent
+to 6.52 full 256K requests. Enabling vision changes the profiled headroom;
+consult the image run receipt for its actual allocation. Six simultaneous fully populated 256K contexts have NOT been tested.
 This is cache capacity, not a six-session long-context accuracy certification.
 
 Do not blindly restore the TP4 resident owner bundle. Its queued scheduler,

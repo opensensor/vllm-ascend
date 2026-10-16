@@ -44,13 +44,14 @@ serve_cmd=(
   --max-num-batched-tokens 2048 --max-num-seqs 6
   --gpu-memory-utilization 0.955
   --scheduler-cls vllm_ascend.core.qwen_prefill_scheduler.QwenPrefillPacedScheduler
-  --language-model-only --mm-encoder-tp-mode data --enable-expert-parallel --enable-ep-weight-filter
+  --mm-encoder-tp-mode data --enable-expert-parallel --enable-ep-weight-filter
   --enable-auto-tool-choice --tool-call-parser qwen3_xml --reasoning-parser qwen3
   --mamba-cache-mode align --enable-chunked-prefill --enable-prefix-caching
   --enable-prompt-tokens-details --seed 0
   --speculative-config '{"method":"mtp","num_speculative_tokens":2}'
   --compilation-config '{"mode":0,"cudagraph_mode":"FULL_DECODE_ONLY","cudagraph_capture_sizes":[3,6,12,18]}'
-  --limit-mm-per-prompt '{"image":0,"video":0}'
+  --limit-mm-per-prompt '{"image":1,"video":0}'
+  --mm-processor-kwargs '{"min_pixels":65536,"max_pixels":1048576}'
   --worker-extension-cls tools.sidecard.qfn_resident_worker.QfnResidentWorkerExtension
   --additional-config "$additional_config"
 )

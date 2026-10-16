@@ -1,0 +1,40 @@
+# Manual runtime diagnostic, not an lm-eval task configuration.
+# Do not pass this file to test_lm_eval_correctness.py.
+model_name: /srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-TP6-MTP-20261010
+model_type: runtime_diagnostic
+hardware: Three Atlas 300I Duo cards, six Ascend 310P3 chips
+manual_only: true
+serve:
+  tensor_parallel_size: 6
+  enable_expert_parallel: true
+  dtype: float16
+  max_model_len: 262144
+  max_num_seqs: 6
+  served_model_name: qwen38-flash-next
+  speculative_tokens: 2
+  mm_encoder_tp_mode: data
+  image_limit: 1
+  video_limit: 0
+  min_pixels: 65536
+  max_pixels: 1048576
+tasks:
+  - name: retained_text_colors_and_ocr_smoke
+    metrics:
+      - name: passed_fraction
+        value: 1.0
+    sample_count: 7
+    evidence: artifacts/qfn-tp6-images-20261016/image-smoke-retained.json
+  - name: streaming_changed_image_and_kv_replay
+    metrics:
+      - name: passed_fraction
+        value: 1.0
+    sample_count: 3
+    evidence: artifacts/qfn-tp6-images-20261016/streaming-cache.json
+num_fewshot: 0
+validation_runner: artifacts/qfn-tp6-images-20261016/image_smoke.py
+long_context_quality: unqualified
+notes: >-
+  Real-weight HTTP and SSE smoke checks, including OCR and 1024-token image
+  prefix reuse. The two-image rejection also returned HTTP 400 with subsequent
+  HTTP 200 health. These small checks are not a vision benchmark, an lm-eval
+  score, or validation of six fully populated 256K windows.

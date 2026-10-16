@@ -1,0 +1,123 @@
+{
+  "source": "QSA_SOURCE = 'def qsa_indexer_select_groups_310(\\n    query: torch.Tensor,\\n    compressed_key_cache: torch.Tensor,\\n    block_table: torch.Tensor,\\n    query_start_loc: torch.Tensor,\\n    positions: torch.Tensor,\\n    *,\\n    compress_ratio: int,\\n    token_topk: int,\\n    max_visible_groups: int | None = None,\\n    max_matmul_decode_tokens: int = _QSA_MATMUL_DECODE_MAX_TOKENS,\\n    query_lens: Sequence[int] | None = None,\\n    selection_policy: str = QSA_SELECTION_STABLE_ARGSORT,\\n) -> QSAGroupSelection:\\n    \"\"\"Select learned QSA groups on 310P.\\n\\n    ``compressed_key_cache`` is paged ND storage\\n    ``[physical_blocks, groups_per_block + 3, index_head_dim]``. The final\\n    three rows are private scratch storage used to carry an incomplete\\n    four-token group across scheduler invocations. Long single-request\\n    prefills use a tiled matrix multiply; other shapes use the native score\\n    kernel. The host-visible sequence limit removes the unused padded\\n    block-table suffix before scoring and stable sorting. Equal scores retain\\n    the reference\\'s lower-group-id tie break.\\n    ``max_matmul_decode_tokens`` lets the routed-W4 MTP runtime opt in to\\n    wider verification batches without changing the W8/default crossover.\\n    \"\"\"\\n    if query.device.type != \"npu\":\\n        raise RuntimeError(\"qsa_indexer_select_groups_310 is an Ascend NPU-only path\")\\n    if token_topk % compress_ratio:\\n        raise ValueError(\"token_topk must be divisible by compress_ratio\")\\n    if query.ndim != 3 or compressed_key_cache.ndim != 3:\\n        raise ValueError(\"query/cache must be [T,H,D] and [blocks,rows,D]\")\\n    if query.shape[-1] != compressed_key_cache.shape[-1]:\\n        raise ValueError(\"query and compressed cache head dimensions differ\")\\n    if positions.shape != (query.shape[0],):\\n        raise ValueError(\"positions must be [T]\")\\n    if max_visible_groups is not None:\\n        if max_visible_groups < 0:\\n            raise ValueError(\"max_visible_groups must be nonnegative\")\\n        groups_per_block = compressed_key_cache.shape[1] - _QSA_INDEX_CACHE_SCRATCH_ROWS\\n        if groups_per_block <= 0:\\n            raise ValueError(\"compressed cache has no logical group rows\")\\n        required_blocks = max(1, (max_visible_groups + groups_per_block - 1) // groups_per_block)\\n        if required_blocks > block_table.shape[1]:\\n            raise ValueError(\"max_visible_groups exceeds block table capacity\")\\n        # The native score op sizes both its output and its per-core work from\\n        # the table width. Scheduler-provided host sequence lengths let us\\n        # exclude the unused padded suffix without synchronizing the NPU.\\n        block_table = block_table[:, :required_blocks]\\n    op_namespace = getattr(torch.ops, \"_C_ascend\", None)\\n    op = None if op_namespace is None else getattr(op_namespace, \"npu_qsa_indexer_score_310\", None)\\n    if op is None:\\n        raise RuntimeError(\"vLLM Ascend was built without the dedicated 310P QSA index-score operator\")\\n\\n    groups_per_block = compressed_key_cache.shape[1] - _QSA_INDEX_CACHE_SCRATCH_ROWS\\n    capacity = block_table.shape[1] * groups_per_block\\n    if selection_policy not in QSA_SELECTION_POLICIES:\\n        raise ValueError(\\n            f\"qsa selection policy must be one of {sorted(QSA_SELECTION_POLICIES)}, got {selection_policy!r}\"\\n        )\\n    block_topk = token_topk // compress_ratio\\n    selected_width = min(block_topk, capacity)\\n    visible_groups, tail_starts, tail_counts = _qsa_position_geometry(positions, compress_ratio, capacity)\\n    use_matmul_score = _use_qsa_matmul_score_batch(\\n        query_lens,\\n        query.shape[0],\\n        capacity,\\n        block_table.shape[0],\\n        query_start_loc.numel(),\\n        max_matmul_decode_tokens,\\n    )\\n    if 0 < capacity <= block_topk:\\n        # Every visible group fits. The repair step below always replaces the\\n        # sorted scores with this ascending prefix, even for NaN/Inf scores.\\n        # Avoid reading keys and launching score/sort/repair operators whose\\n        # results would be discarded. Keep the original width and tail types.\\n        # Native repair promotes indices with positions; GEMM stores INT32.\\n        selected_dtype = torch.int32 if use_matmul_score else positions.dtype\\n        selected = torch.arange(selected_width, dtype=selected_dtype, device=positions.device)\\n        selected = selected.expand(query.shape[0], -1).contiguous()\\n        return QSAGroupSelection(selected, visible_groups.clamp_max(selected_width), tail_starts, tail_counts)\\n    if use_matmul_score:\\n        # Reuse the paged-key GEMM for long prefills and wide single-request\\n        # decode. At 7K visible groups and two decode queries on 310P, it\\n        # scores about four times faster than the native per-group kernel.\\n        lengths = (query.shape[0],) if query_lens is None else tuple(int(length) for length in query_lens)\\n        selected = _qsa_matmul_select_groups(\\n            query,\\n            compressed_key_cache,\\n            block_table,\\n            visible_groups,\\n            lengths,\\n            groups_per_block,\\n            selected_width,\\n            selection_policy,\\n        )\\n    else:\\n        scores = op(\\n            query.contiguous(),\\n            compressed_key_cache.contiguous(),\\n            block_table.to(dtype=torch.int32).contiguous(),\\n            query_start_loc.to(dtype=torch.int32).contiguous(),\\n            positions.to(dtype=torch.int32).contiguous(),\\n            compress_ratio,\\n        )\\n        selected = _repair_native_group_indices(\\n            _select_topk_indices(scores, selected_width, selection_policy).to(torch.int32),\\n            visible_groups,\\n        )\\n    group_counts = visible_groups.clamp_max(selected_width)\\n    return QSAGroupSelection(selected, group_counts, tail_starts, tail_counts)\\n'\nOPTIONS = {'early': True, 'prefix': True, 'verify': False}\n\ndef operation(worker):\n    try:\n        from tools.qwen4exp.tp6_overlap import OverlapControl\n        owner = getattr(worker, '_qfn_tp6_overlap', None)\n        if owner is None:\n            owner = OverlapControl(worker, QSA_SOURCE)\n            worker._qfn_tp6_overlap = owner\n            owner.install()\n        return owner.configure(**OPTIONS)\n    except Exception as error:\n        return dict(rank=worker.rank, passed=False, error=str(error))\n\nclass Candidate:\n    def validate(self, engine):\n        if not engine._pause_complete() or engine.batch_queue or engine.scheduler.get_num_unfinished_requests():\n            raise RuntimeError('drain engine before overlap controls')\n        if engine.vllm_config.parallel_config.tensor_parallel_size != 6:\n            raise ValueError('requires six profiled workers')\n        return dict(passed=True)\n    def apply(self, engine):\n        self.validate(engine)\n        workers = engine.model_executor.collective_rpc(operation)\n        passed = len(workers) == 6 and {w.get('rank') for w in workers} == set(range(6))\n        return dict(passed=passed and all(w.get('passed') for w in workers), workers=workers)\n\ndef prepare(engine):\n    return Candidate()\n",
+  "options": {
+    "early": true,
+    "prefix": true,
+    "verify": false
+  },
+  "applied": {
+    "passed": true,
+    "applied": {
+      "passed": true,
+      "workers": [
+        {
+          "rank": 0,
+          "passed": true,
+          "early": true,
+          "prefix": true,
+          "verify": false,
+          "failed": false,
+          "early_calls": 58,
+          "prefix_calls": 848,
+          "checked_calls": 848,
+          "checked_capacities": [
+            16,
+            512
+          ]
+        },
+        {
+          "rank": 1,
+          "passed": true,
+          "early": true,
+          "prefix": true,
+          "verify": false,
+          "failed": false,
+          "early_calls": 58,
+          "prefix_calls": 848,
+          "checked_calls": 848,
+          "checked_capacities": [
+            16,
+            512
+          ]
+        },
+        {
+          "rank": 2,
+          "passed": true,
+          "early": true,
+          "prefix": true,
+          "verify": false,
+          "failed": false,
+          "early_calls": 58,
+          "prefix_calls": 848,
+          "checked_calls": 848,
+          "checked_capacities": [
+            16,
+            512
+          ]
+        },
+        {
+          "rank": 3,
+          "passed": true,
+          "early": true,
+          "prefix": true,
+          "verify": false,
+          "failed": false,
+          "early_calls": 58,
+          "prefix_calls": 848,
+          "checked_calls": 848,
+          "checked_capacities": [
+            16,
+            512
+          ]
+        },
+        {
+          "rank": 4,
+          "passed": true,
+          "early": true,
+          "prefix": true,
+          "verify": false,
+          "failed": false,
+          "early_calls": 58,
+          "prefix_calls": 848,
+          "checked_calls": 848,
+          "checked_capacities": [
+            16,
+            512
+          ]
+        },
+        {
+          "rank": 5,
+          "passed": true,
+          "early": true,
+          "prefix": true,
+          "verify": false,
+          "failed": false,
+          "early_calls": 58,
+          "prefix_calls": 848,
+          "checked_calls": 848,
+          "checked_capacities": [
+            16,
+            512
+          ]
+        }
+      ]
+    },
+    "status": {
+      "passed": true,
+      "failed": false,
+      "current": [
+        "tp6_overlap_dcd6220d86714d798822cf24a30ced73",
+        "a51655db32a00c965f6ec90a80b0210fd5efe2882b391aca43d531d28f726dfa"
+      ],
+      "pending": null,
+      "paused": true,
+      "async_scheduling": false,
+      "scheduler_type": "QwenPrefillPacedScheduler",
+      "batch_queue_size": 1,
+      "retained_owners": 10
+    }
+  },
+  "resumed": {
+    "status": "resumed"
+  }
+}

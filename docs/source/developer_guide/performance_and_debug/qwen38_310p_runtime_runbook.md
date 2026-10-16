@@ -119,14 +119,28 @@ reductions, local packing, shared HC operands and PLE remain in place.
 ## Three-card serving profile
 
 The October 16 six-device profile keeps a 262,144-token per-request limit and
-six request slots. Its cache planner reports 1,710,425 tokens (6.52 full 256K
-requests); filling all six windows remains unvalidated. This is separate from
+six request slots. Its original text-only cache planner reported 1,710,425
+tokens (6.52 full 256K requests); filling all six windows remains unvalidated. This is separate from
 the older single-context YaRN experiment. See
 `tools/qwen4exp/TP6_SERVING_PROFILE.txt` and
 `artifacts/qfn-tp6-scaleout-20261016` for the qualified TP6 collective, expanded
 native PLE transport, exact HC restoration, benchmark evidence and launch steps.
 The TP4 queued scheduler and local expert fusion bundle require separate TP6
 geometry qualification; do not install them unchanged into this profile.
+
+The image-capable launcher admits one image per request, with a data-parallel
+vision encoder and processor bounds of 65,536 to 1,048,576 pixels. Video remains
+disabled. MTP2, EP6, decode graphs, native PLE and the custom collective remain
+selected. Vision consumes additional memory, so use this run's cache allocation
+rather than the older text-only estimate. See the
+[image validation report](../../../../artifacts/qfn-tp6-images-20261016/REPORT.md).
+
+Local Kilo's `vllm-310p-w4/qwen38-flash-next` profile should advertise text and
+image input, a 262,144-token context, a 229,376-token input budget, and a
+32,768-token output limit. The input budget reserves room for the configured
+output limit. The provider label should identify three-card TP6; its historical
+provider ID stays unchanged. A client capability flag alone does not enable
+the server's vision encoder.
 
 ## Sources of truth
 
@@ -444,8 +458,9 @@ on port 8001 as `qwen38-w4-builtin-finalize-candidate`.
 
 For the three-card TP6 candidate, read the
 [six-chip hardware report](../../../../artifacts/qwen38-six-chip-hardware-20261009/README.md).
-The image encoder uses data mode, MTP is disabled, and the baseline routed
-projection remains faster for short batches than streaming v2.
+That earlier qualification used data mode for the image encoder and disabled
+MTP; the current October 16 serving profile enables MTP2. The baseline routed
+projection remains faster for short batches than streaming v2 in that report.
 
 Nine-head GDN shards require both corrected chunk schedulers and aligned
 causal-mask writes. A short decode smoke test does not exercise these paths;
