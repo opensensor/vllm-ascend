@@ -24,11 +24,21 @@ W4_BITS = 4
 FP16_MIN_SUBNORMAL = 2**-24
 
 
-def quantize_chunk(weight: torch.Tensor, method: str) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def quantize_chunk(
+    weight: torch.Tensor, method: str, *, mse_backend: str = "torch"
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Return packed codes, stored FP16 scales, and FP32 reconstructed values."""
     if weight.device.type != "cpu" or not torch.isfinite(weight).all():
         raise ValueError("Expected finite CPU weights")
-    codes, scales = quantize_weight(weight, n_bits=W4_BITS, method=method)
+    if mse_backend not in ("torch", "numba"):
+        raise ValueError(f"Unknown CPU MSE backend: {mse_backend}")
+    if mse_backend == "numba" and method == "mse":
+        # Lazy import: Numba is optional and only needed for CPU conversion.
+        from tools.minimax_m3.mse_cpu import quantize_mse_cpu
+
+        codes, scales = quantize_mse_cpu(weight)
+    else:
+        codes, scales = quantize_weight(weight, n_bits=W4_BITS, method=method)
     stored_scales = scales.clamp_min(FP16_MIN_SUBNORMAL).to(torch.float16)
     if not torch.isfinite(stored_scales).all():
         raise ValueError("Block scales exceed FP16 storage range")

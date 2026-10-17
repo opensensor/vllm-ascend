@@ -50,7 +50,7 @@ def atomic_json(path, data):
     temporary.replace(path)
 
 
-def export_tensor(source, name, destination, *, rows=256, method="mse"):
+def export_tensor(source, name, destination, *, rows=256, method="mse", mse_backend="torch"):
     """Write one tensor using bounded row chunks, including large embeddings."""
     if rows <= 0 or rows % W4_BLOCK:
         raise ValueError("chunk rows must be a positive multiple of 32")
@@ -89,7 +89,7 @@ def export_tensor(source, name, destination, *, rows=256, method="mse"):
             if not torch.isfinite(weight).all():
                 raise ValueError(f"Nonfinite source tensor: {name}")
             if expert:
-                codes, scales, reconstructed = quantize_chunk(weight, method)
+                codes, scales, reconstructed = quantize_chunk(weight, method, mse_backend=mse_backend)
                 if not torch.isfinite(reconstructed.half()).all():
                     raise ValueError(f"FP16 expert reconstruction overflows: {name}")
                 tensors = (("codes", codes), ("scales", scales))
@@ -115,10 +115,11 @@ def export_tensor(source, name, destination, *, rows=256, method="mse"):
         "source_dtype": source_dtype,
         "tensors": header,
         "expert": bool(expert),
+        "mse_backend": mse_backend if expert and method == "mse" else None,
     }
 
 
-def export_checkpoint(source, destination, *, rows=256, method="mse", max_tensors=None):
+def export_checkpoint(source, destination, *, rows=256, method="mse", max_tensors=None, mse_backend="torch"):
     source, destination = Path(source).resolve(), Path(destination).resolve()
     if source == destination or source in destination.parents:
         raise ValueError("Export must use a separate directory outside the source checkpoint")
@@ -133,6 +134,8 @@ def export_checkpoint(source, destination, *, rows=256, method="mse", max_tensor
         "index_sha256": file_digest(index_path),
         "config_sha256": file_digest(config_path),
     }
+    # The CPU backend preserves the canonical search/bytes and is deliberately
+    # not part of resume identity. Record it per tensor for mixed-backend runs.
     identity["source_files"] = {
         name: {"size": local_file(source, name).stat().st_size, "mtime_ns": local_file(source, name).stat().st_mtime_ns}
         for name in sorted(set(weight_map.values()))
@@ -159,7 +162,9 @@ def export_checkpoint(source, destination, *, rows=256, method="mse", max_tensor
                 raise ValueError(f"Corrupt export receipt or payload: {filename}")
         else:
             with safe_open(local_file(source, weight_map[name]), framework="pt", device="cpu") as handle:
-                record = export_tensor(handle.get_slice(name), name, target, rows=rows, method=method)
+                record = export_tensor(
+                    handle.get_slice(name), name, target, rows=rows, method=method, mse_backend=mse_backend
+                )
             record["name"] = name
             atomic_json(receipt, record)
         records[name] = record
@@ -189,6 +194,9 @@ def export_checkpoint(source, destination, *, rows=256, method="mse", max_tensor
         "complete": True,
         "export_config_sha256": file_digest(destination / "config.json"),
         "tensor_count": len(records),
+        "mse_backends": sorted({record.get("mse_backend", "torch") for record in records.values() if record["expert"]})
+        if method == "mse"
+        else [],
         "weights": records,
     }
     atomic_json(destination / MANIFEST, manifest)
@@ -201,6 +209,7 @@ def main():
     parser.add_argument("destination", type=Path)
     parser.add_argument("--chunk-rows", type=int, default=256)
     parser.add_argument("--method", choices=("minmax", "mse"), default="mse")
+    parser.add_argument("--mse-backend", choices=("torch", "numba"), default="torch")
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--max-tensors", type=int)
     args = parser.parse_args()
@@ -208,7 +217,12 @@ def main():
     print(
         json.dumps(
             export_checkpoint(
-                args.source, args.destination, rows=args.chunk_rows, method=args.method, max_tensors=args.max_tensors
+                args.source,
+                args.destination,
+                rows=args.chunk_rows,
+                method=args.method,
+                max_tensors=args.max_tensors,
+                mse_backend=args.mse_backend,
             )
         )
     )
