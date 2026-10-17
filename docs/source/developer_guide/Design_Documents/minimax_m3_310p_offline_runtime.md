@@ -106,7 +106,11 @@ Test and lint logs are in the same artifact directory.
 
 ## Full export and runtime preparation
 
-The full 427B checkpoint was **not converted** during runtime implementation.
+The full 427B checkpoint was **not converted** during the initial runtime implementation.
+The later full export completed October 17 at 08:35 UTC: 23,416 tensors,
+219.14 GiB, with a complete manifest. See the
+[three-card serving pathway](minimax_m3_three_card_serving_path.md) for the
+updated per-rank budget, CPU collective gate, and ModelSlim evaluation.
 The exporter and complete miniature export/load/inference path were tested;
 the real-weight gate is limited to one expert. Full conversion is a substantial
 CPU/disk job and writes about 219.14 GiB of unique weight payload plus metadata.
@@ -133,7 +137,7 @@ are exported. Do not modify source shards during conversion.
 `runtime_plan` validates the manifest and **prints only**; it never launches a
 process. Its candidate command uses TP2 x PP3, stage-local EP2, partition
 `21,20,19`, eager execution, one sequence, 8K context, 128-token prefill chunks,
-85% memory utilization, and text-only admission. The existing multimodal
+95% candidate memory utilization (subject to the per-rank budget gate), and text-only admission. The existing multimodal
 wrapper still constructs/loads vision on each stage, even with image admission
 disabled. Budget this replication; do not treat the earlier ideal per-rank
 weight estimates as measured device use.
@@ -151,7 +155,7 @@ VLLM_PP_LAYER_PARTITION=21,20,19 vllm serve /models/MiniMax-M3-W4 \
   --dtype half --tensor-parallel-size 2 --pipeline-parallel-size 3 \
   --enable-expert-parallel --enforce-eager --block-size 128 \
   --max-model-len 8192 --max-num-seqs 1 --max-num-batched-tokens 128 \
-  --gpu-memory-utilization 0.85 --limit-mm-per-prompt '{"image":0,"video":0}' \
+  --gpu-memory-utilization 0.95 --limit-mm-per-prompt '{"image":0,"video":0}' \
   --port 8000
 ```
 

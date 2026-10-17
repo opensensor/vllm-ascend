@@ -1,0 +1,5 @@
+Complete manifest: 23416 source tensors; payloads are checked at load time.
+Hardware-unvalidated candidate. Run only in a separately authorized NPU window, from /workspace.
+Budget gate: estimate 41.89 GiB on the busiest rank at 8K/one sequence, including a 3 GiB allowance.
+Check serving_budget against actual per-device capacity before using this memory fraction.
+env VLLM_PP_LAYER_PARTITION=21,20,19 vllm serve /run/media/matteius/20TB-drive/models/MiniMax-M3-W4 --served-model-name minimax-m3-w4 --load-format minimax_m3_w4 --dtype half --tensor-parallel-size 2 --pipeline-parallel-size 3 --enable-expert-parallel --enforce-eager --block-size 128 --max-model-len 8192 --max-num-seqs 1 --max-num-batched-tokens 128 --gpu-memory-utilization 0.95 --limit-mm-per-prompt '{"image":0,"video":0}' --port 8000
