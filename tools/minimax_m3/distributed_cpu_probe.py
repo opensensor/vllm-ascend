@@ -30,12 +30,14 @@ TOKEN_CASES = (1, 33, 129)
 class GlooBackend:
     """Use real CPU collectives with the unchanged pipeline packet implementation."""
 
-    def __init__(self, groups):
-        self.groups = groups
-
     def new_group(self, ranks, *, backend, use_local_synchronization):
-        assert backend == "hccl" and use_local_synchronization
-        return self.groups[tuple(ranks)]
+        assert backend == "hccl"
+        return dist.new_group(
+            ranks,
+            backend="gloo",
+            use_local_synchronization=use_local_synchronization,
+            timeout=datetime.timedelta(seconds=60),
+        )
 
     def __getattr__(self, name):
         return getattr(dist, name)
@@ -77,13 +79,14 @@ def worker(rank, rendezvous, output):
     )
     groups = [dist.new_group([2 * s, 2 * s + 1]) for s in range(STAGES)]
     pp_groups = [dist.new_group(list(range(t, WORLD_SIZE, TP_SIZE))) for t in range(TP_SIZE)]
-    # Precreate Gloo edges in a world-consistent order. This gate exercises
-    # packet exchange, not the production HCCL group bootstrap.
-    pairs = ((0, 2), (0, 4), (1, 3), (1, 5), (2, 4), (3, 5))
-    edges = {pair: dist.new_group(list(pair)) for pair in pairs}
     stage, tp_rank = divmod(rank, TP_SIZE)
     transport = pipeline_class()(
-        pp_groups[tp_rank], tuple(range(tp_rank, WORLD_SIZE, TP_SIZE)), rank, "cpu", backend=GlooBackend(edges)
+        pp_groups[tp_rank],
+        tuple(range(tp_rank, WORLD_SIZE, TP_SIZE)),
+        rank,
+        "cpu",
+        backend=GlooBackend(),
+        world_size=WORLD_SIZE,
     )
     transport.warmup()
     local_bank = bank(stage, TP_SIZE, tp_rank)
@@ -140,7 +143,7 @@ def main():
             "full model",
             "attention",
             "vLLM scheduler",
-            "HCCL and group bootstrap",
+            "HCCL backend",
             "Cube kernels",
             "real weights",
         ],

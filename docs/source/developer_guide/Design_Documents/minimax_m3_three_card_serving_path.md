@@ -147,10 +147,15 @@ three-stage reference for 1, 33 and 129 tokens. All six ranks passed; final
 maximum absolute FP16 difference was 0.0009765625. Small synthetic weights
 exercise routing/chunk boundaries; this is not full-model inference.
 
-The CPU harness precreates pair groups in a world-consistent order. Direct
-concurrent Gloo creation using the production local-group bootstrap timed out
-in the first attempt. Consequently, **HCCL bootstrap/order remains a separate
-hardware gate**; the CPU result validates packet exchange and math only.
+The initial CPU probe exposed a group-bootstrap failure: locally created
+overlapping PP edges can receive different names because this PyTorch version
+hashes each process's existing group count into the name. The production
+communicator now selects world-ordered group creation for PP3 and larger,
+including nonmember ranks. All regular PP lanes create the same edges in the
+same order with local synchronization disabled. PP2 keeps its existing path.
+The six-process probe now passes through this production bootstrap, without
+precreated groups. HCCL backend execution still requires hardware validation;
+the tested backend is Gloo. Nonregular rank layouts fail before group creation.
 
 ```bash
 python -m tools.minimax_m3.distributed_cpu_probe --output /tmp/m3-six-rank
@@ -158,9 +163,10 @@ python -m pytest --noconftest -q tests/ut/minimax_m3
 python -m tools.minimax_m3.runtime_plan /models/MiniMax-M3-W4
 ```
 
-The focused suite passed 78 tests, with four optional ModelSlim tests skipped
-in the default environment. Those four passed in the isolated checkout-based
-process. Changed-file manual pre-commit checks passed, including Markdown lint.
+The expanded CPU suite passed 142 tests, with four optional ModelSlim tests
+skipped in the default environment. Those four passed separately during the
+previous ModelSlim evaluation. Changed-file manual pre-commit checks passed,
+including Markdown lint.
 
 The implementation and printed command require a coherent runtime snapshot:
 this Ascend plugin, the local upstream vLLM revision
@@ -222,3 +228,59 @@ Evidence: [budget](../../../../artifacts/minimax-m3-serving-path-20261017/budget
 [six-rank probe](../../../../artifacts/minimax-m3-serving-path-20261017/distributed/report.json),
 [ModelSlim samples](../../../../artifacts/minimax-m3-serving-path-20261017/modelslim-probe.json),
 and test/lint receipts in the same artifact directory.
+
+## Follow-through: real banks and frozen sources
+
+The follow-through gate loaded every routed expert in layers 3, 31 and 59
+from the complete export. Each bank has 128 experts, 768 packed/scales buffers,
+and 3.388 GiB of storage. Loading used the production hash-checking bank loader.
+Two EP views shared storage without allocating duplicate banks. Real router
+weights, correction biases and TP-partitioned shared-expert projections were
+also exercised on two seeded random 6144-wide FP16 vectors.
+
+| Layer | EP2 versus unsplit W4 max absolute error | Routed output cosine versus source | Routed output NRMSE |
+| --- | ---: | ---: | ---: |
+| 3 | 0.00000763 | 0.98597 | 0.16763 |
+| 31 | 0.00000381 | 0.98400 | 0.17923 |
+| 59 | 0.00000381 | 0.98254 | 0.18685 |
+
+All combined shared/routed outputs were finite. CPU peak RSS was 4.38–4.40 GiB
+per probe, which is a host-side observation, not NPU load-memory qualification.
+These are complete real MoE banks, not complete decoder layers: attention,
+residual/norm composition and full-model language quality remain separate.
+The random-input quality numbers do not establish calibrated accuracy.
+
+A separate attention gate exercised TP2 production geometry (32 query heads,
+two KV heads, 128-dimensional heads and 128-token pages), distinct physical
+main/index page mappings, and an 8190-token prefix followed by three tokens.
+It matched the independent scalar selection/attention oracle within 0.001
+absolute/relative tolerance. The exported tokenizer and chat template loaded
+with local-only access and remote code disabled.
+
+```bash
+python -m tools.minimax_m3.real_moe_probe /models/MiniMax-M3 \
+  /models/MiniMax-M3-W4 --layer 3 --tokens 2 --threads 4 \
+  --output /tmp/m3-real-bank.json
+
+python -m tools.minimax_m3.source_bundle \
+  --ascend-repo /path/to/vllm-ascend --vllm-repo /path/to/vllm \
+  --catlass-repo /path/to/ascend-sources/reference/catlass \
+  --model /models/MiniMax-M3-W4 --output /path/to/new-source-bundle
+```
+
+The bundle builder freezes committed plugin and upstream vLLM sources,
+excludes the artifact trees and uncommitted edits, and archives CATLASS at the
+plugin's exact gitlink revision `41bf90da655bba3c66d0acd7e00abe33960ecfd6`.
+That revision is available in the local reference clone; no download was
+needed. CATLASS's optional GoogleTest submodule is recorded but not bundled;
+it is not needed for the header-based grouped kernel build. `bundle.json`
+records revisions, archive hashes, checkpoint identity and unmet runtime
+requirements. The archives are a reproducible **source bundle**, not a
+compiled or installed NPU runtime. Weights, CANN, Torch NPU, extension binaries
+and the coherent OPP remain separate deployment inputs. Nothing launches
+or installs when building the bundle.
+
+Follow-through receipts are in
+[offline gates](../../../../artifacts/minimax-m3-offline-gates-20261017/validation.json).
+The generated archives and `SHA256SUMS` are retained locally under
+`artifacts/minimax-m3-offline-gates-20261017/source-bundle/` and are not committed.

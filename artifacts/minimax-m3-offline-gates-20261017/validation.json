@@ -1,0 +1,205 @@
+{
+  "hardware_validated": false,
+  "qwen_modified": false,
+  "upstream_revision": "3ab5dda29acabea01f6a63d0806bdbbb4a27bde5",
+  "source_sha256": {
+    "vllm_ascend/distributed/device_communicators/pipeline_all_gather.py": "23345ff1b53283f9c462c54a26ceaf3697f07294096b915600a07d5de430aec3",
+    "vllm_ascend/distributed/device_communicators/npu_communicator.py": "e875d1c57bb5f2582fc5c134c1b87b53eeaa1e6ac727ff11e1db3c7b348c5a45",
+    "tools/minimax_m3/distributed_cpu_probe.py": "3fba34df433c49153aac22a25c5559b0b6f1462dc6d01e3b468f553164015290",
+    "tools/minimax_m3/real_moe_probe.py": "8855a9315227e50c897d3c093d53a325d8e213dfe33f9777bbeafb049362a228",
+    "tools/minimax_m3/source_bundle.py": "9a67b10c336005a1b3a37879e27568243cb5651d09a1554523c32c5a99805135"
+  },
+  "cpu_tests_passed": 142,
+  "optional_modelslim_tests_skipped": 4,
+  "production_bootstrap_gloo": {
+    "passed": true,
+    "backend": "gloo",
+    "hardware_validated": false,
+    "production_components": [
+      "PackedM3Experts",
+      "PipelineAllGatherTransport"
+    ],
+    "excludes": [
+      "full model",
+      "attention",
+      "vLLM scheduler",
+      "HCCL backend",
+      "Cube kernels",
+      "real weights"
+    ],
+    "ranks": [
+      {
+        "rank": 0,
+        "stage": 0,
+        "passed": true,
+        "comparisons": []
+      },
+      {
+        "rank": 1,
+        "stage": 0,
+        "passed": true,
+        "comparisons": []
+      },
+      {
+        "rank": 2,
+        "stage": 1,
+        "passed": true,
+        "comparisons": []
+      },
+      {
+        "rank": 3,
+        "stage": 1,
+        "passed": true,
+        "comparisons": []
+      },
+      {
+        "rank": 4,
+        "stage": 2,
+        "passed": true,
+        "comparisons": [
+          {
+            "tokens": 1,
+            "max_abs_error": 0.0
+          },
+          {
+            "tokens": 33,
+            "max_abs_error": 0.0
+          },
+          {
+            "tokens": 129,
+            "max_abs_error": 0.0009765625
+          }
+        ]
+      },
+      {
+        "rank": 5,
+        "stage": 2,
+        "passed": true,
+        "comparisons": [
+          {
+            "tokens": 1,
+            "max_abs_error": 0.0
+          },
+          {
+            "tokens": 33,
+            "max_abs_error": 0.0
+          },
+          {
+            "tokens": 129,
+            "max_abs_error": 0.0009765625
+          }
+        ]
+      }
+    ]
+  },
+  "real_moe": [
+    {
+      "layer": 3,
+      "tokens": 2,
+      "expert_count": 128,
+      "loaded_buffers": 768,
+      "bank_bytes": 3638034432,
+      "load_seconds": 23.535398362000706,
+      "total_seconds": 34.983837621999555,
+      "cpu_peak_rss_bytes": 4718215168,
+      "ep2_max_abs_error": 7.62939453125e-06,
+      "combined_shared_routed_finite": true,
+      "output_shape": [
+        2,
+        6144
+      ],
+      "selected_experts": [
+        12,
+        51,
+        55,
+        58,
+        95,
+        109,
+        126
+      ],
+      "routed_source_cosine": 0.9859678745269775,
+      "routed_source_nrmse": 0.16763339936733246,
+      "hardware_validated": false,
+      "full_decoder_validated": false,
+      "scope": "Full real expert bank, router and TP shared MLP; seeded random inputs, no attention or model quality"
+    },
+    {
+      "layer": 31,
+      "tokens": 2,
+      "expert_count": 128,
+      "loaded_buffers": 768,
+      "bank_bytes": 3638034432,
+      "load_seconds": 59.616319818997,
+      "total_seconds": 72.79391484499865,
+      "cpu_peak_rss_bytes": 4706705408,
+      "ep2_max_abs_error": 3.814697265625e-06,
+      "combined_shared_routed_finite": true,
+      "output_shape": [
+        2,
+        6144
+      ],
+      "selected_experts": [
+        13,
+        28,
+        60,
+        79,
+        87,
+        110,
+        118,
+        124
+      ],
+      "routed_source_cosine": 0.9840043783187866,
+      "routed_source_nrmse": 0.17922627925872803,
+      "hardware_validated": false,
+      "full_decoder_validated": false,
+      "scope": "Full real expert bank, router and TP shared MLP; seeded random inputs, no attention or model quality"
+    },
+    {
+      "layer": 59,
+      "tokens": 2,
+      "expert_count": 128,
+      "loaded_buffers": 768,
+      "bank_bytes": 3638034432,
+      "load_seconds": 38.828504053999495,
+      "total_seconds": 52.39892461999989,
+      "cpu_peak_rss_bytes": 4708007936,
+      "ep2_max_abs_error": 3.814697265625e-06,
+      "combined_shared_routed_finite": true,
+      "output_shape": [
+        2,
+        6144
+      ],
+      "selected_experts": [
+        10,
+        43,
+        50,
+        61,
+        72,
+        80,
+        106,
+        117
+      ],
+      "routed_source_cosine": 0.9825384020805359,
+      "routed_source_nrmse": 0.186846524477005,
+      "hardware_validated": false,
+      "full_decoder_validated": false,
+      "scope": "Full real expert bank, router and TP shared MLP; seeded random inputs, no attention or model quality"
+    }
+  ],
+  "tokenizer": {
+    "local_only": true,
+    "remote_code": false,
+    "tokenizer_class": "TokenizersBackend",
+    "chat_template_valid": true,
+    "prompt_token_count": 180,
+    "vocabulary_size": 200061,
+    "all_tokens_in_vocabulary": true
+  },
+  "pending": [
+    "HCCL backend validation",
+    "installed Cube extension and OPP",
+    "full model real-weight server",
+    "device load peak and steady-state memory",
+    "full-model quality and performance"
+  ]
+}

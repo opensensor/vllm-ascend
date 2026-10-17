@@ -96,8 +96,11 @@ class NPUCommunicator(DeviceCommunicatorBase):
         if unique_name.startswith("pp:") and get_current_hardware_profile().supports(
             HardwareCapability.DISTRIBUTED_COMMUNICATION_ADAPTATION
         ):
+            # All world ranks initialize PP communicators. PP3+ overlapping
+            # edges require a global creation order, including nonmembers.
+            pipeline_options = {"world_size": dist.get_world_size()} if len(self.ranks) > 2 else {}
             self.pipeline_transport = PipelineAllGatherTransport(
-                cpu_group, self.ranks, self.global_rank, torch.device("npu", self.device)
+                cpu_group, self.ranks, self.global_rank, torch.device("npu", self.device), **pipeline_options
             )
             self.pipeline_transport.warmup(synchronize=torch.npu.synchronize)
 

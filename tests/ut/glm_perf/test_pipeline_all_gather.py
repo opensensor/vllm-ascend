@@ -151,3 +151,30 @@ def test_pipeline_does_not_warm_or_use_the_bootstrap_closing_edge():
     assert transport.pairs == ((0, 2), (2, 4))
     with pytest.raises(ValueError, match="adjacent"):
         transport.send_tensor_dict({}, 2)
+
+
+def test_world_order_includes_nonmembers_and_both_tp_lanes():
+    cls = transport_class()
+    records = []
+
+    class WorldBackend:
+        def __init__(self):
+            self.calls = []
+
+        def new_group(self, members, *, backend, use_local_synchronization):
+            assert backend == "hccl" and use_local_synchronization is False
+            self.calls.append(tuple(members))
+            return tuple(members)
+
+    for rank in range(6):
+        backend = WorldBackend()
+        transport = cls(None, tuple(range(rank % 2, 6, 2)), rank, "cpu", backend, world_size=6)
+        records.append(backend.calls)
+        assert all(rank in pair for pair in transport.groups)
+    assert records == [[(0, 2), (0, 4), (1, 3), (1, 5), (2, 4), (3, 5)]] * 6
+
+
+@pytest.mark.parametrize("ranks,world", [((0, 2, 5), 6), ((4, 2, 0), 6), ((0, 2, 4), 7)])
+def test_world_order_rejects_inconsistent_layout_before_group_creation(ranks, world):
+    with pytest.raises(ValueError, match="pipeline"):
+        transport_class()(None, ranks, ranks[0], "cpu", Backend(Network(), ranks[0]), world_size=world)

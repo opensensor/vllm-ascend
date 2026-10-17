@@ -109,11 +109,12 @@ def isolated():
         zeros=zeros,
         npu=SimpleNamespace(current_device=lambda: context.device, synchronize=synchronize),
     )
-    dist = SimpleNamespace(ProcessGroup=ProcessGroup)
+    dist = SimpleNamespace(ProcessGroup=ProcessGroup, get_world_size=lambda: 12)
 
     class Pipeline:
-        def __init__(self, cpu_group, ranks, rank, device):
+        def __init__(self, cpu_group, ranks, rank, device, **options):
             context.events.append(("pipeline-init", cpu_group, ranks, rank, device))
+            context.events.append(("pipeline-options", options))
 
         def warmup(self, *, synchronize):
             context.events.append(("pipeline-warmup", synchronize))
@@ -371,3 +372,13 @@ def test_graph_model_requires_explicit_graph_admission(isolated):
     owner = ctx.construct()
     assert owner.custom_sum is ctx.custom
     assert ctx.factories[0][0][0] is config
+
+
+@pytest.mark.parametrize("members,expected", [((0, 2, 4), {"world_size": 6}), ((0, 1), {})])
+def test_pipeline_world_order_is_selected_only_for_three_or_more_stages(isolated, members, expected):
+    ctx = isolated
+    ctx.members, ctx.rank = members, members[0]
+    ctx.supports_pipeline = True
+    ctx.dist.get_world_size = lambda: 6
+    ctx.construct("pp:0")
+    assert ("pipeline-options", expected) in ctx.events

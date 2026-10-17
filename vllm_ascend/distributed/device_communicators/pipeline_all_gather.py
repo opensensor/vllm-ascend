@@ -7,6 +7,31 @@ import torch.distributed as dist
 HCCL_WARMUP_BYTES = 32
 
 
+def global_pipeline_pairs(ranks, world_size):
+    """Enumerate regular vLLM PP lanes in identical order on every rank.
+
+    Local group names depend on the number of groups already owned by each
+    process in some PyTorch versions. Overlapping PP edges make those counts
+    unequal. World-ordered creation uses the shared global ordinal instead.
+    """
+    stride = ranks[1] - ranks[0]
+    span = stride * len(ranks)
+    if stride <= 0 or world_size <= 0 or world_size % span:
+        raise ValueError("pipeline world requires regular, ascending PP lanes")
+    lanes = [
+        tuple(base + offset + stage * stride for stage in range(len(ranks)))
+        for base in range(0, world_size, span)
+        for offset in range(stride)
+    ]
+    if tuple(ranks) not in lanes:
+        raise ValueError("pipeline ranks do not match the world PP layout")
+    pairs = set()
+    for lane in lanes:
+        pairs.update(zip(lane[:-1], lane[1:]))
+        pairs.add((lane[0], lane[-1]))
+    return tuple(sorted(pairs))
+
+
 class PipelineAllGatherTransport:
     """Preserve tensor bytes without HcclSend/Recv or activation host copies.
 
@@ -16,7 +41,7 @@ class PipelineAllGatherTransport:
     tensors, so a later request cannot overwrite a still-live packet.
     """
 
-    def __init__(self, cpu_group, ranks, global_rank, device, backend=dist):
+    def __init__(self, cpu_group, ranks, global_rank, device, backend=dist, *, world_size=None):
         if len(ranks) < 2 or len(set(ranks)) != len(ranks) or global_rank not in ranks:
             raise ValueError("pipeline transport requires distinct ranks and a local member")
         self.cpu_group = cpu_group
@@ -31,9 +56,12 @@ class PipelineAllGatherTransport:
         pairs = {tuple(sorted((self.ranks[index], self.ranks[index + 1]))) for index in range(len(ranks) - 1)}
         self.pairs = tuple(sorted(pairs))
         creation_pairs = pairs | {tuple(sorted((self.ranks[0], self.ranks[-1])))}
-        # The same ordering on all members avoids overlapping-group deadlocks.
+        if world_size is not None:
+            creation_pairs = global_pipeline_pairs(self.ranks, world_size)
+        # All world ranks must participate when world_size is provided.
+        # Nonmembers must consume the same global group ordinal too.
         for pair in sorted(creation_pairs):
-            group = backend.new_group(list(pair), backend="hccl", use_local_synchronization=True)
+            group = backend.new_group(list(pair), backend="hccl", use_local_synchronization=world_size is None)
             if global_rank in pair:
                 self.groups[pair] = group
 
