@@ -38,6 +38,7 @@ from vllm.v1.kv_cache_interface import (
     KVCacheSpec,
 )
 
+from vllm_ascend._310p.attention.minimax_m3 import M3EagerMetadataBuilder
 from vllm_ascend.attention.attention_mask import AttentionMaskBuilder
 from vllm_ascend.core.kv_cache_interface import AscendSFAIndexerCacheSpec
 from vllm_ascend.models.minimax_m3.ops.msa_m3_npu import (
@@ -164,7 +165,9 @@ class AscendMiniMaxM3IndexerBackend(AttentionBackend):
         return AscendMiniMaxM3IndexerImpl
 
     @staticmethod
-    def get_builder_cls() -> type[AscendMiniMaxM3IndexerMetadataBuilder]:
+    def get_builder_cls() -> type[AscendMiniMaxM3IndexerMetadataBuilder | M3EagerMetadataBuilder]:
+        if get_ascend_device_type() == AscendDeviceType._310P:
+            return M3EagerMetadataBuilder
         return AscendMiniMaxM3IndexerMetadataBuilder
 
     @classmethod
@@ -750,7 +753,9 @@ class AscendMiniMaxM3SparseBackend(AttentionBackend):
         return AscendMiniMaxM3SparseImpl
 
     @staticmethod
-    def get_builder_cls() -> type[AscendMiniMaxM3SparseMetadataBuilder]:
+    def get_builder_cls() -> type[AscendMiniMaxM3SparseMetadataBuilder | M3EagerMetadataBuilder]:
+        if get_ascend_device_type() == AscendDeviceType._310P:
+            return M3EagerMetadataBuilder
         return AscendMiniMaxM3SparseMetadataBuilder
 
     @classmethod

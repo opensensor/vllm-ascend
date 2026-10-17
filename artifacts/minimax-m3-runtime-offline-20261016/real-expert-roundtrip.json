@@ -1,0 +1,126 @@
+{
+  "scope": "One real expert; CPU export/load/MLP only. Random inputs, not activation calibration or model accuracy.",
+  "source": "/run/media/matteius/20TB-drive/models/MiniMax-M3",
+  "output": "/run/media/matteius/20TB-drive/models/MiniMax-M3-W4-offline-probe",
+  "elapsed_seconds": 10.6734279960001,
+  "loaded_buffers": 6,
+  "output_shape": [
+    2,
+    6144
+  ],
+  "output_finite": true,
+  "output_l2": 2251.01904296875,
+  "source_mlp_output_cosine": 0.9858523011207581,
+  "source_mlp_output_nrmse": 0.16877414286136627,
+  "projection_contract": "FP16 input and dequantized weights, FP32 accumulation oracle, FP16 projection output",
+  "weights": {
+    "language_model.model.layers.3.block_sparse_moe.experts.0.w1.weight": {
+      "file": "w1.safetensors",
+      "sha256": "f4e0ee5161c8024dc74ecba0dfdbda46711fbc3918a6a98d0051638fcc732037",
+      "source_sha256": "28d321e5bd519d68677e19e83edaf5b56ae33f386f6ee78e2235f561f774e513",
+      "source_shape": [
+        3072,
+        6144
+      ],
+      "source_dtype": "BF16",
+      "tensors": {
+        "codes": {
+          "dtype": "U8",
+          "shape": [
+            3072,
+            3072
+          ],
+          "data_offsets": [
+            0,
+            9437184
+          ]
+        },
+        "scales": {
+          "dtype": "F16",
+          "shape": [
+            96,
+            192
+          ],
+          "data_offsets": [
+            9437184,
+            9474048
+          ]
+        }
+      },
+      "expert": true,
+      "name": "language_model.model.layers.3.block_sparse_moe.experts.0.w1.weight"
+    },
+    "language_model.model.layers.3.block_sparse_moe.experts.0.w2.weight": {
+      "file": "w2.safetensors",
+      "sha256": "bcca82df96f1dc474b9195afc7ef3c458f4aeb9eec96c5adddbf0c2e6362ab8b",
+      "source_sha256": "5736d599f7a26327ef70241ba3522180e89472646e6df8fba403a6ad427d4c49",
+      "source_shape": [
+        6144,
+        3072
+      ],
+      "source_dtype": "BF16",
+      "tensors": {
+        "codes": {
+          "dtype": "U8",
+          "shape": [
+            6144,
+            1536
+          ],
+          "data_offsets": [
+            0,
+            9437184
+          ]
+        },
+        "scales": {
+          "dtype": "F16",
+          "shape": [
+            192,
+            96
+          ],
+          "data_offsets": [
+            9437184,
+            9474048
+          ]
+        }
+      },
+      "expert": true,
+      "name": "language_model.model.layers.3.block_sparse_moe.experts.0.w2.weight"
+    },
+    "language_model.model.layers.3.block_sparse_moe.experts.0.w3.weight": {
+      "file": "w3.safetensors",
+      "sha256": "18aa90ba3d2d2a8425170749b2d601ad68d3eb2a0e0dc2dadf86949e0cc9790a",
+      "source_sha256": "e861a799baa63f53eb33153e9a6063a745a3f4795208f972b3c06bbd643a87ed",
+      "source_shape": [
+        3072,
+        6144
+      ],
+      "source_dtype": "BF16",
+      "tensors": {
+        "codes": {
+          "dtype": "U8",
+          "shape": [
+            3072,
+            3072
+          ],
+          "data_offsets": [
+            0,
+            9437184
+          ]
+        },
+        "scales": {
+          "dtype": "F16",
+          "shape": [
+            96,
+            192
+          ],
+          "data_offsets": [
+            9437184,
+            9474048
+          ]
+        }
+      },
+      "expert": true,
+      "name": "language_model.model.layers.3.block_sparse_moe.experts.0.w3.weight"
+    }
+  }
+}

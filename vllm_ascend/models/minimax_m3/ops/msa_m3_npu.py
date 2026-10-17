@@ -10,7 +10,7 @@ from typing import Any
 import torch
 
 from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_hardware_profile
-from vllm_ascend.utils import enable_custom_op
+from vllm_ascend.utils import AscendDeviceType, enable_custom_op, get_ascend_device_type
 
 # Existing mode for legacy prefill, decode, and A5 FP8 prefill.
 _SPARSE_ATTN_INNER_PRECISE = 4
@@ -29,7 +29,9 @@ if get_current_hardware_profile().supports(HardwareCapability.FP8_ATTENTION):
     from vllm_ascend.models.minimax_m3.ops.msa_m3_triton_a5 import (
         minimax_m3_index_topk as _minimax_m3_index_prefill_topk,
     )
-elif get_current_hardware_profile().supports(HardwareCapability.RUNTIME_CUSTOM_OPS):
+elif get_ascend_device_type() != AscendDeviceType._310P and get_current_hardware_profile().supports(
+    HardwareCapability.RUNTIME_CUSTOM_OPS
+):
     from vllm_ascend.models.minimax_m3.ops.msa_m3_triton import (
         minimax_m3_index_topk as _minimax_m3_index_prefill_topk,
     )

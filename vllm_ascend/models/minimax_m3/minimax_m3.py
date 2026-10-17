@@ -43,6 +43,7 @@ from vllm.distributed import (
     get_ep_group,
     get_pp_group,
     get_tensor_model_parallel_world_size,
+    tensor_model_parallel_all_reduce,
 )
 from vllm.forward_context import get_forward_context
 from vllm.logger import logger
@@ -95,6 +96,7 @@ from vllm.v1.kv_cache_interface import (
     get_kv_quant_mode,
 )
 
+from vllm_ascend._310p.ops.minimax_m3 import PackedM3Experts, clipped_swiglu, paged_sparse_attention, validate_runtime
 from vllm_ascend.device.device_op import DeviceOperator
 from vllm_ascend.models.minimax_m3.msa_m3 import (
     AscendMiniMaxM3Indexer,
@@ -369,8 +371,6 @@ class MiniMaxM3SparseAttention(nn.Module, AttentionLayerBase):
         assert isinstance(main_meta, AscendMiniMaxM3SparseMetadata)
         assert isinstance(index_meta, AscendMiniMaxM3IndexerMetadata)
 
-        from vllm_ascend.device.device_op import DeviceOperator
-
         key_cache, value_cache = self.kv_cache
         num_tokens = main_meta.num_actual_tokens
         k_insert = key[:num_tokens].view(-1, self.num_kv_heads, self.head_dim)
@@ -466,6 +466,36 @@ class MiniMaxM3SparseAttention(nn.Module, AttentionLayerBase):
         attn_output: torch.Tensor,
     ) -> None:
         """Insert KV, build sparse top-k indices, then run sparse attention."""
+        if get_ascend_device_type() == AscendDeviceType._310P:
+            metadata = get_forward_context().attn_metadata
+            main = metadata[self.layer_name]
+            index = metadata[self.indexer.index_cache.prefix]
+            index_cache = self.indexer.index_cache.kv_cache
+            if isinstance(index_cache, (tuple, list)):
+                index_cache = index_cache[0]
+            result = paged_sparse_attention(
+                query.view(-1, self.num_heads, self.head_dim),
+                key.view(-1, self.num_kv_heads, self.head_dim),
+                value.view(-1, self.num_kv_heads, self.head_dim),
+                index_query.view(-1, self.num_idx_heads, self.idx_head_dim),
+                index_key.view(-1, self.idx_head_dim),
+                self.kv_cache[0],
+                self.kv_cache[1],
+                index_cache,
+                query_starts=main.query_starts,
+                seq_lens=main.seq_lens,
+                block_table=main.block_table,
+                index_block_table=index.block_table,
+                slot_mapping=main.slot_mapping,
+                index_slot_mapping=index.slot_mapping,
+                max_seq_len=main.max_seq_len,
+                topk_blocks=self.topk_blocks,
+                scale=self.scaling,
+                init_blocks=self.indexer.impl.init_blocks,
+                local_blocks=self.indexer.impl.local_blocks,
+            )
+            attn_output.copy_(result.view_as(attn_output))
+            return
         self._insert_kv(key, value, index_key)
         topk_idx = self.indexer(index_query)
         self.impl.forward(self, query, self.kv_cache, topk_idx, attn_output)
@@ -565,6 +595,9 @@ class MiniMaxM3SwiGLUOAI(nn.Module):
         self.use_mx_quant = use_mx_quant
 
     def forward(self, x: torch.Tensor) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        if get_ascend_device_type() == AscendDeviceType._310P:
+            gate, up = x.chunk(2, dim=-1)
+            return clipped_swiglu(gate, up, self.alpha, self.beta, self.limit).to(x.dtype)
         if self.use_mx_quant or get_ascend_device_type() == AscendDeviceType.A5:
             d = x.shape[-1] // 2
             gate = torch.clamp(x[..., :d], max=self.limit)
@@ -704,6 +737,24 @@ class MiniMaxM3MoE(nn.Module):
             prefix=f"{prefix}.gate",
         )
 
+        if get_ascend_device_type() == AscendDeviceType._310P:
+            if self.ep_size != self.tp_size:
+                raise ValueError("M3 W4 EP group must equal the stage-local TP group")
+            self.experts = PackedM3Experts(
+                config.hidden_size,
+                config.intermediate_size,
+                config.num_local_experts,
+                self.ep_size,
+                self.ep_rank,
+                config.num_experts_per_tok,
+                prefix=f"{prefix}.experts",
+                alpha=config.swiglu_alpha,
+                beta=getattr(config, "swiglu_beta", 1.0),
+                limit=config.swiglu_limit,
+                routed_scale=self.routed_scaling_factor,
+            )
+            return
+
         self.experts = FusedMoEFactory(
             shared_experts=self.shared_experts,
             num_experts=config.num_local_experts,
@@ -740,6 +791,15 @@ class MiniMaxM3MoE(nn.Module):
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         num_tokens, hidden_dim = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_dim)
+
+        if isinstance(self.experts, PackedM3Experts):
+            router_logits, _ = self.gate(hidden_states)
+            result = self.experts(hidden_states, router_logits, self.e_score_correction_bias)
+            if self.shared_experts is not None:
+                result = result + self.shared_experts(hidden_states).float()
+            if self.tp_size > 1:
+                result = tensor_model_parallel_all_reduce(result)
+            return result.to(hidden_states.dtype).view(num_tokens, hidden_dim)
 
         if self.experts.is_internal_router:
             final_hidden_states = self.experts(
@@ -977,6 +1037,8 @@ class MiniMaxM3Model(nn.Module, EagleModelMixin):
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
+        if get_ascend_device_type() == AscendDeviceType._310P:
+            validate_runtime(vllm_config)
 
         # config = vllm_config.model_config.hf_config
         config = _get_text_config(vllm_config)

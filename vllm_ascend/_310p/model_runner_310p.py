@@ -1553,6 +1553,24 @@ class NPUModelRunner310(NPUModelRunner):
                 elif isinstance(cache_spec, AttentionSpec) and layer_name not in kv_cache:
                     kv_cache_spec = cache_spec
                     attn_backend = layer_attention_backends[layer_name]
+                    if attn_backend.get_name() in ("ASCEND_MINIMAX_M3_SPARSE", "ASCEND_MINIMAX_M3_SPARSE_INDEXER"):
+                        # M3's eager gather/scatter path needs ordinary ND pages.
+                        # The indexer owns one cache, not a K/V pair. Allocate
+                        # each layer separately even when a descriptor is shared.
+                        shape = attn_backend.get_kv_cache_shape(
+                            kv_cache_config.num_blocks,
+                            cache_spec.block_size,
+                            cache_spec.num_kv_heads,
+                            cache_spec.head_size,
+                        )
+                        tensor = torch.empty(shape, dtype=cache_spec.dtype, device=self.device)
+                        if (
+                            tensor.numel() * tensor.element_size()
+                            > kv_cache_config.num_blocks * cache_spec.page_size_bytes
+                        ):
+                            raise ValueError("M3 cache allocation exceeds its declared page budget")
+                        kv_cache[layer_name] = (tensor,) if len(shape) == 3 else (tensor[0], tensor[1])
+                        continue
                     assert kv_cache_tensor.size % kv_cache_spec.page_size_bytes == 0
                     num_blocks = kv_cache_tensor.size // kv_cache_spec.page_size_bytes
                     # vLLM #51718 packs all group layers into one tensor;
