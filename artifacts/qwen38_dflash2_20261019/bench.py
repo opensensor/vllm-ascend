@@ -31,6 +31,7 @@ def complete(url: str, prompt: str, max_tokens: int) -> dict:
         "seed": 42,
         "cache_prompt": False,
         "ignore_eos": True,
+        "return_tokens": True,
     }
     request = Request(
         f"{url.rstrip('/')}/completion",
@@ -43,6 +44,8 @@ def complete(url: str, prompt: str, max_tokens: int) -> dict:
     elapsed = time.perf_counter() - start
     if result.get("tokens_predicted") != max_tokens:
         raise RuntimeError(f"expected {max_tokens} tokens: {result!r}")
+    if len(result.get("tokens", [])) != max_tokens:
+        raise RuntimeError("Server did not return every generated token ID; parity cannot be checked")
     return {
         "elapsed_s": elapsed,
         "content": result["content"],

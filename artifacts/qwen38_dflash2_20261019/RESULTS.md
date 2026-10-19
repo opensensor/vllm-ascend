@@ -11,7 +11,7 @@
 
 ## Method
 
-Run the fixed prompts in [bench.py](bench.py) against `/completion`. For each of three prompts, make one warmup request and three measured requests. Use greedy decoding, seed 42, disable prompt caching, ignore EOS, and generate exactly 128 tokens. Compare both token IDs and text. The reported rate is `tokens_predicted / predicted_ms` from the server's decode timings, aggregated over the nine measured requests. The warmups are excluded.
+Run the fixed prompts in [bench.py](bench.py) against `/completion`. For each of three prompts, make one warmup request and three measured requests. Use greedy decoding, seed 42, disable prompt caching, ignore EOS, and generate exactly 128 tokens. The reported rate is `tokens_predicted / predicted_ms` from the server's decode timings, aggregated over the nine measured requests. The warmups are excluded. The original run compared text. The harness now requests raw token IDs for future runs; the original saved responses did not contain them.
 
 ## Results
 
@@ -22,7 +22,7 @@ Run the fixed prompts in [bench.py](bench.py) against `/completion`. For each of
 | Analysis | 46.83 | 126.35 | 2.70× | 41.8% | 3.85 |
 | All 1,152 output tokens | 47.18 | 133.68 | 2.83× | — | — |
 
-All nine paired completions had **identical token IDs and text**. The measured decode times were 24.420 s plain and 8.618 s with DFlash2. GPU memory use after loading was about 29.3 GiB plain and 33.2 GiB with the draft.
+All nine paired completions had **identical text**. The original requests omitted `return_tokens`, so the saved `tokens` arrays are empty and cannot establish token-ID equality. The measured decode times were 24.420 s plain and 8.618 s with DFlash2. GPU memory use after loading was about 29.3 GiB plain and 33.2 GiB with the draft. A larger follow-up found token-level divergence on seven of ten prompts; see [that report](../qwen38_dflash_energy_20261019/RESULTS.md).
 
 ## Reproduction
 
