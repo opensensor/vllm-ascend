@@ -41,6 +41,8 @@ With raw token IDs requested, only three K7 completions and two K3 completions m
 
 The follow-up [same-prefix logit trace](LOGIT_TRACE.md) captured one of these divergences directly. At output token three of the systems prompt, plain decoding ranked `9150` first by 0.0140 raw logit, while an eight-output verifier batch ranked `22903` first by 0.0035. A shorter verifier batch retained the plain ranking. This establishes the target ranking flip in this runtime; batch-dependent numerics are plausible, but the trace does not independently rule out verifier position or state bookkeeping. Do **not** claim bit-identical or distribution-identical output for this local quantized-target runtime on the basis of these measurements. The first three-prompt experiment established identical text on its nine cases; it did not request token IDs, and its report has been corrected.
 
+A [manual review of the saved text](QUALITATIVE_REVIEW.md) found that most divergent passages remain readable and often carry similar ideas, but the forced 256-token cap makes many answers incomplete. The K7 SQL answer introduces an unsupported SQL Server `RANGE` claim, and its math derivation contains malformed notation. The saved outputs do not establish semantic equivalence.
+
 ## Next engineering gate
 
 1. Run a fixed-prefix target-only `llama_decode` probe in one-token and eight-token batch shapes. This will separate batch-dependent kernel numerics from speculative state or position bookkeeping.
