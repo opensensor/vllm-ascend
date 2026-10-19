@@ -104,6 +104,24 @@ def test_discard_retires_prepared_revision_without_unloading_owners():
     assert session.pending is None and len(session.owners) == 2
 
 
+def test_failed_worker_receipt_remains_inspectable_without_allowing_retry():
+    owner, session = engine(), EngineControlSession()
+    source = SOURCE.replace(
+        "return dict(passed=True)",
+        "return dict(passed=False, workers=[dict(rank=0, passed=False, error='missing PLE worker hook')])",
+    )
+    request = prepare(source)
+    assert session.request(owner, request)["passed"]
+    result = session.request(owner, apply(request))
+    assert not result["passed"] and result["failed"]
+    assert result["failure_receipt"]["workers"][0]["error"] == "missing PLE worker hook"
+    status = session.request(owner, {"operation": "status"})
+    assert status["failure_receipt"] == result["failure_receipt"]
+    assert not session.request(owner, prepare(revision="retry"))["passed"]
+    assert not session.request(owner, apply(request))["passed"]
+    assert len(session.owners) == 2
+
+
 @pytest.mark.parametrize("forked", [False, True])
 def test_entrypoint_installs_control_under_spawn_and_fork(monkeypatch, forked):
     calls = []

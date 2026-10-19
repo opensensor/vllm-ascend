@@ -187,3 +187,43 @@ def test_unrelated_live_globals_remain_visible():
     gate = setup_runner()
     gate.original.__globals__["ModelRunnerOutput"] = lambda **kwargs: {"live_factory": True, **kwargs}
     assert gate.patched(gate.runner, None)["live_factory"]
+
+
+def test_mtp3_requires_explicit_admission():
+    gate = setup_runner()
+    gate.runner.num_spec_tokens = gate.scheduler.num_spec_tokens_to_schedule = 3
+    gate.patched(gate.runner, None)
+    assert gate.events == ["bookkeeping", "propose", "copy_draft", "finalize"]
+
+
+@pytest.mark.parametrize("prompt_logprobs", [False, True])
+def test_mtp3_ordering_preserves_hidden_state_consumers(prompt_logprobs):
+    gate = setup_runner()
+    gate.runner.num_spec_tokens = gate.scheduler.num_spec_tokens_to_schedule = 3
+    if prompt_logprobs:
+        gate.runner.num_prompt_logprobs = {"request": 2}
+    patched = candidate.build_forward(gate.original, source=SOURCE, draft_length=3)
+    result = patched(gate.runner, None)
+    expected = (
+        ["bookkeeping", "propose", "copy_draft", "finalize"]
+        if prompt_logprobs
+        else ["propose", "copy_draft", "bookkeeping", "finalize"]
+    )
+    assert gate.events == expected
+    assert result.sampled_token_ids == [[6]]
+    assert patched._qfn_early_tp_draft_length == 3
+
+
+def test_mtp3_rejects_a_shortened_scheduled_draft():
+    gate = setup_runner()
+    gate.runner.num_spec_tokens = 3
+    patched = candidate.build_forward(gate.original, source=SOURCE, draft_length=3)
+    patched(gate.runner, None)
+    assert gate.events == ["bookkeeping", "propose", "copy_draft", "finalize"]
+
+
+@pytest.mark.parametrize("length", [True, 1, 4, 3.0, "3"])
+def test_unsupported_draft_admission_fails_before_installation(length):
+    gate = setup_runner()
+    with pytest.raises(ValueError, match="MTP2 or MTP3"):
+        candidate.build_forward(gate.original, source=SOURCE, draft_length=length)

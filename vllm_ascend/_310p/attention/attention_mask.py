@@ -18,6 +18,7 @@
 import torch
 import torch_npu
 
+from vllm_ascend._310p.attention.noncausal_mask import noncausal_draft_mask
 from vllm_ascend.attention.attention_v1 import AscendMetadata
 from vllm_ascend.utils import ACL_FORMAT_FRACTAL_NZ, nd_to_nz_2d, nd_to_nz_spec
 
@@ -119,7 +120,18 @@ class AttentionMaskBuilder310:
             cls.compressed_chunked_prefill_attn_mask = mask.mul_(PAGED_ATTENTION_COMPRESSED_MASK_VALUE)
         return cls.compressed_chunked_prefill_attn_mask
 
-    def get_attention_mask(self, causal: bool, model_config) -> torch.Tensor:
+    @classmethod
+    def get_noncausal_splitfuse_mask(cls, query_lengths, kv_lengths, device, sliding_window):
+        mask = noncausal_draft_mask(
+            query_lengths,
+            kv_lengths,
+            device=device,
+            sliding_window=sliding_window,
+            max_key_length=cls.max_seqlen,
+        )
+        return torch_npu.npu_format_cast(nd_to_nz_spec(mask).contiguous(), ACL_FORMAT_FRACTAL_NZ)
+
+    def get_attention_mask(self, causal: bool, model_config) -> torch.Tensor | None:
         """
         Retrieves the appropriate attention mask based on the model configuration.
 
@@ -143,6 +155,10 @@ class AttentionMaskBuilder310:
             else:
                 return self._get_non_causal_mask(max_seq_len, model_config.dtype)
 
+        # Noncausal decoder masks depend on each request's prefix and window.
+        # The eager splitfuse route builds them once those lengths are known.
+        if not causal:
+            return None
         return self._get_causal_mask(max_seq_len)
 
     def _get_causal_mask(self, max_seq_len: int) -> torch.Tensor:

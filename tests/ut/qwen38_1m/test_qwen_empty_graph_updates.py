@@ -29,6 +29,18 @@ def registry():
     return SimpleNamespace(handles={3: [], 18: []}, attn_params={3: [], 18: []})
 
 
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("mutable", [False, True])
+def test_dspark_target_skip_requires_explicit_graph_probe_and_empty_registry(enabled, mutable):
+    cfg, params = config(), registry()
+    cfg.speculative_config.method = "dspark"
+    cfg.additional_config["qfn_dspark_graph_probe"] = enabled
+    if mutable:
+        params.attn_params[3].append(object())
+    assert helpers.qwen4exp_target_has_no_task_updates(cfg, False, params) == (enabled and not mutable)
+    assert not helpers.qwen4exp_target_has_no_task_updates(cfg, True, params)
+
+
 @pytest.mark.parametrize(
     "reason", ["eligible", "draft", "model", "async", "dcp", "method", "handles", "params", "keys", "empty", "missing"]
 )
@@ -76,9 +88,12 @@ def load_method(path, cls, name, namespace):
         ("full", False, True, False),
     ],
 )
-def test_runner_skips_only_empty_update_stream_round_trip(mode, capturing, enpu, mutable):
+@pytest.mark.parametrize("method_name", ["mtp", "dspark"])
+def test_runner_skips_only_empty_update_stream_round_trip(mode, capturing, enpu, mutable, method_name):
     calls = []
     cfg, params = config(), registry()
+    cfg.speculative_config.method = method_name
+    cfg.additional_config["qfn_dspark_graph_probe"] = method_name == "dspark"
     if mutable:
         params.handles[3].append(object())
     context = SimpleNamespace(cudagraph_runtime_mode=mode, capturing=capturing)
@@ -93,7 +108,7 @@ def test_runner_skips_only_empty_update_stream_round_trip(mode, capturing, enpu,
         "qwen4exp_target_has_no_task_updates": helpers.qwen4exp_target_has_no_task_updates,
     }
     method = load_method("vllm_ascend/_310p/model_runner_310p.py", "NPUModelRunner310", "_model_forward", namespace)
-    output = object()
+    output = (object(), [object() for _ in range(5)]) if method_name == "dspark" else object()
 
     def model(**kwargs):
         calls.append("model")
@@ -102,7 +117,8 @@ def test_runner_skips_only_empty_update_stream_round_trip(mode, capturing, enpu,
 
     runner = SimpleNamespace(
         uses_mrope=False,
-        _qwen4exp_mtp_ple=True,
+        _qwen4exp_mtp_ple=method_name == "mtp",
+        _qwen4exp_speculative_state=True,
         model=model,
         input_ids=SimpleNamespace(cpu=list(range(8))),
         _ple_query_start_loc_cpu=None,

@@ -1,0 +1,226 @@
+{
+  "objective": "Evaluate learned DSpark drafting on the retained QFN Ascend 310P target against native MTP2, then optimize only measured bottlenecks.",
+  "status": "optimized_k2_k7_trials_complete_native_mtp_serving",
+  "created": "2026-10-19",
+  "execution_policy": {
+    "muse": "User authorized stopping Muse and taking over all six NPUs on 2026-10-19; restart launcher preserved.",
+    "hardware": "Exclusive hardware window authorized; Muse stopped before tests.",
+    "deployment": "Use a separate frozen runtime and port for experiments; never edit the installed plugin in place.",
+    "automation": "This file records the work queue; it does not schedule or start hardware jobs."
+  },
+  "target": {
+    "model": "/srv/ai/models/Qwen3.8-Flash-Next-W4A16-G128-TP6-MTP-20261010",
+    "baseline": "Native MTP2 with retained QFN optimizations",
+    "plugin": "/srv/ai/storage/artifacts/qfn-tp6-scaleout-20261016/runtime",
+    "vllm_revision": "3ab5dda29acabea01f6a63d0806bdbbb4a27bde5",
+    "candidate_runtime": "/srv/ai/storage/experiments/qfn-dspark-20261019/qfn-runtime-v6",
+    "python": "/srv/ai/venvs/qwen38-w4-test-ce1862/bin/python",
+    "runtime_base_correction": "The editable package default was an older Qwen27B investigation tree. Retained QFN runtime matches the local model source and is the base of the candidate."
+  },
+  "draft": {
+    "repository": "shadowpa0327/Qwen3.8-Flash-Next-DSpark",
+    "revision": "f653cfbdfa12ca30ed74c1736b62e6664dfc6e94",
+    "metadata_staged": "/run/media/matteius/20TB-drive/muse-spark-reap-eval/runs/qfn-dspark-prep/checkpoint-meta",
+    "weights_downloaded_by_this_preparation": true,
+    "hidden_size": 2560,
+    "query_heads": 32,
+    "kv_heads": 8,
+    "vocabulary_size": 248320,
+    "capture": {
+      "pre_layer_inputs": [
+        1,
+        12,
+        23,
+        34,
+        45
+      ],
+      "hc_streams": 4,
+      "operation": "Reshape widened input to [tokens, 4, 2560], FP32 mean across streams, cast back to target dtype, concatenate taps in checkpoint order.",
+      "reference": "qwen38_dspark_sglang/qwen4_exp_aux_capture.py in the pinned checkpoint; do not install its SGLang monkey patch in vLLM."
+    },
+    "trained_block_size": 7,
+    "first_trial_k": 3,
+    "markov_rank": 256,
+    "dtype_plan": "Explicit FP16 loading on 310P, with finite-value and logits checks after BF16 conversion.",
+    "shared_weights": "Checkpoint omits target embedding and LM head. Both must be correctly populated; random allocation-time contents are unacceptable.",
+    "local_weights": "/run/media/matteius/20TB-drive/models/qfn-dspark-f653cfb"
+  },
+  "tasks": [
+    {
+      "id": "Q01",
+      "title": "Triton-free DSpark anchor-sampling expansion",
+      "status": "device_validated",
+      "depends_on": [],
+      "files": [
+        "vllm_ascend/_310p/dflash_ops.py",
+        "vllm_ascend/spec_decode/dspark_proposer.py",
+        "tests/ut/spec_decode/test_dflash_310p_ops.py",
+        "tests/ut/spec_decode/test_dspark_310p_dispatch.py"
+      ],
+      "changes": "Support SAMPLE_FROM_ANCHOR with K queries and K sampled rows; retain DFlash K+1 queries; select fallback per device; reject unsupported DCP metadata before helper buffer access.",
+      "validation": "72 primitive cases passed per NPU on all six chips (432 total), including both anchor layouts; immutable tails and exact integer outputs."
+    },
+    {
+      "id": "Q02",
+      "title": "Add exact QFN auxiliary feature capture",
+      "status": "implemented_cpu_and_synthetic_device_validated",
+      "depends_on": [],
+      "files": [
+        "vllm_ascend/models/qwen4_exp/model.py",
+        "vllm_ascend/spec_decode/llm_base_proposer.py"
+      ],
+      "changes": "Provide the target auxiliary-capture interface expected by the installed drafter/runner, including text and multimodal wrapper plumbing. Capture before the specified layers and materialize owned outputs so later in-place operations cannot overwrite taps. Preserve the existing MTP HC buffer and ordinary forward return contract when capture is disabled.",
+      "validation": "18 CPU tests; real QFN capture/forward methods on NPU with synthetic 48-layer stacks, H2560/4HC, token counts1/3/7: captures and ordinary output exact against CPU. Actual target-weight feature comparison remains pending."
+    },
+    {
+      "id": "Q03",
+      "title": "Resolve draft TP and shared vocabulary weights",
+      "status": "tp1_vocab_implemented_and_component_device_validated",
+      "depends_on": [],
+      "files": [
+        "vllm_ascend/spec_decode/llm_base_proposer.py",
+        "vllm_ascend/models/qwen3_dspark.py",
+        "vllm_ascend/models/qwen4_exp/model.py"
+      ],
+      "changes": "Default draft TP6 is incompatible with 32 query/8 KV heads. Audit draft TP1 alongside target TP6, including the per-rank TP1 implementation's replication cost. Shared TP6 vocabulary modules cannot simply become TP1 modules. Resolve complete embedding/LM-head ownership, vocabulary padding, quantized W8 head behavior and Markov-head vocabulary mapping. Consider the retained TP4 target profile with draft TP4 as the simpler initial alternative if memory permits.",
+      "validation": "Complete real embedding and LM head loaded independently for TP1 from full target float shards: 248320 rows each exact. Full logits finite, max error0.000963211 vs FP32 CPU; same argmax3/3. Full target and draft loaded on all six workers; approximately18GiB per chip before runtime caches."
+    },
+    {
+      "id": "Q04",
+      "title": "Extend QFN recurrent-state bookkeeping beyond the MTP-only predicate",
+      "status": "state_wiring_implemented_native_kernels_validated_whole_model_pending",
+      "depends_on": [],
+      "files": [
+        "vllm_ascend/_310p/model_runner_310p.py",
+        "vllm_ascend/_310p/qwen4exp_mtp.py",
+        "vllm_ascend/models/qwen4_exp/model.py"
+      ],
+      "changes": "Audit _qwen4exp_mtp_ple guards for speculative state stride, accepted-token counts, query lengths and PLE commit. Separate generic target verification bookkeeping from MTP-specific hidden-state and drafter logic. Do not merely rename the MTP predicate to accept DSpark.",
+      "validation": "72 native paired cases /144 request checks across six chips: K1/K3 every accepted prefix and changed acceptance, convolution and GDN outputs/states exact vs sequential native steps. PLE host history tests pass; whole-model QSA/PLE rollback pending. MTP-only graph/prefix optimizations remain MTP-only."
+    },
+    {
+      "id": "Q10",
+      "title": "Add bounded QFN DSpark configuration admission after state support",
+      "status": "bounded_opt_in_admission_implemented_full_startup_testing",
+      "depends_on": [
+        "Q02",
+        "Q04",
+        "Q06"
+      ],
+      "files": [
+        "vllm/model_executor/models/config.py:Qwen4ExpForConditionalGenerationConfig",
+        "vllm_ascend/patch/platform/patch_use_v2_model_runner.py"
+      ],
+      "changes": "The upstream QFN verifier explicitly allows only MTP/ngram/ngram_gpu. Add a narrowly scoped plugin integration that retains HC, RoPE, PP, PLE, DBO and microbatch validation while admitting the qualified DSpark configuration. Select MRv1 explicitly. Initially require eager, synchronous, PP1, no prefix cache/context parallelism, K<=3, correct feature capture and qualified draft TP/head sharing.",
+      "validation": "29 bounded admission/runner tests passed; actual full configuration loads target and draft with MRv1. Eager synchronous TP6/draftTP1 batch1, no prefix/CP, K1..3 guard remains."
+    },
+    {
+      "id": "Q05",
+      "title": "Build a pinned isolated DSpark runtime and load audit",
+      "status": "full_pair_short_generation_validated",
+      "depends_on": [
+        "Q01",
+        "Q02",
+        "Q03",
+        "Q04",
+        "Q10"
+      ],
+      "changes": "Rebase the scoped changes onto the exact remote plugin snapshot, not the much newer full local working tree. Reuse the existing noncausal attention overlay after checking hashes. Pin draft weights, validate config normalization/parameter coverage and FP16 conversion. Audit remaining Triton operations through model load, Markov bias, sampling, input preparation and verifier paths. Use MRv1 eager, PP1, no context parallelism, batch1, short text context and prefix cache disabled initially.",
+      "validation": "v6 loaded target and draft across all6chips and generated Hello! plus correct add(a,b). Registered310P context probe passes with real draft weights and module-owned RoPE. Longer state/quality/performance checks remain."
+    },
+    {
+      "id": "Q06",
+      "title": "Qualify draft primitives and bidirectional attention on 310P",
+      "status": "device_validated",
+      "depends_on": [
+        "Q01"
+      ],
+      "artifacts": [
+        "/run/media/matteius/20TB-drive/muse-spark-reap-eval/results/qfn-dspark-20261019"
+      ],
+      "changes": "Extend the device expansion qualifier to anchor sampling and run on all six chips. Exercise the staged noncausal splitfuse probe with paged prefixes and multiple requests.",
+      "validation": "432 primitive cases and 280 attention combinations passed. QFN TP4 draft geometry 8Q/2KV/D128 tested on all six chips; TP1 32Q/8KV/D128 tested on chip0. K3/K7, page-crossing, multiple requests and symmetric windows tested. Max attention error 0.0024316311 against FP32 reference. No model-level state rollback or full generation claim."
+    },
+    {
+      "id": "Q07",
+      "title": "Measure target-only verification ceiling and rollback correctness",
+      "status": "pending",
+      "depends_on": [
+        "Q04",
+        "Q05",
+        "Q06"
+      ],
+      "changes": "Use known next tokens to time QFN block verification at K1/K3, then K7 only after longer QSA verification is proven. Measure auxiliary capture overhead separately. Force all rejection positions and qualify target state commit before adding learned proposals.",
+      "validation": "Nonempty output token IDs, state parity, finite logits and shape-dependent greedy differences reported. Record verifier, state commit, PLE and communication costs. Label oracle throughput as a ceiling excluding drafting and acceptance."
+    },
+    {
+      "id": "Q08",
+      "title": "Run real DSpark K3 against native MTP2",
+      "status": "optimized_k2_k7_measured_quality_work_remains",
+      "depends_on": [
+        "Q02",
+        "Q03",
+        "Q05",
+        "Q06",
+        "Q07"
+      ],
+      "changes": "Run bracketed repeated MTP2/DSpark/MTP2 trials with identical target bytes, prompts, sampling, context and prefix-cache policy. Start with greedy code/edit/tool tasks, then enable K7 only if its verification and memory checks pass.",
+      "validation": "Matched C1/C4 workload: best DSpark K2 22.03/53.94 tok/s; K7 unsharded 18.19/41.92; K7 sharded 18.83/38.49; closing native MTP 32.30/74.70. Full Kilo workflow and universal answer equivalence remain unclaimed."
+    },
+    {
+      "id": "Q09",
+      "title": "Optimize measured costs and retain only wins",
+      "status": "profiling_and_optimizations_implemented_no_win_over_mtp",
+      "depends_on": [
+        "Q08"
+      ],
+      "changes": "Choose K and confidence gating from measured acceptance. Profile dense draft projections, Markov vocabulary projection, capture/communication and target verification. Reuse qualified QFN INT8 kernels where their shape/dtype contracts match. Add graph support only after eager correctness and immutable-buffer replay tests.",
+      "validation": "Repeated coding and Kilo workloads beat native MTP2 without material quality regressions. Keep a ready rollback to the retained QFN launcher. If DSpark loses, retain MTP2 and use the measurements to decide whether draft adaptation/training is worthwhile."
+    }
+  ],
+  "interpretation": [
+    "K2 and K7 DSpark were tested with the compatible fast QFN stack. Best DSpark K2 measured 22.03 / 53.94 tok/s; closing native MTP measured 32.30 / 74.70. Native MTP is restored on port 8001.",
+    "The draft was trained on an NVFP4 target; acceptance on our W4 QFN target must be measured.",
+    "DFlash2's post-layer taps [5,15,25,35,45] are not interchangeable with this DSpark checkpoint's pre-layer taps.",
+    "DSpark affects decoding. It does not directly eliminate Muse's long cold-prefill latency.",
+    "Publisher measurements on another platform did not establish a universal win over native MTP."
+  ],
+  "results": "/run/media/matteius/20TB-drive/muse-spark-reap-eval/results/qfn-dspark-20261019/summary.json",
+  "optimized_stack_iteration": {
+    "status": "native_mtp_restored_and_streaming_tools_verified",
+    "baseline": "resident-fast-mtp-v1",
+    "candidate": "qfn-runtime-v12",
+    "host_tests_passed": 291,
+    "target": "Beat retained 30+ tok/s C1 and 70+ tok/s C4 with combined optimizations",
+    "candidate_contract": "Experimental K2 graphs [3,6,12] and K7 graphs [8,16,32]; target TP6, eager TP1 draft, C1/C4, 8K text-only. Neither DSpark candidate is active.",
+    "baseline_c1_median_decode_tok_s": 31.593311428822545,
+    "baseline_c4_aggregate_e2e_tok_s": 74.24844328291654,
+    "baseline_qualification": "6 ranks: 196 PLE comparisons and 876 QSA comparisons each; retained HC/custom collective/graphs/early MTP active",
+    "v7_failure": "Target graph capture passed; engine startup rejected paced scheduler without prefix caching. Fixed checkpoint-tier admission and K+1 slot reservation in v8.",
+    "run": "resident-fast-dspark-k7-v2",
+    "dspark_c1_median_decode_tok_s": 22.03092239530955,
+    "dspark_c4_aggregate_e2e_tok_s": 53.93831007694372,
+    "profiling": "Draft inclusive24.02ms; transformer10.31ms; vocabulary6.61ms on rank0 instrumented run. Nested timings cannot be summed.",
+    "metadata": "Target-only CPU lengths:1276 exact checks/rank; QSA624 exact checks/rank. Noncausal draft retains device lengths.",
+    "next": "Profile target verification kernels and improve draft acceptance. Retain native MTP for serving until a matched DSpark trial wins.",
+    "last_measured_run": "resident-fast-dspark-v10 K2 with canonical TP6 vocabulary sharding",
+    "vocab_qualification": "956 exact draft-choice vector comparisons/rank across6ranks; canonical rank0 input broadcasts required",
+    "k7_collective_qualification": "8/16/32rows *2560, FP16/FP32,6NPUs, changed-input graph replay/eager interleaving, ownership retirement all passed; synthetic component gate, not whole-model proof",
+    "k7_ple_qualification": "Native host adapter cap increased18to32, explicit ABI capacity admission;96 exact synthetic producer/DMA/gather cases across6NPUs passed; full-table serving checks pending",
+    "focused_tests_latest": 113,
+    "service_run": "resident-fast-mtp-v2",
+    "service_runtime": "qfn-runtime-v6",
+    "k7_unsharded": {
+      "c1": 18.188823720435998,
+      "c4": 41.91933009594642
+    },
+    "k7_sharded": {
+      "c1": 18.830667311089744,
+      "c4": 38.48608360968561
+    },
+    "native_mtp_early_hook": "Retained in native baseline; excluded from DSpark because its hidden-state/acceptance contracts differ.",
+    "native_closing_c1_median_decode_tok_s": 32.30057244948366,
+    "native_closing_c4_aggregate_e2e_tok_s": 74.70091836563755,
+    "current_service_handoff": "/run/media/matteius/20TB-drive/muse-spark-reap-eval/results/qfn-runtime-handoff.json"
+  }
+}

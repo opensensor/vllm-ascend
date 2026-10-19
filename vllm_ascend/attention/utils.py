@@ -577,10 +577,9 @@ def _select_seq_lens(
     Defaults to the CPU mirror: ``_seq_lens_cpu`` is always available and
     updated during draft iterations, while ``seq_lens_cpu`` is None in async
     spec decode mode. Cross-attention and generic parallel drafting override
-    this with the NPU ``seq_lens``; the one exception is DSpark on the GLM5.2
-    family, whose CPU mirror carries the same post-rejection-sampling lengths
-    across draft iterations, so building from it skips the NPU->CPU sync at
-    ``seq_lens.tolist()`` in the metadata build.
+    this with the NPU ``seq_lens``. DSpark on GLM5.2 and the explicitly admitted
+    synchronous QFN graph probe keep the corrected CPU mirror. This avoids a
+    metadata readback and lets QFN trim QSA pages using host sequence lengths.
     """
     # Prefer _seq_lens_cpu (always available, updated during draft
     # iterations) over seq_lens_cpu (None in async spec decode mode).
@@ -596,8 +595,18 @@ def _select_seq_lens(
     if isinstance(kv_cache_spec, CrossAttentionSpec):
         seq_lens = common_attn_metadata.seq_lens
     if speculative_config is not None and speculative_config.parallel_drafting:
-        # PARD / DFlash (and DSpark on other models) keep the NPU seq_lens;
-        # only DSpark on the GLM5.2 family keeps the CPU mirror above.
-        if not (speculative_config.use_dspark() and _is_glm_model(model_config)):
+        qfn_graph_probe = (
+            (getattr(vllm_config, "additional_config", None) or {}).get("qfn_dspark_graph_probe") is True
+            and getattr(getattr(vllm_config, "scheduler_config", None), "async_scheduling", True) is False
+            and getattr(common_attn_metadata, "causal", False) is True
+            and any(
+                arch in {"Qwen4ExpForCausalLM", "Qwen4ExpForConditionalGeneration"}
+                for arch in (getattr(model_config, "architectures", ()) or ())
+            )
+        )
+        # QFN target metadata is host-authoritative. Its noncausal DSpark
+        # draft still subtracts current rejection counts on-device; the draft
+        # CPU mirror can overestimate lengths, so it retains the device path.
+        if not (speculative_config.use_dspark() and (_is_glm_model(model_config) or qfn_graph_probe)):
             seq_lens = common_attn_metadata.seq_lens
     return seq_lens

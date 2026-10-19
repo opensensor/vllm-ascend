@@ -382,7 +382,87 @@ A few important things to consider when using DFlash2 draft models:
 5. The selector parameters (`selector_top_k`, `selector_rank`, ...) come from
    the draft checkpoint's `dflash_config` and need no user configuration.
 
+### Experimental 310P primitives
+
+The MRv1 DFlash path has PyTorch implementations of input expansion and the
+DFlash2 greedy selector for 310P. Input expansion handles the first row of a
+two-dimensional MRoPE position tensor, partial or complete rejection, and the
+separate position IDs and linear KV addresses. The inherited padded-input
+preparation also uses its PyTorch fallback on 310P, even when Triton is installed.
+
+On one Ascend 310P3 with torch `2.13.0+cpu` and torch_npu `2.13.0.rc1`, an
+isolated eager probe passed **54/54 cases**: 18 expansion cases and 36 selector
+cases. This covers draft lengths 1/3/7, multiple requests, strided MRoPE and
+block-table inputs, rejection, padded tails, selector ties, and FP16/FP32 scores.
+These are primitive checks, not an end-to-end Qwen DFlash2 validation or a
+throughput result. Draft attention, hybrid-state rollback, graph capture, and
+full-model integration still require hardware validation; 310P MRv2 remains
+MTP-only.
+
+The experimental decoder attention route also honors `causal=False` during eager
+chunked prefill and prefix-cache hits. It builds an explicit per-request mask
+covering cached prefix keys and all current draft queries; a sliding window W
+allows W-1 keys on either side, matching the pinned upstream noncausal attention
+convention. It bypasses the compressed causal-mask operator. CPU reference tests
+cover mask visibility, attention outputs, causal/noncausal routing, and native
+input validation. The explicit-mask splitfuse operator still needs device parity
+checks before full-model use. Graph capture, non-FP16 tensors, sinks, ALiBi, and
+other noncausal decoder states fail explicitly. Existing causal target and
+pooling routes are unchanged.
+
+The first probe found correct active outputs but corrupted padded tails after
+`destination[:count].copy_(source)`. Initial device inputs and sentinels were
+verified before the helper ran. A matched sequence with no CPU observations
+between writes reproduced the following results across draft lengths 1/3/7,
+prebuilt and computed sources, and three repetitions, with JIT compilation off:
+
+| Prefix write method | Cases preserving all outputs and tails |
+| --- | ---: |
+| Sliced `copy_` | 0/18 |
+| Sliced `copy_` after source `clone()` | 0/18 |
+| Sliced `copy_` after source `contiguous()` | 0/18 |
+| Full-destination `index_copy_` with explicit prefix indices | 18/18 |
+
+The expansion fallback uses indexed writes for all six output prefixes. This
+avoids the observed path without attributing the underlying fault to a specific
+driver or runtime component. A simpler copy diagnostic with observations between
+operations passed 194/194 cases, so standalone copy success did not establish
+correctness for the queued sequence. CPU regressions check the exact logical
+outputs, dtype conversion, and untouched sentinel tails.
+
+The small reproducer is
+[`tools/dflash_research/ascend_copy_probe.py`](../../../../tools/dflash_research/ascend_copy_probe.py).
+Run it only on an allocated idle device; it does not load a model:
+
+```shell
+python tools/dflash_research/ascend_copy_probe.py --device npu:0 --output copy-results.json
+```
+
+`--device cpu` checks the harness without an accelerator. The optional
+`--sync-between-writes` flag creates a separate synchronization-control run;
+the results above use the default queued sequence. JSON preserves expected and
+actual buffers, source mode, dtype/runtime information, and the script hash.
+
 ## Speculating using DSpark
+
+The bounded QFN 310P experiment retains native MTP3 as its faster serving
+configuration. Its qualified wider routing stack measured 32.85 decode tok/s
+at one request and 74.94 aggregate end-to-end tok/s at four requests, versus
+31.65 and 67.85 for the matched MTP3 controls. These are short, fixed-token
+workloads; they do not establish general coding quality or long-context speed.
+The resident adapters require separately qualified native resource owners and
+are not enabled by default.
+
+`tools/dflash_research/qfn_dspark_reference.py` independently replays saved
+DSpark target features through full-context PyTorch attention. On CUDA, all
+seven proposals matched Ascend in 63 of 64 recorded rounds (442/448 tokens).
+The remaining round changed at a near-tied logit. Across 63 verified rounds,
+Ascend accepted 77 proposals; the reference matched 78 tokens against the
+recorded target continuation. This single-request FP16 draft audit argues
+against a large attention/cache/Markov implementation error in that trace.
+It does not validate every serving batch, INT8 arithmetic, or the target's
+features against the NVFP4 teacher used to train the draft. Machine-readable
+measurements are retained in `artifacts/qfn-dspark-20261019/`.
 
 The following code configures vLLM Ascend to use speculative decoding where proposals are generated by a DSpark semi-autoregressive block drafter with a sequential Markov logit-bias head.
 

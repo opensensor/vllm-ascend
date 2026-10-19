@@ -69,9 +69,10 @@ from vllm_ascend._310p.prefix_mamba_state import (
 )
 from vllm_ascend._310p.qwen4exp_mtp import (
     is_qwen4exp_mtp_config,
+    is_qwen4exp_speculative_target,
     qwen4exp_target_has_no_task_updates,
     stage_ple_history,
-    validate_mtp_ple_scheduling,
+    validate_qwen4exp_speculative_scheduling,
 )
 from vllm_ascend._310p.sample.rejection_sampler import AscendRejectionSampler310
 from vllm_ascend._310p.sample.sampler import AscendSampler310
@@ -261,7 +262,8 @@ class NPUModelRunner310(NPUModelRunner):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._qwen4exp_mtp_ple = is_qwen4exp_mtp_config(self.model_config, self.speculative_config)
-        validate_mtp_ple_scheduling(self._qwen4exp_mtp_ple, self.use_async_scheduling)
+        self._qwen4exp_speculative_state = is_qwen4exp_speculative_target(self.model_config, self.speculative_config)
+        validate_qwen4exp_speculative_scheduling(self.model_config, self.speculative_config, self.use_async_scheduling)
         # MRV1 identifies recurrent state by scheduler block id. For the
         # single-request deployment without prefix caching, the only live
         # recurrent state is the current request's state (plus one state per
@@ -275,7 +277,7 @@ class NPUModelRunner310(NPUModelRunner):
             self.cache_config.enable_prefix_caching
             and self.cache_config.mamba_cache_mode == "align"
             and getattr(self.model_config.hf_text_config, "model_type", None) == "qwen4_exp_text"
-            and (self.speculative_config is None or self._qwen4exp_mtp_ple)
+            and (self.speculative_config is None or self._qwen4exp_speculative_state)
         )
         self.supports_compact_mamba_state = self.supports_prefix_mamba_state_tier or (
             not self.cache_config.enable_prefix_caching
@@ -283,12 +285,12 @@ class NPUModelRunner310(NPUModelRunner):
                 self.max_num_reqs,
                 getattr(self.model_config.hf_text_config, "model_type", None),
             )
-            and (self.speculative_config is None or self._qwen4exp_mtp_ple)
+            and (self.speculative_config is None or self._qwen4exp_speculative_state)
         )
         self.num_compact_mamba_blocks = (
             prefix_mamba_slot_count(
                 self.max_num_reqs,
-                self.speculative_config.num_speculative_tokens if self._qwen4exp_mtp_ple else 0,
+                self.speculative_config.num_speculative_tokens if self._qwen4exp_speculative_state else 0,
                 minimum_slots=self.vllm_config.additional_config.get(
                     "qwen_prefix_mamba_min_slots", PREFIX_MAMBA_MIN_SLOTS
                 ),
@@ -298,7 +300,7 @@ class NPUModelRunner310(NPUModelRunner):
                 queue_depth=self.vllm_config.additional_config.get("qwen_prefix_mamba_queue_depth", 1),
             )
             if self.supports_prefix_mamba_state_tier
-            else (1 + self.speculative_config.num_speculative_tokens if self._qwen4exp_mtp_ple else 1)
+            else (1 + self.speculative_config.num_speculative_tokens if self._qwen4exp_speculative_state else 1)
         )
         self._live_mamba_slots = (
             LiveMambaRequestSlots(self.max_num_reqs, self.num_compact_mamba_blocks)
@@ -330,11 +332,11 @@ class NPUModelRunner310(NPUModelRunner):
             cp_kv_cache_interleave_size=self.parallel_config.cp_kv_cache_interleave_size,
             reasoning_config=getattr(self.vllm_config, "reasoning_config", None),
         )
-        if self._qwen4exp_mtp_ple:
+        if self._qwen4exp_speculative_state:
             text_config = self.model_config.hf_text_config
             self._ple_context_len = int(text_config.ngram_size) - 1
             if self._ple_context_len < 1:
-                raise ValueError("Qwen4Exp MTP requires ngram_size >= 2")
+                raise ValueError("Qwen4Exp speculative decoding requires ngram_size >= 2")
             self._ple_eos_token_id = int(text_config.eos_token_id)
             self._ple_context_cpu = torch.empty((self.max_num_reqs + 1, self._ple_context_len), dtype=torch.int32)
             self._ple_context_gpu = torch.empty_like(self._ple_context_cpu, device=self.device)
@@ -602,7 +604,7 @@ class NPUModelRunner310(NPUModelRunner):
 
     def _bookkeeping_sync(self, scheduler_output, sampler_output, *args, **kwargs):
         self._mamba_sample_snapshot = None
-        if self._qwen4exp_mtp_ple and not self.use_async_scheduling and self.need_accepted_tokens:
+        if self._qwen4exp_speculative_state and not self.use_async_scheduling and self.need_accepted_tokens:
             sampled = sampler_output.sampled_token_ids
             host_sampled = sampled.cpu()
             ledger = getattr(self, "_transfer_ledger", None)
@@ -1157,7 +1159,7 @@ class NPUModelRunner310(NPUModelRunner):
             assert positions is not None
             prepare_mrope_cos_sin_slices_from_runner(self, positions)
 
-        if self._qwen4exp_mtp_ple:
+        if self._qwen4exp_speculative_state:
             query_start_loc, ngram_context = self._stage_qwen4exp_ple_inputs(num_tokens_padded)
             model_kwargs["query_start_loc"] = query_start_loc
             model_kwargs["ngram_context"] = ngram_context
@@ -1181,7 +1183,7 @@ class NPUModelRunner310(NPUModelRunner):
         }
         run_model = partial(self.model, **model_inputs)
         if (
-            self._qwen4exp_mtp_ple
+            self._qwen4exp_speculative_state
             and not self.enable_enpu
             and forward_context.cudagraph_runtime_mode == CUDAGraphMode.FULL
             and not forward_context.capturing

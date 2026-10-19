@@ -110,8 +110,12 @@ def qwen4exp_target_has_no_task_updates(vllm_config, is_draft_model, graph_param
     """
     if (
         is_draft_model
-        or not is_qwen4exp_mtp_config(
+        or not is_qwen4exp_speculative_target(
             getattr(vllm_config, "model_config", None), getattr(vllm_config, "speculative_config", None)
+        )
+        or (
+            getattr(vllm_config.speculative_config, "method", None) == "dspark"
+            and vllm_config.additional_config.get("qfn_dspark_graph_probe") is not True
         )
         or getattr(getattr(vllm_config, "scheduler_config", None), "async_scheduling", True) is not False
         or getattr(getattr(vllm_config, "parallel_config", None), "decode_context_parallel_size", None) != 1
@@ -174,6 +178,26 @@ def is_qwen4exp_mtp_config(model_config: object, speculative_config: object) -> 
         return False
     architectures = getattr(model_config, "architectures", ()) or ()
     return any(arch in {"Qwen4ExpForCausalLM", "Qwen4ExpForConditionalGeneration"} for arch in architectures)
+
+
+def is_qwen4exp_speculative_target(model_config: object, speculative_config: object) -> bool:
+    """Target state ownership is independent of the learned draft architecture.
+
+    This selects PLE history and recurrent-state bookkeeping, not MTP's
+    widened hidden states or its graph optimizations. Configuration admission
+    remains a separate gate until the complete DSpark pair is qualified.
+    """
+    if getattr(speculative_config, "method", None) not in {"mtp", "dspark"}:
+        return False
+    architectures = getattr(model_config, "architectures", ()) or ()
+    return any(arch in {"Qwen4ExpForCausalLM", "Qwen4ExpForConditionalGeneration"} for arch in architectures)
+
+
+def validate_qwen4exp_speculative_scheduling(model_config, speculative_config, async_scheduling):
+    if is_qwen4exp_speculative_target(model_config, speculative_config) and async_scheduling:
+        raise ValueError(
+            f"Qwen4Exp {speculative_config.method} requires --no-async-scheduling until PLE history is device-resident"
+        )
 
 
 def validate_mtp_ple_scheduling(is_qwen4exp_mtp: bool, async_scheduling: bool) -> None:

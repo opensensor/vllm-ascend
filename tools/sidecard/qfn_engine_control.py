@@ -31,12 +31,14 @@ class EngineControlSession:
         self.pending = None
         self.current = None
         self.failed = False
+        self.failure_receipt = None
         self.owners = []
 
     def status(self, engine):
         return dict(
             passed=True,
             failed=self.failed,
+            failure_receipt=self.failure_receipt,
             current=None if self.current is None else self.current[:2],
             pending=None if self.pending is None else self.pending[:2],
             paused=engine.is_scheduler_paused(),
@@ -102,6 +104,10 @@ class EngineControlSession:
                 receipt = candidate.apply(engine)
                 json.dumps(receipt, allow_nan=False)
                 if not isinstance(receipt, dict) or receipt.get("passed") is not True:
+                    # Keep individual worker errors available after quarantine.
+                    # Without this receipt, the generic rejection hides which
+                    # admission failed and forces a separate diagnostic RPC.
+                    self.failure_receipt = json.loads(json.dumps(receipt, allow_nan=False))
                     raise RuntimeError("engine candidate did not confirm application")
                 require_drained_engine(engine)
                 self.current, self.pending = self.pending, None
@@ -115,7 +121,7 @@ class EngineControlSession:
                 return self.status(engine)
             raise ValueError("invalid engine control operation or fields")
         except Exception as error:
-            return dict(passed=False, error=str(error), failed=self.failed)
+            return dict(passed=False, error=str(error), failed=self.failed, failure_receipt=self.failure_receipt)
 
 
 def engine_control(engine, payload):

@@ -132,11 +132,18 @@ def _rope_forward_oot(
     if self.cos_sin_cache.dtype != query.dtype:
         self.cos_sin_cache = self.cos_sin_cache.to(query.dtype)
 
-    # This flag should set to True when doing drafting.
-    if getattr(self, "_is_drafting_update_enabled", False):
-        update_cos_sin(positions)
-
-    cos, sin = get_cos_and_sin_slice()
+    if getattr(self, "use_model_owned_rope", False):
+        # Parallel draft context and query batches have different lengths and
+        # positions. The target may use an entirely different rotary cache
+        # (QFN owns its MRoPE), so never consume its process-global slices.
+        cos, sin = self.cos_sin_cache.index_select(0, positions).chunk(2, dim=-1)
+        cos = torch.cat((cos, cos), dim=-1).view(1, positions.numel(), 1, -1)
+        sin = torch.cat((sin, sin), dim=-1).view(1, positions.numel(), 1, -1)
+    else:
+        # This flag should set to True when doing drafting.
+        if getattr(self, "_is_drafting_update_enabled", False):
+            update_cos_sin(positions)
+        cos, sin = get_cos_and_sin_slice()
     if offsets is not None:
         raise NotImplementedError("Batched rotary embedding is currently not supported on NPU.")
     rotary_mode = "half" if is_neox_style else "interleave"

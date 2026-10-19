@@ -251,6 +251,9 @@ class AscendAttentionBackendImpl310(AscendAttentionBackendImpl):
             attn_metadata (AscendMetadata): Metadata containing start locations and block tables.
             output: The output tensor.
         """
+        if attn_metadata.causal is False:
+            return self.forward_noncausal_chunked_prefill_310(query, attn_metadata, output)
+
         num_actual_tokens = int(attn_metadata.num_actual_tokens)
         query = query[:num_actual_tokens]
         output_slice = output[:num_actual_tokens]
@@ -315,6 +318,64 @@ class AscendAttentionBackendImpl310(AscendAttentionBackendImpl):
 
         return output
 
+    def forward_noncausal_chunked_prefill_310(self, query, attn_metadata, output):
+        """Eager draft attention with an explicit prefix/window-aware mask.
+
+        Compressed causal mask types cannot represent bidirectional queries.
+        Use the legacy splitfuse operator's explicit additive mask instead.
+        This route requires device validation before full-model use.
+        """
+        if torch.npu.is_current_stream_capturing():
+            raise NotImplementedError("310P noncausal draft attention requires eager execution")
+        if self.sinks is not None or self.alibi_slopes is not None:
+            raise NotImplementedError("310P noncausal draft attention does not support sinks or ALiBi")
+        if self.key_cache.dtype != torch.float16 or self.value_cache.dtype != torch.float16:
+            raise NotImplementedError("310P noncausal draft attention requires FP16 KV caches")
+        if not hasattr(torch_npu, "_npu_paged_attention_splitfuse"):
+            raise NotImplementedError("310P noncausal draft attention requires explicit-mask splitfuse")
+        qlens = get_query_lens_cpu(attn_metadata)
+        if qlens is None:
+            boundaries = attn_metadata.query_start_loc.cpu()
+            qlens = boundaries[1:] - boundaries[:-1]
+        qlens = qlens.to(device="cpu", dtype=torch.int32).contiguous()
+        kv_lens = attn_metadata.seq_lens.to(device="cpu", dtype=torch.int32).tolist()
+        num_tokens = int(attn_metadata.num_actual_tokens)
+        if num_tokens < 1 or sum(qlens.tolist()) != num_tokens:
+            raise ValueError("Noncausal query lengths do not match the active token count")
+        for name, tensor in (("query", query), ("output", output)):
+            if tensor.dtype != torch.float16:
+                raise NotImplementedError(f"310P noncausal draft attention requires FP16 {name}")
+            if (
+                tensor.ndim not in (2, 3)
+                or tensor.shape[0] < num_tokens
+                or tensor[0].numel() != self.num_heads * self.head_size
+                or not tensor.is_contiguous()
+                or tensor.device != self.key_cache.device
+            ):
+                raise ValueError(f"Noncausal {name} has invalid token capacity, head layout, or device")
+        block_tables = attn_metadata.block_tables
+        if block_tables.ndim != 2 or block_tables.shape[0] < qlens.numel():
+            raise ValueError("Noncausal block tables have insufficient request rows")
+        if block_tables.dtype != torch.int32 or block_tables.device != query.device or not block_tables.is_contiguous():
+            raise ValueError("Noncausal block tables must be contiguous device int32 tensors")
+        mask = AttentionMaskBuilder310.get_noncausal_splitfuse_mask(
+            qlens.tolist(), kv_lens, query.device, self.sliding_window
+        )
+        torch_npu._npu_paged_attention_splitfuse(
+            query=query[:num_tokens],
+            key_cache=self.key_cache,
+            value_cache=self.value_cache,
+            mask=mask,
+            block_table=attn_metadata.block_tables,
+            seq_len=qlens,
+            context_lens=attn_metadata.seq_lens.to(device=query.device, dtype=torch.int32).contiguous(),
+            num_kv_heads=self.num_kv_heads,
+            num_heads=self.num_heads,
+            scale_value=self.scale,
+            out=output[:num_tokens],
+        )
+        return output
+
     def forward_impl(self, query, key, value, kv_cache, attn_metadata, output):
         """
         Main dispatch method for attention operations.
@@ -335,6 +396,11 @@ class AscendAttentionBackendImpl310(AscendAttentionBackendImpl):
             NotImplementedError: If the attention state is not supported on 310P.
         """
         state = attn_metadata.attn_state
+        if attn_metadata.causal is False and state not in (
+            AscendAttentionState.ChunkedPrefill,
+            AscendAttentionState.PrefillCacheHit,
+        ):
+            raise NotImplementedError("310P noncausal decoder attention requires the eager chunked-prefill path")
         # Condition for PrefillNoCache: No previous tokens have been processed yet
         if state == AscendAttentionState.PrefillNoCache:
             output = self.forward_prefill_310(query, key, value, attn_metadata, output)

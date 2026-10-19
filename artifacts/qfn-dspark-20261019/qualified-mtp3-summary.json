@@ -1,0 +1,130 @@
+{
+  "retained": "native MTP3 + early draft + qualified HC/PLE/collectives + wider gate/down + 12-token grouped chunks",
+  "matched_mtp3": {
+    "baseline": {
+      "c1": 31.65385044117609,
+      "c4": 67.84789516799809
+    },
+    "wide": {
+      "c1": 32.85129922886292,
+      "c4": 74.9379983970014
+    },
+    "serial_text_identical": true,
+    "concurrent_text_identical": true,
+    "speedup": {
+      "c1": 1.0378294827010732,
+      "c4": 1.1044999732334733
+    },
+    "retained": "wide"
+  },
+  "previous_deterministic_mtp2": {
+    "c1": 32.20933,
+    "c4": 73.32772
+  },
+  "speedup_vs_previous_deterministic_mtp2": {
+    "c1": 1.0199311574895509,
+    "c4": 1.0219600227172125
+  },
+  "six_token_chunks": {
+    "serial_text_identical": true,
+    "concurrent_text_identical": true,
+    "wide": {
+      "c1": 32.83763700341797,
+      "c4": 75.05920081895445
+    },
+    "wide6": {
+      "c1": 32.964461605521834,
+      "c4": 74.48668878922177
+    },
+    "speedup": {
+      "c1": 1.0038621719976581,
+      "c4": 0.9923725269722282
+    },
+    "retained": "wide"
+  },
+  "fused_grouped_reduction": {
+    "retained": false,
+    "exact_cases": 0,
+    "cases": 162,
+    "max_abs": 1.9073486328125e-06,
+    "note": "Final FP16 cast does not reproduce grouped finalizer intermediate rounding; no serving installation."
+  },
+  "fixes": [
+    "Deterministic Torch/CANN execution removes observed HC-injection one-ULP repeat variability.",
+    "Reset idle compact Mamba block tables before graph recapture; stale global ID132 exceeded compact pool105.",
+    "Locate qualified native resource owners on vLLM RPC wrapper, not inner NPUWorker310."
+  ],
+  "validation": {
+    "unit_tests_passed": 158,
+    "ruff": "passed",
+    "diff_check": "passed",
+    "kilo": {
+      "returncode": 0,
+      "elapsed_s": 95.9540177519957,
+      "model": "vllm-310p-w4/qwen38-flash-next",
+      "run": "resident-mtp3-routes-v1",
+      "tests_unchanged": true,
+      "validation_returncode": 0,
+      "validation_output": "----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK\n",
+      "tool_calls": [
+        {
+          "tool": "read",
+          "status": "completed"
+        },
+        {
+          "tool": "bash",
+          "status": "completed"
+        },
+        {
+          "tool": "read",
+          "status": "completed"
+        },
+        {
+          "tool": "edit",
+          "status": "completed"
+        },
+        {
+          "tool": "bash",
+          "status": "completed"
+        }
+      ]
+    }
+  },
+  "next_work": [
+    "Profile large-prompt prefill: Kilo cold 21740 tokens took 57.21 seconds; retain complete-prefix caching for tool turns.",
+    "Trace grouped finalizer intermediate multiply/accumulate rounding before fusing it.",
+    "Recheck DSpark incremental KV and target/draft alignment with numerical nondeterminism controlled.",
+    "Port retained verification dispatch improvements into a fresh DSpark run and compare against this native MTP service."
+  ],
+  "limits": [
+    "Three short prompts, fixed 256-token serial and 512-token concurrent completions; throughput is workload dependent.",
+    "Previous MTP2 comparison is historical, not an alternating same-process comparison.",
+    "Live method is native MTP, not DSpark.",
+    "262144 context configured; full-window performance has not been validated in this iteration."
+  ],
+  "kilo_cold_prefill": {
+    "prompt_tokens": 21740,
+    "seconds": 57.2115,
+    "effective_tokens_per_second": 380.0
+  },
+  "kilo_followup_prefill": {
+    "cached_tokens": [
+      21632,
+      22144,
+      22528,
+      22784
+    ],
+    "computed_tokens": [
+      528,
+      468,
+      277,
+      252
+    ],
+    "seconds": [
+      2.4958,
+      2.7368,
+      1.5966,
+      2.774
+    ]
+  }
+}

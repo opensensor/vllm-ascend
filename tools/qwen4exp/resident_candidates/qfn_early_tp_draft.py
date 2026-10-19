@@ -9,6 +9,7 @@ and exact seam must match; all unsupported requests retain original ordering.
 import hashlib
 import inspect
 import textwrap
+from functools import partial
 from types import FunctionType
 
 TARGET = "vllm_ascend.worker.model_runner_v1:NPUModelRunner.sample_tokens"
@@ -28,7 +29,7 @@ REPLACEMENT = """        early_pp_padded_drafter = (
         )"""
 
 
-def eligible(runner, spec_metadata, batch_descriptor, scheduler):
+def eligible(runner, spec_metadata, batch_descriptor, scheduler, *, draft_length=2):
     """Host-only admission; exclude every dependency not audited for this run."""
     config = getattr(runner, "speculative_config", None)
     parallel = getattr(runner, "parallel_config", None)
@@ -36,8 +37,8 @@ def eligible(runner, spec_metadata, batch_descriptor, scheduler):
     if (
         config is None
         or getattr(config, "method", None) != "mtp"
-        or getattr(runner, "num_spec_tokens", None) != 2
-        or getattr(scheduler, "num_spec_tokens_to_schedule", None) != 2
+        or getattr(runner, "num_spec_tokens", None) != draft_length
+        or getattr(scheduler, "num_spec_tokens_to_schedule", None) != draft_length
         or getattr(runner, "use_async_scheduling", True)
         or getattr(config, "disable_padded_drafter_batch", True)
         or getattr(parallel, "tensor_parallel_size", None) not in (2, 4, 6)
@@ -59,8 +60,12 @@ def eligible(runner, spec_metadata, batch_descriptor, scheduler):
     return getattr(getattr(model, "model", None), "_mtp_hidden_buffer", None) is not None
 
 
-def build_forward(original, *, source=None):
+def build_forward(original, *, source=None, draft_length=2):
     """Compile the one reviewed change while preserving live module globals."""
+    # Three-token drafting is an explicit experimental opt-in. The retained
+    # controller and every existing caller continue to admit only MTP2.
+    if type(draft_length) is not int or draft_length not in (2, 3):
+        raise ValueError("early draft supports only explicit MTP2 or MTP3 admission")
     original = getattr(original, "_qfn_early_tp_base", original)
     source = textwrap.dedent(inspect.getsource(original)) if source is None else source
     if hashlib.sha256(source.encode()).hexdigest() != QUALIFIED_SOURCE_SHA256:
@@ -74,7 +79,7 @@ def build_forward(original, *, source=None):
     unwrapped = inspect.unwrap(original)
     namespace = dict(unwrapped.__globals__)
     exec(compile(factory_source, "<qfn-qualified-early-tp-draft>", "exec"), namespace)
-    compiled = namespace["factory"](eligible)
+    compiled = namespace["factory"](partial(eligible, draft_length=draft_length))
     forward = FunctionType(
         compiled.__code__, unwrapped.__globals__, compiled.__name__, compiled.__defaults__, compiled.__closure__
     )
@@ -83,6 +88,7 @@ def build_forward(original, *, source=None):
     forward.__qualname__ = original.__qualname__
     forward = unwrapped.__globals__["torch"].inference_mode()(forward)
     forward._qfn_early_tp_base = original
+    forward._qfn_early_tp_draft_length = draft_length
     return forward
 
 

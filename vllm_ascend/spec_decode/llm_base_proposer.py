@@ -490,6 +490,13 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
         else:
             target_language_model = model
 
+        # Missing vocab weights need independent ownership when target and
+        # draft use different TP groups. The runner enters the draft group
+        # around load_model; do not re-enter its one-shot context manager here.
+        prepare_vocab = getattr(self.model, "prepare_target_vocabulary", None)
+        if self.method == "dspark" and prepare_vocab is not None:
+            prepare_vocab(self.vllm_config)
+
         # share embed_tokens with the target model if needed
         self._maybe_share_embeddings(target_language_model)
         self._maybe_share_topk_indices(target_language_model)
@@ -2491,7 +2498,7 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
         used as padding and filtered out later by `token_indices_to_sample`.
         No blocking CPU operations should be introduced in this function.
         """
-        if HAS_TRITON:
+        if HAS_TRITON and not ascend_utils.is_310p():
             num_reqs = common_attn_metadata.num_reqs
             device = valid_sampled_tokens_count.device
 

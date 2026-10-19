@@ -10,7 +10,11 @@ from tools.qwen4exp.draft_real_weight_gate import QfnDraftRealWeightMixin
 from tools.sidecard.npu_collective_graph import CollectiveGraphObserver
 from tools.sidecard.qfn_collective_profile import QfnProfileWorkerExtension
 from tools.sidecard.qfn_collective_worker import _communicator
-from tools.sidecard.qfn_resident_lifecycle import renew_collective_graphs, reset_prefix_tier
+from tools.sidecard.qfn_resident_lifecycle import (
+    renew_collective_graphs,
+    reset_compact_mamba_tables,
+    reset_prefix_tier,
+)
 from vllm_ascend.compilation.acl_graph import (
     get_draft_graph_params,
     get_draft_graph_prefill_params,
@@ -38,6 +42,12 @@ class QfnResidentWorkerExtension(QfnDraftRealWeightMixin, QfnProfileWorkerExtens
             if changed or control.recapture:
                 wrappers = self._resident_wrappers()
                 facade = _communicator().custom_sum
+                eager_wrappers = ()
+                if getattr(self.model_runner.speculative_config, "method", None) == "dspark":
+                    drafter = self.model_runner.drafter
+                    if not self.model_runner.speculative_config.enforce_eager or drafter.use_cuda_graph:
+                        raise RuntimeError("DSpark resident reload requires an explicitly eager draft")
+                    eager_wrappers = (drafter.model,)
 
                 def clear(wrappers):
                     clear_graph_state(
@@ -53,6 +63,7 @@ class QfnResidentWorkerExtension(QfnDraftRealWeightMixin, QfnProfileWorkerExtens
                     synchronize=torch.npu.synchronize,
                     clear_state=clear,
                     observer_factory=CollectiveGraphObserver,
+                    eager_wrappers=eager_wrappers,
                 )
                 session.apply(generation)
                 gc.collect()
@@ -91,6 +102,7 @@ class QfnResidentWorkerExtension(QfnDraftRealWeightMixin, QfnProfileWorkerExtens
     def resident_reset(self):
         try:
             super().resident_reset()
+            reset_compact_mamba_tables(self.model_runner)
             for tier in getattr(self.model_runner, "_prefix_mamba_tiers", {}).values():
                 reset_prefix_tier(tier)
             torch.npu.synchronize()

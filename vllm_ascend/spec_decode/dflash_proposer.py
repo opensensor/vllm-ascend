@@ -6,10 +6,12 @@ from vllm.forward_context import get_forward_context
 from vllm.triton_utils import triton
 from vllm.v1.attention.backends.utils import CommonAttentionMetadata
 
+from vllm_ascend._310p.dflash_ops import copy_and_expand_dflash_inputs
 from vllm_ascend.ascend_config import get_ascend_config
 from vllm_ascend.ascend_forward_context import _EXTRA_CTX, set_ascend_forward_context
 from vllm_ascend.attention.attention_v1 import AscendAttentionState
 from vllm_ascend.attention.utils import AscendCommonAttentionMetadata
+from vllm_ascend.device.device_config import is_310p
 from vllm_ascend.ops.triton.spec_decode.utils import copy_and_expand_dflash_and_dspark_inputs_kernel
 from vllm_ascend.ops.triton.triton_utils import get_vectorcore_num, init_device_properties_triton
 from vllm_ascend.spec_decode.eagle_proposer import AscendEagleProposer
@@ -129,7 +131,12 @@ class AscendDflashProposer(AscendEagleProposer):
 
         has_num_rejected = num_rejected_tokens_gpu is not None
 
-        copy_and_expand_dflash_and_dspark_inputs_kernel[(_compute_num_programs(num_context, num_query_total),)](
+        expand_inputs = (
+            copy_and_expand_dflash_inputs
+            if is_310p()
+            else copy_and_expand_dflash_and_dspark_inputs_kernel[(_compute_num_programs(num_context, num_query_total),)]
+        )
+        expand_inputs(
             # Inputs
             next_token_ids_ptr=next_token_ids,
             target_positions_ptr=target_positions,

@@ -85,6 +85,7 @@ from vllm.model_executor.models.interfaces import (
     HasInnerState,
     IsHybrid,
     MixtureOfExperts,
+    SupportsEagle3,
     SupportsLoRA,
     SupportsPP,
 )
@@ -2909,6 +2910,8 @@ class AscendQwen4ExpModel(nn.Module):
         self.start_layer = 0
         self.end_layer = config.num_hidden_layers
         speculative_config = getattr(vllm_config, "speculative_config", None)
+        self._dspark_aux_enabled = bool(getattr(speculative_config, "use_dspark", lambda: False)())
+        self._aux_hidden_state_layers: tuple[int, ...] = ()
         if getattr(speculative_config, "method", None) == "mtp":
             # This buffer must outlive every ACL graph capture. A Python
             # assignment to an intermediate tensor in forward() only runs
@@ -2949,6 +2952,21 @@ class AscendQwen4ExpModel(nn.Module):
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_input_ids(input_ids)
 
+    def set_aux_hidden_state_layers(self, layers: tuple[int, ...]) -> None:
+        """Accept runner indices, capturing DSpark's zero-based pre-layer inputs.
+
+        MRv1 adds one to dflash_config.target_layer_ids before calling this
+        interface. QFN DSpark was trained on PRE-layer HC means, unlike the
+        QFN DFlash2 checkpoint's post-layer features. Do not mix the contracts.
+        """
+        if layers and not self._dspark_aux_enabled:
+            raise NotImplementedError("Qwen4Exp auxiliary capture currently supports DSpark only")
+        if any(type(layer) is not int or not 1 <= layer <= len(self.layers) for layer in layers):
+            raise ValueError("Qwen4Exp auxiliary layers must be one-based valid runner indices")
+        if len(set(layers)) != len(layers):
+            raise ValueError("Qwen4Exp auxiliary layers must be unique")
+        self._aux_hidden_state_layers = tuple(layer - 1 for layer in layers)
+
     def forward(
         self,
         input_ids: torch.Tensor | None,
@@ -2978,7 +2996,17 @@ class AscendQwen4ExpModel(nn.Module):
         # table tensors alive only for this forward (and its captured graph).
         qsa_rope_cache: _QSARopeStepCache = {}
         logical_position_cache: _QSALogicalPositionStepCache = {}
-        for layer in self.layers:
+        aux_hidden_states = {} if self._aux_hidden_state_layers else None
+        for layer_idx, layer in enumerate(self.layers):
+            if aux_hidden_states is not None and layer_idx in self._aux_hidden_state_layers:
+                # FP32 averaging matches the draft's training capture. Reduction
+                # owns its storage, so subsequent in-place HC updates are safe.
+                aux_hidden_states[layer_idx] = (
+                    hidden_states.unflatten(-1, (self.hc_count, self.hidden_size))
+                    .float()
+                    .mean(dim=-2)
+                    .to(hidden_states.dtype)
+                )
             hidden_states = layer(
                 hidden_states,
                 positions,
@@ -3002,7 +3030,10 @@ class AscendQwen4ExpModel(nn.Module):
             self._mtp_hidden_buffer[:num_tokens].copy_(hidden_states)
         # Final mixer collapses the streams to the sampled single-stream state.
         sample_hidden, _residual = self.hyper_connection_mixer.mix(hidden_states)
-        return sample_hidden.to(self.dtype_policy.main_dtype)
+        sample_hidden = sample_hidden.to(self.dtype_policy.main_dtype)
+        if aux_hidden_states is not None:
+            return sample_hidden, [aux_hidden_states[idx] for idx in self._aux_hidden_state_layers]
+        return sample_hidden
 
 
 # ===========================================================================
@@ -3013,6 +3044,7 @@ class AscendQwen4ExpForCausalLM(
     HasInnerState,
     SupportsLoRA,
     SupportsPP,
+    SupportsEagle3,
     MixtureOfExperts,
     IsHybrid,
 ):
@@ -3817,6 +3849,12 @@ class AscendQwen4ExpForCausalLM(
     def get_mtp_target_hidden_states(self) -> torch.Tensor | None:
         return self.model._mtp_hidden_buffer
 
+    def set_aux_hidden_state_layers(self, layers: tuple[int, ...]) -> None:
+        self.model.set_aux_hidden_state_layers(layers)
+
+    def get_eagle3_default_aux_hidden_state_layers(self) -> tuple[int, ...]:
+        raise ValueError("Qwen4Exp DSpark requires explicit target_layer_ids from the draft checkpoint")
+
     def forward(
         self,
         input_ids: torch.Tensor | None,
@@ -3959,6 +3997,12 @@ class AscendQwen4ExpForConditionalGeneration(
 
     def get_mtp_target_hidden_states(self) -> torch.Tensor | None:
         return self.language_model.get_mtp_target_hidden_states()
+
+    def set_aux_hidden_state_layers(self, layers: tuple[int, ...]) -> None:
+        self.language_model.set_aux_hidden_state_layers(layers)
+
+    def get_eagle3_default_aux_hidden_state_layers(self) -> tuple[int, ...]:
+        return self.language_model.get_eagle3_default_aux_hidden_state_layers()
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         """Stream vision tensors to the ViT and all other tensors to Qwen4Exp."""

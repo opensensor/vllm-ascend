@@ -7,6 +7,7 @@ from vllm_ascend.models.llama_eagle3 import load_quarot_target_layer
 from vllm_ascend.utils import (
     get_rotation_matrix,
     get_rotation_path,
+    is_310p,
 )
 
 TARGET_EMBED_WEIGHT_NAMES = (
@@ -67,6 +68,62 @@ class AscendQwen3DSparkForCausalLM(Qwen3DSparkForCausalLM):
 
         config = self.config
         self.enable_confidence_head = bool(getattr(config, "enable_confidence_head", False))
+        if is_310p():
+            # Worker-only import: the 310P operator depends on torch_npu.
+            from vllm_ascend._310p.ops.rotary_embedding import AscendRotaryEmbedding310
+
+            for module in self.model.modules():
+                if isinstance(module, AscendRotaryEmbedding310):
+                    module.use_model_owned_rope = True
+
+    def prepare_target_vocabulary(self, vllm_config: VllmConfig) -> None:
+        """Populate missing TP1 vocabulary modules before ordinary sharing.
+
+        Called under the drafter's TP group. The default sharing path remains
+        unchanged for equal TP sizes and other target families.
+        """
+        from vllm_ascend._310p.qwen4exp_draft_vocab import load_full_vocab_weight
+        from vllm_ascend._310p.qwen4exp_mtp import is_qwen4exp_speculative_target
+
+        spec = vllm_config.speculative_config
+        if not is_qwen4exp_speculative_target(vllm_config.model_config, spec):
+            return
+        if vllm_config.parallel_config.tensor_parallel_size == spec.draft_tensor_parallel_size:
+            return
+        if spec.draft_tensor_parallel_size != 1 or vllm_config.parallel_config.pipeline_parallel_size != 1:
+            raise ValueError("QFN DSpark vocabulary replication requires draft TP1 and target PP1")
+        if get_rotation_path(vllm_config) is not None:
+            raise ValueError("QFN DSpark TP1 vocabulary replication requires an unrotated target")
+        config = vllm_config.model_config.hf_text_config
+        if self.config.vocab_size != config.vocab_size or self.config.hidden_size != config.hidden_size:
+            raise ValueError("QFN DSpark requires matching target and draft vocabulary and hidden size")
+        if getattr(self, "draft_id_to_target_id", None) is not None:
+            raise ValueError("QFN DSpark TP1 vocabulary replication does not support vocabulary remapping")
+        pending = []
+        for owner, name, layer_cls, names, flag in (
+            (
+                self.model,
+                "embed_tokens",
+                VocabParallelEmbedding,
+                ("model.language_model.embed_tokens.weight", *TARGET_EMBED_WEIGHT_NAMES),
+                "has_own_embed_tokens",
+            ),
+            (self, "lm_head", ParallelLMHead, TARGET_LM_HEAD_WEIGHT_NAMES, "has_own_lm_head"),
+        ):
+            if getattr(self, flag, True):
+                continue
+            with torch.device(self.model.fc.weight.device):
+                layer = layer_cls(config.vocab_size, config.hidden_size, params_dtype=torch.float16)
+            receipt = load_full_vocab_weight(
+                layer, vllm_config.model_config.model, names, config.vocab_size, config.hidden_size
+            )
+            layer.quant_method.process_weights_after_loading(layer)
+            pending.append((owner, name, layer, flag, receipt))
+        # Publish only after both missing weights loaded successfully.
+        self.target_vocab_load_receipts = {name: receipt for _, name, _, _, receipt in pending}
+        for owner, name, layer, flag, _ in pending:
+            setattr(owner, name, layer)
+            setattr(self, flag, True)
 
     def compute_confidence(self, head_hidden: torch.Tensor, markov_embed: torch.Tensor) -> torch.Tensor:
         """Per-position acceptance probability for each drafted token."""

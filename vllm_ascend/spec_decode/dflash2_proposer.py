@@ -5,6 +5,8 @@ from torch import nn
 from vllm.config import VllmConfig
 from vllm.v1.sample.metadata import SamplingMetadata
 
+from vllm_ascend._310p.dflash_ops import greedy_select_path_310p
+from vllm_ascend.device.device_config import is_310p
 from vllm_ascend.ops.triton.spec_decode.utils import dflash2_greedy_selector_walk_kernel
 from vllm_ascend.ops.triton.triton_utils import get_vectorcore_num, init_device_properties_triton
 from vllm_ascend.spec_decode.dflash_proposer import AscendDflashProposer
@@ -27,6 +29,8 @@ def greedy_select_path(candidate_ids: torch.Tensor, scores: torch.Tensor) -> tor
     num_reqs, num_steps, top_k = candidate_ids.shape
     assert candidate_ids.is_contiguous()
     assert scores.is_contiguous()
+    if is_310p():
+        return greedy_select_path_310p(candidate_ids, scores)
     output_tokens = torch.empty(
         (num_reqs, num_steps),
         dtype=candidate_ids.dtype,

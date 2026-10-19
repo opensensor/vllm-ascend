@@ -10,6 +10,7 @@ from vllm.v1.attention.backends.utils import CommonAttentionMetadata
 from vllm.v1.kv_cache_interface import UniformTypeKVCacheSpecs
 from vllm.v1.worker.utils import AttentionGroup
 
+from vllm_ascend._310p.dflash_ops import copy_and_expand_dflash_inputs
 from vllm_ascend.ascend_config import get_ascend_config
 from vllm_ascend.ascend_forward_context import set_ascend_forward_context
 from vllm_ascend.attention.attention_v1 import AscendAttentionState
@@ -18,6 +19,7 @@ from vllm_ascend.attention.utils import enable_pcp
 from vllm_ascend.ops.triton.spec_decode.utils import copy_and_expand_dflash_and_dspark_inputs_kernel
 from vllm_ascend.spec_decode.dflash_proposer import AscendDflashProposer, _compute_num_programs
 from vllm_ascend.spec_decode.utils import DynamicSpecScheduler
+from vllm_ascend.utils import is_310p
 
 
 class AscendDSparkProposer(AscendDflashProposer):
@@ -271,9 +273,14 @@ class AscendDSparkProposer(AscendDflashProposer):
             gid = attn_group.kv_cache_group_id
             gid_block_table = self._per_group_block_table_buffers[gid]
             kernel_block_size = self._per_group_kernel_block_sizes[gid]
-            copy_and_expand_dflash_and_dspark_inputs_kernel[
-                (_compute_num_programs(self._dflash_num_context, num_query_total),)
-            ](
+            expand_inputs = (
+                copy_and_expand_dflash_inputs
+                if is_310p()
+                else copy_and_expand_dflash_and_dspark_inputs_kernel[
+                    (_compute_num_programs(self._dflash_num_context, num_query_total),)
+                ]
+            )
+            expand_inputs(
                 # Inputs
                 next_token_ids_ptr=next_token_ids,
                 target_positions_ptr=target_positions,
