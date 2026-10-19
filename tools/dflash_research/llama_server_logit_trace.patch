@@ -1,0 +1,49 @@
+--- a/tools/server/server-context.cpp
++++ b/tools/server/server-context.cpp
+@@ -28,0 +29 @@
++#include <limits>
+@@ -40,0 +42,36 @@
++// Temporary DFlash2 experiment: record the target's unsampled top logits.
++static void trace_dflash_target_logits(llama_context * ctx, const char * path, int output_pos, int idx, int batch_outputs) {
++    if (output_pos > 4) {
++        return;
++    }
++
++    const float * logits = llama_get_logits_ith(ctx, idx);
++    const llama_token * candidates = llama_get_sampled_candidates_ith(ctx, idx);
++    const int count = llama_get_sampled_logits_count_ith(ctx, idx);
++    if (!logits || count < 2) {
++        LOG_INF("DFLASH_TRACE path=%s pos=%d idx=%d batch_outputs=%d count=%d missing_logits\n",
++                path, output_pos, idx, batch_outputs, count);
++        return;
++    }
++
++    float first = -std::numeric_limits<float>::infinity();
++    float second = first;
++    int first_id = -1;
++    int second_id = -1;
++    for (int i = 0; i < count; ++i) {
++        const float value = logits[i];
++        const int id = candidates ? candidates[i] : i;
++        if (value > first) {
++            second = first;
++            second_id = first_id;
++            first = value;
++            first_id = id;
++        } else if (value > second) {
++            second = value;
++            second_id = id;
++        }
++    }
++    LOG_INF("DFLASH_TRACE path=%s pos=%d idx=%d batch_outputs=%d count=%d top1=%d logit1=%.9g top2=%d logit2=%.9g\n",
++            path, output_pos, idx, batch_outputs, count, first_id, first, second_id, second);
++}
++
+@@ -3858,0 +3896,2 @@
++            trace_dflash_target_logits(slot.ctx_tgt, "serial", slot.stats.n_gen + 1, tok_idx, 1);
++
+@@ -3919,0 +3959,4 @@
++                for (size_t i = 0; i < slot.spec_i_batch.size(); ++i) {
++                    trace_dflash_target_logits(slot.ctx_tgt, "verify", slot.stats.n_gen + 1 + i,
++                            slot.spec_i_batch[i], slot.spec_i_batch.size());
++                }

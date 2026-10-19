@@ -1,0 +1,79 @@
+0.00.020.550 I cmn  common_param: common_params_print_info: verbosity = 3 (adjust with the `-lv N` CLI arg)
+0.00.020.640 I srv          init: The UI is disabled
+0.00.020.642 I srv          init: Use --ui/--no-ui (or deprecated --webui/--no-webui) to enable/disable
+0.00.020.698 W srv  llama_server: -----------------
+0.00.020.700 W srv  llama_server: CORS is set to allow all origins ('*') and no API key is set
+0.00.020.700 W srv  llama_server: this can be a security risk (cross-origin attacks)
+0.00.020.700 W srv  llama_server: more info: https://github.com/ggml-org/llama.cpp/pull/25655
+0.00.020.701 W srv  llama_server: -----------------
+0.00.022.017 I srv    load_model: loading model '/run/media/matteius/ai-drive/models/gguf/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q8_K_XL.gguf'
+0.00.642.024 E llama_init_from_model: failed to initialize the context: dflash requires ctx_other to be set (this warning is normal during memory fitting)
+0.00.667.746 W operator(): failed to measure the memory of the extra model, fitting without it: failed to create llama_context from model
+0.00.883.836 W model has unused tensor blk.64.attn_norm.weight (size = 20480 bytes) -- ignoring
+0.00.883.841 W model has unused tensor blk.64.post_attention_norm.weight (size = 20480 bytes) -- ignoring
+0.00.883.846 W model has unused tensor blk.64.attn_q.weight (size = 125829120 bytes) -- ignoring
+0.00.883.847 W model has unused tensor blk.64.attn_k.weight (size = 10485760 bytes) -- ignoring
+0.00.883.849 W model has unused tensor blk.64.attn_v.weight (size = 10485760 bytes) -- ignoring
+0.00.883.855 W model has unused tensor blk.64.attn_output.weight (size = 33423360 bytes) -- ignoring
+0.00.883.856 W model has unused tensor blk.64.attn_q_norm.weight (size = 1024 bytes) -- ignoring
+0.00.883.858 W model has unused tensor blk.64.attn_k_norm.weight (size = 1024 bytes) -- ignoring
+0.00.883.860 W model has unused tensor blk.64.ffn_gate.weight (size = 94699520 bytes) -- ignoring
+0.00.883.861 W model has unused tensor blk.64.ffn_down.weight (size = 94699520 bytes) -- ignoring
+0.00.883.863 W model has unused tensor blk.64.ffn_up.weight (size = 94699520 bytes) -- ignoring
+0.00.883.866 W model has unused tensor blk.64.nextn.eh_proj.weight (size = 104857600 bytes) -- ignoring
+0.00.883.868 W model has unused tensor blk.64.nextn.enorm.weight (size = 20480 bytes) -- ignoring
+0.00.883.870 W model has unused tensor blk.64.nextn.hnorm.weight (size = 20480 bytes) -- ignoring
+0.00.883.874 W model has unused tensor blk.64.nextn.shared_head_norm.weight (size = 20480 bytes) -- ignoring
+0.04.420.204 I cmn          init: llama threadpool init, n_threads = 16
+0.04.505.407 I common_speculative_init_result: loading draft model '/run/media/matteius/ai-drive/models/gguf/Qwen3.8-27B-DFlash2/Qwen3.8-27B-DFlash2-Q8_0.gguf'
+0.05.072.613 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 4096, kv_unified = 'false'
+0.05.072.663 I common_speculative_impl_draft_dflash: adding speculative implementation 'draft-dflash'
+0.05.072.666 I common_speculative_impl_draft_dflash: - n_max=7, n_min=0, p_min=0.00
+0.05.072.666 I common_speculative_impl_draft_dflash: - block_size=8, mask_token_id=248070, n_extract=5, sample_from_anchor=true
+0.05.115.053 W srv          init: chat template supports preserving reasoning, it is enabled by default (may use more tokens, disable via --no-reasoning-preserve)
+0.05.115.085 I srv  llama_server: model loaded
+0.05.115.089 I srv  llama_server: listening on http://127.0.0.1:8199
+0.10.943.288 I slot get_availabl: id  0 | task -1 | selected slot by LRU, t_last = -1
+0.10.943.325 I slot launch_slot_: id  0 | task 0 | processing task, is_child = 0
+0.11.282.506 I DFLASH_TRACE path=serial pos=1 idx=3 batch_outputs=1 count=248320 top1=271 logit1=17.5330715 top2=198 logit2=16.9932117
+0.11.530.392 I DFLASH_TRACE path=verify pos=2 idx=0 batch_outputs=3 count=248320 top1=1206 logit1=19.2931252 top2=22418 logit2=16.7823467
+0.11.530.515 I DFLASH_TRACE path=verify pos=3 idx=1 batch_outputs=3 count=248320 top1=9632 logit1=18.5494652 top2=16410 logit2=16.2260017
+0.11.530.629 I DFLASH_TRACE path=verify pos=4 idx=2 batch_outputs=3 count=248320 top1=22418 logit1=20.5180779 top2=5731 logit2=18.8513775
+0.11.562.303 I DFLASH_TRACE path=verify pos=3 idx=0 batch_outputs=2 count=248320 top1=9150 logit1=21.9645195 top2=22903 logit2=21.9530315
+0.11.562.427 I DFLASH_TRACE path=verify pos=4 idx=1 batch_outputs=2 count=248320 top1=37972 logit1=21.074894 top2=2972 logit2=19.8227577
+0.11.562.452 I slot print_timing: id  0 | task 0 | prompt eval time =     339.17 ms /    28 tokens (   12.11 ms per token,    82.55 tokens per second)
+0.11.562.453 I slot print_timing: id  0 | task 0 |        eval time =     279.92 ms /     4 tokens (   93.31 ms per token,    10.72 tokens per second)
+0.11.562.453 I slot print_timing: id  0 | task 0 |       total time =     619.09 ms /    32 tokens
+0.11.562.458 I slot print_timing: id  0 | task 0 |    graphs reused =          1
+0.11.562.460 I slot print_timing: id  0 | task 0 | draft acceptance = 0.33333 (    1 accepted /     3 generated), mean len =  1.50
+0.11.562.502 I slot      release: id  0 | task 0 | stop processing: n_tokens = 31, truncated = 0
+0.20.288.949 I slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 1.000 (> 0.100 thold), f_keep = 0.903
+0.20.288.978 I slot launch_slot_: id  0 | task 5 | processing task, is_child = 0
+0.20.423.534 I DFLASH_TRACE path=serial pos=1 idx=3 batch_outputs=1 count=248320 top1=271 logit1=17.5330715 top2=198 logit2=16.9932117
+0.20.454.243 I DFLASH_TRACE path=verify pos=2 idx=0 batch_outputs=3 count=248320 top1=1206 logit1=19.2931252 top2=22418 logit2=16.7823467
+0.20.454.380 I DFLASH_TRACE path=verify pos=3 idx=1 batch_outputs=3 count=248320 top1=9632 logit1=18.5494652 top2=16410 logit2=16.2260017
+0.20.454.516 I DFLASH_TRACE path=verify pos=4 idx=2 batch_outputs=3 count=248320 top1=22418 logit1=20.5180779 top2=5731 logit2=18.8513775
+0.20.484.151 I DFLASH_TRACE path=verify pos=3 idx=0 batch_outputs=2 count=248320 top1=9150 logit1=21.9645195 top2=22903 logit2=21.9530315
+0.20.484.289 I DFLASH_TRACE path=verify pos=4 idx=1 batch_outputs=2 count=248320 top1=37972 logit1=21.074894 top2=2972 logit2=19.8227577
+0.20.484.311 I slot print_timing: id  0 | task 5 | prompt eval time =     134.55 ms /    28 tokens (    4.81 ms per token,   208.10 tokens per second)
+0.20.484.313 I slot print_timing: id  0 | task 5 |        eval time =      60.76 ms /     4 tokens (   20.25 ms per token,    49.38 tokens per second)
+0.20.484.313 I slot print_timing: id  0 | task 5 |       total time =     195.31 ms /    32 tokens
+0.20.484.314 I slot print_timing: id  0 | task 5 |    graphs reused =          1
+0.20.484.317 I slot print_timing: id  0 | task 5 | draft acceptance = 0.33333 (    1 accepted /     3 generated), mean len =  1.50
+0.20.484.337 I slot      release: id  0 | task 5 | stop processing: n_tokens = 31, truncated = 0
+0.27.365.820 I slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 1.000 (> 0.100 thold), f_keep = 0.903
+0.27.365.850 I slot launch_slot_: id  0 | task 10 | processing task, is_child = 0
+0.27.503.315 I DFLASH_TRACE path=serial pos=1 idx=3 batch_outputs=1 count=248320 top1=271 logit1=17.5330715 top2=198 logit2=16.9932117
+0.27.683.004 I DFLASH_TRACE path=verify pos=2 idx=0 batch_outputs=8 count=248320 top1=1206 logit1=19.2282505 top2=22418 logit2=16.7895317
+0.27.683.156 I DFLASH_TRACE path=verify pos=3 idx=1 batch_outputs=8 count=248320 top1=9632 logit1=18.5783844 top2=16410 logit2=16.2472076
+0.27.683.293 I DFLASH_TRACE path=verify pos=4 idx=2 batch_outputs=8 count=248320 top1=22418 logit1=20.5217323 top2=23111 logit2=18.819149
+0.27.720.948 I DFLASH_TRACE path=verify pos=3 idx=0 batch_outputs=8 count=248320 top1=22903 logit1=21.9426403 top2=9150 logit2=21.9391327
+0.27.721.071 I DFLASH_TRACE path=verify pos=4 idx=1 batch_outputs=8 count=248320 top1=37972 logit1=21.051651 top2=2972 logit2=19.8298206
+0.27.751.165 I DFLASH_TRACE path=verify pos=4 idx=0 batch_outputs=8 count=248320 top1=279 logit1=23.7441654 top2=411 logit2=21.2114162
+0.29.702.644 I slot print_timing: id  0 | task 10 | prompt eval time =     137.46 ms /    28 tokens (    4.91 ms per token,   203.70 tokens per second)
+0.29.702.647 I slot print_timing: id  0 | task 10 |        eval time =    2199.32 ms /   256 tokens (    8.62 ms per token,   115.95 tokens per second)
+0.29.702.647 I slot print_timing: id  0 | task 10 |       total time =    2336.78 ms /   284 tokens
+0.29.702.648 I slot print_timing: id  0 | task 10 |    graphs reused =         63
+0.29.702.651 I slot print_timing: id  0 | task 10 | draft acceptance = 0.41319 (  188 accepted /   455 generated), mean len =  3.85
+0.29.702.671 I slot      release: id  0 | task 10 | stop processing: n_tokens = 283, truncated = 0
+0.45.976.403 I srv    operator(): operator(): cleaning up before exit...
