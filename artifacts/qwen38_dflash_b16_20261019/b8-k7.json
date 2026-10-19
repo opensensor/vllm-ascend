@@ -1,0 +1,583 @@
+[
+  {
+    "arm": "b8-k7",
+    "prompt": "code",
+    "request": {
+      "messages": [
+        {
+          "role": "system",
+          "content": "Answer the user's request directly."
+        },
+        {
+          "role": "user",
+          "content": "Implement a Python LRUCache using OrderedDict with capacity validation, get and put methods, and a short runnable example. Explain time complexity in under 100 words."
+        }
+      ],
+      "temperature": 0,
+      "seed": 42,
+      "max_tokens": 1536,
+      "stream": false,
+      "cache_prompt": false,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      }
+    },
+    "response": {
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "```python\nfrom collections import OrderedDict\n\nclass LRUCache:\n    def __init__(self, capacity: int):\n        if capacity <= 0:\n            raise ValueError(\"Capacity must be positive\")\n        self.capacity = capacity\n        self.cache = OrderedDict()\n\n    def get(self, key: int) -> int:\n        if key not in self.cache:\n            return -1\n        self.cache.move_to_end(key)\n        return self.cache[key]\n\n    def put(self, key: int, value: int) -> None:\n        if key in self.cache:\n            self.cache.move_to_end(key)\n        self.cache[key] = value\n        if len(self.cache) > self.capacity:\n            self.cache.popitem(last=False)\n\n# Example usage\nif __name__ == \"__main__\":\n    cache = LRUCache(2)\n    cache.put(1, 1)\n    cache.put(2, 2)\n    print(cache.get(1))    # Output: 1\n    cache.put(3, 3)        # Evicts key 2\n    print(cache.get(2))    # Output: -1\n    cache.put(4, 4)        # Evicts key 1\n    print(cache.get(1))    # Output: -1\n    print(cache.get(3))    # Output: 3\n    print(cache.get(4))    # Output: 4\n```\n\n**Time Complexity:** Both `get` and `put` operations run in O(1) average time. `OrderedDict` maintains insertion order and allows O(1) lookups, moves, and deletions. Capacity validation occurs only during initialization."
+          }
+        }
+      ],
+      "created": 1792416033,
+      "model": "/run/media/matteius/ai-drive/models/gguf/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q8_K_XL.gguf",
+      "system_fingerprint": "b0-unknown",
+      "object": "chat.completion",
+      "usage": {
+        "completion_tokens": 364,
+        "prompt_tokens": 58,
+        "total_tokens": 422,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "id": "chatcmpl-wiDMx71GZlasmjJZo8IqDhewdy6k6EfA",
+      "timings": {
+        "cache_n": 0,
+        "prompt_n": 58,
+        "prompt_ms": 281.007,
+        "prompt_per_token_ms": 4.844948275862069,
+        "prompt_per_second": 206.4005522994089,
+        "predicted_n": 364,
+        "predicted_ms": 1616.829,
+        "predicted_per_token_ms": 4.454074380165289,
+        "predicted_per_second": 224.51353853747057,
+        "draft_n": 364,
+        "draft_n_accepted": 311
+      }
+    },
+    "wall_seconds": 2.0757919999887235,
+    "gpu_energy_joules": 586.9104816487005,
+    "power_samples": 43,
+    "content": "```python\nfrom collections import OrderedDict\n\nclass LRUCache:\n    def __init__(self, capacity: int):\n        if capacity <= 0:\n            raise ValueError(\"Capacity must be positive\")\n        self.capacity = capacity\n        self.cache = OrderedDict()\n\n    def get(self, key: int) -> int:\n        if key not in self.cache:\n            return -1\n        self.cache.move_to_end(key)\n        return self.cache[key]\n\n    def put(self, key: int, value: int) -> None:\n        if key in self.cache:\n            self.cache.move_to_end(key)\n        self.cache[key] = value\n        if len(self.cache) > self.capacity:\n            self.cache.popitem(last=False)\n\n# Example usage\nif __name__ == \"__main__\":\n    cache = LRUCache(2)\n    cache.put(1, 1)\n    cache.put(2, 2)\n    print(cache.get(1))    # Output: 1\n    cache.put(3, 3)        # Evicts key 2\n    print(cache.get(2))    # Output: -1\n    cache.put(4, 4)        # Evicts key 1\n    print(cache.get(1))    # Output: -1\n    print(cache.get(3))    # Output: 3\n    print(cache.get(4))    # Output: 4\n```\n\n**Time Complexity:** Both `get` and `put` operations run in O(1) average time. `OrderedDict` maintains insertion order and allows O(1) lookups, moves, and deletions. Capacity validation occurs only during initialization.",
+    "reasoning_content": null,
+    "finish_reason": "stop",
+    "completion_tokens": 364,
+    "prompt_tokens": 58,
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 58,
+      "prompt_ms": 281.007,
+      "prompt_per_token_ms": 4.844948275862069,
+      "prompt_per_second": 206.4005522994089,
+      "predicted_n": 364,
+      "predicted_ms": 1616.829,
+      "predicted_per_token_ms": 4.454074380165289,
+      "predicted_per_second": 224.51353853747057,
+      "draft_n": 364,
+      "draft_n_accepted": 311
+    }
+  },
+  {
+    "arm": "b8-k7",
+    "prompt": "sql",
+    "request": {
+      "messages": [
+        {
+          "role": "system",
+          "content": "Answer the user's request directly."
+        },
+        {
+          "role": "user",
+          "content": "In PostgreSQL, write a query computing each customer's rolling revenue over the previous seven calendar days, including the current date, from orders(customer_id, order_date date, amount numeric). Explain why ROWS 6 PRECEDING is not equivalent. Keep the answer under 250 words."
+        }
+      ],
+      "temperature": 0,
+      "seed": 42,
+      "max_tokens": 1536,
+      "stream": false,
+      "cache_prompt": false,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      }
+    },
+    "response": {
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "```sql\nSELECT \n    customer_id,\n    order_date,\n    SUM(amount) OVER (\n        PARTITION BY customer_id \n        ORDER BY order_date \n        RANGE BETWEEN INTERVAL '6 days' PRECEDING AND CURRENT ROW\n    ) AS rolling_revenue\nFROM orders;\n```\n\nThis query uses `RANGE` with an interval to define the window based on calendar time. It sums all orders for a customer where `order_date` falls within the last seven days (current date minus 6 days to current date).\n\n**Why `ROWS 6 PRECEDING` is not equivalent:**\n\n`ROWS` operates on the physical position of rows in the result set, not on the values in the `ORDER BY` column.\n\n1.  **Missing Dates:** If a customer has no orders on certain days, `ROWS 6 PRECEDING` will include the 6th previous *order*, which might be from 10 or 30 days ago. `RANGE` correctly excludes orders older than 7 calendar days, even if there are fewer than 7 rows in that period.\n2.  **Multiple Orders Per Day:** If a customer places multiple orders on the same day, `ROWS 6 PRECEDING` might exclude some orders from the current day or include orders from more than 7 days ago, depending on the row count. `RANGE` includes *all* orders within the 7-day window, regardless of how many rows exist per day.\n\nIn short, `ROWS` counts records; `RANGE` counts time. For calendar-based rolling windows, `RANGE` is required to ensure the window is defined by date boundaries, not row density."
+          }
+        }
+      ],
+      "created": 1792416036,
+      "model": "/run/media/matteius/ai-drive/models/gguf/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q8_K_XL.gguf",
+      "system_fingerprint": "b0-unknown",
+      "object": "chat.completion",
+      "usage": {
+        "completion_tokens": 354,
+        "prompt_tokens": 83,
+        "total_tokens": 437,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "id": "chatcmpl-0DqpeRdNRouKMbGBHuumSvkTBFXBs6C2",
+      "timings": {
+        "cache_n": 0,
+        "prompt_n": 83,
+        "prompt_ms": 227.801,
+        "prompt_per_token_ms": 2.744590361445783,
+        "prompt_per_second": 364.3530976597996,
+        "predicted_n": 354,
+        "predicted_ms": 2909.96,
+        "predicted_per_token_ms": 8.243512747875354,
+        "predicted_per_second": 121.30750938157226,
+        "draft_n": 672,
+        "draft_n_accepted": 258
+      }
+    },
+    "wall_seconds": 3.3210638169839513,
+    "gpu_energy_joules": 1696.0409735184332,
+    "power_samples": 68,
+    "content": "```sql\nSELECT \n    customer_id,\n    order_date,\n    SUM(amount) OVER (\n        PARTITION BY customer_id \n        ORDER BY order_date \n        RANGE BETWEEN INTERVAL '6 days' PRECEDING AND CURRENT ROW\n    ) AS rolling_revenue\nFROM orders;\n```\n\nThis query uses `RANGE` with an interval to define the window based on calendar time. It sums all orders for a customer where `order_date` falls within the last seven days (current date minus 6 days to current date).\n\n**Why `ROWS 6 PRECEDING` is not equivalent:**\n\n`ROWS` operates on the physical position of rows in the result set, not on the values in the `ORDER BY` column.\n\n1.  **Missing Dates:** If a customer has no orders on certain days, `ROWS 6 PRECEDING` will include the 6th previous *order*, which might be from 10 or 30 days ago. `RANGE` correctly excludes orders older than 7 calendar days, even if there are fewer than 7 rows in that period.\n2.  **Multiple Orders Per Day:** If a customer places multiple orders on the same day, `ROWS 6 PRECEDING` might exclude some orders from the current day or include orders from more than 7 days ago, depending on the row count. `RANGE` includes *all* orders within the 7-day window, regardless of how many rows exist per day.\n\nIn short, `ROWS` counts records; `RANGE` counts time. For calendar-based rolling windows, `RANGE` is required to ensure the window is defined by date boundaries, not row density.",
+    "reasoning_content": null,
+    "finish_reason": "stop",
+    "completion_tokens": 354,
+    "prompt_tokens": 83,
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 83,
+      "prompt_ms": 227.801,
+      "prompt_per_token_ms": 2.744590361445783,
+      "prompt_per_second": 364.3530976597996,
+      "predicted_n": 354,
+      "predicted_ms": 2909.96,
+      "predicted_per_token_ms": 8.243512747875354,
+      "predicted_per_second": 121.30750938157226,
+      "draft_n": 672,
+      "draft_n_accepted": 258
+    }
+  },
+  {
+    "arm": "b8-k7",
+    "prompt": "math",
+    "request": {
+      "messages": [
+        {
+          "role": "system",
+          "content": "Answer the user's request directly."
+        },
+        {
+          "role": "user",
+          "content": "Derive the probability of at least one collision after n independent draws from m equally likely values. Include the n > m case, the birthday approximation, and its assumptions. Keep the answer under 250 words."
+        }
+      ],
+      "temperature": 0,
+      "seed": 42,
+      "max_tokens": 1536,
+      "stream": false,
+      "cache_prompt": false,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      }
+    },
+    "response": {
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "Let $P(n, m)$ be the probability of at least one collision when drawing $n$ independent values from $m$ equally likely options.\n\n**Exact Derivation**\nIt is easier to calculate the complement: the probability that all $n$ draws are distinct.\n1. The first draw is always unique.\n2. The second draw must differ from the first: probability $\\frac{m-1}{m}$.\n3. The third draw must differ from the first two: probability $\\frac{m-2}{m}$.\n4. The $k$-th draw must differ from the previous $k-1$ draws: probability $\\frac{m-(k-1)}{m}$.\n\nThe probability of no collisions is:\n$$ P(\\text{no collision}) = \\prod_{k=0}^{n-1} \\frac{m-k}{m} = \\frac{m!}{(m-n)! m^n} $$\n\nThus, the probability of at least one collision is:\n$$ P(\\text{collision}) = 1 - \\frac{m!}{(m-n)! m^n} $$\n\n**Case $n > m$**\nIf $n > m$, the Pigeonhole Principle guarantees that at least one value must be repeated. Therefore:\n$$ P(\\text{collision}) = 1 $$\n\n**Birthday Approximation**\nFor large $m$ and $n \\ll m$, we use the approximation $\\ln(1-x) \\approx -x$.\n$$ \\ln(P(\\text{no collision})) = \\sum_{k=0}^{n-1} \\ln\\left(1 - \\frac{k}{m}\\right) \\approx -\\sum_{k=0}^{n-1} \\frac{k}{m} = -\\frac{n(n-1)}{2m} $$\nExponentiating gives:\n$$ P(\\text{no collision}) \\approx e^{-\\frac{n(n-1)}{2m}} $$\nSo,\n$$ P(\\text{collision}) \\approx 1 - e^{-\\frac{n(n-1)}{2m}} $$\n\n**Assumptions**\n1. **Independence**: Each draw is independent of previous draws.\n2. **Uniformity**: All $m$ values have equal probability $\\frac{1}{m}$.\n3. **Small $n/m$**: The approximation holds best when $n$ is small relative to $m$ (specifically $n \\ll \\sqrt{m}$ for high accuracy)."
+          }
+        }
+      ],
+      "created": 1792416039,
+      "model": "/run/media/matteius/ai-drive/models/gguf/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q8_K_XL.gguf",
+      "system_fingerprint": "b0-unknown",
+      "object": "chat.completion",
+      "usage": {
+        "completion_tokens": 541,
+        "prompt_tokens": 68,
+        "total_tokens": 609,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "id": "chatcmpl-knS8tI0wNwwZQoVJVz5zndQmuofuofVG",
+      "timings": {
+        "cache_n": 0,
+        "prompt_n": 68,
+        "prompt_ms": 223.414,
+        "prompt_per_token_ms": 3.2855,
+        "prompt_per_second": 304.3676761527926,
+        "predicted_n": 541,
+        "predicted_ms": 2950.356,
+        "predicted_per_token_ms": 5.463622222222223,
+        "predicted_per_second": 183.02875991914195,
+        "draft_n": 672,
+        "draft_n_accepted": 445
+      }
+    },
+    "wall_seconds": 3.3620667109789792,
+    "gpu_energy_joules": 1723.688445447654,
+    "power_samples": 69,
+    "content": "Let $P(n, m)$ be the probability of at least one collision when drawing $n$ independent values from $m$ equally likely options.\n\n**Exact Derivation**\nIt is easier to calculate the complement: the probability that all $n$ draws are distinct.\n1. The first draw is always unique.\n2. The second draw must differ from the first: probability $\\frac{m-1}{m}$.\n3. The third draw must differ from the first two: probability $\\frac{m-2}{m}$.\n4. The $k$-th draw must differ from the previous $k-1$ draws: probability $\\frac{m-(k-1)}{m}$.\n\nThe probability of no collisions is:\n$$ P(\\text{no collision}) = \\prod_{k=0}^{n-1} \\frac{m-k}{m} = \\frac{m!}{(m-n)! m^n} $$\n\nThus, the probability of at least one collision is:\n$$ P(\\text{collision}) = 1 - \\frac{m!}{(m-n)! m^n} $$\n\n**Case $n > m$**\nIf $n > m$, the Pigeonhole Principle guarantees that at least one value must be repeated. Therefore:\n$$ P(\\text{collision}) = 1 $$\n\n**Birthday Approximation**\nFor large $m$ and $n \\ll m$, we use the approximation $\\ln(1-x) \\approx -x$.\n$$ \\ln(P(\\text{no collision})) = \\sum_{k=0}^{n-1} \\ln\\left(1 - \\frac{k}{m}\\right) \\approx -\\sum_{k=0}^{n-1} \\frac{k}{m} = -\\frac{n(n-1)}{2m} $$\nExponentiating gives:\n$$ P(\\text{no collision}) \\approx e^{-\\frac{n(n-1)}{2m}} $$\nSo,\n$$ P(\\text{collision}) \\approx 1 - e^{-\\frac{n(n-1)}{2m}} $$\n\n**Assumptions**\n1. **Independence**: Each draw is independent of previous draws.\n2. **Uniformity**: All $m$ values have equal probability $\\frac{1}{m}$.\n3. **Small $n/m$**: The approximation holds best when $n$ is small relative to $m$ (specifically $n \\ll \\sqrt{m}$ for high accuracy).",
+    "reasoning_content": null,
+    "finish_reason": "stop",
+    "completion_tokens": 541,
+    "prompt_tokens": 68,
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 68,
+      "prompt_ms": 223.414,
+      "prompt_per_token_ms": 3.2855,
+      "prompt_per_second": 304.3676761527926,
+      "predicted_n": 541,
+      "predicted_ms": 2950.356,
+      "predicted_per_token_ms": 5.463622222222223,
+      "predicted_per_second": 183.02875991914195,
+      "draft_n": 672,
+      "draft_n_accepted": 445
+    }
+  },
+  {
+    "arm": "b8-k7",
+    "prompt": "debug",
+    "request": {
+      "messages": [
+        {
+          "role": "system",
+          "content": "Answer the user's request directly."
+        },
+        {
+          "role": "user",
+          "content": "A multithreaded work queue loses items during shutdown. Describe the most likely race and give a concrete close, drain, and join protocol that prevents loss. Keep the answer under 300 words."
+        }
+      ],
+      "temperature": 0,
+      "seed": 42,
+      "max_tokens": 1536,
+      "stream": false,
+      "cache_prompt": false,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      }
+    },
+    "response": {
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "The most likely race is a **lost wakeup** or **premature termination**. This occurs when a worker thread checks the queue, finds it empty, and is about to block or exit, while simultaneously the main thread pushes the final item and signals the condition variable. If the worker misses the signal or checks the \"shutdown\" flag before seeing the new item, it exits without processing the last task. Conversely, if the main thread sets a shutdown flag before pushing the final item, workers may exit immediately, leaving items stranded.\n\nTo prevent loss, implement a strict **Close, Drain, and Join** protocol:\n\n1.  **Close (Signal Intent):** The main thread sets a `shutdown` flag to `true` and notifies all waiting workers. Crucially, do **not** push new items after this point. This signals workers that no *new* work will arrive, but existing work must be completed.\n2.  **Drain (Process Remaining Work):** Workers continue to process items from the queue until it is empty. The worker loop should check: `while (true) { item = try_dequeue(); if (item) process(item); else if (shutdown_flag) break; else wait(); }`. This ensures that any item already in the queue is processed before the worker exits. The main thread should wait until the queue is empty (drained) before proceeding.\n3.  **Join (Reclaim Resources):** Once the queue is empty and all workers have exited their loops, the main thread calls `join()` on each worker thread. This ensures all worker threads have fully terminated and their resources are reclaimed.\n\n**Key Implementation Details:**\n*   Use a mutex to protect the queue and the `shutdown` flag.\n*   Use a condition variable for efficient waiting.\n*   The `shutdown` flag must be checked *after* attempting to dequeue an item. If the queue is empty and `shutdown` is true, the worker exits. If the queue is not empty, the worker processes the item regardless of the `shutdown` flag.\n*   The main thread must ensure the queue is empty before joining. This can be done by having workers signal a \"queue empty\" condition variable when they find the queue empty and `shutdown` is true, or by having the main thread wait on a counter of active workers.\n\nThis protocol guarantees that all items enqueued before `close()` are processed, and no items are lost due to race conditions during shutdown."
+          }
+        }
+      ],
+      "created": 1792416045,
+      "model": "/run/media/matteius/ai-drive/models/gguf/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q8_K_XL.gguf",
+      "system_fingerprint": "b0-unknown",
+      "object": "chat.completion",
+      "usage": {
+        "completion_tokens": 507,
+        "prompt_tokens": 66,
+        "total_tokens": 573,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "id": "chatcmpl-0r66IuOgjwYtVgJx77sP5rB0i2YLsJB9",
+      "timings": {
+        "cache_n": 0,
+        "prompt_n": 66,
+        "prompt_ms": 221.618,
+        "prompt_per_token_ms": 3.3578484848484846,
+        "prompt_per_second": 297.809744695828,
+        "predicted_n": 507,
+        "predicted_ms": 4911.309,
+        "predicted_per_token_ms": 9.706144268774704,
+        "predicted_per_second": 103.02752280502,
+        "draft_n": 1141,
+        "draft_n_accepted": 344
+      }
+    },
+    "wall_seconds": 5.3249943850096315,
+    "gpu_energy_joules": 2859.393400463262,
+    "power_samples": 108,
+    "content": "The most likely race is a **lost wakeup** or **premature termination**. This occurs when a worker thread checks the queue, finds it empty, and is about to block or exit, while simultaneously the main thread pushes the final item and signals the condition variable. If the worker misses the signal or checks the \"shutdown\" flag before seeing the new item, it exits without processing the last task. Conversely, if the main thread sets a shutdown flag before pushing the final item, workers may exit immediately, leaving items stranded.\n\nTo prevent loss, implement a strict **Close, Drain, and Join** protocol:\n\n1.  **Close (Signal Intent):** The main thread sets a `shutdown` flag to `true` and notifies all waiting workers. Crucially, do **not** push new items after this point. This signals workers that no *new* work will arrive, but existing work must be completed.\n2.  **Drain (Process Remaining Work):** Workers continue to process items from the queue until it is empty. The worker loop should check: `while (true) { item = try_dequeue(); if (item) process(item); else if (shutdown_flag) break; else wait(); }`. This ensures that any item already in the queue is processed before the worker exits. The main thread should wait until the queue is empty (drained) before proceeding.\n3.  **Join (Reclaim Resources):** Once the queue is empty and all workers have exited their loops, the main thread calls `join()` on each worker thread. This ensures all worker threads have fully terminated and their resources are reclaimed.\n\n**Key Implementation Details:**\n*   Use a mutex to protect the queue and the `shutdown` flag.\n*   Use a condition variable for efficient waiting.\n*   The `shutdown` flag must be checked *after* attempting to dequeue an item. If the queue is empty and `shutdown` is true, the worker exits. If the queue is not empty, the worker processes the item regardless of the `shutdown` flag.\n*   The main thread must ensure the queue is empty before joining. This can be done by having workers signal a \"queue empty\" condition variable when they find the queue empty and `shutdown` is true, or by having the main thread wait on a counter of active workers.\n\nThis protocol guarantees that all items enqueued before `close()` are processed, and no items are lost due to race conditions during shutdown.",
+    "reasoning_content": null,
+    "finish_reason": "stop",
+    "completion_tokens": 507,
+    "prompt_tokens": 66,
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 66,
+      "prompt_ms": 221.618,
+      "prompt_per_token_ms": 3.3578484848484846,
+      "prompt_per_second": 297.809744695828,
+      "predicted_n": 507,
+      "predicted_ms": 4911.309,
+      "predicted_per_token_ms": 9.706144268774704,
+      "predicted_per_second": 103.02752280502,
+      "draft_n": 1141,
+      "draft_n_accepted": 344
+    }
+  },
+  {
+    "arm": "b8-k7",
+    "prompt": "story",
+    "request": {
+      "messages": [
+        {
+          "role": "system",
+          "content": "Answer the user's request directly."
+        },
+        {
+          "role": "user",
+          "content": "Write a self-contained 250\u2013350 word story about an engineer debugging a radio telescope during a storm. Include dialogue and a clear ending."
+        }
+      ],
+      "temperature": 0,
+      "seed": 42,
+      "max_tokens": 1536,
+      "stream": false,
+      "cache_prompt": false,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      }
+    },
+    "response": {
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "The rain lashed against the reinforced glass of the control room, blurring the view of the massive dish swaying violently in the gale. Inside, the air was thick with the smell of ozone and stale coffee. Elena stared at the main monitor, her eyes burning as she traced the jagged red line of the signal-to-noise ratio. It was spiking erratically, a chaotic dance that made no sense.\n\n\"Come on,\" she muttered, tapping the glass. \"Just give me a clean read.\"\n\nBehind her, the heavy door hissed open. Marcus, the senior systems engineer, stepped in, his jacket dripping water onto the polished floor. He didn\u2019t look at the screens; he looked at Elena.\n\n\"Power grid is fluctuating,\" he said, his voice low but urgent. \"The storm is hitting the main transformer. If we don\u2019t isolate the receiver array, we\u2019re going to fry the LNA.\"\n\nElena didn\u2019t turn around. \"I can\u2019t isolate it. The feedback loop is already active. If I cut the power, I lose the calibration data for the entire quarter.\"\n\nMarcus walked over, placing a hand on her shoulder. \"Elena, look at me. The hardware is more important than the data. We can recalibrate. We can\u2019t replace the receiver.\"\n\nShe finally turned, her face pale under the blue glow of the monitors. The red line on the screen spiked again, louder this time, a digital scream. \"It\u2019s not just noise, Marcus. It\u2019s a pattern. It\u2019s repeating every 1.4 seconds.\"\n\nMarcus frowned, leaning in. \"That\u2019s impossible. The storm is random.\"\n\n\"Exactly,\" Elena whispered, a sudden, cold realization washing over her. \"It\u2019s not the storm. It\u2019s the interference from the dish\u2019s own structural resonance. The wind is hitting the harmonic frequency of the antenna.\"\n\nShe spun back to the console, her fingers flying across the keyboard. \"I\u2019m not cutting power. I\u2019m shifting the phase of the feed horn by two degrees. It\u2019ll cancel out the resonance.\"\n\n\"Are you sure?\" Marcus asked, his hand hovering over the emergency kill switch.\n\n\"Trust me.\"\n\nShe hit enter. The screen flickered. The jagged red line smoothed out, flattening into a steady, calm green wave. The hum of the server room seemed to quiet, as if the machine itself was exhaling.\n\nMarcus let out a breath he didn\u2019t realize he\u2019d been holding. \"You\u2019re a madwoman, Elena.\"\n\nElena allowed a small, tired smile. \"Just an engineer. Now, let\u2019s get this data before the next gust hits.\" Outside, the storm raged on, but inside, the signal was clear."
+          }
+        }
+      ],
+      "created": 1792416051,
+      "model": "/run/media/matteius/ai-drive/models/gguf/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q8_K_XL.gguf",
+      "system_fingerprint": "b0-unknown",
+      "object": "chat.completion",
+      "usage": {
+        "completion_tokens": 572,
+        "prompt_tokens": 56,
+        "total_tokens": 628,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "id": "chatcmpl-Y9l09LsFOhqcT5NTRVqpTa7Hauh08BuX",
+      "timings": {
+        "cache_n": 0,
+        "prompt_n": 56,
+        "prompt_ms": 219.434,
+        "prompt_per_token_ms": 3.9184642857142857,
+        "prompt_per_second": 255.2020197416991,
+        "predicted_n": 572,
+        "predicted_ms": 6067.839,
+        "predicted_per_token_ms": 10.62668826619965,
+        "predicted_per_second": 94.10269455072886,
+        "draft_n": 1414,
+        "draft_n_accepted": 370
+      }
+    },
+    "wall_seconds": 6.473110563005321,
+    "gpu_energy_joules": 3556.4185021424637,
+    "power_samples": 131,
+    "content": "The rain lashed against the reinforced glass of the control room, blurring the view of the massive dish swaying violently in the gale. Inside, the air was thick with the smell of ozone and stale coffee. Elena stared at the main monitor, her eyes burning as she traced the jagged red line of the signal-to-noise ratio. It was spiking erratically, a chaotic dance that made no sense.\n\n\"Come on,\" she muttered, tapping the glass. \"Just give me a clean read.\"\n\nBehind her, the heavy door hissed open. Marcus, the senior systems engineer, stepped in, his jacket dripping water onto the polished floor. He didn\u2019t look at the screens; he looked at Elena.\n\n\"Power grid is fluctuating,\" he said, his voice low but urgent. \"The storm is hitting the main transformer. If we don\u2019t isolate the receiver array, we\u2019re going to fry the LNA.\"\n\nElena didn\u2019t turn around. \"I can\u2019t isolate it. The feedback loop is already active. If I cut the power, I lose the calibration data for the entire quarter.\"\n\nMarcus walked over, placing a hand on her shoulder. \"Elena, look at me. The hardware is more important than the data. We can recalibrate. We can\u2019t replace the receiver.\"\n\nShe finally turned, her face pale under the blue glow of the monitors. The red line on the screen spiked again, louder this time, a digital scream. \"It\u2019s not just noise, Marcus. It\u2019s a pattern. It\u2019s repeating every 1.4 seconds.\"\n\nMarcus frowned, leaning in. \"That\u2019s impossible. The storm is random.\"\n\n\"Exactly,\" Elena whispered, a sudden, cold realization washing over her. \"It\u2019s not the storm. It\u2019s the interference from the dish\u2019s own structural resonance. The wind is hitting the harmonic frequency of the antenna.\"\n\nShe spun back to the console, her fingers flying across the keyboard. \"I\u2019m not cutting power. I\u2019m shifting the phase of the feed horn by two degrees. It\u2019ll cancel out the resonance.\"\n\n\"Are you sure?\" Marcus asked, his hand hovering over the emergency kill switch.\n\n\"Trust me.\"\n\nShe hit enter. The screen flickered. The jagged red line smoothed out, flattening into a steady, calm green wave. The hum of the server room seemed to quiet, as if the machine itself was exhaling.\n\nMarcus let out a breath he didn\u2019t realize he\u2019d been holding. \"You\u2019re a madwoman, Elena.\"\n\nElena allowed a small, tired smile. \"Just an engineer. Now, let\u2019s get this data before the next gust hits.\" Outside, the storm raged on, but inside, the signal was clear.",
+    "reasoning_content": null,
+    "finish_reason": "stop",
+    "completion_tokens": 572,
+    "prompt_tokens": 56,
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 56,
+      "prompt_ms": 219.434,
+      "prompt_per_token_ms": 3.9184642857142857,
+      "prompt_per_second": 255.2020197416991,
+      "predicted_n": 572,
+      "predicted_ms": 6067.839,
+      "predicted_per_token_ms": 10.62668826619965,
+      "predicted_per_second": 94.10269455072886,
+      "draft_n": 1414,
+      "draft_n_accepted": 370
+    }
+  },
+  {
+    "arm": "b8-k7",
+    "prompt": "translation",
+    "request": {
+      "messages": [
+        {
+          "role": "system",
+          "content": "Answer the user's request directly."
+        },
+        {
+          "role": "user",
+          "content": "Translate 'The engineer reviewed the design before the test' into Spanish. Explain two alternative word choices and their nuances. Reply in under 150 words."
+        }
+      ],
+      "temperature": 0,
+      "seed": 42,
+      "max_tokens": 1536,
+      "stream": false,
+      "cache_prompt": false,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      }
+    },
+    "response": {
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "**Translation:**\nEl ingeniero revis\u00f3 el dise\u00f1o antes de la prueba.\n\n**Alternative Word Choices:**\n\n1.  **Revis\u00f3 vs. Analiz\u00f3:**\n    *   *Revis\u00f3* (reviewed) implies a general check or inspection for errors or compliance. It is the most direct translation.\n    *   *Analiz\u00f3* (analyzed) suggests a deeper, more detailed examination of the design\u2019s components or logic. Use this if the engineer performed a thorough technical breakdown rather than a quick check.\n\n2.  **Prueba vs. Ensayo:**\n    *   *Prueba* (test) is the standard, general term for any trial or examination.\n    *   *Ensayo* (trial/assay) often implies a preliminary or experimental test, particularly in scientific or industrial contexts. It can sound more formal or specific to a trial run rather than a final validation.\n\nChoose *analiz\u00f3* and *ensayo* if the context involves rigorous, experimental technical work; otherwise, stick with the standard *revis\u00f3* and *prueba* for general clarity."
+          }
+        }
+      ],
+      "created": 1792416054,
+      "model": "/run/media/matteius/ai-drive/models/gguf/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q8_K_XL.gguf",
+      "system_fingerprint": "b0-unknown",
+      "object": "chat.completion",
+      "usage": {
+        "completion_tokens": 234,
+        "prompt_tokens": 56,
+        "total_tokens": 290,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "id": "chatcmpl-rLllXJcBXEkBfB3OoDo5ML6QQIbVYjLu",
+      "timings": {
+        "cache_n": 0,
+        "prompt_n": 56,
+        "prompt_ms": 217.904,
+        "prompt_per_token_ms": 3.891142857142857,
+        "prompt_per_second": 256.9939055730964,
+        "predicted_n": 234,
+        "predicted_ms": 2005.025,
+        "predicted_per_token_ms": 8.605257510729615,
+        "predicted_per_second": 116.20802733133003,
+        "draft_n": 462,
+        "draft_n_accepted": 168
+      }
+    },
+    "wall_seconds": 2.4119507409923244,
+    "gpu_energy_joules": 1222.6581197576054,
+    "power_samples": 50,
+    "content": "**Translation:**\nEl ingeniero revis\u00f3 el dise\u00f1o antes de la prueba.\n\n**Alternative Word Choices:**\n\n1.  **Revis\u00f3 vs. Analiz\u00f3:**\n    *   *Revis\u00f3* (reviewed) implies a general check or inspection for errors or compliance. It is the most direct translation.\n    *   *Analiz\u00f3* (analyzed) suggests a deeper, more detailed examination of the design\u2019s components or logic. Use this if the engineer performed a thorough technical breakdown rather than a quick check.\n\n2.  **Prueba vs. Ensayo:**\n    *   *Prueba* (test) is the standard, general term for any trial or examination.\n    *   *Ensayo* (trial/assay) often implies a preliminary or experimental test, particularly in scientific or industrial contexts. It can sound more formal or specific to a trial run rather than a final validation.\n\nChoose *analiz\u00f3* and *ensayo* if the context involves rigorous, experimental technical work; otherwise, stick with the standard *revis\u00f3* and *prueba* for general clarity.",
+    "reasoning_content": null,
+    "finish_reason": "stop",
+    "completion_tokens": 234,
+    "prompt_tokens": 56,
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 56,
+      "prompt_ms": 217.904,
+      "prompt_per_token_ms": 3.891142857142857,
+      "prompt_per_second": 256.9939055730964,
+      "predicted_n": 234,
+      "predicted_ms": 2005.025,
+      "predicted_per_token_ms": 8.605257510729615,
+      "predicted_per_second": 116.20802733133003,
+      "draft_n": 462,
+      "draft_n_accepted": 168
+    }
+  },
+  {
+    "arm": "b8-k7",
+    "prompt": "systems",
+    "request": {
+      "messages": [
+        {
+          "role": "system",
+          "content": "Answer the user's request directly."
+        },
+        {
+          "role": "user",
+          "content": "A service needs 20 ms of CPU time and 80 ms waiting for storage per request. Assume one CPU core and ample storage concurrency, with no other contention. Give single-request latency and throughput, maximum throughput, and the approximate concurrency needed to reach it. Keep the answer under 180 words."
+        }
+      ],
+      "temperature": 0,
+      "seed": 42,
+      "max_tokens": 1536,
+      "stream": false,
+      "cache_prompt": false,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      }
+    },
+    "response": {
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "**Single-Request Latency**\nThe total latency is the sum of CPU time and storage wait time:\n$$20 \\text{ ms} + 80 \\text{ ms} = 100 \\text{ ms}$$\n\n**Throughput (Single Request)**\nWith only one request in flight, the system completes one request every 100 ms.\n$$\\text{Throughput} = \\frac{1}{0.1 \\text{ s}} = 10 \\text{ requests/second (RPS)}$$\n\n**Maximum Throughput**\nThe bottleneck is the single CPU core, which can only process 20 ms of work per request. To maximize CPU utilization, the core must be kept busy continuously.\n$$\\text{Max Throughput} = \\frac{1}{0.02 \\text{ s}} = 50 \\text{ RPS}$$\n\n**Required Concurrency**\nUsing Little\u2019s Law ($L = \\lambda W$), where $L$ is concurrency, $\\lambda$ is throughput, and $W$ is latency:\n$$L = 50 \\text{ RPS} \\times 0.1 \\text{ s} = 5$$\n\nAlternatively, since the CPU is busy for 20% of the time per request ($20/100$), you need $1 / 0.2 = 5$ concurrent requests to keep the CPU saturated while storage waits are handled in parallel.\n\n**Summary**\n*   **Latency:** 100 ms\n*   **Max Throughput:** 50 RPS\n*   **Concurrency:** 5"
+          }
+        }
+      ],
+      "created": 1792416056,
+      "model": "/run/media/matteius/ai-drive/models/gguf/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q8_K_XL.gguf",
+      "system_fingerprint": "b0-unknown",
+      "object": "chat.completion",
+      "usage": {
+        "completion_tokens": 352,
+        "prompt_tokens": 88,
+        "total_tokens": 440,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "id": "chatcmpl-V6dqjNXLqSkelkufkKndQlSSL18tTBfe",
+      "timings": {
+        "cache_n": 0,
+        "prompt_n": 88,
+        "prompt_ms": 226.525,
+        "prompt_per_token_ms": 2.5741477272727273,
+        "prompt_per_second": 388.47809292572566,
+        "predicted_n": 352,
+        "predicted_ms": 2169.56,
+        "predicted_per_token_ms": 6.181082621082621,
+        "predicted_per_second": 161.78395619388263,
+        "draft_n": 497,
+        "draft_n_accepted": 281
+      }
+    },
+    "wall_seconds": 2.575104138988536,
+    "gpu_energy_joules": 1322.9362437736268,
+    "power_samples": 53,
+    "content": "**Single-Request Latency**\nThe total latency is the sum of CPU time and storage wait time:\n$$20 \\text{ ms} + 80 \\text{ ms} = 100 \\text{ ms}$$\n\n**Throughput (Single Request)**\nWith only one request in flight, the system completes one request every 100 ms.\n$$\\text{Throughput} = \\frac{1}{0.1 \\text{ s}} = 10 \\text{ requests/second (RPS)}$$\n\n**Maximum Throughput**\nThe bottleneck is the single CPU core, which can only process 20 ms of work per request. To maximize CPU utilization, the core must be kept busy continuously.\n$$\\text{Max Throughput} = \\frac{1}{0.02 \\text{ s}} = 50 \\text{ RPS}$$\n\n**Required Concurrency**\nUsing Little\u2019s Law ($L = \\lambda W$), where $L$ is concurrency, $\\lambda$ is throughput, and $W$ is latency:\n$$L = 50 \\text{ RPS} \\times 0.1 \\text{ s} = 5$$\n\nAlternatively, since the CPU is busy for 20% of the time per request ($20/100$), you need $1 / 0.2 = 5$ concurrent requests to keep the CPU saturated while storage waits are handled in parallel.\n\n**Summary**\n*   **Latency:** 100 ms\n*   **Max Throughput:** 50 RPS\n*   **Concurrency:** 5",
+    "reasoning_content": null,
+    "finish_reason": "stop",
+    "completion_tokens": 352,
+    "prompt_tokens": 88,
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 88,
+      "prompt_ms": 226.525,
+      "prompt_per_token_ms": 2.5741477272727273,
+      "prompt_per_second": 388.47809292572566,
+      "predicted_n": 352,
+      "predicted_ms": 2169.56,
+      "predicted_per_token_ms": 6.181082621082621,
+      "predicted_per_second": 161.78395619388263,
+      "draft_n": 497,
+      "draft_n_accepted": 281
+    }
+  }
+]
