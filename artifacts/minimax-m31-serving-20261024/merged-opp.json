@@ -1,0 +1,40 @@
+{
+  "base": "/srv/ai/storage/artifacts/npu-collective-qfn-20261014-024609/qfn-runtime/vllm_ascend/_cann_ops_custom/vendors/custom_transformer",
+  "kernel_source": "/vllm-workspace/minimax-m31-kernel-opp/vendors/custom_transformer",
+  "destination": "/vllm-workspace/minimax-m31-merged-opp/vendors/custom_transformer",
+  "overlays": [
+    {
+      "path": "op_impl/ai_core/tbe/kernel/config/ascend310p/w2_blocked_dequant_matmul_v310.json",
+      "sha256": "852fe9354b7ff2f742512828c252e04d1ba263af73353817f403d36ce5bdd38a"
+    },
+    {
+      "path": "op_impl/ai_core/tbe/kernel/ascend310p/w2_blocked_dequant_matmul_v310/W2BlockedDequantMatmulV310_3d6a48b4987633382a2b03889048deca.o",
+      "sha256": "25f5e3e6f3f887c322db39e7ac0c173dd497c95a134bb9d2560b0f1b2b077b67"
+    },
+    {
+      "path": "op_impl/ai_core/tbe/kernel/ascend310p/w2_blocked_dequant_matmul_v310/W2BlockedDequantMatmulV310_3d6a48b4987633382a2b03889048deca.json",
+      "sha256": "25ed51fa2339b696921d4736f00fd7d60a809b7eff8f298759271d2edfe40229"
+    },
+    {
+      "path": "op_impl/ai_core/tbe/kernel/config/ascend310p/w2_grouped_blocked_dequant_matmul_v310.json",
+      "sha256": "82dfdc96dfb387f123d87f8dffb85c7ac1ddd9f43ec57ea74aed8b2e4307f895"
+    },
+    {
+      "path": "op_impl/ai_core/tbe/kernel/ascend310p/w2_grouped_blocked_dequant_matmul_v310/W2GroupedBlockedDequantMatmulV310_21ed540d36cafc1d1bee8d7cdd208e81.o",
+      "sha256": "c1d9380f918535d380ba73c00a721790c7c85a061811d2da499d42661839bc30"
+    },
+    {
+      "path": "op_impl/ai_core/tbe/kernel/ascend310p/w2_grouped_blocked_dequant_matmul_v310/W2GroupedBlockedDequantMatmulV310_21ed540d36cafc1d1bee8d7cdd208e81.json",
+      "sha256": "7b08a4c74712e4b01d7f8b31d5ca3a5a9d20e47df82974f31020343ec5c6cfb1"
+    },
+    {
+      "path": "op_impl/ai_core/tbe/kernel/ascend310p/w2_grouped_blocked_dequant_matmul_v310/W2GroupedBlockedDequantMatmulV310_514169fc48f8479e22f086ad5d5bbe69.o",
+      "sha256": "32485d5a6a566dece381b3d81a8e4c9434d44f425c608c5d540fc66c26902fcd"
+    },
+    {
+      "path": "op_impl/ai_core/tbe/kernel/ascend310p/w2_grouped_blocked_dequant_matmul_v310/W2GroupedBlockedDequantMatmulV310_514169fc48f8479e22f086ad5d5bbe69.json",
+      "sha256": "9ab013b3f92879f233eae9b1b37e7328d4565224c1a79795bb908cd37f3eedbe"
+    }
+  ],
+  "note": "Existing host tiling supports the unchanged M3 W4 geometry and tiling struct; runtime gate still required"
+}

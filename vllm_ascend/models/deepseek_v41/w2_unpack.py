@@ -41,22 +41,20 @@ pure-tensor slices -- the same pattern as the Qwen4Exp reference.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn.functional as F
 
-from tests.ut.deepseek_w2.reference.w2_moe_reference import W2Expert
-from tests.ut.qwen38_1m.reference.w8a8_reference import (
-    dequantize_per_token,
-    quantize_per_token_int8,
-)
 from tools.deepseek_w2.w2_format import (
     W2_BLOCK_COLS,
     W2_BLOCK_ROWS,
     broadcast_block_scales,
     unpack_codes,
-    unpack_w2_codes,
 )
+
+if TYPE_CHECKING:
+    from tests.ut.deepseek_w2.reference.w2_moe_reference import W2Expert
 
 __all__ = [
     "ActiveExpertWeights",
@@ -201,8 +199,14 @@ def w2_group_qdq_linear(
     The activation path is the shared symmetric per-token INT8 QDQ, identical to
     the E0.4 W2 reference and the Qwen4Exp W8A8 grouped path.
     """
-    q_a, scale_a = quantize_per_token_int8(x)
-    x_deq = dequantize_per_token(q_a, scale_a).double()
+    # Keep runtime registration independent of the tests package. This is the
+    # same symmetric per-token grid used by the independent W8A8 oracle.
+    activation = x.float()
+    amax = activation.abs().amax(dim=-1, keepdim=True)
+    int8_max = torch.iinfo(torch.int8).max
+    scale_a = torch.where(amax > 0, amax / int8_max, torch.ones_like(amax))
+    q_a = torch.round(activation / scale_a).clamp(-int8_max - 1, int8_max).to(torch.int8)
+    x_deq = (q_a.float() * scale_a).double()
     w_deq = codes.double() * scale
     return x_deq @ w_deq.t()
 

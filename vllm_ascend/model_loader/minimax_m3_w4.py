@@ -14,9 +14,16 @@ from tools.minimax_m3.checkpoint import dense_weights, load_expert_banks, read_m
 @register_model_loader("minimax_m3_w4")
 class MiniMaxM3W4Loader(DefaultModelLoader):
     def __init__(self, load_config):
-        if load_config.model_loader_extra_config:
-            raise ValueError("M3 W4 loader does not accept extra loader options")
-        super().__init__(dataclasses.replace(load_config, load_format="safetensors"))
+        options = load_config.model_loader_extra_config or {}
+        if set(options) - {"expert_layout", "max_grouped_routes"}:
+            raise ValueError("Unknown M3 W4 loader options")
+        self.expert_layout = options.get("expert_layout", "canonical")
+        self.max_grouped_routes = options.get("max_grouped_routes", 128)
+        if self.expert_layout not in ("canonical", "nz256"):
+            raise ValueError("M3 expert_layout must be canonical or nz256")
+        if type(self.max_grouped_routes) is not int or self.max_grouped_routes not in (128, 512):
+            raise ValueError("M3 max_grouped_routes must be 128 or 512")
+        super().__init__(dataclasses.replace(load_config, load_format="safetensors", model_loader_extra_config={}))
 
     def download_model(self, model_config):
         # Intentionally local-only; never silently download the BF16 checkpoint.
@@ -29,7 +36,9 @@ class MiniMaxM3W4Loader(DefaultModelLoader):
         if len(backbones) != 1:
             raise ValueError("M3 W4 loader requires exactly one MiniMaxM3Model backbone")
         backbone = backbones[0]
-        load_expert_banks(model, folder, manifest)
+        load_expert_banks(
+            model, folder, manifest, expert_layout=self.expert_layout, max_grouped_routes=self.max_grouped_routes
+        )
         loaded = model.load_weights(
             dense_weights(
                 folder,

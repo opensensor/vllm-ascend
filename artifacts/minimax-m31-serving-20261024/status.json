@@ -1,0 +1,32 @@
+{
+  "updated_utc": "2026-10-24T23:20:29.549744+00:00",
+  "real_service_validated": true,
+  "conversion_complete": true,
+  "weight_transfer": "complete; rsync exit 0 and dry-run unchanged",
+  "full_60_layer_dummy_text_http": "passed",
+  "full_60_layer_dummy_image_http": "passed",
+  "full_8k_dummy_boundary": "passed",
+  "cpu_single_token": "completed",
+  "source_expert_cpu_single_token": "completed",
+  "runtime": "/srv/ai/venvs/minimax-m31",
+  "npu_host": "threadripper",
+  "implementation_roots": [
+    "/vllm-workspace/vllm",
+    "/vllm-workspace/vllm-ascend"
+  ],
+  "base_commit": "704c3f8f30c5f306f4aa5f70385ecb632cc49a1f",
+  "nz256_expert_candidate": "rejected: installed OPP uses 16x128 tiles; output mismatch",
+  "nz128_batch512_candidate": "rejected: independent CPU checks reveal NZ error and nonfinite concentrated routes",
+  "isolated_kernel_build": "passed",
+  "current_kernel_canonical512_cpu_comparison": "passed",
+  "current_kernel_nz256_512_cpu_comparison": "passed",
+  "cpu_tests": "200 passed, 10 skipped; parser tests also passed in the serving environment",
+  "changed_files_lint": "passed; full format.sh ci blocked by existing repository-wide failures",
+  "real_service": "running qualified NZ256 experts with resident reload controls; baseline attention",
+  "real_log": "/vllm-workspace/minimax-resident.log",
+  "coherence": "Final post-reload suite 9/9 passed; separate 7943-token sparse retrieval passed",
+  "next_experiment": "Future candidates use the resident controls; attention fast path remains rejected",
+  "resident_reload": "Python module replacement, versioned direct CANN load/activation and rollback passed on six ranks; PIDs and weight allocations unchanged",
+  "attention_fast_path": "rejected twice on full-model greeting; 390-call shadow locally close but end-to-end incoherent; baseline restored",
+  "delivery": "qualified; signed delivery commit recorded in git history"
+}

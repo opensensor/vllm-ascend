@@ -1,0 +1,97 @@
+{
+  "scope": "Small deterministic coherence/format smoke, not lm-eval or long-context qualification",
+  "cases": [
+    {
+      "status": 200,
+      "text": "Hello!",
+      "reasoning": "",
+      "usage": {
+        "prompt_tokens": 201,
+        "total_tokens": 205,
+        "completion_tokens": 4,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "first_output_seconds": 7.714548685005866,
+      "elapsed_seconds": 8.746606316999532,
+      "name": "greeting",
+      "expected": "hello",
+      "passed": true
+    },
+    {
+      "status": 200,
+      "text": "Paris",
+      "reasoning": "The user asks for the capital of France, answer with only the city name.",
+      "usage": {
+        "prompt_tokens": 205,
+        "total_tokens": 225,
+        "completion_tokens": 20,
+        "completion_tokens_details": {
+          "reasoning_tokens": 16
+        }
+      },
+      "first_output_seconds": 5.760010047000833,
+      "elapsed_seconds": 15.258902321977075,
+      "name": "france",
+      "expected": "paris",
+      "passed": true
+    },
+    {
+      "status": 200,
+      "text": "42",
+      "reasoning": "17 + 25 = 42.",
+      "usage": {
+        "prompt_tokens": 205,
+        "total_tokens": 217,
+        "completion_tokens": 12,
+        "completion_tokens_details": {
+          "reasoning_tokens": 8
+        }
+      },
+      "first_output_seconds": 5.737586939998437,
+      "elapsed_seconds": 11.006918318977114,
+      "name": "addition",
+      "expected": "42",
+      "passed": true
+    },
+    {
+      "status": 200,
+      "text": "cobalt",
+      "reasoning": "The user wants exactly the word \"cobalt\".",
+      "usage": {
+        "prompt_tokens": 198,
+        "total_tokens": 213,
+        "completion_tokens": 15,
+        "completion_tokens_details": {
+          "reasoning_tokens": 10
+        }
+      },
+      "first_output_seconds": 5.578959602979012,
+      "elapsed_seconds": 12.3951874129707,
+      "name": "copy",
+      "expected": "cobalt",
+      "passed": true
+    },
+    {
+      "status": 200,
+      "text": "Red",
+      "reasoning": "The image is a solid red color. Dominant color: red.",
+      "usage": {
+        "prompt_tokens": 463,
+        "total_tokens": 481,
+        "completion_tokens": 18,
+        "completion_tokens_details": {
+          "reasoning_tokens": 14
+        }
+      },
+      "first_output_seconds": 10.18566987599479,
+      "elapsed_seconds": 18.681524137966335,
+      "name": "image",
+      "expected": "red",
+      "passed": true
+    }
+  ],
+  "sample_count": 5,
+  "passed_fraction": 1.0
+}

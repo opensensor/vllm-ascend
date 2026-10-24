@@ -1,0 +1,131 @@
+{
+  "hardware_validated": false,
+  "payload_hashes_verified": false,
+  "model_tensor_count": 23428,
+  "unique_payload_bytes": 235320182272,
+  "assumptions": {
+    "tp": 2,
+    "pp": 3,
+    "ep": 2,
+    "context": 131072,
+    "sequences": 16,
+    "device_gib": 45.6,
+    "utilization": 0.95,
+    "reserve_gib": 3,
+    "vision": "Fully replicated per rank (conservative upper bound)",
+    "reserve": "Assumed allowance for workspaces, communication, alignment, and allocator"
+  },
+  "cache_bytes_per_token_all_ranks": 153600,
+  "best": {
+    "partition": [
+      21,
+      20,
+      19
+    ],
+    "stages": [
+      {
+        "stage": 0,
+        "ranks": [
+          0,
+          1
+        ],
+        "start_layer": 0,
+        "end_layer_exclusive": 21,
+        "weight_bytes_per_rank": 39806651392,
+        "kv_bytes_per_rank": 56371445760,
+        "runtime_reserve_bytes": 3221225472,
+        "planned_bytes_per_rank": 99399322624,
+        "budget_bytes_per_rank": 46514495815,
+        "headroom_bytes_per_rank": -52884826809
+      },
+      {
+        "stage": 1,
+        "ranks": [
+          2,
+          3
+        ],
+        "start_layer": 21,
+        "end_layer_exclusive": 41,
+        "weight_bytes_per_rank": 41543855104,
+        "kv_bytes_per_rank": 53687091200,
+        "runtime_reserve_bytes": 3221225472,
+        "planned_bytes_per_rank": 98452171776,
+        "budget_bytes_per_rank": 46514495815,
+        "headroom_bytes_per_rank": -51937675961
+      },
+      {
+        "stage": 2,
+        "ranks": [
+          4,
+          5
+        ],
+        "start_layer": 41,
+        "end_layer_exclusive": 60,
+        "weight_bytes_per_rank": 40782575104,
+        "kv_bytes_per_rank": 51002736640,
+        "runtime_reserve_bytes": 3221225472,
+        "planned_bytes_per_rank": 95006537216,
+        "budget_bytes_per_rank": 46514495815,
+        "headroom_bytes_per_rank": -48492041401
+      }
+    ],
+    "peak_bytes_per_rank": 99399322624,
+    "fits_planning_budget": false
+  },
+  "original": {
+    "partition": [
+      21,
+      20,
+      19
+    ],
+    "stages": [
+      {
+        "stage": 0,
+        "ranks": [
+          0,
+          1
+        ],
+        "start_layer": 0,
+        "end_layer_exclusive": 21,
+        "weight_bytes_per_rank": 39806651392,
+        "kv_bytes_per_rank": 56371445760,
+        "runtime_reserve_bytes": 3221225472,
+        "planned_bytes_per_rank": 99399322624,
+        "budget_bytes_per_rank": 46514495815,
+        "headroom_bytes_per_rank": -52884826809
+      },
+      {
+        "stage": 1,
+        "ranks": [
+          2,
+          3
+        ],
+        "start_layer": 21,
+        "end_layer_exclusive": 41,
+        "weight_bytes_per_rank": 41543855104,
+        "kv_bytes_per_rank": 53687091200,
+        "runtime_reserve_bytes": 3221225472,
+        "planned_bytes_per_rank": 98452171776,
+        "budget_bytes_per_rank": 46514495815,
+        "headroom_bytes_per_rank": -51937675961
+      },
+      {
+        "stage": 2,
+        "ranks": [
+          4,
+          5
+        ],
+        "start_layer": 41,
+        "end_layer_exclusive": 60,
+        "weight_bytes_per_rank": 40782575104,
+        "kv_bytes_per_rank": 51002736640,
+        "runtime_reserve_bytes": 3221225472,
+        "planned_bytes_per_rank": 95006537216,
+        "budget_bytes_per_rank": 46514495815,
+        "headroom_bytes_per_rank": -48492041401
+      }
+    ],
+    "peak_bytes_per_rank": 99399322624,
+    "fits_planning_budget": false
+  }
+}

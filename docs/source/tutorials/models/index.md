@@ -11,3 +11,5 @@ This section provides tutorials for different models of vLLM Ascend.
 - [GLM-5.3 Flash: CUDA and one Ascend sidecard (experimental)](GLM5.3-Flash-Sidecard.md)
 
 - [Qwen3.8 Flash-Next: TP6 images on 310P](Qwen3.8-Flash-Next-TP6-Images.md)
+
+- [MiniMax M3.1 Flash: six-chip 310P validation (experimental)](MiniMax-M3.1-Flash-310P.md)

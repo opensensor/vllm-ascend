@@ -13,6 +13,8 @@ from torch import nn
 
 W4_BLOCK = 32
 MAX_GROUPED_ROUTES = 128
+NZ_OUTPUT_TILE = 16
+NZ_INPUT_TILE = 256
 ATTENTION_QUERY_TILE = 16
 W4_LAYOUT = "minimax-m3-signed-w4-block32-fp16-v1"
 
@@ -74,6 +76,26 @@ def unpack_w4(codes, scales):
     return signed.float() * scales.float().repeat_interleave(W4_BLOCK, -2).repeat_interleave(W4_BLOCK, -1)
 
 
+def pack_w4_nz256(codes):
+    """Lossless CPU load-time packing for the current 16x256 grouped kernel.
+
+    INT8 dtype signals NZ layout to the operator; the checkpoint stays UINT8
+    canonical. Older 16x128 operator packages are incompatible with this layout.
+    """
+    if codes.device.type != "cpu" or codes.dtype != torch.uint8 or codes.ndim != 2:
+        raise ValueError("NZ packing requires a CPU UINT8 canonical matrix")
+    rows, packed_cols = codes.shape
+    cols = packed_cols * 2
+    if not rows or rows % NZ_OUTPUT_TILE or not cols or cols % NZ_INPUT_TILE:
+        raise ValueError("Expert dimensions must contain complete 16x256 NZ tiles")
+    row_tiles, col_tiles = rows // NZ_OUTPUT_TILE, cols // NZ_INPUT_TILE
+    values = codes.reshape(row_tiles, NZ_OUTPUT_TILE, col_tiles, NZ_INPUT_TILE // 2)
+    fields = torch.stack((values & 15, values >> 4), dim=-1)
+    fields = fields.reshape(row_tiles, NZ_OUTPUT_TILE, col_tiles, NZ_INPUT_TILE)
+    planes = fields.permute(0, 2, 3, 1).reshape(row_tiles, col_tiles, 2, -1)
+    return (planes[..., 0, :] | (planes[..., 1, :] << 4)).reshape_as(codes).view(torch.int8).contiguous()
+
+
 def reference_grouped_mm(x, codes, scales, group_ends):
     """CPU implementation of the native grouped operator, including peer zeros."""
     if x.device.type != "cpu":
@@ -87,6 +109,14 @@ def reference_grouped_mm(x, codes, scales, group_ends):
             ).to(x.dtype)
         start = stop
     return output
+
+
+def grouped_w4_mm(x, codes, scales, group_ends):
+    """Stable resident dispatch seam for versioned, validated CANN kernels."""
+    op = getattr(torch.ops._C_ascend, "npu_w2_grouped_blocked_dequant_matmul_310", None)
+    if op is None:
+        raise RuntimeError("M3 W4 requires the grouped 310P Cube extension and OPP")
+    return op(x, codes, scales, group_ends)
 
 
 class PackedM3Experts(nn.Module):
@@ -119,6 +149,7 @@ class PackedM3Experts(nn.Module):
         self.top_k = top_k
         self.alpha, self.beta, self.limit, self.routed_scale = alpha, beta, limit, routed_scale
         self.projector = projector
+        self.max_grouped_routes = MAX_GROUPED_ROUTES
         for projection, rows, cols in (
             ("w1", intermediate, hidden),
             ("w3", intermediate, hidden),
@@ -138,12 +169,12 @@ class PackedM3Experts(nn.Module):
         op = self.projector
         if op is None:
             if hidden_states.device.type == "cpu":
+                if self.w1_codes.dtype != torch.uint8:
+                    raise ValueError("NZ expert banks require the matching native NPU operator")
                 op = reference_grouped_mm
             else:
-                op = getattr(torch.ops._C_ascend, "npu_w2_grouped_blocked_dequant_matmul_310", None)
-                if op is None:
-                    raise RuntimeError("M3 W4 requires the grouped 310P Cube extension and OPP")
-        chunk_tokens = MAX_GROUPED_ROUTES // self.top_k
+                op = grouped_w4_mm
+        chunk_tokens = self.max_grouped_routes // self.top_k
         if chunk_tokens == 0:
             raise ValueError("M3 top-k exceeds grouped operator route capacity")
         scales = {name: getattr(self, f"{name}_scales").float() for name in ("w1", "w2", "w3")}

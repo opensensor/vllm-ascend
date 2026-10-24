@@ -228,3 +228,59 @@ def test_actual_moe_adapter_bypasses_fused_allocation_and_reduces_shared_once(ra
     result = model(x)
     assert len(calls) == 1 and calls[0].dtype == torch.float32
     torch.testing.assert_close(result, x / 2)
+
+
+def test_sparse_constructor_owns_rope_before_runner_cache_initialization():
+    """Profiling must work without the ordinary attention runner's RoPE slices."""
+
+    class Component(torch.nn.Module):
+        def __init__(self, *args, **kwargs):
+            super().__init__()
+
+    class Rotary(Component):
+        def forward(self, positions):
+            if not getattr(self, "use_model_owned_rope", False):
+                raise RuntimeError("runner cos/sin cache is uninitialized")
+            return positions
+
+    context = SimpleNamespace(model_config=None, compilation_config=SimpleNamespace(static_forward_context={}))
+    namespace = {
+        "torch": torch,
+        "nn": torch.nn,
+        "AttentionLayerBase": type("AttentionLayerBase", (), {}),
+        "get_tensor_model_parallel_world_size": lambda: 2,
+        "get_ascend_device_type": lambda: 1,
+        "AscendDeviceType": SimpleNamespace(_310P=1),
+        "_use_fused_qkv_indexer": lambda *args: False,
+        "_register_m3_sparse_packed_modules": lambda *args: None,
+        "get_rope": lambda *args, **kwargs: Rotary(),
+        "get_current_vllm_config": lambda: context,
+        "_resolve_layer_kv_cache_dtypes": lambda *args: ("float16", torch.float16),
+    }
+    for name in (
+        "QKVParallelLinear",
+        "AscendMiniMaxM3IndexerLinear",
+        "RowParallelLinear",
+        "GemmaRMSNorm",
+        "AscendMiniMaxM3SparseBackend",
+        "AscendMiniMaxM3SparseImpl",
+        "AscendMiniMaxM3Indexer",
+    ):
+        namespace[name] = Component
+    cls = production_definition(MODEL, "MiniMaxM3SparseAttention", namespace)
+    layer = cls(
+        hidden_size=6144,
+        num_heads=64,
+        num_kv_heads=4,
+        head_dim=128,
+        rotary_dim=64,
+        sparse_cfg={
+            "sparse_num_index_heads": 4,
+            "sparse_index_dim": 128,
+            "sparse_topk_blocks": 16,
+            "sparse_block_size": 128,
+        },
+        prefix="model.layers.0.self_attn",
+    )
+    positions = torch.tensor([0, 19, 129])
+    torch.testing.assert_close(layer.rotary_emb(positions), positions)

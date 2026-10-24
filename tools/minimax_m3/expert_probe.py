@@ -13,6 +13,8 @@ from pathlib import Path
 import torch
 from safetensors.torch import load_file, save_file
 
+from tools.glm_perf.glm_int4 import pack_nz_codes, unpack_canonical_codes
+from tools.glm_perf.operator_bench import nzpacked_codes
 from tools.minimax_m3.layer_probe import digest, metrics
 
 LOCAL_EXPERTS = 64
@@ -53,7 +55,9 @@ def prepare(model, cache, output, layer, expert):
     )
 
 
-def run(bundle, ops, binding, device):
+def run(bundle, ops, binding, device, routes=MAX_ROUTES, layout="canonical"):
+    if routes < LOCAL_EXPERTS or routes % LOCAL_EXPERTS:
+        raise ValueError("Probe route count must be a positive multiple of the local expert count")
     torch.npu.set_device(device)
     spec = importlib.util.spec_from_file_location("m3_probe_ops", ops)
     module = importlib.util.module_from_spec(spec)
@@ -69,6 +73,8 @@ def run(bundle, ops, binding, device):
         "probe_sha256": digest(Path(__file__)),
         "torch_version": torch.__version__,
         "local_experts": LOCAL_EXPERTS,
+        "routes": routes,
+        "layout": layout,
         "bank_contents": "One real converted expert repeated in every slot",
         "projections": {},
     }
@@ -76,15 +82,19 @@ def run(bundle, ops, binding, device):
         codes = weights[projection + "_codes"]
         scales = weights[projection + "_scales"]
         reference = module.unpack_w4(codes, scales).half().float()
+        if layout == "nz128":
+            codes = nzpacked_codes(codes[None], reference.shape[1], 4)[0].view(torch.int8)
+        elif layout == "nz256":
+            codes = pack_nz_codes(unpack_canonical_codes(codes, reference.shape[1])[None])[0]
         bank_codes = codes.to(device)[None].repeat(LOCAL_EXPERTS, 1, 1).contiguous()
         bank_scales = scales.float().to(device)[None].repeat(LOCAL_EXPERTS, 1, 1).contiguous()
-        x = torch.randn(MAX_ROUTES, reference.shape[1], generator=torch.Generator().manual_seed(31)).half()
+        x = torch.randn(routes, reference.shape[1], generator=torch.Generator().manual_seed(31)).half()
         cpu = (x.float() @ reference.T).half()
         device_x = x.to(device)
         results = {}
         for case, ends in (
-            ("two_routes_each", torch.arange(1, LOCAL_EXPERTS + 1) * (MAX_ROUTES // LOCAL_EXPERTS)),
-            ("last_expert_only", torch.tensor([0] * (LOCAL_EXPERTS - 1) + [MAX_ROUTES])),
+            ("equal_routes_each", torch.arange(1, LOCAL_EXPERTS + 1) * (routes // LOCAL_EXPERTS)),
+            ("last_expert_only", torch.tensor([0] * (LOCAL_EXPERTS - 1) + [routes])),
             ("zero_local_routes", torch.zeros(LOCAL_EXPERTS, dtype=torch.int64)),
         ):
             result = operator(device_x, bank_codes, bank_scales, ends.to(device=device, dtype=torch.int64))
@@ -132,12 +142,14 @@ def main():
     parser.add_argument("--binding", type=Path)
     parser.add_argument("--device", default="npu:0")
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--routes", type=int, default=MAX_ROUTES)
+    parser.add_argument("--layout", choices=("canonical", "nz128", "nz256"), default="canonical")
     args = parser.parse_args()
     torch.set_num_threads(4)
     if args.prepare:
         prepare(args.model, args.cache, args.bundle, args.layer, args.expert)
         return
-    report = run(args.bundle, args.ops, args.binding, args.device)
+    report = run(args.bundle, args.ops, args.binding, args.device, args.routes, args.layout)
     args.output.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
     if not report["numerical_gate_passed"]:

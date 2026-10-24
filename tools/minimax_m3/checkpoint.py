@@ -15,7 +15,7 @@ from tools.minimax_m3.export_w4 import (
     local_file,
     mixed_weight_groups,
 )
-from vllm_ascend._310p.ops.minimax_m3 import W4_LAYOUT, PackedM3Experts
+from vllm_ascend._310p.ops.minimax_m3 import W4_LAYOUT, PackedM3Experts, pack_w4_nz256
 
 LAYER_NAME = re.compile(r"(?:^|\.)layers\.(\d+)\.")
 
@@ -85,7 +85,11 @@ def checked_tensors(folder, record):
             yield name, handle.get_tensor(name)
 
 
-def load_expert_banks(model, folder, manifest):
+def load_expert_banks(model, folder, manifest, *, expert_layout="canonical", max_grouped_routes=128):
+    if expert_layout not in ("canonical", "nz256"):
+        raise ValueError("Unsupported M3 resident expert layout")
+    if type(max_grouped_routes) is not int or max_grouped_routes not in (128, 512):
+        raise ValueError("M3 grouped route capacity must be 128 or 512")
     by_id = {}
     for name, record in manifest["weights"].items():
         match = EXPERT_NAME.fullmatch(name)
@@ -96,6 +100,11 @@ def load_expert_banks(model, folder, manifest):
         for module in model.modules():
             if not isinstance(module, PackedM3Experts):
                 continue
+            module.max_grouped_routes = max_grouped_routes
+            for projection in ("w1", "w2", "w3"):
+                name = f"{projection}_codes"
+                dtype = torch.int8 if expert_layout == "nz256" else torch.uint8
+                setattr(module, name, getattr(module, name).view(dtype))
             layer_match = LAYER_NAME.search(module.prefix)
             if layer_match is None:
                 raise ValueError(f"Expert module has no layer identity: {module.prefix}")
@@ -105,6 +114,8 @@ def load_expert_banks(model, folder, manifest):
                 for projection in ("w1", "w2", "w3"):
                     record = by_id[layer, expert, projection]
                     for kind, tensor in checked_tensors(folder, record):
+                        if kind == "codes" and expert_layout == "nz256":
+                            tensor = pack_w4_nz256(tensor)
                         target = getattr(module, f"{projection}_{kind}")[local]
                         if target.shape != tensor.shape or target.dtype != tensor.dtype:
                             raise ValueError(

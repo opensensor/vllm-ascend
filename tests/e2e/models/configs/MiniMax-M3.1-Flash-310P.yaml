@@ -1,0 +1,49 @@
+# Manual runtime diagnostic, not an lm-eval task configuration.
+# Do not pass this file to test_lm_eval_correctness.py.
+model_name: /srv/ai/storage/models/MiniMax-M3.1-Flash-W4
+model_type: runtime_diagnostic
+hardware: Three dual-chip Ascend 310P3 cards, six memory banks
+manual_only: true
+serve:
+  tensor_parallel_size: 2
+  pipeline_parallel_size: 3
+  pipeline_layers: [21, 20, 19]
+  enable_expert_parallel: true
+  dtype: float16
+  enforce_eager: true
+  max_model_len: 8192
+  max_num_seqs: 1
+  max_num_batched_tokens: 128
+  served_model_name: minimax-m31-flash
+  image_limit: 1
+  video_limit: 0
+  expert_layout: nz256
+  max_grouped_routes: 512
+tasks:
+  - name: greeting_fact_arithmetic_copy_red_image
+    metrics:
+      - name: passed_fraction
+        value: 1.0
+    sample_count: 5
+    evidence: artifacts/minimax-m31-serving-20261024/optimized-coherence/report.json
+  - name: json_multistep_multiturn_sparse_retrieval
+    metrics:
+      - name: passed_fraction
+        value: 1.0
+    sample_count: 4
+    evidence: artifacts/minimax-m31-serving-20261024/optimized-extended/report.json
+  - name: sparse_retrieval_7943_tokens
+    metrics:
+      - name: passed_fraction
+        value: 1.0
+    sample_count: 1
+    evidence: artifacts/minimax-m31-serving-20261024/resident-8k-retrieval/report.json
+num_fewshot: 0
+validation_runner: tools/minimax_m3/coherence_probe.py
+long_context_quality: bounded_retrieval_only
+notes: >-
+  Real-weight greedy HTTP/SSE diagnostics; the sparse retrieval prompt has
+  3443 tokens and exceeds the 16-block attention budget. These small checks
+  do not establish broad model accuracy or native-release quantization parity.
+  Unformatted raw completion was repetitive and is not qualified. ACLGraph,
+  sequence-parallel MoE and speculation are rejected by this eager adapter.

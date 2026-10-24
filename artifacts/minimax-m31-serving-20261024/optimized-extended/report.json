@@ -1,0 +1,84 @@
+{
+  "scope": "Small deterministic coherence/format smoke, not lm-eval or long-context qualification",
+  "cases": [
+    {
+      "status": 200,
+      "text": "{\"colors\": [\"red\", \"blue\"]}",
+      "reasoning": "",
+      "usage": {
+        "prompt_tokens": 211,
+        "total_tokens": 223,
+        "completion_tokens": 12,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "first_output_seconds": 6.142447347985581,
+      "elapsed_seconds": 11.423299109039363,
+      "name": "json",
+      "expected": {
+        "colors": [
+          "red",
+          "blue"
+        ]
+      },
+      "passed": true
+    },
+    {
+      "status": 200,
+      "text": "8",
+      "reasoning": "3 red + 2 blue = 5. Add 4 blue = 9. Remove 1 red = 8.",
+      "usage": {
+        "prompt_tokens": 228,
+        "total_tokens": 258,
+        "completion_tokens": 30,
+        "completion_tokens_details": {
+          "reasoning_tokens": 26
+        }
+      },
+      "first_output_seconds": 6.569788996013813,
+      "elapsed_seconds": 21.35798164404696,
+      "name": "multi_step",
+      "expected": "8",
+      "passed": true
+    },
+    {
+      "status": 200,
+      "text": "cedar-47",
+      "reasoning": "The user asked me to remember \"cedar-47\". They want only the code.",
+      "usage": {
+        "prompt_tokens": 231,
+        "total_tokens": 256,
+        "completion_tokens": 25,
+        "completion_tokens_details": {
+          "reasoning_tokens": 18
+        }
+      },
+      "first_output_seconds": 6.496287943969946,
+      "elapsed_seconds": 18.51217075198656,
+      "name": "multi_turn",
+      "expected": "cedar-47",
+      "passed": true
+    },
+    {
+      "status": 200,
+      "text": "amber cloud",
+      "reasoning": "",
+      "usage": {
+        "prompt_tokens": 3443,
+        "total_tokens": 3447,
+        "completion_tokens": 4,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "first_output_seconds": 70.08780225395458,
+      "elapsed_seconds": 71.18127138499403,
+      "name": "sparse_retrieval",
+      "expected": "amber cloud",
+      "passed": true
+    }
+  ],
+  "sample_count": 4,
+  "passed_fraction": 1.0
+}

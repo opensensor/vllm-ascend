@@ -297,6 +297,10 @@ class MiniMaxM3SparseAttention(nn.Module, AttentionLayerBase):
             max_position=max_position_embeddings,
             rope_parameters=rope_parameters,
         )
+        if get_ascend_device_type() == AscendDeviceType._310P:
+            # Sparse attention owns its RoPE cache. The runner's global slices
+            # are not initialized for this attention backend during profiling.
+            self.rotary_emb.use_model_owned_rope = True
 
         self.index_q_norm = GemmaRMSNorm(self.idx_head_dim, eps=rms_norm_eps)
         self.index_k_norm = GemmaRMSNorm(self.idx_head_dim, eps=rms_norm_eps)

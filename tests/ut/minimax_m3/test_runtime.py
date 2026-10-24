@@ -82,17 +82,22 @@ def test_router_bias_only_changes_selection():
     torch.testing.assert_close(weights, expected / expected.sum(1, keepdim=True))
 
 
-@pytest.mark.parametrize("tokens", [0, 1, 17, 65])
-def test_packed_moe_ep_sum_and_chunk_boundaries(tokens):
+@pytest.mark.parametrize("route_cap", [128, 512])
+@pytest.mark.parametrize("tokens", [0, 1, 17, 65, 257])
+def test_packed_moe_ep_sum_and_chunk_boundaries(tokens, route_cap):
     torch.manual_seed(7)
     x = torch.randn(tokens, 32).half()
     logits = torch.randn(tokens, 4)
     bias = torch.tensor([0.03, -0.04, 0.07, 0.01])
     full = make_bank()
+    full.max_grouped_routes = route_cap
     actual = full(x, logits, bias)
     if tokens:
         torch.testing.assert_close(actual, expert_oracle(full, x, logits, bias), atol=0.003, rtol=0.003)
-    distributed = make_bank(2, 0)(x, logits, bias) + make_bank(2, 1)(x, logits, bias)
+    shards = [make_bank(2, rank) for rank in range(2)]
+    for shard in shards:
+        shard.max_grouped_routes = route_cap
+    distributed = sum(shard(x, logits, bias) for shard in shards)
     torch.testing.assert_close(actual, distributed, atol=1e-6, rtol=1e-6)
 
 
@@ -130,7 +135,16 @@ def attention_oracle(q, k, v, iq, ik, *, prefix, block_size, topk, local, init):
 
 
 @pytest.mark.parametrize(
-    "prefix,length,topk,local,init", [(0, 35, 2, 1, 0), (19, 18, 2, 0, 0), (71, 1, 3, 1, 1), (0, 2, 16, 1, 0)]
+    "prefix,length,topk,local,init",
+    [
+        (0, 35, 2, 1, 0),
+        (19, 18, 2, 0, 0),
+        (71, 1, 3, 1, 1),
+        (0, 2, 16, 1, 0),
+        (0, 129, 64, 1, 0),
+        (93, 17, 32, 1, 1),
+        (127, 2, 32, 1, 0),
+    ],
 )
 def test_paged_sparse_attention_causality_and_head_selection(prefix, length, topk, local, init):
     torch.manual_seed(44)
@@ -178,6 +192,7 @@ def test_paged_sparse_attention_causality_and_head_selection(prefix, length, top
     torch.testing.assert_close(actual[:length], expected, atol=0.002, rtol=0.002)
     assert torch.count_nonzero(actual[length:]) == 0
     assert torch.isfinite(actual).all()
+    torch.testing.assert_close(ic.flatten(0, 1)[islots], ik)
 
 
 def test_mixed_decode_prefill_batch_has_no_cross_request_cache_leak():
