@@ -1,0 +1,535 @@
+#!/bin/bash
+
+ROOT_DIR=$1
+SOC_VERSION=$2
+: "${ROOT_DIR:?ROOT_DIR is not set}"
+
+log() {
+    echo "[build_aclnn] $*"
+}
+
+setup_catlass_dependency() {
+    local catlass_path="${ROOT_DIR}/csrc/third_party/catlass/include"
+    local catlass_commit
+    local absolute_catlass_path
+
+    git config --global --add safe.directory "$ROOT_DIR"
+    catlass_commit=$(git config -f "${ROOT_DIR}/.gitmodules" --get submodule.csrc/third_party/catlass.commit)
+    if [[ ! -d "${catlass_path}" ]]; then
+        echo "dependency catlass is missing, try to fetch it..."
+        git submodule sync
+        if ! git submodule update --init --recursive; then
+            log "fetch failed"
+            exit 1
+        fi
+        cd "${ROOT_DIR}/csrc/third_party/catlass" || exit 1
+        git fetch origin
+        git checkout "${catlass_commit}" || exit 1
+        cd - || exit 1
+    fi
+    absolute_catlass_path=$(cd "${catlass_path}" && pwd)
+    export CPATH="${absolute_catlass_path}${CPATH:+:${CPATH}}"
+    log "catlass include=${absolute_catlass_path}"
+}
+
+resolve_op_dir() {
+    local op_name=$1
+    local candidate_dir
+    for candidate_dir in \
+        "${ROOT_DIR}/csrc/moe/${op_name}" \
+        "${ROOT_DIR}/csrc/gmm/${op_name}" \
+        "${ROOT_DIR}/csrc/attention/${op_name}" \
+        "${ROOT_DIR}/csrc/mc2/${op_name}" \
+        "${ROOT_DIR}/csrc/ffn/${op_name}" \
+        "${ROOT_DIR}/csrc/posembedding/${op_name}"; do
+        if [[ -d "${candidate_dir}" ]]; then
+            echo "${candidate_dir}"
+            return 0
+        fi
+    done
+    find "${ROOT_DIR}/csrc" -maxdepth 3 -type d -name "${op_name}" -print -quit 2>/dev/null
+}
+
+op_name_to_type() {
+    local op_name=$1
+    local component
+    local op_type=""
+    local -a components
+
+    IFS='_' read -r -a components <<< "${op_name}"
+    for component in "${components[@]}"; do
+        op_type+="${component^}"
+    done
+    echo "${op_type}"
+}
+
+hash_op_host_sources() {
+    local op_path=$1
+
+    find "${op_path}/op_host" -type f -exec sha256sum {} + |
+        LC_ALL=C sort | sha256sum | cut -d ' ' -f 1
+}
+
+log_selected_ops() {
+    local op_name
+    local op_path
+    local kernel_cpp_file_count
+
+    log "resolved SOC_ARG=${SOC_ARG}"
+    log "resolved CUSTOM_OPS=${CUSTOM_OPS}"
+    log "custom op count=${#CUSTOM_OPS_ARRAY[@]}"
+    for op_name in "${CUSTOM_OPS_ARRAY[@]}"; do
+        op_path=$(resolve_op_dir "${op_name}")
+        if [[ -z "${op_path}" ]]; then
+            log "op ${op_name}: dir=<missing>"
+            continue
+        fi
+        kernel_cpp_file_count=0
+        if [[ -d "${op_path}/op_kernel" ]]; then
+            kernel_cpp_file_count=$(find "${op_path}/op_kernel" -maxdepth 1 -name '*.cpp' | wc -l | tr -d ' ')
+        fi
+        log "op ${op_name}: dir=${op_path} cmake=$([[ -f "${op_path}/CMakeLists.txt" ]] && echo yes || echo no) op_host_cmake=$([[ -f "${op_path}/op_host/CMakeLists.txt" ]] && echo yes || echo no) op_kernel_cpp_count=${kernel_cpp_file_count}"
+    done
+}
+
+invalidate_stale_kernel_cache() {
+    local binary_root="${ROOT_DIR}/csrc/build/binary/${SOC_ARG}"
+    local compile_stamp
+    local copied_launcher
+    local generated_launcher
+    local op_name
+    local op_path
+    local source_stamp
+    local stale_kernel_cache
+
+    [[ -d "${binary_root}" ]] || return 0
+
+    for op_name in "${CUSTOM_OPS_ARRAY[@]}"; do
+        op_path=$(resolve_op_dir "${op_name}")
+        [[ -n "${op_path}" && -d "${op_path}/op_kernel" ]] || continue
+
+        source_stamp="${binary_root}/src/${op_name}/${op_name}_${SOC_ARG}_src_copy.done"
+        stale_kernel_cache=0
+        if [[ ! -f "${source_stamp}" ]] ||
+           find "${op_path}/op_kernel" -type f -newer "${source_stamp}" -print -quit | grep -q .; then
+            stale_kernel_cache=1
+        elif [[ -f "${op_path}/op_host/CMakeLists.txt" &&
+                "${op_path}/op_host/CMakeLists.txt" -nt "${source_stamp}" ]]; then
+            # Per-SoC kernel compiler options live beside the host sources.
+            # Recompile device objects when those options change.
+            stale_kernel_cache=1
+        elif [[ "${op_name}" == "w2_blocked_dequant_matmul_v310" ||
+                "${op_name}" == "qwen_w4_group_matmul_v310" ||
+                "${op_name}" == "qwen_w4_grouped_matmul_v310" ||
+                "${op_name}" == "qwen_w4_routed_matmul_v310" ]] &&
+             find "${ROOT_DIR}/csrc/moe/common/kernel_utils" -type f -newer "${source_stamp}" -print -quit |
+                 grep -q .; then
+            # The 310P W2 kernel includes the shared CATLASS block helpers.
+            stale_kernel_cache=1
+        elif [[ "${op_name}" == "qwen_w4_routed_matmul_v310" ||
+                "${op_name}" == "qwen_w4_grouped_matmul_v310" ]] &&
+             find "${ROOT_DIR}/csrc/gmm/qwen_w4_group_matmul_v310/op_kernel" -type f -newer "${source_stamp}" -print -quit |
+                 grep -q .; then
+            # Routed projections share the group-W4 Cube implementation.
+            stale_kernel_cache=1
+        fi
+        if [[ "${stale_kernel_cache}" -eq 0 ]]; then
+            generated_launcher="${ROOT_DIR}/csrc/build/impl/dynamic/${op_name}.py"
+            copied_launcher=$(find "${binary_root}/src/${op_name}" -maxdepth 1 \
+                -type f -name '*.py' -print -quit 2>/dev/null)
+            if [[ -f "${generated_launcher}" ]] &&
+               { [[ -z "${copied_launcher}" ]] ||
+                 ! cmp -s "${generated_launcher}" "${copied_launcher}"; }; then
+                stale_kernel_cache=1
+            fi
+        fi
+        if [[ "${stale_kernel_cache}" -eq 0 ]]; then
+            continue
+        fi
+
+        log "invalidating stale kernel cache for ${op_name}"
+        rm -f -- "${source_stamp}"
+        # These generated launchers embed per-SoC compiler options. Removing
+        # the copied launcher makes Ninja refresh it from build/impl/dynamic.
+        find "${binary_root}/src/${op_name}" -maxdepth 1 -type f \
+            -name '*.py' -delete 2>/dev/null || true
+        while IFS= read -r -d '' compile_stamp; do
+            rm -f -- "${compile_stamp}"
+        done < <(find "${binary_root}/gen" -maxdepth 1 -type f \
+            -name "${op_name}_${SOC_ARG}_*.done" -print0 2>/dev/null)
+    done
+}
+
+invalidate_stale_host_cache() {
+    local autogen_root="${ROOT_DIR}/csrc/build/autogen"
+    local binary_root="${ROOT_DIR}/csrc/build/binary/${SOC_ARG}"
+    local generated_proto
+    local host_hash
+    local host_stamp
+    local op_name
+    local op_path
+    local op_type
+    local stale_host_cache
+
+    [[ -d "${autogen_root}" ]] || return 0
+
+    for op_name in "${CUSTOM_OPS_ARRAY[@]}"; do
+        op_path=$(resolve_op_dir "${op_name}")
+        [[ -n "${op_path}" && -d "${op_path}/op_host" ]] || continue
+
+        host_stamp="${binary_root}/src/${op_name}/${op_name}_${SOC_ARG}_host.sha256"
+        host_hash=$(hash_op_host_sources "${op_path}")
+        stale_host_cache=0
+        if [[ ! -f "${host_stamp}" ]] ||
+           [[ "$(< "${host_stamp}")" != "${host_hash}" ]]; then
+            log "invalidating stale host metadata for ${op_name}"
+            stale_host_cache=1
+        fi
+        for generated_proto in \
+            "${autogen_root}/${op_name}_proto.cpp" \
+            "${autogen_root}/inner/${op_name}_proto.cpp" \
+            "${autogen_root}/exc/${op_name}_proto.cpp"; do
+            [[ -f "${generated_proto}" ]] || continue
+            if find "${op_path}/op_host" -type f -newer "${generated_proto}" \
+                -print -quit | grep -q .; then
+                rm -f -- "${generated_proto}"
+                stale_host_cache=1
+            fi
+        done
+        [[ "${stale_host_cache}" -eq 1 && -d "${binary_root}" ]] || continue
+
+        # Host definitions determine the number and dtypes of generated kernel
+        # variants. CANN does not prune outputs from variants removed by a
+        # newer definition, so delete only this operator's generated products.
+        op_type=$(op_name_to_type "${op_name}")
+        find "${binary_root}/gen" -maxdepth 1 -type f \
+            \( -name "${op_type}-*" -o -name "${op_type}_*_param.json" \
+               -o -name "${op_name}_${SOC_ARG}_*.done" \) \
+            -delete 2>/dev/null || true
+        find "${binary_root}/gen" -maxdepth 1 -type d \
+            -name "kernel_meta_${op_type}_*" -exec rm -rf -- {} + 2>/dev/null || true
+        rm -rf -- "${binary_root}/bin/${op_name}"
+        rm -f -- "${binary_root}/bin/${op_name}.json"
+    done
+}
+
+update_host_cache_fingerprints() {
+    local binary_root="${ROOT_DIR}/csrc/build/binary/${SOC_ARG}"
+    local host_stamp
+    local op_name
+    local op_path
+
+    for op_name in "${CUSTOM_OPS_ARRAY[@]}"; do
+        op_path=$(resolve_op_dir "${op_name}")
+        [[ -n "${op_path}" && -d "${op_path}/op_host" ]] || continue
+        host_stamp="${binary_root}/src/${op_name}/${op_name}_${SOC_ARG}_host.sha256"
+        mkdir -p -- "$(dirname "${host_stamp}")"
+        hash_op_host_sources "${op_path}" > "${host_stamp}"
+    done
+}
+
+remove_stale_kernel_locks() {
+    local binary_root="${ROOT_DIR}/csrc/build/binary/${SOC_ARG}"
+    local lock_file
+    local lock_pid
+
+    [[ -d "${binary_root}/gen" ]] || return 0
+    while IFS= read -r -d '' lock_file; do
+        lock_pid=$(tr -cd '0-9' < "${lock_file}")
+        if [[ -z "${lock_pid}" ]] || ! kill -0 "${lock_pid}" 2>/dev/null; then
+            log "removing stale compiler lock ${lock_file}"
+            rm -f -- "${lock_file}"
+        fi
+    done < <(find "${binary_root}/gen" -mindepth 2 -maxdepth 2 \
+        -type f -name 'kernel_meta.lock' -print0 2>/dev/null)
+}
+
+log "start: ROOT_DIR=${ROOT_DIR:-<unset>} SOC_VERSION=${SOC_VERSION:-<unset>} cwd=$(pwd)"
+log "env: ASCEND_HOME_PATH=${ASCEND_HOME_PATH:-<unset>} ASCEND_TOOLKIT_HOME=${ASCEND_TOOLKIT_HOME:-<unset>}"
+
+if [[ "$SOC_VERSION" =~ ^ascend310 ]]; then
+    log "matched SOC branch: ascend310"
+    # ASCEND310P series
+    # dependency: catlass
+    setup_catlass_dependency
+
+    CUSTOM_OPS_ARRAY=(
+        "causal_conv1d_v310"
+        "gdn_gating_v310"
+        "recurrent_gated_delta_rule_v310"
+        "qsa_index_cache_update_v310"
+        "qsa_indexer_score_v310"
+        "qsa_sparse_attention_v310"
+        "qsa_gather_value_nz_v310"
+        "chunk_fwd_o"
+        "chunk_gated_delta_rule_fwd_h"
+        "chunk_kda_fwd"
+        "kda_gate_cumsum"
+        "kda_layout_swap12"
+        "w2_blocked_dequant_matmul_v310"
+        "qwen_w4_group_matmul_v310"
+        "qwen_w4_routed_matmul_v310"
+        "qwen_w4_grouped_matmul_v310"
+        "qwen_w4_a8_int4_matmul_v310"
+        "qwen_w4_a8_pack_v310"
+        "qwen_w4_a8_swiglu_pack_v310"
+        "qwen_w8_route_combine_v310"
+        "rms_norm_dynamic_quant"
+        "add_rms_norm_dynamic_quant"
+    )
+    CUSTOM_OPS=$(IFS=';'; echo "${CUSTOM_OPS_ARRAY[*]}")
+    SOC_ARG="ascend310p"
+elif [[ "$SOC_VERSION" =~ ^ascend910b ]]; then
+    log "matched SOC branch: ascend910b"
+    # ASCEND910B (A2) series
+    # dependency: catlass
+    setup_catlass_dependency
+
+    CUSTOM_OPS_ARRAY=(
+        "scatter_nd_update_sk"
+        "moe_grouped_matmul"
+        "grouped_matmul_swiglu_quant_weight_nz_tensor_list"
+        "lightning_indexer"
+        "sparse_flash_attention"
+        "kv_quant_sparse_flash_attention"
+        "moe_gating_top_k"
+        "moe_gating_top_k_hash"
+        "add_rms_norm_bias"
+        "rms_norm_cast"
+        "transpose_kv_cache_by_block"
+        "copy_and_expand_eagle_inputs"
+        "causal_conv1d"
+        "lightning_indexer_quant"
+        "compressor"
+        "compressor_metadata"
+        "vllm_quant_lightning_indexer"
+        "vllm_quant_lightning_indexer_metadata"
+        "quant_lightning_indexer_v2"
+        "quant_lightning_indexer_v2_metadata"
+        "sparse_attn_sharedkv"
+        "sparse_attn_sharedkv_metadata"
+        "hc_pre"
+        "hc_post"
+        "inplace_partial_rotary_mul"
+        "rms_norm_dynamic_quant"
+        "dequant_situ_quant"
+        "dequant_swiglu_quant"
+        "grouped_matmul_swiglu_quant"
+        "grouped_matmul_swiglu_quant_v2"
+        "recurrent_gated_delta_rule"
+        "recurrent_kda"
+        "chunk_fwd_o"
+        "chunk_gated_delta_rule_fwd_h"
+        "chunk_kda_fwd"
+        "kda_gate_cumsum"
+        "kda_layout_swap12"
+        "store_kv_block"
+        "store_kv_block_metadata"
+        "sparse_attention_score"
+        "k2q_csr"
+        "msa_index_score"
+        "fused_sparse_attention_overlap"
+    )
+
+    CUSTOM_OPS=$(IFS=';'; echo "${CUSTOM_OPS_ARRAY[*]}")
+    SOC_ARG="ascend910b"
+elif [[ "$SOC_VERSION" =~ ^ascend910_93 ]]; then
+    log "matched SOC branch: ascend910_93"
+    # ASCEND910C (A3) series
+    # dependency: catlass
+    setup_catlass_dependency
+
+    CUSTOM_OPS_ARRAY=(
+        "scatter_nd_update_sk"
+        "grouped_matmul_swiglu_quant_weight_nz_tensor_list"
+        "lightning_indexer"
+        "sparse_flash_attention"
+        "kv_quant_sparse_flash_attention"
+        "dispatch_ffn_combine"
+        "dispatch_ffn_combine_w4_a8"
+        "dispatch_ffn_combine_bf16"
+        "moe_gating_top_k"
+        "moe_gating_top_k_hash"
+        "add_rms_norm_bias"
+        "rms_norm_cast"
+        "transpose_kv_cache_by_block"
+        "copy_and_expand_eagle_inputs"
+        "causal_conv1d"
+        "moe_grouped_matmul"
+        "lightning_indexer_quant"
+        "compressor"
+        "compressor_metadata"
+        "vllm_quant_lightning_indexer"
+        "vllm_quant_lightning_indexer_metadata"
+        "quant_lightning_indexer_v2"
+        "quant_lightning_indexer_v2_metadata"
+        "sparse_attn_sharedkv"
+        "sparse_attn_sharedkv_metadata"
+        "hc_pre"
+        "hc_post"
+        "inplace_partial_rotary_mul"
+        "rms_norm_dynamic_quant"
+        "dequant_situ_quant"
+        "dequant_swiglu_quant"
+        "grouped_matmul_swiglu_quant"
+        "grouped_matmul_swiglu_quant_v2"
+        "recurrent_gated_delta_rule"
+        "recurrent_kda"
+        "chunk_fwd_o"
+        "chunk_gated_delta_rule_fwd_h"
+        "chunk_kda_fwd"
+        "kda_gate_cumsum"
+        "kda_layout_swap12"
+        "store_kv_block"
+        "store_kv_block_metadata"
+        "sparse_attention_score"
+        "k2q_csr"
+        "msa_index_score"
+        "fused_sparse_attention_overlap"
+    )
+    CUSTOM_OPS=$(IFS=';'; echo "${CUSTOM_OPS_ARRAY[*]}")
+    SOC_ARG="ascend910_93"
+elif [[ "$SOC_VERSION" =~ ^ascend950 ]]; then
+    log "matched SOC branch: ascend950"
+    # ASCEND950 (A5) series
+    # dependency: catlass
+    setup_catlass_dependency
+
+    CUSTOM_OPS_ARRAY=(
+        "moe_gating_top_k_hash"
+        "inplace_partial_rotary_mul"
+        "kv_compress_epilog"
+        "compressor"
+        "compressor_metadata"
+        "vllm_quant_lightning_indexer"
+        "vllm_quant_lightning_indexer_metadata"
+        "quant_lightning_indexer_v2"
+        "quant_lightning_indexer_v2_metadata"
+        "kv_quant_sparse_attn_sharedkv"
+        "kv_quant_sparse_attn_sharedkv_metadata"
+        "hc_post"
+        "hc_pre"
+        "swiglu_group_quant"
+        "situ_mx_quant"
+        "indexer_compress_epilog_v2"
+        "causal_conv1d"
+        "recurrent_gated_delta_rule"
+        "recurrent_kda"
+        "chunk_fwd_o"
+        "chunk_gated_delta_rule_fwd_h"
+        "chunk_kda_fwd"
+        "kda_gate_cumsum"
+        "kda_layout_swap12"
+        "store_kv_block"
+        "store_kv_block_metadata"
+        "k2q_csr"
+        "sparse_attention_score"
+        "mla_prolog_v3"
+    )
+
+    CUSTOM_OPS=$(IFS=';'; echo "${CUSTOM_OPS_ARRAY[*]}")
+    SOC_ARG="ascend950"
+else
+    # others
+    # currently, no custom aclnn ops for other series
+    log "no custom ACLNN ops configured for SOC_VERSION=${SOC_VERSION}; skip build_aclnn"
+    exit 0
+fi
+
+log_selected_ops
+invalidate_stale_kernel_cache
+invalidate_stale_host_cache
+remove_stale_kernel_locks
+
+
+# # build custom ops
+# cd csrc
+# rm -rf build output build_out
+# echo "building custom ops $CUSTOM_OPS for $SOC_VERSION"
+# bash build.sh --pkg --ops="$CUSTOM_OPS" --soc="$SOC_ARG"
+
+# # install custom ops to vllm_ascend/_cann_ops_custom
+# ./build/cann-ops-transformer*.run --install-path=$ROOT_DIR/vllm_ascend/_cann_ops_custom
+
+
+(
+  set -euo pipefail
+
+  : "${ROOT_DIR:?ROOT_DIR is not set}"
+
+  log "subshell cwd before cd=$(pwd)"
+  cd "${ROOT_DIR}/csrc"
+  log "subshell cwd after cd=$(pwd)"
+  # ASCEND_OP_NAME is cached by CMake. Reusing csrc/build after changing the
+  # selected operator set can therefore produce a valid-looking installer that
+  # silently omits operators. This is especially dangerous for the 310P Qwen4
+  # path: the QSA operators and its GDN operators must live in the same custom
+  # package. Always configure the package from a clean build tree.
+  log "cleaning csrc/build and output dirs to refresh the custom-op manifest"
+  rm -rf -- build output build_out
+
+  : "${CUSTOM_OPS:?CUSTOM_OPS is not set}"
+  : "${SOC_VERSION:?SOC_VERSION is not set}"
+  : "${SOC_ARG:?SOC_ARG is not set}"
+
+  log "build command: bash build.sh --pkg --ops=\"${CUSTOM_OPS}\" --soc=\"${SOC_ARG}\""
+  log "building custom ops ${CUSTOM_OPS} for ${SOC_VERSION}"
+  bash build.sh --pkg --ops="${CUSTOM_OPS}" --soc="${SOC_ARG}"
+  log "build.sh finished"
+  update_host_cache_fingerprints
+
+  custom_ops_install_dir="${ROOT_DIR}/vllm_ascend/_cann_ops_custom"
+  log "custom_ops_install_dir=${custom_ops_install_dir}"
+
+  mkdir -p -- "$custom_ops_install_dir"
+
+  # Older/copied vendor packages can predate the post-install permission fix.
+  # Make that package-owned directory removable before replacing its contents.
+  if [[ -d "${custom_ops_install_dir}/vendors/custom_transformer/scripts" ]]; then
+    chmod u+w "${custom_ops_install_dir}/vendors/custom_transformer/scripts"
+  fi
+
+  # Remove all top-level entries under custom_ops_install_dir except .gitkeep, including hidden files and directories.
+  find "$custom_ops_install_dir" -mindepth 1 -maxdepth 1 \
+    ! -name '.gitkeep' \
+    -exec rm -rf -- {} +
+
+  shopt -s nullglob
+  installer_candidates=(./build/cann-ops-transformer*.run)
+  shopt -u nullglob
+
+  log "installer candidate count=${#installer_candidates[@]}"
+  for installer_file in "${installer_candidates[@]}"; do
+    log "installer candidate: $(ls -lh "${installer_file}")"
+  done
+
+  (( ${#installer_candidates[@]} == 1 )) || { echo "ERROR: expected 1 installer, got ${#installer_candidates[@]}" >&2; exit 1; }
+
+  chmod +x -- "${installer_candidates[0]}" || true
+  log "running installer: ${installer_candidates[0]}"
+  "${installer_candidates[0]}" --install-path="${custom_ops_install_dir}"
+  # CANN leaves generated vendor script dirs owner-read-only; keep repo-local
+  # editable-build artifacts removable by the non-root user who built them.
+  if [[ -d "${custom_ops_install_dir}/vendors/custom_transformer/scripts" ]]; then
+    chmod u+w "${custom_ops_install_dir}/vendors/custom_transformer/scripts"
+  fi
+  log "installer finished"
+  log "installed files under ${custom_ops_install_dir} (maxdepth=4, first 120 entries):"
+  { find "${custom_ops_install_dir}" -mindepth 1 -maxdepth 4 -print | sort | head -n 120 | sed 's#^#[build_aclnn] install: #'; } || true
+
+  # install batch_invariant run package and whl package
+  if [[ "${VLLM_BATCH_INVARIANT:-0}" == "1" ]]; then
+    log "VLLM_BATCH_INVARIANT=1, installing batch_invariant run package and whl package..."
+
+    # call separate installation script
+    batch_invariant_script="${ROOT_DIR}/csrc/build_batch_invariant_ops.sh"
+    if [[ -f "${batch_invariant_script}" ]]; then
+      log "Calling batch_invariant_ops build script: ${batch_invariant_script}"
+      bash "${batch_invariant_script}" "${SOC_ARG}"
+    else
+      log "Warning: batch_invariant_ops build script not found at ${batch_invariant_script}"
+    fi
+  else
+    log "VLLM_BATCH_INVARIANT is not set to 1, skipping batch_invariant ops build"
+  fi
+)

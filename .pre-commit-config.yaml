@@ -5,7 +5,8 @@ default_install_hook_types:
 default_stages:
   - pre-commit # Run locally
   - manual # Run in CI
-exclude: '^(\.agents|\.claude|\.gemini)/.*'
+# Preserve the checksummed historical sources and generated API references.
+exclude: '^(\.agents|\.claude|\.gemini)/.*|^csrc/release_sources/qwen38_single_card_20261011/(snapshots|reference_cann91|licenses|validation)/'
 
 repos:
 - repo: https://github.com/astral-sh/ruff-pre-commit

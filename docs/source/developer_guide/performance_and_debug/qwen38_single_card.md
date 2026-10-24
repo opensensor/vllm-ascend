@@ -53,6 +53,14 @@ pinned model configuration remained downloadable. The later refresh used
 that same frozen runtime and operators with the draft-addressing correction;
 it did not upgrade packages or re-quantize the checkpoint.
 
+## Custom operator sources
+
+For the four release vendor packages, see the
+[custom operator sources and rebuild recipe](qwen38_custom_op_rebuild.md).
+The fork contains the host/tiling sources, handwritten APIs, generated API
+references and historical source manifests needed for a CANN rebuild.
+CANN 9.2 compilation and inference remain unvalidated.
+
 ## Download and run the exact qualified profile
 
 The [single-card release](https://github.com/opensensor/vllm-ascend/releases/tag/qwen38-single-card-20261011)

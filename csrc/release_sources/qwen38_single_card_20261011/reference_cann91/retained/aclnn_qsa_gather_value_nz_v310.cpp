@@ -1,0 +1,311 @@
+#include <string.h>
+#include <string>
+#include <vector>
+#include "base/err_msg.h"
+#include "graph/types.h"
+#include "aclnn_qsa_gather_value_nz_v310.h"
+
+#ifdef ACLNN_WITH_BINARY
+#include <vector>
+#include <tuple>
+#include <map>
+#include "graph/ascend_string.h"
+#include "QsaGatherValueNzV310_op_resource.h"
+using OP_HOST_FUNC_HANDLE = std::vector<void *>;
+using OP_RES = std::tuple<const uint8_t *, const uint8_t *>;
+using OP_BINARY_RES = std::vector<OP_RES>;
+using OP_RUNTIME_KB_RES = std::vector<OP_RES>;
+using OP_RESOURCES = std::map<ge::AscendString,
+    std::tuple<OP_HOST_FUNC_HANDLE, OP_BINARY_RES, OP_RUNTIME_KB_RES>>;
+using OP_SOC_RESOURCES = std::map<ge::AscendString, std::tuple<OP_HOST_FUNC_HANDLE,
+    std::map<ge::AscendString, OP_BINARY_RES>, OP_RUNTIME_KB_RES>>;
+namespace op {
+extern uint32_t GenOpTypeId(const char *op_name, const OP_RESOURCES &op_resources);
+extern uint32_t GenOpTypeId(const char *op_name, const OP_SOC_RESOURCES &op_resources);
+}
+#endif
+
+namespace {
+typedef struct {
+    uint32_t id;
+    const char *funcName;
+    bool hasReg;
+} NnopbaseDfxId;
+typedef struct {
+    ge::DataType dtype;
+    ge::Format format;
+} TensorDesc;
+typedef struct {
+    TensorDesc *inputsDesc;
+    size_t inputsNum;
+    TensorDesc *outputsDesc;
+    size_t outputsNum;
+} SupportInfo;
+typedef struct {
+    SupportInfo *supportInfo;
+    size_t num;
+} OpSocSupportInfo;
+typedef struct {
+    OpSocSupportInfo *socSupportInfo;
+    size_t num;
+} OpSupportList;
+enum SocType {
+    SOC_VERSION_ASCEND910A = 1,
+    SOC_VERSION_ASCEND910B = 2,
+    SOC_VERSION_ASCEND910_93 = 3,
+    SOC_VERSION_ASCEND950 = 4,
+    SOC_VERSION_ASCEND310P = 5,
+    SOC_VERSION_ASCEND310B = 6,
+    SOC_VERSION_BS9SX1A = 7,
+    SOC_VERSION_ASCEND610Lite = 8,
+    SOC_VERSION_MC61AM21A = 10, // 9 is deprecated
+    SOC_VERSION_MC62CM12A = 11,
+    SOC_VERSION_BS9SX2A = 12,
+    SOC_VERSION_ASCEND910_96 = 13,
+    SOC_VERSION_KIRINX90 = 14,
+    SOC_VERSION_KIRIN9030 = 15,
+    SOC_VERSION_ASCEND350 = 16,
+    SOC_VERSION_INVALID = 99
+};
+enum NnopbaseAttrDtype {
+    kNnopbaseBool = 0U,
+    kNnopbaseFloat,
+    kNnopbaseInt,
+    kNnopbaseString,
+    kNnopbaseAttrEnd
+};
+uint32_t socSupportList[] = {SOC_VERSION_ASCEND310P};
+uint32_t socSupportListLen = 1;
+
+static const char *socNameList[] = {"ascend310p"};
+static const size_t socNameListLen = 1;
+TensorDesc inputDesc0_0[6] =
+    {{ge::DT_FLOAT16, ge::FORMAT_FRACTAL_NZ},
+     {ge::DT_INT32, ge::FORMAT_ND},
+     {ge::DT_INT32, ge::FORMAT_ND},
+     {ge::DT_INT32, ge::FORMAT_ND},
+     {ge::DT_INT32, ge::FORMAT_ND},
+     {ge::DT_INT32, ge::FORMAT_ND}};
+TensorDesc outputDesc0_0[1] =
+    {{ge::DT_FLOAT16, ge::FORMAT_FRACTAL_NZ}};
+SupportInfo list0_0 = {inputDesc0_0, 6, outputDesc0_0, 1};
+SupportInfo supportInfo0[1] = {list0_0};
+OpSocSupportInfo socSupportInfo0= {supportInfo0, 1};
+
+OpSocSupportInfo opSocSupportList[1] = {socSupportInfo0};
+OpSupportList supportList = {opSocSupportList, 1};
+
+[[maybe_unused]] uint32_t NNOPBASE_QsaGatherValueNzV310 = 0U;
+} // namespace
+
+extern void NnopbaseOpLogE(const aclnnStatus code, const char *const expr);
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+extern aclnnStatus NnopbaseCreateExecutorSpace(void **space);
+extern void *NnopbaseGetExecutor(void *space, const char *opType, char *inputsDesc, uint32_t inputNum,
+                                 char *outputsDesc, uint32_t outputNum, char *attrsDesc, uint32_t attrsNum);
+extern aclnnStatus NnopbaseAddInput(void *executor, const aclTensor *tensor, const uint32_t index);
+extern aclnnStatus NnopbaseAddIgnoreContinuesInput(void *executor,
+                                                   const aclTensor *tensor, const uint32_t index);
+extern aclnnStatus NnopbaseAddIntArrayInput(void *executor, const aclIntArray *array, const uint32_t index);
+extern aclnnStatus NnopbaseAddBoolArrayInput(void *executor, const aclBoolArray *array, const uint32_t index);
+extern aclnnStatus NnopbaseAddFloatArrayInput(void *executor, const aclFloatArray *array, const uint32_t index);
+extern aclnnStatus NnopbaseAddOutput(void *executor, const aclTensor *tensor, const uint32_t index);
+extern aclnnStatus NnopbaseAddDynamicInput(void *executor, const aclTensorList *tensor_list, const uint32_t index);
+extern aclnnStatus __attribute__((weak)) NnopbaseAddIgnoreContiguousDynamicInput(void *executor, const aclTensorList *tensor_list, const uint32_t index);
+extern aclnnStatus NnopbaseAddDynamicOutput(void *executor, const aclTensorList *tensor_list, const uint32_t index);
+extern aclnnStatus NnopbaseAddAttrWithDtype(void *executor, void *attrAddr, size_t attrLen, const size_t index, const NnopbaseAttrDtype dtype);
+extern aclnnStatus NnopbaseAddIntArrayAttr(void *executor, const aclIntArray* array, const size_t index);
+extern aclnnStatus NnopbaseAddFloatArrayAttr(void *executor, const aclFloatArray* array, const size_t index);
+extern aclnnStatus NnopbaseAddBoolArrayAttr(void *executor, const aclBoolArray* array, const size_t index);
+extern aclnnStatus NnopbaseAddArrayAttrWithDtype(void *executor, void *array, const size_t len, const size_t elementSize, const size_t index, const NnopbaseAttrDtype dtype);
+extern uint64_t NnopbaseMsprofSysTime();
+extern const char* __attribute__((weak)) NnopbaseGetSocName();
+extern aclnnStatus NnopbaseAddTilingId(void *executor, NnopbaseDfxId *tilingId);
+extern void NnopbaseReportApiInfo(const uint64_t beginTime, NnopbaseDfxId &dfxId);
+extern aclnnStatus NnopbaseRunForWorkspace(void *executor, uint64_t *workspaceLen);
+extern aclnnStatus NnopbaseRunWithWorkspace(void *executor, aclrtStream stream, void *workspace, uint64_t workspaceSize);
+extern aclnnStatus NnopbaseAddSupportList(void *executor, OpSupportList *list, uint32_t *socSupportList, size_t socSupportListLen);
+extern aclnnStatus __attribute__((weak)) NnopbaseAddSocNameList(void *executor, OpSupportList *list, const char * const *socNameList, size_t socNameListLen);
+extern aclnnStatus NnopbaseAddScalarInput(void *executor, const aclScalar *scalar, const uint32_t index, const int32_t srcIndex, const ge::DataType dtype);
+extern aclnnStatus NnopbaseAddScalarListInput(void *executor, const aclScalarList *scalarList, const uint32_t index, const int32_t srcIndex, const ge::DataType dtype);
+extern void NnopbaseAddOpTypeId(void *executor, const uint32_t opTypeId);
+extern aclnnStatus __attribute__((weak)) NnopbaseAddParamName(void *executor, const uint32_t index, const char *name, const bool isInput);
+extern aclnnStatus __attribute__((weak)) NnopbaseSetFormatMatchMode(void *executor, const uint32_t mode);
+extern aclnnStatus NnopbaseSetRef(void *executor, const size_t inputIrIdx, const size_t outputIrIdx);
+extern void __attribute__((weak)) NnopbaseSetMatchArgsFlag(void *executor);
+extern bool __attribute__((weak)) NnopbaseMatchArgs(void *executor, uint64_t *workspaceLen);
+extern void __attribute__((weak)) NnopbaseSetParamCheckMode(void *executor, const uint32_t mode);
+extern aclnnStatus NnopbaseGetUnContiguousTensors(void *executor, const aclTensorList **inTensors);
+extern aclnnStatus NnopbaseSetUnContExecutor(void *executor, aclOpExecutor *inExe, const size_t inWsSize);
+extern aclnnStatus NnopbaseGetUnContExecutor(void *executor, aclOpExecutor **inExe, size_t *inWsSize);
+extern aclnnStatus NnopbaseGetRefUnContiguousTensors(void *executor, const aclTensorList **unContTensors, const aclTensorList **contTensors);
+extern aclnnStatus NnopbaseSetViewCopyExecutor(void *executor, aclOpExecutor *exe);
+extern aclnnStatus NnopbaseGetViewCopyExecutor(void *executor, aclOpExecutor **exe);
+extern aclnnStatus NnopbaseReleaseRefContiguousTensors(void *executor, const aclTensorList **tensors);
+extern void *NnopbaseGetApiFunc(const char *funcName);
+using AclnnContiguousGetWorkspaceSizeFunc = aclnnStatus (*)(const aclTensorList *, uint64_t *, aclOpExecutor **);
+using AclnnViewCopyGetWorkspaceSizeFunc = aclnnStatus (*)(const aclTensorList *, const aclTensorList *, uint64_t *, aclOpExecutor **);
+using AclnnFunc = aclnnStatus (*)(void *, uint64_t, aclOpExecutor *, aclrtStream);
+
+#define ACLNN_SUCCESS  0
+#define ACLNN_ERR_PARAM_NULLPTR 161001
+#define ACLNN_ERR_PARAM_INVALID 161002
+#define NNOPBASE_INVALID_ARGUMENT "EZ1010"
+
+#define NNOPBASE_ASSERT_OK_RETVAL(v)                                    \
+    do {                                                                \
+        const aclnnStatus _chk_stutus = (v);                            \
+        if (_chk_stutus != ACLNN_SUCCESS) {                             \
+            NnopbaseOpLogE(_chk_stutus, #v);                            \
+            return _chk_stutus;                                         \
+        }                                                               \
+    } while (false)
+
+#define NNOPBASE_ASSERT_NOTNULL_RETVAL(v)                               \
+    do {                                                                \
+        if ((v) == nullptr) {                                           \
+            NnopbaseOpLogE(ACLNN_ERR_PARAM_NULLPTR, #v " != nullptr");  \
+            return ACLNN_ERR_PARAM_NULLPTR;                             \
+        }                                                               \
+    } while (false)
+
+aclnnStatus aclnnQsaGatherValueNzV310GetWorkspaceSize(
+    const aclTensor *valueCache,
+    const aclTensor *groupIndices,
+    const aclTensor *groupCounts,
+    const aclTensor *tailStarts,
+    const aclTensor *tailCounts,
+    const aclTensor *blockTable,
+    int64_t numKvHeads,
+    int64_t headDim,
+    bool transposeOutput,
+    const aclTensor *out,
+    uint64_t *workspaceSize,
+    aclOpExecutor **executor)
+{
+    uint64_t timeStamp = NnopbaseMsprofSysTime();
+#ifdef ACLNN_WITH_BINARY
+    static uint32_t QsaGatherValueNzV310OpTypeId = op::GenOpTypeId("QsaGatherValueNzV310", QsaGatherValueNzV310_RESOURCES);
+#endif
+    static NnopbaseDfxId dfxId = {0x60000, __func__, false};
+    static NnopbaseDfxId tilingId = {0x60000, "aclnnQsaGatherValueNzV310Tiling", false};
+    void *nnopExecutor;
+    static void *executorSpace = NULL;
+    const char *opType = "QsaGatherValueNzV310";
+    char inputDesc[] = {1, 1, 1, 1, 1, 1};
+    char outputDesc[] = {1};
+    char attrDesc[] = {1, 1, 1};
+
+    NNOPBASE_ASSERT_NOTNULL_RETVAL(valueCache);
+    NNOPBASE_ASSERT_NOTNULL_RETVAL(groupIndices);
+    NNOPBASE_ASSERT_NOTNULL_RETVAL(groupCounts);
+    NNOPBASE_ASSERT_NOTNULL_RETVAL(tailStarts);
+    NNOPBASE_ASSERT_NOTNULL_RETVAL(tailCounts);
+    NNOPBASE_ASSERT_NOTNULL_RETVAL(blockTable);
+    NNOPBASE_ASSERT_NOTNULL_RETVAL(out);
+
+    if (!executorSpace) {
+        NNOPBASE_ASSERT_OK_RETVAL(NnopbaseCreateExecutorSpace(&executorSpace));
+    }
+    nnopExecutor = NnopbaseGetExecutor(executorSpace, opType, inputDesc, sizeof(inputDesc) / sizeof(char), outputDesc,
+                                       sizeof(outputDesc) / sizeof(char), attrDesc, sizeof(attrDesc) / sizeof(char));
+    NNOPBASE_ASSERT_NOTNULL_RETVAL(nnopExecutor);
+    NNOPBASE_ASSERT_NOTNULL_RETVAL(executor);
+    *executor = reinterpret_cast<aclOpExecutor *>(nnopExecutor);
+    NNOPBASE_ASSERT_OK_RETVAL(NnopbaseAddTilingId(*executor, &tilingId));
+    if (NnopbaseSetMatchArgsFlag != NULL) {
+        NnopbaseSetMatchArgsFlag(*executor);
+    }
+#ifdef ACLNN_WITH_BINARY
+    NnopbaseAddOpTypeId(*executor, QsaGatherValueNzV310OpTypeId);
+#endif
+    NNOPBASE_ASSERT_OK_RETVAL(NnopbaseAddInput(*executor, valueCache, 0));
+    NNOPBASE_ASSERT_OK_RETVAL(NnopbaseAddInput(*executor, groupIndices, 1));
+    NNOPBASE_ASSERT_OK_RETVAL(NnopbaseAddInput(*executor, groupCounts, 2));
+    NNOPBASE_ASSERT_OK_RETVAL(NnopbaseAddInput(*executor, tailStarts, 3));
+    NNOPBASE_ASSERT_OK_RETVAL(NnopbaseAddInput(*executor, tailCounts, 4));
+    NNOPBASE_ASSERT_OK_RETVAL(NnopbaseAddInput(*executor, blockTable, 5));
+    NNOPBASE_ASSERT_OK_RETVAL(NnopbaseAddAttrWithDtype(*executor, static_cast<void*>(&numKvHeads), sizeof(int64_t), 0, kNnopbaseInt));
+    NNOPBASE_ASSERT_OK_RETVAL(NnopbaseAddAttrWithDtype(*executor, static_cast<void*>(&headDim), sizeof(int64_t), 1, kNnopbaseInt));
+    NNOPBASE_ASSERT_OK_RETVAL(NnopbaseAddAttrWithDtype(*executor, static_cast<void*>(&transposeOutput), sizeof(bool), 2, kNnopbaseBool));
+    NNOPBASE_ASSERT_OK_RETVAL(NnopbaseAddOutput(*executor, out, 0));
+    if (NnopbaseMatchArgs != NULL) {
+        if (NnopbaseMatchArgs(*executor, workspaceSize)) {
+            NnopbaseReportApiInfo(timeStamp, dfxId);
+            return ACLNN_SUCCESS;
+        }
+    }
+    if (NnopbaseAddParamName != NULL) {
+        NNOPBASE_ASSERT_OK_RETVAL(NnopbaseAddParamName(*executor, 0, "valueCache", true));
+        NNOPBASE_ASSERT_OK_RETVAL(NnopbaseAddParamName(*executor, 1, "groupIndices", true));
+        NNOPBASE_ASSERT_OK_RETVAL(NnopbaseAddParamName(*executor, 2, "groupCounts", true));
+        NNOPBASE_ASSERT_OK_RETVAL(NnopbaseAddParamName(*executor, 3, "tailStarts", true));
+        NNOPBASE_ASSERT_OK_RETVAL(NnopbaseAddParamName(*executor, 4, "tailCounts", true));
+        NNOPBASE_ASSERT_OK_RETVAL(NnopbaseAddParamName(*executor, 5, "blockTable", true));
+        NNOPBASE_ASSERT_OK_RETVAL(NnopbaseAddParamName(*executor, 0, "out", false));
+    }
+    if (NnopbaseAddSocNameList != NULL) {
+        NNOPBASE_ASSERT_OK_RETVAL(NnopbaseAddSocNameList(*executor, &supportList, socNameList, socNameListLen));
+    } else {
+        NNOPBASE_ASSERT_OK_RETVAL(NnopbaseAddSupportList(*executor, &supportList, socSupportList, socSupportListLen));
+    }
+
+    uint64_t inContWorkspaceSize = 0U;
+    const aclTensorList *inUnContTensors = nullptr;
+    aclOpExecutor *aclInExecutor = nullptr;
+    NnopbaseGetUnContiguousTensors(*executor, &inUnContTensors);
+    if (inUnContTensors != nullptr) {
+        static AclnnContiguousGetWorkspaceSizeFunc aclnnContiguousGetWorkspaceSize = (AclnnContiguousGetWorkspaceSizeFunc)NnopbaseGetApiFunc("aclnnContiguousGetWorkspaceSize");
+        NNOPBASE_ASSERT_NOTNULL_RETVAL(aclnnContiguousGetWorkspaceSize);
+        NNOPBASE_ASSERT_OK_RETVAL(aclnnContiguousGetWorkspaceSize(inUnContTensors, &inContWorkspaceSize, &aclInExecutor));
+        NnopbaseSetUnContExecutor(*executor, aclInExecutor, inContWorkspaceSize);
+    }
+
+    NNOPBASE_ASSERT_OK_RETVAL(NnopbaseRunForWorkspace(*executor, workspaceSize));
+    *workspaceSize += inContWorkspaceSize;
+    NnopbaseReportApiInfo(timeStamp, dfxId);
+    return ACLNN_SUCCESS;
+}
+
+aclnnStatus aclnnQsaGatherValueNzV310(
+    void *workspace,
+    uint64_t workspaceSize,
+    aclOpExecutor *executor,
+    aclrtStream stream)
+{
+    uint64_t timeStamp = NnopbaseMsprofSysTime();
+    static NnopbaseDfxId dfxId = {0x60000, __func__, false};
+    uint64_t inContWorkspaceSize = 0U;
+    aclOpExecutor *aclInExecutor = nullptr;
+    void *inWorkspace = nullptr;
+    NnopbaseGetUnContExecutor(executor, &aclInExecutor, &inContWorkspaceSize);
+    if (workspaceSize < inContWorkspaceSize) {
+        const std::string value = std::to_string(workspaceSize);
+        const std::string requiredSize = std::to_string(inContWorkspaceSize);
+        const std::string reason = std::string("The passed workspace size ") + value +
+            " does not meet the minimum workspace size " + requiredSize +
+            " actually required by the AutoContiguous API";
+        const std::vector<const char*> msgKey = {"value", "paraName", "reason"};
+        const std::vector<const char*> msgValue = {value.c_str(), "workspaceSize", reason.c_str()};
+        REPORT_PREDEFINED_ERR_MSG(NNOPBASE_INVALID_ARGUMENT, msgKey, msgValue);
+        return ACLNN_ERR_PARAM_INVALID;
+    }
+    workspaceSize -= inContWorkspaceSize;
+    inWorkspace = (char *)workspace + workspaceSize;
+    if (aclInExecutor != nullptr) {
+        static AclnnFunc aclnnContiguous = (AclnnFunc)NnopbaseGetApiFunc("aclnnContiguous");
+        NNOPBASE_ASSERT_NOTNULL_RETVAL(aclnnContiguous);
+        NNOPBASE_ASSERT_OK_RETVAL(aclnnContiguous(inWorkspace, inContWorkspaceSize, aclInExecutor, stream));
+    }
+    NNOPBASE_ASSERT_OK_RETVAL(NnopbaseRunWithWorkspace(executor, stream, workspace, workspaceSize));
+    NnopbaseReportApiInfo(timeStamp, dfxId);
+    return ACLNN_SUCCESS;
+}
+
+#ifdef __cplusplus
+}
+#endif

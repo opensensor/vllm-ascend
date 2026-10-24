@@ -1,0 +1,849 @@
+bash build.sh --pkg --ops=causal_conv1d_v310\,gdn_gating_v310\,recurrent_gated_delta_rule_v310\,qsa_index_cache_update_v310\,qsa_indexer_score_v310\,qsa_sparse_attention_v310\,qsa_gather_value_nz_v310\,qwen4_exp_ple_decode_v310\,chunk_fwd_o_vllm\,chunk_gated_delta_rule_fwd_h\,chunk_kda_fwd\,kda_gate_cumsum\,kda_layout_swap12\,w2_blocked_dequant_matmul_v310\,w2_grouped_blocked_dequant_matmul_v310\,qwen_w4_group_matmul_v310\,qwen_w4_routed_matmul_v310\,qwen_w4_grouped_matmul_v310\,qwen_w4_a8_int4_matmul_v310\,qwen_w4_a8_int4_down_reduce_v310\,qwen_w4_a8_pack_v310\,qwen_w4_a8_swiglu_pack_v310\,rms_norm_dynamic_quant\,add_rms_norm_dynamic_quant --soc=ascend310p --vendor_name=custom --package-path /usr/local/Ascend/cann-9.1.0 --cann_3rd_lib_path=/srv/ai/src/qwen38-coherent-opp-src-20261001-r2/csrc/third_party -j4 --jit 
+json found in /srv/ai/src/qwen38-coherent-opp-src-20261001-r2/csrc/third_party/json, and not force rebuild cann third_party
+[2026-10-24 01:34:21] [2026-10-24 01:34:21] Info: use CMake generator Ninja
+[2026-10-24 01:34:21] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/gen_bisheng_dir /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc
+[2026-10-24 01:34:21] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc
+[2026-10-24 01:34:21] [2026-10-24 01:34:21] Info: cmake config generator=-G Ninja -DBUILD_OPEN_PROJECT=ON -DVENDOR_NAME=custom -DASCEND_OP_NAME=causal_conv1d_v310,gdn_gating_v310,recurrent_gated_delta_rule_v310,qsa_index_cache_update_v310,qsa_indexer_score_v310,qsa_sparse_attention_v310,qsa_gather_value_nz_v310,qwen4_exp_ple_decode_v310,chunk_fwd_o_vllm,chunk_gated_delta_rule_fwd_h,chunk_kda_fwd,kda_gate_cumsum,kda_layout_swap12,w2_blocked_dequant_matmul_v310,w2_grouped_blocked_dequant_matmul_v310,qwen_w4_group_matmul_v310,qwen_w4_routed_matmul_v310,qwen_w4_grouped_matmul_v310,qwen_w4_a8_int4_matmul_v310,qwen_w4_a8_int4_down_reduce_v310,qwen_w4_a8_pack_v310,qwen_w4_a8_swiglu_pack_v310,rms_norm_dynamic_quant,add_rms_norm_dynamic_quant -DCANN_3RD_LIB_PATH=/srv/ai/src/qwen38-coherent-opp-src-20261001-r2/csrc/third_party -DCUSTOM_ASCEND_CANN_PACKAGE_PATH=/usr/local/Ascend/cann-9.1.0 -DCHECK_COMPATIBLE=true -DENABLE_CCACHE=ON -DCUSTOM_CCACHE=/usr/bin/ccache -DASCEND_COMPUTE_UNIT=ascend310p; -DENABLE_BUILT_IN=OFF -DENABLE_OPS_HOST=ON -DENABLE_OPS_KERNEL=OFF -DENABLE_BUILD_PKG=ON build_cache=/srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v2/csrc/build_cache .
+[2026-10-24 01:34:21] -- The C compiler identification is GNU 15.2.0
+[2026-10-24 01:34:21] -- The CXX compiler identification is GNU 15.2.0
+[2026-10-24 01:34:21] -- Detecting C compiler ABI info
+[2026-10-24 01:34:21] -- Detecting C compiler ABI info - done
+[2026-10-24 01:34:21] -- Check for working C compiler: /usr/bin/cc - skipped
+[2026-10-24 01:34:21] -- Detecting C compile features
+[2026-10-24 01:34:21] -- Detecting C compile features - done
+[2026-10-24 01:34:21] -- Detecting CXX compiler ABI info
+[2026-10-24 01:34:22] -- Detecting CXX compiler ABI info - done
+[2026-10-24 01:34:22] -- Check for working CXX compiler: /usr/bin/c++ - skipped
+[2026-10-24 01:34:22] -- Detecting CXX compile features
+[2026-10-24 01:34:22] -- Detecting CXX compile features - done
+[2026-10-24 01:34:22] -- compile project with library
+[2026-10-24 01:34:22] -- Found Python3: /srv/ai/venvs/qwen38-w4-test-ce1862/bin/python3.12 (found version "3.12.13") found components: Interpreter
+[2026-10-24 01:34:22] -- ASCEND_CANN_PACKAGE_PATH=/usr/local/Ascend/cann-9.1.0
+[2026-10-24 01:34:22] -- ENABLE_CCACHE=ON, CUSTOM_CCACHE=/usr/bin/ccache
+[2026-10-24 01:34:22] -- CCACHE_PROGRAM=/usr/bin/ccache
+[2026-10-24 01:34:22] -- ASCEND_COMPUTE_UNIT=ascend310p;
+[2026-10-24 01:34:22] -- ASCEND_OP_NAME=causal_conv1d_v310,gdn_gating_v310,recurrent_gated_delta_rule_v310,qsa_index_cache_update_v310,qsa_indexer_score_v310,qsa_sparse_attention_v310,qsa_gather_value_nz_v310,qwen4_exp_ple_decode_v310,chunk_fwd_o_vllm,chunk_gated_delta_rule_fwd_h,chunk_kda_fwd,kda_gate_cumsum,kda_layout_swap12,w2_blocked_dequant_matmul_v310,w2_grouped_blocked_dequant_matmul_v310,qwen_w4_group_matmul_v310,qwen_w4_routed_matmul_v310,qwen_w4_grouped_matmul_v310,qwen_w4_a8_int4_matmul_v310,qwen_w4_a8_int4_down_reduce_v310,qwen_w4_a8_pack_v310,qwen_w4_a8_swiglu_pack_v310,rms_norm_dynamic_quant,add_rms_norm_dynamic_quant
+[2026-10-24 01:34:22] -- TILING_KEY=
+[2026-10-24 01:34:22] -- TESTS_UT_OPS_TEST=
+[2026-10-24 01:34:22] -- TESTS_EXAMPLE_OPS_TEST=
+[2026-10-24 01:34:22] -- CMAKE_BUILD_TYPE=Release
+[2026-10-24 01:34:22] -- VERSION=
+[2026-10-24 01:34:22] -- Found json: /srv/ai/src/qwen38-coherent-opp-src-20261001-r2/csrc/third_party/json/include
+[2026-10-24 01:34:22] -- Start building custom package.
+[2026-10-24 01:34:22] -- Search libs under install path /usr/local/Ascend/cann-9.1.0
+[2026-10-24 01:34:22] -- CMAKE_MODULE_PATH            :/srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/cmake/modules
+[2026-10-24 01:34:22] -- compile option:   -Wall -Wextra -Wshadow -Wformat=2 -fno-common -fPIC -Wformat-signedness -Wno-missing-include-dirs -Wno-write-strings
+[2026-10-24 01:34:22] -- Found dlog: /usr/local/Ascend/cann-9.1.0/pkg_inc/base
+[2026-10-24 01:34:22] -- Transformer Variables in dlog module:
+[2026-10-24 01:34:22] -- dlog_TRANSFORMER_INCLUDE_DIR="/usr/local/Ascend/cann-9.1.0/pkg_inc/base"
+[2026-10-24 01:34:22] -- dlog_SHARED_LIBRARY="/usr/local/Ascend/cann-9.1.0/lib64/libascendalog.so"
+[2026-10-24 01:34:22] -- 
+[2026-10-24 01:34:22]  Properties for TARGET dlog:
+[2026-10-24 01:34:22]    dlog.INTERFACE_COMPILE_DEFINITIONS = "LOG_CPP;PROCESS_LOG"
+[2026-10-24 01:34:22]    dlog.INTERFACE_LINK_LIBRARIES = "dlog_headers"
+[2026-10-24 01:34:22]    dlog.IMPORTED_LOCATION = "/usr/local/Ascend/cann-9.1.0/lib64/libascendalog.so"
+[2026-10-24 01:34:22] 
+[2026-10-24 01:34:22] -- 
+[2026-10-24 01:34:22]  Properties for TARGET dlog_headers:
+[2026-10-24 01:34:22]    dlog_headers.INTERFACE_INCLUDE_DIRECTORIES = "/usr/local/Ascend/cann-9.1.0/pkg_inc/base"
+[2026-10-24 01:34:22] 
+[2026-10-24 01:34:22] -- Found securec: /usr/local/Ascend/cann-9.1.0/include
+[2026-10-24 01:34:22] -- Found OPBASE: /usr/local/Ascend/cann-9.1.0/include
+[2026-10-24 01:34:22] -- Found OPABSE include:/usr/local/Ascend/cann-9.1.0/x86_64-linux/include
+[2026-10-24 01:34:22] -- Found OPABSE lib:/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/libops_base.so
+[2026-10-24 01:34:22] -- Found platform: /usr/local/Ascend/cann-9.1.0/include
+[2026-10-24 01:34:22] -- Found platform include:/usr/local/Ascend/cann-9.1.0/x86_64-linux/include
+[2026-10-24 01:34:22] -- Found register library:/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/libregister.so
+[2026-10-24 01:34:22] -- Found opp_registry library:/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/libopp_registry.so
+[2026-10-24 01:34:22] -- Found exe_graph library:/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/libexe_graph.so
+[2026-10-24 01:34:22] -- Found graph_base library:/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/libgraph_base.so
+[2026-10-24 01:34:22] -- Found error_manager library:/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/liberror_manager.so
+[2026-10-24 01:34:22] -- Found metadef library:/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/libmetadef.so
+[2026-10-24 01:34:22] -- Found rt2_registry library:/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/librt2_registry.a
+[2026-10-24 01:34:22] -- Found metadef: /usr/local/Ascend/cann-9.1.0/include
+[2026-10-24 01:34:22] -- Found source metadef include dir:  /usr/local/Ascend/cann-9.1.0/x86_64-linux/include/;/usr/local/Ascend/cann-9.1.0/x86_64-linux/include/exe_graph
+[2026-10-24 01:34:22] -- Found graph library:/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/libgraph.so
+[2026-10-24 01:34:22] -- Found source acl include dir:  /usr/local/Ascend/cann-9.1.0/x86_64-linux/include
+[2026-10-24 01:34:22] -- Found source npuruntime include dir: /usr/local/Ascend/cann-9.1.0/x86_64-linux/pkg_inc/runtime
+[2026-10-24 01:34:22] -- Found aclnn include dir:  /usr/local/Ascend/cann-9.1.0/x86_64-linux/include
+[2026-10-24 01:34:22] -- Found opdev include dir:  /usr/local/Ascend/cann-9.1.0/x86_64-linux/include/aclnn
+[2026-10-24 01:34:22] -- Found tilingapi include:/usr/local/Ascend/cann-9.1.0/x86_64-linux/include
+[2026-10-24 01:34:22] -- TILINGAPI_INC_DIRS: /usr/local/Ascend/cann-9.1.0/x86_64-linux/include;/usr/local/Ascend/cann-9.1.0/x86_64-linux/ascendc;/usr/local/Ascend/cann-9.1.0/x86_64-linux/ascendc/include;/usr/local/Ascend/cann-9.1.0/x86_64-linux/ascendc/include/highlevel_api;/usr/local/Ascend/cann-9.1.0/x86_64-linux/ascendc/include/highlevel_api/lib;/usr/local/Ascend/cann-9.1.0/x86_64-linux/ascendc/include/highlevel_api/impl;/usr/local/Ascend/cann-9.1.0/x86_64-linux/ascendc/include/highlevel_api/tiling
+[2026-10-24 01:34:22] -- Found tilingapi lib:/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/libtiling_api.a
+[2026-10-24 01:34:22] -- Using AICPU include dirs: /usr/local/Ascend/cann-9.1.0/x86_64-linux/include/aicpu;/usr/local/Ascend/cann-9.1.0/x86_64-linux/include/expeCMake Warning (author) at /srv/ai/venvs/fork028/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/ExternalProject/shared_internal_commands.cmake:1277 (message):
+  The DOWNLOAD_EXTRACT_TIMESTAMP option was not given and policy CMP0135 is
+  not set.  The policy's OLD behavior will be used.  When using a URL
+  download, the timestamps of extracted files should preferably be that of
+  the time of extraction, otherwise code that depends on the extracted
+  contents might not be rebuilt if the URL changes.  The OLD behavior
+  preserves the timestamps from the archive instead, but this is usually not
+  what you want.  Update your project to the NEW behavior or specify the
+  DOWNLOAD_EXTRACT_TIMESTAMP option with a value of true to avoid this
+  robustness issue.
+Call Stack (most recent call first):
+  /srv/ai/venvs/fork028/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/ExternalProject.cmake:3283 (_ep_add_download_command)
+  cmake/third_party/abseil-cpp.cmake:46 (ExternalProject_Add)
+  CMakeLists.txt:129 (include)
+This warning is for project developers.  Use -Wno-author to suppress it.
+
+CMake Warning (author) at /srv/ai/venvs/fork028/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/ExternalProject/shared_internal_commands.cmake:1277 (message):
+  The DOWNLOAD_EXTRACT_TIMESTAMP option was not given and policy CMP0135 is
+  not set.  The policy's OLD behavior will be used.  When using a URL
+  download, the timestamps of extracted files should preferably be that of
+  the time of extraction, otherwise code that depends on the extracted
+  contents might not be rebuilt if the URL changes.  The OLD behavior
+  preserves the timestamps from the archive instead, but this is usually not
+  what you want.  Update your project to the NEW behavior or specify the
+  DOWNLOAD_EXTRACT_TIMESTAMP option with a value of true to avoid this
+  robustness issue.
+Call Stack (most recent call first):
+  /srv/ai/venvs/fork028/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/ExternalProject.cmake:3283 (_ep_add_download_command)
+  cmake/third_party/ascend_protobuf.cmake:93 (ExternalProject_Add)
+  CMakeLists.txt:130 (include)
+This warning is for project developers.  Use -Wno-author to suppress it.
+
+riment;/usr/local/Ascend/cann-9.1.0/x86_64-linux/include/experiment/cce;/usr/local/Ascend/cann-9.1.0/x86_64-linux/include/experiment/msprof;/usr/local/Ascend/cann-9.1.0/x86_64-linux/pkg_inc;/usr/local/Ascend/cann-9.1.0/x86_64-linux/pkg_inc/aicpu;/usr/local/Ascend/cann-9.1.0/x86_64-linux/pkg_inc/aicpu_common/context;/usr/local/Ascend/cann-9.1.0/x86_64-linux/pkg_inc/aicpu_common/context/common;/usr/local/Ascend/cann-9.1.0/x86_64-linux/pkg_inc/aicpu_common/context/cpu_proto;/usr/local/Ascend/cann-9.1.0/x86_64-linux/pkg_inc/aicpu_common/context/utils;/usr/local/Ascend/cann-9.1.0/x86_64-linux/include/aicpu_common/context;/usr/local/Ascend/cann-9.1.0/x86_64-linux/include/aicpu_common/context/common;/usr/local/Ascend/cann-9.1.0/x86_64-linux/include/aicpu_common/context/cpu_proto;/usr/local/Ascend/cann-9.1.0/x86_64-linux/include/experiment/datagw/aicpu/common;/usr/local/Ascend/cann-9.1.0/x86_64-linux/include/aicpu_common/context/utils
+[2026-10-24 01:34:22] -- Could NOT find abseil-cpp (missing: ABSL_SOURCE_DIR) 
+[2026-10-24 01:34:22] -- [ThirdPartyLib][abseil-cpp] found in file:///srv/ai/src/qwen38-coherent-opp-src-20261001-r2/csrc/third_party/pkg/abseil-cpp-20230802.1.tar.gz.
+[2026-10-24 01:34:22] -- Could NOT find ascend_protobuf_build_transformer (missing: ASCEND_PROTOBUF_SHARED_INCLUDE) 
+[2026-10-24 01:34:22] -- [ThirdPartyLib][ascend protobuf] ascend protobuf shared not found, finding binary file.
+[2026-10-24 01:34:22] -- [ThirdPartyLib][ascend protobuf] found in file:///srv/ai/src/qwen38-coherent-opp-src-20261001-r2/csrc/third_party/pkg/protobuf-25.1.tar.gz.
+[2026-10-24 01:34:22] -- Found alog: /usr/local/Ascend/cann-9.1.0/include
+[2026-10-24 01:34:22] -- Variables in alog module:
+[2026-10-24 01:34:22] -- alog_a_INCLUDE_DIR="/usr/local/Ascend/cann-9.1.0/include"
+[2026-10-24 01:34:22] -- slog_a_SHARED_LIBRARY="/usr/local/Ascend/cann-9.1.0/lib64/libascendalog.so"
+[2026-10-24 01:34:22] -- alog_a_SHARED_LIBRARY="/usr/local/Ascend/cann-9.1.0/lib64/libascendalog.so"
+[2026-10-24 01:34:22] -- 
+[2026-10-24 01:34:22]  Properties for TARGET slog_a:
+[2026-10-24 01:34:22]    slog_a.INTERFACE_COMPILE_DEFINITIONS = "LOG_CPP;PROCESS_LOG"
+[2026-10-24 01:34:22]    slog_a.INTERFACE_LINK_LIBRARIES = "alog_headers"
+[2026-10-24 01:34:22]    slog_a.IMPORTED_LOCATION = "/usr/local/Ascend/cann-9.1.0/lib64/libascendalog.so"
+[2026-10-24 01:34:22] 
+[2026-10-24 01:34:22] -- 
+[2026-10-24 01:34:22]  Properties for TARGET alog_a:
+[2026-10-24 01:34:22]    alog_a.INTERFACE_COMPILE_DEFINITIONS = "LOG_CPP;PROCESS_LOG"
+[2026-10-24 01:34:22]    alog_a.INTERFACE_LINK_LIBRARIES = "alog_headers"
+[2026-10-24 01:34:22]    alog_a.IMPORTED_LOCATION = "/usr/local/Ascend/cann-9.1.0/lib64/libascendalog.so"
+[2026-10-24 01:34:22] 
+[2026-10-24 01:34:22] -- 
+[2026-10-24 01:34:22]  Properties for TARGET alog_headers:
+[2026-10-24 01:34:22]    alog_headers.INTERFACE_INCLUDE_DIRECTORIES = "/usr/local/Ascend/cann-9.1.0/include;/usr/local/Ascend/cann-9.1.0/include/base"
+[2026-10-24 01:34:22] 
+[2026-10-24 01:34:22] -- Could NOT find unified_dlog (missing: _INCLUDE_ROOT_DIR) 
+[2026-10-24 01:34:23] -- Detected architecture: x86_64
+[2026-10-24 01:34:23] -- End building custom package.
+[2026-10-24 01:34:23] -- create aclnn master header file: /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/aclnn_ops_transformer_custom.h
+[2026-10-24 01:34:23] -- no operator info to generate
+[2026-10-24 01:34:23] -- Configuring done (1.6s)
+[2026-10-24 01:34:23] -- Generating done (0.1s)
+[2026-10-24 01:34:23] -- Build files have been written to: /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build
+[2026-10-24 01:34:23] [1/211] Creating directories for 'abseil_build_transformer'
+[2026-10-24 01:34:23] [2/211] Performing download step (verify and extract) for 'abseil_build_transformer'
+[2026-10-24 01:34:23] CMake Warning at /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/abseil_build_transformer-prefix/src/abseil_build_transformer-stamp/verify-abseil_build_transformer.cmake:15 (message):
+[2026-10-24 01:34:23]   File cannot be verified since no URL_HASH specified
+[2026-10-24 01:34:23] 
+[2026-10-24 01:34:23] 
+[2026-10-24 01:34:23] -- extracting...
+[2026-10-24 01:34:23]      src='/srv/ai/src/qwen38-coherent-opp-src-20261001-r2/csrc/third_party/pkg/abseil-cpp-20230802.1.tar.gz'
+[2026-10-24 01:34:23]      dst='/srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/third_party/abseil-cpp'
+[2026-10-24 01:34:23] -- extracting... [tar xf]
+[2026-10-24 01:34:23] -- extracting... [analysis]
+[2026-10-24 01:34:23] -- extracting... [rename]
+[2026-10-24 01:34:23] -- extracting... [clean up]
+[2026-10-24 01:34:23] -- extracting... done
+[2026-10-24 01:34:23] [3/211] No update step for 'abseil_build_transformer'
+[2026-10-24 01:34:23] [4/211] Performing patch step for 'abseil_build_transformer'
+[2026-10-24 01:34:23] (Stripping trailing CRs from patch; use --binary to disable.)
+[2026-10-24 01:34:23] patching file CMakeLists.txt
+[2026-10-24 01:34:23] (Stripping trailing CRs from patch; use --binary to disable.)
+[2026-10-24 01:34:23] patching file absl/base/options.h
+[2026-10-24 01:34:23] (Stripping trailing CRs from patch; use --binary to disable.)
+[2026-10-24 01:34:23] patching file absl/hash/internal/hash.cc
+[2026-10-24 01:34:23] (Stripping trailing CRs from patch; use --binary to disable.)
+[2026-10-24 01:34:23] patching file absl/hash/internal/hash.h
+[2026-10-24 01:34:23] patch unexpectedly ends in middle of line
+[2026-10-24 01:34:23] Hunk #1 succeeded at 1159 with fuzz 1.
+[2026-10-24 01:34:23] [5/211] No configure step for 'abseil_build_transformer'
+[2026-10-24 01:34:23] [6/211] No build step for 'abseil_build_transformer'
+[2026-10-24 01:34:23] [7/211] No install step for 'abseil_build_transformer'
+[2026-10-24 01:34:23] [8/211] Completed 'abseil_build_transformer'
+[2026-10-24 01:34:24] [9/211] Building CXX object CMakeFiles/op_host_aclnn.dir/gmm/qwen_w4_a8_int4_matmul_v310/op_host/qwen_w4_a8_int4_matmul_v310_def.cpp.o
+[2026-10-24 01:34:24] [10/211] Building CXX object CMakeFiles/op_host_aclnn.dir/gmm/qwen_w4_a8_pack_v310/op_host/qwen_w4_a8_pack_v310_def.cpp.o
+[2026-10-24 01:34:24] [11/211] Building CXX object CMakeFiles/op_host_aclnn.dir/gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/qwen_w4_a8_int4_down_reduce_v310_def.cpp.o
+[2026-10-24 01:34:24] [12/211] Building CXX object CMakeFiles/op_host_aclnn.dir/gmm/qwen_w4_a8_swiglu_pack_v310/op_host/qwen_w4_a8_swiglu_pack_v310_def.cpp.o
+[2026-10-24 01:34:25] [13/211] Building CXX object CMakeFiles/op_host_aclnn.dir/gmm/qwen_w4_grouped_matmul_v310/op_host/qwen_w4_grouped_matmul_v310_def.cpp.o
+[2026-10-24 01:34:25] [14/211] Building CXX object CMakeFiles/op_host_aclnn.dir/gmm/qwen_w4_group_matmul_v310/op_host/qwen_w4_group_matmul_v310_def.cpp.o
+[2026-10-24 01:34:25] [15/211] Building CXX object CMakeFiles/op_host_aclnn.dir/gmm/qwen_w4_routed_matmul_v310/op_host/qwen_w4_routed_matmul_v310_def.cpp.o
+[2026-10-24 01:34:25] [16/211] Building CXX object CMakeFiles/op_host_aclnn.dir/gmm/w2_blocked_dequant_matmul_v310/op_host/w2_blocked_dequant_matmul_v310_def.cpp.o
+[2026-10-24 01:34:26] [17/211] Building CXX object CMakeFiles/op_host_aclnn.dir/gmm/w2_grouped_blocked_dequant_matmul_v310/op_host/w2_grouped_blocked_dequant_matmul_v310_def.cpp.o
+[2026-10-24 01:34:26] [18/211] Building CXX object CMakeFiles/op_host_aclnn.dir/moe/causal_conv1d_v310/op_host/causal_conv1d_v310_def.cpp.o
+[2026-10-24 01:34:26] [19/211] Building CXX object CMakeFiles/op_host_aclnn.dir/moe/gdn_gating_v310/op_host/gdn_gating_v310_def.cpp.o
+[2026-10-24 01:34:26] [20/211] Building CXX object CMakeFiles/op_host_aclnn.dir/attention/add_rms_norm_dynamic_quant/op_host/add_rms_norm_dynamic_quant_def.cpp.o
+[2026-10-24 01:34:26] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/add_rms_norm_dynamic_quant/op_host/add_rms_norm_dynamic_quant_def.cpp: In constructor ‘ops::AddRmsNormDynamicQuant::AddRmsNormDynamicQuant(const char*)’:
+[2026-10-24 01:34:26] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/add_rms_norm_dynamic_quant/op_host/add_rms_norm_dynamic_quant_def.cpp:88:56: warning: conversion from ‘double’ to ‘float’ changes value from ‘9.9999999999999995e-7’ to ‘9.99999997e-7f’ [-Wfloat-conversion]
+[2026-10-24 01:34:26]    88 |         this->Attr("epsilon").AttrType(OPTIONAL).Float(1e-6);
+[2026-10-24 01:34:26]       |                                                        ^~~~
+[2026-10-24 01:34:27] [21/211] Building CXX object CMakeFiles/op_host_aclnn.dir/attention/qsa_gather_value_nz_v310/op_host/qsa_gather_value_nz_v310_def.cpp.o
+[2026-10-24 01:34:27] [22/211] Building CXX object CMakeFiles/op_host_aclnn.dir/attention/qsa_index_cache_update_v310/op_host/qsa_index_cache_update_v310_def.cpp.o
+[2026-10-24 01:34:27] [23/211] Building CXX object CMakeFiles/op_host_aclnn.dir/attention/qsa_indexer_score_v310/op_host/qsa_indexer_score_v310_def.cpp.o
+[2026-10-24 01:34:27] [24/211] Creating directories for 'ascend_protobuf_build_transformer'
+[2026-10-24 01:34:27] [25/211] Generating op_host_aclnn_inner_stub.cpp
+[2026-10-24 01:34:27] [26/211] Building CXX object CMakeFiles/op_host_aclnnInner.dir/op_host_aclnn_inner_stub.cpp.o
+[2026-10-24 01:34:27] [27/211] Building CXX object CMakeFiles/op_host_aclnn.dir/attention/qsa_sparse_attention_v310/op_host/qsa_sparse_attention_v310_def.cpp.o
+[2026-10-24 01:34:27] [28/211] Linking CXX shared library libop_host_aclnnInner.so
+[2026-10-24 01:34:27] [29/211] Creating directories for 'tiling_sink_task'
+[2026-10-24 01:34:27] [30/211] No download step for 'tiling_sink_task'
+[2026-10-24 01:34:27] [31/211] Performing download step (verify and extract) for 'ascend_protobuf_build_transformer'
+[2026-10-24 01:34:27] CMake Warning at /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/ascend_protobuf_build_transformer-prefix/src/ascend_protobuf_build_transformer-stamp/verify-ascend_protobuf_build_transformer.cmake:15 (message):
+[2026-10-24 01:34:27]   File cannot be verified since no URL_HASH specified
+[2026-10-24 01:34:27] 
+[2026-10-24 01:34:27] 
+[2026-10-24 01:34:27] -- extracting...
+[2026-10-24 01:34:27]      src='/srv/ai/src/qwen38-coherent-opp-src-20261001-r2/csrc/third_party/pkg/protobuf-25.1.tar.gz'
+[2026-10-24 01:34:27]      dst='/srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/third_party/ascend_protobuf'
+[2026-10-24 01:34:27] -- extracting... [tar xf]
+[2026-10-24 01:34:27] -- extracting... [analysis]
+[2026-10-24 01:34:27] -- extracting... [rename]
+[2026-10-24 01:34:27] -- extracting... [clean up]
+[2026-10-24 01:34:27] -- extracting... done
+[2026-10-24 01:34:27] [32/211] No update step for 'ascend_protobuf_build_transformer'
+[2026-10-24 01:34:27] [33/211] Performing patch step for 'ascend_protobuf_build_transformer'
+[2026-10-24 01:34:27] (Stripping trailing CRs from patch; use --binary to disable.)
+[2026-10-24 01:34:27] patching file CMakeLists.txt
+[2026-10-24 01:34:27] (Stripping trailing CRs from patch; use --binary to disable.)
+[2026-10-24 01:34:27] patching file src/google/protobuf/arenastring.cc
+[2026-10-24 01:34:27] (Stripping trailing CRs from patch; use --binary to disable.)
+[2026-10-24 01:34:27] patching file src/google/protobuf/arenastring.h
+[2026-10-24 01:34:27] (Stripping trailing CRs from patch; use --binary to disable.)
+[2026-10-24 01:34:27] patching file src/google/protobuf/compiler/cpp/field_generators/string_field.cc
+[2026-10-24 01:34:27] (Stripping trailing CRs from patch; use --binary to disable.)
+[2026-10-24 01:34:27] patching file src/google/protobuf/compiler/cpp/helpers.cc
+[2026-10-24 01:34:27] (Stripping trailing CRs from patch; use --binary to disable.)
+[2026-10-24 01:34:27] patching file src/google/protobuf/compiler/cpp/helpers.h
+[2026-10-24 01:34:27] (Stripping trailing CRs from patch; use --binary to disable.)
+[2026-10-24 01:34:27] patching file src/google/protobuf/compiler/csharp/csharp_helpers.cc
+[2026-10-24 01:34:27] (Stripping trailing CRs from patch; use --binary to disable.)
+[2026-10-24 01:34:27] patching file src/google/protobuf/compiler/java/names.cc
+[2026-10-24 01:34:27] (Stripping trailing CRs from patch; use --binary to disable.)
+[2026-10-24 01:34:27] patching file src/google/protobuf/extension_set.h
+[2026-10-24 01:34:27] (Stripping trailing CRs from patch; use --binary to disable.)
+[2026-10-24 01:34:27] patching file src/google/protobuf/message_lite.h
+[2026-10-24 01:34:27] (Stripping trailing CRs from patch; use --binary to disable.)
+[2026-10-24 01:34:27] patching file src/google/protobuf/port_def.inc
+[2026-10-24 01:34:27] patch unexpectedly ends in middle of line
+[2026-10-24 01:34:27] Hunk #1 succeeded at 572 with fuzz 1.
+[2026-10-24 01:34:28] [34/211] Building CXX object CMakeFiles/op_host_aclnn.dir/attention/qwen4_exp_ple_decode_v310/op_host/qwen4_exp_ple_decode_v310_def.cpp.o
+[2026-10-24 01:34:28] [35/211] Building CXX object CMakeFiles/op_host_aclnn.dir/attention/rms_norm_dynamic_quant/op_host/rms_norm_dynamic_quant_def.cpp.o
+[2026-10-24 01:34:28] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/rms_norm_dynamic_quant/op_host/rms_norm_dynamic_quant_def.cpp: In constructor ‘ops::RmsNormDynamicQuant::RmsNormDynamicQuant(const char*)’:
+[2026-10-24 01:34:28] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/rms_norm_dynamic_quant/op_host/rms_norm_dynamic_quant_def.cpp:76:56: warning: conversion from ‘double’ to ‘float’ changes value from ‘9.9999999999999995e-7’ to ‘9.99999997e-7f’ [-Wfloat-conversion]
+[2026-10-24 01:34:28]    76 |         this->Attr("epsilon").AttrType(OPTIONAL).Float(1e-6);
+[2026-10-24 01:34:28]       |                                                        ^~~~
+[2026-10-24 01:34:28] [36/211] Linking CXX shared library libop_host_aclnn.so
+[2026-10-24 01:34:28] [37/211] Generating autogen/aclnn_qwen_w4_a8_int4_down_reduce_v310.cpp, autogen/aclnn_qwen_w4_a8_int4_matmul_v310.cpp, autogen/aclnn_qwen_w4_a8_pack_v310.cpp, autogen/aclnn_qwen_w4_a8_swiglu_pack_v310.cpp, autogen/aclnn_qwen_w4_group_matmul_v310.cpp, autogen/aclnn_qwen_w4_grouped_matmul_v310.cpp, autogen/aclnn_qwen_w4_routed_matmul_v310.cpp, autogen/aclnn_w2_blocked_dequant_matmul_v310.cpp, autogen/aclnn_w2_grouped_blocked_dequant_matmul_v310.cpp, autogen/aclnn_causal_conv1d_v310.cpp, autogen/aclnn_gdn_gating_v310.cpp, autogen/aclnn_add_rms_norm_dynamic_quant.cpp, autogen/aclnn_qsa_gather_value_nz_v310.cpp, autogen/aclnn_qsa_index_cache_update_v310.cpp, autogen/aclnn_qsa_indexer_score_v310.cpp, autogen/aclnn_qsa_sparse_attention_v310.cpp, autogen/aclnn_qwen4_exp_ple_decode_v310.cpp, autogen/aclnn_rms_norm_dynamic_quant.cpp, autogen/aclnn_qwen_w4_a8_int4_down_reduce_v310.h, autogen/aclnn_qwen_w4_a8_int4_matmul_v310.h, autogen/aclnn_qwen_w4_a8_pack_v310.h, autogen/aclnn_qwen_w4_a8_swiglu_pack_v310.h, autogen/aclnn_qwen_w4_group_matmul_v310.h, autogen/aclnn_qwen_w4_grouped_matmul_v310.h, autogen/aclnn_qwen_w4_routed_matmul_v310.h, autogen/aclnn_w2_blocked_dequant_matmul_v310.h, autogen/aclnn_w2_grouped_blocked_dequant_matmul_v310.h, autogen/aclnn_causal_conv1d_v310.h, autogen/aclnn_gdn_gating_v310.h, autogen/aclnn_add_rms_norm_dynamic_quant.h, autogen/aclnn_qsa_gather_value_nz_v310.h, autogen/aclnn_qsa_index_cache_update_v310.h, autogen/aclnn_qsa_indexer_score_v310.h, autogen/aclnn_qsa_sparse_attention_v310.h, autogen/aclnn_qwen4_exp_ple_decode_v310.h, autogen/aclnn_rms_norm_dynamic_quant.h
+[2026-10-24 01:34:28] [38/211] Building CXX object CMakeFiles/op_host_aclnnExc.dir/moe/chunk_fwd_o_vllm/op_host/chunk_fwd_o_vllm_def.cpp.o
+[2026-10-24 01:34:28] [39/211] Building CXX object CMakeFiles/op_host_aclnnExc.dir/moe/chunk_gated_delta_rule_fwd_h/op_host/chunk_gated_delta_rule_fwd_h_def.cpp.o
+[2026-10-24 01:34:29] [40/211] Building CXX object CMakeFiles/ops_aclnn.dir/autogen/aclnn_qwen_w4_a8_int4_down_reduce_v310.cpp.o
+[2026-10-24 01:34:29] [41/211] Building CXX object CMakeFiles/ops_aclnn.dir/autogen/aclnn_qwen_w4_a8_int4_matmul_v310.cpp.o
+[2026-10-24 01:34:29] [42/211] Building CXX object CMakeFiles/ops_aclnn.dir/autogen/aclnn_qwen_w4_a8_pack_v310.cpp.o
+[2026-10-24 01:34:29] [43/211] Building CXX object CMakeFiles/ops_aclnn.dir/autogen/aclnn_qwen_w4_a8_swiglu_pack_v310.cpp.o
+[2026-10-24 01:34:29] [44/211] Building CXX object CMakeFiles/ops_aclnn.dir/autogen/aclnn_qwen_w4_group_matmul_v310.cpp.o
+[2026-10-24 01:34:29] [45/211] Building CXX object CMakeFiles/ops_aclnn.dir/autogen/aclnn_qwen_w4_grouped_matmul_v310.cpp.o
+[2026-10-24 01:34:29] [46/211] Building CXX object CMakeFiles/op_host_aclnnExc.dir/attention/chunk_kda_fwd/op_host/310p/chunk_kda_fwd_def.cpp.o
+[2026-10-24 01:34:30] [47/211] Building CXX object CMakeFiles/ops_aclnn.dir/autogen/aclnn_w2_blocked_dequant_matmul_v310.cpp.o
+[2026-10-24 01:34:30] [48/211] Building CXX object CMakeFiles/ops_aclnn.dir/autogen/aclnn_qwen_w4_routed_matmul_v310.cpp.o
+[2026-10-24 01:34:30] [49/211] Building CXX object CMakeFiles/ops_aclnn.dir/autogen/aclnn_w2_grouped_blocked_dequant_matmul_v310.cpp.o
+[2026-10-24 01:34:30] [50/211] Building CXX object CMakeFiles/ops_aclnn.dir/autogen/aclnn_causal_conv1d_v310.cpp.o
+[2026-10-24 01:34:30] [51/211] Building CXX object CMakeFiles/ops_aclnn.dir/autogen/aclnn_gdn_gating_v310.cpp.o
+[2026-10-24 01:34:30] [52/211] Building CXX object CMakeFiles/ops_aclnn.dir/autogen/aclnn_add_rms_norm_dynamic_quant.cpp.o
+[2026-10-24 01:34:30] [53/211] Building CXX object CMakeFiles/ops_aclnn.dir/autogen/aclnn_qsa_gather_value_nz_v310.cpp.o
+[2026-10-24 01:34:30] [54/211] Building CXX object CMakeFiles/ops_aclnn.dir/autogen/aclnn_qsa_index_cache_update_v310.cpp.o
+[2026-10-24 01:34:31] [55/211] Building CXX object CMakeFiles/ops_aclnn.dir/autogen/aclnn_qsa_indexer_score_v310.cpp.o
+[2026-10-24 01:34:31] [56/211] Building CXX object CMakeFiles/ops_aclnn.dir/autogen/aclnn_qsa_sparse_attention_v310.cpp.o
+[2026-10-24 01:34:31] [57/211] Building CXX object CMakeFiles/ops_aclnn.dir/autogen/aclnn_qwen4_exp_ple_decode_v310.cpp.o
+[2026-10-24 01:34:31] [58/211] Building CXX object CMakeFiles/ops_aclnn.dir/autogen/aclnn_rms_norm_dynamic_quant.cpp.o
+[2026-10-24 01:34:31] [59/211] Linking CXX static library libops_aclnn.a
+[2026-10-24 01:34:32] [60/211] Building CXX object CMakeFiles/op_host_aclnnExc.dir/attention/kda_layout_swap12/op_host/kda_layout_swap12_def.cpp.o
+[2026-10-24 01:34:32] [61/211] No update step for 'tiling_sink_task'
+[2026-10-24 01:34:32] [62/211] Building CXX object CMakeFiles/op_host_aclnnExc.dir/attention/kda_gate_cumsum/op_host/kda_gate_cumsum_def.cpp.o
+[2026-10-24 01:34:32] [63/211] No patch step for 'tiling_sink_task'
+[2026-10-24 01:34:32] [64/211] Generating tbe/graph/ops_proto_transformer.h
+[2026-10-24 01:34:32] merged op transformer proto file: /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/tbe/graph/ops_proto_transformer.h
+[2026-10-24 01:34:32] [65/211] Generating opapi_stub.cpp
+[2026-10-24 01:34:32] [66/211] Generating tbe/graph/ops_proto_transformer.cpp
+[2026-10-24 01:34:32] [67/211] Building CXX object CMakeFiles/op_host_aclnnExc.dir/attention/recurrent_gated_delta_rule_v310/op_host/recurrent_gated_delta_rule_v310_def.cpp.o
+[2026-10-24 01:34:32] [68/211] Linking CXX shared library libop_host_aclnnExc.so
+[2026-10-24 01:34:32] [69/211] Performing configure step for 'ascend_protobuf_build_transformer'
+[2026-10-24 01:34:32] CMake Warning (deprecated) at CMakeLists.txt:7 (cmake_policy):
+[2026-10-24 01:34:32]   The OLD behavior for policy CMP0141 will be removed from a future version
+[2026-10-24 01:34:32]   of CMake.
+[2026-10-24 01:34:32] 
+[2026-10-24 01:34:32]   The cmake-policies(7) manual explains that the OLD behaviors of all
+[2026-10-24 01:34:32]   policies are deprecated and that a policy should be set to OLD only under
+[2026-10-24 01:34:32]   specific short-term circumstances.  Projects should be ported to the NEW
+[2026-10-24 01:34:32]   behavior and not rely on setting a policy to OLD.
+[2026-10-24 01:34:32] This warning is for project developers.  Use -Wno-author or -Wno-deprecated
+[2026-10-24 01:34:32] to suppress it.
+[2026-10-24 01:34:32] 
+[2026-10-24 01:34:32] CMake Warning (deprecated) at third_party/utf8_range/CMakeLists.txt:1 (cmake_minimum_required):
+[2026-10-24 01:34:32]   Compatibility with CMake < 3.10 will be removed from a future version of
+[2026-10-24 01:34:32]   CMake.
+[2026-10-24 01:34:32] 
+[2026-10-24 01:34:32]   Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+[2026-10-24 01:34:32]   to tell CMake that the project requires at least <min> but has been updated
+[2026-10-24 01:34:32]   to work with policies introduced by <max> or earlier.
+[2026-10-24 01:34:32] This warning is for project developers.  Use -Wno-author or -Wno-deprecated
+[2026-10-24 01:34:32] to suppress it.
+[2026-10-24 01:34:32] 
+[2026-10-24 01:34:32] -- Configuring done (0.7s)
+[2026-10-24 01:34:32] -- Generating done (0.3s)
+[2026-10-24 01:34:32] CMake Warning (unused-cli):
+[2026-10-24 01:34:32]   Manually-specified variables were not used by the project:
+[2026-10-24 01:34:32] 
+[2026-10-24 01:34:32]     CMAKE_CXX_LDFLAGS
+[2026-10-24 01:34:32] 
+[2026-10-24 01:34:32] 
+[2026-10-24 01:34:32] -- Build files have been written to: /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/ascend_protobuf_build_transformer-prefix/src/ascend_protobuf_build_transformer-build
+[2026-10-24 01:34:32] [70/211] Generating autogen/exc/chunk_fwd_o_vllm_proto.cpp, autogen/exc/chunk_gated_delta_rule_fwd_h_proto.cpp, autogen/exc/chunk_kda_fwd_proto.cpp, autogen/exc/kda_gate_cumsum_proto.cpp, autogen/exc/kda_layout_swap12_proto.cpp, autogen/exc/recurrent_gated_delta_rule_v310_proto.cpp
+[2026-10-24 01:34:32] [71/211] Performing configure step for 'tiling_sink_task'
+[2026-10-24 01:34:32] -- The C compiler identification is GNU 7.3.0
+[2026-10-24 01:34:32] -- The CXX compiler identification is GNU 7.3.0
+[2026-10-24 01:34:32] -- Detecting C compiler ABI info
+[2026-10-24 01:34:32] -- Detecting C compiler ABI info - done
+[2026-10-24 01:34:32] -- Check for working C compiler: /usr/local/Ascend/cann-9.1.0/toolkit/toolchain/hcc/bin/aarch64-target-linux-gnu-gcc - skipped
+[2026-10-24 01:34:32] -- Detecting C compile features
+[2026-10-24 01:34:32] -- Detecting C compile features - done
+[2026-10-24 01:34:32] -- Detecting CXX compiler ABI info
+[2026-10-24 01:34:32] -- Detecting CXX compiler ABI info - done
+[2026-10-24 01:34:32] -- Check for working CXX compiler: /usr/local/Ascend/cann-9.1.0/toolkit/toolchain/hcc/bin/aarch64-target-linux-gnu-g++ - skipped
+[2026-10-24 01:34:32] -- Detecting CXX compile features
+[2026-10-24 01:34:32] -- Detecting CXX compile features - done
+[2026-10-24 01:34:32] CMake Warning at CMakeLists.txt:45 (message):
+[2026-10-24 01:34:32]   File not found:
+[2026-10-24 01:34:32]   /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/common/src/tiling_sink/../../../attention/common/op_host/fia_tiling_info.cpp
+[2026-10-24 01:34:32] 
+[2026-10-24 01:34:32] 
+[2026-10-24 01:34:32] -- Configuring done (0.3s)
+[2026-10-24 01:34:32] -- Generating done (0.0s)
+[2026-10-24 01:34:32] CMake Warning (unused-cli):
+[2026-10-24 01:34:32]   Manually-specified variables were not used by the project:
+[2026-10-24 01:34:32] 
+[2026-10-24 01:34:32]     ENABLE_BUILT_IN
+[2026-10-24 01:34:32]     SYS_VERSION
+[2026-10-24 01:34:32] 
+[2026-10-24 01:34:32] 
+[2026-10-24 01:34:32] -- Build files have been written to: /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/common/tiling_sink_task-prefix/src/tiling_sink_task-build
+[2026-10-24 01:34:33] [72/211] Building CXX object common/stub/op_api/CMakeFiles/opapi_math.dir/opapi_stub.cpp.o
+[2026-10-24 01:34:33] [73/211] Linking CXX shared library libopapi_math.so
+[2026-10-24 01:34:33] [74/211] Building CXX object common/stub/op_tiling/CMakeFiles/optiling.dir/op_cache_tiling.cpp.o
+[2026-10-24 01:34:33] [75/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_opapi_obj.dir/opapi_stub.cpp.o
+[2026-10-24 01:34:34] [76/211] Building CXX object common/stub/op_tiling/CMakeFiles/optiling.dir/runtime_kb_api.cpp.o
+[2026-10-24 01:34:34] [77/211] Building CXX object common/stub/op_tiling/CMakeFiles/optiling.dir/tbe_tiling_api.cpp.o
+[2026-10-24 01:34:34] [78/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_opapi_obj.dir/__/__/__/moe/chunk_fwd_o_vllm/op_host/op_api/aclnn_chunk_fwd_o_vllm.cpp.o
+[2026-10-24 01:34:34] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/moe/chunk_fwd_o_vllm/op_host/op_api/aclnn_chunk_fwd_o_vllm.cpp: In function ‘aclnnStatus CheckFormat(ChunkFwdOVllmParams)’:
+[2026-10-24 01:34:34] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/moe/chunk_fwd_o_vllm/op_host/op_api/aclnn_chunk_fwd_o_vllm.cpp:63:52: warning: unused parameter ‘params’ [-Wunused-parameter]
+[2026-10-24 01:34:34]    63 | static aclnnStatus CheckFormat(ChunkFwdOVllmParams params)
+[2026-10-24 01:34:34]       |                                ~~~~~~~~~~~~~~~~~~~~^~~~~~
+[2026-10-24 01:34:34] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/moe/chunk_fwd_o_vllm/op_host/op_api/aclnn_chunk_fwd_o_vllm.cpp: In function ‘aclnnStatus CheckShape(ChunkFwdOVllmParams)’:
+[2026-10-24 01:34:34] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/moe/chunk_fwd_o_vllm/op_host/op_api/aclnn_chunk_fwd_o_vllm.cpp:68:51: warning: unused parameter ‘params’ [-Wunused-parameter]
+[2026-10-24 01:34:34]    68 | static aclnnStatus CheckShape(ChunkFwdOVllmParams params)
+[2026-10-24 01:34:34]       |                               ~~~~~~~~~~~~~~~~~~~~^~~~~~
+[2026-10-24 01:34:34] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/moe/chunk_fwd_o_vllm/op_host/op_api/aclnn_chunk_fwd_o_vllm.cpp: In function ‘aclnnStatus CheckDtype(ChunkFwdOVllmParams)’:
+[2026-10-24 01:34:34] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/moe/chunk_fwd_o_vllm/op_host/op_api/aclnn_chunk_fwd_o_vllm.cpp:96:51: warning: unused parameter ‘params’ [-Wunused-parameter]
+[2026-10-24 01:34:34]    96 | static aclnnStatus CheckDtype(ChunkFwdOVllmParams params)
+[2026-10-24 01:34:34]       |                               ~~~~~~~~~~~~~~~~~~~~^~~~~~
+[2026-10-24 01:34:34] [79/211] Performing build step for 'ascend_protobuf_build_transformer'
+[2026-10-24 01:34:34] [build-cache] HIT domain=third_party unit=ascend_protobuf_build_transformer key=da8c3d641201b85d5eb8d6831aefa5202b60fb93c70895e687821247741006ec
+[2026-10-24 01:34:34] [80/211] No install step for 'ascend_protobuf_build_transformer'
+[2026-10-24 01:34:35] [81/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_opapi_obj.dir/__/__/__/moe/chunk_fwd_o_vllm/op_host/op_api/chunk_fwd_o_vllm.cpp.o
+[2026-10-24 01:34:35] [82/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_opapi_obj.dir/__/__/__/moe/chunk_gated_delta_rule_fwd_h/op_host/op_api/aclnn_chunk_gated_delta_rule_fwd_h.cpp.o
+[2026-10-24 01:34:35] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/moe/chunk_gated_delta_rule_fwd_h/op_host/op_api/aclnn_chunk_gated_delta_rule_fwd_h.cpp: In function ‘aclnnStatus CheckFormat(ChunkGatedDeltaRuleFwdHParams)’:
+[2026-10-24 01:34:35] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/moe/chunk_gated_delta_rule_fwd_h/op_host/op_api/aclnn_chunk_gated_delta_rule_fwd_h.cpp:74:62: warning: unused parameter ‘params’ [-Wunused-parameter]
+[2026-10-24 01:34:35]    74 | static aclnnStatus CheckFormat(ChunkGatedDeltaRuleFwdHParams params)
+[2026-10-24 01:34:35]       |                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~
+[2026-10-24 01:34:36] [83/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_opapi_obj.dir/__/__/__/moe/chunk_gated_delta_rule_fwd_h/op_host/op_api/chunk_gated_delta_rule_fwd_h.cpp.o
+[2026-10-24 01:34:36] [84/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_opapi_obj.dir/__/__/__/attention/chunk_kda_fwd/op_host/op_api/chunk_kda_fwd.cpp.o
+[2026-10-24 01:34:37] [85/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_opapi_obj.dir/__/__/__/attention/chunk_kda_fwd/op_host/op_api/aclnn_chunk_kda_fwd.cpp.o
+[2026-10-24 01:34:37] [86/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_opapi_obj.dir/__/__/__/attention/kda_gate_cumsum/op_host/op_api/aclnn_kda_gate_cumsum.cpp.o
+[2026-10-24 01:34:37] [87/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_opapi_obj.dir/__/__/__/attention/kda_gate_cumsum/op_host/op_api/kda_gate_cumsum.cpp.o
+[2026-10-24 01:34:38] [88/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_opapi_obj.dir/__/__/__/attention/kda_layout_swap12/op_host/op_api/kda_layout_swap12.cpp.o
+[2026-10-24 01:34:38] [89/211] Completed 'ascend_protobuf_build_transformer'
+[2026-10-24 01:34:38] [90/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_opapi_obj.dir/__/__/__/attention/kda_layout_swap12/op_host/op_api/aclnn_kda_layout_swap12.cpp.o
+[2026-10-24 01:34:38] [91/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_opapi_obj.dir/__/__/__/attention/recurrent_gated_delta_rule_v310/op_host/op_api/aclnn_recurrent_gated_delta_rule_v310.cpp.o
+[2026-10-24 01:34:38] [92/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_opapi_obj.dir/__/__/__/attention/recurrent_gated_delta_rule_v310/op_host/op_api/recurrent_gated_delta_rule_v310.cpp.o
+[2026-10-24 01:34:38] [93/211] Performing build step for 'tiling_sink_task'
+[2026-10-24 01:34:38] ninja: no work to do.
+[2026-10-24 01:34:38] [94/211] Linking CXX shared library liboptiling.so
+[2026-10-24 01:34:38] [95/211] Generating cust_opapi_stub.cpp
+[2026-10-24 01:34:39] [96/211] Building CXX object common/CMakeFiles/common_transformer_obj.dir/src/fallback_comm.cpp.o
+[2026-10-24 01:34:39] [97/211] Building CXX object common/CMakeFiles/common_transformer_obj.dir/src/fallback_comm_2stages.cpp.o
+[2026-10-24 01:34:39] [98/211] Building CXX object common/CMakeFiles/common_transformer_obj.dir/src/tiling_base/tiling_util.cpp.o
+[2026-10-24 01:34:40] [99/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_tiling_obj.dir/qwen_w4_a8_int4_down_reduce_v310_tiling.cpp.o
+[2026-10-24 01:34:40] [100/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_tiling_obj.dir/__/__/qwen_w4_a8_int4_matmul_v310/op_host/qwen_w4_a8_int4_matmul_v310_tiling.cpp.o
+[2026-10-24 01:34:40] [101/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_tiling_obj.dir/__/__/qwen_w4_a8_pack_v310/op_host/qwen_w4_a8_pack_v310_tiling.cpp.o
+[2026-10-24 01:34:40] [102/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_tiling_obj.dir/__/__/qwen_w4_a8_swiglu_pack_v310/op_host/qwen_w4_a8_swiglu_pack_v310_tiling.cpp.o
+[2026-10-24 01:34:41] [103/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_tiling_obj.dir/__/__/qwen_w4_group_matmul_v310/op_host/qwen_w4_group_matmul_v310_tiling.cpp.o
+[2026-10-24 01:34:41] [104/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_tiling_obj.dir/__/__/qwen_w4_grouped_matmul_v310/op_host/qwen_w4_grouped_matmul_v310_tiling.cpp.o
+[2026-10-24 01:34:41] [105/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_tiling_obj.dir/__/__/qwen_w4_routed_matmul_v310/op_host/qwen_w4_routed_matmul_v310_tiling.cpp.o
+[2026-10-24 01:34:42] [106/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_tiling_obj.dir/__/__/w2_blocked_dequant_matmul_v310/op_host/w2_blocked_dequant_matmul_v310_tiling.cpp.o
+[2026-10-24 01:34:42] [107/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_tiling_obj.dir/__/__/w2_grouped_blocked_dequant_matmul_v310/op_host/w2_grouped_blocked_dequant_matmul_v310_tiling.cpp.o
+[2026-10-24 01:34:43] [108/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_tiling_obj.dir/__/__/__/moe/causal_conv1d_v310/op_host/causal_conv1d_v310_tiling.cpp.o
+[2026-10-24 01:34:43] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/moe/causal_conv1d_v310/op_host/causal_conv1d_v310_tiling.cpp: In function ‘optiling::DimTileChoice optiling::ChooseDimTileSize(gert::TilingContext*, int64_t, int64_t, uint32_t)’:
+[2026-10-24 01:34:43] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/moe/causal_conv1d_v310/op_host/causal_conv1d_v310_tiling.cpp:65:68: warning: unused parameter ‘context’ [-Wunused-parameter]
+[2026-10-24 01:34:43]    65 | static inline DimTileChoice ChooseDimTileSize(gert::TilingContext *context, int64_t batch, int64_t dim,
+[2026-10-24 01:34:43]       |                                               ~~~~~~~~~~~~~~~~~~~~~^~~~~~~
+[2026-10-24 01:34:43] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/moe/causal_conv1d_v310/op_host/causal_conv1d_v310_tiling.cpp: In function ‘ge::graphStatus optiling::TilingParseForCausalConv1d(gert::TilingParseContext*)’:
+[2026-10-24 01:34:43] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/moe/causal_conv1d_v310/op_host/causal_conv1d_v310_tiling.cpp:512:77: warning: unused parameter ‘context’ [-Wunused-parameter]
+[2026-10-24 01:34:43]   512 | static ge::graphStatus TilingParseForCausalConv1d(gert::TilingParseContext *context)
+[2026-10-24 01:34:43]       |                                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~
+[2026-10-24 01:34:43] [109/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_tiling_obj.dir/__/__/__/moe/gdn_gating_v310/op_host/gdn_gating_v310_tiling.cpp.o
+[2026-10-24 01:34:44] [110/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_tiling_obj.dir/__/__/__/moe/chunk_fwd_o_vllm/op_host/chunk_fwd_o_vllm_tiling.cpp.o
+[2026-10-24 01:34:44] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/moe/chunk_fwd_o_vllm/op_host/chunk_fwd_o_vllm_tiling.cpp: In function ‘void optiling::ChunkFwdOVllmTilingDataPrint(gert::TilingContext*, ChunkFwdOVllmTilingData&)’:
+[2026-10-24 01:34:44] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/moe/chunk_fwd_o_vllm/op_host/chunk_fwd_o_vllm_tiling.cpp:40:10: warning: unused variable ‘nodeName’ [-Wunused-variable]
+[2026-10-24 01:34:44]    40 |     auto nodeName = context->GetNodeName();
+[2026-10-24 01:34:44]       |          ^~~~~~~~
+[2026-10-24 01:34:44] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/moe/chunk_fwd_o_vllm/op_host/chunk_fwd_o_vllm_tiling.cpp:38:97: warning: unused parameter ‘tiling’ [-Wunused-parameter]
+[2026-10-24 01:34:44]    38 | static void ChunkFwdOVllmTilingDataPrint(gert::TilingContext *context, ChunkFwdOVllmTilingData &tiling)
+[2026-10-24 01:34:44]       |                                                                        ~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~
+[2026-10-24 01:34:44] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/moe/chunk_fwd_o_vllm/op_host/chunk_fwd_o_vllm_tiling.cpp: In function ‘ge::graphStatus optiling::Tiling4ChunkFwdOVllm(gert::TilingContext*)’:
+[2026-10-24 01:34:44] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/moe/chunk_fwd_o_vllm/op_host/chunk_fwd_o_vllm_tiling.cpp:82:19: warning: conversion from ‘double’ to ‘float’ may change value [-Wfloat-conversion]
+[2026-10-24 01:34:44]    82 |     float scale = *(attrPtr->GetAttrPointer<double>(ATTR_SCALE_IDX));
+[2026-10-24 01:34:44]       |                   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[2026-10-24 01:34:44] [111/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_tiling_obj.dir/__/__/__/moe/chunk_gated_delta_rule_fwd_h/op_host/chunk_gated_delta_rule_fwd_h_tiling.cpp.o
+[2026-10-24 01:34:44] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/moe/chunk_gated_delta_rule_fwd_h/op_host/chunk_gated_delta_rule_fwd_h_tiling.cpp: In function ‘void optiling::ChunkGatedDeltaRuleFwdHTilingDataPrint(gert::TilingContext*, ChunkGatedDeltaRuleFwdHTilingData&)’:
+[2026-10-24 01:34:44] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/moe/chunk_gated_delta_rule_fwd_h/op_host/chunk_gated_delta_rule_fwd_h_tiling.cpp:59:10: warning: unused variable ‘nodeName’ [-Wunused-variable]
+[2026-10-24 01:34:44]    59 |     auto nodeName = context->GetNodeName();
+[2026-10-24 01:34:44]       |          ^~~~~~~~
+[2026-10-24 01:34:44] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/moe/chunk_gated_delta_rule_fwd_h/op_host/chunk_gated_delta_rule_fwd_h_tiling.cpp:57:117: warning: unused parameter ‘tiling’ [-Wunused-parameter]
+[2026-10-24 01:34:44]    57 | static void ChunkGatedDeltaRuleFwdHTilingDataPrint(gert::TilingContext *context, ChunkGatedDeltaRuleFwdHTilingData &tiling)
+[2026-10-24 01:34:44]       |                                                                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~
+[2026-10-24 01:34:45] [112/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_tiling_obj.dir/__/__/__/attention/kda_gate_cumsum/op_host/kda_gate_cumsum_tiling.cpp.o
+[2026-10-24 01:34:45] [113/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_tiling_obj.dir/__/__/__/attention/chunk_kda_fwd/op_host/chunk_kda_fwd_tiling.cpp.o
+[2026-10-24 01:34:45] [114/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_tiling_obj.dir/__/__/__/attention/add_rms_norm_dynamic_quant/op_host/add_rms_norm_dynamic_quant_tiling.cpp.o
+[2026-10-24 01:34:45] In file included from /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/add_rms_norm_dynamic_quant/op_host/add_rms_norm_dynamic_quant_tiling.cpp:15:
+[2026-10-24 01:34:45] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/add_rms_norm_dynamic_quant/op_host/add_rms_norm_dynamic_quant_tiling.h:121:16: warning: conversion from ‘double’ to ‘float’ changes value from ‘9.9999999999999995e-7’ to ‘9.99999997e-7f’ [-Wfloat-conversion]
+[2026-10-24 01:34:45]   121 |     float eps_{1e-6};
+[2026-10-24 01:34:45]       |                ^~~~
+[2026-10-24 01:34:45] In file included from /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/utils/inc/log/ops_log.h:18,
+[2026-10-24 01:34:45]                  from /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/utils/inc/error/ops_error.h:18,
+[2026-10-24 01:34:45]                  from /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/add_rms_norm_dynamic_quant/op_host/add_rms_norm_dynamic_quant_tiling.h:22:
+[2026-10-24 01:34:45] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/add_rms_norm_dynamic_quant/op_host/add_rms_norm_dynamic_quant_tiling.cpp: In member function ‘bool optiling::AddRmsNormDynamicQuantTilingHelper::GetBaseInfo()’:
+[2026-10-24 01:34:45] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/utils/inc/log/inner/dfx_base.h:120:17: warning: format ‘%u’ expects argument of type ‘unsigned int’, but argument 12 has type ‘int32_t’ {aka ‘int’} [-Wformat=]
+[2026-10-24 01:34:45]   120 |                 "[%s:%d][%s]%s[%s][%lu] OpName:[%s] " #FMT,                                                     \
+[2026-10-24 01:34:45] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/utils/inc/log/inner/dfx_base.h:149:44: note: in expansion of macro ‘OPS_LOG_STUB’
+[2026-10-24 01:34:45]   149 | #define OPS_LOG_STUB_I(OPS_DESC, FMT, ...) OPS_LOG_STUB(OP, DLOG_INFO, OPS_DESC, FMT, ##__VA_ARGS__)
+[2026-10-24 01:34:45]       |                                            ^~~~~~~~~~~~
+[2026-10-24 01:34:45] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/utils/inc/log/ops_log.h:22:34: note: in expansion of macro ‘OPS_LOG_STUB_I’
+[2026-10-24 01:34:45]    22 | #define OPS_LOG_I(OPS_DESC, ...) OPS_LOG_STUB_I(OPS_DESC, __VA_ARGS__)
+[2026-10-24 01:34:45]       |                                  ^~~~~~~~~~~~~~
+[2026-10-24 01:34:45] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/add_rms_norm_dynamic_quant/op_host/add_rms_norm_dynamic_quant_tiling.cpp:236:5: note: in expansion of macro ‘OPS_LOG_I’
+[2026-10-24 01:34:45]   236 |     OPS_LOG_I("outputMask", "outQuant1Flag: %u, outQuant2Flag: %u", this->outQuant1Flag, this->outQuant2Flag);
+[2026-10-24 01:34:45]       |     ^~~~~~~~~
+[2026-10-24 01:34:45] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/utils/inc/log/inner/dfx_base.h:120:17: warning: format ‘%u’ expects argument of type ‘unsigned int’, but argument 13 has type ‘int32_t’ {aka ‘int’} [-Wformat=]
+[2026-10-24 01:34:45]   120 |                 "[%s:%d][%s]%s[%s][%lu] OpName:[%s] " #FMT,                                                     \
+[2026-10-24 01:34:45] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/utils/inc/log/inner/dfx_base.h:149:44: note: in expansion of macro ‘OPS_LOG_STUB’
+[2026-10-24 01:34:45]   149 | #define OPS_LOG_STUB_I(OPS_DESC, FMT, ...) OPS_LOG_STUB(OP, DLOG_INFO, OPS_DESC, FMT, ##__VA_ARGS__)
+[2026-10-24 01:34:45]       |                                            ^~~~~~~~~~~~
+[2026-10-24 01:34:45] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/utils/inc/log/ops_log.h:22:34: note: in expansion of macro ‘OPS_LOG_STUB_I’
+[2026-10-24 01:34:45]    22 | #define OPS_LOG_I(OPS_DESC, ...) OPS_LOG_STUB_I(OPS_DESC, __VA_ARGS__)
+[2026-10-24 01:34:45]       |                                  ^~~~~~~~~~~~~~
+[2026-10-24 01:34:45] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/add_rms_norm_dynamic_quant/op_host/add_rms_norm_dynamic_quant_tiling.cpp:236:5: note: in expansion of macro ‘OPS_LOG_I’
+[2026-10-24 01:34:45]   236 |     OPS_LOG_I("outputMask", "outQuant1Flag: %u, outQuant2Flag: %u", this->outQuant1Flag, this->outQuant2Flag);
+[2026-10-24 01:34:45]       |     ^~~~~~~~~
+[2026-10-24 01:34:45] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/add_rms_norm_dynamic_quant/op_host/add_rms_norm_dynamic_quant_tiling.cpp: In member function ‘bool optiling::AddRmsNormDynamicQuantTilingHelper::CalculateShapeParameters()’:
+[2026-10-24 01:34:45] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/add_rms_norm_dynamic_quant/op_host/add_rms_norm_dynamic_quant_tiling.cpp:323:28: warning: conversion from ‘double’ to ‘float’ may change value [-Wfloat-conversion]
+[2026-10-24 01:34:45]   323 |     this->avgFactor_ = 1.0 / ((float)this->numLastDim_);
+[2026-10-24 01:34:45]       |                        ~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[2026-10-24 01:34:45] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/add_rms_norm_dynamic_quant/op_host/add_rms_norm_dynamic_quant_tiling.cpp: In function ‘ge::graphStatus optiling::Tiling4AddRmsNormDynamicQuant(gert::TilingContext*)’:
+[2026-10-24 01:34:45] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/add_rms_norm_dynamic_quant/op_host/add_rms_norm_dynamic_quant_tiling.cpp:491:10: warning: unused variable ‘isEmptyTensor’ [-Wunused-variable]
+[2026-10-24 01:34:45]   491 |     bool isEmptyTensor = (col_val == 0);
+[2026-10-24 01:34:45]       |          ^~~~~~~~~~~~~
+[2026-10-24 01:34:45] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/add_rms_norm_dynamic_quant/op_host/add_rms_norm_dynamic_quant_tiling.cpp:494:34: warning: unused variable ‘curSocVersion’ [-Wunused-variable]
+[2026-10-24 01:34:45]   494 |     platform_ascendc::SocVersion curSocVersion =
+[2026-10-24 01:34:45]       |                                  ^~~~~~~~~~~~~
+[2026-10-24 01:34:45] [115/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_tiling_obj.dir/__/__/__/attention/kda_layout_swap12/op_host/kda_layout_swap12_tiling.cpp.o
+[2026-10-24 01:34:46] [116/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_tiling_obj.dir/__/__/__/attention/qsa_gather_value_nz_v310/op_host/qsa_gather_value_nz_v310_tiling.cpp.o
+[2026-10-24 01:34:46] [117/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_tiling_obj.dir/__/__/__/attention/qsa_index_cache_update_v310/op_host/qsa_index_cache_update_v310_tiling.cpp.o
+[2026-10-24 01:34:47] [118/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_tiling_obj.dir/__/__/__/attention/qsa_indexer_score_v310/op_host/qsa_indexer_score_v310_tiling.cpp.o
+[2026-10-24 01:34:47] [119/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_tiling_obj.dir/__/__/__/attention/qsa_sparse_attention_v310/op_host/qsa_sparse_attention_v310_tiling.cpp.o
+[2026-10-24 01:34:47] [120/211] 
+[2026-10-24 01:34:47] [121/211] 
+[2026-10-24 01:34:47] [122/211] 
+[2026-10-24 01:34:47] [123/211] 
+[2026-10-24 01:34:47] [124/211] 
+[2026-10-24 01:34:47] [125/211] 
+[2026-10-24 01:34:47] [126/211] 
+[2026-10-24 01:34:47] [127/211] 
+[2026-10-24 01:34:47] [128/211] 
+[2026-10-24 01:34:47] [129/211] 
+[2026-10-24 01:34:47] [130/211] 
+[2026-10-24 01:34:47] [131/211] 
+[2026-10-24 01:34:47] [132/211] 
+[2026-10-24 01:34:47] [133/211] 
+[2026-10-24 01:34:47] [134/211] 
+[2026-10-24 01:34:47] [135/211] 
+[2026-10-24 01:34:47] [136/211] 
+[2026-10-24 01:34:47] [137/211] 
+[2026-10-24 01:34:47] [138/211] Building CXX object CMakeFiles/cust_opapi.dir/cust_opapi_stub.cpp.o
+[2026-10-24 01:34:48] [139/211] Building CXX object CMakeFiles/cust_proto.dir/autogen/qwen_w4_a8_int4_down_reduce_v310_proto.cpp.o
+[2026-10-24 01:34:48] [140/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_tiling_obj.dir/__/__/__/attention/qwen4_exp_ple_decode_v310/op_host/qwen4_exp_ple_decode_v310_tiling.cpp.o
+[2026-10-24 01:34:48] [141/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_tiling_obj.dir/__/__/__/attention/recurrent_gated_delta_rule_v310/op_host/recurrent_gated_delta_rule_v310_tiling.cpp.o
+[2026-10-24 01:34:49] [142/211] Building CXX object CMakeFiles/cust_proto.dir/autogen/qwen_w4_a8_pack_v310_proto.cpp.o
+[2026-10-24 01:34:49] [143/211] Building CXX object CMakeFiles/cust_proto.dir/autogen/qwen_w4_a8_int4_matmul_v310_proto.cpp.o
+[2026-10-24 01:34:49] [144/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_tiling_obj.dir/__/__/__/attention/rms_norm_dynamic_quant/op_host/rms_norm_dynamic_quant_tiling.cpp.o
+[2026-10-24 01:34:49] In file included from /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/rms_norm_dynamic_quant/op_host/rms_norm_dynamic_quant_tiling.cpp:15:
+[2026-10-24 01:34:49] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/rms_norm_dynamic_quant/op_host/rms_norm_dynamic_quant_tiling.h:121:16: warning: conversion from ‘double’ to ‘float’ changes value from ‘9.9999999999999995e-7’ to ‘9.99999997e-7f’ [-Wfloat-conversion]
+[2026-10-24 01:34:49]   121 |     float eps_{1e-6};
+[2026-10-24 01:34:49]       |                ^~~~
+[2026-10-24 01:34:49] In file included from /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/utils/inc/log/ops_log.h:18,
+[2026-10-24 01:34:49]                  from /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/utils/inc/error/ops_error.h:18,
+[2026-10-24 01:34:49]                  from /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/rms_norm_dynamic_quant/op_host/rms_norm_dynamic_quant_tiling.h:22:
+[2026-10-24 01:34:49] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/rms_norm_dynamic_quant/op_host/rms_norm_dynamic_quant_tiling.cpp: In member function ‘bool optiling::RmsNormDynamicQuantTilingHelper::GetBaseInfo()’:
+[2026-10-24 01:34:49] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/utils/inc/log/inner/dfx_base.h:120:17: warning: format ‘%u’ expects argument of type ‘unsigned int’, but argument 12 has type ‘int32_t’ {aka ‘int’} [-Wformat=]
+[2026-10-24 01:34:49]   120 |                 "[%s:%d][%s]%s[%s][%lu] OpName:[%s] " #FMT,                                                     \
+[2026-10-24 01:34:49] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/utils/inc/log/inner/dfx_base.h:149:44: note: in expansion of macro ‘OPS_LOG_STUB’
+[2026-10-24 01:34:49]   149 | #define OPS_LOG_STUB_I(OPS_DESC, FMT, ...) OPS_LOG_STUB(OP, DLOG_INFO, OPS_DESC, FMT, ##__VA_ARGS__)
+[2026-10-24 01:34:49]       |                                            ^~~~~~~~~~~~
+[2026-10-24 01:34:49] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/utils/inc/log/ops_log.h:22:34: note: in expansion of macro ‘OPS_LOG_STUB_I’
+[2026-10-24 01:34:49]    22 | #define OPS_LOG_I(OPS_DESC, ...) OPS_LOG_STUB_I(OPS_DESC, __VA_ARGS__)
+[2026-10-24 01:34:49]       |                                  ^~~~~~~~~~~~~~
+[2026-10-24 01:34:49] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/rms_norm_dynamic_quant/op_host/rms_norm_dynamic_quant_tiling.cpp:234:5: note: in expansion of macro ‘OPS_LOG_I’
+[2026-10-24 01:34:49]   234 |     OPS_LOG_I("outputMask", "outQuant1Flag: %u, outQuant2Flag: %u", this->outQuant1Flag, this->outQuant2Flag);
+[2026-10-24 01:34:49]       |     ^~~~~~~~~
+[2026-10-24 01:34:49] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/utils/inc/log/inner/dfx_base.h:120:17: warning: format ‘%u’ expects argument of type ‘unsigned int’, but argument 13 has type ‘int32_t’ {aka ‘int’} [-Wformat=]
+[2026-10-24 01:34:49]   120 |                 "[%s:%d][%s]%s[%s][%lu] OpName:[%s] " #FMT,                                                     \
+[2026-10-24 01:34:49] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/utils/inc/log/inner/dfx_base.h:149:44: note: in expansion of macro ‘OPS_LOG_STUB’
+[2026-10-24 01:34:49]   149 | #define OPS_LOG_STUB_I(OPS_DESC, FMT, ...) OPS_LOG_STUB(OP, DLOG_INFO, OPS_DESC, FMT, ##__VA_ARGS__)
+[2026-10-24 01:34:49]       |                                            ^~~~~~~~~~~~
+[2026-10-24 01:34:49] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/utils/inc/log/ops_log.h:22:34: note: in expansion of macro ‘OPS_LOG_STUB_I’
+[2026-10-24 01:34:49]    22 | #define OPS_LOG_I(OPS_DESC, ...) OPS_LOG_STUB_I(OPS_DESC, __VA_ARGS__)
+[2026-10-24 01:34:49]       |                                  ^~~~~~~~~~~~~~
+[2026-10-24 01:34:49] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/rms_norm_dynamic_quant/op_host/rms_norm_dynamic_quant_tiling.cpp:234:5: note: in expansion of macro ‘OPS_LOG_I’
+[2026-10-24 01:34:49]   234 |     OPS_LOG_I("outputMask", "outQuant1Flag: %u, outQuant2Flag: %u", this->outQuant1Flag, this->outQuant2Flag);
+[2026-10-24 01:34:49]       |     ^~~~~~~~~
+[2026-10-24 01:34:49] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/rms_norm_dynamic_quant/op_host/rms_norm_dynamic_quant_tiling.cpp: In member function ‘bool optiling::RmsNormDynamicQuantTilingHelper::CalculateShapeParameters()’:
+[2026-10-24 01:34:49] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/rms_norm_dynamic_quant/op_host/rms_norm_dynamic_quant_tiling.cpp:321:28: warning: conversion from ‘double’ to ‘float’ may change value [-Wfloat-conversion]
+[2026-10-24 01:34:49]   321 |     this->avgFactor_ = 1.0 / ((float)this->numLastDim_);
+[2026-10-24 01:34:49]       |                        ~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[2026-10-24 01:34:49] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/rms_norm_dynamic_quant/op_host/rms_norm_dynamic_quant_tiling.cpp: In function ‘ge::graphStatus optiling::Tiling4RmsNormDynamicQuant(gert::TilingContext*)’:
+[2026-10-24 01:34:49] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/rms_norm_dynamic_quant/op_host/rms_norm_dynamic_quant_tiling.cpp:488:10: warning: unused variable ‘isEmptyTensor’ [-Wunused-variable]
+[2026-10-24 01:34:49]   488 |     bool isEmptyTensor = (col_val == 0);
+[2026-10-24 01:34:49]       |          ^~~~~~~~~~~~~
+[2026-10-24 01:34:49] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/attention/rms_norm_dynamic_quant/op_host/rms_norm_dynamic_quant_tiling.cpp:491:34: warning: unused variable ‘curSocVersion’ [-Wunused-variable]
+[2026-10-24 01:34:49]   491 |     platform_ascendc::SocVersion curSocVersion =
+[2026-10-24 01:34:49]       |                                  ^~~~~~~~~~~~~
+[2026-10-24 01:34:49] [145/211] Building CXX object CMakeFiles/cust_proto.dir/autogen/qwen_w4_a8_swiglu_pack_v310_proto.cpp.o
+[2026-10-24 01:34:50] [146/211] Building CXX object CMakeFiles/cust_proto.dir/autogen/qwen_w4_group_matmul_v310_proto.cpp.o
+[2026-10-24 01:34:50] [147/211] Building CXX object CMakeFiles/cust_proto.dir/autogen/qwen_w4_grouped_matmul_v310_proto.cpp.o
+[2026-10-24 01:34:50] [148/211] Building CXX object CMakeFiles/cust_proto.dir/autogen/qwen_w4_routed_matmul_v310_proto.cpp.o
+[2026-10-24 01:34:50] [149/211] Building CXX object CMakeFiles/cust_proto.dir/autogen/w2_blocked_dequant_matmul_v310_proto.cpp.o
+[2026-10-24 01:34:50] [150/211] Building CXX object CMakeFiles/cust_proto.dir/autogen/w2_grouped_blocked_dequant_matmul_v310_proto.cpp.o
+[2026-10-24 01:34:50] [151/211] Building CXX object CMakeFiles/cust_proto.dir/autogen/causal_conv1d_v310_proto.cpp.o
+[2026-10-24 01:34:51] [152/211] Building CXX object CMakeFiles/cust_proto.dir/autogen/gdn_gating_v310_proto.cpp.o
+[2026-10-24 01:34:51] [153/211] Building CXX object CMakeFiles/cust_proto.dir/autogen/add_rms_norm_dynamic_quant_proto.cpp.o
+[2026-10-24 01:34:51] In file included from /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen/add_rms_norm_dynamic_quant_proto.h:4,
+[2026-10-24 01:34:51]                  from /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen/add_rms_norm_dynamic_quant_proto.cpp:1:
+[2026-10-24 01:34:51] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen/add_rms_norm_dynamic_quant_proto.h: In member function ‘ge::Operator::OpFloat ge::op::AddRmsNormDynamicQuant::get_attr_epsilon() const’:
+[2026-10-24 01:34:51] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen/add_rms_norm_dynamic_quant_proto.h:21:27: warning: conversion from ‘double’ to ‘ge::Operator::OpFloat’ {aka ‘float’} changes value from ‘9.9999999999999995e-7’ to ‘9.99999997e-7’ [-Wfloat-conversion]
+[2026-10-24 01:34:51]    21 |     .ATTR(epsilon, Float, 1e-06)
+[2026-10-24 01:34:51]       |                           ^~~~~
+[2026-10-24 01:34:51] [154/211] Building CXX object CMakeFiles/cust_proto.dir/autogen/qsa_gather_value_nz_v310_proto.cpp.o
+[2026-10-24 01:34:51] [155/211] Building CXX object CMakeFiles/cust_proto.dir/autogen/qsa_index_cache_update_v310_proto.cpp.o
+[2026-10-24 01:34:51] In file included from /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen/qsa_index_cache_update_v310_proto.h:4,
+[2026-10-24 01:34:51]                  from /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen/qsa_index_cache_update_v310_proto.cpp:1:
+[2026-10-24 01:34:51] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen/qsa_index_cache_update_v310_proto.h: In member function ‘ge::Operator::OpFloat ge::op::QsaIndexCacheUpdateV310::get_attr_normEps() const’:
+[2026-10-24 01:34:51] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen/qsa_index_cache_update_v310_proto.h:21:27: warning: conversion from ‘double’ to ‘ge::Operator::OpFloat’ {aka ‘float’} changes value from ‘9.9999999999999995e-7’ to ‘9.99999997e-7’ [-Wfloat-conversion]
+[2026-10-24 01:34:51]    21 |     .ATTR(normEps, Float, 1e-06)
+[2026-10-24 01:34:51]       |                           ^~~~~
+[2026-10-24 01:34:52] [156/211] Building CXX object CMakeFiles/cust_proto.dir/autogen/qsa_indexer_score_v310_proto.cpp.o
+[2026-10-24 01:34:52] [157/211] Building CXX object CMakeFiles/cust_proto.dir/autogen/qsa_sparse_attention_v310_proto.cpp.o
+[2026-10-24 01:34:52] [158/211] Building CXX object CMakeFiles/cust_proto.dir/autogen/qwen4_exp_ple_decode_v310_proto.cpp.o
+[2026-10-24 01:34:52] In file included from /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen/qwen4_exp_ple_decode_v310_proto.h:4,
+[2026-10-24 01:34:52]                  from /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen/qwen4_exp_ple_decode_v310_proto.cpp:1:
+[2026-10-24 01:34:52] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen/qwen4_exp_ple_decode_v310_proto.h: In member function ‘ge::Operator::OpFloat ge::op::Qwen4ExpPleDecodeV310::get_attr_normEps() const’:
+[2026-10-24 01:34:52] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen/qwen4_exp_ple_decode_v310_proto.h:17:27: warning: conversion from ‘double’ to ‘ge::Operator::OpFloat’ {aka ‘float’} changes value from ‘9.9999999999999995e-7’ to ‘9.99999997e-7’ [-Wfloat-conversion]
+[2026-10-24 01:34:52]    17 |     .ATTR(normEps, Float, 1e-06)
+[2026-10-24 01:34:52]       |                           ^~~~~
+[2026-10-24 01:34:52] [159/211] Building CXX object CMakeFiles/cust_proto.dir/autogen/rms_norm_dynamic_quant_proto.cpp.o
+[2026-10-24 01:34:52] In file included from /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen/rms_norm_dynamic_quant_proto.h:4,
+[2026-10-24 01:34:52]                  from /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen/rms_norm_dynamic_quant_proto.cpp:1:
+[2026-10-24 01:34:52] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen/rms_norm_dynamic_quant_proto.h: In member function ‘ge::Operator::OpFloat ge::op::RmsNormDynamicQuant::get_attr_epsilon() const’:
+[2026-10-24 01:34:52] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen/rms_norm_dynamic_quant_proto.h:19:27: warning: conversion from ‘double’ to ‘ge::Operator::OpFloat’ {aka ‘float’} changes value from ‘9.9999999999999995e-7’ to ‘9.99999997e-7’ [-Wfloat-conversion]
+[2026-10-24 01:34:52]    19 |     .ATTR(epsilon, Float, 1e-06)
+[2026-10-24 01:34:52]       |                           ^~~~~
+[2026-10-24 01:34:53] [160/211] Building CXX object CMakeFiles/cust_proto.dir/autogen/exc/chunk_fwd_o_vllm_proto.cpp.o
+[2026-10-24 01:34:53] [161/211] Building CXX object CMakeFiles/cust_proto.dir/autogen/exc/chunk_gated_delta_rule_fwd_h_proto.cpp.o
+[2026-10-24 01:34:53] [162/211] Building CXX object CMakeFiles/cust_proto.dir/autogen/exc/chunk_kda_fwd_proto.cpp.o
+[2026-10-24 01:34:53] [163/211] Building CXX object CMakeFiles/cust_proto.dir/autogen/exc/kda_gate_cumsum_proto.cpp.o
+[2026-10-24 01:34:53] [164/211] No install step for 'tiling_sink_task'
+[2026-10-24 01:34:53] [165/211] Running C++ protocol buffer compiler on /usr/local/Ascend/cann-9.1.0/include/proto/ge_onnx.proto
+[2026-10-24 01:34:53] generate proto cpp_out onnx by /usr/local/Ascend/cann-9.1.0/include/proto/ge_onnx.proto
+[2026-10-24 01:34:54] [166/211] Building CXX object CMakeFiles/cust_proto.dir/autogen/exc/kda_layout_swap12_proto.cpp.o
+[2026-10-24 01:34:54] [167/211] Building CXX object CMakeFiles/cust_proto.dir/autogen/exc/recurrent_gated_delta_rule_v310_proto.cpp.o
+[2026-10-24 01:34:54] [168/211] Building CXX object CMakeFiles/cust_proto.dir/tbe/graph/ops_proto_transformer.cpp.o
+[2026-10-24 01:34:54] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/tbe/graph/ops_proto_transformer.cpp:2:9: warning: macro ‘OP_TRANSFORMER_PROTO_H_’ is not used [-Wunused-macros]
+[2026-10-24 01:34:54]     2 | #define OP_TRANSFORMER_PROTO_H_
+[2026-10-24 01:34:54]       |         ^~~~~~~~~~~~~~~~~~~~~~~
+[2026-10-24 01:34:54] [169/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_infer_obj.dir/qwen_w4_a8_int4_down_reduce_v310_infershape.cpp.o
+[2026-10-24 01:34:54] [170/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_infer_obj.dir/__/__/qwen_w4_a8_int4_matmul_v310/op_host/qwen_w4_a8_int4_matmul_v310_infershape.cpp.o
+[2026-10-24 01:34:55] [171/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_infer_obj.dir/__/__/qwen_w4_a8_pack_v310/op_host/qwen_w4_a8_pack_v310_infershape.cpp.o
+[2026-10-24 01:34:55] [172/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_infer_obj.dir/__/__/qwen_w4_a8_swiglu_pack_v310/op_host/qwen_w4_a8_swiglu_pack_v310_infershape.cpp.o
+[2026-10-24 01:34:55] [173/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_infer_obj.dir/__/__/qwen_w4_group_matmul_v310/op_host/qwen_w4_group_matmul_v310_infershape.cpp.o
+[2026-10-24 01:34:55] [174/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_infer_obj.dir/__/__/qwen_w4_grouped_matmul_v310/op_host/qwen_w4_grouped_matmul_v310_infershape.cpp.o
+[2026-10-24 01:34:56] [175/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_infer_obj.dir/__/__/qwen_w4_routed_matmul_v310/op_host/qwen_w4_routed_matmul_v310_infershape.cpp.o
+[2026-10-24 01:34:56] [176/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_infer_obj.dir/__/__/__/moe/chunk_fwd_o_vllm/op_host/proto_stub.cpp.o
+[2026-10-24 01:34:56] [177/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_infer_obj.dir/__/__/__/moe/chunk_gated_delta_rule_fwd_h/op_host/proto_stub.cpp.o
+[2026-10-24 01:34:56] [178/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_infer_obj.dir/__/__/w2_blocked_dequant_matmul_v310/op_host/w2_blocked_dequant_matmul_v310_infershape.cpp.o
+[2026-10-24 01:34:56] [179/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_infer_obj.dir/__/__/__/attention/add_rms_norm_dynamic_quant/op_host/proto_stub.cpp.o
+[2026-10-24 01:34:56] [180/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_infer_obj.dir/__/__/__/attention/chunk_kda_fwd/op_host/proto_stub.cpp.o
+[2026-10-24 01:34:56] [181/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_infer_obj.dir/__/__/__/attention/kda_gate_cumsum/op_host/proto_stub.cpp.o
+[2026-10-24 01:34:56] [182/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_infer_obj.dir/__/__/__/attention/kda_layout_swap12/op_host/proto_stub.cpp.o
+[2026-10-24 01:34:56] [183/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_infer_obj.dir/__/__/w2_grouped_blocked_dequant_matmul_v310/op_host/w2_grouped_blocked_dequant_matmul_v310_infershape.cpp.o
+[2026-10-24 01:34:56] [184/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_infer_obj.dir/__/__/__/moe/causal_conv1d_v310/op_host/causal_conv1d_v310_infershape.cpp.o
+[2026-10-24 01:34:57] [185/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_infer_obj.dir/__/__/__/moe/gdn_gating_v310/op_host/gdn_gating_v310_infershape.cpp.o
+[2026-10-24 01:34:57] [186/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_infer_obj.dir/__/__/__/attention/qsa_gather_value_nz_v310/op_host/qsa_gather_value_nz_v310_infershape.cpp.o
+[2026-10-24 01:34:57] [187/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_infer_obj.dir/__/__/__/attention/qsa_index_cache_update_v310/op_host/qsa_index_cache_update_v310_infershape.cpp.o
+[2026-10-24 01:34:57] [188/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_infer_obj.dir/__/__/__/attention/qsa_indexer_score_v310/op_host/qsa_indexer_score_v310_infershape.cpp.o
+[2026-10-24 01:34:57] [189/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_infer_obj.dir/__/__/__/attention/rms_norm_dynamic_quant/op_host/proto_stub.cpp.o
+[2026-10-24 01:34:58] [190/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_infer_obj.dir/__/__/__/attention/qsa_sparse_attention_v310/op_host/qsa_sparse_attention_v310_infershape.cpp.o
+[2026-10-24 01:34:58] [191/211] Linking CXX shared library libcust_opmaster_rt2.0.so
+[2026-10-24 01:34:58] [192/211] Generating compat/liboptiling.so
+[2026-10-24 01:34:58] [193/211] Linking CXX shared library libcust_opapi.so
+[2026-10-24 01:34:58] [194/211] cd /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build && /srv/ai/venvs/qwen38-w4-test-ce1862/bin/python3.12 /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/cmake/scripts/util/ascendc_impl_build.py "" "" "" "" /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/impl /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen --opsinfo-dir /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen/inner /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen/exc
+[2026-10-24 01:34:58] /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/cmake/scripts/util/ascendc_impl_build.py:212: SyntaxWarning: invalid escape sequence '\d'
+[2026-10-24 01:34:58]   ascendc_api_version = re.findall(r"#define ASCENDC_API_VERSION (\d+)", ascendc_api_version_file.read())
+[2026-10-24 01:34:58] [195/211] Generating autogen/aic-ascend310p-ops-info.json
+[2026-10-24 01:34:58] 
+[2026-10-24 01:34:58] 
+[2026-10-24 01:34:58] ==============check valid for ops info start==============
+[2026-10-24 01:34:58] ==============check valid for ops info end================
+[2026-10-24 01:34:58] 
+[2026-10-24 01:34:58] 
+[2026-10-24 01:34:58] Compile op info cfg successfully.
+[2026-10-24 01:34:58] [196/211] Generating scripts/install.sh, scripts/upgrade.sh
+[2026-10-24 01:34:58] [197/211] Generating version.info
+[2026-10-24 01:34:58] [198/211] Completed 'tiling_sink_task'
+[2026-10-24 01:34:58] [199/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_infer_obj.dir/__/__/__/attention/qwen4_exp_ple_decode_v310/op_host/qwen4_exp_ple_decode_v310_infershape.cpp.o
+[2026-10-24 01:34:58] [200/211] Building CXX object gmm/qwen_w4_a8_int4_down_reduce_v310/op_host/CMakeFiles/ophost_transformer_infer_obj.dir/__/__/__/attention/recurrent_gated_delta_rule_v310/op_host/recurrent_gated_delta_rule_v310_infershape.cpp.o
+[2026-10-24 01:34:58] [201/211] cd /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build && /srv/ai/venvs/fork028/lib/python3.12/site-packages/cmake/data/bin/cmake -E make_directory /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/binary/ascend310p/gen && /srv/ai/venvs/qwen38-w4-test-ce1862/bin/python3.12 /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/cmake/scripts/util/ascendc_bin_param_build.py /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen/aic-ascend310p-ops-info.ini /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/binary/ascend310p/gen ascend310p --opc-config-file /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen/custom_opc_options.ini && /srv/ai/venvs/qwen38-w4-test-ce1862/bin/python3.12 /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/cmake/scripts/util/ascendc_bin_param_build.py /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen/inner/aic-ascend310p-ops-info.ini /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/binary/ascend310p/gen ascend310p --opc-config-file /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen/custom_opc_options.ini && /srv/ai/venvs/qwen38-w4-test-ce1862/bin/python3.12 /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/cmake/scripts/util/ascendc_bin_param_build.py /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen/exc/aic-ascend310p-ops-info.ini /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/binary/ascend310p/gen ascend310p --opc-config-file /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen/custom_opc_options.ini && bash /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/cmake/scripts/fix_format.sh /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/binary/ascend310p/gen
+[2026-10-24 01:34:58] INFO: /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/autogen/inner/aic-ascend310p-ops-info.ini does not exists in this project, skip generating compile commands.
+[2026-10-24 01:35:00] [202/211] Building CXX object common/src/framework/CMakeFiles/op_transformer_onnx_plugin_obj.dir/fillwindowcache_onnx_plugin.cpp.o
+[2026-10-24 01:35:00] [203/211] Building CXX object common/src/framework/CMakeFiles/op_transformer_onnx_plugin_obj.dir/embedding_bag_onnx_plugin.cpp.o
+[2026-10-24 01:35:00] [204/211] Building CXX object common/src/framework/CMakeFiles/op_transformer_onnx_plugin_obj.dir/multi_head_attention_onnx_plugin.cpp.o
+[2026-10-24 01:35:00] [205/211] Building CXX object common/src/framework/CMakeFiles/op_transformer_onnx_plugin_obj.dir/npu_fused_attention_score_fwd_onnx_plugin.cpp.o
+[2026-10-24 01:35:02] [206/211] Building CXX object common/src/framework/CMakeFiles/op_transformer_onnx_plugin_obj.dir/npu_scaled_masked_softmax_onnx_plugin.cpp.o
+[2026-10-24 01:35:02] [207/211] Linking CXX shared library libcust_opsproto_rt2.0.so
+[2026-10-24 01:35:02] [208/211] Building CXX object common/src/framework/CMakeFiles/op_transformer_onnx_plugin_obj.dir/npu_masked_softmax_with_relposbias_onnx_plugin.cpp.o
+[2026-10-24 01:35:02] [209/211] Building CXX object common/src/framework/CMakeFiles/op_transformer_onnx_plugin_obj.dir/npu_fused_attention_score_onnx_plugin.cpp.o
+[2026-10-24 01:35:02] [210/211] Building CXX object common/src/framework/CMakeFiles/op_transformer_onnx_plugin_obj.dir/tfidf_vectorizer_onnx_plugin.cpp.o
+[2026-10-24 01:35:02] [210/211] Run CPack packaging tool...
+[2026-10-24 01:35:02] CPack: Create package using External
+[2026-10-24 01:35:02] CPack: Install projects
+[2026-10-24 01:35:02] CPack: - Install project: cann_ops-transformer []
+[2026-10-24 01:35:02] CPack: Create package
+[2026-10-24 01:35:02] 
+[2026-10-24 01:35:02] About to compress 5352 KB of data...
+[2026-10-24 01:35:02] Adding files to archive named "cann-ops-transformer-custom_linux-x86_64.run"...
+[2026-10-24 01:35:02] ./help.info
+[2026-10-24 01:35:02] ./install.sh
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/include/aclnnop/aclnn_add_rms_norm_dynamic_quant.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/include/aclnnop/aclnn_causal_conv1d_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/include/aclnnop/aclnn_chunk_fwd_o_vllm.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/include/aclnnop/aclnn_chunk_gated_delta_rule_fwd_h.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/include/aclnnop/aclnn_chunk_kda_fwd.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/include/aclnnop/aclnn_gdn_gating_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/include/aclnnop/aclnn_kda_gate_cumsum.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/include/aclnnop/aclnn_kda_layout_swap12.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/include/aclnnop/aclnn_ops_transformer_custom.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/include/aclnnop/aclnn_qsa_gather_value_nz_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/include/aclnnop/aclnn_qsa_index_cache_update_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/include/aclnnop/aclnn_qsa_indexer_score_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/include/aclnnop/aclnn_qsa_sparse_attention_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/include/aclnnop/aclnn_qwen4_exp_ple_decode_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/include/aclnnop/aclnn_qwen_w4_a8_int4_down_reduce_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/include/aclnnop/aclnn_qwen_w4_a8_int4_matmul_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/include/aclnnop/aclnn_qwen_w4_a8_pack_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/include/aclnnop/aclnn_qwen_w4_a8_swiglu_pack_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/include/aclnnop/aclnn_qwen_w4_group_matmul_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/include/aclnnop/aclnn_qwen_w4_grouped_matmul_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/include/aclnnop/aclnn_qwen_w4_routed_matmul_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/include/aclnnop/aclnn_recurrent_gated_delta_rule_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/include/aclnnop/aclnn_rms_norm_dynamic_quant.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/include/aclnnop/aclnn_w2_blocked_dequant_matmul_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/include/aclnnop/aclnn_w2_grouped_blocked_dequant_matmul_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_api/lib/libcust_opapi.so
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/config/ascend310p/aic-ascend310p-ops-info.json
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/add_rms_norm_dynamic_quant/add_rms_norm_dynamic_quant.cpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/add_rms_norm_dynamic_quant/add_rms_norm_dynamic_quant_base.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/add_rms_norm_dynamic_quant/add_rms_norm_dynamic_quant_cut_d_kernel.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/add_rms_norm_dynamic_quant/add_rms_norm_dynamic_quant_helper.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/add_rms_norm_dynamic_quant/add_rms_norm_dynamic_quant_normal_kernel.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/add_rms_norm_dynamic_quant/add_rms_norm_dynamic_quant_single_row_kernel.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/add_rms_norm_dynamic_quant/compat_310p.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/add_rms_norm_dynamic_quant/reduce_common.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/causal_conv1d_v310/causal_conv1d_v310.cpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/causal_conv1d_v310/causal_conv1d_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/causal_conv1d_v310/causal_conv1d_v310_common.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/causal_conv1d_v310/causal_conv1d_v310_tiling_data.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/causal_conv1d_v310/causal_conv1d_v310_tiling_key.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_fwd_o_vllm/arch22/epilogue/block/block_epilogue_gdn_fwdo_output.hpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_fwd_o_vllm/arch22/epilogue/block/block_epilogue_gdn_fwdo_qkmask.hpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_fwd_o_vllm/arch22/epilogue/gdn_fwd_o_epilogue_policies.hpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_fwd_o_vllm/arch22/gemm/block/block_scheduler_gdn_fwd_o.hpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_fwd_o_vllm/arch22/gemm/kernel/gdn_fwd_o_kernel.hpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_fwd_o_vllm/chunk_fwd_o_vllm.cpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_gated_delta_rule_fwd_h/arch22/epilogue/block/block_epilogue_gdn_fwdh_update.hpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_gated_delta_rule_fwd_h/arch22/epilogue/block/block_epilogue_gdn_fwdh_vnew.hpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_gated_delta_rule_fwd_h/arch22/epilogue/gdn_fwd_h_epilogue_policies.hpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_gated_delta_rule_fwd_h/arch22/gemm/block/block_scheduler_gdn_fwd_h.hpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_gated_delta_rule_fwd_h/arch22/gemm/kernel/gdn_fwd_h_kernel.hpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_gated_delta_rule_fwd_h/chunk_gated_delta_rule_fwd_h.cpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_gated_delta_rule_fwd_h/chunk_gated_delta_rule_fwd_h_struct.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_gated_delta_rule_fwd_h/epilogue/block/block_epilogue_gdn_fwdh_update.hpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_gated_delta_rule_fwd_h/epilogue/block/block_epilogue_gdn_fwdh_vnew.hpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_gated_delta_rule_fwd_h/epilogue/gdn_fwd_h_epilogue_policies.hpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_gated_delta_rule_fwd_h/gemm/block/block_scheduler_gdn_fwd_h.hpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_gated_delta_rule_fwd_h/gemm/kernel/gdn_fwd_h_kernel.hpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_kda_fwd/chunk_kda_fwd.cpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_kda_fwd/chunk_kda_fwd_common.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_kda_fwd/chunk_kda_fwd_finalize.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_kda_fwd/chunk_kda_fwd_post_wu.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_kda_fwd/chunk_kda_fwd_prepare.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/chunk_kda_fwd/chunk_kda_fwd_varlen.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/common/common.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/common/common_func.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/common/dropmask.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/common/gm_to_l1_iterator.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/common/gm_to_ub_iterator.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/common/hardware.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/common/iterator.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/common/l0c_to_gm_iterator.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/common/l0c_to_l1_iterator.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/common/l0c_to_ub_iterator.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/common/l1_to_bt_iterator.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/common/l1_to_fb_iterator.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/common/l1_to_l0_iterator.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/common/l1_to_ub_iterator.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/common/layout.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/common/mem.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/common/mma.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/common/pse.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/common/simd.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/common/util.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/gdn_gating_v310/gdn_gating_v310.cpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/gdn_gating_v310/gdn_gating_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/gdn_gating_v310/gdn_gating_v310_tiling_data.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/kda_gate_cumsum/kda_gate_cumsum.cpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/kda_gate_cumsum/kda_gate_cumsum_kernel.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/kda_layout_swap12/kda_layout_swap12.cpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qsa_gather_value_nz_v310/qsa_gather_value_nz_v310.cpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qsa_gather_value_nz_v310/qsa_gather_value_nz_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qsa_gather_value_nz_v310/qsa_gather_value_nz_v310_tiling_data.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qsa_index_cache_update_v310/qsa_index_cache_update_v310.cpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qsa_index_cache_update_v310/qsa_index_cache_update_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qsa_index_cache_update_v310/qsa_index_cache_update_v310_tiling_data.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qsa_indexer_score_v310/qsa_indexer_score_v310.cpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qsa_indexer_score_v310/qsa_indexer_score_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qsa_indexer_score_v310/qsa_indexer_score_v310_tiling_data.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qsa_sparse_attention_v310/qsa_cube_sparse_attention_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qsa_sparse_attention_v310/qsa_sparse_attention_v310.cpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qsa_sparse_attention_v310/qsa_sparse_attention_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qsa_sparse_attention_v310/qsa_sparse_attention_v310_tiling_data.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qwen4_exp_ple_decode_v310/qwen4_exp_ple_decode_v310.cpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qwen4_exp_ple_decode_v310/qwen4_exp_ple_decode_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qwen4_exp_ple_decode_v310/qwen4_exp_ple_decode_v310_tiling_data.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qwen_w4_a8_int4_down_reduce_v310/qwen_w4_a8_int4_down_reduce_v310.cpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qwen_w4_a8_int4_down_reduce_v310/qwen_w4_a8_int4_down_reduce_v310_tiling_data.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qwen_w4_a8_int4_matmul_v310/native_int4_schedule.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qwen_w4_a8_int4_matmul_v310/qwen_w4_a8_int4_matmul_v310.cpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qwen_w4_a8_int4_matmul_v310/qwen_w4_a8_int4_matmul_v310_tiling_data.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qwen_w4_a8_pack_v310/qwen_w4_a8_pack_v310.cpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qwen_w4_a8_swiglu_pack_v310/qwen_w4_a8_swiglu_pack_v310.cpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qwen_w4_group_matmul_v310/compat_310p.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qwen_w4_group_matmul_v310/qwen_w4_group_matmul_v310.cpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qwen_w4_group_matmul_v310/qwen_w4_group_matmul_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qwen_w4_group_matmul_v310/qwen_w4_group_matmul_v310_tiling_data.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qwen_w4_grouped_matmul_v310/qwen_w4_grouped_matmul_v310.cpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qwen_w4_grouped_matmul_v310/qwen_w4_grouped_matmul_v310_tiling_data.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qwen_w4_routed_matmul_v310/qwen_w4_routed_matmul_v310.cpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/qwen_w4_routed_matmul_v310/qwen_w4_routed_matmul_v310_tiling_data.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/recurrent_gated_delta_rule_v310/recurrent_gated_delta_rule_v310.cpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/recurrent_gated_delta_rule_v310/recurrent_gated_delta_rule_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/recurrent_gated_delta_rule_v310/recurrent_gated_delta_rule_v310_tiling_data.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/rms_norm_dynamic_quant/compat_310p.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/rms_norm_dynamic_quant/reduce_common.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/rms_norm_dynamic_quant/rms_norm_dynamic_quant.cpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/rms_norm_dynamic_quant/rms_norm_dynamic_quant_base.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/rms_norm_dynamic_quant/rms_norm_dynamic_quant_cut_d_kernel.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/rms_norm_dynamic_quant/rms_norm_dynamic_quant_helper.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/rms_norm_dynamic_quant/rms_norm_dynamic_quant_normal_kernel.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/rms_norm_dynamic_quant/rms_norm_dynamic_quant_single_row_kernel.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/w2_blocked_dequant_matmul_v310/compat_310p.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/w2_blocked_dequant_matmul_v310/w2_blocked_dequant_matmul_v310.cpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/w2_blocked_dequant_matmul_v310/w2_blocked_dequant_matmul_v310.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/w2_blocked_dequant_matmul_v310/w2_blocked_dequant_matmul_v310_tiling_data.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/w2_grouped_blocked_dequant_matmul_v310/w2_grouped_blocked_dequant_matmul_v310.cpp
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/w2_grouped_blocked_dequant_matmul_v310/w2_grouped_blocked_dequant_matmul_v310_tiling_data.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/dynamic/add_rms_norm_dynamic_quant.py
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/dynamic/causal_conv1d_v310.py
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/dynamic/chunk_fwd_o_vllm.py
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/dynamic/chunk_gated_delta_rule_fwd_h.py
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/dynamic/chunk_kda_fwd.py
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/dynamic/gdn_gating_v310.py
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/dynamic/kda_gate_cumsum.py
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/dynamic/kda_layout_swap12.py
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/dynamic/qsa_gather_value_nz_v310.py
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/dynamic/qsa_index_cache_update_v310.py
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/dynamic/qsa_indexer_score_v310.py
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/dynamic/qsa_sparse_attention_v310.py
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/dynamic/qwen4_exp_ple_decode_v310.py
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/dynamic/qwen_w4_a8_int4_down_reduce_v310.py
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/dynamic/qwen_w4_a8_int4_matmul_v310.py
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/dynamic/qwen_w4_a8_pack_v310.py
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/dynamic/qwen_w4_a8_swiglu_pack_v310.py
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/dynamic/qwen_w4_group_matmul_v310.py
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/dynamic/qwen_w4_grouped_matmul_v310.py
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/dynamic/qwen_w4_routed_matmul_v310.py
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/dynamic/recurrent_gated_delta_rule_v310.py
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/dynamic/rms_norm_dynamic_quant.py
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/dynamic/w2_blocked_dequant_matmul_v310.py
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/dynamic/w2_grouped_blocked_dequant_matmul_v310.py
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/op_tiling/lib/linux/x86_64/libcust_opmaster_rt2.0.so
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_impl/ai_core/tbe/op_tiling/liboptiling.so
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_proto/inc/add_rms_norm_dynamic_quant_proto.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_proto/inc/causal_conv1d_v310_proto.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_proto/inc/chunk_fwd_o_vllm_proto.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_proto/inc/chunk_gated_delta_rule_fwd_h_proto.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_proto/inc/chunk_kda_fwd_proto.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_proto/inc/gdn_gating_v310_proto.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_proto/inc/kda_gate_cumsum_proto.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_proto/inc/kda_layout_swap12_proto.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_proto/inc/qsa_gather_value_nz_v310_proto.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_proto/inc/qsa_index_cache_update_v310_proto.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_proto/inc/qsa_indexer_score_v310_proto.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_proto/inc/qsa_sparse_attention_v310_proto.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_proto/inc/qwen4_exp_ple_decode_v310_proto.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_proto/inc/qwen_w4_a8_int4_down_reduce_v310_proto.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_proto/inc/qwen_w4_a8_int4_matmul_v310_proto.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_proto/inc/qwen_w4_a8_pack_v310_proto.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_proto/inc/qwen_w4_a8_swiglu_pack_v310_proto.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_proto/inc/qwen_w4_group_matmul_v310_proto.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_proto/inc/qwen_w4_grouped_matmul_v310_proto.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_proto/inc/qwen_w4_routed_matmul_v310_proto.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_proto/inc/recurrent_gated_delta_rule_v310_proto.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_proto/inc/rms_norm_dynamic_quant_proto.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_proto/inc/w2_blocked_dequant_matmul_v310_proto.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_proto/inc/w2_grouped_blocked_dequant_matmul_v310_proto.h
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/op_proto/lib/linux/x86_64/libcust_opsproto_rt2.0.so
+[2026-10-24 01:35:02] ./packages/vendors/custom_transformer/version.info
+[2026-10-24 01:35:02] ./uninstall.sh
+[2026-10-24 01:35:02] ./upgrade.sh
+[2026-10-24 01:35:03] CRC: 4211447657
+[2026-10-24 01:35:03] SHA256: 22fe24fceac8d10ac4a4ccfb973ffeaff6e99eeda7974727d6fd0889b74cd986
+[2026-10-24 01:35:03] Skipping md5sum at user request
+[2026-10-24 01:35:03] 
+[2026-10-24 01:35:03] Self-extractable archive "cann-ops-transformer-custom_linux-x86_64.run" successfully created.
+[2026-10-24 01:35:03] Copy /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/_CPack_Packages/Linux/External/cann-ops-transformer-custom_linux-x86_64.run/cann-ops-transformer-custom_linux-x86_64.run to /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/
+[2026-10-24 01:35:03] Copy /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/_CPack_Packages/Linux/External/cann-ops-transformer-custom_linux-x86_64.run/cann-ops-transformer-custom_linux-x86_64.run to /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build_out/
+[2026-10-24 01:35:03] CPack: - package: /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/cann-ops-transformer-custom_linux-x86_64.run.json generated.
+[2026-10-24 01:35:03] CPack: - package: /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build/cann-ops-transformer-custom_linux-x86_64.run generated.
+Build artifacts: /srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3/csrc/build (not installed; inference not validated)

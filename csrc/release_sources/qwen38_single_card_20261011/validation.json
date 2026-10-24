@@ -1,0 +1,91 @@
+{
+  "status": "source_handoff_verified; embedded_host_build_passed_on_cann_9.1.0; cann_9.2_not_tested",
+  "historical_library_pairs_matching_frozen_release": 4,
+  "historical_libraries_matching_frozen_release": 8,
+  "operators_per_package": {
+    "coherent": 5,
+    "embedded": 24,
+    "gdn": 4,
+    "retained": 22
+  },
+  "selected_host_cpp_files": 153,
+  "selected_handwritten_api_cpp_files": 32,
+  "selected_generated_api_cpp_references": 39,
+  "release_kernel_and_common_source_files_matching_after_documented_restore": 247,
+  "offline_checks": {
+    "python_syntax": "passed",
+    "shell_syntax_all_four_build_scripts_and_wrapper": "passed",
+    "wrapper_invalid_argument_cases": 5,
+    "verifier_rejects_corruption_and_path_escape": true,
+    "source_shared_libraries_included": false
+  },
+  "host_build": {
+    "package": "embedded",
+    "mode": "host-only --jit",
+    "cann": "9.1.0",
+    "python": "3.12.13",
+    "compiler": "g++ 15.2.0",
+    "exit_code": 0,
+    "expected_workspace_exports": 24,
+    "missing_workspace_exports": [],
+    "generated_api_headers_byte_matching": 18,
+    "run_package_created": true,
+    "device_kernels_compiled": false,
+    "npu_inference_run": false,
+    "working_directory": "/srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v3",
+    "python_environment": "/srv/ai/venvs/qwen38-w4-test-ce1862",
+    "third_party_cache": "/srv/ai/src/qwen38-coherent-opp-src-20261001-r2/csrc/third_party",
+    "build_cache": "/srv/ai/storage/artifacts/qwen38-op-source-handoff-20261023/build-embedded-host-v2/csrc/build_cache",
+    "earlier_failures": [
+      {
+        "attempt": 1,
+        "failure": "System Python lacked regex",
+        "resolution": "Used historical Python build environment; added early regex check to wrapper."
+      },
+      {
+        "attempt": 2,
+        "failure": "Libraries compiled but CPack could not find source-tree third_party/makeself/makeself.sh",
+        "resolution": "Included original makeself sources for each vendor, then reran the wrapper in a new work directory."
+      }
+    ],
+    "receipts": "validation/embedded-host-cann91"
+  },
+  "not_validated": [
+    "CANN 9.2 compilation",
+    "coherent/retained/gdn host builds",
+    "full device-kernel rebuild",
+    "TP2/EP2 inference with rebuilt packages",
+    "bit-for-bit historical binary reproduction"
+  ],
+  "repository_restoration": {
+    "coherent": {
+      "files": 2044,
+      "matches_recovered_handoff": true
+    },
+    "retained": {
+      "files": 2034,
+      "matches_recovered_handoff": true
+    },
+    "gdn": {
+      "files": 2304,
+      "matches_recovered_handoff": true
+    },
+    "embedded": {
+      "files": 2223,
+      "matches_recovered_handoff": true
+    }
+  },
+  "repository_tests": {
+    "isolated_cpu_tests_passed": 11,
+    "command": "PYTHONPATH=. pytest -q --confcutdir=tests/ut/qwen38_1m tests/ut/qwen38_1m/test_custom_op_sources.py",
+    "ordinary_ut_setup": "blocked by local missing vllm.third_party.flash_linear_attention dependency"
+  },
+  "repository_lint": {
+    "full_command": "bash format.sh ci",
+    "full_result": "failed: existing repository-wide style/spelling/import violations; unrelated formatter edits discarded",
+    "changed_files_command": "SHELLCHECK_OPTS=--exclude=SC2046,SC2006,SC2086 pre-commit run --hook-stage manual",
+    "changed_files_result": "passed",
+    "historical_sources": "Checksum-pinned snapshots, generated references and literal receipts are excluded from rewriting hooks; source reconstruction tests validate their hashes.",
+    "secret_scan": "Passed with exact fingerprints for reviewed C++ tiling/template identifiers, upstream public Makeself Tester signing fixtures, and one build-cache digest."
+  }
+}
