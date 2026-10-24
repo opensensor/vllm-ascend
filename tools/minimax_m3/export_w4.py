@@ -25,6 +25,38 @@ EXPERT_NAME = re.compile(
     r"^(?:language_model\.)?model\.layers\.(\d+)\.block_sparse_moe\.experts\.(\d+)\.(w[123])\.weight$"
 )
 DTYPES = {"BF16": (torch.bfloat16, 2), "F16": (torch.float16, 2), "F32": (torch.float32, 4)}
+MIXED_SOURCE_FORMAT = "minimax-m31-nvfp4-mxfp8-v1"
+
+
+def mixed_weight_groups(weight_map):
+    """Map every mixed-checkpoint tensor to exactly one logical output weight."""
+    groups, consumed = {}, set()
+    for name in sorted(weight_map):
+        if name.endswith(".weight_packed"):
+            base = name.removesuffix(".weight_packed")
+            output = base + ".weight"
+            if not EXPERT_NAME.fullmatch(output):
+                raise ValueError("Only routed experts may use NVFP4")
+            members = [
+                base + suffix
+                for suffix in (".weight_packed", ".weight_scale", ".weight_global_scale", ".input_global_scale")
+            ]
+        elif name.endswith(".weight_scale_inv"):
+            output = name.removesuffix("_scale_inv")
+            if EXPERT_NAME.fullmatch(output):
+                raise ValueError("M3.1 routed experts require NVFP4 companions")
+            members = [output, name]
+        else:
+            continue
+        if output in groups or any(n not in weight_map or n in consumed for n in members):
+            raise ValueError("Missing or overlapping mixed quantization companions")
+        groups[output] = members
+        consumed.update(members)
+    for name in weight_map.keys() - consumed:
+        if name in groups or not name.endswith((".weight", ".bias", ".e_score_correction_bias")):
+            raise ValueError(f"Unaccounted mixed-checkpoint tensor: {name}")
+        groups[name] = [name]
+    return groups
 
 
 def file_digest(path):
@@ -50,7 +82,7 @@ def atomic_json(path, data):
     temporary.replace(path)
 
 
-def export_tensor(source, name, destination, *, rows=256, method="mse", mse_backend="torch"):
+def export_tensor(source, name, destination, *, rows=256, method="mse", mse_backend="torch", output_dtype=None):
     """Write one tensor using bounded row chunks, including large embeddings."""
     if rows <= 0 or rows % W4_BLOCK:
         raise ValueError("chunk rows must be a positive multiple of 32")
@@ -67,7 +99,9 @@ def export_tensor(source, name, destination, *, rows=256, method="mse", mse_back
             ("scales", "F16", [shape[0] // W4_BLOCK, shape[1] // W4_BLOCK], 2),
         ]
     else:
-        output_dtype = "F16" if source_dtype == "BF16" else source_dtype
+        output_dtype = output_dtype or ("F16" if source_dtype == "BF16" else source_dtype)
+        if output_dtype not in DTYPES:
+            raise ValueError("Unsupported output dtype")
         descriptions = [(name, output_dtype, shape, DTYPES[output_dtype][1])]
     header, offset = {}, 0
     for key, dtype, dims, size in descriptions:

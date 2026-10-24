@@ -1,0 +1,141 @@
+{
+  "repository": "MiniMaxAI/MiniMax-M3.1-Flash",
+  "revision": "54e4e69dfc452b1e94a426c24a4fdeeaa8e3ad5e",
+  "validation": "remote_headers_only_not_converted_or_hardware_validated",
+  "source_payload_bytes": 250103411200,
+  "config_sha256": "df6a3668e2de5b8dc0e883e3767495ad17af7e4d69fabe9683088be015fda9ab",
+  "index_sha256": "55adcfd75b3433b98a9a045c26386776c179bddeed7eb86c40b73187d218abf1",
+  "source_tensors": 89632,
+  "budget": {
+    "hardware_validated": false,
+    "payload_hashes_verified": false,
+    "model_tensor_count": 23428,
+    "unique_payload_bytes": 235320182272,
+    "assumptions": {
+      "tp": 2,
+      "pp": 3,
+      "ep": 2,
+      "context": 8192,
+      "sequences": 1,
+      "device_gib": 45.6,
+      "utilization": 0.95,
+      "reserve_gib": 3,
+      "vision": "Fully replicated per rank (conservative upper bound)",
+      "reserve": "Assumed allowance for workspaces, communication, alignment, and allocator"
+    },
+    "cache_bytes_per_token_all_ranks": 153600,
+    "best": {
+      "partition": [
+        21,
+        20,
+        19
+      ],
+      "stages": [
+        {
+          "stage": 0,
+          "ranks": [
+            0,
+            1
+          ],
+          "start_layer": 0,
+          "end_layer_exclusive": 21,
+          "weight_bytes_per_rank": 39806651392,
+          "kv_bytes_per_rank": 220200960,
+          "runtime_reserve_bytes": 3221225472,
+          "planned_bytes_per_rank": 43248077824,
+          "budget_bytes_per_rank": 46514495815,
+          "headroom_bytes_per_rank": 3266417991
+        },
+        {
+          "stage": 1,
+          "ranks": [
+            2,
+            3
+          ],
+          "start_layer": 21,
+          "end_layer_exclusive": 41,
+          "weight_bytes_per_rank": 41543855104,
+          "kv_bytes_per_rank": 209715200,
+          "runtime_reserve_bytes": 3221225472,
+          "planned_bytes_per_rank": 44974795776,
+          "budget_bytes_per_rank": 46514495815,
+          "headroom_bytes_per_rank": 1539700039
+        },
+        {
+          "stage": 2,
+          "ranks": [
+            4,
+            5
+          ],
+          "start_layer": 41,
+          "end_layer_exclusive": 60,
+          "weight_bytes_per_rank": 40782575104,
+          "kv_bytes_per_rank": 199229440,
+          "runtime_reserve_bytes": 3221225472,
+          "planned_bytes_per_rank": 44203030016,
+          "budget_bytes_per_rank": 46514495815,
+          "headroom_bytes_per_rank": 2311465799
+        }
+      ],
+      "peak_bytes_per_rank": 44974795776,
+      "fits_planning_budget": true
+    },
+    "original": {
+      "partition": [
+        21,
+        20,
+        19
+      ],
+      "stages": [
+        {
+          "stage": 0,
+          "ranks": [
+            0,
+            1
+          ],
+          "start_layer": 0,
+          "end_layer_exclusive": 21,
+          "weight_bytes_per_rank": 39806651392,
+          "kv_bytes_per_rank": 220200960,
+          "runtime_reserve_bytes": 3221225472,
+          "planned_bytes_per_rank": 43248077824,
+          "budget_bytes_per_rank": 46514495815,
+          "headroom_bytes_per_rank": 3266417991
+        },
+        {
+          "stage": 1,
+          "ranks": [
+            2,
+            3
+          ],
+          "start_layer": 21,
+          "end_layer_exclusive": 41,
+          "weight_bytes_per_rank": 41543855104,
+          "kv_bytes_per_rank": 209715200,
+          "runtime_reserve_bytes": 3221225472,
+          "planned_bytes_per_rank": 44974795776,
+          "budget_bytes_per_rank": 46514495815,
+          "headroom_bytes_per_rank": 1539700039
+        },
+        {
+          "stage": 2,
+          "ranks": [
+            4,
+            5
+          ],
+          "start_layer": 41,
+          "end_layer_exclusive": 60,
+          "weight_bytes_per_rank": 40782575104,
+          "kv_bytes_per_rank": 199229440,
+          "runtime_reserve_bytes": 3221225472,
+          "planned_bytes_per_rank": 44203030016,
+          "budget_bytes_per_rank": 46514495815,
+          "headroom_bytes_per_rank": 2311465799
+        }
+      ],
+      "peak_bytes_per_rank": 44974795776,
+      "fits_planning_budget": true
+    }
+  },
+  "dspark": "Separate subdirectory excluded; no speculative decoding in this budget"
+}

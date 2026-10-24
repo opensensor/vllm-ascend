@@ -1,0 +1,51 @@
+{
+  "created_utc": "2026-10-24T18:51:25.955505+00:00",
+  "revision": "54e4e69dfc452b1e94a426c24a4fdeeaa8e3ad5e",
+  "milestone": "real-weight component validation, not full decoder or service",
+  "attention": {
+    "devices": [
+      "npu:0",
+      "npu:1",
+      "npu:2",
+      "npu:3",
+      "npu:4",
+      "npu:5"
+    ],
+    "all_passed": true,
+    "selected_block_sets_exact": true,
+    "router_ids_exact": true,
+    "sequence_length": 8193,
+    "queries": 3,
+    "max_attention_nrmse": 0.0003790636546909809,
+    "max_output_projection_nrmse": 0.0004445880767889321
+  },
+  "expert": {
+    "device_gate_passed": true,
+    "max_projection_nrmse": 1.4415333680517506e-05,
+    "clipped_swiglu": {
+      "finite": true,
+      "max_abs": 0.0,
+      "nrmse": 0.0,
+      "cosine": 1.0000004768371582
+    },
+    "source_comparison": {
+      "finite": true,
+      "max_abs": 6.5771484375,
+      "nrmse": 0.17851325869560242,
+      "cosine": 0.9840287566184998
+    },
+    "scope": "One real converted expert repeated in every slot"
+  },
+  "cpu_tests": {
+    "passed": 102,
+    "skipped": 4,
+    "command": "python -m pytest --noconftest tests/ut/minimax_m3 -q"
+  },
+  "services_stopped": [
+    "qwen3-vl-model",
+    "qwen3-vl-card2",
+    "qwen3-vl-thinking"
+  ],
+  "full_model_serving_validated": false,
+  "preparation_progress_file": "pipeline-status.json"
+}

@@ -7,7 +7,14 @@ import regex as re
 import torch
 from safetensors import safe_open
 
-from tools.minimax_m3.export_w4 import EXPERT_NAME, MANIFEST, file_digest, local_file
+from tools.minimax_m3.export_w4 import (
+    EXPERT_NAME,
+    MANIFEST,
+    MIXED_SOURCE_FORMAT,
+    file_digest,
+    local_file,
+    mixed_weight_groups,
+)
 from vllm_ascend._310p.ops.minimax_m3 import W4_LAYOUT, PackedM3Experts
 
 LAYER_NAME = re.compile(r"(?:^|\.)layers\.(\d+)\.")
@@ -26,7 +33,15 @@ def read_manifest(folder):
     records = manifest["weights"]
     if file_digest(folder / "source_index.json") != manifest["index_sha256"]:
         raise ValueError("M3 W4 source index digest mismatch")
-    source_keys = set(json.loads((folder / "source_index.json").read_text())["weight_map"])
+    source_map = json.loads((folder / "source_index.json").read_text())["weight_map"]
+    if manifest.get("source_format") == MIXED_SOURCE_FORMAT:
+        source_keys = set(mixed_weight_groups(source_map))
+        if config.get("quantization_config") or text.get("quantization_config"):
+            raise ValueError("Converted mixed checkpoint retains source quantization config")
+    elif manifest.get("source_format") is not None:
+        raise ValueError("Unknown M3 W4 source format")
+    else:
+        source_keys = set(source_map)
     if set(records) != source_keys:
         raise ValueError("M3 W4 manifest does not cover exactly the source index")
     if len(records) != manifest["tensor_count"]:
