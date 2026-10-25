@@ -1,0 +1,8 @@
+import gguf
+r=gguf.GGUFReader('/srv/ai/minimax-source-trial/native-reference-20261025/M31-source-nvfp4-00001-of-00014.gguf')
+w=gguf.GGUFWriter('/workspace/m31-native-vocab.gguf',r.fields['general.architecture'].contents())
+for f in r.fields.values():
+ if f.name=='general.architecture' or f.name.startswith(('GGUF.','split.')):continue
+ kind=f.types[0];sub=f.types[-1] if kind==gguf.GGUFValueType.ARRAY else None
+ w.add_key_value(f.name,f.contents(),kind,sub_type=sub)
+w.write_header_to_file();w.write_kv_data_to_file();w.write_ti_data_to_file();w.close()

@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+mount_dir=/tmp/m31-native-gguf-mount
+/tmp/m31-sshfs-package/root/usr/bin/sshfs -f threadripper:/srv/ai/minimax-source-trial/native-reference-20261025 "$mount_dir" -o direct_io,max_conns=4,ServerAliveInterval=15,ServerAliveCountMax=4 > /tmp/m31-sshfs.log 2>&1 &
+sshfs_pid=$!
+trap 'fusermount3 -u "$mount_dir" 2>/dev/null || true; kill "$sshfs_pid" 2>/dev/null || true; wait "$sshfs_pid" 2>/dev/null || true' EXIT
+for attempt in $(seq 1 50); do
+    if mountpoint -q "$mount_dir"; then break; fi
+    sleep 0.1
+done
+mountpoint -q "$mount_dir"
+python3 - <<'PY'
+import hashlib,numpy as np,time,os,json
+from pathlib import Path
+p=Path('/tmp/m31-native-gguf-mount/.transport-speed')
+a=np.arange(16*1024*1024,dtype=np.int32);started=time.monotonic()
+with p.open('wb') as f:
+    a.tofile(f);f.flush();os.fsync(f.fileno())
+elapsed=time.monotonic()-started
+print(json.dumps({'write_mib_per_second':64/elapsed,'seconds':elapsed,'bytes':a.nbytes,'sha256':hashlib.sha256(a.tobytes()).hexdigest()}),flush=True)
+PY
+printf 'READY_FOR_CONVERSION\n'
+read -r action
+[[ "$action" == run ]]
+rm "$mount_dir/.transport-speed"
+cd /tmp/m31-native-llama
+OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 python3 convert_hf_to_gguf.py /run/media/matteius/20TB-drive/models/MiniMax-M3.1-Flash --outfile "$mount_dir/M31-source-nvfp4.gguf" --outtype auto --split-max-size 20G > /tmp/m31-native-conversion.log 2>&1
+printf 'CONVERSION_COMPLETE\n'

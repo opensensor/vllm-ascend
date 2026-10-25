@@ -1,0 +1,32 @@
+import json,subprocess,sys,time
+from pathlib import Path
+root=Path('/var/tmp/m31-native-comparison-20261025');root.mkdir(exist_ok=False)
+ssh=['ssh','-o','ServerAliveInterval=15','-o','ServerAliveCountMax=4','threadripper']
+def remote(command,log,check=True):
+ with (root/log).open('w') as f:
+  r=subprocess.run(ssh+[command],stdout=f,stderr=subprocess.STDOUT)
+ if check and r.returncode:raise RuntimeError(f'{log}: exit {r.returncode}')
+ return r.returncode
+remote('PYTHONPATH=/workspace/m31-native-llama/gguf-py /srv/ai/venvs/minimax-m31/bin/python /workspace/m31-native-metadata.py','metadata.log')
+remote('test -z "$(ss -lntH \'sport = :8002\')" && sudo -n systemd-run --unit=m31-native-reference --collect --uid=matteius --property=WorkingDirectory=/workspace/m31-native-llama /bin/bash /workspace/m31-native-reference-launch.sh','launch.log')
+print('Native server launched; waiting for health',flush=True)
+ready=False
+for attempt in range(160):
+ r=subprocess.run(ssh+['curl -fsS --max-time 10 http://127.0.0.1:8002/health'],capture_output=True,text=True)
+ if r.returncode==0:
+  ready=True;(root/'health.json').write_text(r.stdout);break
+ state=subprocess.run(ssh+['systemctl is-active m31-native-reference.service'],capture_output=True,text=True)
+ if state.stdout.strip() not in ('active','activating'):raise RuntimeError('Native server exited; inspect its log')
+ time.sleep(15)
+if not ready:raise RuntimeError('Native server load exceeded forty minutes')
+print('Native server ready',flush=True)
+template_status=remote('/srv/ai/venvs/minimax-m31/bin/python /workspace/m31-native-template-audit.py','template-audit.log',check=False)
+print('Template audit exit',template_status,flush=True)
+remote('/srv/ai/venvs/minimax-m31/bin/python -u /workspace/m31-native-token-replay.py','token-replay.log')
+print('Identical-token replay complete',flush=True)
+if template_status:raise RuntimeError('Chat rendering differs; inspect before the paired Kilo trial')
+print('Starting paired fresh Kilo trial',flush=True)
+with (root/'kilo-run.log').open('w') as log:
+ r=subprocess.run([sys.executable,'/tmp/m31-native-kilo-trial.py',str(root/'session'),'--max-requests','8'],stdout=log,stderr=subprocess.STDOUT,timeout=11000)
+print('Kilo process exit',r.returncode,flush=True)
+(root/'controller-result.json').write_text(json.dumps({'template_audit_exit':template_status,'kilo_process_exit':r.returncode,'finished':time.time()},indent=2))

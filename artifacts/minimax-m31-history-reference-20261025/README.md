@@ -152,6 +152,20 @@ on-host SSE client. The responsible network component was not identified. Those
 three attempts are excluded from model-quality results; the user's normal Kilo
 configuration was not changed by this transport workaround.
 
+A subsequent fresh run added fused residual normalization and FP8 attention
+rounding. The user took over the NPUs during response six, after five completed
+responses and nine tool calls (one Bash syntax error, then a successful repair).
+No final summary had arrived. This interrupted run is **neither a completed
+failure nor a success**; the eight-response guard was not reached. The initial
+system/user prefix stayed unchanged across requests. See the
+[interrupted trial receipt](fp8-fresh-kilo-interrupted.json).
+
+At handoff, all six workers were back on baseline dispatch with unchanged PIDs
+and weight storage. There were zero running/waiting requests, pause and
+maintenance were disabled, and the resident lock was released. The source-weight
+32K diagnostic service remained loaded on port 8000. Further NPU experiments are
+on hold while the user owns the devices.
+
 ## Attention and fused normalization device gate
 
 All six ranks produced exact FP8 K/V and index Q/K results on a synthetic
@@ -220,10 +234,12 @@ An unmodified [Unsloth llama.cpp revision](https://github.com/unslothai/llama.cp
 was built on the Threadripper host with CPU support. Its converter's
 `--outtype auto` path preserves the released NVFP4 expert codes/scales, writes
 MXFP8 dense weights as BF16, and forms normalization weights in FP32. Conversion
-to 14 GGUF shards is running directly onto the host's NVMe. This avoids another
-signed INT4 expert quantization. No native-backend behavior result is available
-at this checkpoint; llama.cpp is an independent implementation, not a claim of
-equivalence to the hosted BF16/QAT execution.
+and transfer of 14 GGUF shards to the host's NVMe have completed. This avoids
+another signed INT4 expert quantization. See the
+[reference preparation record](../minimax-m31-native-reference-20261025/README.md).
+No native-backend behavior result is available: inference is held while the user
+owns the NPUs, to avoid competing for host CPU/memory. Llama.cpp is an independent
+implementation, not a claim of equivalence to the hosted BF16/QAT execution.
 
 The focused suite passes 86 tests, including a regression requiring failed
 activation warmup to stop before source-bank loading. The whole-tree formatter

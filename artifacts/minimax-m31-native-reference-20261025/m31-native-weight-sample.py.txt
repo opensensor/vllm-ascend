@@ -1,0 +1,15 @@
+import base64,json
+from pathlib import Path
+import gguf
+r=gguf.GGUFReader('/srv/ai/minimax-source-trial/native-reference-20261025/M31-source-nvfp4-00001-of-00014.gguf')
+tensors={t.name:t for t in r.tensors}
+rows=[]
+for name,t in tensors.items():
+ if not name.endswith('.weight'):continue
+ scales=tensors[name.removesuffix('.weight')+'.scale'].data
+ for expert in (0,127):
+  for row in (0,t.data.shape[1]//2,t.data.shape[1]-1):
+   for offset in (0,t.data.shape[2]-36):
+    rows.append({'name':name,'expert':expert,'row':row,'offset':offset,'bytes':base64.b64encode(t.data[expert,row,offset:offset+36]).decode(),'global_inverse':float(scales[expert])})
+Path('/workspace/m31-native-weight-sample.json').write_text(json.dumps(rows))
+print(json.dumps({'sample_rows':len(rows),'bytes':sum(len(base64.b64decode(x['bytes'])) for x in rows)}))

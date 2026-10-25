@@ -1,0 +1,30 @@
+import json,subprocess,hashlib
+from pathlib import Path
+import gguf
+root=Path('/srv/ai/minimax-source-trial/native-reference-20261025')
+files=sorted(root.glob('*.gguf'))
+assert len(files)==14
+counts={};tensor_count=0;data_bytes=0;names=set();layers=set();shards=[]
+for path in files:
+ r=gguf.GGUFReader(str(path))
+ for t in r.tensors:
+  assert t.name not in names,t.name
+  names.add(t.name);tensor_count+=1;data_bytes+=t.n_bytes
+  key=t.tensor_type.name;counts[key]=counts.get(key,0)+1
+  if '.indexer.k_proj.weight' in t.name:layers.add(t.name.split('.')[1])
+ shards.append({'filename':path.name,'file_bytes':path.stat().st_size,'tensors':len(r.tensors),'tensor_bytes':sum(t.n_bytes for t in r.tensors)})
+assert counts.get('NVFP4')==171, counts
+assert layers=={str(i) for i in range(60)}, layers
+for layer in range(3,60):
+ for kind in ('gate','down','up'):
+  assert f'blk.{layer}.ffn_{kind}_exps.scale' in names
+first=gguf.GGUFReader(str(files[0]));metadata={}
+for key in ('general.architecture','general.name','split.count','split.tensors.count','minimax-m3.block_count','minimax-m3.context_length'):
+ if key in first.fields:metadata[key]=first.fields[key].contents()
+assert tensor_count==first.fields['split.tensors.count'].contents()
+assert metadata['general.architecture']=='minimax-m3'
+assert metadata['minimax-m3.block_count']==60
+repo=Path('/workspace/m31-native-llama');binary=repo/'build-m31-cpu/bin/llama-server'
+result={'revision':subprocess.check_output(['git','-C',str(repo),'rev-parse','HEAD'],text=True).strip(),'source_changes':subprocess.check_output(['git','-C',str(repo),'status','--porcelain','--untracked-files=no'],text=True),'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'shards':shards,'tensor_count':tensor_count,'tensor_bytes':data_bytes,'types':counts,'sparse_layers':len(layers),'metadata':metadata,'tensor_names':sorted(names)}
+(root/'metadata.json').write_text(json.dumps(result,indent=2,default=str)+'\n')
+print(json.dumps({k:v for k,v in result.items() if k not in ('shards','tensor_names')},default=str))

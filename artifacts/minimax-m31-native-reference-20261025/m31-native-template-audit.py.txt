@@ -1,0 +1,17 @@
+import json,hashlib,urllib.request
+from pathlib import Path
+root=Path('/workspace/m31-native-template-audit');root.mkdir(exist_ok=True)
+def post(endpoint,body):
+ req=urllib.request.Request('http://127.0.0.1:8002'+endpoint,data=json.dumps(body).encode(),headers={'Content-Type':'application/json'})
+ return json.load(urllib.request.urlopen(req,timeout=120))
+results=[]
+for name in ('fresh','late'):
+ request=json.loads(Path(f'/workspace/m31-native-{name}-request.json').read_text())
+ expected=json.loads(Path(f'/workspace/m31-native-{name}-ids.json').read_text())
+ rendered=post('/apply-template',request)
+ (root/f'{name}-rendered.json').write_text(json.dumps(rendered,indent=2))
+ actual=post('/tokenize',{'content':rendered['prompt'],'add_special':False,'parse_special':True})['tokens']
+ (root/f'{name}-ids.json').write_text(json.dumps(actual))
+ results.append({'fixture':name,'npu_prompt_tokens':len(expected),'native_prompt_tokens':len(actual),'exact_ids':actual==expected,'first_mismatch':next((i for i,(a,b) in enumerate(zip(actual,expected)) if a!=b),None),'native_ids_sha256':hashlib.sha256(json.dumps(actual).encode()).hexdigest()})
+(root/'receipt.json').write_text(json.dumps(results,indent=2)+'\n');print(json.dumps(results),flush=True)
+assert all(r['exact_ids'] for r in results), 'Native chat rendering differs; investigate before paired fresh trial'

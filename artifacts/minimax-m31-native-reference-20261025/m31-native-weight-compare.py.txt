@@ -1,0 +1,30 @@
+import base64,json,re,hashlib
+from collections import defaultdict
+from pathlib import Path
+import numpy as np
+import torch
+from safetensors import safe_open
+root=Path('/run/media/matteius/20TB-drive/models/MiniMax-M3.1-Flash')
+index=json.loads((root/'model.safetensors.index.json').read_text())['weight_map']
+records=json.loads(Path('/tmp/m31-native-weight-sample.json').read_text())
+groups=defaultdict(list)
+for item in records:
+ layer,kind=re.fullmatch(r'blk\.(\d+)\.ffn_(gate|down|up)_exps.weight',item['name']).groups()
+ prefix=f'language_model.model.layers.{layer}.block_sparse_moe.experts.{item["expert"]}.{dict(gate="w1",down="w2",up="w3")[kind]}'
+ groups[prefix].append(item)
+bytes_checked=0; mismatch=[]; globals_checked=0
+for prefix,rows in groups.items():
+ def load(suffix):
+  name=prefix+'.'+suffix
+  with safe_open(root/index[name],framework='pt') as f:return f.get_tensor(name)
+ p=load('weight_packed').view(torch.uint8).numpy();s=load('weight_scale').view(torch.uint8).numpy();g=load('weight_global_scale').float().numpy()
+ expected_inverse=float(np.float32(1.0/g.item())); globals_checked+=1
+ for item in rows:
+  col=item['offset']//36*32;row=item['row']
+  packed=p[row,col:col+32].reshape(4,8);scales=s[row,col//8:col//8+4]
+  vals=np.stack((packed&15,packed>>4),axis=-1).reshape(4,16)
+  encoded=np.concatenate((scales, (vals[:,:8]|(vals[:,8:]<<4)).flatten())).tobytes()
+  actual=base64.b64decode(item['bytes']);bytes_checked+=len(encoded)
+  if encoded!=actual or item['global_inverse']!=expected_inverse:mismatch.append({k:v for k,v in item.items() if k!='bytes'})
+result={'sampled_shard':1,'sampled_experts_per_bank':[0,127],'sampled_rows_per_expert':['first','middle','last'],'sampled_superblocks_per_row':['first','last'],'banks':14,'bytes_checked':bytes_checked,'global_inverse_values_checked':globals_checked,'mismatches':mismatch,'scope':'Sampled GGUF repacking and inverse-global metadata only; not a full model hash or inference gate.'}
+Path('/tmp/m31-native-weight-comparison.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result));assert not mismatch

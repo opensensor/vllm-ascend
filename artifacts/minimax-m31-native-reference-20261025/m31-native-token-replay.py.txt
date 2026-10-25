@@ -1,0 +1,19 @@
+import json,time,urllib.request,hashlib
+from pathlib import Path
+root=Path('/workspace/m31-native-token-replay');root.mkdir(exist_ok=False)
+tokens=json.loads(Path('/workspace/m31-native-prompt-tokens.json').read_text())
+assert len(tokens)==5549
+body={'prompt':tokens,'n_predict':1024,'temperature':0,'top_k':0,'top_p':0.95,'min_p':0,'repeat_penalty':1.0,'seed':71,'stream':True,'cache_prompt':False,'return_tokens':True,'return_progress':True}
+(root/'settings.json').write_text(json.dumps({k:v for k,v in body.items() if k!='prompt'},indent=2))
+started=time.monotonic();events=[];first_output=None
+request=urllib.request.Request('http://127.0.0.1:8002/completion',data=json.dumps(body).encode(),headers={'Content-Type':'application/json'})
+with urllib.request.urlopen(request,timeout=10800) as response, (root/'events.sse').open('wb') as raw:
+ for line in response:
+  raw.write(line);raw.flush()
+  if not line.startswith(b'data: '):continue
+  event=json.loads(line[6:]);events.append(event)
+  if event.get('content') and first_output is None:first_output=time.monotonic()-started
+  if event.get('prompt_progress'):print(json.dumps(event['prompt_progress']),flush=True)
+  if event.get('content'):print(event['content'],end='',flush=True)
+result={'content':''.join(e.get('content','') for e in events),'tokens':[t for e in events for t in e.get('tokens',[])],'last_event':events[-1],'prompt_tokens':len(tokens),'prompt_sha256':hashlib.sha256(json.dumps(tokens).encode()).hexdigest(),'first_output_seconds':first_output,'elapsed_seconds':time.monotonic()-started}
+(root/'response.json').write_text(json.dumps(result,indent=2));print('\nCOMPLETE',flush=True)

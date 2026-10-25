@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+exec /workspace/m31-native-llama/build-m31-cpu/bin/llama-server \
+  --model /srv/ai/minimax-source-trial/native-reference-20261025/M31-source-nvfp4-00001-of-00014.gguf \
+  --alias minimax-m31-flash --host 127.0.0.1 --port 8002 \
+  --threads 32 --threads-batch 32 --poll 0 --poll-batch 0 \
+  --ctx-size 32768 --batch-size 512 --ubatch-size 512 --parallel 1 \
+  --gpu-layers 0 --load-mode mmap --flash-attn on --cache-type-k f16 --cache-type-v f16 \
+  --cache-ram 0 --no-context-shift --jinja --reasoning-format deepseek \
+  --reasoning-preserve --sse-ping-interval 15 \
+  > /workspace/m31-native-reference-server.log 2>&1

@@ -1,0 +1,228 @@
+{
+  "candidate": "Source NVFP4 weights + NVFP4/MXFP8 activation round trips + fused FP32 residual normalization + fused FP32 QK normalization/rotary + identity-scaled FP8 KV/index rounding",
+  "temperature": 1,
+  "top_p": 0.95,
+  "seed": 71,
+  "completed_responses": 5,
+  "partial_responses": 1,
+  "tool_results": [
+    {
+      "tool": "bash",
+      "status": "completed",
+      "exit": 0,
+      "output_characters": 5125,
+      "output_sha256": "91b7a2682db995ae0976a37ae7570a47939447bf6f0d936c2e87658dcff23f0a"
+    },
+    {
+      "tool": "read",
+      "status": "completed",
+      "exit": null,
+      "output_characters": 11349,
+      "output_sha256": "830f383870f0ea2f6ad51580ff5fd6e0662ae102e6666901e7a9202f53a5227c"
+    },
+    {
+      "tool": "bash",
+      "status": "completed",
+      "exit": 0,
+      "output_characters": 1721,
+      "output_sha256": "75efbb93259ce908f702ed4689a92105b58f7dfb53dfc6d1ec6017e59e8578a7"
+    },
+    {
+      "tool": "bash",
+      "status": "completed",
+      "exit": 0,
+      "output_characters": 3730,
+      "output_sha256": "77e766ee0b620e7cb5058f3b5ddb604182d19be41c18695cd026a8c1261d4530"
+    },
+    {
+      "tool": "bash",
+      "status": "completed",
+      "exit": 2,
+      "output_characters": 504,
+      "output_sha256": "51abf9298905a01d7b4240bbaa33b1f59ee0b41dc59be80aad0dca0d61d40a7a"
+    },
+    {
+      "tool": "bash",
+      "status": "completed",
+      "exit": 0,
+      "output_characters": 1930,
+      "output_sha256": "ff40e6407be6a781848911321f1cc4bb7d297653d222bb4b315794270240838d"
+    },
+    {
+      "tool": "bash",
+      "status": "completed",
+      "exit": 0,
+      "output_characters": 3351,
+      "output_sha256": "b084a799304e5194b2954079dc68b8c2050b26a75d78639342ade5068561713f"
+    },
+    {
+      "tool": "bash",
+      "status": "completed",
+      "exit": 0,
+      "output_characters": 1816,
+      "output_sha256": "b22187679afff47d7250c9d3e667a7ecd45b099c0ccef67479dcd37aea32fead"
+    },
+    {
+      "tool": "read",
+      "status": "completed",
+      "exit": null,
+      "output_characters": 2668,
+      "output_sha256": "3057ac54b63589157d0a36d379ab1519a44a6fa3bdd322816a20a8e2e9bdf2f4"
+    }
+  ],
+  "responses": [
+    {
+      "response": "response-01.sse",
+      "content": "I'll explore the project structure to describe it accurately.",
+      "reasoning": "",
+      "generated_tokens": 113,
+      "finish_reason": "tool_calls",
+      "usage": {
+        "prompt_tokens": 7738,
+        "total_tokens": 7851,
+        "completion_tokens": 113,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "tool_calls": [
+        {
+          "name": "bash",
+          "arguments": "{\"command\":\"ls -la /run/media/matteius/20TB-drive/vllm-ascend\",\"description\":\"List project root\"}"
+        },
+        {
+          "name": "read",
+          "arguments": "{\"filePath\":\"/run/media/matteius/20TB-drive/vllm-ascend/README.md\",\"limit\":120}"
+        }
+      ],
+      "complete": true
+    },
+    {
+      "response": "response-02.sse",
+      "content": "",
+      "reasoning": "Let's explore the vllm_ascend package structure, csrc, tests, docs, and git status/branch to note the fork's custom work.",
+      "generated_tokens": 290,
+      "finish_reason": "tool_calls",
+      "usage": {
+        "prompt_tokens": 13727,
+        "total_tokens": 14017,
+        "completion_tokens": 290,
+        "completion_tokens_details": {
+          "reasoning_tokens": 32
+        }
+      },
+      "tool_calls": [
+        {
+          "name": "bash",
+          "arguments": "{\"command\":\"ls /run/media/matteius/20TB-drive/vllm-ascend/vllm_ascend; echo \\\"---\\\"; ls /run/media/matteius/20TB-drive/vllm-ascend/csrc; echo \\\"---\\\"; ls /run/media/matteius/20TB-drive/vllm-ascend/tests; echo \\\"---\\\"; ls /run/media/matteius/20TB-drive/vllm-ascend/docs/source; echo \\\"---\\\"; ls /run/media/matteius/20TB-drive/vllm-ascend/tools\",\"description\":\"List main package dirs\"}"
+        },
+        {
+          "name": "bash",
+          "arguments": "{\"command\":\"cd /run/media/matteius/20TB-drive/vllm-ascend && git log --oneline -15 && echo \\\"--- branch ---\\\" && git branch -a | head -20 && echo \\\"--- remote ---\\\" && git remote -v && echo \\\"--- status ---\\\" && git status --short | head -30\",\"description\":\"Check git history and remotes\"}"
+        }
+      ],
+      "complete": true
+    },
+    {
+      "response": "response-03.sse",
+      "content": "",
+      "reasoning": "Let me dig into the key modules to describe architecture accurately. Look at vllm_ascend subdirs, worker, platform, quantization, and the fork-specific work (310p, system_one, sidecard, xlite).",
+      "generated_tokens": 344,
+      "finish_reason": "tool_calls",
+      "usage": {
+        "prompt_tokens": 15742,
+        "total_tokens": 16086,
+        "completion_tokens": 344,
+        "completion_tokens_details": {
+          "reasoning_tokens": 48
+        }
+      },
+      "tool_calls": [
+        {
+          "name": "bash",
+          "arguments": "{\"command\":\"cd /run/media/matteius/20TB-drive/vllm-ascend && for d in vllm_ascend/worker vllm_ascend/quantization vllm_ascend/ops vllm_ascend/distributed vllm_ascend/attention vllm_ascend/compilation vllm_ascend/spec_decode vllm_ascend/_310p vllm_ascend/system_one vllm_ascend/xlite vllm_ascend/patch vllm_ascend/core vllm_ascend/ec_manager vllm_ascend/ep lb 2>/dev/null; do echo \\\"=== $d ===\\\"; ls $d 2>/dev/null | head -25; done\",\"description\":\"List module contents\"}"
+        },
+        {
+          "name": "bash",
+          "arguments": "{\"command\":\"cd /run/media/matteius/20TB-drive/vllm-ascend && ls tests/ut && echo \\\"--- e2e ---\\\" && ls tests/e2e && echo \\\"--- csrc kernels ---\\\" && ls csrc/kernels && echo \\\"--- examples ---\\\" && ls examples\",\"description\":\"List tests, kernels, examples\"}"
+        }
+      ],
+      "complete": true
+    },
+    {
+      "response": "response-04.sse",
+      "content": "",
+      "reasoning": "",
+      "generated_tokens": 130,
+      "finish_reason": "tool_calls",
+      "usage": {
+        "prompt_tokens": 16874,
+        "total_tokens": 17004,
+        "completion_tokens": 130,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "tool_calls": [
+        {
+          "name": "bash",
+          "arguments": "{\"command\":\"cd /run/media/matteius/20TB-drive/vllm-ascend && for d in worker quantization ops distributed attention compilation spec_decode _310p system_one xlite patch core ec_manager eplb model_executor sample device observability profiler lora weight_switch device_allocator; do echo \\\"=== $d ===\\\"; ls vllm_ascend/$d 2>/dev/null | head -20; done\",\"description\":\"List vllm_ascend module contents\"}"
+        }
+      ],
+      "complete": true
+    },
+    {
+      "response": "response-05.sse",
+      "content": "",
+      "reasoning": "Let me look at the fork-specific aspects: `_310p` (Ascend 310P support), `system_one`, `xlite`, quantization methods, and the docs. Also check pyproject, setup.py for build, and the AGENTS.md-mentioned runbook.\n\nLet me check some details to describe the project's unique features in this fork.",
+      "generated_tokens": 243,
+      "finish_reason": "tool_calls",
+      "usage": {
+        "prompt_tokens": 18064,
+        "total_tokens": 18307,
+        "completion_tokens": 243,
+        "completion_tokens_details": {
+          "reasoning_tokens": 70
+        }
+      },
+      "tool_calls": [
+        {
+          "name": "bash",
+          "arguments": "{\"command\":\"cd /run/media/matteius/20TB-drive/vllm-ascend && ls vllm_ascend/quantization/methods && echo \\\"--- models ---\\\" && ls vllm_ascend/models && echo \\\"--- patch/worker ---\\\" && ls vllm_ascend/patch/worker vllm_ascend/patch/platform && echo \\\"--- docs dev guide ---\\\" && ls docs/source/developer_guide\",\"description\":\"List quantization methods, models, patches\"}"
+        },
+        {
+          "name": "read",
+          "arguments": "{\"filePath\":\"/run/media/matteius/20TB-drive/vllm-ascend/pyproject.toml\"}"
+        }
+      ],
+      "complete": true
+    },
+    {
+      "response": "response-06.sse",
+      "content": "",
+      "reasoning": "Let me look at the fork-specific aspects: `_310p` support, `system_one`, `xlite`, `sidecard`, and the docs runbook. Also check the AGENTS.md mention of Qwen3.8 Flash-Next W4 work on four Ascend 310P devices.\n\nLet me check a few key files quickly.",
+      "generated_tokens": 105,
+      "tool_calls": [],
+      "complete": false
+    }
+  ],
+  "final_answer_received": false,
+  "termination": "User took over the NPUs; interrupted during response six. The eight-response guard was not reached. This is not a completed failure or success trial.",
+  "elapsed_seconds": 3223.7994248867035,
+  "stable_workers_and_weights": true,
+  "baseline_restored": true,
+  "handoff": {
+    "running_requests": 0,
+    "waiting_requests": 0,
+    "resident_lock_available": true,
+    "service": "minimax-m31-source-trial.service",
+    "port": 8000,
+    "context_limit": 32768
+  },
+  "limitations": [
+    "One seed and one task; original pre-mitigation Kilo agent prompt.",
+    "One Bash syntax error (exit 2), followed by a successful corrected command; this is not an all-successful-tool trajectory.",
+    "Initial system/user messages were unchanged across requests. No forced final answer or tool-output repair was injected.",
+    "No final summary had been received before the user interruption; cannot infer how the unfinished trial would end."
+  ]
+}
