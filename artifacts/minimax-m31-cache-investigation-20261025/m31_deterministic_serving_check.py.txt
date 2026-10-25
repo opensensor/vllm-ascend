@@ -1,0 +1,29 @@
+from pathlib import Path
+prefix=Path('/workspace/m31_cache_probe.py').read_text().split("with Path('/tmp/minimax-m31-resident.lock')")[0]
+exec(prefix.replace("out=Path('/workspace/m31-cache-probe')","out=Path('/workspace/m31-deterministic-serving')"))
+from tools.minimax_m3.resident_determinism import transition
+from tools.minimax_m3.tool_probe import chat_request
+with Path('/tmp/minimax-m31-resident.lock').open('w') as lock:
+ fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+ assert not c.request('/is_paused',method='GET')['is_paused']
+ c.request('/resident/maintenance')
+ try:
+  receipt=transition(c,Path('/workspace/m31-startup-serving-source.py').read_text(),True)
+  (out/'enable.json').write_text(json.dumps(receipt,indent=2)+'\n')
+  body=tokens('The archive contains ordinary records about rooms, dates, colors and cities. '*600)
+  tail=tokens('\nThe secret word is amber. Repeat only the secret word.\nAnswer:')
+  prompt=body[:4097-len(tail)]+tail;assert len(prompt)==4097
+  reset();run('sparse_cold',prompt,5);run('sparse_warm',prompt,5)
+  other=tokens('An unrelated notebook discusses rivers, mountains and trains. '*150)[:1025]
+  run('unrelated',other,2);run('sparse_after_unrelated',prompt,5)
+  reset();run('sparse_zeroed_repeat',prompt,5)
+  p=json.loads(Path('/workspace/m31-loop-replay-payload.json').read_text());p.update(temperature=0,max_tokens=256)
+  reset();r=chat_request(c.base_url,p,timeout=600);(out/'loop-replay.json').write_text(json.dumps(r,indent=2)+'\n')
+  print('loop replay',json.dumps({k:r.get(k) for k in ('status','finish_reason','message','usage')}),flush=True)
+  p={'model':'minimax-m31-flash','messages':[{'role':'user','content':'Write the integers from 1 to 100 in ascending order, separated by commas. No explanation.'}],'temperature':0,'max_tokens':64,'stream':True,'stream_options':{'include_usage':True}}
+  for i in range(3):
+   r=chat_request(c.base_url,p,timeout=300);r['tokens_per_second_after_first']=(r['usage']['completion_tokens']-1)/(r['elapsed_seconds']-r['first_output_seconds'])
+   (out/f'decode-{i}.json').write_text(json.dumps(r,indent=2)+'\n');print('decode',i,r['tokens_per_second_after_first'],flush=True)
+  status=c.rpc('resident_capture');(out/'status.json').write_text(json.dumps(status,indent=2)+'\n')
+ finally:
+  if not c.request('/is_paused',method='GET')['is_paused']:c.request('/resident/maintenance',method='DELETE')

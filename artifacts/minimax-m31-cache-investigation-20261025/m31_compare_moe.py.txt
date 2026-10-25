@@ -1,0 +1,23 @@
+import json,torch
+from pathlib import Path
+root=Path('/workspace/m31-moe-trace');report=[]
+for rank in (0,1):
+ a=torch.load(root/f'cold_a-rank{rank}.pt',weights_only=True);b=torch.load(root/f'cold_b-rank{rank}.pt',weights_only=True)
+ assert len(a)==len(b)
+ for x,y in zip(a,b):
+  item={'rank':rank,'layer':x['layer'],'positions':[int(x['positions'][0]),int(x['positions'][-1])],'kind':x.get('kind','layer'),'different':{}}
+  for key in x:
+   if isinstance(x[key],torch.Tensor):
+    t,u=x[key],y[key]
+    if x.get('kind')=='projection' and key=='input':
+     t,u=t.clone(),u.clone()
+     for r,v in [(x,t),(y,u)]:
+      e=r['ends']
+      if e.dtype==torch.int32 and e.numel()==len(v):v[e>=64]=0
+      else:v[int(e[-1]):]=0
+    if not torch.equal(t,u):
+     error=(t.float()-u.float()).abs()
+     item['different'][key]={'shape':list(t.shape),'count':int((t!=u).sum()),'max':float(error.max()),'nrmse':float(error.norm()/t.float().norm().clamp_min(1e-30))}
+  report.append(item)
+(root/'comparison.json').write_text(json.dumps(report,indent=2)+'\n')
+print(json.dumps([{**r,'different':{k:v for k,v in r['different'].items() if k not in ('slots','index_slots','main_pages','index_pages')}} for r in report if any(k not in ('slots','index_slots','main_pages','index_pages') for k in r['different'])],indent=2))

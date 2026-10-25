@@ -1,0 +1,51 @@
+import fcntl,json,time,urllib.request
+from pathlib import Path
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+import uuid
+c=ResidentClient('http://127.0.0.1:8000',6,timeout=300)
+out=Path('/workspace/m31-cache-probe-eager');out.mkdir(exist_ok=True)
+def tokens(text):return c.request('/tokenize',{'model':'minimax-m31-flash','prompt':text,'add_special_tokens':False})['tokens']
+def metrics():
+ with urllib.request.urlopen(c.base_url+'/metrics',timeout=10) as r:text=r.read().decode()
+ return {line.split('{')[0]:float(line.rsplit(' ',1)[1]) for line in text.splitlines() if line.startswith(('vllm:prefix_cache_hits_total{','vllm:prefix_cache_queries_total{'))}
+def reset(zero=True):
+ c.request('/pause?mode=wait&clear_cache=true')
+ if zero:c.rpc('resident_reset')
+ c.resume()
+def run(name,prompt,count=9):
+ before=metrics();started=time.monotonic()
+ r=c.request('/v1/completions',{'model':'minimax-m31-flash','prompt':prompt,'add_special_tokens':False,'max_tokens':count,'temperature':0,'seed':71,'ignore_eos':True,'logprobs':20,'return_tokens_as_token_ids':True,'return_token_ids':True})
+ result={'seconds':time.monotonic()-started,'metrics_before':before,'metrics_after':metrics(),'response':r}
+ (out/(name+'.json')).write_text(json.dumps(result,indent=2)+'\n')
+ print(name,round(result['seconds'],3),r['choices'][0].get('token_ids'),result['metrics_after'],flush=True)
+ return r['choices'][0]['token_ids']
+with Path('/tmp/minimax-m31-resident.lock').open('w') as lock:
+ fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+ assert not c.request('/is_paused',method='GET')['is_paused']
+ assert not c.request('/resident/maintenance',method='GET')['maintenance']
+ before=c.rpc('resident_status');c.request('/resident/maintenance')
+ try:
+  source=Path('/workspace/m31-loop-ab/eager-source.py').read_text()
+  c.switch(Control(uuid.uuid4().hex,'direct-target','m3_candidate',source));c.resume()
+  body=tokens('The archive contains ordinary records about rooms, dates, colors and cities. '*150)
+  tail=tokens('\nThe secret word is amber. Repeat only the secret word.\nAnswer:')
+  prompt=body[:1025-len(tail)]+tail;assert len(prompt)==1025
+  other=tokens('An unrelated notebook discusses rivers, mountains and trains. '*150)[:1025]
+  (out/'prompts.json').write_text(json.dumps({'prompt':prompt,'unrelated':other})+'\n')
+  reset();generated=run('cold',prompt)
+  run('warm',prompt)
+  run('unrelated',other,2)
+  run('warm_after_unrelated',prompt)
+  reset(False);run('prefix_clear_keep_storage',prompt)
+  reset();run('zeroed_repeat',prompt)
+  for prefix in (1,2,7):
+   reset();run('recompute_'+str(prefix),prompt+generated[:prefix],1)
+  after=c.rpc('resident_capture')
+  assert [(x['rank'],x['pid'],x['weight_storage_digest']) for x in before]==[(x['rank'],x['pid'],x['weight_storage_digest']) for x in after]
+  (out/'status.json').write_text(json.dumps(after,indent=2)+'\n')
+ finally:
+  if not c.request('/is_paused',method='GET')['is_paused']:
+   graph=Path('/workspace/m31-startup-serving-source.py').read_text()
+   c.switch(Control(uuid.uuid4().hex,'direct-target','m3_candidate',graph));c.resume()
+   c.request('/resident/maintenance',method='DELETE')

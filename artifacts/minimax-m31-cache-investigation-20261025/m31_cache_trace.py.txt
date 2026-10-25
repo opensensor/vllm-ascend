@@ -1,0 +1,41 @@
+import fcntl,json,time,urllib.request
+from pathlib import Path
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_control import Control
+import uuid
+c=ResidentClient('http://127.0.0.1:8000',6,timeout=300)
+out=Path('/workspace/m31-cache-trace');out.mkdir(exist_ok=True)
+def tokens(text):return c.request('/tokenize',{'model':'minimax-m31-flash','prompt':text,'add_special_tokens':False})['tokens']
+def metrics():
+ with urllib.request.urlopen(c.base_url+'/metrics',timeout=10) as r:text=r.read().decode()
+ return {line.split('{')[0]:float(line.rsplit(' ',1)[1]) for line in text.splitlines() if line.startswith(('vllm:prefix_cache_hits_total{','vllm:prefix_cache_queries_total{'))}
+def reset(zero=True):
+ c.request('/pause?mode=wait&clear_cache=true')
+ if zero:c.rpc('resident_reset')
+ c.resume()
+def run(name,prompt,count=9):
+ before=metrics();started=time.monotonic()
+ r=c.request('/v1/completions',{'model':'minimax-m31-flash','prompt':prompt,'add_special_tokens':False,'max_tokens':count,'temperature':0,'seed':71,'ignore_eos':True,'logprobs':20,'return_tokens_as_token_ids':True,'return_token_ids':True})
+ result={'seconds':time.monotonic()-started,'metrics_before':before,'metrics_after':metrics(),'response':r}
+ (out/(name+'.json')).write_text(json.dumps(result,indent=2)+'\n')
+ print(name,round(result['seconds'],3),r['choices'][0].get('token_ids'),result['metrics_after'],flush=True)
+ return r['choices'][0]['token_ids']
+with Path('/tmp/minimax-m31-resident.lock').open('w') as lock:
+ fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+ assert not c.request('/is_paused',method='GET')['is_paused']
+ assert not c.request('/resident/maintenance',method='GET')['maintenance']
+ before=c.rpc('resident_status');c.request('/resident/maintenance')
+ try:
+  source=Path('/workspace/m31-loop-ab/eager-source.py').read_text().replace('def replacements(native_resources):','def base_replacements(native_resources):')+'\n'+Path('/workspace/m31_cache_trace_hooks.py').read_text()
+  c.switch(Control(uuid.uuid4().hex,'direct-target','m3_candidate',source));c.resume()
+  prompt=json.loads(Path('/workspace/m31-cache-probe/prompts.json').read_text())['prompt']
+  for label in ('cold_a','cold_b'):
+   reset();c.rpc('resident_capture',label);run(label,prompt,1);c.rpc('resident_capture','save')
+  after=c.rpc('resident_capture')
+  assert [(x['rank'],x['pid'],x['weight_storage_digest']) for x in before]==[(x['rank'],x['pid'],x['weight_storage_digest']) for x in after]
+  (out/'status.json').write_text(json.dumps(after,indent=2)+'\n')
+ finally:
+  if not c.request('/is_paused',method='GET')['is_paused']:
+   graph=Path('/workspace/m31-startup-serving-source.py').read_text()
+   c.switch(Control(uuid.uuid4().hex,'direct-target','m3_candidate',graph));c.resume()
+   c.request('/resident/maintenance',method='DELETE')

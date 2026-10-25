@@ -1,0 +1,12 @@
+def replacements(native_resources):
+    import torch
+    changes=base_replacements(native_resources)
+    def capture(self,mode=None):
+        self._m3_idle()
+        if mode is not None:
+            torch.npu.synchronize()
+            if mode not in ('on','off'):raise ValueError('expected on/off')
+            torch.use_deterministic_algorithms(mode=='on',warn_only=mode=='on')
+        return {**self.resident_status(),'deterministic':torch.are_deterministic_algorithms_enabled(),'warn_only':torch.is_deterministic_algorithms_warn_only_enabled()}
+    changes['vllm_ascend._310p.worker_310p:NPUWorker310.resident_capture']=capture
+    return changes

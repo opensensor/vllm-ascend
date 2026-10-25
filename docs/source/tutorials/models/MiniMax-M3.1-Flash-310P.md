@@ -697,6 +697,38 @@ decode measurement was 3.927 tokens/s; context remains 163840, without a full
 160K test. See `artifacts/minimax-m31-agent-loop-20261025/` for the bounded
 results, memory failure, recovery and remaining attribution limits.
 
+### Retained operator determinism after cache investigation
+
+Subsequent cache tests reproduced varying output scores even after zeroing KV
+storage and disabling graphs. All 360 main/index caches were covered by reset.
+The first traced difference occurred in FP32 router logits; isolated repeated
+router calls varied on all six chips. Deterministic operator mode removed that
+variation. Keeping it enabled across execution also made the bounded cold/warm
+cache comparisons match exactly, including 4097-token sparse attention with
+partial graphs and 4096 verified cache-hit tokens.
+
+The service now retains `torch.use_deterministic_algorithms(True, warn_only=True)`.
+The median short decode rate is 3.872 tokens/s, about 2.18% below the previous
+3.958 median. All 240 graph pieces and the 163840-token context setting remain.
+The original reasoning-loop continuation still repeats discovery commands, and
+prefill versus incremental decode still gives different scores. This improves
+repeatability; it is not a coherence fix or universal batch-invariance guarantee.
+
+Use the drained controller to change the mode without reloading shards:
+
+```bash
+python -m tools.minimax_m3.resident_determinism enable \
+  --serving-source /workspace/m31-startup-serving-source.py \
+  --output /workspace/m31-determinism-enable.json
+```
+
+The controller releases graphs before changing flags and reinstalls the exact
+saved generation afterward. `disable` restores false/false flags. The installed
+post-start script enables the mode after dense conversion; that appended step
+has passed shell syntax checks but has not had another cold-restart test.
+Evidence and remaining limits are in
+`artifacts/minimax-m31-cache-investigation-20261025/`.
+
 ### Offline candidate: paired expert gate/up
 
 `--paired-gate-up` is an **opt-in, unqualified candidate**, not the current

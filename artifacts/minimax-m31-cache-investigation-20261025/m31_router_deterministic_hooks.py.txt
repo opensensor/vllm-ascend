@@ -1,0 +1,15 @@
+def replacements(native_resources):
+    import functools,inspect,torch
+    from vllm_ascend.ops.fused_moe.gate_linear import AscendGateLinear
+    changes=base_replacements(native_resources)
+    original=inspect.unwrap(AscendGateLinear.forward)
+    @functools.wraps(original)
+    def forward(self,x):
+        enabled=torch.are_deterministic_algorithms_enabled()
+        warn_only=torch.is_deterministic_algorithms_warn_only_enabled()
+        if enabled:return original(self,x)
+        torch.use_deterministic_algorithms(True)
+        try:return original(self,x)
+        finally:torch.use_deterministic_algorithms(enabled,warn_only=warn_only)
+    changes['vllm_ascend.ops.fused_moe.gate_linear:AscendGateLinear.forward']=forward
+    return changes

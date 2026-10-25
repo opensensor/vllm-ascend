@@ -1,0 +1,54 @@
+def replacements(native_resources):
+    import inspect
+    from pathlib import Path
+    import torch
+    from vllm.forward_context import get_forward_context
+    from vllm_ascend.models.minimax_m3.minimax_m3 import MiniMaxM3DecoderLayer,MiniMaxM3SparseAttention
+    changes=base_replacements(native_resources)
+    original=inspect.unwrap(MiniMaxM3DecoderLayer.forward)
+    state={'label':None,'records':[]}
+    def cpu(x):return x.detach().cpu() if x is not None else None
+    def layer(self,positions,hidden_states,residual):
+        enabled=state['label'] is not None and self.layer_idx<4
+        if enabled:
+            record=dict(layer=self.layer_idx,positions=cpu(positions),hidden_in=cpu(hidden_states),residual_in=cpu(residual))
+        result=original(self,positions,hidden_states,residual)
+        if enabled:
+            record.update(hidden_out=cpu(result[0]),residual_out=cpu(result[1]))
+            attn=self.self_attn;meta=get_forward_context().attn_metadata
+            main,index=meta[attn.layer_name],meta[attn.indexer.index_cache.prefix]
+            record.update(query_starts=main.query_starts,seq_lens=cpu(main.seq_lens),slots=cpu(main.slot_mapping),index_slots=cpu(index.slot_mapping),main_pages=cpu(main.block_table),index_pages=cpu(index.block_table))
+            length=int(record['seq_lens'][0]);blocks=(length+127)//128
+            idx=attn.indexer.index_cache.kv_cache
+            if isinstance(idx,(tuple,list)):idx=idx[0]
+            record['key_history']=cpu(attn.kv_cache[0].index_select(0,main.block_table[0,:blocks].long())).flatten(0,1)[:length]
+            record['value_history']=cpu(attn.kv_cache[1].index_select(0,main.block_table[0,:blocks].long())).flatten(0,1)[:length]
+            record['index_history']=cpu(idx.index_select(0,index.block_table[0,:blocks].long())).flatten(0,1)[:length]
+            state['records'].append(record)
+        return result
+    def capture(self,label=None):
+        self._m3_idle()
+        if label=='save':
+            target=Path('/workspace/m31-cache-trace')/f"{state['label']}-rank{self.rank}.pt"
+            torch.save(state['records'],target)
+            state['label']=None;state['records'].clear()
+        elif label is not None:
+            state['label']=label;state['records'].clear()
+        def tensors(x):
+            if isinstance(x,torch.Tensor):yield x
+            elif isinstance(x,dict):
+                for v in x.values():yield from tensors(v)
+            elif isinstance(x,(tuple,list)):
+                for v in x:yield from tensors(v)
+        ptrs={x.untyped_storage().data_ptr() for x in tensors(self.model_runner.kv_caches)}
+        missing=[];covered=0
+        for n,m in self.model_runner.model.named_modules():
+            if not isinstance(m,MiniMaxM3SparseAttention):continue
+            for kind,cache in [('main',m.kv_cache),('index',m.indexer.index_cache.kv_cache)]:
+                for x in tensors(cache):
+                    if x.untyped_storage().data_ptr() not in ptrs:missing.append(n+':'+kind)
+                    else:covered+=1
+        return {**self.resident_status(),'cache_audit':dict(covered=covered,missing=missing)}
+    changes['vllm_ascend.models.minimax_m3.minimax_m3:MiniMaxM3DecoderLayer.forward']=layer
+    changes['vllm_ascend._310p.worker_310p:NPUWorker310.resident_capture']=capture
+    return changes

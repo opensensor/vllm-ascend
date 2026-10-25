@@ -1,0 +1,45 @@
+import dataclasses,fcntl,json,uuid
+from pathlib import Path
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+source='''
+def replacements(native_resources):
+    def capture(self):
+        import torch,time
+        self._m3_idle()
+        original=torch.are_deterministic_algorithms_enabled()
+        warn=torch.is_deterministic_algorithms_warn_only_enabled()
+        gate=next(m.gate for m in self.model_runner.model.modules() if type(m).__name__=='MiniMaxM3MoE')
+        reports=[]
+        try:
+            for rows in (1,512):
+                x=torch.randn((rows,gate.weight.shape[1]),generator=torch.Generator().manual_seed(71)).half().to(gate.weight.device)
+                for deterministic in (False,True,'scoped'):
+                    torch.use_deterministic_algorithms(deterministic is True)
+                    torch.npu.synchronize()
+                    outputs=[];started=time.monotonic()
+                    for repeat in range(5):
+                        if deterministic=='scoped':torch.use_deterministic_algorithms(True)
+                        result=gate(x)[0]
+                        if deterministic=='scoped':torch.use_deterministic_algorithms(False)
+                        outputs.append(result.detach().cpu())
+                    differences=[(v-outputs[0]).abs() for v in outputs[1:]]
+                    reports.append(dict(rows=rows,deterministic=deterministic,identical=all(torch.equal(v,outputs[0]) for v in outputs[1:]),max_abs=max(float(v.max()) for v in differences),seconds=time.monotonic()-started))
+            result=dict(passed=True,cases=reports)
+        except Exception as exc:result=dict(passed=False,error=str(exc),cases=reports)
+        finally:torch.use_deterministic_algorithms(original,warn_only=warn)
+        return {**self.resident_status(),'router_repeatability':dict(original=original,**result)}
+    return {'vllm_ascend._310p.worker_310p:NPUWorker310.resident_capture':capture}
+'''
+c=ResidentClient('http://127.0.0.1:8000',6)
+with Path('/tmp/minimax-m31-resident.lock').open('w') as lock:
+ fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+ assert not c.request('/is_paused',method='GET')['is_paused']
+ c.request('/resident/maintenance');c.request('/pause?mode=wait&clear_cache=true')
+ try:
+  ctl=Control(uuid.uuid4().hex,'direct-target','router_probe',source)
+  c.rpc('resident_prepare',json.dumps(dataclasses.asdict(ctl)));c.rpc('resident_apply',ctl.generation)
+  r=c.rpc('resident_capture');Path('/workspace/m31-router-scope-probe.json').write_text(json.dumps(r,indent=2)+'\n')
+  print([(x['rank'],x['router_repeatability']) for x in r],flush=True)
+ finally:
+  c.switch(Control(uuid.uuid4().hex,'direct-target','m3_candidate',Path('/workspace/m31-startup-serving-source.py').read_text()));c.resume();c.request('/resident/maintenance',method='DELETE')
