@@ -90,7 +90,10 @@ class PackedM3Experts:
 """
     module = types.ModuleType("test_composition")
     exec(candidate_source(fake, "native_v2"), module.__dict__)
-    replacements = module.replacements({"native_v2": lambda *args: "new"})
+    kernel = lambda *args: "new"
+    kernel.max_compact_routes = 4
+    replacements = module.replacements({"native_v2": kernel})
+    assert replacements["vllm_ascend._310p.ops.minimax_m3:grouped_w4_mm"].max_compact_routes == 4
     assert replacements["vllm_ascend._310p.ops.minimax_m3:PackedM3Experts.forward"](None) == "new"
     assert (
         replacements["vllm_ascend.models.minimax_m3.minimax_m3:paged_sparse_attention"]

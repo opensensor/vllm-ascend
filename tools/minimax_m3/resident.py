@@ -31,6 +31,7 @@ def candidate_source(module_source=None, native_name=None, activation_name=None,
         source += (
             f"    kernel = native_resources[{native_name!r}]\n"
             "    def project(x, codes, scales, ends):\n        return kernel(x, codes, scales, ends)\n"
+            "    project.max_compact_routes = getattr(kernel, 'max_compact_routes', 0)\n"
             "    changes['vllm_ascend._310p.ops.minimax_m3:grouped_w4_mm'] = project\n"
         )
         if module_source is not None:

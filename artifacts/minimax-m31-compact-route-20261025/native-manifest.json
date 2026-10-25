@@ -1,0 +1,35 @@
+{
+  "name": "minimax_w4_int8_v15",
+  "libraries": [
+    {
+      "path": "/vllm-workspace/minimax-native-int8-v15/bridge.so",
+      "sha256": "65fc997286f4c59c11410cccd5221050b55e8acc99f59c0725585c1f25ea8edf"
+    }
+  ],
+  "assets": [
+    {
+      "path": "/vllm-workspace/minimax-native-int8-v15/grouped_w4.bin",
+      "sha256": "902cbfef4247203cefb920675acfc132a7f59e08ba17359c1da3fff230f15ccb"
+    },
+    {
+      "path": "/vllm-workspace/minimax-native-int8-v15/sources.tar.gz",
+      "sha256": "b1a7552cd48b9c7b888f142eb963535114fc941c517ce1d59284624b2c67378c"
+    },
+    {
+      "path": "/vllm-workspace/minimax-native-int8-v15/resident_native.py",
+      "sha256": "7fdb02085ae06019ec3f8ced64e58afa3a91cf3b6055c3ade6378be4dc7702b9"
+    },
+    {
+      "path": "/vllm-workspace/minimax-native-int8-v15/reconstruction_bridge.cpp",
+      "sha256": "21cb44459521b91439e94f2bfa1f79e87563971d222206404dba00c5cfd01e2b"
+    },
+    {
+      "path": "/vllm-workspace/minimax-native-int8-v15/build-options.json",
+      "sha256": "0c8020b74663cfcc51046009cb1e48c5ded5a2f7994c2fd3c9cef9cd8ca408cf"
+    }
+  ],
+  "operators": [
+    "minimax_w4_int8_v15::launch"
+  ],
+  "validation_source": "import types\n_module = types.ModuleType('minimax_w4_int8_v15')\nexec(compile(open('/vllm-workspace/minimax-native-int8-v15/resident_native.py').read(), '/vllm-workspace/minimax-native-int8-v15/resident_native.py', 'exec'), _module.__dict__)\ndef prepare():\n    return _module.GroupedW4Kernel('minimax_w4_int8_v15', '/vllm-workspace/minimax-native-int8-v15/grouped_w4.bin', 'minimax_w4_int8_v15_kernel')\ndef validate(resource):\n    return _module.validate_kernel(resource)\n"
+}

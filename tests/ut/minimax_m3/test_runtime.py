@@ -126,6 +126,35 @@ def test_route_count_reductions_preserve_int64_native_boundaries(rank):
     assert boundaries == ([[1024, 2048]] * 3 + [[1, 2]] * 3 if rank == 0 else [[0, 0]] * 6)
 
 
+@pytest.mark.parametrize("tokens", [1, 3])
+@pytest.mark.parametrize("logits", [[9.0, -2.0, 10.0, -1.0], [1.0, 2.0, 9.0, 10.0]])
+def test_compact_decode_preserves_route_order_and_masks_unwritten_peer_rows(tokens, logits):
+    dtypes = []
+
+    def project(x, codes, scales, groups):
+        dtypes.append(groups.dtype)
+        if groups.dtype == torch.int64:
+            return reference_grouped_mm(x, codes, scales, groups)
+        result = x.new_full((len(x), codes.shape[1]), float("nan"))
+        for row, expert in enumerate(groups.tolist()):
+            if expert < codes.shape[0]:
+                result[row] = reference_grouped_mm(
+                    x[row : row + 1], codes[expert : expert + 1], scales[expert : expert + 1], torch.ones(1).long()
+                )[0]
+        return result
+
+    project.max_compact_routes = 4
+    x = torch.randn(tokens, 32, generator=torch.Generator().manual_seed(83)).half()
+    logits = torch.tensor([logits]).expand(tokens, -1)
+    expected = make_bank()(x, logits)
+    shards = [make_bank(2, rank) for rank in range(2)]
+    for shard in shards:
+        shard.projector = project
+    actual = sum(shard(x, logits) for shard in shards)
+    torch.testing.assert_close(actual, expected, atol=1e-6, rtol=1e-6)
+    assert all(dtype == (torch.int32 if tokens == 1 else torch.int64) for dtype in dtypes)
+
+
 def attention_oracle(q, k, v, iq, ik, *, prefix, block_size, topk, local, init):
     """Independent scalar token/head implementation, no paged runtime helpers."""
     result = torch.empty_like(q)

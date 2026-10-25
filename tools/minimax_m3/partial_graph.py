@@ -2,11 +2,24 @@
 """Single-token layer graphs around eager sparse attention, sharing one pool."""
 
 import functools
+import inspect
 
 import torch
 import torch.distributed as dist
 
 CAPTURE_RESERVE_BYTES = 768 * 1024**2
+
+
+def _base_apply(function):
+    """Unwrap old experimental release hooks as well as decorated successors."""
+    function = inspect.unwrap(function)
+    while function.__name__ == "resident_apply":
+        closure = inspect.getclosurevars(function).nonlocals
+        parent = closure.get("apply")
+        if not callable(parent) or not callable(closure.get("release")):
+            break
+        function = inspect.unwrap(parent)
+    return function
 
 
 def add_replacements(changes):
@@ -18,9 +31,11 @@ def add_replacements(changes):
     from vllm_ascend._310p.worker_310p import NPUWorker310
     from vllm_ascend.models.minimax_m3.minimax_m3 import MiniMaxM3DecoderLayer, MiniMaxM3Model, MiniMaxM3SparseAttention
 
-    original = MiniMaxM3DecoderLayer.forward
-    model_forward = MiniMaxM3Model.forward
-    apply = NPUWorker310.resident_apply
+    # Preparation runs while the old generation is still installed. Never bind
+    # new wrappers to those old wrappers, which would retain/recreate old pools.
+    original = inspect.unwrap(MiniMaxM3DecoderLayer.forward)
+    model_forward = inspect.unwrap(MiniMaxM3Model.forward)
+    apply = _base_apply(NPUWorker310.resident_apply)
     state = {
         "owners": {},
         "positions": None,
@@ -154,6 +169,7 @@ def add_replacements(changes):
         state["replays"] += 1
         return owner["post_output"]
 
+    @functools.wraps(apply)
     def resident_apply(self, generation):
         self._m3_idle()
         release()

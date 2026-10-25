@@ -1,0 +1,40 @@
+import json,time
+from pathlib import Path
+from functools import partial
+import torch,torch_npu
+from safetensors.torch import load_file
+from tools.minimax_m3.int8_native_probe import load_kernel
+from tools.minimax_m3.int8_native import pack_int8_layout
+from tools.minimax_m3.int8_projection_probe import timed
+from vllm_ascend._310p.ops.minimax_m3 import pack_w4_nz256
+
+torch.set_num_threads(4);torch.npu.set_device(5);torch.npu.set_compile_mode(jit_compile=False)
+torch.npu.set_per_process_memory_fraction(.02,5)
+with torch.inference_mode():
+ candidate,validate=load_kernel(Path('/vllm-workspace/minimax-native-int8-v15/manifest.json'))
+ validation=validate(candidate);assert validation['passed'];print('validation',validation,flush=True)
+ baseline,_=load_kernel(Path('/vllm-workspace/minimax-native-int8-v14/manifest.json'))
+ weights=load_file('/srv/ai/storage/artifacts/minimax-m31-20261024/expert0/weights.safetensors')
+ report={'validation':validation,'cases':[]}
+ for projection in ('w1','w3','w2'):
+  canonical,scales=weights[projection+'_codes'],weights[projection+'_scales']
+  if canonical.ndim==3:canonical,scales=canonical[0],scales[0]
+  codes=pack_int8_layout(pack_w4_nz256(canonical)[None].repeat(4,1,1)).npu()
+  scales=scales[None].repeat(4,1,1).float()*torch.tensor([1,.5,1.5,2])[:,None,None]
+  scales=scales.npu()
+  for ids in ([3,1,0,2],[4,3,1,4],[4,4,4,2],[4,4,4,4]):
+   ids_cpu=torch.tensor(ids);order=ids_cpu.argsort(stable=True);inverse=order.argsort().npu()
+   x=torch.randn(4,canonical.shape[1]*2,generator=torch.Generator().manual_seed(91)).half().npu()
+   sorted_x=x.index_select(0,order.npu()).contiguous()
+   ends=torch.tensor([int((ids_cpu<=expert).sum()) for expert in range(4)],device=x.device)
+   route_ids=ids_cpu.int().npu();local=ids_cpu<4
+   base_out,base_timing=timed(partial(baseline,sorted_x,codes,scales,ends),5)
+   actual,timing=timed(partial(candidate,x,codes,scales,route_ids),5)
+   expected=base_out[order.argsort()]
+   expected[~local]=0;actual[~local]=0
+   row={'projection':projection,'ids':ids,'exact':torch.equal(actual,expected),'max_abs':float((actual-expected).abs().max()),'baseline':base_timing,'candidate':timing,'speedup':base_timing['median_seconds']/timing['median_seconds']}
+   report['cases'].append(row);print(row,flush=True)
+  for kernel in (baseline,candidate):kernel.banks.clear();kernel.scales.clear()
+  del codes,scales,x,sorted_x;torch.npu.empty_cache()
+ Path('/workspace/m31-compact-probe.json').write_text(json.dumps(report,indent=2)+'\n')
+ assert all(r['exact'] for r in report['cases'])

@@ -194,31 +194,44 @@ class PackedM3Experts(nn.Module):
             local_ids = torch.where(
                 (local_ids >= 0) & (local_ids < self.num_local_experts), local_ids, self.num_local_experts
             )
-            order = local_ids.to(torch.int32).float().argsort(stable=True)
-            inverse = order.to(torch.int32).float().argsort()
-            token_ids = torch.arange(x.shape[0], device=x.device).repeat_interleave(self.top_k)
-            rows = token_ids.index_select(0, order)
-            sorted_x = x.index_select(0, rows).to(torch.float16).contiguous()
-            expert_ids = torch.arange(self.num_local_experts, device=x.device)
-            # 310P INT64 reductions use slow AI-CPU casts/cumsum. Route counts
-            # are bounded; retain INT64 only at the native kernel boundary.
-            count_dtype = torch.int32 if local_ids.numel() <= torch.iinfo(torch.int32).max else torch.int64
-            ends = (
-                (local_ids[:, None] == expert_ids)
-                .sum(0, dtype=count_dtype)
-                .cumsum(0, dtype=count_dtype)
-                .to(torch.int64)
-                .contiguous()
-            )
+            compact = x.shape[0] == 1 and self.top_k <= getattr(op, "max_compact_routes", 0)
+            if compact:
+                # One token has at most four routes. Pass their local IDs in
+                # routing order, avoiding sorting and a full expert histogram.
+                sorted_x = x.expand(self.top_k, -1).to(torch.float16).contiguous()
+                ends = local_ids.to(torch.int32).contiguous()
+                routed_weights = weights.flatten()[:, None]
+            else:
+                order = local_ids.to(torch.int32).float().argsort(stable=True)
+                inverse = order.to(torch.int32).float().argsort()
+                token_ids = torch.arange(x.shape[0], device=x.device).repeat_interleave(self.top_k)
+                rows = token_ids.index_select(0, order)
+                sorted_x = x.index_select(0, rows).to(torch.float16).contiguous()
+                expert_ids = torch.arange(self.num_local_experts, device=x.device)
+                # 310P INT64 reductions use slow AI-CPU casts/cumsum. Route counts
+                # are bounded; retain INT64 only at the native kernel boundary.
+                count_dtype = torch.int32 if local_ids.numel() <= torch.iinfo(torch.int32).max else torch.int64
+                ends = (
+                    (local_ids[:, None] == expert_ids)
+                    .sum(0, dtype=count_dtype)
+                    .cumsum(0, dtype=count_dtype)
+                    .to(torch.int64)
+                    .contiguous()
+                )
+                routed_weights = weights.flatten()[:, None].index_select(0, order)
             gate = op(sorted_x, self.w1_codes, scales["w1"], ends)
             up = op(sorted_x, self.w3_codes, scales["w3"], ends)
             act = clipped_swiglu(gate, up, self.alpha, self.beta, self.limit).to(torch.float16)
             routed = op(act.contiguous(), self.w2_codes, scales["w2"], ends).float()
             # Never depend on uncomputed peer rows being initialized by a kernel.
-            local_rows = torch.arange(routed.shape[0], device=x.device) < ends[-1]
+            local_rows = (
+                ends < self.num_local_experts if compact else torch.arange(routed.shape[0], device=x.device) < ends[-1]
+            )
             routed = torch.where(local_rows[:, None], routed, 0)
-            routed *= weights.flatten()[:, None].index_select(0, order)
-            outputs.append(routed.index_select(0, inverse).view(x.shape[0], self.top_k, -1).sum(1))
+            routed *= routed_weights
+            if not compact:
+                routed = routed.index_select(0, inverse)
+            outputs.append(routed.view(x.shape[0], self.top_k, -1).sum(1))
         return torch.cat(outputs) * self.routed_scale
 
 

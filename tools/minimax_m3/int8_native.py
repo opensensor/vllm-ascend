@@ -8,6 +8,7 @@ import torch
 from vllm_ascend._310p.ops.minimax_m3 import pack_w4_nz256, reference_grouped_mm
 
 MAX_ROWS = 2048
+MAX_COMPACT_ROUTES = 4
 
 
 def prepare_scales(scales):
@@ -29,6 +30,7 @@ def pack_int8_layout(codes):
 
 class GroupedW4Kernel:
     requires_int8_layout = True
+    max_compact_routes = MAX_COMPACT_ROUTES
 
     def __init__(self, namespace, binary, entry):
         self.kernel = getattr(torch.classes, namespace).Kernel(binary, entry)
@@ -59,6 +61,7 @@ class GroupedW4Kernel:
     def __call__(self, x, codes, scales, ends):
         rows, cols = x.shape
         experts, output, packed_cols = codes.shape
+        compact = ends.dtype == torch.int32 and ends.shape == (rows,) and rows <= MAX_COMPACT_ROUTES
         if (
             not 0 < rows <= MAX_ROWS
             or not 1024 <= cols <= 6144
@@ -69,20 +72,21 @@ class GroupedW4Kernel:
             or codes.dtype != torch.int8
             or x.dtype != torch.float16
             or scales.shape != (experts, output // 32, cols // 32)
-            or ends.shape != (experts,)
-            or ends.dtype != torch.int64
+            or not (compact or (ends.shape == (experts,) and ends.dtype == torch.int64))
         ):
             raise ValueError("INT8 kernel requires <=2048 rows, NZ W4, N128 and K1024 geometry")
         ratios, weight_scales = self.bank_scales(codes, scales)
-        fused = rows <= 4
+        fused = rows <= MAX_COMPACT_ROUTES
         if fused:
             quantized, activation_scales = x, weight_scales
         else:
             quantized, activation_scales = self.npu.npu_dynamic_quant(x)
-        key = (rows, experts, output, cols, x.device)
+        key = (rows, experts, output, cols, x.device, compact)
         if key not in self.tilings:
             self.tilings[key] = torch.tensor(
-                [rows, experts, output, cols, 2, 2 if fused else 1], dtype=torch.int64, device=x.device
+                [rows, experts, output, cols, 2, 3 if compact else (2 if fused else 1)],
+                dtype=torch.int64,
+                device=x.device,
             )
         result = torch.empty((rows, output), dtype=x.dtype, device=x.device)
         self.launch(
@@ -123,4 +127,20 @@ def validate_kernel(kernel):
             (actual.float() - expected.float()).square().mean().sqrt() / expected.float().square().mean().sqrt()
         )
         reports.append({"rows": rows, "nrmse": error, "finite": bool(actual.isfinite().all())})
-    return {"passed": all(r["finite"] and r["nrmse"] < 0.025 for r in reports), "cases": reports}
+    compact_reports = []
+    for ids in ([0, 1, 2, 2], [2, 1, 0, 2], [2, 2, 2, 2], [1, 0, 1, 0]):
+        x = torch.randn(len(ids), 1024, generator=generator).half().npu()
+        route_ids = torch.tensor(ids, dtype=torch.int32, device=x.device)
+        actual = kernel(x, codes, device_scales, route_ids)
+        actual = torch.where((route_ids < codes.shape[0])[:, None], actual, 0).cpu()
+        expected = torch.zeros_like(actual)
+        for row, expert in enumerate(ids):
+            if expert < codes.shape[0]:
+                ends = torch.tensor([int(i >= expert) for i in range(codes.shape[0])], device=x.device)
+                expected[row] = kernel(x[row : row + 1], codes, device_scales, ends).cpu()[0]
+        compact_reports.append({"ids": ids, "exact": torch.equal(actual, expected)})
+    return {
+        "passed": all(r["finite"] and r["nrmse"] < 0.025 for r in reports) and all(r["exact"] for r in compact_reports),
+        "cases": reports,
+        "compact_cases": compact_reports,
+    }

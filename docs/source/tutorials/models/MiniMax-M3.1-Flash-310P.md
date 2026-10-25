@@ -567,7 +567,7 @@ AI-CPU integer work. Attention also reuses its block quotient instead of
 computing it twice. The serving median increased from 3.462 to 3.595 tokens/s,
 with all three response messages unchanged.
 
-The retained `minimax_w4_int8_v14` kernel loads four scale rows once per output
+The `minimax_w4_int8_v14` kernel loads four scale rows once per output
 tile and reuses them through its K slices. Previously it loaded a scale row
 for each N16 slice and K1024 chunk. This changes data movement, not arithmetic.
 All twelve isolated real-weight projection cases matched v13 exactly. Three
@@ -590,3 +590,41 @@ controller, then loads and selects the compatible v14 kernel. These iterations
 retained worker PIDs and weight storage. Context capacity remains 163840.
 Evidence is in `artifacts/minimax-m31-integer-perf-20261025/` and
 `artifacts/minimax-m31-int8-scale-cache-20261025/`.
+
+### Compact decode routing and graph reload ownership
+
+The current `minimax_w4_int8_v15` path handles the four selected experts directly
+for single-token decoding. It avoids sorting, histograms, cumulative counts and
+inverse gathers. INT32 route IDs select local experts; peer routes remain masked
+before weighting. Prefill retains the grouped boundary path. Build flags remain
+`--wide-l1 --rint-unpack --int8-compute --scale-cache`.
+
+Twelve isolated real-weight projection cases matched v14 exactly, including
+unsorted routes and peer-only rows. The three-request serving median reached
+**3.778 tokens/s**. A subsequent graph lifecycle fix measured **3.777 tokens/s**
+with all three response messages unchanged. These are short greedy counting
+benchmarks, not broad quality evaluations.
+
+Resident preparation happens while the preceding generation is still installed.
+Graph wrappers now unwrap that preceding generation before binding their base
+methods, preventing wrapper chains from retaining or recreating old graph pools.
+All 240 graph pieces captured across six workers, with no disabled layers and
+at least 896 MiB free at capture admission. The v14 trial had disabled graphs
+on both middle-stage ranks because stale native metadata reduced free memory.
+The live v15 transition reused its compatible immutable metadata and released
+old copies. Worker PIDs and weight storage remained unchanged through these
+transitions; context capacity remains 163840.
+
+For fresh startup, the post-start script now converts directly using the v15
+manifest, then selects v15 with activation v2 and partial graphs. This avoids
+initializing redundant v13/v14 metadata. The installed Python sources and startup
+script match the running candidate; a new cold startup has not been repeated.
+The startup script and receipts are in
+`artifacts/minimax-m31-compact-route-20261025/`.
+
+```bash
+python -m tools.minimax_m3.resident switch \
+  --module-file /vllm-workspace/vllm-ascend/vllm_ascend/_310p/ops/minimax_m3.py \
+  --native-name minimax_w4_int8_v15 --activation-name minimax_activation_v2 \
+  --partial-graphs
+```

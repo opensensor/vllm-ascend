@@ -145,6 +145,28 @@ def test_prefill_remains_eager(graph_runtime):
     graph_runtime.vote.assert_not_called()
 
 
+def test_preparing_a_second_generation_does_not_retain_the_first_wrappers(graph_runtime, monkeypatch):
+    runtime = graph_runtime
+    with torch.inference_mode():
+        runtime.model.forward(None, torch.tensor([7]), None, torch.zeros(1, 4))
+    old_status = runtime.worker.resident_capture
+    old_graphs = tuple(runtime.graphs)
+    # Match the transaction ordering: prepare while old methods are installed,
+    # then release the old generation and install the prepared replacements.
+    changes = add_replacements({})
+    runtime.worker.resident_apply("next")
+    for name, value in changes.items():
+        module, attribute = name.split(":")
+        cls, method = attribute.split(".")
+        monkeypatch.setattr(getattr(sys.modules[module], cls), method, value, raising=False)
+    with torch.inference_mode():
+        runtime.model.forward(None, torch.tensor([8]), None, torch.ones(1, 4))
+    assert runtime.npu.empty_cache.call_count == 2
+    assert old_status()["piecewise_graph"]["copies"] == 2
+    assert runtime.worker.resident_capture()["piecewise_graph"]["captures"] == 4
+    assert all(graph.reset.call_count == 1 for graph in old_graphs)
+
+
 def test_graph_source_is_snapshotted_and_keeps_native_replacements():
     source = 'def add_replacements(changes):\n    changes["probe"] = lambda: "captured"\n    return changes\n'
     module = types.ModuleType("composed")
