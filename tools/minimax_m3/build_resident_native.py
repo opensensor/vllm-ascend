@@ -24,6 +24,9 @@ def build(
     scale_cache=False,
     rint_unpack=False,
     expert_lanes=0,
+    int8_compute=False,
+    byte_unpack=False,
+    int8_original_layout=False,
 ):
     if not namespace.isidentifier() or not namespace.startswith("minimax_w4_"):
         raise ValueError("use a unique minimax_w4_ namespace for each build")
@@ -35,6 +38,12 @@ def build(
         raise ValueError("scale cache requires wide L1")
     if expert_lanes not in (0, 1, 2, 4, 8) or (expert_lanes and not wide_l1):
         raise ValueError("expert lanes must be 0, 1, 2, 4 or 8 and require wide L1")
+    if int8_original_layout and not int8_compute:
+        raise ValueError("INT8 original layout requires INT8 compute")
+    if byte_unpack and (rint_unpack or int8_compute):
+        raise ValueError("byte unpack is a separate FP16 candidate")
+    if int8_compute and (singleton_l1 or scale_cache or expert_lanes or not wide_l1 or not rint_unpack):
+        raise ValueError("INT8 prototype requires wide L1 and RINT, without other candidate options")
     output, source_root, cann = output.resolve(), source_root.resolve(strict=True), cann.resolve(strict=True)
     output.mkdir(parents=True, exist_ok=False)
     sources = output / "sources"
@@ -76,7 +85,8 @@ def build(
         if contents.count(original) != 1:
             raise ValueError("grouped L1 workspace contract changed")
         header.write_text(contents.replace(original, f"constexpr uint32_t W2_L1_MAX_K = {l1_max_k};"))
-    kernel_source = (grouped / "w2_grouped_blocked_dequant_matmul_v310.cpp").read_text()
+    kernel_file = "w4a8_grouped.cpp" if int8_compute else "w2_grouped_blocked_dequant_matmul_v310.cpp"
+    kernel_source = (grouped / kernel_file).read_text()
     entry = namespace + "_kernel"
     # OPP normally initializes a hidden system-workspace pointer. A direct
     # binary owns its workspace explicitly and must never depend on that state.
@@ -109,6 +119,8 @@ def build(
             *(["-DGLM_W2_GROUPED_L1_WIDE", "-DGLM_W2_GROUPED_L1_WIDE_PIPELINED"] if wide_l1 else []),
             *(["-DGLM_W2_GROUPED_L1_SCALE_CACHE"] if scale_cache else []),
             *(["-DGLM_W2_GROUPED_RINT_UNPACK"] if rint_unpack else []),
+            *(["-DGLM_W4_BYTE_UNPACK"] if byte_unpack else []),
+            *(["-DMINIMAX_INT8_ORIGINAL_LAYOUT"] if int8_original_layout else []),
             *([f"-DGLM_W2_GROUPED_EXPERT_LANES={expert_lanes}"] if expert_lanes else []),
         ],
         check=True,
@@ -117,7 +129,10 @@ def build(
     with tarfile.open(output / "sources.tar.gz", "w:gz") as archive:
         archive.add(sources, arcname="sources")
     helper = output / "resident_native.py"
-    shutil.copy2(Path(__file__).with_name("resident_native.py"), helper)
+    helper_name = "int8_native.py" if int8_compute else "resident_native.py"
+    shutil.copy2(Path(__file__).with_name(helper_name), helper)
+    if int8_original_layout:
+        helper.write_text(helper.read_text().replace("requires_int8_layout = True", "requires_int8_layout = False"))
     (output / "build-options.json").write_text(
         json.dumps(
             {
@@ -127,6 +142,9 @@ def build(
                 "scale_cache": scale_cache,
                 "rint_unpack": rint_unpack,
                 "expert_lanes": expert_lanes,
+                "int8_compute": int8_compute,
+                "byte_unpack": byte_unpack,
+                "int8_original_layout": int8_original_layout,
             },
             indent=2,
         )
@@ -181,6 +199,9 @@ def main():
         choices=(0, 1, 2, 4, 8),
         help="Cores per expert team for prefill; 0 retains all-core scheduling",
     )
+    parser.add_argument("--int8-compute", action="store_true", help="Experimental packed W4 / INT8 Cube kernel")
+    parser.add_argument("--byte-unpack", action="store_true", help="Signed byte-pair W4 extraction, FP16 compute")
+    parser.add_argument("--int8-original-layout", action="store_true", help="Retain existing resident W4 byte order")
     args = parser.parse_args()
     print(
         build(
@@ -194,6 +215,9 @@ def main():
             scale_cache=args.scale_cache,
             rint_unpack=args.rint_unpack,
             expert_lanes=args.expert_lanes,
+            int8_compute=args.int8_compute,
+            byte_unpack=args.byte_unpack,
+            int8_original_layout=args.int8_original_layout,
         )
     )
 

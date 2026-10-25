@@ -314,6 +314,7 @@ public:
     }
 
 private:
+    friend class W4A8Tile;
 #ifdef GLM_W2_GROUPED_L1_WIDE
     // Keep a complete 128x1024 decoded B tile in L1. A grouped expert has at
     // most 128 rows here, so its FP32 accumulator stays in L0C across K slices.
@@ -774,6 +775,13 @@ private:
         }
 #endif
 
+#ifdef GLM_W4_BYTE_UNPACK
+        if (bitsPerCode_ == 4 && nzPacked_) {
+            Duplicate(masksUB_, static_cast<int16_t>(0x0f0f), 1024);
+            Duplicate(masksUB_[1024], static_cast<int16_t>(0x0808), 1024);
+            Duplicate(masksUB_[2048], static_cast<int16_t>(0xf0f0), 1024);
+        }
+#endif
         // The vector unpack is field-major across the complete packed tile.
         // Gather directly into eight [N=16,K=16] row-major fragments, avoiding
         // an intermediate logical [16,128] tensor and 128 small UB copies.
@@ -945,6 +953,31 @@ private:
         PipeBarrier<PIPE_V>();
     }
 
+#ifdef GLM_W4_BYTE_UNPACK
+    __aicore__ inline void DecodeW4Bytes()
+    {
+        auto words = cU8_.ReinterpretCast<int16_t>();
+        And(fieldI16UB_, words, masksUB_, 1024);
+        And(andTmp_, words, masksUB_[1024], 1024);
+        PipeBarrier<PIPE_V>();
+        // Each byte's sign bit 0x08 becomes 0xf0. No carry crosses bytes.
+        Muls(andTmp_, andTmp_, static_cast<int16_t>(30), 1024);
+        PipeBarrier<PIPE_V>();
+        Or(fieldI16UB_, fieldI16UB_, andTmp_, 1024);
+        // A masked high nibble is already a signed INT8 multiple of sixteen.
+        // This avoids ShiftRight, which dav_m200 does not implement.
+        And(c16_, words, masksUB_[2048], 1024);
+        SetFlag<HardEvent::V_MTE2>(EVENT_ID0);
+        WaitFlag<HardEvent::V_MTE2>(EVENT_ID0);
+        PipeBarrier<PIPE_V>();
+        Cast(signedHalfUB_, fieldI16UB_.ReinterpretCast<int8_t>(), RoundMode::CAST_NONE, 2048);
+        Cast(signedHalfUB_[2048], c16_.ReinterpretCast<int8_t>(), RoundMode::CAST_NONE, 2048);
+        PipeBarrier<PIPE_V>();
+        Muls(signedHalfUB_[2048], signedHalfUB_[2048], static_cast<half>(1.0f / 16.0f), 2048);
+        PipeBarrier<PIPE_V>();
+    }
+#endif
+
     __aicore__ inline void DecodeTile(int64_t codeOffset)
     {
         // The resident-L1 path reuses cU8_ promptly after a bulk DMA.
@@ -971,6 +1004,12 @@ private:
         }
         SetFlag<HardEvent::MTE2_V>(EVENT_ID0);
         WaitFlag<HardEvent::MTE2_V>(EVENT_ID0);
+#ifdef GLM_W4_BYTE_UNPACK
+        if (bitsPerCode_ == 4 && nzPacked_) {
+            DecodeW4Bytes();
+            return;
+        }
+#endif
         Cast(cH_, cU8_, RoundMode::CAST_NONE, (int32_t)packedTileCount_);
         // The paired-scale schedule reaches the next MTE2 copy before its
         // preceding vector read of cU8_ is guaranteed complete. Release the

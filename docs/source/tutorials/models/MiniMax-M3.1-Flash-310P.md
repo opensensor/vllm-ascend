@@ -385,9 +385,9 @@ regressed. It remains unpromoted; the subsequent v9 unpacking kernel now serves 
 weights and KV storage survived the benchmark unchanged. See `v8-summary.json`
 and the full resident receipt in the context/performance evidence directory.
 
-### Current decode kernel: v9
+### Previous decode kernel: v9
 
-The biased-RINT unpacking schedule is now active with the same 160K cache and
+The biased-RINT unpacking schedule was qualified with the same 160K cache and
 512-token prefill profile. Three matched 64-token counting requests improved
 from a median 1.746 to 1.830 tokens/s after first output (4.8%); all three messages
 matched exactly. The 90 real-projection comparisons and 144 byte-reuse checks
@@ -398,13 +398,60 @@ Build with `--wide-l1 --rint-unpack` and a fresh namespace. After a resident
 benchmark, activate with `python -m tools.minimax_m3.activate_equivalent`, passing
 its `--manifest`, `--evidence` and `--output` paths. This requires matching binary
 hashes and evidence for the current worker generation, and preserves request
-caches. The installed post-start script now selects `minimax_w4_v9`.
+caches. That revision selected `minimax_w4_v9`; the current script selects INT8 v13.
 
 The four-core team candidate regressed concentrated routing and was rejected.
 Experimental batched-head attention and direct FP16 scales each caused device
 failures during component checks and required recovery restarts; neither serves
 requests. A separate-process INT8 projection probe measured 1.17–1.19x speedup
 including activation quantization, with about 1.1% normalized RMS output error.
-It uses expanded weights and excludes packed-W4 conversion; INT8 serving is
-still unimplemented. Detailed results and failure evidence are in
+That initial probe used expanded weights and excluded packed-W4 conversion.
+The subsequent packed-weight serving implementation is described below. Detailed results and failure evidence are in
 `artifacts/minimax-m31-unpack-perf-20261025/`.
+
+
+### Current decode kernel: packed W4 with INT8 compute
+
+`minimax_w4_int8_v13` now serves all six workers. Expert codes remain packed
+signed INT4; a reversible resident transpose arranges the bytes for INT8 matrix
+multiplication. Dense layers remain FP16. This is additional approximate
+quantization, not a lossless replacement for the FP16 expert arithmetic.
+
+| Same three 64-token requests | Median decode tokens/s |
+| --- | ---: |
+| FP16 v9 | 1.830 |
+| FP16 v12, exact byte unpack | 1.956 |
+| INT8 v13, packed W4 storage | 2.231 |
+
+Rates exclude time to first output. INT8 improves 14.0% over v12 and 21.9% over
+v9, including activation quantization and weight decoding. All 342 real expert
+projection banks passed a four-route comparison with worst normalized RMS error
+1.278%. The greeting, streaming automatic tool call, and short Python function
+checks passed. Earlier broad/tool/image/retrieval checks remain historical FP16
+evidence; they were not repeated for INT8. The 163840-token capacity remains
+configured, with full-length testing deferred to the user.
+
+The resident conversion rearranged 192.375 GiB across six chips in 9.3–10.7 s
+per worker. Worker PIDs stayed unchanged and no shards were reloaded. Conversion
+invalidates request caches once. Compatible later INT8 module/kernel changes can
+keep these weight banks resident. The installed post-start script establishes
+FP16 v12 on fresh workers, then invokes:
+
+```bash
+python -m tools.minimax_m3.resident_int8 enable \
+  --manifest /vllm-workspace/minimax-native-int8-v13/manifest.json \
+  --baseline minimax_w4_v12 --output /workspace/m31-int8-activation.json
+```
+
+To return to FP16, use the same command with `disable`. **Do not switch directly
+to a FP16 kernel while banks use the INT8 layout.** The disable operation first
+restores their byte order. CPU partial-conversion rollback and a device byte
+round trip passed; full live rollback was not exercised during this promotion.
+The post-start script is intended for fresh workers, not reexecution on already
+converted banks.
+
+Build this variant with `--wide-l1 --rint-unpack --int8-compute`. Build the exact
+FP16 fallback with `--wide-l1 --byte-unpack`. Expanded INT8 storage for every
+expert would exceed aggregate device capacity; selective caching remains future
+work. Evidence, reproducible sources, and measured limitations are in
+`artifacts/minimax-m31-int8-compute-20261025/`.

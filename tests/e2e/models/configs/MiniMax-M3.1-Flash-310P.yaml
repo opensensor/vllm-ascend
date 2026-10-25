@@ -20,12 +20,13 @@ serve:
   served_model_name: minimax-m31-flash
   image_limit: 1
   video_limit: 0
-  expert_layout: nz256
+  expert_layout: nz256_int8_repacked
+  checkpoint_expert_layout: nz256
   max_grouped_routes: 2048
   enable_auto_tool_choice: true
   tool_call_parser: minimax_m3
   reasoning_parser: minimax_m31
-  native_kernel: minimax_w4_v9
+  native_kernel: minimax_w4_int8_v13
   attention_query_tile: 64
 tasks:
   - name: greeting_fact_arithmetic_copy_red_image
@@ -94,10 +95,18 @@ tasks:
         value: 1.0
     sample_count: 234
     evidence: artifacts/minimax-m31-unpack-perf-20261025/m31-v9-fresh-benchmark.json
+  - name: int8_v13_greeting_tool_and_code
+    metrics:
+      - name: passed_fraction
+        value: 1.0
+    sample_count: 3
+    evidence: artifacts/minimax-m31-int8-compute-20261025/m31-int8-short-checks/report.json
 num_fewshot: 0
 validation_runner: tools/minimax_m3/coherence_probe.py
 long_context_quality: 48k_bounded_retrieval_only_160k_full_test_deferred_to_user
 notes: >-
+  All cases before int8_v13 are historical FP16 diagnostics, not INT8
+  quality qualification. Current INT8 median short decode is 2.231 tokens/s.
   Real-weight greedy HTTP/SSE diagnostics; the sparse retrieval prompt has
   3443 tokens and exceeds the 16-block attention budget. These small checks
   do not establish broad model accuracy or native-release quantization parity.

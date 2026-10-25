@@ -15,7 +15,7 @@ from tools.glm_perf.resident_native import NativeManifest
 from tools.minimax_m3.resident import candidate_source
 
 
-def benchmark_replacements(native_resources, baseline, candidate, iterations, attention=False):
+def benchmark_replacements(native_resources, baseline, candidate, iterations, attention=False, decode_only=False):
     # Worker-isolated imports: this function's source is sent to each rank.
     import hashlib
     import statistics
@@ -55,7 +55,10 @@ def benchmark_replacements(native_resources, baseline, candidate, iterations, at
                     for projection in ("w1", "w3", "w2"):
                         codes = getattr(bank, projection + "_codes")
                         scales = getattr(bank, projection + "_scales").float()
-                        for rows, concentrated in ((4, False), (4, True), (512, False), (2048, False), (2048, True)):
+                        cases = ((4, False), (4, True))
+                        if not decode_only:
+                            cases += ((512, False), (2048, False), (2048, True))
+                        for rows, concentrated in cases:
                             boundaries = (
                                 [rows] * experts
                                 if concentrated
@@ -123,7 +126,7 @@ def benchmark_replacements(native_resources, baseline, candidate, iterations, at
     }
 
 
-def run_benchmark(client, manifest, baseline, iterations, attention=False):
+def run_benchmark(client, manifest, baseline, iterations, attention=False, decode_only=False):
     if iterations < 1:
         raise ValueError("iterations must be positive")
     before = client.rpc("resident_status")
@@ -137,7 +140,7 @@ def run_benchmark(client, manifest, baseline, iterations, attention=False):
         inspect.getsource(benchmark_replacements)
         + "\ndef replacements(native_resources):\n"
         + f"    return benchmark_replacements(native_resources, {baseline!r}, {manifest.name!r}, "
-        + f"{iterations!r}, {attention!r})\n"
+        + f"{iterations!r}, {attention!r}, {decode_only!r})\n"
     )
     control = Control(uuid.uuid4().hex, "direct-target", "projection_benchmark", hook)
     applied = False
@@ -174,6 +177,7 @@ def run_benchmark(client, manifest, baseline, iterations, attention=False):
         "scope": "Private attention caches"
         if attention
         else "Resident full expert banks; projection microbenchmark, not serving throughput",
+        "decode_only": decode_only,
         "baseline": baseline,
         "candidate": manifest.name,
         "before": before,
@@ -191,6 +195,7 @@ def main():
     parser.add_argument("--url", default="http://127.0.0.1:8000")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--attention", action="store_true", help="Compare attention on bounded private scratch caches")
+    parser.add_argument("--decode-only", action="store_true", help="Time only four-route expert cases")
     args = parser.parse_args()
     client = ResidentClient(args.url, 6)
     with Path("/tmp/minimax-m31-resident.lock").open("w") as lock:
@@ -201,6 +206,7 @@ def main():
             args.baseline,
             args.iterations,
             args.attention,
+            args.decode_only,
         )
     args.output.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps({"passed": report["passed"], "workers": len(report["workers"])}))
