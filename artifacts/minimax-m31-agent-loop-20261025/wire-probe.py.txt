@@ -1,0 +1,28 @@
+import json, subprocess, tempfile, threading, time
+from pathlib import Path
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+records=[]
+class Handler(BaseHTTPRequestHandler):
+ def log_message(self,*args):pass
+ def do_POST(self):
+  p=json.loads(self.rfile.read(int(self.headers['Content-Length'])));records.append(p)
+  has_result=any(m['role']=='tool' for m in p['messages'])
+  delta={'role':'assistant','content':'Wire check complete.'} if has_result else {'role':'assistant','reasoning':'WIRE_REASONING_SENTINEL','tool_calls':[{'index':0,'id':'call_wire','type':'function','function':{'name':'bash','arguments':json.dumps({'command':'printf wire_result','description':'Read a diagnostic marker'})}}]}
+  self.send_response(200);self.send_header('Content-Type','text/event-stream');self.end_headers()
+  chunks=[{'id':'wire','object':'chat.completion.chunk','created':int(time.time()),'model':p['model'],'choices':[{'index':0,'delta':delta,'finish_reason':None}]},{'id':'wire','object':'chat.completion.chunk','created':int(time.time()),'model':p['model'],'choices':[{'index':0,'delta':{},'finish_reason':'stop' if has_result else 'tool_calls'}],'usage':{'prompt_tokens':100,'completion_tokens':10,'total_tokens':110}}]
+  for c in chunks:self.wfile.write(('data: '+json.dumps(c)+'\n\n').encode())
+  self.wfile.write(b'data: [DONE]\n\n')
+server=ThreadingHTTPServer(('127.0.0.1',0),Handler);threading.Thread(target=server.serve_forever,daemon=True).start()
+with tempfile.TemporaryDirectory(prefix='m31-wire-') as d:
+ root=Path(d)
+ config={'$schema':'https://app.kilo.ai/config.json','provider':{'minimax-ascend':{'options':{'baseURL':f'http://127.0.0.1:{server.server_port}/v1','apiKey':'local'}}},'permission':{'*':'deny','bash':'allow'}}
+ (root/'kilo.json').write_text(json.dumps(config))
+ r=subprocess.run(['kilo','run','--pure','--dir',str(root),'--agent','minimax-code','--model','minimax-ascend/minimax-m31-flash','--format','json','Run printf wire_result with bash, then stop.'],capture_output=True,text=True,timeout=60)
+ Path('/tmp/m31-kilo-wire-cli.txt').write_text(r.stdout+'\n'+r.stderr)
+ Path('/tmp/m31-kilo-wire-requests.json').write_text(json.dumps(records,indent=2))
+ print('exit',r.returncode,'requests',len(records))
+ for p in records:
+  print('sampling',{k:p.get(k) for k in ('temperature','top_p','max_tokens')})
+  for m in p['messages']:
+   if m['role'] in ('assistant','tool'):print(m)
+server.shutdown()

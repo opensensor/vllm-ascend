@@ -1,0 +1,28 @@
+import fcntl,json
+from pathlib import Path
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.minimax_m3.tool_probe import chat_request,tool
+out=Path('/workspace/m31-loop-ab');c=ResidentClient('http://127.0.0.1:8000',6)
+with Path('/tmp/minimax-m31-resident.lock').open('w') as lock:
+ fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+ assert (out/'retained-restore.json').exists()
+ assert not c.request('/is_paused',method='GET')['is_paused']
+ c.request('/resident/maintenance')
+ try:
+  lookup=tool('lookup_code',{'city':{'type':'string'}})
+  p={'model':'minimax-m31-flash','temperature':1.0,'top_p':0.95,'seed':71,'max_tokens':128,'stream':True,'stream_options':{'include_usage':True},'tools':[lookup],'tool_choice':'auto','messages':[
+   {'role':'system','content':'Use the provided tool results. When the lookup returns the requested code, report it briefly and finish.'},
+   {'role':'user','content':'Look up the code for Paris.'},
+   {'role':'assistant','content':None,'reasoning_content':'I need to look up the city code.','tool_calls':[{'id':'call_lookup','type':'function','function':{'name':'lookup_code','arguments':'{"city":"Paris"}'}}]},
+   {'role':'tool','tool_call_id':'call_lookup','content':'{"city":"Paris","code":"FR-PAR"}'}]}
+  r=chat_request('http://127.0.0.1:8000',p,timeout=300)
+  r['passed']=r.get('status')==200 and r.get('finish_reason')=='stop' and 'FR-PAR' in r.get('message',{}).get('content','') and not r.get('message',{}).get('tool_calls')
+  (out/'final-tool-completion.json').write_text(json.dumps(r,indent=2)+'\n');print('tool completion',r['passed'],r.get('message'),flush=True)
+  p={'model':'minimax-m31-flash','messages':[{'role':'user','content':'Write the integers from 1 to 100 in ascending order, separated by commas. No explanation.'}],'temperature':0,'max_tokens':64,'stream':True,'stream_options':{'include_usage':True}}
+  r=chat_request('http://127.0.0.1:8000',p,timeout=300)
+  r['tokens_per_second_after_first']=(r['usage']['completion_tokens']-1)/(r['elapsed_seconds']-r['first_output_seconds'])
+  (out/'final-decode.json').write_text(json.dumps(r,indent=2)+'\n');print('decode',r['tokens_per_second_after_first'],flush=True)
+  status=c.rpc('resident_capture');(out/'final-status.json').write_text(json.dumps(status,indent=2)+'\n')
+  print('workers',[(x['rank'],x['pid'],x.get('piecewise_graph')) for x in status],flush=True)
+ finally:
+  if not c.request('/is_paused',method='GET')['is_paused']:c.request('/resident/maintenance',method='DELETE')

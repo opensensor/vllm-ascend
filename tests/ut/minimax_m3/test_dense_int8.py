@@ -7,7 +7,7 @@ import pytest
 import torch
 
 from tools.glm_perf.resident_control import Control
-from tools.minimax_m3 import resident_dense_int8
+from tools.minimax_m3 import dense_int8, resident_dense_int8
 from tools.minimax_m3.dense_int8 import DenseInt8Method, convert, quantize_weight, restore, selected_projection
 
 
@@ -63,6 +63,61 @@ def test_conversion_failure_restores_completed_and_current_layers(monkeypatch):
     assert not state
     assert all(torch.equal(layer.weight, original) for (_, layer), original in zip(modules, originals))
     assert all(isinstance(layer.quant_method, ReferenceMethod) for _, layer in modules)
+
+
+def test_restore_allocation_failure_keeps_remaining_recovery_records(monkeypatch):
+    model, modules = model_fixture()
+    originals = [layer.weight.clone() for _, layer in modules]
+    state = {}
+    convert(model, state)
+    device_weight = dense_int8.device_weight
+    calls = 0
+
+    def fail_second(*args):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("injected allocation failure")
+        return device_weight(*args)
+
+    monkeypatch.setattr(dense_int8, "device_weight", fail_second)
+    with pytest.raises(RuntimeError, match="allocation failure"):
+        restore(state)
+    assert list(state) == [modules[1][0]]
+    assert torch.equal(modules[0][1].weight, originals[0])
+    assert modules[1][1].weight.dtype == torch.int8
+    restore(state)
+    assert not state
+    assert all(torch.equal(layer.weight, original) for (_, layer), original in zip(modules, originals))
+
+
+def test_conversion_releases_metadata_before_restoration(monkeypatch):
+    events = []
+    codes = torch.ones(4, dtype=torch.int8)
+    kernel = types.SimpleNamespace(requires_int8_layout=True, banks={1: (codes,)}, scales={2: torch.ones(1)})
+    unrelated = types.SimpleNamespace(banks={1: "keep"})
+    monkeypatch.setattr(
+        torch,
+        "npu",
+        types.SimpleNamespace(
+            synchronize=lambda: events.append("synchronize"), empty_cache=lambda: events.append("empty_cache")
+        ),
+        raising=False,
+    )
+
+    def restore_with_headroom(state):
+        assert not kernel.banks and not kernel.scales
+        assert events == ["idle", "synchronize", "empty_cache"]
+        events.append("restore")
+
+    monkeypatch.setattr(dense_int8, "restore", restore_with_headroom)
+    replacements = resident_dense_int8.conversion_replacements(False, {"int8": kernel, "other": unrelated})
+    worker = types.SimpleNamespace(_m3_idle=lambda: events.append("idle"), resident_status=lambda: {"rank": 0})
+    result = next(iter(replacements.values()))(worker)
+    assert result["dense_conversion"]["passed"]
+    assert events[-1] == "restore"
+    assert torch.equal(codes, torch.ones(4, dtype=torch.int8))
+    assert unrelated.banks == {1: "keep"}
 
 
 @pytest.mark.parametrize("suffix", ["self_attn.qkv_proj", "block_sparse_moe.gate", "self_attn.index_q_proj"])

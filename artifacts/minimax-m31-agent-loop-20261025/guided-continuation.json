@@ -1,0 +1,37 @@
+{
+  "status": 200,
+  "finish_reason": "tool_calls",
+  "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "Let me check the repository's specific local additions \u2014 this looks like a fork (opensensor/vllm-ascend) with 310P work. Let me check remote and the local-only features.",
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-9d90e95dcfe48446",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\":\"git remote -v; echo \\\"=== branches ===\\\"; git branch -a | head -20; echo \\\"=== status ===\\\"; git status --short | head -20\",\"description\":\"Show remotes, branches, status\"}"
+        }
+      },
+      {
+        "id": "chatcmpl-tool-9c1420183addbc25",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\":\"git ls-files | grep -c \\\"310p\\\\|310P\\\" ; echo \\\"--- top dirs ---\\\"; git ls-files | cut -d/ -f1 | sort | uniq -c | sort -rn | head -20\",\"description\":\"Count 310P-related files and top dirs\"}"
+        }
+      }
+    ]
+  },
+  "usage": {
+    "prompt_tokens": 9645,
+    "total_tokens": 9846,
+    "completion_tokens": 201,
+    "completion_tokens_details": {
+      "reasoning_tokens": 41
+    }
+  },
+  "elapsed_seconds": 131.2944507009961,
+  "scope": "Recommended sampling and new instructions, plus cached README returned to proposed call; not an exact full-session replay. No generated shell command executed."
+}

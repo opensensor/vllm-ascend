@@ -66,6 +66,11 @@ def restore(state):
         layer.weight.data = device_weight(record["weight"], layer.weight.device, record["format"])
         layer.quant_method = record["method"]
         del state[name]
+        if layer.weight.device.type != "cpu":
+            # Restoration increases resident storage. Retire format-cast scratch
+            # and the old INT8 tensor before allocating the next projection.
+            torch.npu.synchronize()
+            torch.npu.empty_cache()
 
 
 @torch.inference_mode()

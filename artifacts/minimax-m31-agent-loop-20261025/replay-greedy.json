@@ -1,0 +1,37 @@
+{
+  "status": 200,
+  "finish_reason": "tool_calls",
+  "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "I have a good picture. Let me summarize the project.\n\nLet me check a couple more things: the fork nature (opensensor/vllm-ascend is a fork of vllm-project/vllm-ascend), and the 310P focus.\n\nLet me verify the upstream relationship.",
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-904e6ecd3c8a2af8",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\":\"git log --oneline --format='%s' --all --grep=\\\"upstream\\\" -i | head -10\",\"description\":\"Show upstream sync commits\"}"
+        }
+      },
+      {
+        "id": "chatcmpl-tool-905d350f2086332d",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\":\"ls vllm_ascend/compilation vllm_ascend/sample vllm_ascend/spec_decode vllm_ascend/lora 2>/dev/null\",\"description\":\"List remaining modules\"}"
+        }
+      }
+    ]
+  },
+  "usage": {
+    "prompt_tokens": 5549,
+    "total_tokens": 5742,
+    "completion_tokens": 193,
+    "completion_tokens_details": {
+      "reasoning_tokens": 61
+    }
+  },
+  "elapsed_seconds": 96.79879531699407,
+  "scope": "Frozen tail of three completed tool turns, old agent instructions; diagnostic only, proposed calls were not executed."
+}

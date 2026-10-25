@@ -1,0 +1,29 @@
+{
+  "status": 200,
+  "finish_reason": "tool_calls",
+  "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "I have enough info. Let me summarize the project.\n\nLet me quickly check the README top for the description and the overall stats.",
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-975c394949f5f6aa",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\":\"head -60 README.md; echo \\\"=== STATS ===\\\"; git log --oneline | wc -l; git ls-files | wc -l; python3 -c \\\"print()\\\" 2>/dev/null; wc -l vllm_ascend/worker/model_runner_v1.py vllm_ascend/worker/model_runner_v2.py vllm_ascend/worker/worker_v1.py 2>/dev/null\",\"description\":\"Show README head and repo stats\"}"
+        }
+      }
+    ]
+  },
+  "usage": {
+    "prompt_tokens": 5549,
+    "total_tokens": 5707,
+    "completion_tokens": 158,
+    "completion_tokens_details": {
+      "reasoning_tokens": 26
+    }
+  },
+  "elapsed_seconds": 45.828265085001476,
+  "scope": "Frozen tail of three completed tool turns, old agent instructions; diagnostic only, proposed calls were not executed."
+}

@@ -13,13 +13,28 @@ from tools.glm_perf.resident_control import Control
 from tools.glm_perf.resident_harness import ResidentClient
 
 
-def conversion_replacements(enable):
+def release_conversion_metadata(native_resources):
+    """Release rebuildable W4A8 metadata after draining and dropping graphs."""
+    # Worker-only import; the controller must not initialize an NPU context.
+    import torch
+
+    torch.npu.synchronize()
+    for kernel in native_resources.values():
+        if getattr(kernel, "requires_int8_layout", False):
+            kernel.banks.clear()
+            kernel.scales.clear()
+    torch.npu.empty_cache()
+
+
+def conversion_replacements(enable, native_resources):
     from tools.minimax_m3.dense_int8 import convert, restore
+    from tools.minimax_m3.resident_dense_int8 import release_conversion_metadata
 
     def capture(self):
         self._m3_idle()
         state = self.__dict__.setdefault("_m3_dense_int8", {})
         try:
+            release_conversion_metadata(native_resources)
             reports = convert(self.model_runner.model, state) if enable else restore(state)
             result = {"passed": True, "enabled": enable, "projections": reports or []}
         except Exception as exc:
@@ -31,7 +46,7 @@ def conversion_replacements(enable):
 
 def mutate(client, enable):
     source = inspect.getsource(conversion_replacements) + (
-        f"\ndef replacements(native_resources):\n    return conversion_replacements({enable!r})\n"
+        f"\ndef replacements(native_resources):\n    return conversion_replacements({enable!r}, native_resources)\n"
     )
     control = Control(uuid.uuid4().hex, "direct-target", "dense_int8_conversion", source)
     client.rpc("resident_prepare", json.dumps(dataclasses.asdict(control)))

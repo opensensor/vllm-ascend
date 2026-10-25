@@ -1,0 +1,36 @@
+{
+  "status": 200,
+  "finish_reason": "tool_calls",
+  "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "I have a good picture. Let me summarize the project.\n\nLet me check the fork relationship \u2014 this is a fork of vllm-project/vllm-ascend, focused on Ascend NPU (310P) support.\n\nLet me quickly check the README for the fork's positioning.",
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-90b62987303d6fdc",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\":\"git remote -v; echo \\\"---\\\"; git log --oneline -3\",\"description\":\"Show remotes and recent commits\"}"
+        }
+      },
+      {
+        "id": "chatcmpl-tool-b6697fd86b280452",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\":\"grep -n \\\"310P\\\\|310p\\\" README.md | head -20\",\"description\":\"Check README for 310P mentions\"}"
+        }
+      }
+    ]
+  },
+  "usage": {
+    "prompt_tokens": 5549,
+    "total_tokens": 5715,
+    "completion_tokens": 166,
+    "completion_tokens_details": {
+      "reasoning_tokens": 59
+    }
+  },
+  "elapsed_seconds": 48.69101347896503
+}

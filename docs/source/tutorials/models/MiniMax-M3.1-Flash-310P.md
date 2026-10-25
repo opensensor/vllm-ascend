@@ -671,6 +671,32 @@ post-start script now enables the retained dense path. Its source match and
 shell syntax were checked; a cold restart was not repeated. Evidence and the
 startup script are in `artifacts/minimax-m31-dense-int8-20261025/`.
 
+### Reasoning-loop investigation and dense restoration headroom
+
+The subsequent October 25 investigation reproduced repeated repository discovery
+from a captured Kilo conversation. The behavior also occurred without graphs and
+with dense FP16 projections. Neither optimization is required for that bounded
+continuation, but custom W4 expert conversion and expert INT8 compute remain
+unresolved suspects. Kilo's actual outgoing requests preserved reasoning history
+and tool results. Temperature 1.0/top-p 0.95 and clearer completion guidance are
+now configured locally; they are not a demonstrated fix for the original loop.
+
+Dense restoration now releases rebuildable expert quantization metadata and
+retires temporary allocations between projections. The initial restoration ran
+out of memory on one rank and correctly left serving paused. After recovery,
+normal tile-64 sparse-attention scratch still exhausted memory during the FP16
+replay, stalling the distributed request and requiring a restart. Weight storage
+fitting does not establish sufficient inference headroom.
+
+A matched eager A/B using attention query tiles of eight completed in both dense
+INT8 and FP16 modes. The controller then re-enabled all 348 dense projections
+and restored normal tile-64 partial graphs without another shard reload. The
+retained startup path is now cold-start tested, all 240 graph pieces are active,
+and a fresh tool-result continuation finished correctly. A single recovery
+decode measurement was 3.927 tokens/s; context remains 163840, without a full
+160K test. See `artifacts/minimax-m31-agent-loop-20261025/` for the bounded
+results, memory failure, recovery and remaining attribution limits.
+
 ### Offline candidate: paired expert gate/up
 
 `--paired-gate-up` is an **opt-in, unqualified candidate**, not the current

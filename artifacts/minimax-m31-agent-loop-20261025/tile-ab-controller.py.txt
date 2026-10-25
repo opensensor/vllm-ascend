@@ -1,0 +1,41 @@
+import fcntl,json,uuid
+from pathlib import Path
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.minimax_m3.resident import candidate_source
+from tools.minimax_m3.resident_dense_int8 import transition
+from tools.minimax_m3.tool_probe import chat_request
+out=Path('/workspace/m31-loop-ab');c=ResidentClient('http://127.0.0.1:8000',6)
+root=Path('/vllm-workspace/vllm-ascend')
+ops=(root/'vllm_ascend/_310p/ops/minimax_m3.py').read_text()
+assert ops.count('ATTENTION_QUERY_TILE = 64')==1
+source=candidate_source(ops.replace('ATTENTION_QUERY_TILE = 64','ATTENTION_QUERY_TILE = 8'),'minimax_w4_int8_v15','minimax_activation_v2')
+graph=Path('/workspace/m31-startup-serving-source.py').read_text()
+p=json.loads(Path('/workspace/m31-loop-replay-payload.json').read_text());p.update(temperature=0,max_tokens=256)
+def run(name):
+ r=chat_request('http://127.0.0.1:8000',p,timeout=600)
+ (out/(name+'.json')).write_text(json.dumps(r,indent=2)+'\n')
+ print(name,json.dumps({k:r.get(k) for k in ('status','finish_reason','message','usage','elapsed_seconds')}),flush=True)
+ if r.get('status')!=200 or not r.get('finish_reason'):raise RuntimeError('incomplete comparison')
+with Path('/tmp/minimax-m31-resident.lock').open('w') as lock:
+ fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+ assert not c.request('/is_paused',method='GET')['is_paused']
+ before=c.rpc('resident_status');expected=Control(before[0]['generation'],'direct-target',before[0]['candidate'],graph)
+ assert all(r['digest']==expected.digest and not r['native_failed'] for r in before)
+ c.request('/resident/maintenance')
+ try:
+  receipt=c.switch(Control(uuid.uuid4().hex,'direct-target','m3_candidate',source));c.resume()
+  (out/'tile8-source.py').write_text(source)
+  (out/'tile8-initial.json').write_text(json.dumps(receipt,indent=2))
+  run('tile8_dense_int8')
+  receipt=transition(c,source,False)
+  (out/'tile8-dense-fp16-transition.json').write_text(json.dumps(receipt,indent=2))
+  print('all ranks dense FP16',flush=True)
+  run('tile8_dense_fp16')
+  receipt=transition(c,source,True)
+  (out/'tile8-dense-int8-transition.json').write_text(json.dumps(receipt,indent=2))
+  receipt=c.switch(Control(uuid.uuid4().hex,'direct-target','m3_candidate',graph));c.resume()
+  (out/'retained-restore.json').write_text(json.dumps(receipt,indent=2))
+  print('restored qualified dense INT8 and graphs',flush=True)
+ finally:
+  if not c.request('/is_paused',method='GET')['is_paused']:c.request('/resident/maintenance',method='DELETE')
