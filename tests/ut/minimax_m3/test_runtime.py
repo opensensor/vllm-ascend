@@ -19,6 +19,7 @@ from vllm_ascend._310p.ops.minimax_m3 import (
     PackedM3Experts,
     clipped_swiglu,
     paged_sparse_attention,
+    reference_grouped_mm,
     route_experts,
     unpack_w4,
     validate_runtime,
@@ -427,3 +428,28 @@ def test_runtime_rejects_unsupported_modes(section, key, value):
     setattr(getattr(config, section), key, value)
     with pytest.raises(ValueError):
         validate_runtime(config)
+
+
+@pytest.mark.parametrize("int8_layouts", [(), ("w1",), ("w1", "w2", "w3")])
+def test_int8_scale_metadata_reuses_original_buffers_without_changing_other_kernels(int8_layouts):
+    bank = make_bank()
+    bank._m3_int8_layouts = set(int8_layouts)
+    seen = []
+
+    def project(x, codes, scales, ends):
+        seen.append((codes.data_ptr(), scales.data_ptr(), scales.dtype))
+        return reference_grouped_mm(x, codes, scales, ends)
+
+    bank.projector = project
+    x = torch.randn(1, 32, generator=torch.Generator().manual_seed(61)).half()
+    logits = torch.tensor([[1.0, -2.0, 3.0, 4.0]])
+    bias = torch.zeros(4)
+    actual = bank(x, logits, bias)
+    torch.testing.assert_close(actual, expert_oracle(bank, x, logits, bias), atol=0.003, rtol=0.003)
+    assert len(seen) == 3
+    by_codes = {pointer: (scale_pointer, dtype) for pointer, scale_pointer, dtype in seen}
+    for name in ("w1", "w2", "w3"):
+        pointer, dtype = by_codes[getattr(bank, name + "_codes").data_ptr()]
+        assert dtype == (torch.float16 if name in int8_layouts else torch.float32)
+        if name in int8_layouts:
+            assert pointer == getattr(bank, name + "_scales").data_ptr()

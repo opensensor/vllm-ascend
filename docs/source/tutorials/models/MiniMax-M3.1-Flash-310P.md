@@ -409,7 +409,6 @@ That initial probe used expanded weights and excluded packed-W4 conversion.
 The subsequent packed-weight serving implementation is described below. Detailed results and failure evidence are in
 `artifacts/minimax-m31-unpack-perf-20261025/`.
 
-
 ### Current decode kernel: packed W4 with INT8 compute
 
 `minimax_w4_int8_v13` now serves all six workers. Expert codes remain packed
@@ -456,7 +455,6 @@ expert would exceed aggregate device capacity; selective caching remains future
 work. Evidence, reproducible sources, and measured limitations are in
 `artifacts/minimax-m31-int8-compute-20261025/`.
 
-
 ### Direct sparse-cache gathering
 
 The current attention implementation gathers selected `(page, token, head)`
@@ -480,3 +478,44 @@ While this resident module generation is active, first select native-only
 This removes the module patch without changing weight layout; then `disable`
 can restore the FP16 byte layout. Never directly select FP16 on INT8-layout
 banks. Evidence is in `artifacts/minimax-m31-direct-gather-20261025/`.
+
+### Device-resident activation and scale reuse
+
+The INT8 path now passes the original scale buffers to the native kernel,
+which already caches immutable bank metadata. Removing the full-bank FP32
+casts improved the matched short-decode median from 3.340 to 3.389 tokens/s.
+FP16 kernels retain their FP32 scale contract.
+
+`minimax_activation_v2` fuses FP16 input conversion, clipping, sigmoid and
+FP32 products into one direct CANN kernel. It consumes the existing projection
+buffers and uploads its immutable launch descriptor once per geometry. Other
+parameters, non-dense storage, unsupported sizes and autograd use the reference
+path. The returned activation remains FP32, preserving the caller's narrowing.
+
+Bounded native checks matched FP32 outputs exactly on all six workers, including
+a sweep of every finite FP16 gate value. An isolated four-route activation
+measured 27 versus 125 microseconds. Three real serving requests measured
+3.431, 3.429 and 3.406 tokens/s, with all response messages matching the earlier
+baseline. These are short decode measurements, not broad quality qualification.
+The 163840-token capacity is unchanged; no full-context prompt was tested.
+
+Build and load a uniquely named activation library without reloading weights:
+
+```bash
+python -m tools.minimax_m3.build_activation_native \
+  /vllm-workspace/minimax-activation-v2 \
+  --compiler /vllm-workspace/minimax-native-int8-v13/compile-kernel \
+  --namespace minimax_activation_v2
+python -m tools.minimax_m3.resident load-native \
+  --manifest /vllm-workspace/minimax-activation-v2/manifest.json
+python -m tools.minimax_m3.resident switch \
+  --native-name minimax_w4_int8_v13 --activation-name minimax_activation_v2
+```
+
+The build directory must not already exist. For a hot Python module generation,
+also pass `--module-file`; the controller composes all replacements. The
+installed post-start script loads the activation after INT8 layout conversion.
+To disable only the activation, switch to native-only `minimax_w4_int8_v13`.
+Evidence and the post-start script are in
+`artifacts/minimax-m31-fused-activation-20261025/`; scale-reuse evidence is in
+`artifacts/minimax-m31-scale-reuse-20261025/`.

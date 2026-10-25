@@ -179,7 +179,13 @@ class PackedM3Experts(nn.Module):
         chunk_tokens = self.max_grouped_routes // self.top_k
         if chunk_tokens == 0:
             raise ValueError("M3 top-k exceeds grouped operator route capacity")
-        scales = {name: getattr(self, f"{name}_scales").float() for name in ("w1", "w2", "w3")}
+        # INT8 kernels own immutable, precomputed scale metadata. Passing the
+        # original FP16 scales avoids recasting every full expert bank per token.
+        int8_layouts = getattr(self, "_m3_int8_layouts", ())
+        scales = {
+            name: getattr(self, f"{name}_scales") if name in int8_layouts else getattr(self, f"{name}_scales").float()
+            for name in ("w1", "w2", "w3")
+        }
         outputs = []
         for start in range(0, hidden_states.shape[0], chunk_tokens):
             x = hidden_states[start : start + chunk_tokens]

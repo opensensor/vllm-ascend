@@ -1,0 +1,32 @@
+import json,time
+from pathlib import Path
+import torch,torch_npu
+from vllm_ascend._310p.ops.minimax_m3 import clipped_swiglu
+
+torch.npu.set_device(0)
+torch.npu.set_compile_mode(jit_compile=False)
+torch.ops.load_library('/vllm-workspace/minimax-native-int8-v13/bridge.so')
+k=torch.classes.minimax_w4_int8_v13.Kernel('/workspace/m31_activation_v1.bin','m31_activation_v1')
+launch=torch.ops.minimax_w4_int8_v13.launch
+reports=[]
+with torch.inference_mode():
+ for rows,width in [(1,3072),(4,3072),(1,12288),(64,3072),(1,65536)]:
+  torch.manual_seed(43)
+  gate=(torch.randn(rows,width)*15).half()
+  if width==65536: gate=torch.arange(65536,dtype=torch.int32).to(torch.int16).view(torch.float16).reshape(1,-1).nan_to_num()
+  gate=gate.npu();up=(torch.randn(rows,width)*15).half().npu()
+  config=torch.tensor([gate.numel()],dtype=torch.int64,device='npu:0');out=torch.empty_like(gate,dtype=torch.float32)
+  def native():
+   launch(k,[gate,up,out,config],8)
+   return out
+  expected=clipped_swiglu(gate,up);native();torch.npu.synchronize()
+  e=expected.cpu();a=out.cpu();finite=bool(a.isfinite().all())
+  report=dict(rows=rows,width=width,finite=finite,max_abs=float((a-e).abs().max()),half_exact=torch.equal(a.half(),e.half()),half_mismatch=int((a.half()!=e.half()).sum()))
+  if width==3072 and rows==4:
+   for f in [native,lambda:clipped_swiglu(gate,up)]:
+    for _ in range(5):f()
+    torch.npu.synchronize();start=time.perf_counter()
+    for _ in range(100):f()
+    torch.npu.synchronize();report['native_ms' if f==native else 'reference_ms']=(time.perf_counter()-start)*10
+  reports.append(report);print(report,flush=True)
+Path('/workspace/m31-activation-probe.json').write_text(json.dumps(reports,indent=2)+'\n')

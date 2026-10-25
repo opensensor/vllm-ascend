@@ -12,9 +12,9 @@ from tools.glm_perf.resident_harness import ResidentClient
 from tools.glm_perf.resident_native import NativeManifest
 
 
-def candidate_source(module_source=None, native_name=None):
+def candidate_source(module_source=None, native_name=None, activation_name=None):
     """Compose a complete generation; switching restores the prior generation."""
-    if module_source is None and native_name is None:
+    if module_source is None and native_name is None and activation_name is None:
         return ""
     source = "import types\n\ndef replacements(native_resources):\n    changes = {}\n"
     if module_source is not None:
@@ -35,6 +35,16 @@ def candidate_source(module_source=None, native_name=None):
         )
         if module_source is not None:
             source += "    module.grouped_w4_mm = project\n"
+    if activation_name is not None:
+        source += (
+            f"    activation_kernel = native_resources[{activation_name!r}]\n"
+            "    def activation(gate, up, alpha=1.702, beta=1.0, limit=7.0):\n"
+            "        return activation_kernel(gate, up, alpha, beta, limit)\n"
+            "    changes['vllm_ascend._310p.ops.minimax_m3:clipped_swiglu'] = activation\n"
+            "    changes['vllm_ascend.models.minimax_m3.minimax_m3:clipped_swiglu'] = activation\n"
+        )
+        if module_source is not None:
+            source += "    module.clipped_swiglu = activation\n"
     return source + "    return changes\n"
 
 
@@ -45,6 +55,7 @@ def main():
     parser.add_argument("--workers", type=int, default=6)
     parser.add_argument("--module-file", type=Path)
     parser.add_argument("--native-name")
+    parser.add_argument("--activation-name")
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -60,7 +71,9 @@ def main():
             try:
                 if args.action == "switch":
                     source = candidate_source(
-                        args.module_file.read_text() if args.module_file else None, args.native_name
+                        args.module_file.read_text() if args.module_file else None,
+                        args.native_name,
+                        args.activation_name,
                     )
                     result = client.switch(
                         Control(uuid.uuid4().hex, "direct-target", "m3_candidate" if source else "baseline", source)

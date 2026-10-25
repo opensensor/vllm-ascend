@@ -1,0 +1,47 @@
+import torch
+
+
+def add_replacements(changes):
+    from vllm_ascend._310p.ops.minimax_m3 import paged_sparse_attention
+    from vllm_ascend._310p.worker_310p import NPUWorker310
+    original=changes.get('vllm_ascend._310p.ops.minimax_m3:paged_sparse_attention',paged_sparse_attention)
+    apply=NPUWorker310.resident_apply
+    state={'owners':{},'bucket':None,'pool':None,'stream':None,'captures':0,'replays':0,'eager':0,'checks':[]}
+    def release():
+        torch.npu.synchronize()
+        for owner in state['owners'].values():
+            if owner.get('graph') is not None:owner['graph'].reset()
+        state['owners'].clear();state['pool']=None;state['stream']=None;state['bucket']=None
+    def attention(*args,**kwargs):
+        if args[0].shape[0]!=1 or kwargs['query_starts']!=(0,1) or torch.is_grad_enabled():
+            state['eager']+=1;return original(*args,**kwargs)
+        bucket=(kwargs['max_seq_len']+args[5].shape[1]-1)//args[5].shape[1]
+        if state['bucket']!=bucket:
+            release();state['bucket']=bucket;state['pool']=torch.npu.graph_pool_handle();state['stream']=torch.npu.Stream(device=args[0].device)
+        key=tuple(t.data_ptr() for t in args[5:])
+        owner=state['owners'].get(key)
+        if owner is None:
+            owner={'args':[t.clone() for t in args[:5]]+list(args[5:]),'kw':{k:v.clone() if isinstance(v,torch.Tensor) else v for k,v in kwargs.items()},'graph':None}
+            state['owners'][key]=owner
+            stream=state['stream'];stream.wait_stream(torch.npu.current_stream())
+            with torch.npu.stream(stream):
+                original(*owner['args'],**owner['kw']);stream.synchronize()
+                owner['graph']=torch.npu.NPUGraph()
+                with torch.npu.graph(owner['graph'],pool=state['pool'],stream=stream):owner['output']=original(*owner['args'],**owner['kw'])
+            torch.npu.current_stream().wait_stream(stream);state['captures']+=1
+        for target,value in zip(owner['args'][:5],args[:5]):target.copy_(value)
+        for name,value in kwargs.items():
+            if isinstance(value,torch.Tensor):owner['kw'][name].copy_(value)
+        expected=original(*args,**kwargs)
+        owner['graph'].replay();state['replays']+=1
+        state['checks'].append(float((owner['output'].float()-expected.float()).abs().max().cpu()))
+        return expected
+    def resident_apply(self,generation):
+        self._m3_idle();release();return apply(self,generation)
+    def capture(self):
+        return {**self.resident_status(),'attention_graph':{k:v for k,v in state.items() if k not in ('owners','pool','stream')},'graphs':len(state['owners'])}
+    for target in ('vllm_ascend._310p.ops.minimax_m3','vllm_ascend.models.minimax_m3.minimax_m3'):
+        changes[target+':paged_sparse_attention']=attention
+    changes['vllm_ascend._310p.worker_310p:NPUWorker310.resident_apply']=resident_apply
+    changes['vllm_ascend._310p.worker_310p:NPUWorker310.resident_capture']=capture
+    return changes
