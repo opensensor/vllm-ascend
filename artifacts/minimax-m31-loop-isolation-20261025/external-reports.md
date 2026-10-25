@@ -4,6 +4,11 @@ Reviewed October 25, 2026. These are public observations and documentation,
 not reproductions on our Ascend service. The [local investigation](README.md)
 contains the hardware tests and numerical measurements.
 
+The [deeper evidence audit](../../reports/m31_loop_evidence_audit.md) adds
+request-forwarding defects, active intervention in Atomic Agent's harness,
+quantization receipt definitions and a source-preserving expert format. In
+particular, benchmark completion does not establish unaided model recovery.
+
 ## Findings
 
 Similar overthinking and repeated tool inspection are reported on hosted
