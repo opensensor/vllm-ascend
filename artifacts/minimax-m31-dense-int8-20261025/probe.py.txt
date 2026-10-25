@@ -1,0 +1,76 @@
+"""Bounded real-weight TP2 dense projection benchmark; never changes serving weights."""
+import gc
+import json
+import time
+from pathlib import Path
+
+import torch
+import torch_npu
+from safetensors.torch import load_file
+
+torch.set_num_threads(4)
+torch.npu.set_device(5)
+torch.npu.set_compile_mode(jit_compile=False)
+torch.npu.set_per_process_memory_fraction(0.02)
+root = Path('/srv/ai/storage/models/MiniMax-M3.1-Flash-W4')
+records = json.loads((root / 'minimax_m3_w4.json').read_text())['weights']
+results = []
+
+def timing(fn):
+    for _ in range(5):
+        fn()
+    torch.npu.synchronize()
+    start = time.perf_counter()
+    for _ in range(100):
+        fn()
+    torch.npu.synchronize()
+    eager = (time.perf_counter() - start) * 1e6 / 100
+    graph = torch.npu.NPUGraph()
+    with torch.npu.graph(graph):
+        out = fn()
+    for _ in range(5):
+        graph.replay()
+    torch.npu.synchronize()
+    start = time.perf_counter()
+    for _ in range(100):
+        graph.replay()
+    torch.npu.synchronize()
+    replay = (time.perf_counter() - start) * 1e6 / 100
+    graph.reset()
+    return {'eager_us': eager, 'graph_us': replay}
+
+with torch.inference_mode():
+    for suffix in ('self_attn.q_proj.weight', 'self_attn.o_proj.weight',
+                   'self_attn.k_proj.weight', 'self_attn.index_q_proj.weight',
+                   'block_sparse_moe.shared_experts.gate_proj.weight',
+                   'block_sparse_moe.shared_experts.down_proj.weight'):
+        name = 'language_model.model.layers.21.' + suffix
+        rec = records[name]
+        w = load_file(str(root / rec['file']))[name]
+        # TP column projections split outputs; row projections split inputs.
+        if 'o_proj' in suffix or 'down_proj' in suffix:
+            w = w[:, :w.shape[1] // 2].contiguous()
+        elif 'index_' not in suffix:
+            w = w[:w.shape[0] // 2].contiguous()
+        scale = w.float().abs().amax(1).clamp_min(1e-12) / 127
+        q = (w.float() / scale[:, None]).round().clamp(-127, 127).to(torch.int8)
+        wd = torch_npu.npu_format_cast(w.npu(), 29)
+        qd = torch_npu.npu_format_cast(q.npu(), 29).T
+        sd = scale.npu()
+        x = torch.randn(1, w.shape[1], generator=torch.Generator().manual_seed(32)).half().npu()
+        def fp16():
+            return torch.nn.functional.linear(x, wd)
+        def int8():
+            qx, sx = torch_npu.npu_dynamic_quant(x)
+            return torch_npu.npu_quant_matmul(qx, qd, sd, pertoken_scale=sx, output_dtype=torch.float16)
+        expected = fp16().float()
+        actual = int8().float()
+        error = ((actual - expected).square().mean() / expected.square().mean()).sqrt().item()
+        result = {'name': name, 'shape': list(w.shape), 'nrmse': error,
+                  'fp16': timing(fp16), 'int8': timing(int8)}
+        results.append(result)
+        print(json.dumps(result), flush=True)
+        del w, q, wd, qd, sd, scale, x, expected, actual
+        gc.collect()
+        torch.npu.empty_cache()
+Path('/workspace/m31-dense-int8-probe.json').write_text(json.dumps(results, indent=2) + '\n')

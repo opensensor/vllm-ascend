@@ -628,3 +628,45 @@ python -m tools.minimax_m3.resident switch \
   --native-name minimax_w4_int8_v15 --activation-name minimax_activation_v2 \
   --partial-graphs
 ```
+
+### Selected dense W8A8 projections
+
+The retained dense path quantizes shared-expert gate/up and down projections,
+and attention output projections, to per-channel INT8 weights with dynamic
+per-token activation quantization. QKV/indexer, routing, vision and vocabulary
+projections remain unchanged. Unlike v14/v15 movement optimizations, this changes
+arithmetic and is an additional lossy quantization step.
+
+A separate-process real-weight probe found captured large projections faster
+with INT8, while small K/indexer projections were slower. In-place conversion
+checked all **348 selected local projections** across six workers: maximum
+random-input NRMSE was **0.01606** against their FP16 methods. Exact FP16 recovery
+copies reside in host RAM; no second FP16 copy stays on device. Device weight
+storage decreased by **0.945–0.995 GiB per rank** (5.812 GiB total). Expert shards
+and worker processes stayed resident. Dense parameter storage intentionally
+changed, so its storage digest changes during conversion.
+
+Three 64-token greedy counting requests measured **3.961, 3.958 and 3.955 tokens/s**,
+a **4.8%** median improvement over 3.777. The short tool-call and Python-function
+checks passed. These bounded checks do not establish broad model quality or
+long-context equivalence. No full 160K test was run.
+
+`tools.minimax_m3.resident_dense_int8` verifies the supplied complete serving
+source against every worker, drains requests, releases graph captures, converts
+weights, then reinstalls that source and rebuilds partial graphs lazily. A
+numerical failure recovers all workers from host copies. An uncertain RPC or
+failed recovery leaves serving paused. Disabling also requires the exact current
+source and releases captures before restoring FP16 weights:
+
+```bash
+python -m tools.minimax_m3.resident_dense_int8 disable \
+  --serving-source /workspace/m31-startup-serving-source.py \
+  --output /workspace/m31-dense-restore.json
+```
+
+The live optimization session uses `/workspace/m31-unwrapped-serving-source.py`;
+post-start activation writes `/workspace/m31-startup-serving-source.py` before
+conversion. Use the snapshot matching the currently installed generation. The
+post-start script now enables the retained dense path. Its source match and
+shell syntax were checked; a cold restart was not repeated. Evidence and the
+startup script are in `artifacts/minimax-m31-dense-int8-20261025/`.
