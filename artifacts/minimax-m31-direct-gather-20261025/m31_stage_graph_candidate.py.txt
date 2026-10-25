@@ -1,0 +1,96 @@
+import copy
+import functools
+import torch
+
+
+def add_replacements(changes):
+    from vllm.forward_context import get_forward_context
+    from vllm.sequence import IntermediateTensors
+    from vllm_ascend.models.minimax_m3.minimax_m3 import MiniMaxM3Model
+    from vllm_ascend._310p.worker_310p import NPUWorker310
+
+    original = MiniMaxM3Model.forward
+    apply = NPUWorker310.resident_apply
+    state = {'owner': None, 'captures': 0, 'replays': 0, 'eager': 0}
+
+    def release():
+        owner = state['owner']
+        if owner is not None:
+            torch.npu.synchronize()
+            if owner.get('graph') is not None:
+                owner['graph'].reset()
+            state['owner'] = None
+
+    def signature(input_ids, positions, intermediate_tensors, inputs_embeds, metadata):
+        if positions.ndim != 1 or positions.numel() != 1 or torch.is_grad_enabled():
+            return None
+        if not isinstance(metadata, dict) or not metadata:
+            return None
+        if any(getattr(m, 'query_starts', None) != (0, 1) for m in metadata.values()):
+            return None
+        def tensor_key(t):
+            return None if t is None else (tuple(t.shape), t.dtype, t.device)
+        middle = None if intermediate_tensors is None else tuple((k, tensor_key(v)) for k,v in intermediate_tensors.tensors.items())
+        return (tensor_key(input_ids),tensor_key(positions),tensor_key(inputs_embeds),middle,
+                tuple((name,(m.max_seq_len+127)//128,tuple(m.block_table.shape)) for name,m in metadata.items()))
+
+    def invoke(self, owner, context):
+        previous=context.attn_metadata
+        context.attn_metadata=owner['metadata']
+        try:
+            return original(self,owner['ids'],owner['positions'],owner['middle'],owner['embeds'])
+        finally:
+            context.attn_metadata=previous
+
+    @functools.wraps(original)
+    def forward(self,input_ids,positions,intermediate_tensors,inputs_embeds=None):
+        context=get_forward_context();metadata=context.attn_metadata
+        key=signature(input_ids,positions,intermediate_tensors,inputs_embeds,metadata)
+        if key is None:
+            state['eager']+=1
+            return original(self,input_ids,positions,intermediate_tensors,inputs_embeds)
+        owner=state['owner']
+        if owner is None or owner['key']!=key:
+            release()
+            owner={'key':key,'metadata':{},'bindings':[],'graph':None}
+            state['owner']=owner
+            def clone(t):return None if t is None else t.clone()
+            owner.update(ids=clone(input_ids),positions=positions.clone(),embeds=clone(inputs_embeds),
+                         middle=None if intermediate_tensors is None else IntermediateTensors({k:v.clone() for k,v in intermediate_tensors.tensors.items()}))
+            copies={}
+            for name,m in metadata.items():
+                frozen=copy.copy(m)
+                for field in ('seq_lens','block_table','slot_mapping'):
+                    tensor=getattr(m,field);identity=(tensor.data_ptr(),tuple(tensor.shape),tuple(tensor.stride()),tensor.dtype)
+                    if identity not in copies:
+                        copies[identity]=tensor.clone();owner['bindings'].append((name,field,copies[identity]))
+                    setattr(frozen,field,copies[identity])
+                owner['metadata'][name]=frozen
+            stream=torch.npu.Stream(device=positions.device);stream.wait_stream(torch.npu.current_stream());owner['stream']=stream
+            with torch.npu.stream(stream):
+                invoke(self,owner,context)
+                stream.synchronize()
+                owner['graph']=torch.npu.NPUGraph();owner['pool']=torch.npu.graph_pool_handle()
+                with torch.npu.graph(owner['graph'],pool=owner['pool'],stream=stream):
+                    owner['output']=invoke(self,owner,context)
+            torch.npu.current_stream().wait_stream(stream)
+            state['captures']+=1
+        for target,source in ((owner['ids'],input_ids),(owner['positions'],positions),(owner['embeds'],inputs_embeds)):
+            if target is not None:target.copy_(source)
+        if owner['middle'] is not None:
+            for name,target in owner['middle'].tensors.items():target.copy_(intermediate_tensors[name])
+        for name,field,target in owner['bindings']:target.copy_(getattr(metadata[name],field))
+        owner['graph'].replay();state['replays']+=1
+        return owner['output']
+
+    def resident_apply(self,generation):
+        self._m3_idle();release();return apply(self,generation)
+
+    def capture(self):
+        return {**self.resident_status(),'stage_graph':{k:v for k,v in state.items() if k!='owner'},
+                'metadata_copies':len(state['owner']['bindings']) if state['owner'] else 0}
+
+    changes['vllm_ascend.models.minimax_m3.minimax_m3:MiniMaxM3Model.forward']=forward
+    changes['vllm_ascend._310p.worker_310p:NPUWorker310.resident_apply']=resident_apply
+    changes['vllm_ascend._310p.worker_310p:NPUWorker310.resident_capture']=capture
+    return changes

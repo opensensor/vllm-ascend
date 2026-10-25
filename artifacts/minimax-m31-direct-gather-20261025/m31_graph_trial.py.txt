@@ -1,0 +1,29 @@
+import dataclasses,fcntl,json,statistics,subprocess,sys,uuid
+from pathlib import Path
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.minimax_m3.resident import candidate_source
+out=Path('/workspace/m31-moe-graph-trial');out.mkdir(exist_ok=True)
+c=ResidentClient('http://127.0.0.1:8000',6)
+base=candidate_source(Path('/workspace/m31-direct-gather-ops.py').read_text(), 'minimax_w4_int8_v13')
+source=candidate_source(Path('/workspace/m31-direct-gather-ops.py').read_text(), 'minimax_w4_int8_v13', decode_graph=True)
+def apply(source):
+ control=Control(uuid.uuid4().hex,'direct-target','m3_candidate',source)
+ c.request('/pause?mode=wait&clear_cache=false');c.rpc('resident_prepare',json.dumps(dataclasses.asdict(control)));r=c.rpc('resident_apply',control.generation);c.request('/resume');return r
+with Path('/tmp/minimax-m31-resident.lock').open('w') as lock:
+ fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+ before=c.rpc('resident_status');expected=Control(before[0]['generation'],'direct-target',before[0]['candidate'],base)
+ assert all(r['digest']==expected.digest for r in before)
+ assert not c.request('/is_paused',method='GET')['is_paused']
+ c.request('/resident/maintenance');keep=False
+ try:
+  after=apply(source)
+  assert [(r['pid'],r['weight_storage_digest']) for r in before]==[(r['pid'],r['weight_storage_digest']) for r in after]
+  subprocess.run([sys.executable,'/workspace/m31-serve-benchmark.py','--output',str(out/'decode'),'--label','moe-decode-graph'],check=True)
+  report=json.loads((out/'decode/report.json').read_text());median=statistics.median(r['tokens_per_second_after_first'] for r in report['cases'])
+  keep=median>3.3404*1.02
+  (out/'activation.json').write_text(json.dumps(dict(before=before,after=after,median_tok_s=median,retained=keep,cache_reset=False),indent=2)+'\n')
+  print('median tok/s',median,'retained',keep,flush=True)
+ finally:
+  if not keep:apply(base)
+  c.request('/resident/maintenance',method='DELETE')

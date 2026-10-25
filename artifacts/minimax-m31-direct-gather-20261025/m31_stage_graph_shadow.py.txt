@@ -1,0 +1,28 @@
+import dataclasses,fcntl,json,statistics,subprocess,sys,uuid
+from pathlib import Path
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.minimax_m3.resident import candidate_source
+out=Path('/workspace/m31-stage-graph-shadow');out.mkdir(exist_ok=True)
+c=ResidentClient('http://127.0.0.1:8000',6)
+base=candidate_source(Path('/workspace/m31-direct-gather-ops.py').read_text(), 'minimax_w4_int8_v13')
+source=base.replace("    return changes\n", "    graph = types.ModuleType('m31_graph_candidate')\n" + f"    exec(compile({Path('/workspace/m31_stage_graph_shadow_module.py').read_text()!r}, '<graph_candidate>', 'exec'), graph.__dict__)\n" + "    return graph.add_replacements(changes)\n")
+def apply(source):
+ control=Control(uuid.uuid4().hex,'direct-target','m3_candidate',source)
+ c.request('/pause?mode=wait&clear_cache=true');c.rpc('resident_reset');c.rpc('resident_prepare',json.dumps(dataclasses.asdict(control)));r=c.rpc('resident_apply',control.generation);c.request('/resume');return r
+with Path('/tmp/minimax-m31-resident.lock').open('w') as lock:
+ fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+ before=c.rpc('resident_status');expected=Control(before[0]['generation'],'direct-target',before[0]['candidate'],base)
+ assert all(r['digest']==expected.digest for r in before)
+ assert not c.request('/is_paused',method='GET')['is_paused']
+ c.request('/resident/maintenance');keep=False
+ try:
+  after=apply(source)
+  assert [(r['pid'],r['weight_storage_digest']) for r in before]==[(r['pid'],r['weight_storage_digest']) for r in after]
+  response=c.request('/v1/chat/completions',{'model':'minimax-m31-flash','messages':[{'role':'user','content':'Count from one to twenty.'}],'temperature':0,'max_tokens':4})
+  stats=c.rpc('resident_capture')
+  (out/'diagnostic.json').write_text(json.dumps(dict(response=response,workers=stats),indent=2)+'\n')
+  print(json.dumps([{'rank':r['rank'],'graph':r['stage_graph']} for r in stats]),flush=True)
+ finally:
+  if not keep:apply(base)
+  c.request('/resident/maintenance',method='DELETE')

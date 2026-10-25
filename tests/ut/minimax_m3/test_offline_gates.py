@@ -27,7 +27,8 @@ def test_ep_views_share_storage_and_preserve_global_expert_identity():
 
 
 @pytest.mark.parametrize("prefix,tokens", [(129, 2), (8190, 3), (16381, 3)])
-def test_tp2_production_attention_geometry_matches_independent_oracle(prefix, tokens):
+@pytest.mark.parametrize("unused_pages", [0, 37])
+def test_tp2_production_attention_geometry_matches_independent_oracle(prefix, tokens, unused_pages):
     previous = torch.get_num_threads()
     torch.set_num_threads(2)
     try:
@@ -39,14 +40,14 @@ def test_tp2_production_attention_geometry_matches_independent_oracle(prefix, to
         v = torch.randn(length, heads, dim, generator=generator).half()
         iq = torch.randn(tokens, heads, dim, generator=generator).half()
         ik = torch.randn(length, dim, generator=generator).half()
-        main_pages = torch.randperm(pages, generator=generator)
+        main_pages = torch.randperm(pages + unused_pages, generator=generator)[:pages]
         index_pages = main_pages.flip(0)
         positions = torch.arange(length)
         main_slots = main_pages[positions // block] * block + positions % block
         index_slots = index_pages[positions // block] * block + positions % block
-        kc = torch.full((pages, block, heads, dim), torch.nan, dtype=torch.float16)
+        kc = torch.full((pages + unused_pages, block, heads, dim), torch.nan, dtype=torch.float16)
         vc = torch.full_like(kc, torch.nan)
-        ic = torch.full((pages, block, dim), torch.nan, dtype=torch.float16)
+        ic = torch.full((pages + unused_pages, block, dim), torch.nan, dtype=torch.float16)
         kc.flatten(0, 1)[main_slots[:prefix]] = k[:prefix]
         vc.flatten(0, 1)[main_slots[:prefix]] = v[:prefix]
         ic.flatten(0, 1)[index_slots[:prefix]] = ik[:prefix]

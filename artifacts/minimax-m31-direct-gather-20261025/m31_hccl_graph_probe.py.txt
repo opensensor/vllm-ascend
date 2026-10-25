@@ -1,0 +1,17 @@
+import datetime,json,os
+import torch,torch_npu
+rank=int(os.environ['LOCAL_RANK']);torch.npu.set_device(rank);torch.npu.set_compile_mode(jit_compile=False);torch.set_num_threads(2)
+torch.distributed.init_process_group('hccl',timeout=datetime.timedelta(seconds=45))
+stream=torch.npu.Stream();x=torch.full((6144,),float(rank+1),dtype=torch.float16,device=f'npu:{rank}');stream.wait_stream(torch.npu.current_stream())
+with torch.inference_mode(),torch.npu.stream(stream):
+ for _ in range(2):
+  y=x.clone();torch.distributed.all_reduce(y)
+ torch.npu.synchronize();graph=torch.npu.NPUGraph()
+ with torch.npu.graph(graph,stream=stream):
+  y=x.clone();torch.distributed.all_reduce(y)
+ checks=[]
+ for step in range(3):
+  x.fill_(rank+step+1);graph.replay();torch.npu.synchronize();checks.append(bool((y.cpu()==3+2*step).all()))
+ print(json.dumps({'rank':rank,'checks':checks,'passed':all(checks)}),flush=True)
+ torch.npu.synchronize();graph.reset()
+torch.distributed.destroy_process_group()

@@ -289,8 +289,13 @@ def paged_sparse_attention(
                 selected = head_scores.topk(min(topk_blocks, num_blocks), -1).indices
                 logical = (selected[..., None] * block_size + offsets).flatten(1)
                 selected_pages = pages[selected]
-                k = key_cache[:, :, head][selected_pages].flatten(1, 2).float()
-                v = value_cache[:, :, head][selected_pages].flatten(1, 2).float()
+                # Index ND cache rows directly: slicing a head before advanced
+                # indexing materializes the entire allocated cache on 310P.
+                physical = (selected_pages[..., None] * block_size + offsets).flatten(1)
+                head_rows = (physical * key_cache.shape[2] + head).flatten()
+                gathered_shape = (end - begin, -1, query.shape[-1])
+                k = key_cache.flatten(0, 2).index_select(0, head_rows).view(gathered_shape).float()
+                v = value_cache.flatten(0, 2).index_select(0, head_rows).view(gathered_shape).float()
                 mask = (logical <= qpos[:, None]) & (logical < seq_len)
                 k = torch.where(mask[..., None], k, 0)
                 v = torch.where(mask[..., None], v, 0)

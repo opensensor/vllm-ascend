@@ -455,3 +455,28 @@ FP16 fallback with `--wide-l1 --byte-unpack`. Expanded INT8 storage for every
 expert would exceed aggregate device capacity; selective caching remains future
 work. Evidence, reproducible sources, and measured limitations are in
 `artifacts/minimax-m31-int8-compute-20261025/`.
+
+
+### Direct sparse-cache gathering
+
+The current attention implementation gathers selected `(page, token, head)`
+rows directly from the ND cache. The previous head slice caused CANN to copy
+an entire allocated cache head before selecting pages. The six-worker trace
+identified this copy as 40.6% of first-stage compute-task time; this percentage
+excludes communication and is not an end-to-end latency fraction.
+
+Three matched 64-token requests improved from 2.231 to **3.340 tokens/s**
+(median decode after first output), a 49.7% gain. All three response messages
+matched the INT8 baseline exactly. The largest bounded synthetic attention
+output difference was 0.0000153; cache-page selection and masking are unchanged.
+The probe covered one-token decode through 16K context and a 64-token prefill,
+including a 160K-sized allocation with mostly unused pages, not a 160K prompt.
+The CPU suite passed 200 tests with 24 hardware skips.
+
+Python dispatch was hot-switched with request caches and worker PIDs preserved.
+The installed source includes the direct gather for future fresh workers.
+While this resident module generation is active, first select native-only
+`minimax_w4_int8_v13` before invoking the layout-aware INT8 disable command.
+This removes the module patch without changing weight layout; then `disable`
+can restore the FP16 byte layout. Never directly select FP16 on INT8-layout
+banks. Evidence is in `artifacts/minimax-m31-direct-gather-20261025/`.

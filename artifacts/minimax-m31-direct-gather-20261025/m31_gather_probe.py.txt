@@ -1,0 +1,33 @@
+import gc,importlib.util,json,statistics,time
+from pathlib import Path
+import torch,torch_npu
+
+def module(name,path):
+    spec=importlib.util.spec_from_file_location(name,path); m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);return m
+base=module('baseline','/workspace/m31-original-gather-ops.py').paged_sparse_attention
+candidate=module('candidate','/workspace/m31-direct-gather-ops.py').paged_sparse_attention
+torch.set_num_threads(4); torch.npu.config.allow_internal_format = False; torch.npu.set_device(5); torch.npu.set_compile_mode(jit_compile=False); torch.npu.set_per_process_memory_fraction(.025,5)
+device='npu:5'
+g=torch.Generator().manual_seed(81)
+records=[]
+with torch.inference_mode():
+ for capacity,context,queries in ((4096,2048,1),(163840,2048,1),(163840,16384,1),(163840,2048,64)):
+    pages=capacity//128; used=(context+127)//128
+    def random(*shape):return torch.randn(*shape,generator=g).half().to(device)
+    kc=torch.full((pages,128,2,128),torch.nan,dtype=torch.float16,device=device);vc=torch.full_like(kc,torch.nan);ic=torch.full((pages,128,128),torch.nan,dtype=torch.float16,device=device)
+    order=torch.randperm(pages,generator=g)[:used].to(device); iorder=torch.randperm(pages,generator=g)[:used].to(device)
+    kc.index_copy_(0,order,random(used,128,2,128));vc.index_copy_(0,order,random(used,128,2,128));ic.index_copy_(0,iorder,random(used,128,128))
+    length=context-3; positions=torch.arange(length-queries,length,device=device)
+    args=(random(queries,32,128),random(queries,2,128),random(queries,2,128),random(queries,2,128),random(queries,128),kc,vc,ic)
+    kw=dict(query_starts=(0,queries),seq_lens=torch.tensor([length],device=device),block_table=order[None],index_block_table=iorder[None],slot_mapping=order[positions//128]*128+positions%128,index_slot_mapping=iorder[positions//128]*128+positions%128,max_seq_len=length,topk_blocks=16,scale=128**-.5,init_blocks=1,local_blocks=1)
+    results={};timings={}
+    for name,fn in (('baseline',base),('direct',candidate)):
+      fn(*args,**kw);torch.npu.synchronize(); samples=[]
+      for _ in range(5):
+        t=time.perf_counter(); result=fn(*args,**kw);torch.npu.synchronize();samples.append(time.perf_counter()-t)
+      results[name]=result.cpu();timings[name]=statistics.median(samples)
+    record=dict(capacity=capacity,context=length,queries=queries,timings=timings,speedup=timings['baseline']/timings['direct'],exact=torch.equal(results['baseline'],results['direct']),max_abs=float((results['baseline'].float()-results['direct'].float()).abs().max()),nrmse=float((results['baseline'].float()-results['direct'].float()).norm()/results['baseline'].float().norm()),finite=bool(results['direct'].isfinite().all()))
+    records.append(record);print(record,flush=True)
+    del args,kw,kc,vc,ic,result;gc.collect();torch.npu.empty_cache()
+Path('/workspace/m31-direct-gather-probe.json').write_text(json.dumps(records,indent=2)+'\n')
+assert all(r['max_abs'] <= .001 and r['finite'] for r in records)

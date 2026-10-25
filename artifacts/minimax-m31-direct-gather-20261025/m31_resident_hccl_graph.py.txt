@@ -1,0 +1,42 @@
+import dataclasses,fcntl,json,uuid
+from pathlib import Path
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.minimax_m3.resident import candidate_source
+base=candidate_source(Path('/workspace/m31-direct-gather-ops.py').read_text(),'minimax_w4_int8_v13')
+source=base.replace('def replacements(', 'def native_replacements(')+'''
+def replacements(native_resources):
+    import torch
+    from vllm.distributed import get_tp_group
+    changes=native_replacements(native_resources)
+    def capture(self):
+        self._m3_idle()
+        group=get_tp_group()
+        stream=torch.npu.Stream();stream.wait_stream(torch.npu.current_stream())
+        checks=[]
+        with torch.inference_mode(),torch.npu.stream(stream):
+            x=torch.full((6144,),float(group.rank_in_group+1),dtype=torch.float16,device=self.device)
+            group.all_reduce(x.clone());torch.npu.synchronize()
+            graph=torch.npu.NPUGraph()
+            with torch.npu.graph(graph,stream=stream):
+                y=group.all_reduce(x.clone())
+            for step in range(3):
+                x.fill_(group.rank_in_group+step+1);graph.replay();torch.npu.synchronize()
+                checks.append(bool((y.cpu()==3+2*step).all()))
+            graph.reset()
+        return {**self.resident_status(),'checks':checks,'passed':all(checks)}
+    changes['vllm_ascend._310p.worker_310p:NPUWorker310.resident_capture']=capture
+    return changes
+'''
+c=ResidentClient('http://127.0.0.1:8000',6)
+def apply(source):
+ control=Control(uuid.uuid4().hex,'direct-target','m3_candidate',source)
+ c.rpc('resident_prepare',json.dumps(dataclasses.asdict(control)));return c.rpc('resident_apply',control.generation)
+with Path('/tmp/minimax-m31-resident.lock').open('w') as lock:
+ fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+ assert not c.request('/is_paused',method='GET')['is_paused']
+ c.request('/resident/maintenance');c.request('/pause?mode=wait&clear_cache=false')
+ try:
+  apply(source);r=c.rpc('resident_capture');Path('/workspace/m31-resident-hccl-graph.json').write_text(json.dumps(r,indent=2)+'\n');print([(x['rank'],x['passed']) for x in r],flush=True)
+ finally:
+  apply(base);c.request('/resume');c.request('/resident/maintenance',method='DELETE')

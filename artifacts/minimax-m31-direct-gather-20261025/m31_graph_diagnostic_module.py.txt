@@ -1,0 +1,77 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Optional single-token expert graphs owned by one resident patch generation."""
+
+import functools
+
+import torch
+
+EXPERT_FORWARD = "vllm_ascend._310p.ops.minimax_m3:PackedM3Experts.forward"
+WORKER_APPLY = "vllm_ascend._310p.worker_310p:NPUWorker310.resident_apply"
+
+
+def add_replacements(changes):
+    # Imported only inside initialized resident workers.
+    from vllm_ascend._310p.ops.minimax_m3 import PackedM3Experts
+    from vllm_ascend._310p.worker_310p import NPUWorker310
+
+    original = changes.get(EXPERT_FORWARD, PackedM3Experts.forward)
+    original = getattr(original, "_m3_eager_forward", original)
+    apply = getattr(NPUWorker310.resident_apply, "_m3_graph_original", NPUWorker310.resident_apply)
+    owners = {}
+    counts = {"calls": {}, "captures": 0, "replays": 0}
+
+    @functools.wraps(original)
+    def forward(self, hidden_states, router_logits, correction_bias=None):
+        key = str((tuple(hidden_states.shape), hidden_states.device.type, torch.is_grad_enabled()))
+        counts["calls"][key] = counts["calls"].get(key, 0) + 1
+        if hidden_states.shape[0] != 1 or hidden_states.device.type != "npu" or torch.is_grad_enabled():
+            return original(self, hidden_states, router_logits, correction_bias)
+        owner = owners.get(self)
+        if owner is None:
+            counts["captures"] += 1
+            # Warm eager work before capture so immutable native scale metadata
+            # and shape tilings are initialized outside the private graph pool.
+            stream = torch.npu.Stream(device=hidden_states.device)
+            stream.wait_stream(torch.npu.current_stream())
+            owner = {"stream": stream, "graph": None}
+            owners[self] = owner
+            with torch.npu.stream(stream):
+                owner["x"] = hidden_states.clone()
+                owner["logits"] = router_logits.clone()
+                owner["bias"] = correction_bias.clone() if correction_bias is not None else None
+                original(self, owner["x"], owner["logits"], owner["bias"])
+                stream.synchronize()
+                owner["graph"] = torch.npu.NPUGraph()
+                owner["pool"] = torch.npu.graph_pool_handle()
+                with torch.npu.graph(owner["graph"], pool=owner["pool"], stream=stream):
+                    owner["output"] = original(self, owner["x"], owner["logits"], owner["bias"])
+            torch.npu.current_stream().wait_stream(stream)
+        owner["x"].copy_(hidden_states)
+        owner["logits"].copy_(router_logits)
+        if correction_bias is not None:
+            owner["bias"].copy_(correction_bias)
+        counts["replays"] += 1
+        owner["graph"].replay()
+        return owner["output"]
+
+    def resident_apply(self, generation):
+        # Release graph pools before any module/kernel/layout switch. This hook
+        # runs through the existing drained-scheduler transaction, so no request
+        # can still use these outputs. Native libraries remain resident.
+        self._m3_idle()
+        torch.npu.synchronize()
+        for owner in owners.values():
+            if owner["graph"] is not None:
+                owner["graph"].reset()
+        owners.clear()
+        return apply(self, generation)
+
+    def capture(self):
+        return {**self.resident_status(), "expert_graphs": len(owners), "counts": counts}
+
+    changes["vllm_ascend._310p.worker_310p:NPUWorker310.resident_capture"] = capture
+    forward._m3_eager_forward = original
+    resident_apply._m3_graph_original = apply
+    changes[EXPERT_FORWARD] = forward
+    changes[WORKER_APPLY] = resident_apply
+    return changes

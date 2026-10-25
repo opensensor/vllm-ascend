@@ -1,0 +1,47 @@
+import json,statistics,time
+from pathlib import Path
+import torch,torch_npu
+from safetensors.torch import load_file
+from tools.minimax_m3.int8_native import pack_int8_layout
+from tools.minimax_m3.int8_native_probe import load_kernel
+from vllm_ascend._310p.ops.minimax_m3 import PackedM3Experts,pack_w4_nz256
+
+torch.set_num_threads(4);torch.npu.set_device(5);torch.npu.set_compile_mode(jit_compile=False);torch.npu.set_per_process_memory_fraction(.025,5)
+kernel,_=load_kernel(Path('/vllm-workspace/minimax-native-int8-v13/manifest.json'))
+weights=load_file('/srv/ai/storage/artifacts/minimax-m31-20261024/expert0/weights.safetensors')
+with torch.device('meta'):
+ bank=PackedM3Experts(6144,3072,8,2,0,4,prefix='graph_probe',projector=kernel)
+for name in ('w1','w3','w2'):
+ codes=weights[name+'_codes'];scales=weights[name+'_scales']
+ if codes.ndim==3:codes=codes[0];scales=scales[0]
+ packed=pack_int8_layout(pack_w4_nz256(codes)[None]).repeat(4,1,1).to('npu:5')
+ setattr(bank,name+'_codes',packed)
+ setattr(bank,name+'_scales',scales[None].repeat(4,1,1).half().to('npu:5'))
+stream=torch.npu.Stream();stream.wait_stream(torch.npu.current_stream())
+report={'scope':'Isolated real projection weights replicated into four experts; graph routing changes, no live service graph'}
+with torch.inference_mode(),torch.npu.stream(stream):
+ x=torch.randn(1,6144,device='npu:5',dtype=torch.float16);logits=torch.randn(1,8,device='npu:5');bias=torch.zeros(8,device='npu:5')
+ for _ in range(2):bank(x,logits,bias)
+ torch.npu.synchronize()
+ graph=torch.npu.NPUGraph();pool=torch.npu.graph_pool_handle()
+ with torch.npu.graph(graph,pool=pool,stream=stream):output=bank(x,logits,bias)
+ checks=[]
+ for step in range(6):
+  x.copy_(torch.randn(1,6144,generator=torch.Generator().manual_seed(50+step)).half().to('npu:5'))
+  values=torch.randn(1,8,generator=torch.Generator().manual_seed(step))
+  if step==0:values[0,:4]+=20
+  if step==1:values[0,4:]+=20
+  logits.copy_(values.to('npu:5'));graph.replay();actual=output.cpu();expected=bank(x,logits,bias).cpu()
+  checks.append({'step':step,'exact':torch.equal(actual,expected),'max_abs':float((actual-expected).abs().max()),'finite':bool(actual.isfinite().all())})
+ timings={}
+ for name,fn in (('eager',lambda:bank(x,logits,bias)),('graph',graph.replay)):
+  samples=[]
+  for _ in range(3):
+   torch.npu.synchronize();t=time.perf_counter()
+   for _ in range(20):fn()
+   torch.npu.synchronize();samples.append((time.perf_counter()-t)/20)
+  timings[name]=statistics.median(samples)
+ report.update(checks=checks,timings=timings,speedup=timings['eager']/timings['graph'],passed=all(c['exact'] and c['finite'] for c in checks))
+ print(json.dumps(report,indent=2),flush=True)
+ Path('/workspace/m31-moe-graph-probe.json').write_text(json.dumps(report,indent=2)+'\n')
+ torch.npu.synchronize();graph.reset()

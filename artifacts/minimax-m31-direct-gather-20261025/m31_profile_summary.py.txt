@@ -1,0 +1,21 @@
+import csv,json,collections
+from pathlib import Path
+root=Path('/workspace/m31-int8-decode-profile')
+reports=[]
+for p in sorted(root.glob('rank*/**/ASCEND_PROFILER_OUTPUT')):
+    traces=list(p.glob('trace_view.json'))
+    if not traces: continue
+    data=json.loads(traces[0].read_text()); events=data.get('traceEvents',data) if isinstance(data,dict) else data
+    spans=collections.defaultdict(list)
+    for e in events:
+        if e.get('ph')=='X' and e.get('name','').startswith('m31::'):
+            spans[e['name']].append(e.get('dur',0)/1000)
+    rows=list(csv.DictReader((p/'kernel_details.csv').open()))
+    byname=collections.defaultdict(lambda:[0,0])
+    for r in rows:
+        byname[r['Name']][0]+=1
+        byname[r['Name']][1]+=float(r['Duration(us)'])/1000
+    report={'rank':p.parts[-3], 'spans':{k:{'calls':len(v),'total_ms':sum(v),'avg_ms':sum(v)/len(v)} for k,v in spans.items()},'kernels':sorted([{'name':k,'calls':v[0],'total_ms':v[1]} for k,v in byname.items()],key=lambda x:-x['total_ms'])[:25]}
+    reports.append(report)
+(root/'summary.json').write_text(json.dumps(reports,indent=2)+'\n')
+print(json.dumps(reports,indent=2))

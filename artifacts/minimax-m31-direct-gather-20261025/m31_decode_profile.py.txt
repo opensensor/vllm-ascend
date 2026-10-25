@@ -1,0 +1,92 @@
+import dataclasses
+import fcntl
+import json
+import uuid
+from pathlib import Path
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.minimax_m3.resident import candidate_source
+
+out=Path('/workspace/m31-int8-decode-profile');out.mkdir(exist_ok=True)
+base=candidate_source(native_name='minimax_w4_int8_v13')
+source=base.replace('def replacements(', 'def native_replacements(')+'''
+def replacements(native_resources):
+    import functools
+    import torch
+    import torch_npu
+    import vllm_ascend.models.minimax_m3.minimax_m3 as model
+    changes = native_replacements(native_resources)
+    state = {'profiler': None, 'steps': 0}
+    def wrap(name, function):
+        @functools.wraps(function)
+        def call(*args, **kwargs):
+            with torch.profiler.record_function('m31::' + name):
+                return function(*args, **kwargs)
+        return call
+    for name in ('MiniMaxM3Attention', 'MiniMaxM3MoE', 'MiniMaxM3DecoderLayer'):
+        changes['vllm_ascend.models.minimax_m3.minimax_m3:' + name + '.forward'] = wrap(name, getattr(model, name).forward)
+    changes['vllm_ascend.models.minimax_m3.minimax_m3:tensor_model_parallel_all_reduce'] = wrap('all_reduce', model.tensor_model_parallel_all_reduce)
+    original = model.MiniMaxM3Model.forward
+    def forward(self, input_ids, positions, intermediate_tensors, inputs_embeds=None):
+        if positions.numel() == 1 and state['profiler'] is None:
+            p = torch_npu.profiler
+            rank = torch.distributed.get_rank()
+            state['profiler'] = p.profile(
+                activities=[p.ProfilerActivity.CPU, p.ProfilerActivity.NPU],
+                record_shapes=False, profile_memory=False, with_stack=False,
+                experimental_config=p._ExperimentalConfig(
+                    profiler_level=p.ProfilerLevel.Level1,
+                    aic_metrics=p.AiCMetrics.PipeUtilization,
+                    export_type=p.ExportType.Text,
+                    data_simplification=True),
+                on_trace_ready=p.tensorboard_trace_handler(
+                    '/workspace/m31-int8-decode-profile/rank' + str(rank),
+                    analyse_flag=True, async_mode=False))
+            state['profiler'].start()
+        with torch.profiler.record_function('m31::model_forward'):
+            result = original(self, input_ids, positions, intermediate_tensors, inputs_embeds)
+        state['steps'] += int(state['profiler'] is not None)
+        return result
+    def capture(self):
+        self._m3_idle()
+        if state['profiler'] is not None:
+            torch.npu.synchronize()
+            state['profiler'].stop()
+            state['profiler'] = None
+        return {**self.resident_status(), 'profile_steps': state['steps']}
+    changes['vllm_ascend.models.minimax_m3.minimax_m3:MiniMaxM3Model.forward'] = forward
+    changes['vllm_ascend._310p.worker_310p:NPUWorker310.resident_capture'] = capture
+    return changes
+'''
+(out/'candidate.py').write_text(source)
+c=ResidentClient('http://127.0.0.1:8000',6)
+def apply(source,name):
+    control=Control(uuid.uuid4().hex,'direct-target',name,source)
+    c.rpc('resident_prepare',json.dumps(dataclasses.asdict(control)))
+    return c.rpc('resident_apply',control.generation)
+with Path('/tmp/minimax-m31-resident.lock').open('w') as lock:
+    fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    before=c.rpc('resident_status')
+    expected=Control(before[0]['generation'],'direct-target',before[0]['candidate'],base)
+    assert all(row['digest']==expected.digest for row in before)
+    assert not c.request('/is_paused',method='GET')['is_paused']
+    c.request('/resident/maintenance')
+    active=False
+    try:
+        c.request('/pause?mode=wait&clear_cache=false')
+        apply(source,'int8_profile');active=True
+        c.request('/resume')
+        response=c.request('/v1/chat/completions',{'model':'minimax-m31-flash','messages':[{'role':'user','content':'Count from one to twenty, one number per line.'}],'temperature':0,'max_tokens':12})
+        (out/'response.json').write_text(json.dumps(response,indent=2)+'\n')
+        c.request('/pause?mode=wait&clear_cache=false')
+        profile=c.rpc('resident_capture')
+        (out/'capture.json').write_text(json.dumps(profile,indent=2)+'\n')
+    finally:
+        c.request('/pause?mode=wait&clear_cache=false')
+        if active:
+            after=apply(base,before[0]['candidate'])
+            assert [(r['pid'],r['weight_storage_digest']) for r in after]==[(r['pid'],r['weight_storage_digest']) for r in before]
+            (out/'restore.json').write_text(json.dumps(after,indent=2)+'\n')
+        c.request('/resume')
+        c.request('/resident/maintenance',method='DELETE')
+print('Profile finished, dispatch restored, all weights/PIDs preserved.',flush=True)

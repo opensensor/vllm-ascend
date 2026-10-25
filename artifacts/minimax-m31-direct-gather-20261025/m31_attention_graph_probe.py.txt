@@ -1,0 +1,29 @@
+import importlib.util,json
+from pathlib import Path
+import torch,torch_npu
+
+torch.set_num_threads(2);torch.npu.set_device(5);torch.npu.set_compile_mode(jit_compile=False);torch.npu.set_per_process_memory_fraction(.02,5)
+s=Path('/workspace/m31-direct-gather-ops.py').read_text()
+results=[]
+with torch.inference_mode():
+ for variant,source in (('scalar',s),('vector',s.replace('seq_len = seq_lens[request]','seq_len = seq_lens[request : request + 1]'))):
+  ns={};exec(compile(source,'<attention>', 'exec'),ns);fn=ns['paged_sparse_attention']
+  g=torch.Generator().manual_seed(82)
+  def random(*shape):return torch.randn(*shape,generator=g).half().to('npu:5')
+  q,k,v,iq,ik=random(1,32,128),random(1,2,128),random(1,2,128),random(1,2,128),random(1,128)
+  kc,vc,ic=random(4,128,2,128),random(4,128,2,128),random(4,128,128)
+  lens=torch.tensor([133],device='npu:5',dtype=torch.int32);slots=torch.tensor([132],device='npu:5');table=torch.arange(4,device='npu:5',dtype=torch.int32)[None]
+  args=(q,k,v,iq,ik,kc,vc,ic)
+  kw=dict(query_starts=(0,1),seq_lens=lens,block_table=table,index_block_table=table,slot_mapping=slots,index_slot_mapping=slots,max_seq_len=200,topk_blocks=16,scale=128**-.5,init_blocks=0,local_blocks=1)
+  stream=torch.npu.Stream();stream.wait_stream(torch.npu.current_stream())
+  with torch.npu.stream(stream):
+   fn(*args,**kw);torch.npu.synchronize();graph=torch.npu.NPUGraph()
+   with torch.npu.graph(graph,stream=stream):out=fn(*args,**kw)
+   checks=[]
+   for step in range(5):
+    lens.fill_(133+step);slots.fill_(132+step);q.copy_(random(1,32,128));iq.copy_(random(1,2,128))
+    expected=fn(*args,**kw).cpu();graph.replay();actual=out.cpu()
+    checks.append({'step':step,'exact':torch.equal(actual,expected),'max_abs':float((actual-expected).abs().max())})
+   torch.npu.synchronize();graph.reset()
+  results.append({'variant':variant,'checks':checks});print(results[-1],flush=True)
+Path('/workspace/m31-attention-graph-probe.json').write_text(json.dumps(results,indent=2)+'\n')

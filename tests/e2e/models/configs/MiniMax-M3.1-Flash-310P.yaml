@@ -28,6 +28,7 @@ serve:
   reasoning_parser: minimax_m31
   native_kernel: minimax_w4_int8_v13
   attention_query_tile: 64
+  attention_cache_gather: direct_rows
 tasks:
   - name: greeting_fact_arithmetic_copy_red_image
     metrics:
@@ -106,7 +107,7 @@ validation_runner: tools/minimax_m3/coherence_probe.py
 long_context_quality: 48k_bounded_retrieval_only_160k_full_test_deferred_to_user
 notes: >-
   All cases before int8_v13 are historical FP16 diagnostics, not INT8
-  quality qualification. Current INT8 median short decode is 2.231 tokens/s.
+  quality qualification. Current INT8 plus direct-gather median short decode is 3.340 tokens/s.
   Real-weight greedy HTTP/SSE diagnostics; the sparse retrieval prompt has
   3443 tokens and exceeds the 16-block attention budget. These small checks
   do not establish broad model accuracy or native-release quantization parity.
