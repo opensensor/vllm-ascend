@@ -12,13 +12,15 @@ from tools.glm_perf.build_query_bf16_vector import compile_bridge
 from tools.glm_perf.resident_native import file_digest
 
 
-def build(output, source_root, namespace, cann, *, singleton_l1=False, l1_max_k=4096, wide_l1=False):
+def build(output, source_root, namespace, cann, *, singleton_l1=False, l1_max_k=4096, wide_l1=False, scale_cache=False):
     if not namespace.isidentifier() or not namespace.startswith("minimax_w4_"):
         raise ValueError("use a unique minimax_w4_ namespace for each build")
     if l1_max_k not in (4096, 6144) or (l1_max_k != 4096 and not singleton_l1):
         raise ValueError("L1 max K must be 4096 or 6144, with singleton L1 enabled for 6144")
     if singleton_l1 and wide_l1:
         raise ValueError("choose singleton L1 or wide L1, not both")
+    if scale_cache and not wide_l1:
+        raise ValueError("scale cache requires wide L1")
     output, source_root, cann = output.resolve(), source_root.resolve(strict=True), cann.resolve(strict=True)
     output.mkdir(parents=True, exist_ok=False)
     sources = output / "sources"
@@ -91,6 +93,7 @@ def build(output, source_root, namespace, cann, *, singleton_l1=False, l1_max_k=
             "-Wno-ignored-attributes",
             *(["-DGLM_W2_GROUPED_CANDIDATE"] if singleton_l1 else []),
             *(["-DGLM_W2_GROUPED_L1_WIDE", "-DGLM_W2_GROUPED_L1_WIDE_PIPELINED"] if wide_l1 else []),
+            *(["-DGLM_W2_GROUPED_L1_SCALE_CACHE"] if scale_cache else []),
         ],
         check=True,
     )
@@ -100,7 +103,11 @@ def build(output, source_root, namespace, cann, *, singleton_l1=False, l1_max_k=
     helper = output / "resident_native.py"
     shutil.copy2(Path(__file__).with_name("resident_native.py"), helper)
     (output / "build-options.json").write_text(
-        json.dumps({"singleton_l1": singleton_l1, "l1_max_k": l1_max_k, "wide_l1": wide_l1}, indent=2) + "\n"
+        json.dumps(
+            {"singleton_l1": singleton_l1, "l1_max_k": l1_max_k, "wide_l1": wide_l1, "scale_cache": scale_cache},
+            indent=2,
+        )
+        + "\n"
     )
     validation = (
         "import types\n"
@@ -142,6 +149,7 @@ def main():
     parser.add_argument("--singleton-l1", action="store_true", help="Keep single-route dequantized tiles in L1")
     parser.add_argument("--l1-max-k", type=int, choices=(4096, 6144), default=4096)
     parser.add_argument("--wide-l1", action="store_true", help="Pipeline 128x1024 L1 tiles for small expert groups")
+    parser.add_argument("--scale-cache", action="store_true", help="Reuse scale rows across wide-L1 K tiles")
     args = parser.parse_args()
     print(
         build(
@@ -152,6 +160,7 @@ def main():
             singleton_l1=args.singleton_l1,
             l1_max_k=args.l1_max_k,
             wide_l1=args.wide_l1,
+            scale_cache=args.scale_cache,
         )
     )
 

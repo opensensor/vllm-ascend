@@ -100,7 +100,7 @@ class PackedM3Experts:
 
 @pytest.mark.parametrize(
     "rows,dtype,scale_dtype",
-    [(513, torch.int8, torch.float32), (4, torch.uint8, torch.float32), (4, torch.int8, torch.float16)],
+    [(2049, torch.int8, torch.float32), (4, torch.uint8, torch.float32), (4, torch.int8, torch.float16)],
 )
 def test_native_projection_rejects_unqualified_contract_before_launch(rows, dtype, scale_dtype):
     kernel = GroupedW4Kernel.__new__(GroupedW4Kernel)

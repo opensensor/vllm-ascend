@@ -1,0 +1,51 @@
+import json
+import os
+import time
+from collections import defaultdict
+from pathlib import Path
+import torch
+import vllm_ascend._310p.ops.minimax_m3 as ops
+import vllm_ascend.models.minimax_m3.minimax_m3 as model
+
+def replacements(native_resources):
+    pending = []
+    changes = {}
+    def wrap(name, function):
+        def call(*args, **kwargs):
+            begin = torch.npu.Event(enable_timing=True)
+            end = torch.npu.Event(enable_timing=True)
+            begin.record()
+            started = time.perf_counter()
+            result = function(*args, **kwargs)
+            elapsed = time.perf_counter() - started
+            end.record()
+            pending.append((name, begin, end, elapsed))
+            return result
+        return call
+    for name in ('route_experts', 'clipped_swiglu', 'paged_sparse_attention'):
+        changes['vllm_ascend._310p.ops.minimax_m3:' + name] = wrap(name, getattr(ops, name))
+    for name in ('clipped_swiglu', 'paged_sparse_attention'):
+        changes['vllm_ascend.models.minimax_m3.minimax_m3:' + name] = changes['vllm_ascend._310p.ops.minimax_m3:' + name]
+    changes['vllm_ascend._310p.ops.minimax_m3:grouped_w4_mm'] = wrap('grouped_w4_mm', native_resources['minimax_w4_v6'])
+    changes['vllm_ascend._310p.ops.minimax_m3:PackedM3Experts.forward'] = wrap('experts', ops.PackedM3Experts.forward)
+    for name in ('MiniMaxM3Attention', 'MiniMaxM3MoE', 'MiniMaxM3DecoderLayer'):
+        changes['vllm_ascend.models.minimax_m3.minimax_m3:' + name + '.forward'] = wrap(name, getattr(model, name).forward)
+    changes['vllm_ascend.models.minimax_m3.minimax_m3:tensor_model_parallel_all_reduce'] = wrap('all_reduce', model.tensor_model_parallel_all_reduce)
+    original = model.MiniMaxM3Model.forward
+    output = Path('/workspace/m31-profile-' + str(os.getpid()) + '.jsonl')
+    def forward(self, input_ids, positions, intermediate_tensors, inputs_embeds=None):
+        start = time.perf_counter()
+        result = original(self, input_ids, positions, intermediate_tensors, inputs_embeds)
+        torch.npu.synchronize()
+        elapsed = time.perf_counter() - start
+        totals = defaultdict(lambda: {'cpu_seconds': 0., 'device_ms': 0., 'calls': 0})
+        for name, begin, end, seconds in pending:
+            totals[name]['cpu_seconds'] += seconds
+            totals[name]['device_ms'] += begin.elapsed_time(end)
+            totals[name]['calls'] += 1
+        pending.clear()
+        with output.open('a') as stream:
+            stream.write(json.dumps({'tokens': positions.numel(), 'elapsed': elapsed, 'components': dict(totals)}) + '\n')
+        return result
+    changes['vllm_ascend.models.minimax_m3.minimax_m3:MiniMaxM3Model.forward'] = forward
+    return changes

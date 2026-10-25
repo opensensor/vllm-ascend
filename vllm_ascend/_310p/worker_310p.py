@@ -27,6 +27,7 @@ from vllm.v1.core.kv_cache_utils import get_kv_cache_groups
 
 import vllm_ascend.envs as envs_ascend
 from vllm_ascend._310p.kv_cache_sharing import get_310p_shared_cache_slots
+from vllm_ascend._310p.minimax_memory import warmup_minimax_before_cache
 from vllm_ascend._310p.model_runner_310p import NPUModelRunner310
 from vllm_ascend.utils import is_rc_device
 from vllm_ascend.worker.worker import NPUWorker, init_workspace_manager
@@ -149,12 +150,15 @@ class NPUWorker310(NPUWorker):
         # compilation in this case, but 310P runs these native operators with
         # JIT compilation disabled and performs its decode warmup during graph
         # capture.  Repeating the large prefill here adds startup latency and
-        # does not warm GDN attention because profile metadata omits it.
+        # does not warm GDN attention because profile metadata omits it. M3
+        # needs its lazy TP communicator workspaces reserved before a large KV pool.
         if kv_cache_memory_bytes := self.cache_config.kv_cache_memory_bytes:
+            warmed = warmup_minimax_before_cache(self)
             self.available_kv_cache_memory_bytes = int(kv_cache_memory_bytes)
             logger.info_once(
-                "Using explicitly qualified KV cache memory: %.2f GiB; skipping 310P memory profile forward.",
+                "Using explicit KV cache memory: %.2f GiB; M3 communication/profile warmup=%s.",
                 GiB(self.available_kv_cache_memory_bytes),
+                warmed,
                 scope="local",
             )
             return self._apply_kvpp_memory_budget(

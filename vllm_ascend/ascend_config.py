@@ -424,6 +424,7 @@ class AscendConfig:
         {
             "refresh": false,
             "enable_cpu_binding": true,
+            "hccl_buffer_size_mb": 200,
             "multistream_dsv4_dsa_overlap": true,
             "enable_prefill_mc2": false,
             "multistream_overlap_shared_expert": false,
@@ -568,6 +569,9 @@ class AscendConfig:
 
     # ---- user-input switches: bool/int/list/str, auto type validation ----
     enable_cpu_binding: bool = True
+    # Send and receive each reserve this many MiB per ordinary communicator.
+    # Keep 200 by default; lower values require workload-specific validation.
+    hccl_buffer_size_mb: int = 200
     multistream_dsv4_dsa_overlap: bool = True
     enable_prefill_mc2: bool = False
     multistream_overlap_shared_expert: bool = False
@@ -646,6 +650,13 @@ class AscendConfig:
     def _validate_qwen_prefix_mamba_min_slots(cls, value):
         if type(value) is not int or value < 1:
             raise ValueError("qwen_prefix_mamba_min_slots must be a positive integer")
+        return value
+
+    @field_validator("hccl_buffer_size_mb", mode="before")
+    @classmethod
+    def _validate_hccl_buffer_size_mb(cls, value):
+        if type(value) is not int or value < 1:
+            raise ValueError("hccl_buffer_size_mb must be a positive integer")
         return value
 
     # ---- sub-configs (no vllm_config dep): pydantic dict→dataclass coercion ----

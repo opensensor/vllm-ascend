@@ -1,0 +1,50 @@
+
+==================================== ERRORS ====================================
+_________ ERROR collecting tests/ut/_310p/test_model_runner_v2_310p.py _________
+ImportError while importing test module '/vllm-workspace/vllm-ascend/tests/ut/_310p/test_model_runner_v2_310p.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/python3.12.13/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/ut/_310p/test_model_runner_v2_310p.py:14: in <module>
+    import vllm_ascend._310p.worker.v2.model_runner as model_runner_module
+vllm_ascend/_310p/worker/v2/model_runner.py:43: in <module>
+    from vllm_ascend._310p.attention.attention_v1 import AscendAttentionBackend310
+vllm_ascend/_310p/attention/attention_v1.py:27: in <module>
+    from vllm_ascend._310p.attention.attention_mask import (
+vllm_ascend/_310p/attention/attention_mask.py:22: in <module>
+    from vllm_ascend.attention.attention_v1 import AscendMetadata
+vllm_ascend/attention/attention_v1.py:60: in <module>
+    from vllm_ascend.device.device_op import DeviceOperator
+vllm_ascend/device/device_op.py:29: in <module>
+    from vllm_ascend.ops.triton.fla.chunk_scaled_dot_kkt import chunk_scaled_dot_kkt_fwd_kernel
+vllm_ascend/ops/__init__.py:21: in <module>
+    import vllm_ascend.ops.fused_moe.fused_moe  # noqa
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+vllm_ascend/ops/fused_moe/fused_moe.py:35: in <module>
+    from vllm_ascend.ops.fused_moe.moe_comm_method import get_moe_comm_method, setup_moe_comm_method
+vllm_ascend/ops/fused_moe/moe_comm_method.py:35: in <module>
+    from vllm_ascend.ops.fused_moe.moe_mlp import apply_moe_mlp
+vllm_ascend/ops/fused_moe/moe_mlp.py:22: in <module>
+    from vllm_ascend.device.device_op import DeviceOperator
+E   ImportError: cannot import name 'DeviceOperator' from partially initialized module 'vllm_ascend.device.device_op' (most likely due to a circular import) (/vllm-workspace/vllm-ascend/vllm_ascend/device/device_op.py)
+------------------------------- Captured stdout --------------------------------
+INFO 10-25 03:15:57 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-25 03:15:57 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-25 03:15:57 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 10-25 03:15:57 [__init__.py:272] Platform plugin ascend is activated
+INFO 10-25 03:15:57 [platform.py:72] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=0.
+INFO 10-25 03:16:01 [importing.py:98] Triton not installed or not compatible; certain GPU-related functions will not be available.
+------------------------------- Captured stderr --------------------------------
+W1025 03:16:04.679000 2723441 torch/_library/triton.py:53] Triton not available, find_triton_kernels = []
+=============================== warnings summary ===============================
+../../srv/ai/venvs/minimax-m31/lib/python3.12/site-packages/torch/jit/_script.py:365: 14 warnings
+  /srv/ai/venvs/minimax-m31/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+ERROR tests/ut/_310p/test_model_runner_v2_310p.py
+14 warnings, 1 error in 13.88s
+ERROR: found no collectors for /vllm-workspace/vllm-ascend/tests/ut/_310p/test_model_runner_v2_310p.py::test_worker_uses_explicit_cache_budget_without_profile_forward

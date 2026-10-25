@@ -105,3 +105,10 @@ def test_native_build_rejects_conflicting_l1_schedules(tmp_path):
     with pytest.raises(ValueError, match="not both"):
         build(output, tmp_path, "minimax_w4_test", tmp_path, singleton_l1=True, wide_l1=True)
     assert not output.exists()
+
+
+def test_native_build_rejects_scale_cache_without_wide_l1(tmp_path):
+    output = tmp_path / "build"
+    with pytest.raises(ValueError, match="scale cache requires wide L1"):
+        build(output, tmp_path, "minimax_w4_test", tmp_path, scale_cache=True)
+    assert not output.exists()

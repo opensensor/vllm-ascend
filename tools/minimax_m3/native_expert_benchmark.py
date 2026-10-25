@@ -51,7 +51,10 @@ def main():
                 (4, [4] * 64),
                 (64, list(range(1, 65))),
                 (128, list(range(2, 129, 2))),
+                (512, list(range(8, 513, 8))),
                 (512, [512] * 64),
+                (2048, list(range(32, 2049, 32))),
+                (2048, [2048] * 64),
             ):
                 x = torch.randn(rows, reference.shape[1], generator=torch.Generator().manual_seed(53)).half()
                 expected = (x.float() @ reference.T).half()

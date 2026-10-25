@@ -47,7 +47,8 @@ def test_loader_rejects_unknown_or_unqualified_options(options):
         MiniMaxM3W4Loader(LoadConfig(load_format="minimax_m3_w4", model_loader_extra_config=options))
 
 
-def test_load_time_repack_is_lossless_and_keeps_checkpoint_canonical(tmp_path):
+@pytest.mark.parametrize("route_cap", [512, 2048])
+def test_load_time_repack_is_lossless_and_keeps_checkpoint_canonical(tmp_path, route_cap):
     source, target = tmp_path / "source", tmp_path / "export"
     source.mkdir()
     tensors = {
@@ -67,8 +68,8 @@ def test_load_time_repack_is_lossless_and_keeps_checkpoint_canonical(tmp_path):
     bank = PackedM3Experts(256, 256, 4, 2, 0, 2, prefix="model.layers.0.experts")
     assert load_expert_banks(bank, target, manifest) == 12
     originals = {name: tensor.clone() for name, tensor in bank.named_buffers()}
-    assert load_expert_banks(bank, target, manifest, expert_layout="nz256", max_grouped_routes=512) == 12
-    assert bank.max_grouped_routes == 512
+    assert load_expert_banks(bank, target, manifest, expert_layout="nz256", max_grouped_routes=route_cap) == 12
+    assert bank.max_grouped_routes == route_cap
     for projection in ("w1", "w2", "w3"):
         decoded = unpack_nz_w4(getattr(bank, projection + "_codes"), 256)
         for local in range(2):

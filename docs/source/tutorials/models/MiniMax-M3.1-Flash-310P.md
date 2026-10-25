@@ -19,8 +19,10 @@ image, and retrieval from a 3443-token prompt. A separate 7943-token retrieval a
 returned the correct key. These are bounded diagnostics,
 not a broad quality benchmark. Full 60-layer dummy serving also passed an
 8192-token cache-boundary request; dummy output is not evidence of coherence.
-The current 16K profile also passed a cold 16043-token retrieval with real
-weights in 299.90 s after clearing scheduler and physical caches.
+The earlier 16K profile passed a cold 16043-token retrieval with real
+weights in 299.90 s after clearing scheduler and physical caches. The current
+profile uses 512-token prefill batches. A 48603-token cold retrieval passed
+in 490.13 s; the current capacity profile allows 163840 tokens.
 
 ## Supported features
 
@@ -34,16 +36,25 @@ weights in 299.90 s after clearing scheduler and physical caches.
 | ACLGraph | Unsupported by the current eager adapter; rejected explicitly |
 | FlashComm1 | Sequence-parallel MoE unsupported by this adapter |
 | MTP/DSpark | Separate draft checkpoint not converted; speculation rejected |
-| Context/concurrency | Current profile 16384 tokens, one sequence |
+| Context/concurrency | 163840 tokens, one sequence |
 | Tool calls | Auto, named, required, parallel, streamed and nested arguments |
 | Structured output | JSON schema, normal and streamed responses |
 
 An offline 128K × 16 capacity calculation needs approximately 92.57 GiB on the
 busiest rank, including the provisional runtime reserve. It does not fit these
-chips. The initial 8K profile has been extended to 16K with one sequence. Both
-startup profiles reported the same 1.75 GiB available cache budget (58,368 token slots);
-the larger request limit does not allocate additional cache. The retrieval
-checks remain bounded diagnostics, not broad long-context quality validation.
+chips. The fully exercised 48K profile supports one sequence and allocated 55,808
+cache slots. The 160K profile reserves 4,410,900,480 bytes per rank, including
+spare cache blocks, and uses 32 MiB ordinary HCCL buffers. The model's 1,048,576
+position limit is not a hardware capacity claim: FP16 KV alone would need
+26.25 GiB on each 21-layer rank at that length, in addition to weights.
+Startup allocated 164,096 token slots and passed text, image, 3443-token retrieval
+and streamed-tool checks. The user owns the full 160K Kilo test; automated checks
+deliberately remain short. Allocation plus short inference does not establish
+full-context quality or peak-memory stability.
+Explicit cache allocation runs M3's model profile first to reserve lazy TP
+communication workspaces. The existing custom pipeline transport warms itself.
+Other models retain the existing explicit-budget fast path. Retrieval checks remain bounded diagnostics, not broad long-context
+quality validation.
 
 ## Environment preparation
 
@@ -104,11 +115,13 @@ export VLLM_PP_LAYER_PARTITION=21,20,19
 vllm serve /srv/ai/storage/models/MiniMax-M3.1-Flash-W4 \
   --served-model-name minimax-m31-flash \
   --load-format minimax_m3_w4 --dtype half \
-  --model-loader-extra-config '{"expert_layout":"nz256","max_grouped_routes":512}' \
+  --model-loader-extra-config '{"expert_layout":"nz256","max_grouped_routes":2048}' \
   --tensor-parallel-size 2 --pipeline-parallel-size 3 \
   --enable-expert-parallel --enforce-eager --block-size 128 \
-  --max-model-len 16384 --max-num-seqs 1 \
-  --max-num-batched-tokens 128 --gpu-memory-utilization 0.95 \
+  --max-model-len 163840 --max-num-seqs 1 \
+  --max-num-batched-tokens 512 --gpu-memory-utilization 0.95 \
+  --kv-cache-memory-bytes 4410900480 \
+  --additional-config '{"hccl_buffer_size_mb":32}' \
   --limit-mm-per-prompt '{"image":1,"video":0}' \
   --mm-processor-kwargs '{"max_long_side_pixel":448}' \
   --no-async-scheduling --disable-custom-all-reduce \
@@ -158,12 +171,12 @@ assistant turn. Normal and streamed constrained JSON both return valid content.
 
 ### Kilo CLI
 
-The example in `artifacts/minimax-m31-tools-20261025/kilo-minimax.json` is a
+The example in `artifacts/minimax-m31-context-perf-20261025/kilo-minimax.json` is a
 credential-free fragment to merge into `~/.config/kilo/kilo.jsonc`; preserve any
 existing providers and permissions. It selects the OpenAI-compatible endpoint
 `http://192.168.53.187:8000/v1` and provides a compact `minimax-code` agent with
 read, glob, grep, bash, edit and write tools, plus a tool-free `minimax-chat` agent.
-The dummy `local` API key is not authentication. The serving profile has a 16K
+The dummy `local` API key is not authentication. The serving profile has a 160K
 context and reserves 2048 output tokens; large repositories require focused
 reads and context compaction.
 
@@ -247,6 +260,22 @@ cold 168.99 s. The native full-projection benchmark was bit-identical to OPP and
 about 10–13% faster on common routing cases. The earlier singleton-L1 v5
 candidate passed numerically but was slower and remains rejected.
 
+The current 512-token prefill profile groups up to 2048 expert routes per call,
+reusing each decoded weight tile over more tokens. It retains 64-query attention
+tiles and the original sparse arithmetic. The v7 helper qualifies larger calls;
+its native schedule is the same as v6. All 30 full-sized projection checks were
+bit-identical to OPP and passed independent CPU references, including 2048
+routes selecting one expert.
+
+| Request | 128-token chunks | 512-token chunks |
+| --- | ---: | ---: |
+| 3443-token retrieval | 61.01 s | 37.90 s |
+| Cold 16043-token retrieval | 299.90 s | 158.76 s |
+
+Both profiles returned the same exact answers. Short greeting/factual requests
+were approximately unchanged; sustained decode remains around two tokens per
+second. These gains improve prompt processing, not token-by-token decoding.
+
 ## Resident Python and CANN reload
 
 Real-weight validation passed module replacement, direct native activation and
@@ -302,17 +331,18 @@ same command. The CLI serializes controllers and blocks new public requests
 during a transaction. After a failed mutation, restore a valid generation and
 use `resident resume`; do not resume disagreeing ranks.
 
-Build the qualified wider L1 schedule with `--wide-l1` and a fresh namespace:
+Build the qualified wider L1 schedule and 2048-route helper with `--wide-l1`
+and a fresh namespace:
 
 ```bash
-python -m tools.minimax_m3.build_resident_native /vllm-workspace/minimax-native-v6 \
-  --namespace minimax_w4_v6 --wide-l1
+python -m tools.minimax_m3.build_resident_native /vllm-workspace/minimax-native-v7 \
+  --namespace minimax_w4_v7 --wide-l1
 python -m tools.minimax_m3.probe_resident_native \
-  /vllm-workspace/minimax-native-v6/manifest.json --device npu:0 \
-  --output /workspace/m31-native-v6-standalone.json
+  /vllm-workspace/minimax-native-v7/manifest.json --device npu:0 \
+  --output /workspace/m31-native-v7-standalone.json
 python -m tools.minimax_m3.resident load-native \
-  --manifest /vllm-workspace/minimax-native-v6/manifest.json
-python -m tools.minimax_m3.resident switch --native-name minimax_w4_v6
+  --manifest /vllm-workspace/minimax-native-v7/manifest.json
+python -m tools.minimax_m3.resident switch --native-name minimax_w4_v7
 ```
 
 Do not rebuild into an existing version directory. The installed Python
@@ -327,3 +357,30 @@ the qualified OPP kernel until the native activation commands above run.
 Evidence and launch scripts are in `artifacts/minimax-m31-serving-20261024/`.
 Tool/Kilo checks, candidate timings, and the new service scripts are in
 `artifacts/minimax-m31-tools-20261025/`.
+
+The current 160K launcher, validated 48K fallback, 512-token prefill checks and v7 receipts are in
+`artifacts/minimax-m31-context-perf-20261025/`.
+
+For bounded kernel benchmarks against existing weight banks, without clearing
+prefix or physical KV caches:
+
+```bash
+python -m tools.minimax_m3.build_resident_native /vllm-workspace/minimax-native-v8 \
+  --namespace minimax_w4_v8 --wide-l1 --scale-cache
+python -m tools.minimax_m3.resident_benchmark \
+  --manifest /vllm-workspace/minimax-native-v8/manifest.json \
+  --baseline minimax_w4_v7 --output /workspace/m31-native-v8-resident-benchmark.json
+```
+
+This pauses scheduling while requests queue, compares projections on all six
+resident banks, and restores baseline dispatch before resuming. The candidate
+is never used for user inference. It checks bitwise output equality and unchanged
+KV storage, worker PIDs, weight storage and generation. Native failures leave
+serving paused for inspection. Microbenchmark gains require separate full-model
+qualification before promotion.
+
+The scale-cache v8 candidate passed all 90 bitwise comparisons across six ranks,
+but measured gains were only about 0–2% and concentrated-route cases slightly
+regressed. It remains unpromoted; v7 serves requests. All worker identities,
+weights and KV storage survived the benchmark unchanged. See `v8-summary.json`
+and the full resident receipt in the context/performance evidence directory.

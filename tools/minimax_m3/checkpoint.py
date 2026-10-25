@@ -88,8 +88,8 @@ def checked_tensors(folder, record):
 def load_expert_banks(model, folder, manifest, *, expert_layout="canonical", max_grouped_routes=128):
     if expert_layout not in ("canonical", "nz256"):
         raise ValueError("Unsupported M3 resident expert layout")
-    if type(max_grouped_routes) is not int or max_grouped_routes not in (128, 512):
-        raise ValueError("M3 grouped route capacity must be 128 or 512")
+    if type(max_grouped_routes) is not int or max_grouped_routes not in (128, 512, 2048):
+        raise ValueError("M3 grouped route capacity must be 128, 512 or 2048")
     by_id = {}
     for name, record in manifest["weights"].items():
         match = EXPERT_NAME.fullmatch(name)

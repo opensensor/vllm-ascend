@@ -25,6 +25,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--image", type=Path, help="Solid red PNG for the color check")
     parser.add_argument("--max-tokens", type=int, default=64)
+    parser.add_argument("--timeout", type=int, default=1200, help="HTTP timeout in seconds for cold long prompts")
     parser.add_argument(
         "--extended", action="store_true", help="Add JSON, history, multi-step and sparse retrieval checks"
     )
@@ -102,7 +103,7 @@ def main():
             "temperature": 0,
             "max_tokens": args.max_tokens,
         }
-        result = stream_request(args.base_url, "/v1/chat/completions", payload, 1200)
+        result = stream_request(args.base_url, "/v1/chat/completions", payload, args.timeout)
         # Exact short answers deliberately reject leaked reasoning markup.
         result.update(name=name, expected=expected, passed=answer_matches(result["text"], expected), request=payload)
         (args.output / (name + ".json")).write_text(json.dumps(result, indent=2) + "\n")

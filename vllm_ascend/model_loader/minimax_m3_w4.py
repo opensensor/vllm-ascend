@@ -21,8 +21,8 @@ class MiniMaxM3W4Loader(DefaultModelLoader):
         self.max_grouped_routes = options.get("max_grouped_routes", 128)
         if self.expert_layout not in ("canonical", "nz256"):
             raise ValueError("M3 expert_layout must be canonical or nz256")
-        if type(self.max_grouped_routes) is not int or self.max_grouped_routes not in (128, 512):
-            raise ValueError("M3 max_grouped_routes must be 128 or 512")
+        if type(self.max_grouped_routes) is not int or self.max_grouped_routes not in (128, 512, 2048):
+            raise ValueError("M3 max_grouped_routes must be 128, 512 or 2048")
         super().__init__(dataclasses.replace(load_config, load_format="safetensors", model_loader_extra_config={}))
 
     def download_model(self, model_config):

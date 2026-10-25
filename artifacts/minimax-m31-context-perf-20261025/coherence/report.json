@@ -1,0 +1,174 @@
+{
+  "scope": "Small deterministic coherence/format smoke, not lm-eval or long-context qualification",
+  "cases": [
+    {
+      "status": 200,
+      "text": "Hello!",
+      "reasoning": "",
+      "usage": {
+        "prompt_tokens": 201,
+        "total_tokens": 205,
+        "completion_tokens": 4,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "first_output_seconds": 6.428168533020653,
+      "elapsed_seconds": 7.378899041970726,
+      "name": "greeting",
+      "expected": "hello",
+      "passed": true
+    },
+    {
+      "status": 200,
+      "text": "Paris",
+      "reasoning": "The user asks for the capital of France, answer with only the city name.",
+      "usage": {
+        "prompt_tokens": 205,
+        "total_tokens": 225,
+        "completion_tokens": 20,
+        "completion_tokens_details": {
+          "reasoning_tokens": 16
+        }
+      },
+      "first_output_seconds": 4.8823689430137165,
+      "elapsed_seconds": 13.613359999028035,
+      "name": "france",
+      "expected": "paris",
+      "passed": true
+    },
+    {
+      "status": 200,
+      "text": "42",
+      "reasoning": "17 + 25 = 42.",
+      "usage": {
+        "prompt_tokens": 205,
+        "total_tokens": 217,
+        "completion_tokens": 12,
+        "completion_tokens_details": {
+          "reasoning_tokens": 8
+        }
+      },
+      "first_output_seconds": 4.86280825099675,
+      "elapsed_seconds": 9.709641611028928,
+      "name": "addition",
+      "expected": "42",
+      "passed": true
+    },
+    {
+      "status": 200,
+      "text": "cobalt",
+      "reasoning": "The user wants exactly the word \"cobalt\".",
+      "usage": {
+        "prompt_tokens": 198,
+        "total_tokens": 213,
+        "completion_tokens": 15,
+        "completion_tokens_details": {
+          "reasoning_tokens": 10
+        }
+      },
+      "first_output_seconds": 4.716053323005326,
+      "elapsed_seconds": 10.973973601008765,
+      "name": "copy",
+      "expected": "cobalt",
+      "passed": true
+    },
+    {
+      "status": 200,
+      "text": "Red",
+      "reasoning": "The image is a solid red color. Dominant color: red.",
+      "usage": {
+        "prompt_tokens": 463,
+        "total_tokens": 481,
+        "completion_tokens": 18,
+        "completion_tokens_details": {
+          "reasoning_tokens": 14
+        }
+      },
+      "first_output_seconds": 8.019487447978463,
+      "elapsed_seconds": 15.832689244998619,
+      "name": "image",
+      "expected": "red",
+      "passed": true
+    },
+    {
+      "status": 200,
+      "text": "{\"colors\": [\"red\", \"blue\"]}",
+      "reasoning": "",
+      "usage": {
+        "prompt_tokens": 211,
+        "total_tokens": 223,
+        "completion_tokens": 12,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "first_output_seconds": 5.148931136005558,
+      "elapsed_seconds": 10.009935620997567,
+      "name": "json",
+      "expected": {
+        "colors": [
+          "red",
+          "blue"
+        ]
+      },
+      "passed": true
+    },
+    {
+      "status": 200,
+      "text": "8",
+      "reasoning": "3 red + 2 blue = 5. Add 4 blue = 9. Remove 1 red = 8.",
+      "usage": {
+        "prompt_tokens": 228,
+        "total_tokens": 258,
+        "completion_tokens": 30,
+        "completion_tokens_details": {
+          "reasoning_tokens": 26
+        }
+      },
+      "first_output_seconds": 5.453229725011624,
+      "elapsed_seconds": 19.045494138030335,
+      "name": "multi_step",
+      "expected": "8",
+      "passed": true
+    },
+    {
+      "status": 200,
+      "text": "cedar-47",
+      "reasoning": "The user asked me to remember \"cedar-47\". They want only the code.",
+      "usage": {
+        "prompt_tokens": 231,
+        "total_tokens": 256,
+        "completion_tokens": 25,
+        "completion_tokens_details": {
+          "reasoning_tokens": 18
+        }
+      },
+      "first_output_seconds": 5.407455529028084,
+      "elapsed_seconds": 16.451581826026086,
+      "name": "multi_turn",
+      "expected": "cedar-47",
+      "passed": true
+    },
+    {
+      "status": 200,
+      "text": "amber cloud",
+      "reasoning": "",
+      "usage": {
+        "prompt_tokens": 3443,
+        "total_tokens": 3447,
+        "completion_tokens": 4,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "first_output_seconds": 36.89947026700247,
+      "elapsed_seconds": 37.90484590100823,
+      "name": "sparse_retrieval",
+      "expected": "amber cloud",
+      "passed": true
+    }
+  ],
+  "sample_count": 9,
+  "passed_fraction": 1.0
+}

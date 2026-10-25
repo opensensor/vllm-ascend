@@ -7,7 +7,7 @@ from vllm_ascend._310p.ops.minimax_m3 import pack_w4_nz256, reference_grouped_mm
 
 CUBE_CORES = 8
 OUTPUT_TILE = 128
-MAX_ROUTES = 512
+MAX_ROUTES = 2048
 
 
 class GroupedW4Kernel:
@@ -63,7 +63,13 @@ def validate_kernel(kernel):
     scales = torch.rand((2, 8, 8), generator=generator) / 64
     device_scales = scales.npu()
     reports = []
-    for rows, boundaries in ((4, [1, 3]), (128, [64, 128]), (512, [512, 512])):
+    for rows, boundaries in (
+        (4, [1, 3]),
+        (128, [64, 128]),
+        (512, [512, 512]),
+        (2048, [1024, 2047]),
+        (2048, [2048, 2048]),
+    ):
         x = torch.randn(rows, 256, generator=generator).half()
         ends = torch.tensor(boundaries, dtype=torch.int64)
         expected = reference_grouped_mm(x, canonical, scales, ends)

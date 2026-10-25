@@ -82,8 +82,8 @@ def test_router_bias_only_changes_selection():
     torch.testing.assert_close(weights, expected / expected.sum(1, keepdim=True))
 
 
-@pytest.mark.parametrize("route_cap", [128, 512])
-@pytest.mark.parametrize("tokens", [0, 1, 17, 65, 257])
+@pytest.mark.parametrize("route_cap", [128, 512, 2048])
+@pytest.mark.parametrize("tokens", [0, 1, 17, 65, 257, 1025])
 def test_packed_moe_ep_sum_and_chunk_boundaries(tokens, route_cap):
     torch.manual_seed(7)
     x = torch.randn(tokens, 32).half()

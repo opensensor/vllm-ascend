@@ -11,18 +11,21 @@ serve:
   enable_expert_parallel: true
   dtype: float16
   enforce_eager: true
-  max_model_len: 16384
+  max_model_len: 163840
+  kv_cache_memory_bytes: 4410900480
+  additional_config:
+    hccl_buffer_size_mb: 32
   max_num_seqs: 1
-  max_num_batched_tokens: 128
+  max_num_batched_tokens: 512
   served_model_name: minimax-m31-flash
   image_limit: 1
   video_limit: 0
   expert_layout: nz256
-  max_grouped_routes: 512
+  max_grouped_routes: 2048
   enable_auto_tool_choice: true
   tool_call_parser: minimax_m3
   reasoning_parser: minimax_m31
-  native_kernel: minimax_w4_v6
+  native_kernel: minimax_w4_v7
   attention_query_tile: 64
 tasks:
   - name: greeting_fact_arithmetic_copy_red_image
@@ -61,9 +64,33 @@ tasks:
         value: 1.0
     sample_count: 1
     evidence: artifacts/minimax-m31-tools-20261025/final-16k/report.json
+  - name: native_v7_batch512_coherence
+    metrics:
+      - name: passed_fraction
+        value: 1.0
+    sample_count: 9
+    evidence: artifacts/minimax-m31-context-perf-20261025/coherence/report.json
+  - name: batch512_cold_sparse_retrieval_16043_tokens
+    metrics:
+      - name: passed_fraction
+        value: 1.0
+    sample_count: 1
+    evidence: artifacts/minimax-m31-context-perf-20261025/cold-16k/report.json
+  - name: batch512_cold_sparse_retrieval_48603_tokens
+    metrics:
+      - name: passed_fraction
+        value: 1.0
+    sample_count: 1
+    evidence: artifacts/minimax-m31-context-perf-20261025/cold-48k/report.json
+  - name: context160k_short_smoke
+    metrics:
+      - name: passed_fraction
+        value: 1.0
+    sample_count: 4
+    evidence: artifacts/minimax-m31-context-perf-20261025/short-160k/report.json
 num_fewshot: 0
 validation_runner: tools/minimax_m3/coherence_probe.py
-long_context_quality: bounded_retrieval_only
+long_context_quality: 48k_bounded_retrieval_only_160k_full_test_deferred_to_user
 notes: >-
   Real-weight greedy HTTP/SSE diagnostics; the sparse retrieval prompt has
   3443 tokens and exceeds the 16-block attention budget. These small checks

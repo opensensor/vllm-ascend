@@ -1,0 +1,61 @@
+{
+  "scope": "Small deterministic coherence/format smoke, not lm-eval or long-context qualification",
+  "cases": [
+    {
+      "status": 200,
+      "text": "Hello!",
+      "reasoning": "",
+      "usage": {
+        "prompt_tokens": 201,
+        "total_tokens": 205,
+        "completion_tokens": 4,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "first_output_seconds": 6.382154996972531,
+      "elapsed_seconds": 7.337527422001585,
+      "name": "greeting",
+      "expected": "hello",
+      "passed": true
+    },
+    {
+      "status": 200,
+      "text": "Paris",
+      "reasoning": "The user asks for the capital of France, answer with only the city name.",
+      "usage": {
+        "prompt_tokens": 205,
+        "total_tokens": 225,
+        "completion_tokens": 20,
+        "completion_tokens_details": {
+          "reasoning_tokens": 16
+        }
+      },
+      "first_output_seconds": 4.8824891520198435,
+      "elapsed_seconds": 13.642299213970546,
+      "name": "france",
+      "expected": "paris",
+      "passed": true
+    },
+    {
+      "status": 200,
+      "text": "amber cloud",
+      "reasoning": "",
+      "usage": {
+        "prompt_tokens": 3443,
+        "total_tokens": 3447,
+        "completion_tokens": 4,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "first_output_seconds": 59.995360841974616,
+      "elapsed_seconds": 61.009715332009364,
+      "name": "sparse_retrieval",
+      "expected": "amber cloud",
+      "passed": true
+    }
+  ],
+  "sample_count": 3,
+  "passed_fraction": 1.0
+}

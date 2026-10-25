@@ -1137,7 +1137,13 @@ def get_hccl_config_for_pg_options(group_name: str) -> dict | None:
 
 
 def get_default_buffer_config() -> dict:
-    return {"hccl_buffer_size": _DEFAULT_BUFFER_SIZE}
+    # Group construction can precede config initialization in standalone users.
+    # Special DP/EPLB/MC2 groups retain their separate contracts above.
+    try:
+        size = get_ascend_config().hccl_buffer_size_mb
+    except RuntimeError:
+        size = _DEFAULT_BUFFER_SIZE
+    return {"hccl_buffer_size": size}
 
 
 def calculate_dp_buffer_size() -> int:
