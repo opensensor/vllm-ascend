@@ -1,0 +1,23 @@
+import fcntl,json,time,urllib.request
+from pathlib import Path
+from tools.minimax_m3.tool_probe import chat_request
+from tools.glm_perf.resident_harness import ResidentClient
+c=ResidentClient('http://127.0.0.1:8000',6,timeout=1200)
+out=Path('/workspace/m31-full-history-results');out.mkdir(exist_ok=True)
+def metrics():
+ with urllib.request.urlopen(c.base_url+'/metrics',timeout=10) as r:t=r.read().decode()
+ return {l.split('{')[0]:float(l.rsplit(' ',1)[1]) for l in t.splitlines() if l.startswith(('vllm:prefix_cache_hits_total{','vllm:prefix_cache_queries_total{'))}
+with Path('/tmp/minimax-m31-resident.lock').open('w') as lock:
+ fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+ assert not c.request('/is_paused',method='GET')['is_paused']
+ assert not c.request('/resident/maintenance',method='GET')['maintenance']
+ c.request('/resident/maintenance')
+ try:
+  p=json.loads(Path('/workspace/m31-full-history-cases.json').read_text())['history']
+  c.request('/pause?mode=wait&clear_cache=true');c.rpc('resident_reset');c.resume()
+  for label in ('cold','warm'):
+   before=metrics();r=chat_request(c.base_url,p,timeout=1200);r['metrics_before']=before;r['metrics_after']=metrics()
+   (out/(label+'.json')).write_text(json.dumps(r,indent=2))
+   print(label,json.dumps({k:r.get(k) for k in ('status','finish_reason','message','usage','elapsed_seconds','metrics_before','metrics_after')}),flush=True)
+ finally:
+  if not c.request('/is_paused',method='GET')['is_paused']:c.request('/resident/maintenance',method='DELETE')

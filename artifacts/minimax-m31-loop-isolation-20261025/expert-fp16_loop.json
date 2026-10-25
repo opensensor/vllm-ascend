@@ -1,0 +1,37 @@
+{
+  "status": 200,
+  "finish_reason": "tool_calls",
+  "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "I have a good picture. Let me summarize the project.\n\nLet me check the fork relationship \u2014 this is opensensor/vllm-ascend, a fork of vllm-project/vllm-ascend. Let me verify a couple of details: the 310P focus, the \"w3\" file, and the plan docs at root.",
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-9cfb0dc487bd051a",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\":\"ls *.md; echo \\\"===ROOT===\\\"; ls\",\"description\":\"List root markdown files\"}"
+        }
+      },
+      {
+        "id": "chatcmpl-tool-9c2f2baa9ed5cee3",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\":\"git log --oneline -15 --format='%h %ad %s' --date=short\",\"description\":\"Show recent commit history with dates\"}"
+        }
+      }
+    ]
+  },
+  "usage": {
+    "prompt_tokens": 5549,
+    "total_tokens": 5726,
+    "completion_tokens": 177,
+    "completion_tokens_details": {
+      "reasoning_tokens": 72
+    }
+  },
+  "elapsed_seconds": 117.94507564697415,
+  "first_output_seconds": 54.399006541993
+}

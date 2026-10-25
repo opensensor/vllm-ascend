@@ -1,0 +1,37 @@
+{
+  "status": 200,
+  "finish_reason": "tool_calls",
+  "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "Let me look at the README and docs index for a good description.",
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-9916027df16e4141",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\":\"ls; echo \\\"===README===\\\"; head -60 README.md 2>/dev/null\",\"description\":\"List root and read README\"}"
+        }
+      },
+      {
+        "id": "chatcmpl-tool-b005bfa2247ff08d",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\":\"cat docs/source/developer_guide/Design_Documents/index.md 2>/dev/null | head -80\",\"description\":\"Read design docs index\"}"
+        }
+      }
+    ]
+  },
+  "usage": {
+    "prompt_tokens": 5322,
+    "total_tokens": 5447,
+    "completion_tokens": 125,
+    "completion_tokens_details": {
+      "reasoning_tokens": 14
+    }
+  },
+  "elapsed_seconds": 55.731257321021985,
+  "first_output_seconds": 20.975066916027572
+}

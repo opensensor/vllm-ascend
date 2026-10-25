@@ -1,0 +1,19 @@
+import json,sqlite3,copy
+from pathlib import Path
+c=sqlite3.connect(f'file:{Path.home()}/.local/share/kilo/kilo.db?mode=ro',uri=True)
+wire=json.loads(Path('/tmp/m31-kilo-wire-requests.json').read_text())[0]
+new=json.loads((Path.home()/'.config/kilo/kilo.jsonc').read_text())['agent']['minimax-code']['prompt']
+old=json.loads((Path.home()/'.config/kilo/kilo.jsonc.before-m31-loop-mitigation-20261025').read_text())['agent']['minimax-code']['prompt']
+system=wire['messages'][0]['content'].replace(new,old).replace('Is directory a git repo: no','Is directory a git repo: yes')+'\n\n'+Path('AGENTS.md').read_text()
+messages=[{'role':'system','content':system},{'role':'user','content':'Decsribe this project'}]
+rows=list(c.execute('select id,data from message where session_id=? order by time_created',('<local-session-id>',)))
+for mid,raw in rows[1:4]:
+ parts=[json.loads(r[0]) for r in c.execute('select data from part where message_id=? order by time_created',(mid,))]
+ calls=[p for p in parts if p['type']=='tool']
+ messages.append({'role':'assistant','content':''.join(p.get('text','') for p in parts if p['type']=='text') or None,'reasoning_content':''.join(p.get('text','') for p in parts if p['type']=='reasoning'),'tool_calls':[{'id':p['callID'],'type':'function','function':{'name':p['tool'],'arguments':json.dumps(p['state']['input'])}} for p in calls]})
+ messages.extend({'role':'tool','tool_call_id':p['callID'],'content':p['state']['output']} for p in calls)
+base={'model':'minimax-m31-flash','messages':messages,'tools':wire['tools'],'tool_choice':'auto','max_tokens':384,'stream':True,'stream_options':{'include_usage':True},'temperature':0,'seed':71}
+cases={'history':base,'omit_reasoning':copy.deepcopy(base),'tools_none':copy.deepcopy(base)}
+for m in cases['omit_reasoning']['messages']:m.pop('reasoning_content',None)
+cases['tools_none']['tool_choice']='none'
+Path('/tmp/m31-onset-cases.json').write_text(json.dumps(cases))

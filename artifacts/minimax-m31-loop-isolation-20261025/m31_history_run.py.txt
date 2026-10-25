@@ -1,0 +1,17 @@
+import fcntl,json
+from pathlib import Path
+from tools.minimax_m3.tool_probe import chat_request
+from tools.glm_perf.resident_harness import ResidentClient
+c=ResidentClient('http://127.0.0.1:8000',6,timeout=300)
+out=Path('/workspace/m31-history-results');out.mkdir(exist_ok=True)
+with Path('/tmp/minimax-m31-resident.lock').open('w') as lock:
+ fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+ assert not c.request('/is_paused',method='GET')['is_paused']
+ assert not c.request('/resident/maintenance',method='GET')['maintenance']
+ c.request('/resident/maintenance')
+ try:
+  for label,payload in json.loads(Path('/workspace/m31-history-cases.json').read_text()).items():
+   result=chat_request(c.base_url,payload,timeout=600)
+   (out/(label+'.json')).write_text(json.dumps(result,indent=2))
+   print(label,json.dumps({k:result.get(k) for k in ('status','finish_reason','usage','message')}),flush=True)
+ finally:c.request('/resident/maintenance',method='DELETE')

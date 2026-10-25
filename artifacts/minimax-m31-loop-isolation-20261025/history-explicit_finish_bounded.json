@@ -1,0 +1,19 @@
+{
+  "status": 200,
+  "finish_reason": "stop",
+  "message": {
+    "role": "assistant",
+    "content": "**vllm-ascend** is an Ascend NPU (Huawei CANN/Ascend 910-series) backend plugin for the vLLM inference engine, maintained as a fork of the upstream `vllm-project/vllm-ascend` project with periodic upstream merges.\n\n**Structure:** `vllm_ascend/` holds the plugin \u2014 platform/device abstractions, `worker/` (model runner, EPLB), `attention/` (MLA, sparse attention), `compilation/` (ACL graph capture, graph fusion passes), `quantization/`, `spec_decode/` (Eagle, Medusa, ngram, DFlash, DSpark proposers), `lora/` (Punica), `sample/`, `weight_switch/`, `ec_manager/`, `xlite/`, and `observability/` (memory accounting, run logs, request timing).\n\n**Focus:** heavy emphasis on 310P-class hardware \u2014 many design docs target DeepSeek-V4.1, GLM-5.x, MiniMax-M3, and Qwen3.8 \"Flash-Next\" 1M-context on 310P, plus KV-cache offloading, chunked pipeline parallelism, context/disaggregated prefill, and dynamic topology planning.\n\n**Activity:** ~1,000+ commits since Sept 2025, dominated by fixes and performance work, with substantial test and docs coverage.",
+    "reasoning": ""
+  },
+  "usage": {
+    "prompt_tokens": 5583,
+    "total_tokens": 5871,
+    "completion_tokens": 288,
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    }
+  },
+  "elapsed_seconds": 85.1888959259959,
+  "first_output_seconds": 4.031493132992182
+}

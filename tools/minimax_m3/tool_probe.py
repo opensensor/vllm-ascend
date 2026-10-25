@@ -2,11 +2,43 @@
 """Bounded real-model tool protocol checks, including streamed argument assembly."""
 
 import argparse
+import copy
 import json
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+
+def tokenize_chat(base_url, payload, timeout=30):
+    """Render the same reasoning history as chat completions on pinned vLLM.
+
+    ChatCompletionRequest normalizes reasoning_content to reasoning, whereas
+    TokenizeChatRequest currently drops the deprecated alias. Normalize a copy
+    so cache probes do not silently compare different conversations.
+    """
+    fields = (
+        "model",
+        "messages",
+        "tools",
+        "chat_template",
+        "chat_template_kwargs",
+        "add_generation_prompt",
+        "continue_final_message",
+        "add_special_tokens",
+        "mm_processor_kwargs",
+        "media_io_kwargs",
+    )
+    body = copy.deepcopy({key: payload[key] for key in fields if key in payload})
+    for message in body["messages"]:
+        deprecated = message.pop("reasoning_content", None)
+        if deprecated is not None and message.get("reasoning") is None:
+            message["reasoning"] = deprecated
+    request = urllib.request.Request(
+        base_url + "/tokenize", data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.load(response)
 
 
 def chat_request(base_url, payload, timeout=900):

@@ -1,0 +1,7 @@
+import json,copy
+from pathlib import Path
+p=json.loads(Path('/tmp/m31-loop-replay-payload.json').read_text());p.update(temperature=0,max_tokens=512)
+cases={}
+q=copy.deepcopy(p);q['messages'].append({'role':'user','content':'You have enough information. Describe the project now using the evidence already collected. Do not call any more tools.'});cases['explicit_finish']=q
+q=copy.deepcopy(p);q['messages']=[q['messages'][0],{'role':'user','content':'Describe this project. Here is its README and repository information already collected:\n\n'+Path('README.md').read_text()+'\nRepository: opensensor/vllm-ascend, fork of vllm-project/vllm-ascend. This fork adds Ascend 310P model serving, custom CANN kernels, quantized weight loading, resident reload controls and benchmarks. Top-level directories: vllm_ascend, csrc, tests, tools, docs, examples, benchmarks.'}];cases['fresh_evidence']=q
+Path('/tmp/m31-exit-cases.json').write_text(json.dumps(cases))

@@ -1,0 +1,17 @@
+import dataclasses,fcntl,json,uuid
+from pathlib import Path
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+c=ResidentClient('http://127.0.0.1:8000',6)
+with Path('/tmp/minimax-m31-resident.lock').open('w') as lock:
+ fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+ assert not c.request('/is_paused',method='GET')['is_paused']
+ assert not c.request('/resident/maintenance',method='GET')['maintenance']
+ c.request('/resident/maintenance');c.request('/pause?mode=wait&clear_cache=true')
+ try:
+  ctl=Control(uuid.uuid4().hex,'direct-target','projection_paths',Path('/workspace/m31_projection_paths_hooks.py').read_text())
+  c.rpc('resident_prepare',json.dumps(dataclasses.asdict(ctl)));c.rpc('resident_apply',ctl.generation)
+  r=c.rpc('resident_capture');Path('/workspace/m31-projection-paths.json').write_text(json.dumps(r,indent=2)+'\n')
+  print([(x['rank'],x['probe']) for x in r],flush=True)
+ finally:
+  c.switch(Control(uuid.uuid4().hex,'direct-target','m3_candidate',Path('/workspace/m31-startup-serving-source.py').read_text()));c.resume();c.request('/resident/maintenance',method='DELETE')

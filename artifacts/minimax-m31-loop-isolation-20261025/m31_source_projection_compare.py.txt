@@ -1,0 +1,39 @@
+import json
+from pathlib import Path
+import torch
+from safetensors import safe_open
+from tools.minimax_m3.checkpoint import read_manifest,checked_tensors
+from tools.minimax_m3.mixed_checkpoint import dequant_nvfp4
+from vllm_ascend._310p.ops.minimax_m3 import unpack_w4,clipped_swiglu
+torch.set_num_threads(8)
+root=Path('/run/media/matteius/20TB-drive/models');source=root/'MiniMax-M3.1-Flash';converted=root/'MiniMax-M3.1-Flash-W4'
+manifest=read_manifest(converted);index=json.loads((source/'model.safetensors.index.json').read_text())['weight_map']
+records=torch.load('/tmp/m31-real-projection-inputs.pt',weights_only=False)
+def weights(expert,projection):
+ name=f'language_model.model.layers.3.block_sparse_moe.experts.{expert}.{projection}.weight'
+ values=[]
+ for suffix in ('_packed','_scale','_global_scale'):
+  key=name+suffix
+  with safe_open(source/index[key],framework='pt') as f:values.append(f.get_tensor(key))
+ original=dequant_nvfp4(*values).half()
+ values=dict(checked_tensors(converted,manifest['weights'][name]));w4=unpack_w4(values['codes'],values['scales']).half()
+ return original,w4
+reports=[]
+with torch.inference_mode():
+ for row,expert in enumerate(records[0]['ends'].tolist()):
+  modes={'source':{},'w4':{}}
+  case={'expert':expert,'projections':{}}
+  for name,record in zip(('w1','w3','w2'),records):
+   x=record['input'][row:row+1].float();orig,w4=weights(expert,name)
+   a=(x@orig.float().T).half().float();b=(x@w4.float().T).half().float();native=record['output'][row:row+1].float()
+   def compare(v,ref):return {'nrmse':float((v-ref).norm()/ref.norm()),'cosine':float(torch.nn.functional.cosine_similarity(v.flatten(),ref.flatten(),dim=0))}
+   case['projections'][name]={'w4_vs_source':compare(b,a),'native_int8_vs_w4':compare(native,b),'native_int8_vs_source':compare(native,a)}
+   if name!='w2':
+    modes['source'][name]=a;modes['w4'][name]=b
+   else:
+    for label,w in (('source',orig),('w4',w4)):
+     h=clipped_swiglu(modes[label]['w1'],modes[label]['w3']).half().float()
+     modes[label]['out']=(h@w.float().T).half().float()
+    case['expert_output_w4_vs_source']=compare(modes['w4']['out'],modes['source']['out'])
+  reports.append(case);print(json.dumps(case),flush=True)
+Path('/tmp/m31-source-projection-compare.json').write_text(json.dumps(reports,indent=2)+'\n')

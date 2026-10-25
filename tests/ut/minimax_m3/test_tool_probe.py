@@ -8,11 +8,36 @@ from unittest.mock import patch
 import pytest
 
 from tools.minimax_m3.build_resident_native import build
-from tools.minimax_m3.tool_probe import chat_request, check_calls, tool
+from tools.minimax_m3.tool_probe import chat_request, check_calls, tokenize_chat, tool
 
 
 class Response(io.BytesIO):
     status = 200
+
+
+@pytest.mark.parametrize("canonical,expected", [(None, "prior thought"), ("preferred", "preferred"), ("", "")])
+def test_tokenization_preserves_chat_reasoning_without_mutating_history(canonical, expected):
+    payload = {
+        "model": "minimax",
+        "max_tokens": 256,
+        "messages": [
+            {"role": "assistant", "content": None, "reasoning_content": "prior thought", "reasoning": canonical}
+        ],
+        "tools": [tool("lookup", {})],
+        "chat_template_kwargs": {"reasoning_effort": "low"},
+    }
+    original = json.dumps(payload)
+    with patch("urllib.request.urlopen", return_value=Response(b'{"count": 42, "tokens": [1, 2]}')) as send:
+        assert tokenize_chat("http://localhost", payload)["count"] == 42
+    request = send.call_args.args[0]
+    body = json.loads(request.data)
+    assert request.full_url == "http://localhost/tokenize"
+    assert body["messages"][0]["reasoning"] == expected
+    assert "reasoning_content" not in body["messages"][0]
+    assert body["tools"] == payload["tools"]
+    assert body["chat_template_kwargs"] == payload["chat_template_kwargs"]
+    assert "max_tokens" not in body
+    assert json.dumps(payload) == original
 
 
 def test_tool_schema_can_leave_every_argument_optional():

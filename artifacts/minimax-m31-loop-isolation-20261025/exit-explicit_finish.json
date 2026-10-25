@@ -1,0 +1,19 @@
+{
+  "status": 200,
+  "finish_reason": "length",
+  "message": {
+    "role": "assistant",
+    "content": "# vllm-ascend (OpenSensor fork)\n\n## What it is\n\nA hardware backend plugin for [vLLM](https://github.com/vllm-project/vllm) that runs inference on **Huawei Ascend NPUs** (the `910B`/`310P` \"Ascend\" accelerator family). It is a fork of the upstream `vllm-project/vllm-ascend` project, maintained under the `opensensor` org, with a heavy local divergence: the repo carries its own product requirements (PRDs), design documents, and evaluation harnesses for **310P-targeted** deployments.\n\nThe plugin lives in `vllm_ascend/` and is registered into vLLM's platform/worker/model-runner extension points rather than being a standalone server.\n\n## Layout\n\n| Path | Role |\n|---|---|\n| `vllm_ascend/worker/` | Worker, model runner (v1/v2), EPLB, KV-cache pool, CPU binding |\n| `vllm_ascend/attention/` | Attention backends (FlashAttention variants, MLA, sparse/KV offload) |\n| `vllm_ascend/ops/` | Custom Ascend ops (attention, MoE, RMSNorm, RoPE, quant) |\n| `vllm_ascend/compilation/` | `torch.compile` integration: ACL graph capture, graph fusion passes, updatable/breakable graphs |\n| `vllm_ascend/quantization/` | Quantization support (compressed weights, KV quant) |\n| `vllm_ascend/spec_decode/` | Speculative decoding: EAGLE, Medusa, n-gram, MTP, plus several vendor-specific proposers (`dflash`, `dspark`, `gemma4`, `step3p5`) |\n| `vllm_ascend/lora/` | LoRA / punica, fused MoE with LoRA |\n| `vllm_ascend/sample/` | Custom samplers, penalties, rejection sampling |\n| `vllm_ascend/weight_switch/` | Hot weight swapping (linear / `o_proj`) |\n| `vllm_ascend/ec_manager/` | External/elastic cache management |\n| `vllm_ascend/xlite/` | \"XLite\" lightweight worker/model-runner path |\n| `vllm_ascend/observability/` | Metrics provider, request timing,",
+    "reasoning": ""
+  },
+  "usage": {
+    "prompt_tokens": 5576,
+    "total_tokens": 6088,
+    "completion_tokens": 512,
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    }
+  },
+  "elapsed_seconds": 193.33266111300327,
+  "first_output_seconds": 48.77151460503228
+}

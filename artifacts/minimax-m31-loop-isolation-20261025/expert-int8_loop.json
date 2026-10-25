@@ -1,0 +1,37 @@
+{
+  "status": 200,
+  "finish_reason": "tool_calls",
+  "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "I have a good picture. Let me summarize the project.\n\nLet me check a couple more things: the fork nature (opensensor/vllm-ascend is a fork of vllm-project/vllm-ascend), and the 310P focus.\n\nLet me verify the upstream relationship.",
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-9844847a0e9ab693",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\":\"git log --oneline --format='%s' --all --grep=\\\"upstream\\\" -i | head -10\",\"description\":\"Show upstream sync commits\"}"
+        }
+      },
+      {
+        "id": "chatcmpl-tool-a1c7895ab5568681",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\":\"ls vllm_ascend/compilation vllm_ascend/sample vllm_ascend/spec_decode vllm_ascend/lora 2>/dev/null\",\"description\":\"List remaining modules\"}"
+        }
+      }
+    ]
+  },
+  "usage": {
+    "prompt_tokens": 5549,
+    "total_tokens": 5742,
+    "completion_tokens": 193,
+    "completion_tokens_details": {
+      "reasoning_tokens": 61
+    }
+  },
+  "elapsed_seconds": 101.24743543198565,
+  "first_output_seconds": 46.86209416599013
+}

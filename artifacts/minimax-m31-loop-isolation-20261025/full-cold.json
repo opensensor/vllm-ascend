@@ -1,0 +1,45 @@
+{
+  "status": 200,
+  "finish_reason": "tool_calls",
+  "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "I have a good picture. Let me summarize the project.\n\nLet me check a couple more things: the fork nature (opensensor/vllm-ascend is a fork of vllm-project/vllm-ascend), and the 310P focus.\n\nLet me verify the upstream relationship.",
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-8244361c295a7e13",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\":\"git log --oneline --format='%s' --all --grep=\\\"merge upstream\\\" -i | head -5; echo \\\"---\\\"; git log --oneline --format='%s' --all --grep=\\\"sync\\\" -i | head -8\",\"description\":\"Check upstream sync cadence\"}"
+        }
+      },
+      {
+        "id": "chatcmpl-tool-859e690d7eedf075",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\":\"cat .gitmodules; echo \\\"===VERSION===\\\"; grep -rn \\\"version\\\" setup.py | grep -i \\\"scm\\\\|fallback\\\" | head -5\",\"description\":\"Check submodules and versioning\"}"
+        }
+      }
+    ]
+  },
+  "usage": {
+    "prompt_tokens": 29577,
+    "total_tokens": 29798,
+    "completion_tokens": 221,
+    "completion_tokens_details": {
+      "reasoning_tokens": 61
+    }
+  },
+  "elapsed_seconds": 312.9082811460248,
+  "first_output_seconds": 240.5226181310136,
+  "metrics_before": {
+    "vllm:prefix_cache_queries_total": 183466.0,
+    "vllm:prefix_cache_hits_total": 60288.0
+  },
+  "metrics_after": {
+    "vllm:prefix_cache_queries_total": 213043.0,
+    "vllm:prefix_cache_hits_total": 60288.0
+  }
+}

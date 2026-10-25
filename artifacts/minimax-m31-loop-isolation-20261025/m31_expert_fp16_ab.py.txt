@@ -1,0 +1,41 @@
+import fcntl,json,uuid
+from pathlib import Path
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.minimax_m3.resident_int8 import convert
+from tools.minimax_m3.resident import candidate_source
+from tools.minimax_m3.tool_probe import chat_request
+c=ResidentClient('http://127.0.0.1:8000',6,timeout=900)
+out=Path('/workspace/m31-expert-fp16-ab');out.mkdir(exist_ok=True)
+serving=Path('/workspace/m31-startup-serving-source.py').read_text()
+ops=Path('/vllm-workspace/vllm-ascend/vllm_ascend/_310p/ops/minimax_m3.py').read_text()
+eager=candidate_source(ops,'minimax_w4_v12','minimax_activation_v2')
+int8_eager=Path('/workspace/m31-loop-ab/eager-source.py').read_text()
+def switch(source):return c.switch(Control(uuid.uuid4().hex,'direct-target','m3_candidate',source))
+def save(name,value):
+ (out/(name+'.json')).write_text(json.dumps(value,indent=2)+'\n')
+ print(name,flush=True)
+def run(label,payload):
+ result=chat_request(c.base_url,payload,timeout=900);save(label,result)
+ print(json.dumps({k:result.get(k) for k in ('status','finish_reason','message','usage')}),flush=True)
+with Path('/tmp/minimax-m31-resident.lock').open('w') as lock:
+ fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+ assert not c.request('/is_paused',method='GET')['is_paused']
+ assert not c.request('/resident/maintenance',method='GET')['maintenance']
+ before=c.rpc('resident_status');save('before',before)
+ c.request('/resident/maintenance');mutated=False
+ try:
+  p=json.loads(Path('/workspace/m31-loop-replay-payload.json').read_text());p.update(temperature=0,max_tokens=384)
+  switch(int8_eager);run('int8_loop',p)
+  c.request('/pause?mode=wait&clear_cache=true');mutated=True
+  save('disable_int8',convert(c,'minimax_w4_v12','minimax_w4_int8_v15',False))
+  save('fp16_switch',switch(eager));c.resume()
+  run('fp16_loop',p)
+  onset=json.loads(Path('/workspace/m31-onset-cases.json').read_text())['history']
+  run('fp16_onset',onset)
+ finally:
+  if not c.request('/is_paused',method='GET')['is_paused']:c.request('/pause?mode=wait&clear_cache=true')
+  if mutated:save('restore_int8',convert(c,'minimax_w4_v12','minimax_w4_int8_v15',True))
+  save('restore_serving',switch(serving));c.resume()
+  after=c.rpc('resident_status');assert [(x['rank'],x['pid']) for x in before]==[(x['rank'],x['pid']) for x in after]
+  save('after',after);c.request('/resident/maintenance',method='DELETE')

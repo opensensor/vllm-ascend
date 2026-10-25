@@ -1,0 +1,29 @@
+{
+  "status": 200,
+  "finish_reason": "tool_calls",
+  "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "I have enough. Let me write the description.\n\nLet me quickly check the README top and the fork relationship (opensensor/vllm-ascend is a fork of vllm-project/vllm-ascend).",
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-a724669d05e6991e",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\":\"head -60 README.md; echo \\\"=== git remote ===\\\"; git remote -v\",\"description\":\"Read README head and remotes\"}"
+        }
+      }
+    ]
+  },
+  "usage": {
+    "prompt_tokens": 5558,
+    "total_tokens": 5661,
+    "completion_tokens": 103,
+    "completion_tokens_details": {
+      "reasoning_tokens": 45
+    }
+  },
+  "elapsed_seconds": 75.30862885800889,
+  "first_output_seconds": 46.73421220801538
+}

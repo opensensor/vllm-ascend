@@ -1,0 +1,28 @@
+import json,subprocess,tempfile,threading,time,os
+from pathlib import Path
+from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
+records=[]
+class Handler(BaseHTTPRequestHandler):
+ def log_message(self,*args):pass
+ def do_POST(self):
+  p=json.loads(self.rfile.read(int(self.headers['Content-Length'])));records.append(p)
+  self.send_response(200);self.send_header('Content-Type','text/event-stream');self.end_headers()
+  for delta,finish in [({'role':'assistant','content':'Diagnostic wire capture complete.'},None),({},'stop')]:
+   chunk={'id':'wire','object':'chat.completion.chunk','created':int(time.time()),'model':p['model'],'choices':[{'index':0,'delta':delta,'finish_reason':finish}]}
+   self.wfile.write(('data: '+json.dumps(chunk)+'\n\n').encode())
+  self.wfile.write(b'data: [DONE]\n\n')
+srv=ThreadingHTTPServer(('127.0.0.1',0),Handler);threading.Thread(target=srv.serve_forever,daemon=True).start()
+with tempfile.TemporaryDirectory(prefix='m31-config-') as d:
+ config=json.loads((Path.home()/'.config/kilo/kilo.jsonc.before-m31-loop-mitigation-20261025').read_text())
+ config['provider']={'minimax-ascend':config['provider']['minimax-ascend']}
+ config['provider']['minimax-ascend']['options'].update(baseURL=f'http://127.0.0.1:{srv.server_port}/v1',apiKey='local')
+ config['permission']={'*':'deny'}
+ root=Path(d)/'kilo';root.mkdir();(root/'kilo.jsonc').write_text(json.dumps(config))
+ env={**os.environ,'XDG_CONFIG_HOME':d}
+ r=subprocess.run(['kilo','run','--pure','--dir','/run/media/matteius/20TB-drive/vllm-ascend','--session','<local-session-id>','--fork','--agent','minimax-code','--model','minimax-ascend/minimax-m31-flash','--format','json','Continue.'],capture_output=True,text=True,timeout=90,env=env)
+ Path('/tmp/m31-kilo-full-wire-cli.txt').write_text(r.stdout+'\n'+r.stderr)
+ Path('/tmp/m31-kilo-full-wire-requests.json').write_text(json.dumps(records,indent=2))
+ print('exit',r.returncode,'requests',len(records))
+ for p in records:
+  print('messages',len(p['messages']),'roles',[m['role'] for m in p['messages']], 'tools',[t['function']['name'] for t in p.get('tools',[])])
+srv.shutdown()

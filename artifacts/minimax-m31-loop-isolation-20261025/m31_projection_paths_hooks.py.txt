@@ -1,0 +1,31 @@
+def replacements(native_resources):
+    def capture(self):
+        import torch
+        from pathlib import Path
+        from tools.minimax_m3.resident_int8 import reorder_codes
+        from vllm_ascend._310p.ops.minimax_m3 import PackedM3Experts
+        self._m3_idle()
+        if self.rank != 0:return {**self.resident_status(),'probe':{'skipped':'selected decode experts are owned by rank 0'}}
+        records=torch.load(Path('/workspace/m31-moe-trace')/f'cold_a-rank{self.rank}.pt',weights_only=False)
+        projections=[r for r in records if r['kind']=='projection' and len(r['positions'])==1]
+        bank=next(m for m in self.model_runner.model.modules() if isinstance(m,PackedM3Experts) and '.layers.3.' in m.prefix)
+        kernel=native_resources['minimax_w4_int8_v15'];baseline=native_resources['minimax_w4_v12']
+        reports=[]
+        try:
+            for name,record in zip(('w1','w3','w2'),projections):
+                ends=record['ends'];valid=(ends<64).nonzero().flatten();row=int(valid[0]);expert=int(ends[row])
+                codes=getattr(bank,name+'_codes')[expert:expert+1].contiguous()
+                scales=getattr(bank,name+'_scales')[expert:expert+1].contiguous()
+                x=record['input'][row:row+1].to(codes.device).contiguous()
+                original=reorder_codes(codes,inverse=True)
+                fused=kernel(x,codes,scales,torch.tensor([1],dtype=torch.int64,device=x.device)).float().cpu()
+                compact=kernel(x,codes,scales,torch.tensor([0],dtype=torch.int32,device=x.device)).float().cpu()
+                batched=kernel(x.repeat(8,1),codes,scales,torch.tensor([8],dtype=torch.int64,device=x.device)).float().cpu()[:1]
+                fp16=baseline(x,original,scales.float(),torch.tensor([1],dtype=torch.int64,device=x.device)).float().cpu()
+                def compare(a,b):return {'exact':torch.equal(a,b),'max_abs':float((a-b).abs().max()),'nrmse':float((a-b).norm()/b.norm().clamp_min(1e-30))}
+                reports.append({'projection':name,'expert':expert,'compact_vs_fused':compare(compact,fused),'fused_vs_prefill':compare(fused,batched),'fused_vs_fp16':compare(fused,fp16),'prefill_vs_fp16':compare(batched,fp16)})
+                # Remove the temporary one-expert bank metadata only.
+                key=(codes.data_ptr(),tuple(codes.shape),codes.device);kernel.banks.pop(key,None)
+            return {**self.resident_status(),'probe':{'passed':True,'cases':reports}}
+        except Exception as exc:return {**self.resident_status(),'probe':{'passed':False,'error':str(exc),'cases':reports}}
+    return {'vllm_ascend._310p.worker_310p:NPUWorker310.resident_capture':capture}
