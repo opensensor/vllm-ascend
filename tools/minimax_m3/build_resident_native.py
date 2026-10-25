@@ -12,9 +12,13 @@ from tools.glm_perf.build_query_bf16_vector import compile_bridge
 from tools.glm_perf.resident_native import file_digest
 
 
-def build(output, source_root, namespace, cann):
+def build(output, source_root, namespace, cann, *, singleton_l1=False, l1_max_k=4096, wide_l1=False):
     if not namespace.isidentifier() or not namespace.startswith("minimax_w4_"):
         raise ValueError("use a unique minimax_w4_ namespace for each build")
+    if l1_max_k not in (4096, 6144) or (l1_max_k != 4096 and not singleton_l1):
+        raise ValueError("L1 max K must be 4096 or 6144, with singleton L1 enabled for 6144")
+    if singleton_l1 and wide_l1:
+        raise ValueError("choose singleton L1 or wide L1, not both")
     output, source_root, cann = output.resolve(), source_root.resolve(strict=True), cann.resolve(strict=True)
     output.mkdir(parents=True, exist_ok=False)
     sources = output / "sources"
@@ -49,6 +53,13 @@ def build(output, source_root, namespace, cann):
     )
     grouped = sources / "gmm/w2_grouped_blocked_dequant_matmul_v310/op_kernel"
     blocked = sources / "gmm/w2_blocked_dequant_matmul_v310/op_kernel"
+    if l1_max_k != 4096:
+        header = blocked / "w2_blocked_dequant_matmul_v310.h"
+        original = "constexpr uint32_t W2_L1_MAX_K = 4096;"
+        contents = header.read_text()
+        if contents.count(original) != 1:
+            raise ValueError("grouped L1 workspace contract changed")
+        header.write_text(contents.replace(original, f"constexpr uint32_t W2_L1_MAX_K = {l1_max_k};"))
     kernel_source = (grouped / "w2_grouped_blocked_dequant_matmul_v310.cpp").read_text()
     entry = namespace + "_kernel"
     # OPP normally initializes a hidden system-workspace pointer. A direct
@@ -78,6 +89,8 @@ def build(output, source_root, namespace, cann):
             f"-I{sources / 'moe/common'}",
             f"-include{sources / 'common/include/cann_compat.h'}",
             "-Wno-ignored-attributes",
+            *(["-DGLM_W2_GROUPED_CANDIDATE"] if singleton_l1 else []),
+            *(["-DGLM_W2_GROUPED_L1_WIDE", "-DGLM_W2_GROUPED_L1_WIDE_PIPELINED"] if wide_l1 else []),
         ],
         check=True,
     )
@@ -86,6 +99,9 @@ def build(output, source_root, namespace, cann):
         archive.add(sources, arcname="sources")
     helper = output / "resident_native.py"
     shutil.copy2(Path(__file__).with_name("resident_native.py"), helper)
+    (output / "build-options.json").write_text(
+        json.dumps({"singleton_l1": singleton_l1, "l1_max_k": l1_max_k, "wide_l1": wide_l1}, indent=2) + "\n"
+    )
     validation = (
         "import types\n"
         f"_module = types.ModuleType({namespace!r})\n"
@@ -102,7 +118,13 @@ def build(output, source_root, namespace, cann):
         "libraries": [record(output / "bridge.so")],
         "assets": [
             record(output / name)
-            for name in ("grouped_w4.bin", "sources.tar.gz", "resident_native.py", "reconstruction_bridge.cpp")
+            for name in (
+                "grouped_w4.bin",
+                "sources.tar.gz",
+                "resident_native.py",
+                "reconstruction_bridge.cpp",
+                "build-options.json",
+            )
         ],
         "operators": [namespace + "::launch"],
         "validation_source": validation,
@@ -117,8 +139,21 @@ def main():
     parser.add_argument("--source-root", type=Path, default=Path(__file__).resolve().parents[2] / "csrc")
     parser.add_argument("--namespace", required=True)
     parser.add_argument("--cann", type=Path, default=Path("/usr/local/Ascend/ascend-toolkit/latest"))
+    parser.add_argument("--singleton-l1", action="store_true", help="Keep single-route dequantized tiles in L1")
+    parser.add_argument("--l1-max-k", type=int, choices=(4096, 6144), default=4096)
+    parser.add_argument("--wide-l1", action="store_true", help="Pipeline 128x1024 L1 tiles for small expert groups")
     args = parser.parse_args()
-    print(build(args.output, args.source_root, args.namespace, args.cann))
+    print(
+        build(
+            args.output,
+            args.source_root,
+            args.namespace,
+            args.cann,
+            singleton_l1=args.singleton_l1,
+            l1_max_k=args.l1_max_k,
+            wide_l1=args.wide_l1,
+        )
+    )
 
 
 if __name__ == "__main__":

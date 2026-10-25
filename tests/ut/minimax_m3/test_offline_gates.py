@@ -26,7 +26,7 @@ def test_ep_views_share_storage_and_preserve_global_expert_identity():
         torch.testing.assert_close(view.w1_codes, bank.w1_codes[rank * 2 : rank * 2 + 2])
 
 
-@pytest.mark.parametrize("prefix,tokens", [(129, 2), (8190, 3)])
+@pytest.mark.parametrize("prefix,tokens", [(129, 2), (8190, 3), (16381, 3)])
 def test_tp2_production_attention_geometry_matches_independent_oracle(prefix, tokens):
     previous = torch.get_num_threads()
     torch.set_num_threads(2)

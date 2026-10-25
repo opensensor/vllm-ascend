@@ -1,0 +1,76 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "model": "minimax-ascend/minimax-m31-flash",
+  "default_agent": "minimax-code",
+  "provider": {
+    "minimax-ascend": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "MiniMax M3.1 Flash (six Ascend 310P chips)",
+      "options": {
+        "baseURL": "http://192.168.53.187:8000/v1",
+        "apiKey": "local",
+        "timeout": 1800000,
+        "chunkTimeout": 600000
+      },
+      "models": {
+        "minimax-m31-flash": {
+          "id": "minimax-m31-flash",
+          "name": "MiniMax M3.1 Flash W4 (16K, tools)",
+          "family": "minimax",
+          "reasoning": true,
+          "temperature": false,
+          "tool_call": true,
+          "interleaved": {
+            "field": "reasoning_content"
+          },
+          "limit": {
+            "context": 16384,
+            "input": 16384,
+            "output": 2048
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "options": {
+            "temperature": 0,
+            "maxTokens": 2048
+          }
+        }
+      }
+    }
+  },
+  "agent": {
+    "minimax-code": {
+      "description": "Compact M3.1 coding agent for the 16K Ascend endpoint",
+      "mode": "primary",
+      "model": "minimax-ascend/minimax-m31-flash",
+      "temperature": 0,
+      "tools": {
+        "*": false,
+        "read": true,
+        "glob": true,
+        "grep": true,
+        "bash": true,
+        "edit": true,
+        "write": true
+      },
+      "prompt": "You are a coding assistant working in the user's repository. Read relevant files, make the requested changes, and run focused checks. Follow repository instructions and preserve unrelated work. Keep tool output and explanations short because the context window is 16K. Never claim actions you have not performed."
+    },
+    "minimax-chat": {
+      "description": "M3.1 text/image chat without coding tools",
+      "mode": "primary",
+      "model": "minimax-ascend/minimax-m31-flash",
+      "temperature": 0,
+      "tools": {
+        "*": false
+      },
+      "prompt": "Answer clearly and concisely. Tools are unavailable in this chat profile; do not claim to execute commands or edit files."
+    }
+  }
+}

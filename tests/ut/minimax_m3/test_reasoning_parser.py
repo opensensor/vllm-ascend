@@ -59,3 +59,26 @@ def test_current_assistant_prefill_controls_initial_state(suffix, ended, parser_
     prompt = "]~b]ai\n</mm:think>previous[e~[\n]~b]user\nQuestion[e~[\n]~b]ai\n" + suffix
     assert parser.is_reasoning_end(tokenizer.encode(prompt)) is ended
     assert parser.is_reasoning_end(tokenizer.encode(suffix)) is ended
+
+
+@pytest.mark.parametrize("prefix", ["", "]~b]system\nUse <mm:think></mm:think> markers.[e~[\n]~b]ai\n"])
+def test_structured_output_waits_for_current_thinking_closer(prefix, parser_class):
+    tokenizer = Tokenizer()
+    parser = parser_class(tokenizer)
+    generated = []
+    for text in ("<mm:think>", "work"):
+        delta = tokenizer.encode(text)
+        generated += delta
+        assert not parser.is_reasoning_end_streaming(tokenizer.encode(prefix) + generated, delta)
+    delta = tokenizer.encode("</mm:think>")
+    generated += delta
+    assert parser.is_reasoning_end_streaming(tokenizer.encode(prefix) + generated, delta)
+
+
+def test_structured_output_direct_content_transitions_without_thinking(parser_class):
+    tokenizer = Tokenizer()
+    parser = parser_class(tokenizer)
+    prefix = tokenizer.encode("]~b]system\nUse <mm:think></mm:think> markers.[e~[\n]~b]ai\n")
+    assert not parser.is_reasoning_end_streaming(prefix, [])
+    delta = tokenizer.encode("{")
+    assert parser.is_reasoning_end_streaming(prefix + delta, delta)

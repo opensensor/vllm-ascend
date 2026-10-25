@@ -11,7 +11,7 @@ serve:
   enable_expert_parallel: true
   dtype: float16
   enforce_eager: true
-  max_model_len: 8192
+  max_model_len: 16384
   max_num_seqs: 1
   max_num_batched_tokens: 128
   served_model_name: minimax-m31-flash
@@ -19,6 +19,11 @@ serve:
   video_limit: 0
   expert_layout: nz256
   max_grouped_routes: 512
+  enable_auto_tool_choice: true
+  tool_call_parser: minimax_m3
+  reasoning_parser: minimax_m31
+  native_kernel: minimax_w4_v6
+  attention_query_tile: 64
 tasks:
   - name: greeting_fact_arithmetic_copy_red_image
     metrics:
@@ -38,6 +43,24 @@ tasks:
         value: 1.0
     sample_count: 1
     evidence: artifacts/minimax-m31-serving-20261024/resident-8k-retrieval/report.json
+  - name: native_v6_tile64_coherence
+    metrics:
+      - name: passed_fraction
+        value: 1.0
+    sample_count: 9
+    evidence: artifacts/minimax-m31-tools-20261025/combined-coherence/report.json
+  - name: tool_calls_and_structured_output
+    metrics:
+      - name: passed_fraction
+        value: 1.0
+    sample_count: 10
+    evidence: artifacts/minimax-m31-tools-20261025/final-tools/report.json
+  - name: cold_sparse_retrieval_16043_tokens
+    metrics:
+      - name: passed_fraction
+        value: 1.0
+    sample_count: 1
+    evidence: artifacts/minimax-m31-tools-20261025/final-16k/report.json
 num_fewshot: 0
 validation_runner: tools/minimax_m3/coherence_probe.py
 long_context_quality: bounded_retrieval_only

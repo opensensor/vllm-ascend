@@ -19,6 +19,8 @@ image, and retrieval from a 3443-token prompt. A separate 7943-token retrieval a
 returned the correct key. These are bounded diagnostics,
 not a broad quality benchmark. Full 60-layer dummy serving also passed an
 8192-token cache-boundary request; dummy output is not evidence of coherence.
+The current 16K profile also passed a cold 16043-token retrieval with real
+weights in 299.90 s after clearing scheduler and physical caches.
 
 ## Supported features
 
@@ -32,12 +34,16 @@ not a broad quality benchmark. Full 60-layer dummy serving also passed an
 | ACLGraph | Unsupported by the current eager adapter; rejected explicitly |
 | FlashComm1 | Sequence-parallel MoE unsupported by this adapter |
 | MTP/DSpark | Separate draft checkpoint not converted; speculation rejected |
-| Context/concurrency | Initial profile 8192 tokens, one sequence |
+| Context/concurrency | Current profile 16384 tokens, one sequence |
+| Tool calls | Auto, named, required, parallel, streamed and nested arguments |
+| Structured output | JSON schema, normal and streamed responses |
 
 An offline 128K × 16 capacity calculation needs approximately 92.57 GiB on the
 busiest rank, including the provisional runtime reserve. It does not fit these
-chips. The 8K profile is the practical starting point, not a claim of validated
-long-context language quality.
+chips. The initial 8K profile has been extended to 16K with one sequence. Both
+startup profiles reported the same 1.75 GiB available cache budget (58,368 token slots);
+the larger request limit does not allocate additional cache. The retrieval
+checks remain bounded diagnostics, not broad long-context quality validation.
 
 ## Environment preparation
 
@@ -65,6 +71,25 @@ Do not mix them with this launch configuration. Current canonical and NZ256
 512-route probes passed independent CPU comparisons, including all routes
 selecting one expert (maximum normalized RMS error about 1.5e-5).
 
+The pinned vLLM uses a Rust extension for `minimax_m3` tool parsing. For a source
+installation without that extension, build it from the same pinned checkout
+(install Rust using the official rustup installer if necessary):
+
+```bash
+source /workspace/minimax-m31-env.sh
+cd /vllm-workspace/vllm/rust
+PYO3_PYTHON=/srv/ai/venvs/minimax-m31/bin/python \
+  "$HOME/.cargo/bin/cargo" build --release --locked \
+  -p vllm-tool-parser-py --features pyo3/extension-module -j8
+cp target/release/lib_rust_tool_parser.so ../vllm/_rust_tool_parser.so
+python -m pytest --noconftest -q \
+  ../tests/tool_parsers/test_minimax_m3_tool_parser.py
+```
+
+All six upstream parser tests passed on this host. Keep the Rust binary and
+Python parser from the same source revision; a package installation that already
+provides the extension does not need this manual build.
+
 ## Deployment
 
 With the complete converted checkpoint installed, run from `/workspace`:
@@ -82,13 +107,14 @@ vllm serve /srv/ai/storage/models/MiniMax-M3.1-Flash-W4 \
   --model-loader-extra-config '{"expert_layout":"nz256","max_grouped_routes":512}' \
   --tensor-parallel-size 2 --pipeline-parallel-size 3 \
   --enable-expert-parallel --enforce-eager --block-size 128 \
-  --max-model-len 8192 --max-num-seqs 1 \
+  --max-model-len 16384 --max-num-seqs 1 \
   --max-num-batched-tokens 128 --gpu-memory-utilization 0.95 \
   --limit-mm-per-prompt '{"image":1,"video":0}' \
   --mm-processor-kwargs '{"max_long_side_pixel":448}' \
   --no-async-scheduling --disable-custom-all-reduce \
   --worker-extension-cls tools.minimax_m3.resident_worker.MiniMaxResidentExtension \
   --middleware tools.glm_perf.resident_middleware.ResidentControlMiddleware \
+  --enable-auto-tool-choice --tool-call-parser minimax_m3 \
   --reasoning-parser-plugin /vllm-workspace/vllm-ascend/tools/minimax_m3/reasoning_parser.py \
   --reasoning-parser minimax_m31 --port 8000
 ```
@@ -110,7 +136,54 @@ curl http://127.0.0.1:8000/v1/chat/completions \
 records streaming responses, first-output time and total time. Its nonempty
 HTTP output gate is not a coherence score. Add `--image /workspace/red.png` for
 an image request, or `--long-context-tokens 8190 --case context_boundary` for
-the 8K cache boundary. The latter repeats a token and is not a comprehension test.
+an 8K cache exercise. The latter repeats a token and is not a comprehension test.
+
+Check structured calls, streamed arguments, multiple calls, nested JSON types,
+tool-result history and JSON-schema output with:
+
+```bash
+python -m tools.minimax_m3.tool_probe --output /workspace/m31-tools
+```
+
+The pinned server intentionally returns `finish_reason: stop` for a named tool
+choice, including when a structured call is present. Auto and required choices
+use `tool_calls`. The native XML parser parses model output; these checks do not
+establish grammar-enforced function selection for every prompt.
+
+All ten real-model protocol checks passed after fixing the engine's streaming
+reasoning boundary: historical thinking closers previously activated the JSON
+grammar inside the new reasoning block, leaving the answer in `reasoning` and
+`content` empty. The same plugin now scopes both boundary checks to the current
+assistant turn. Normal and streamed constrained JSON both return valid content.
+
+### Kilo CLI
+
+The example in `artifacts/minimax-m31-tools-20261025/kilo-minimax.json` is a
+credential-free fragment to merge into `~/.config/kilo/kilo.jsonc`; preserve any
+existing providers and permissions. It selects the OpenAI-compatible endpoint
+`http://192.168.53.187:8000/v1` and provides a compact `minimax-code` agent with
+read, glob, grep, bash, edit and write tools, plus a tool-free `minimax-chat` agent.
+The dummy `local` API key is not authentication. The serving profile has a 16K
+context and reserves 2048 output tokens; large repositories require focused
+reads and context compaction.
+
+```bash
+kilo config check
+kilo models minimax-ascend
+kilo --agent minimax-code --model minimax-ascend/minimax-m31-flash
+```
+
+See Kilo's [custom model documentation](https://kilo.ai/docs/code-with-ai/agents/custom-models)
+for provider and context-limit settings. API parser flags are startup settings;
+the resident Python/CANN mechanism below applies to worker implementations.
+
+Kilo 7.8.17 completed a real read/read/edit/bash workflow against the service:
+it fixed a subtraction bug in an addition function and ran the unchanged tests.
+Independent negative, zero and fractional checks also passed. Set `limit.input`
+to the full context capacity: this Kilo version subtracts the output reserve
+itself. Subtracting that reserve in the model definition triggered premature
+compaction after the first tool turn. Evidence: `kilo-report.json` and
+`kilo-independent-check.json` in the new evidence directory.
 
 ## Accuracy evaluation
 
@@ -155,6 +228,24 @@ NZ256 packing; this is not a full-model speedup measurement.
 A short-context attention fast path passed isolated CPU/NPU comparisons but
 failed full-model greeting coherence. It is rejected from the serving baseline.
 Retain full-model checks when changing reductions, masks or block selection.
+
+The subsequent 64-query tile keeps that original attention algorithm. Combined
+with the versioned `minimax_w4_v6` pipelined L1 expert kernel, it passed all nine
+coherence checks and the 7943-token retrieval. Matched short requests retained
+the same output token counts:
+
+| Request | Prior NZ256 baseline | Tile64 + native v6 |
+| --- | ---: | ---: |
+| Greeting | 8.72 s | 7.35 s |
+| France capital | 15.22 s | 13.64 s |
+| 17 + 25 | 10.99 s | 9.72 s |
+| 3443-token retrieval | 71.45 s | 61.19 s |
+
+These remain single-request timings. The new 7943-token check reused prefixes
+from the preceding retrieval, so its 91.27 s is not comparable to the earlier
+cold 168.99 s. The native full-projection benchmark was bit-identical to OPP and
+about 10–13% faster on common routing cases. The earlier singleton-L1 v5
+candidate passed numerically but was slower and remains rejected.
 
 ## Resident Python and CANN reload
 
@@ -211,4 +302,28 @@ same command. The CLI serializes controllers and blocks new public requests
 during a transaction. After a failed mutation, restore a valid generation and
 use `resident resume`; do not resume disagreeing ranks.
 
+Build the qualified wider L1 schedule with `--wide-l1` and a fresh namespace:
+
+```bash
+python -m tools.minimax_m3.build_resident_native /vllm-workspace/minimax-native-v6 \
+  --namespace minimax_w4_v6 --wide-l1
+python -m tools.minimax_m3.probe_resident_native \
+  /vllm-workspace/minimax-native-v6/manifest.json --device npu:0 \
+  --output /workspace/m31-native-v6-standalone.json
+python -m tools.minimax_m3.resident load-native \
+  --manifest /vllm-workspace/minimax-native-v6/manifest.json
+python -m tools.minimax_m3.resident switch --native-name minimax_w4_v6
+```
+
+Do not rebuild into an existing version directory. The installed Python
+baseline now uses 64-query tiles, so native-only activation preserves that
+attention implementation. The host's `minimax-m31.service` uses the supplied
+`activate-native.sh` as `ExecStartPost`: it waits for readiness, validates the
+sealed native artifact on all six workers, and restores dispatch without
+rereading weights. Startup fails if activation fails. The persistent unit is
+installed but is not enabled for boot. A plain direct `vllm serve` command uses
+the qualified OPP kernel until the native activation commands above run.
+
 Evidence and launch scripts are in `artifacts/minimax-m31-serving-20261024/`.
+Tool/Kilo checks, candidate timings, and the new service scripts are in
+`artifacts/minimax-m31-tools-20261025/`.

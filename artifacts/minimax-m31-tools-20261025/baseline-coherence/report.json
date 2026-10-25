@@ -1,0 +1,79 @@
+{
+  "scope": "Small deterministic coherence/format smoke, not lm-eval or long-context qualification",
+  "cases": [
+    {
+      "status": 200,
+      "text": "Hello!",
+      "reasoning": "",
+      "usage": {
+        "prompt_tokens": 201,
+        "total_tokens": 205,
+        "completion_tokens": 4,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "first_output_seconds": 7.690552240994293,
+      "elapsed_seconds": 8.721076925983652,
+      "name": "greeting",
+      "expected": "hello",
+      "passed": true
+    },
+    {
+      "status": 200,
+      "text": "Paris",
+      "reasoning": "The user asks for the capital of France, answer with only the city name.",
+      "usage": {
+        "prompt_tokens": 205,
+        "total_tokens": 225,
+        "completion_tokens": 20,
+        "completion_tokens_details": {
+          "reasoning_tokens": 16
+        }
+      },
+      "first_output_seconds": 5.745755626994651,
+      "elapsed_seconds": 15.216150805994403,
+      "name": "france",
+      "expected": "paris",
+      "passed": true
+    },
+    {
+      "status": 200,
+      "text": "42",
+      "reasoning": "17 + 25 = 42.",
+      "usage": {
+        "prompt_tokens": 205,
+        "total_tokens": 217,
+        "completion_tokens": 12,
+        "completion_tokens_details": {
+          "reasoning_tokens": 8
+        }
+      },
+      "first_output_seconds": 5.733063869993202,
+      "elapsed_seconds": 10.991944668989163,
+      "name": "addition",
+      "expected": "42",
+      "passed": true
+    },
+    {
+      "status": 200,
+      "text": "amber cloud",
+      "reasoning": "",
+      "usage": {
+        "prompt_tokens": 3443,
+        "total_tokens": 3447,
+        "completion_tokens": 4,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "first_output_seconds": 70.3506342539913,
+      "elapsed_seconds": 71.45095246599521,
+      "name": "sparse_retrieval",
+      "expected": "amber cloud",
+      "passed": true
+    }
+  ],
+  "sample_count": 4,
+  "passed_fraction": 1.0
+}

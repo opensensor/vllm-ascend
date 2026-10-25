@@ -15,7 +15,9 @@ W4_BLOCK = 32
 MAX_GROUPED_ROUTES = 128
 NZ_OUTPUT_TILE = 16
 NZ_INPUT_TILE = 256
-ATTENTION_QUERY_TILE = 16
+# TP2/PP3 real-weight coherence and CPU/NPU comparisons qualify 64-query
+# batches. Keep the same per-head top-k selection, masking and FP32 reductions.
+ATTENTION_QUERY_TILE = 64
 W4_LAYOUT = "minimax-m3-signed-w4-block32-fp16-v1"
 
 

@@ -1,0 +1,17 @@
+[Unit]
+Description=MiniMax M3.1 Flash W4 on six Ascend 310P chips
+After=network.target
+
+[Service]
+Type=exec
+User=matteius
+WorkingDirectory=/workspace
+ExecStart=/bin/bash /workspace/minimax-m31-serve-tools.sh
+ExecStartPost=/bin/bash /workspace/minimax-m31-activate-native.sh
+TimeoutStartSec=900
+TimeoutStopSec=90
+StandardOutput=append:/vllm-workspace/minimax-tools.log
+StandardError=append:/vllm-workspace/minimax-tools.log
+
+[Install]
+WantedBy=multi-user.target

@@ -144,6 +144,7 @@ def attention_oracle(q, k, v, iq, ik, *, prefix, block_size, topk, local, init):
         (0, 129, 64, 1, 0),
         (93, 17, 32, 1, 1),
         (127, 2, 32, 1, 0),
+        (19, 129, 4, 1, 1),
     ],
 )
 def test_paged_sparse_attention_causality_and_head_selection(prefix, length, topk, local, init):
