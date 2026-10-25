@@ -59,7 +59,6 @@ def save_window(
 
 
 def main() -> None:
-    """Sample camera frames, submit inference, and record each response in order."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--camera", required=True)

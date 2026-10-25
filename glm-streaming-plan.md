@@ -711,6 +711,7 @@ reuse a candidate namespace or interpret a partial diagnostic as promotion.
   remains unmet. Original language-budget failure preserved. See T14 reports.
 - **files edited/created**: `tools/glm_perf/glm_streaming_contract.h`, `tools/glm_perf/streaming_memory.py`, `tests/ut/glm_perf/test_streaming_memory.py`; coordinator owns shared kernel/caller integration and `T14/` evidence.
 
+
 ### T15: Probe scalar overhead from SDK tensor descriptors offline
 
 - **depends_on**: [T13]
@@ -732,6 +733,7 @@ reuse a candidate namespace or interpret a partial diagnostic as promotion.
 - **log**: Offline pointer consumer passed187 CPU cases, 30 ASan/UBSan boundary probes and seven negative faults. It queries seven UB bases once, uses no descriptor slices, preserves16 casts/6 multiplies/2 ordered adds, 10 vector fences and full-mask exit. SDK/compiler call-site hashes are pinned in bilingual T15 reports. No SDK compile, native validation or performance claim; root defers hardware work until current E2E measurements finish.
 - **files edited/created**:
 
+
 ### T16: Audit decode routing metadata for the next measured candidate
 
 - **depends_on**: [T11]
@@ -748,6 +750,7 @@ reuse a candidate namespace or interpret a partial diagnostic as promotion.
 - **status**: Completed
 - **log**: Verified actual v984 M16/wideK128/FP16-scale frozen source and binary wiring. Source derives3456 GM end reads per H4096/I2048/E72 projection pair. Prepared/no-LUT mask writers permit a full M16 end cache at24640..26944 without UB growth. Existing bulk/vector-scale cache flag cannot be reused unchanged. Eight existing admission/CLI tests passed; compiler case excluded because this is a read-only audit. No speedup or hardware claim. See T16 bilingual reports and provenance.
 - **files edited/created**:
+
 
 ### T17: Implement the decode boundary-cache helper offline
 
@@ -766,6 +769,7 @@ reuse a candidate namespace or interpret a partial diagnostic as promotion.
 - **status**: Completed
 - **log**: Offline public-SDK cache helper passed872 CPU tests (all1..288 lengths/replays, seven faults and sanitizers). No allocation; all live INT64 boundaries refresh every launch. Source/builder remains unchanged. SDK compile, native parity/profiling and serving tests remain queued after T14. See T17 bilingual reports.
 - **files edited/created**:
+
 
 ### T18: Repair a response-budget-limited quality control
 

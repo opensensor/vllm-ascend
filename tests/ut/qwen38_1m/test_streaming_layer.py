@@ -337,7 +337,7 @@ def test_actual_runner_snapshot_publication_uses_raw_counts_and_finally_cleanup(
     exec(compile(ast.fix_missing_locations(ast.Module(body=[cls], type_ignores=[])), str(RUNNER), "exec"), scope)
     runner = scope["NPUModelRunner310"]()
     runner.input_batch = SimpleNamespace(req_ids=["a", "b"])
-    runner._qwen4exp_mtp_ple, runner.use_async_scheduling, runner.need_accepted_tokens = True, False, True
+    runner._qwen4exp_speculative_state, runner.use_async_scheduling, runner.need_accepted_tokens = True, False, True
     calls = []
     host = torch.tensor([[2, 3, -1], [4, -1, -1]])
     sampled = SimpleNamespace(cpu=lambda: calls.append("cpu") or host, device=SimpleNamespace(type="npu"))

@@ -13,9 +13,6 @@ from tools.glm_perf import decode_cache_candidate as candidate
 ROOT = Path(__file__).resolve().parents[3]
 INPUTS = ROOT / "artifacts/glm-perf-310p/streaming-upgrade/T22/inputs"
 STUBS = Path(__file__).parent / "decode_cache_candidate_cpu_stubs"
-# This suite authenticates historical binary/source inputs kept outside Git.
-# Portable clones must not substitute current sources for the frozen v984 build.
-pytestmark = pytest.mark.skipif(not INPUTS.is_dir(), reason="requires external frozen v984 T22 inputs")
 
 
 def plan(tmp_path, inputs=INPUTS, **kwargs):

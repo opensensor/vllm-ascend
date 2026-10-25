@@ -31,11 +31,19 @@ def open_table(metadata):
     return fd
 
 
-def request_count(tokens, starts, history, starts_cpu, *, max_requests=MAX_REQUESTS):
+def request_count(
+    tokens, starts, history, starts_cpu, *, max_requests=MAX_REQUESTS, tokens_per_request=TOKENS_PER_REQUEST
+):
     """Admit metadata without a device readback; reject excess padding groups."""
     if type(max_requests) is not int or not 1 <= max_requests <= MAX_NATIVE_REQUESTS:
         raise ValueError("native PLE supports one to six requests")
-    if not 1 <= tokens <= TOKENS_PER_REQUEST * max_requests or starts is None or history is None or starts_cpu is None:
+    if (
+        type(tokens_per_request) is not int
+        or tokens_per_request not in (3, 4, 8)
+        or tokens_per_request * max_requests > 32
+    ):
+        raise ValueError("native PLE serving admits three, four or eight tokens per request")
+    if not 1 <= tokens <= tokens_per_request * max_requests or starts is None or history is None or starts_cpu is None:
         return None
     count = min(max_requests, history.shape[0])
     if history.ndim != 2 or history.shape[1] != 2 or starts.numel() < count + 1:
@@ -45,10 +53,23 @@ def request_count(tokens, starts, history, starts_cpu, *, max_requests=MAX_REQUE
     return count
 
 
-def load_library(path, digest):
+def validate_capacity(lib, required_tokens):
+    # The retained six-request adapter predates this query and admits 18 rows.
+    query = getattr(lib, "ple_host_max_tokens", None)
+    capacity = 18
+    if query is not None:
+        query.argtypes, query.restype = [], ctypes.c_size_t
+        capacity = query()
+    if required_tokens > capacity:
+        raise ValueError(f"native PLE capacity {capacity} is below required {required_tokens}; rebuild adapter")
+    return capacity
+
+
+def load_library(path, digest, required_tokens=TOKENS_PER_REQUEST * MAX_REQUESTS):
     if hashlib.sha256(Path(path).read_bytes()).hexdigest() != digest:
         raise ValueError("native PLE library digest differs")
     lib = ctypes.CDLL(str(path))
+    validate_capacity(lib, required_tokens)
     pointer, integer, timings = ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_uint64)
     for name, arguments in (
         ("ple_host_create", [integer, integer, ctypes.c_size_t, pointer, pointer, ctypes.POINTER(pointer)]),
@@ -157,9 +178,18 @@ class ServingPLE:
         self.max_requests = config.get("max_requests", MAX_REQUESTS)
         if type(self.max_requests) is not int or not 1 <= self.max_requests <= MAX_NATIVE_REQUESTS:
             raise ValueError("native PLE supports one to six requests")
+        self.tokens_per_request = config.get("tokens_per_request", TOKENS_PER_REQUEST)
+        if (
+            type(self.tokens_per_request) is not int
+            or self.tokens_per_request not in (3, 4, 8)
+            or self.tokens_per_request * self.max_requests > 32
+        ):
+            raise ValueError("native PLE serving admits three, four or eight tokens per request")
         self.metadata = json.loads(Path(config["table"]).read_text())
+        self.lib = load_library(
+            config["library"], config["library_sha256"], self.tokens_per_request * self.max_requests
+        )
         self.fd = open_table(self.metadata)
-        self.lib = load_library(config["library"], config["library_sha256"])
         self.binary = config["binary"]
         if hashlib.sha256(Path(self.binary).read_bytes()).hexdigest() != config["binary_sha256"]:
             raise ValueError("native selector digest differs")
@@ -186,6 +216,7 @@ class ServingPLE:
             table_inode=self.metadata["inode"],
             table_bytes=self.metadata["bytes"],
             owners=len(self.retained),
+            tokens_per_request=self.tokens_per_request,
             shared_mapping=self.mapping_parent is not None,
             host_assisted=True,
             torch_stream_join=True,
@@ -254,6 +285,7 @@ def make_replacements(config, *, manager=None):
                 ngram_context,
                 query_start_loc_cpu,
                 max_requests=manager.max_requests,
+                tokens_per_request=manager.tokens_per_request,
             )
             if manager.enabled
             else None

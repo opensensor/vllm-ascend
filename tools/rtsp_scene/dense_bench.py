@@ -98,7 +98,6 @@ def measure_pair(reference, custom, synchronize, iterations: int, repeats: int) 
 
 
 def main() -> None:
-    """Build projection inputs and compare reference and candidate kernel timings."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--build", type=Path, required=True)

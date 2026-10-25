@@ -25,9 +25,11 @@ struct ProbeArguments {
 #include <dirent.h>
 #include <dlfcn.h>
 #include <fcntl.h>
+#include <initializer_list>
 #include <link.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/sysmacros.h>
 #include "ple_probe_text.h"
 #include "ple_device_access.h"
 
@@ -199,6 +201,46 @@ extern "C" uint32_t PleDmaCapability(void* args) {
         receipt[36] = output.size();
         receipt[37] = output.truncated();
     }
+    if (values.mode == 5) {
+        // Identify the kernel owner without opening a device node or issuing ioctls.
+        PleProbeText output(reinterpret_cast<char*>(receipt + kInventoryStart),
+                            (kReceiptWords - kInventoryStart) * sizeof(uint64_t));
+        const char* nodes[] = {"/dev/davinci0", "/dev/davinci_manager", "/dev/svm0"};
+        for (const char* node : nodes) {
+            struct stat info{};
+            errno = 0;
+            const int status = stat(node, &info);
+            const int stat_error = status < 0 ? errno : 0;
+            output.append("NODE %s stat_errno=%d", node, stat_error);
+            if (status < 0) {
+                output.append("\n");
+                continue;
+            }
+            const unsigned major_number = major(info.st_rdev);
+            const unsigned minor_number = minor(info.st_rdev);
+            output.append(" major=%u minor=%u uid=%lu gid=%lu mode=%04o\n", major_number,
+                          minor_number, static_cast<unsigned long>(info.st_uid),
+                          static_cast<unsigned long>(info.st_gid),
+                          static_cast<unsigned>(info.st_mode & 07777));
+            char path[128];
+            for (const char* suffix : {"", "/device/driver", "/subsystem"}) {
+                const int length = std::snprintf(path, sizeof(path), "/sys/dev/char/%u:%u%s",
+                                                 major_number, minor_number, suffix);
+                if (length < 0 || static_cast<size_t>(length) >= sizeof(path)) continue;
+                char target[512];
+                errno = 0;
+                const ssize_t count = readlink(path, target, sizeof(target) - 1);
+                const int link_error = count < 0 ? errno : 0;
+                if (count >= 0) target[count] = '\0';
+                output.append("LINK %s errno=%d target=%s\n", path, link_error,
+                              count >= 0 ? target : "unavailable");
+            }
+        }
+        const char* paths[] = {"/proc/devices", "/sys/devices/virtual/tsdrv-class/davinci0/uevent"};
+        for (const char* path : paths) ple_access_file(output, path);
+        receipt[36] = output.size();
+        receipt[37] = output.truncated();
+    }
     return 0;
 }
 #else
@@ -218,7 +260,7 @@ int main(int argc, char** argv) {
     if (argc != 2 && argc != 3) return 1;
     if (argc == 3 && std::strcmp(argv[2], "convert") != 0 &&
         std::strcmp(argv[2], "inventory") != 0 && std::strcmp(argv[2], "interfaces") != 0 &&
-        std::strcmp(argv[2], "access") != 0) return 1;
+        std::strcmp(argv[2], "access") != 0 && std::strcmp(argv[2], "identity") != 0) return 1;
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     std::ifstream file(argv[1], std::ios::binary);
     if (!file.good()) return 1;
@@ -253,7 +295,8 @@ int main(int argc, char** argv) {
     args.host_source = reinterpret_cast<uint64_t>(host_source);
     args.mode = argc == 3 ? (std::strcmp(argv[2], "convert") == 0 ? 1 :
         (std::strcmp(argv[2], "inventory") == 0 ? 2 :
-        (std::strcmp(argv[2], "interfaces") == 0 ? 3 : 4))) : 0;
+        (std::strcmp(argv[2], "interfaces") == 0 ? 3 :
+        (std::strcmp(argv[2], "access") == 0 ? 4 : 5)))) : 0;
     require(aclrtLaunchKernelWithHostArgs(function, 1, stream, nullptr, &args, sizeof(args), nullptr, 0), "launch AI CPU probe");
     require(aclrtSynchronizeStreamWithTimeout(stream, 5000), "complete AI CPU probe");
     uint64_t result[kReceiptWords]{};
@@ -278,7 +321,7 @@ int main(int argc, char** argv) {
         std::printf("\"}\n");
         if (result[8] == 0 && result[9] != 0) return 4;
     }
-    if (args.mode == 2 || args.mode == 3 || args.mode == 4) {
+    if (args.mode == 2 || args.mode == 3 || args.mode == 4 || args.mode == 5) {
         if (result[36] > (kReceiptWords - kInventoryStart) * sizeof(uint64_t)) return 5;
         if (result[37]) return 6;  // Never accept a truncated interface inventory.
         std::printf("{\"inventory_hex\":\"");

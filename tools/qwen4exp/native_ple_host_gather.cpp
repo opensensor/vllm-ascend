@@ -95,6 +95,8 @@ int destroy(Owner* owner) {
 }
 }  // namespace
 
+extern "C" size_t ple_host_max_tokens() { return ple_host::kMaxTokens; }
+
 static int create_owner(int device, std::shared_ptr<ple_host::SharedTable> table, size_t tokens, void* packet_device,
                         void* output_device, void** result) {
   if (!result) return -EINVAL;

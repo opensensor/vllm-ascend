@@ -21,11 +21,11 @@ def frozen_inputs(tmp_path):
     reference_dir = tmp_path / "reference"
     reference_dir.mkdir()
     # Actual reference options, with small independently sealed fixture metadata.
-    options = json.loads((Path(__file__).parent / "fixtures/streaming_reference_options.json").read_text())
+    actual = json.loads(Path("artifacts/glm-perf-310p/streaming-upgrade/T2/reference.json").read_text())
     reference = {
         "version": 1021,
         "decode_version": 984,
-        "build_options": options,
+        "build_options": actual["build_options"],
         "checkpoint": {"scale_layout": "fp16_storage_fp32_compute_v1"},
         "frozen_files": [],
     }

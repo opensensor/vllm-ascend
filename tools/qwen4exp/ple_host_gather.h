@@ -9,7 +9,7 @@ namespace ple_host {
 constexpr size_t kHeads = 16;
 constexpr size_t kRowBytes = 320;
 constexpr size_t kReceiptWords = 8;
-constexpr size_t kMaxTokens = 18;
+constexpr size_t kMaxTokens = 32;
 constexpr int kDeviceCount = 6;
 constexpr size_t kPacketBytesPerToken = kHeads * sizeof(int64_t) + kReceiptWords * sizeof(int32_t);
 

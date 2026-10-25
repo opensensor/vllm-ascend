@@ -219,6 +219,7 @@ The actual host-paged lookup consumes a checked mirror of that packet. A
 blocking D2H mirror, host lookup, and the synchronous scheduler remain; this
 qualification must not be treated as permission to bypass async/cache guards.
 
+
 The subsequent [queued scheduling integration](../../artifacts/npu-collective-qfn-20261014-024609/queued-scheduling-results.md)
 now overlaps engine scheduling with worker execution, overlaps output observation
 with drafting, and consumes unchanged-batch draft packets on device. Early PLE

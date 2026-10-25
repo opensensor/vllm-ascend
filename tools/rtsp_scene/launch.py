@@ -29,7 +29,6 @@ def build_command(
     async_scheduling: bool = False,
     chunked_prefill: bool = True,
 ) -> list[str]:
-    """Build the isolated vision server command and its bounded runtime settings."""
     if not model or not 1 <= port <= 65535 or min(max_sequences, tensor_parallel_size, max_batched_tokens) <= 0:
         raise ValueError("Model, valid port and positive sequence/parallel/token counts are required")
     if vision_parallel_mode not in VISION_PARALLEL_MODES:

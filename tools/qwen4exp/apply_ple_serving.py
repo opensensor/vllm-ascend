@@ -34,7 +34,8 @@ def apply_worker(worker):
         torch.npu.synchronize()
         device = worker.model_runner.device
         requests = CONFIG.get("max_requests", 4)
-        for tokens in range(3, 3 * requests + 1, 3):
+        stride = manager.tokens_per_request
+        for tokens in range(stride, stride * requests + 1, stride):
             key = (tokens, requests, device.index)
             manager.lookups[key] = ns["Lookup"](manager, tokens, requests, device)
         # Leave scheduler, resident PatchSession, RPC controls and graphs live.
@@ -147,6 +148,7 @@ def main():
     parser.add_argument("--url", default="http://127.0.0.1:8001")
     parser.add_argument("--expected-workers", type=int, default=4)
     parser.add_argument("--max-requests", type=int, choices=range(1, 7), default=4)
+    parser.add_argument("--tokens-per-request", type=int, choices=(3, 4, 8), default=3)
     args = parser.parse_args()
     config, adapter = None, ""
     if args.action == "install":
@@ -163,6 +165,7 @@ def main():
         library = args.library.resolve(strict=True)
         config = dict(
             max_requests=args.max_requests,
+            tokens_per_request=args.tokens_per_request,
             table=str(args.table.resolve(strict=True)),
             library=str(library),
             library_sha256=hashlib.sha256(library.read_bytes()).hexdigest(),
