@@ -127,9 +127,11 @@ def test_route_count_reductions_preserve_int64_native_boundaries(rank):
 
 
 @pytest.mark.parametrize("tokens", [1, 3])
+@pytest.mark.parametrize("paired", [False, True])
 @pytest.mark.parametrize("logits", [[9.0, -2.0, 10.0, -1.0], [1.0, 2.0, 9.0, 10.0]])
-def test_compact_decode_preserves_route_order_and_masks_unwritten_peer_rows(tokens, logits):
+def test_compact_decode_preserves_route_order_and_masks_unwritten_peer_rows(tokens, logits, paired):
     dtypes = []
+    pair_calls = []
 
     def project(x, codes, scales, groups):
         dtypes.append(groups.dtype)
@@ -143,7 +145,15 @@ def test_compact_decode_preserves_route_order_and_masks_unwritten_peer_rows(toke
                 )[0]
         return result
 
+    def gate_up(x, gate_codes, gate_scales, up_codes, up_scales, routes):
+        assert x.shape[0] == 1  # Native pairing must not receive expanded routes.
+        pair_calls.append(routes.clone())
+        expanded = x.expand(routes.numel(), -1)
+        return project(expanded, gate_codes, gate_scales, routes), project(expanded, up_codes, up_scales, routes)
+
     project.max_compact_routes = 4
+    if paired:
+        project.gate_up = gate_up
     x = torch.randn(tokens, 32, generator=torch.Generator().manual_seed(83)).half()
     logits = torch.tensor([logits]).expand(tokens, -1)
     expected = make_bank()(x, logits)
@@ -153,6 +163,7 @@ def test_compact_decode_preserves_route_order_and_masks_unwritten_peer_rows(toke
     actual = sum(shard(x, logits) for shard in shards)
     torch.testing.assert_close(actual, expected, atol=1e-6, rtol=1e-6)
     assert all(dtype == (torch.int32 if tokens == 1 else torch.int64) for dtype in dtypes)
+    assert len(pair_calls) == (2 if paired and tokens == 1 else 0)
 
 
 def attention_oracle(q, k, v, iq, ik, *, prefix, block_size, topk, local, init):

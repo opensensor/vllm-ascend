@@ -92,8 +92,10 @@ class PackedM3Experts:
     exec(candidate_source(fake, "native_v2"), module.__dict__)
     kernel = lambda *args: "new"
     kernel.max_compact_routes = 4
+    kernel.gate_up = Mock()
     replacements = module.replacements({"native_v2": kernel})
     assert replacements["vllm_ascend._310p.ops.minimax_m3:grouped_w4_mm"].max_compact_routes == 4
+    assert replacements["vllm_ascend._310p.ops.minimax_m3:grouped_w4_mm"].gate_up is kernel.gate_up
     assert replacements["vllm_ascend._310p.ops.minimax_m3:PackedM3Experts.forward"](None) == "new"
     assert (
         replacements["vllm_ascend.models.minimax_m3.minimax_m3:paged_sparse_attention"]

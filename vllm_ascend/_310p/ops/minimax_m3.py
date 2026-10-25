@@ -195,10 +195,11 @@ class PackedM3Experts(nn.Module):
                 (local_ids >= 0) & (local_ids < self.num_local_experts), local_ids, self.num_local_experts
             )
             compact = x.shape[0] == 1 and self.top_k <= getattr(op, "max_compact_routes", 0)
+            paired = getattr(op, "gate_up", None) if compact else None
             if compact:
                 # One token has at most four routes. Pass their local IDs in
                 # routing order, avoiding sorting and a full expert histogram.
-                sorted_x = x.expand(self.top_k, -1).to(torch.float16).contiguous()
+                sorted_x = (x if callable(paired) else x.expand(self.top_k, -1)).to(torch.float16).contiguous()
                 ends = local_ids.to(torch.int32).contiguous()
                 routed_weights = weights.flatten()[:, None]
             else:
@@ -219,8 +220,11 @@ class PackedM3Experts(nn.Module):
                     .contiguous()
                 )
                 routed_weights = weights.flatten()[:, None].index_select(0, order)
-            gate = op(sorted_x, self.w1_codes, scales["w1"], ends)
-            up = op(sorted_x, self.w3_codes, scales["w3"], ends)
+            if callable(paired):
+                gate, up = paired(sorted_x, self.w1_codes, scales["w1"], self.w3_codes, scales["w3"], ends)
+            else:
+                gate = op(sorted_x, self.w1_codes, scales["w1"], ends)
+                up = op(sorted_x, self.w3_codes, scales["w3"], ends)
             act = clipped_swiglu(gate, up, self.alpha, self.beta, self.limit).to(torch.float16)
             routed = op(act.contiguous(), self.w2_codes, scales["w2"], ends).float()
             # Never depend on uncomputed peer rows being initialized by a kernel.

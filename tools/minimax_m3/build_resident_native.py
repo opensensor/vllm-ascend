@@ -27,6 +27,7 @@ def build(
     int8_compute=False,
     byte_unpack=False,
     int8_original_layout=False,
+    paired_gate_up=False,
 ):
     if not namespace.isidentifier() or not namespace.startswith("minimax_w4_"):
         raise ValueError("use a unique minimax_w4_ namespace for each build")
@@ -40,6 +41,8 @@ def build(
         raise ValueError("expert lanes must be 0, 1, 2, 4 or 8 and require wide L1")
     if int8_original_layout and not int8_compute:
         raise ValueError("INT8 original layout requires INT8 compute")
+    if paired_gate_up and (not int8_compute or int8_original_layout):
+        raise ValueError("paired gate/up requires repacked INT8 compute")
     if byte_unpack and (rint_unpack or int8_compute):
         raise ValueError("byte unpack is a separate FP16 candidate")
     if int8_compute and (singleton_l1 or expert_lanes or not wide_l1 or not rint_unpack):
@@ -86,45 +89,44 @@ def build(
             raise ValueError("grouped L1 workspace contract changed")
         header.write_text(contents.replace(original, f"constexpr uint32_t W2_L1_MAX_K = {l1_max_k};"))
     kernel_file = "w4a8_grouped.cpp" if int8_compute else "w2_grouped_blocked_dequant_matmul_v310.cpp"
-    kernel_source = (grouped / kernel_file).read_text()
     entry = namespace + "_kernel"
-    # OPP normally initializes a hidden system-workspace pointer. A direct
-    # binary owns its workspace explicitly and must never depend on that state.
-    old = "GM_ADDR user = AscendC::GetUserWorkspace(workspace);"
-    if kernel_source.count(old) != 1:
-        raise ValueError("grouped kernel workspace contract changed")
-    kernel_source = kernel_source.replace(old, "GM_ADDR user = workspace;")
-    kernel_source = kernel_source.replace("KERNEL_TYPE_MIX_AIC", "KERNEL_TYPE_AICORE")
-    kernel_source = kernel_source.replace("void w2_grouped_blocked_dequant_matmul_v310(", f"void {entry}(")
-    source = sources / "grouped_direct.cpp"
-    source.write_text(kernel_source)
     binary = output / "grouped_w4.bin"
     target = cann / "tools/hcc/aarch64-target-linux-gnu/include/c++/7.3.0"
-    subprocess.run(
-        [
-            str(compiler),
-            str(source),
-            str(binary),
-            "--npu-arch=dav-2002",
-            f"--sysroot={cann / 'tools/hcc/sysroot'}",
-            f"-isystem{target}",
-            f"-isystem{target / 'aarch64-target-linux-gnu'}",
-            f"-I{grouped}",
-            f"-I{blocked}",
-            f"-I{sources / 'third_party/catlass/include'}",
-            f"-I{sources / 'moe/common'}",
-            f"-include{sources / 'common/include/cann_compat.h'}",
-            "-Wno-ignored-attributes",
-            *(["-DGLM_W2_GROUPED_CANDIDATE"] if singleton_l1 else []),
-            *(["-DGLM_W2_GROUPED_L1_WIDE", "-DGLM_W2_GROUPED_L1_WIDE_PIPELINED"] if wide_l1 else []),
-            *(["-DGLM_W2_GROUPED_L1_SCALE_CACHE"] if scale_cache else []),
-            *(["-DGLM_W2_GROUPED_RINT_UNPACK"] if rint_unpack else []),
-            *(["-DGLM_W4_BYTE_UNPACK"] if byte_unpack else []),
-            *(["-DMINIMAX_INT8_ORIGINAL_LAYOUT"] if int8_original_layout else []),
-            *([f"-DGLM_W2_GROUPED_EXPERT_LANES={expert_lanes}"] if expert_lanes else []),
-        ],
-        check=True,
-    )
+    compile_options = [
+        "--npu-arch=dav-2002",
+        f"--sysroot={cann / 'tools/hcc/sysroot'}",
+        f"-isystem{target}",
+        f"-isystem{target / 'aarch64-target-linux-gnu'}",
+        f"-I{grouped}",
+        f"-I{blocked}",
+        f"-I{sources / 'third_party/catlass/include'}",
+        f"-I{sources / 'moe/common'}",
+        f"-include{sources / 'common/include/cann_compat.h'}",
+        "-Wno-ignored-attributes",
+        *(["-DGLM_W2_GROUPED_CANDIDATE"] if singleton_l1 else []),
+        *(["-DGLM_W2_GROUPED_L1_WIDE", "-DGLM_W2_GROUPED_L1_WIDE_PIPELINED"] if wide_l1 else []),
+        *(["-DGLM_W2_GROUPED_L1_SCALE_CACHE"] if scale_cache else []),
+        *(["-DGLM_W2_GROUPED_RINT_UNPACK"] if rint_unpack else []),
+        *(["-DGLM_W4_BYTE_UNPACK"] if byte_unpack else []),
+        *(["-DMINIMAX_INT8_ORIGINAL_LAYOUT"] if int8_original_layout else []),
+        *([f"-DGLM_W2_GROUPED_EXPERT_LANES={expert_lanes}"] if expert_lanes else []),
+    ]
+    kernels = [(kernel_file, entry, binary)]
+    paired_binary, paired_entry = output / "gate_up_w4.bin", namespace + "_gate_up_kernel"
+    if paired_gate_up:
+        kernels.append(("w4a8_gate_up.cpp", paired_entry, paired_binary))
+    for filename, symbol, destination in kernels:
+        kernel_source = (grouped / filename).read_text()
+        # A direct binary owns its workspace and cannot depend on OPP state.
+        old = "GM_ADDR user = AscendC::GetUserWorkspace(workspace);"
+        if kernel_source.count(old) != 1:
+            raise ValueError("grouped kernel workspace contract changed")
+        kernel_source = kernel_source.replace(old, "GM_ADDR user = workspace;")
+        kernel_source = kernel_source.replace("KERNEL_TYPE_MIX_AIC", "KERNEL_TYPE_AICORE")
+        kernel_source = kernel_source.replace("void w2_grouped_blocked_dequant_matmul_v310(", f"void {symbol}(")
+        source = sources / (symbol + ".cpp")
+        source.write_text(kernel_source)
+        subprocess.run([str(compiler), str(source), str(destination), *compile_options], check=True)
     compile_bridge(output / "bridge.so", namespace, cann)
     with tarfile.open(output / "sources.tar.gz", "w:gz") as archive:
         archive.add(sources, arcname="sources")
@@ -145,16 +147,18 @@ def build(
                 "int8_compute": int8_compute,
                 "byte_unpack": byte_unpack,
                 "int8_original_layout": int8_original_layout,
+                "paired_gate_up": paired_gate_up,
             },
             indent=2,
         )
         + "\n"
     )
+    paired_args = f", paired_binary={str(paired_binary)!r}, paired_entry={paired_entry!r}" if paired_gate_up else ""
     validation = (
         "import types\n"
         f"_module = types.ModuleType({namespace!r})\n"
         f"exec(compile(open({str(helper)!r}).read(), {str(helper)!r}, 'exec'), _module.__dict__)\n"
-        f"def prepare():\n    return _module.GroupedW4Kernel({namespace!r}, {str(binary)!r}, {entry!r})\n"
+        f"def prepare():\n    return _module.GroupedW4Kernel({namespace!r}, {str(binary)!r}, {entry!r}{paired_args})\n"
         "def validate(resource):\n    return _module.validate_kernel(resource)\n"
     )
 
@@ -172,6 +176,7 @@ def build(
                 "resident_native.py",
                 "reconstruction_bridge.cpp",
                 "build-options.json",
+                *(["gate_up_w4.bin"] if paired_gate_up else []),
             )
         ],
         "operators": [namespace + "::launch"],
@@ -202,6 +207,7 @@ def main():
     parser.add_argument("--int8-compute", action="store_true", help="Experimental packed W4 / INT8 Cube kernel")
     parser.add_argument("--byte-unpack", action="store_true", help="Signed byte-pair W4 extraction, FP16 compute")
     parser.add_argument("--int8-original-layout", action="store_true", help="Retain existing resident W4 byte order")
+    parser.add_argument("--paired-gate-up", action="store_true", help="Build opt-in compact decode gate/up fusion")
     args = parser.parse_args()
     print(
         build(
@@ -218,6 +224,7 @@ def main():
             int8_compute=args.int8_compute,
             byte_unpack=args.byte_unpack,
             int8_original_layout=args.int8_original_layout,
+            paired_gate_up=args.paired_gate_up,
         )
     )
 

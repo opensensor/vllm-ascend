@@ -28,11 +28,46 @@ def pack_int8_layout(codes):
     )
 
 
+def paired_geometry(x, gate_codes, gate_scales, up_codes, up_scales, routes):
+    """Check metadata only: route IDs stay on device, including peer sentinels."""
+    if x.ndim != 2 or x.shape[0] != 1 or gate_codes.ndim != 3:
+        raise ValueError("paired gate/up requires one input token and two matching expert banks")
+    experts, output, packed_cols = gate_codes.shape
+    cols = x.shape[1]
+    if (
+        not experts
+        or not 1024 <= cols <= 6144
+        or cols % 1024
+        or not output
+        or output % 128
+        or packed_cols * 2 != cols
+        or up_codes.shape != gate_codes.shape
+        or gate_codes.dtype != torch.int8
+        or up_codes.dtype != torch.int8
+        or x.dtype != torch.float16
+        or gate_scales.shape != (experts, output // 32, cols // 32)
+        or up_scales.shape != gate_scales.shape
+        or gate_scales.dtype not in (torch.float16, torch.float32)
+        or up_scales.dtype not in (torch.float16, torch.float32)
+        or routes.ndim != 1
+        or not 1 <= routes.numel() <= MAX_COMPACT_ROUTES
+        or routes.dtype != torch.int32
+        or any(
+            t.device != x.device or not t.is_contiguous()
+            for t in (x, gate_codes, up_codes, gate_scales, up_scales, routes)
+        )
+    ):
+        raise ValueError("paired gate/up requires FP16 single-token input, matching NZ W4 banks and <=4 INT32 routes")
+    return routes.numel(), experts, output, cols
+
+
 class GroupedW4Kernel:
     requires_int8_layout = True
     max_compact_routes = MAX_COMPACT_ROUTES
 
-    def __init__(self, namespace, binary, entry):
+    def __init__(self, namespace, binary, entry, *, paired_binary=None, paired_entry=None):
+        if (paired_binary is None) != (paired_entry is None):
+            raise ValueError("paired binary and entry must be supplied together")
         self.kernel = getattr(torch.classes, namespace).Kernel(binary, entry)
         self.launch = getattr(torch.ops, namespace).launch
         self.npu = importlib.import_module("torch_npu")
@@ -42,6 +77,11 @@ class GroupedW4Kernel:
         offsets = (((ids // 512) * 32 + ids % 32) * 16 + (ids % 512) // 32) * 2
         self.offsets = offsets.to(torch.uint32).npu()
         self.tilings = {}
+        if paired_binary is not None:
+            self.paired_kernel = getattr(torch.classes, namespace).Kernel(paired_binary, paired_entry)
+            self.paired_tilings = {}
+            # Ordinary builds deliberately expose no paired callback.
+            self.gate_up = self._gate_up
 
     def prepare(self, scales):
         version = None if torch.is_inference(scales) else scales._version
@@ -107,6 +147,61 @@ class GroupedW4Kernel:
         )
         return result
 
+    def _gate_up(self, x, gate_codes, gate_scales, up_codes, up_scales, routes):
+        rows, experts, output, cols = paired_geometry(x, gate_codes, gate_scales, up_codes, up_scales, routes)
+        gate_ratios, gate_weights = self.bank_scales(gate_codes, gate_scales)
+        up_ratios, up_weights = self.bank_scales(up_codes, up_scales)
+        key = (rows, experts, output, cols, x.device)
+        if key not in self.paired_tilings:
+            self.paired_tilings[key] = torch.tensor(
+                [rows, experts, output, cols, 2, 3], dtype=torch.int64, device=x.device
+            )
+        gate = torch.empty((rows, output), dtype=x.dtype, device=x.device)
+        up = torch.empty_like(gate)
+        self.launch(
+            self.paired_kernel,
+            [
+                x,
+                gate_codes,
+                gate_ratios,
+                routes,
+                gate,
+                gate,
+                self.paired_tilings[key],
+                gate_weights,
+                gate_weights,
+                self.offsets,
+                up_codes,
+                up_ratios,
+                up_weights,
+                up,
+            ],
+            min(8, output // 128),
+        )
+        return gate, up
+
+
+def validate_paired(kernel, generator):
+    reports = []
+    # Distinct banks/scales, repeated routes, peer-first/all-peer routes, and
+    # changing inputs cover projection identity and activation lifetime.
+    for cols in (1024, 3072, 6144):
+        banks, scales = [], []
+        for _ in range(2):
+            canonical = torch.randint(0, 256, (2, 256, cols // 2), dtype=torch.uint8, generator=generator)
+            banks.append(pack_int8_layout(torch.stack([pack_w4_nz256(e) for e in canonical])).npu())
+            scales.append((torch.rand((2, 8, cols // 32), generator=generator) / 64).npu())
+        for ids in ([0], [1, 0, 1, 0], [2, 1, 0, 2], [2, 2, 2, 2]):
+            x = torch.randn(1, cols, generator=generator).half().npu()
+            routes = torch.tensor(ids, dtype=torch.int32, device=x.device)
+            actual = kernel.gate_up(x, banks[0], scales[0], banks[1], scales[1], routes)
+            expanded = x.expand(len(ids), -1).contiguous()
+            expected = [kernel(expanded, bank, scale, routes) for bank, scale in zip(banks, scales)]
+            valid = (routes < 2)[:, None]
+            exact = [torch.equal(torch.where(valid, a, 0), torch.where(valid, b, 0)) for a, b in zip(actual, expected)]
+            reports.append({"cols": cols, "ids": ids, "exact": all(exact)})
+    return reports
+
 
 def validate_kernel(kernel):
     generator = torch.Generator().manual_seed(31)
@@ -139,8 +234,13 @@ def validate_kernel(kernel):
                 ends = torch.tensor([int(i >= expert) for i in range(codes.shape[0])], device=x.device)
                 expected[row] = kernel(x[row : row + 1], codes, device_scales, ends).cpu()[0]
         compact_reports.append({"ids": ids, "exact": torch.equal(actual, expected)})
+    paired_reports = validate_paired(kernel, generator) if callable(getattr(kernel, "gate_up", None)) else []
     return {
-        "passed": all(r["finite"] and r["nrmse"] < 0.025 for r in reports) and all(r["exact"] for r in compact_reports),
+        "passed": (
+            all(r["finite"] and r["nrmse"] < 0.025 for r in reports)
+            and all(r["exact"] for r in compact_reports + paired_reports)
+        ),
         "cases": reports,
         "compact_cases": compact_reports,
+        "paired_cases": paired_reports,
     }

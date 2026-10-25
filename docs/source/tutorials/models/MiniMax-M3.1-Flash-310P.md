@@ -670,3 +670,33 @@ conversion. Use the snapshot matching the currently installed generation. The
 post-start script now enables the retained dense path. Its source match and
 shell syntax were checked; a cold restart was not repeated. Evidence and the
 startup script are in `artifacts/minimax-m31-dense-int8-20261025/`.
+
+### Offline candidate: paired expert gate/up
+
+`--paired-gate-up` is an **opt-in, unqualified candidate**, not the current
+serving configuration. This work was developed locally while the server was in
+use; no server connection, NPU execution, hot reload, or startup change was made.
+The retained hardware benchmark remains **3.958 tokens/s**.
+
+The compact decoder shares one hidden vector across all selected experts. The
+candidate launches gate/up together and prepares its INT8 activation once per
+core, reusing that L1 activation and its row scale for both projections and all
+local routes. With L local routes, activation preparation falls from 2L to one
+when L is nonzero. Gate/up launches fall from two to one, and the expanded input
+copy disappears. Weight decompression and both matrix multiplies still execute;
+this does not imply a proportional throughput improvement.
+
+The existing packed banks, independent FP16 projection outputs, SwiGLU and down
+projection remain in use. The paired callback is available only when its extra
+binary is explicitly built and sealed. Prefill and ordinary native builds keep
+the separate projection path. Resident source snapshots now also bind that
+optional callback, so use saved complete source when comparing old generation
+digests after deploying updated controller code.
+
+Local checks cover invalid geometry, launch ABI and buffer ownership, metadata
+reuse, module dispatch, peer masking, and sealed build packaging. A host C++
+harness runs the actual entry's route/pointer selection against stubs; it does
+**not** validate CANN arithmetic, device synchronization or L1 retention. Real
+CANN compilation, projection equality, graph replay and serving speed remain
+unverified. Deferred build/probe commands and offline receipts are in
+`artifacts/minimax-m31-paired-gate-up-offline-20261025/`.

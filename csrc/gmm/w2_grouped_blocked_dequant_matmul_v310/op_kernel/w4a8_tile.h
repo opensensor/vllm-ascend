@@ -231,7 +231,7 @@ public:
         SetFlag<HardEvent::V_M>(EVENT_ID7);
         WaitFlag<HardEvent::V_M>(EVENT_ID7);
     }
-    __aicore__ inline void ProcessInt8(bool reuseDecodeTables)
+    __aicore__ inline void ProcessInt8(bool reuseDecodeTables, bool reuseActivation = false)
     {
         if (!reuseDecodeTables) {
             AllocBuffers();
@@ -252,7 +252,10 @@ public:
             }
             return;
         }
-        if (fusedActivation_) PrepareActivation();
+        // The paired decode entry keeps the same single-token activation in
+        // INT8_FULL_A_OFFSET across projections/routes. InitGeometry and the
+        // weight/epilogue buffers do not overwrite that L1 region or rowScales_.
+        if (fusedActivation_ && !reuseActivation) PrepareActivation();
         const uint32_t rows = T_ == 1 ? W2_FRACTAL_SIZE : (uint32_t)T_;
         const uint32_t alignedRows = AlignUpU<uint32_t>(rows, W2_FRACTAL_SIZE);
         auto aLayout = tla::MakeLayout<int8_t, layout::RowMajor>((uint32_t)T_, (uint32_t)K_);
