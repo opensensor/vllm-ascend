@@ -126,6 +126,12 @@ this is a lossy requantization, not a byte-layout conversion.
 
 ## Evidence and limits
 
+The follow-up [public report review](external-reports.md) found similar
+overthinking and repeated tool inspection on hosted MiniMax services, an
+effort-dependent repetition experiment, and a separate low-bit conversion
+warning. These reports weaken attribution to our W4 conversion alone without
+clearing its measured fidelity loss or establishing a common root cause.
+
 Compact response summaries omit private request bodies and original tool outputs.
 The original SQLite session remains local. Prototype scripts document the exact
 fixed paths used in this investigation and are not production entry points.
