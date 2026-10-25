@@ -12,9 +12,13 @@ from tools.glm_perf.resident_harness import ResidentClient
 from tools.glm_perf.resident_native import NativeManifest
 
 
-def candidate_source(module_source=None, native_name=None, activation_name=None, graph_source=None):
+def candidate_source(
+    module_source=None, native_name=None, activation_name=None, graph_source=None, source_native_name=None
+):
     """Compose a complete generation; switching restores the prior generation."""
-    if module_source is None and native_name is None and activation_name is None and graph_source is None:
+    if native_name is not None and source_native_name is not None:
+        raise ValueError("Choose W4 or source NVFP4 native dispatch, not both")
+    if all(value is None for value in (module_source, native_name, activation_name, graph_source, source_native_name)):
         return ""
     source = "import types\n\ndef replacements(native_resources):\n    changes = {}\n"
     if module_source is not None:
@@ -47,6 +51,13 @@ def candidate_source(module_source=None, native_name=None, activation_name=None,
         )
         if module_source is not None:
             source += "    module.clipped_swiglu = activation\n"
+    if source_native_name is not None:
+        source += (
+            f"    source_kernel = native_resources[{source_native_name!r}]\n"
+            "    def source_project(self, x, codes, scales, ends):\n"
+            "        return source_kernel(x, codes, scales, ends, self.lookups[codes.data_ptr()])\n"
+            "    changes['vllm_ascend._310p.ops.minimax_m3:SourceProjector.__call__'] = source_project\n"
+        )
     if graph_source is not None:
         source += (
             "    graph = types.ModuleType('m31_graph_candidate')\n"
@@ -64,6 +75,7 @@ def main():
     parser.add_argument("--workers", type=int, default=6)
     parser.add_argument("--module-file", type=Path)
     parser.add_argument("--native-name")
+    parser.add_argument("--source-native-name", help="Versioned source-NVFP4 kernel; preserve resident source banks")
     parser.add_argument("--activation-name")
     parser.add_argument(
         "--partial-graphs", action="store_true", help="Capture decode pieces around eager sparse attention"
@@ -87,6 +99,7 @@ def main():
                         args.native_name,
                         args.activation_name,
                         Path(__file__).with_name("partial_graph.py").read_text() if args.partial_graphs else None,
+                        args.source_native_name,
                     )
                     result = client.switch(
                         Control(uuid.uuid4().hex, "direct-target", "m3_candidate" if source else "baseline", source)

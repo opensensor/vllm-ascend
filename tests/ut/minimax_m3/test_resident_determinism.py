@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Drain/graph ordering and fail-closed operator-mode transitions."""
 
+import dataclasses
 import types
 
 import pytest
@@ -11,16 +12,17 @@ from tools.minimax_m3.resident_determinism import flag_replacements, transition
 
 
 class Client:
-    def __init__(self, fail=False):
-        self.source = "def replacements(native_resources): return {}\n"
-        control = Control("old", "direct-target", "m3_candidate", self.source)
+    def __init__(self, fail=False, baseline=False):
+        self.source = "" if baseline else "def replacements(native_resources): return {}\n"
+        candidate = "baseline" if baseline else "m3_candidate"
+        control = Control("old", "direct-target", candidate, self.source)
         self.status = [
             dict(
                 rank=0,
                 pid=12,
                 weight_storage_digest="weights",
                 generation="old",
-                candidate="m3_candidate",
+                candidate=candidate,
                 digest=control.digest,
                 native_failed=False,
             )
@@ -45,6 +47,7 @@ class Client:
         return self.status
 
     def switch(self, control):
+        Control.from_dict(dataclasses.asdict(control))
         assert self.paused and control.source == self.source
         self.events.append("recapture")
         return self.status
@@ -54,8 +57,9 @@ class Client:
         self.paused = False
 
 
-def test_flags_change_after_graph_release_and_before_recapture():
-    client = Client()
+@pytest.mark.parametrize("baseline", [False, True])
+def test_flags_change_after_graph_release_and_before_recapture(baseline):
+    client = Client(baseline=baseline)
     assert transition(client, client.source, True)["enabled"]
     assert client.events == ["drain", "resident_prepare", "resident_apply", "resident_capture", "recapture", "resume"]
 

@@ -1,0 +1,57 @@
+import dataclasses,fcntl,inspect,json,uuid
+from pathlib import Path
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.glm_perf.resident_native import NativeManifest
+from tools.minimax_m3.resident import candidate_source
+
+def validation_replacements(native_resources, installed=False):
+ import torch
+ from tools.minimax_m3.nvfp4_checkpoint import SourceProjector
+ from vllm_ascend._310p.ops.minimax_m3 import PackedM3Experts
+ new = native_resources['minimax_w4_nvfp4_v4']
+ def capture(self):
+  self._m3_idle()
+  bank = next(m for m in self.model_runner.model.modules() if isinstance(m,PackedM3Experts))
+  assert isinstance(bank.projector,SourceProjector)
+  checks=[]
+  for name in ('w1','w3','w2'):
+   codes=getattr(bank,name+'_codes');scales=getattr(bank,name+'_scales');lookup=getattr(bank,name+'_lookup')
+   x=torch.linspace(-1,1,codes.shape[-1]*2,device=codes.device,dtype=torch.float16)[None].expand(2,-1).contiguous()
+   routes=torch.tensor([0,bank.num_local_experts],device=codes.device,dtype=torch.int32)
+   a=bank.projector.kernel(x,codes,scales,routes,lookup);b=bank.projector(x,codes,scales,routes) if installed else new(x,codes,scales,routes,lookup)
+   torch.npu.synchronize()
+   checks.append({'projection':name,'exact':torch.equal(a,b),'finite':bool(torch.isfinite(b).all().item()),'max_abs':float((a-b).abs().max().item())})
+  return {**self.resident_status(),'checks':checks}
+ return {'vllm_ascend._310p.worker_310p:NPUWorker310.resident_capture':capture}
+
+c=ResidentClient('http://127.0.0.1:8000',6,timeout=900)
+result={}
+def identity(rows):return [(x['rank'],x['pid'],x['weight_storage_digest']) for x in rows]
+with Path('/tmp/minimax-m31-resident.lock').open('w') as lock:
+ fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+ assert not c.request('/is_paused',method='GET')['is_paused']
+ assert not c.request('/resident/maintenance',method='GET')['maintenance']
+ c.request('/resident/maintenance')
+ try:
+  result['before']=c.rpc('resident_status')
+  c.request('/pause?mode=wait&clear_cache=true');c.rpc('resident_reset')
+  result['load']=c.load_native(NativeManifest(json.loads(Path('/workspace/m31-nvfp4-v4/manifest.json').read_text())))
+  source=inspect.getsource(validation_replacements)+'\ndef replacements(native_resources):\n return validation_replacements(native_resources)\n'
+  control=Control(uuid.uuid4().hex,'direct-target','source_reload_validation',source)
+  c.rpc('resident_prepare',json.dumps(dataclasses.asdict(control)));c.rpc('resident_apply',control.generation)
+  result['comparison']=c.rpc('resident_capture')
+  assert all(check['exact'] and check['finite'] for row in result['comparison'] for check in row['checks'])
+  source=candidate_source(source_native_name='minimax_w4_nvfp4_v4').replace('def replacements(', 'def dispatch_replacements(')+inspect.getsource(validation_replacements)+'\ndef replacements(native_resources):\n changes=dispatch_replacements(native_resources)\n changes.update(validation_replacements(native_resources, True))\n return changes\n'
+  result['v4']=c.switch(Control(uuid.uuid4().hex,'direct-target','m3_candidate',source))
+  result['v4_dispatch_comparison']=c.rpc('resident_capture')
+  assert all(check['exact'] and check['finite'] for row in result['v4_dispatch_comparison'] for check in row['checks'])
+  assert identity(result['before'])==identity(result['v4'])
+  result['restored_v3']=c.switch(Control(uuid.uuid4().hex,'direct-target','baseline',''))
+  assert identity(result['before'])==identity(result['restored_v3'])
+  result['passed']=True
+  c.resume()
+ finally:
+  Path('/workspace/m31-source-hot-reload.json').write_text(json.dumps(result,indent=2)+'\n')
+  if not c.request('/is_paused',method='GET')['is_paused']:c.request('/resident/maintenance',method='DELETE')
+print('passed',result.get('passed'))

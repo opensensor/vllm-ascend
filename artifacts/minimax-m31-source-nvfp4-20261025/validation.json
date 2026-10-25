@@ -1,0 +1,36 @@
+{
+  "cpu_suite": {
+    "command": "python3 -m pytest -q --confcutdir=tests/ut/minimax_m3 tests/ut/minimax_m3",
+    "passed": 293,
+    "skipped": 24,
+    "seconds": 6.41
+  },
+  "scoped_pre_commit": "All changed-file manual-stage hooks passed, including markdownlint and shellcheck",
+  "whole_tree_format": {
+    "command": "bash format.sh ci",
+    "working_copy": "isolated detached worktree with candidate files",
+    "exit_code": 1,
+    "failed_checks": [
+      "ruff check",
+      "codespell",
+      "typos",
+      "markdownlint",
+      "forbidden imports",
+      "new functions over 100 lines comments"
+    ],
+    "scope": "Preexisting failures outside the changed files; unrelated fixes are not included."
+  },
+  "device": "Ascend 310P3, six-chip TP2/PP3 full-model startup and behavioral trials; isolated source kernel qualification on device 5",
+  "quality_fix_established": false,
+  "source_expert_device_readback": {
+    "banks": 342,
+    "tensors": 1026,
+    "mismatches": 0
+  },
+  "source_hot_reload": {
+    "direct_native_checks": 18,
+    "installed_dispatch_checks": 18,
+    "exact": true,
+    "workers_and_weight_storage_preserved": true
+  }
+}

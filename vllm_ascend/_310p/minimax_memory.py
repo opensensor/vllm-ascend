@@ -10,6 +10,10 @@ def warmup_minimax_before_cache(worker):
     text = getattr(getattr(worker, "model_config", None), "hf_text_config", None)
     if getattr(text, "ascend_minimax_m3_w4", None) != W4_LAYOUT:
         return False
+    # Weight conversion/loading can leave large free blocks in PyTorch's pool.
+    # HCCL allocates outside that pool, so release them before its first call.
+    torch.npu.synchronize()
+    torch.npu.empty_cache()
     # The custom pipeline transport already warms its channels at construction.
     # The normal profile initializes TP reductions and real projection workspaces.
     # Otherwise the explicit-budget fast path delays these allocations until the

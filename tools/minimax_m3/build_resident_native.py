@@ -28,9 +28,14 @@ def build(
     byte_unpack=False,
     int8_original_layout=False,
     paired_gate_up=False,
+    source_nvfp4=False,
 ):
     if not namespace.isidentifier() or not namespace.startswith("minimax_w4_"):
         raise ValueError("use a unique minimax_w4_ namespace for each build")
+    if source_nvfp4 and (
+        not wide_l1 or scale_cache or int8_compute or singleton_l1 or expert_lanes or byte_unpack or paired_gate_up
+    ):
+        raise ValueError("source NVFP4 requires wide L1 and excludes W4-specific compute/scale options")
     if l1_max_k not in (4096, 6144) or (l1_max_k != 4096 and not singleton_l1):
         raise ValueError("L1 max K must be 4096 or 6144, with singleton L1 enabled for 6144")
     if singleton_l1 and wide_l1:
@@ -109,6 +114,7 @@ def build(
         *(["-DGLM_W2_GROUPED_RINT_UNPACK"] if rint_unpack else []),
         *(["-DGLM_W4_BYTE_UNPACK"] if byte_unpack else []),
         *(["-DMINIMAX_INT8_ORIGINAL_LAYOUT"] if int8_original_layout else []),
+        *(["-DMINIMAX_SOURCE_NVFP4"] if source_nvfp4 else []),
         *([f"-DGLM_W2_GROUPED_EXPERT_LANES={expert_lanes}"] if expert_lanes else []),
     ]
     kernels = [(kernel_file, entry, binary)]
@@ -131,7 +137,7 @@ def build(
     with tarfile.open(output / "sources.tar.gz", "w:gz") as archive:
         archive.add(sources, arcname="sources")
     helper = output / "resident_native.py"
-    helper_name = "int8_native.py" if int8_compute else "resident_native.py"
+    helper_name = "nvfp4_native.py" if source_nvfp4 else ("int8_native.py" if int8_compute else "resident_native.py")
     shutil.copy2(Path(__file__).with_name(helper_name), helper)
     if int8_original_layout:
         helper.write_text(helper.read_text().replace("requires_int8_layout = True", "requires_int8_layout = False"))
@@ -148,6 +154,7 @@ def build(
                 "byte_unpack": byte_unpack,
                 "int8_original_layout": int8_original_layout,
                 "paired_gate_up": paired_gate_up,
+                "source_nvfp4": source_nvfp4,
             },
             indent=2,
         )
@@ -208,6 +215,7 @@ def main():
     parser.add_argument("--byte-unpack", action="store_true", help="Signed byte-pair W4 extraction, FP16 compute")
     parser.add_argument("--int8-original-layout", action="store_true", help="Retain existing resident W4 byte order")
     parser.add_argument("--paired-gate-up", action="store_true", help="Build opt-in compact decode gate/up fusion")
+    parser.add_argument("--source-nvfp4", action="store_true", help="Preserve source FP4 codes and per-row K16 scales")
     args = parser.parse_args()
     print(
         build(
@@ -225,6 +233,7 @@ def main():
             byte_unpack=args.byte_unpack,
             int8_original_layout=args.int8_original_layout,
             paired_gate_up=args.paired_gate_up,
+            source_nvfp4=args.source_nvfp4,
         )
     )
 

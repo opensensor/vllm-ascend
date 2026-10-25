@@ -1,0 +1,46 @@
+import fcntl,json,uuid
+from pathlib import Path
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.minimax_m3.resident_int8 import convert
+from tools.minimax_m3.resident_dense_int8 import mutate
+from tools.minimax_m3.resident import candidate_source
+from tools.minimax_m3.tool_probe import chat_request
+c=ResidentClient('http://127.0.0.1:8000',6,timeout=900)
+out=Path('/workspace/m31-source-trial-w4-baseline');out.mkdir(exist_ok=True)
+serving=Path('/workspace/m31-startup-serving-source.py').read_text()
+ops=Path('/vllm-workspace/vllm-ascend/vllm_ascend/_310p/ops/minimax_m3.py').read_text()
+assert ops.count('ATTENTION_QUERY_TILE = 64')==1
+# Retain production attention tile 64 for both weight formats.
+eager=candidate_source(ops,'minimax_w4_v12')
+def switch(source):return c.switch(Control(uuid.uuid4().hex,'direct-target','m3_candidate',source))
+def save(name,value):
+ (out/(name+'.json')).write_text(json.dumps(value,indent=2)+'\n');print(name,flush=True)
+with Path('/tmp/minimax-m31-resident.lock').open('w') as lock:
+ fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+ assert not c.request('/is_paused',method='GET')['is_paused']
+ assert not c.request('/resident/maintenance',method='GET')['maintenance']
+ before=c.rpc('resident_status');save('before',before)
+ c.request('/resident/maintenance');expert_changed=False;dense_changed=False
+ try:
+  c.request('/pause?mode=wait&clear_cache=true');expert_changed=True
+  save('disable_expert_int8',convert(c,'minimax_w4_v12','minimax_w4_int8_v15',False))
+  dense_changed=True;r=mutate(c,False);save('disable_dense_int8',r);assert all(x['dense_conversion']['passed'] for x in r)
+  save('fp16_switch',switch(eager));c.resume()
+  cases=json.loads(Path('/workspace/m31-full-history-cases.json').read_text())
+  full=cases['history']; full.update(temperature=0,max_tokens=1024)
+  early=dict(full); early['messages']=full['messages'][:5]
+  late=json.loads(Path('/workspace/m31-loop-replay-payload.json').read_text());late.update(temperature=0,max_tokens=1024,seed=71)
+  for name,p in [('early_after_readme',early),('late_loop',late),('full_history',full)]:
+   c.request('/pause?mode=wait&clear_cache=true'); c.rpc('resident_reset');c.resume()
+   result=chat_request(c.base_url,p,timeout=3600);save(name,result)
+   print(json.dumps({k:result.get(k) for k in ('status','finish_reason','message','usage')}),flush=True)
+
+ finally:
+  if not c.request('/is_paused',method='GET')['is_paused']:c.request('/pause?mode=wait&clear_cache=true')
+  if dense_changed:
+   r=mutate(c,True);save('restore_dense_int8',r);assert all(x['dense_conversion']['passed'] for x in r)
+  if expert_changed:save('restore_expert_int8',convert(c,'minimax_w4_v12','minimax_w4_int8_v15',True))
+  save('restore_serving',switch(serving));c.resume()
+  after=c.rpc('resident_status');assert [(x['rank'],x['pid']) for x in before]==[(x['rank'],x['pid']) for x in after]
+  save('after',after);c.request('/resident/maintenance',method='DELETE')

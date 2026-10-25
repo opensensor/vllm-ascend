@@ -2,6 +2,7 @@
 """Lossless resident packing and explicit operator-capacity opt-in."""
 
 import json
+from types import SimpleNamespace
 
 import pytest
 import torch
@@ -45,6 +46,61 @@ def test_nz256_rejects_incompatible_geometry_or_storage(shape, dtype):
 def test_loader_rejects_unknown_or_unqualified_options(options):
     with pytest.raises(ValueError):
         MiniMaxM3W4Loader(LoadConfig(load_format="minimax_m3_w4", model_loader_extra_config=options))
+
+
+def test_source_loader_reserves_communication_before_expanding_experts(monkeypatch, tmp_path):
+    from vllm_ascend.model_loader import minimax_m3_w4
+
+    events = []
+    backbone = type("MiniMaxM3Model", (), {"start_layer": 0, "end_layer": 1})()
+
+    def dense_load(weights):
+        assert list(weights) == []
+        events.append("dense")
+        return set()
+
+    model = SimpleNamespace(
+        modules=lambda: iter([backbone]),
+        parameters=lambda: iter([SimpleNamespace(device=SimpleNamespace(type="npu"))]),
+        named_parameters=lambda: iter([]),
+        load_weights=dense_load,
+    )
+    monkeypatch.setattr(minimax_m3_w4, "read_manifest", lambda folder: {})
+    monkeypatch.setattr(minimax_m3_w4, "load_source_banks", lambda *args: events.append("experts"))
+    monkeypatch.setattr(minimax_m3_w4, "dense_weights", lambda *args, **kwargs: iter([]))
+    monkeypatch.setattr(minimax_m3_w4, "get_pp_group", lambda: SimpleNamespace(is_first_rank=True, is_last_rank=True))
+    monkeypatch.setattr(
+        minimax_m3_w4, "get_tp_group", lambda: SimpleNamespace(all_reduce=lambda value: events.append("communication"))
+    )
+    monkeypatch.setattr(torch, "zeros", lambda *args, **kwargs: object())
+    monkeypatch.setattr(
+        torch,
+        "npu",
+        SimpleNamespace(
+            synchronize=lambda: events.append("synchronize"), empty_cache=lambda: events.append("release_cache")
+        ),
+        raising=False,
+    )
+    loader = MiniMaxM3W4Loader(
+        LoadConfig(
+            load_format="minimax_m3_w4",
+            model_loader_extra_config={
+                "expert_layout": "nz256",
+                "source_nvfp4": str(tmp_path),
+                "source_nvfp4_kernel": str(tmp_path / "kernel.json"),
+            },
+        )
+    )
+    loader.load_weights(model, SimpleNamespace(model=str(tmp_path)))
+    assert events == [
+        "synchronize",
+        "release_cache",
+        "communication",
+        "synchronize",
+        "release_cache",
+        "experts",
+        "dense",
+    ]
 
 
 @pytest.mark.parametrize("route_cap", [512, 2048])

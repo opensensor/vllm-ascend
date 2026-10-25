@@ -108,6 +108,24 @@ tasks:
     evidence: artifacts/minimax-m31-int8-compute-20261025/m31-int8-short-checks/report.json
 num_fewshot: 0
 validation_runner: tools/minimax_m3/coherence_probe.py
+isolated_candidates:
+  source_nvfp4_fp16:
+    enabled_in_documented_profile: false
+    deployment_status: diagnostic_trial_not_promoted
+    device: Ascend 310P3 device 5
+    runner: tools/minimax_m3/nvfp4_probe.py
+    evidence: artifacts/minimax-m31-source-nvfp4-20261025/device-v3.json
+    sampled_experts: 4
+    layer: 3
+    maximum_complete_expert_nrmse: 0.00013803377805743366
+    graph_replay_exact: true
+    full_model_coherence_validated: false
+    full_model_text_startup_validated: true
+    full_model_trial_context: 32768
+    full_model_trial_topology: TP2_PP3_EP2
+    fresh_tool_loop_reproduced: true
+    loop_evidence: artifacts/minimax-m31-source-nvfp4-20261025/source-fresh-kilo.json
+    limitations: Slower than current INT8; additional scale memory; FP16 activations only
 long_context_quality: 48k_bounded_retrieval_only_160k_full_test_deferred_to_user
 notes: >-
   All cases before int8_v13 are historical FP16 diagnostics, not INT8

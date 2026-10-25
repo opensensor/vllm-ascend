@@ -9,7 +9,7 @@ import torch
 from vllm_ascend._310p.minimax_memory import W4_LAYOUT, warmup_minimax_before_cache
 
 
-def test_model_is_warmed_before_cache_release(monkeypatch):
+def test_loader_cache_is_released_before_communication_warmup(monkeypatch):
     events = []
     monkeypatch.setattr(
         torch,
@@ -23,7 +23,7 @@ def test_model_is_warmed_before_cache_release(monkeypatch):
         model_runner=SimpleNamespace(profile_run=lambda: events.append("profile")),
     )
     assert warmup_minimax_before_cache(worker)
-    assert events == ["profile", "sync", "release"]
+    assert events == ["sync", "release", "profile", "sync", "release"]
 
 
 def test_other_models_keep_the_existing_explicit_budget_fast_path():
@@ -31,6 +31,10 @@ def test_other_models_keep_the_existing_explicit_budget_fast_path():
 
 
 def test_warmup_errors_are_not_hidden(monkeypatch):
+    monkeypatch.setattr(
+        torch, "npu", SimpleNamespace(synchronize=lambda: None, empty_cache=lambda: None), raising=False
+    )
+
     def fail():
         raise RuntimeError("communication failed")
 

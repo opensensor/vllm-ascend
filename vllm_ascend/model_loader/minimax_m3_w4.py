@@ -4,21 +4,29 @@
 import dataclasses
 from pathlib import Path
 
-from vllm.distributed import get_pp_group
+import torch
+from vllm.distributed import get_pp_group, get_tp_group
 from vllm.model_executor.model_loader import register_model_loader
 from vllm.model_executor.model_loader.default_loader import DefaultModelLoader
 
 from tools.minimax_m3.checkpoint import dense_weights, load_expert_banks, read_manifest
+from tools.minimax_m3.nvfp4_checkpoint import load_source_banks
 
 
 @register_model_loader("minimax_m3_w4")
 class MiniMaxM3W4Loader(DefaultModelLoader):
     def __init__(self, load_config):
         options = load_config.model_loader_extra_config or {}
-        if set(options) - {"expert_layout", "max_grouped_routes"}:
+        if set(options) - {"expert_layout", "max_grouped_routes", "source_nvfp4", "source_nvfp4_kernel"}:
             raise ValueError("Unknown M3 W4 loader options")
         self.expert_layout = options.get("expert_layout", "canonical")
         self.max_grouped_routes = options.get("max_grouped_routes", 128)
+        self.source_nvfp4 = options.get("source_nvfp4")
+        self.source_nvfp4_kernel = options.get("source_nvfp4_kernel")
+        if bool(self.source_nvfp4) != bool(self.source_nvfp4_kernel):
+            raise ValueError("Source NVFP4 requires both expert bundle and native kernel manifest")
+        if self.source_nvfp4 and self.expert_layout != "nz256":
+            raise ValueError("Source NVFP4 requires nz256 expert layout")
         if self.expert_layout not in ("canonical", "nz256"):
             raise ValueError("M3 expert_layout must be canonical or nz256")
         if type(self.max_grouped_routes) is not int or self.max_grouped_routes not in (128, 512, 2048):
@@ -36,9 +44,23 @@ class MiniMaxM3W4Loader(DefaultModelLoader):
         if len(backbones) != 1:
             raise ValueError("M3 W4 loader requires exactly one MiniMaxM3Model backbone")
         backbone = backbones[0]
-        load_expert_banks(
-            model, folder, manifest, expert_layout=self.expert_layout, max_grouped_routes=self.max_grouped_routes
-        )
+        if self.source_nvfp4:
+            # HCCL allocates from the driver, outside PyTorch's cache. Reserve
+            # its TP channels before source scales expand the resident banks.
+            device = next(model.parameters()).device
+            if device.type == "npu":
+                torch.npu.synchronize()
+                torch.npu.empty_cache()
+                get_tp_group().all_reduce(torch.zeros(1, dtype=torch.float16, device=device))
+                torch.npu.synchronize()
+                torch.npu.empty_cache()
+            load_source_banks(
+                model, Path(self.source_nvfp4), manifest, Path(self.source_nvfp4_kernel), self.max_grouped_routes
+            )
+        else:
+            load_expert_banks(
+                model, folder, manifest, expert_layout=self.expert_layout, max_grouped_routes=self.max_grouped_routes
+            )
         loaded = model.load_weights(
             dense_weights(
                 folder,

@@ -60,7 +60,8 @@ def transition(client, source, enabled):
     result = client.rpc("resident_capture")
     if not all(row["determinism"]["passed"] for row in result):
         raise RuntimeError(f"determinism transition failed; server remains paused: {result}")
-    after = client.switch(Control(uuid.uuid4().hex, "direct-target", "m3_candidate", source))
+    candidate = "m3_candidate" if source else "baseline"
+    after = client.switch(Control(uuid.uuid4().hex, "direct-target", candidate, source))
     identity = lambda rows: {(r["rank"], r["pid"], r["weight_storage_digest"]) for r in rows}
     if identity(before) != identity(after):
         raise RuntimeError("resident weights or workers changed; server remains paused")

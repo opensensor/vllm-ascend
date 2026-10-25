@@ -40,6 +40,9 @@
 
 #include "kernel_operator.h"
 #include "row_reuse_geometry.h"
+#ifdef MINIMAX_SOURCE_NVFP4
+#include "minimax_nvfp4_decode.h"
+#endif
 
 namespace NsW2 {
 
@@ -182,6 +185,29 @@ public:
                   "resident row accumulators must fit L0C");
 #endif
     __aicore__ inline W2BlockedDequantMatmulV310Cube() {}
+#ifdef MINIMAX_SOURCE_NVFP4
+    __aicore__ inline void BindNvfp4(GM_ADDR codes, GM_ADDR scales, GM_ADDR lookup)
+    {
+        nvfp4_.Bind(codes, scales, lookup);
+    }
+    __aicore__ inline void ClearNvfp4Rows(GM_ADDR y, int64_t n, int64_t start, int64_t stop)
+    {
+        GlobalTensor<half> output;
+        output.SetGlobalBuffer(reinterpret_cast<__gm__ half *>(y));
+        auto zero = resource.ubBuf.template GetBufferByByte<half>(0);
+        Duplicate(zero, static_cast<half>(0), W2_TILE_N);
+        SetFlag<HardEvent::V_MTE3>(EVENT_ID2);
+        WaitFlag<HardEvent::V_MTE3>(EVENT_ID2);
+        for (int64_t row = start; row < stop; ++row) {
+            for (int64_t col = GetBlockIdx() * W2_TILE_N; col < n; col += GetBlockNum() * W2_TILE_N) {
+                DataCopy(output[row * n + col], zero, W2_TILE_N);
+            }
+        }
+        SetFlag<HardEvent::MTE3_V>(EVENT_ID1);
+        WaitFlag<HardEvent::MTE3_V>(EVENT_ID1);
+        PipeBarrier<PIPE_ALL>();
+    }
+#endif
 
     // Shared by the single-expert and grouped-expert entry points. Keeping the
     // geometry explicit lets a grouped kernel advance through device-resident
@@ -704,6 +730,11 @@ private:
 
     __aicore__ inline void AllocBuffers()
     {
+#ifdef MINIMAX_SOURCE_NVFP4
+        static_assert(W2_MMAD_EPILOGUE_UB_BYTES + MiniMaxNvfp4Decode::SCRATCH_BYTES <= ArchTag::UB_SIZE);
+        nvfp4_.Init(resource.ubBuf.template GetBufferByByte<uint8_t>(W2_MMAD_EPILOGUE_UB_BYTES));
+        return;
+#endif
         uint32_t off = W2_MMAD_EPILOGUE_UB_BYTES;
         scaleUB_ = resource.ubBuf.template GetBufferByByte<float>(off);
         // Reserve the same space for resident and fallback experts: decode
@@ -756,6 +787,9 @@ private:
 
     __aicore__ inline void FillTables()
     {
+#ifdef MINIMAX_SOURCE_NVFP4
+        return;
+#endif
         Duplicate(threeUB_, static_cast<int16_t>(fieldMask_), (int32_t)decodedTileCount_);
         Duplicate(signHalfUB_, static_cast<int16_t>(signHalf_), (int32_t)decodedTileCount_);
         if (bitsPerCode_ == 3) {
@@ -1095,6 +1129,29 @@ private:
                                             uint32_t kStart = 0, uint32_t kCount = 0)
     {
         if (kCount == 0) kCount = K_;
+#ifdef MINIMAX_SOURCE_NVFP4
+        // The lookup produces the same FP16 weights as source FP32 decoding.
+        // Reuse the proven Cube/L1 schedule without expanding resident banks.
+        for (uint32_t row = 0; row < nActual; row += W2_FRACTAL_SIZE) {
+            for (uint32_t k = kStart; k < kStart + kCount; k += W2_TILE_K) {
+                const int64_t tile = ((n0 + row) / W2_FRACTAL_SIZE) * (K_ / W2_TILE_K) + k / W2_TILE_K;
+                auto decoded = nvfp4_.Decode(tile);
+                SetFlag<HardEvent::V_MTE3>(EVENT_ID2);
+                WaitFlag<HardEvent::V_MTE3>(EVENT_ID2);
+                if (toL1) {
+                    auto weight = resource.l1Buf.template GetBufferByByte<half>(0);
+                    DataCopy(weight[static_cast<int64_t>(row) * kCount + (k - kStart) * W2_FRACTAL_SIZE],
+                             decoded, MiniMaxNvfp4Decode::VALUES);
+                } else {
+                    DataCopy(wdqNzGm_[coreNzBase_ + static_cast<int64_t>(row) * K_ + k * W2_FRACTAL_SIZE],
+                             decoded, MiniMaxNvfp4Decode::VALUES);
+                }
+                SetFlag<HardEvent::MTE3_V>(EVENT_ID1);
+                WaitFlag<HardEvent::MTE3_V>(EVENT_ID1);
+            }
+        }
+        return;
+#endif
         for (uint32_t scaleRowBase = 0; scaleRowBase < nActual; scaleRowBase += W2_BLOCK_SIZE) {
             int64_t scaleBufferBase = 0;
 #ifdef GLM_W2_GROUPED_L1_SCALE_CACHE
@@ -1168,6 +1225,9 @@ private:
     }
 
     Arch::Resource<ArchTag> resource;
+#ifdef MINIMAX_SOURCE_NVFP4
+    MiniMaxNvfp4Decode nvfp4_;
+#endif
 
     GlobalTensor<half> xGm_;
     GlobalTensor<uint8_t> codesGm_;

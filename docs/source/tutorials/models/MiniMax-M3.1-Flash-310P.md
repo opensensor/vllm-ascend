@@ -13,6 +13,18 @@ Original NVIDIA FP4 bytes are decoded and requantized; they are not interpreted
 as signed INT4. The conversion changes numerical values and requires quality
 validation.
 
+A source-preserving NVFP4 candidate now avoids that requantization.
+On four captured layer-3 experts its device output differs from the decoded
+source reference by 0.00776–0.01380%, versus 14.77–20.26% for the stored W4
+conversion. It supports graph replay, but is much slower than the current
+INT8 kernel and needs more scale memory; it is not enabled in this serving
+profile. Its full text-only TP2/PP3 model has started with a separate 32K
+configuration for the loop comparison. These operator measurements and startup
+do not establish a reasoning-loop fix. The fresh source-weight Kilo trial
+repeated the same directory read three times; it has not solved the behavior.
+See the [candidate report](../../../../artifacts/minimax-m31-source-nvfp4-20261025/README.md)
+for format, memory, performance, validation limits and reproduction commands.
+
 Real-weight serving passed nine small coherence checks: greeting, factual recall,
 arithmetic, exact copying, JSON, multi-step arithmetic, multi-turn recall, a red
 image, and retrieval from a 3443-token prompt. A separate 7943-token retrieval also

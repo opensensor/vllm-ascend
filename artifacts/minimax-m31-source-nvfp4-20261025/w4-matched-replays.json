@@ -1,0 +1,124 @@
+{
+  "stored_experts": "uniform signed INT4, block32x32",
+  "expert_compute": "FP16 v12",
+  "dense_compute": "FP16",
+  "attention_tile": 64,
+  "activation": "Python FP32 clipped SwiGLU",
+  "partial_graphs": false,
+  "temperature": 0,
+  "seed": 71,
+  "max_tokens": 1024,
+  "cases": {
+    "early_after_readme": {
+      "status": 200,
+      "finish_reason": "tool_calls",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "reasoning": "Let me explore the source structure to give a more detailed description.",
+        "tool_calls": [
+          {
+            "id": "chatcmpl-tool-8b85dd9aed2e9e2c",
+            "type": "function",
+            "function": {
+              "name": "bash",
+              "arguments": "{\"command\":\"ls vllm_ascend/ && echo \\\"---CSRC---\\\" && ls csrc/ && echo \\\"---TESTS---\\\" && ls tests/ && echo \\\"---TOOLS---\\\" && ls tools/ && echo \\\"---DOCS---\\\" && ls docs/source/\",\"description\":\"List main source directories\"}"
+            }
+          },
+          {
+            "id": "chatcmpl-tool-af2f5b1eb7fc26a2",
+            "type": "function",
+            "function": {
+              "name": "bash",
+              "arguments": "{\"command\":\"git log --oneline -15 && echo \\\"---BRANCH---\\\" && git branch -a | head -20 && echo \\\"---REMOTE---\\\" && git remote -v\",\"description\":\"Show git history and remotes\"}"
+            }
+          }
+        ]
+      },
+      "usage": {
+        "prompt_tokens": 13614,
+        "total_tokens": 13794,
+        "completion_tokens": 180,
+        "completion_tokens_details": {
+          "reasoning_tokens": 13
+        }
+      },
+      "first_output_seconds": 128.17179581703385,
+      "elapsed_seconds": 198.01016697799787
+    },
+    "late_loop": {
+      "status": 200,
+      "finish_reason": "tool_calls",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "reasoning": "I have a good picture. Let me summarize the project.\n\nLet me check the fork relationship \u2014 this is a fork of vllm-project/vllm-ascend, focused on Ascend NPU (310P) support.\n\nLet me quickly check the README for the fork's identity.",
+        "tool_calls": [
+          {
+            "id": "chatcmpl-tool-b8b8feb3f2ab6ac3",
+            "type": "function",
+            "function": {
+              "name": "bash",
+              "arguments": "{\"command\":\"head -60 README.md\",\"description\":\"Read README head\"}"
+            }
+          },
+          {
+            "id": "chatcmpl-tool-ad9875ec9b3060ff",
+            "type": "function",
+            "function": {
+              "name": "bash",
+              "arguments": "{\"command\":\"git log --oneline -1; git status --short | head -20; git branch -a | head\",\"description\":\"Check repo state\"}"
+            }
+          }
+        ]
+      },
+      "usage": {
+        "prompt_tokens": 5549,
+        "total_tokens": 5704,
+        "completion_tokens": 155,
+        "completion_tokens_details": {
+          "reasoning_tokens": 59
+        }
+      },
+      "first_output_seconds": 54.76595211197855,
+      "elapsed_seconds": 112.22696967498632
+    },
+    "full_history": {
+      "status": 200,
+      "finish_reason": "tool_calls",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "reasoning": "I have a good picture. Let me summarize the project.\n\nLet me check a couple more things: the fork nature (opensensor/vllm-ascend is a fork of vllm-project/vllm-ascend), and the 310P focus.\n\nLet me verify the upstream relationship.",
+        "tool_calls": [
+          {
+            "id": "chatcmpl-tool-ac0c6640e5955b2a",
+            "type": "function",
+            "function": {
+              "name": "bash",
+              "arguments": "{\"command\":\"git log --oneline --format='%s' --all --grep=\\\"merge upstream\\\" -i | head -5; echo \\\"---\\\"; git log --oneline --format='%s' --all --grep=\\\"sync\\\" -i | head -8\",\"description\":\"Check upstream sync cadence\"}"
+            }
+          },
+          {
+            "id": "chatcmpl-tool-93fb9f6910b14343",
+            "type": "function",
+            "function": {
+              "name": "bash",
+              "arguments": "{\"command\":\"ls vllm_ascend/device vllm_ascend/core vllm_ascend/model_loader vllm_ascend/profiler 2>/dev/null\",\"description\":\"List device/core modules\"}"
+            }
+          }
+        ]
+      },
+      "usage": {
+        "prompt_tokens": 29577,
+        "total_tokens": 29798,
+        "completion_tokens": 221,
+        "completion_tokens_details": {
+          "reasoning_tokens": 61
+        }
+      },
+      "first_output_seconds": 278.28872183396015,
+      "elapsed_seconds": 370.4679986219853
+    }
+  }
+}

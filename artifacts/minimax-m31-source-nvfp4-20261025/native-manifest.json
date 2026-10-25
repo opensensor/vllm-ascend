@@ -1,0 +1,35 @@
+{
+  "name": "minimax_w4_nvfp4_v3",
+  "libraries": [
+    {
+      "path": "/workspace/m31-nvfp4-v3/bridge.so",
+      "sha256": "5d9de9dc6d7b648af09c8c58cab2e2c8518595cdf9a193924531f8336631ff63"
+    }
+  ],
+  "assets": [
+    {
+      "path": "/workspace/m31-nvfp4-v3/grouped_w4.bin",
+      "sha256": "002463d8dbb58bc3af5100997ce4a881f8626d5496c71bf6b8e7b49a624b8f21"
+    },
+    {
+      "path": "/workspace/m31-nvfp4-v3/sources.tar.gz",
+      "sha256": "de0fb19808ce079fe927e8c7f4a63e7f9652fc1a04699c5fb273d45bb2efb008"
+    },
+    {
+      "path": "/workspace/m31-nvfp4-v3/resident_native.py",
+      "sha256": "6b6cd7836bc7b16e3fb570271b21055581672ff8643b919ad38b06ae2c919aae"
+    },
+    {
+      "path": "/workspace/m31-nvfp4-v3/reconstruction_bridge.cpp",
+      "sha256": "21cb44459521b91439e94f2bfa1f79e87563971d222206404dba00c5cfd01e2b"
+    },
+    {
+      "path": "/workspace/m31-nvfp4-v3/build-options.json",
+      "sha256": "0f72b00b508c2c0c04e6ee3032487d897aa9e096adf0386fb85432003cc7bb2d"
+    }
+  ],
+  "operators": [
+    "minimax_w4_nvfp4_v3::launch"
+  ],
+  "validation_source": "import types\n_module = types.ModuleType('minimax_w4_nvfp4_v3')\nexec(compile(open('/workspace/m31-nvfp4-v3/resident_native.py').read(), '/workspace/m31-nvfp4-v3/resident_native.py', 'exec'), _module.__dict__)\ndef prepare():\n    return _module.GroupedW4Kernel('minimax_w4_nvfp4_v3', '/workspace/m31-nvfp4-v3/grouped_w4.bin', 'minimax_w4_nvfp4_v3_kernel')\ndef validate(resource):\n    return _module.validate_kernel(resource)\n"
+}

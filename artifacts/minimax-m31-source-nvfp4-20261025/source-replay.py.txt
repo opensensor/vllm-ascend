@@ -1,0 +1,32 @@
+import argparse,fcntl,json,uuid,time
+from pathlib import Path
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.minimax_m3.resident_determinism import transition
+from tools.minimax_m3.tool_probe import chat_request
+parser=argparse.ArgumentParser();parser.add_argument('--case',action='append',choices=['late_loop','full_history','early_after_readme']);parser.add_argument('--initialize-only',action='store_true');args=parser.parse_args()
+client=ResidentClient('http://127.0.0.1:8000',6,timeout=7200)
+out=Path('/workspace/m31-source-trial-results');out.mkdir(exist_ok=True)
+def save(name,result):
+ (out/(name+'.json')).write_text(json.dumps(result,indent=2)+'\n')
+ print(name,json.dumps({k:result.get(k) for k in ('status','finish_reason','message','usage','elapsed_seconds')}) if isinstance(result,dict) else 'saved',flush=True)
+with Path('/tmp/minimax-m31-resident.lock').open('w') as lock:
+ fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+ assert not client.request('/is_paused',method='GET')['is_paused']
+ assert not client.request('/resident/maintenance',method='GET')['maintenance']
+ client.request('/resident/maintenance')
+ try:
+  save('initial',client.switch(Control(uuid.uuid4().hex,'direct-target','baseline','')))
+  client.resume()
+  save('determinism',transition(client,'',True))
+  full=json.loads(Path('/workspace/m31-full-history-cases.json').read_text())['history'];full.update(temperature=0,max_tokens=1024)
+  early=dict(full);early['messages']=full['messages'][:5]
+  late=json.loads(Path('/workspace/m31-loop-replay-payload.json').read_text());late.update(temperature=0,max_tokens=1024,seed=71)
+  for name,payload in [('late_loop',late),('full_history',full),('early_after_readme',early)]:
+   if args.initialize_only or (args.case and name not in args.case):continue
+   client.request('/pause?mode=wait&clear_cache=true');client.rpc('resident_reset');client.resume()
+   print('starting',name,time.time(),flush=True)
+   result=chat_request(client.base_url,payload,timeout=7200);save(name,result)
+   if result.get('status')!=200:raise RuntimeError(result)
+ finally:
+  if not client.request('/is_paused',method='GET')['is_paused']:client.request('/resident/maintenance',method='DELETE')

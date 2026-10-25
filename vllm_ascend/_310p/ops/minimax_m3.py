@@ -121,6 +121,17 @@ def grouped_w4_mm(x, codes, scales, group_ends):
     return op(x, codes, scales, group_ends)
 
 
+class SourceProjector:
+    """Keep source decode tables attached to immutable resident code storage."""
+
+    def __init__(self, kernel, lookups):
+        self.kernel, self.lookups = kernel, lookups
+        self.max_compact_routes = getattr(kernel, "max_compact_routes", 0)
+
+    def __call__(self, x, codes, scales, ends):
+        return self.kernel(x, codes, scales, ends, self.lookups[codes.data_ptr()])
+
+
 class PackedM3Experts(nn.Module):
     """Full-width experts partitioned over a stage-local EP group."""
 
@@ -183,7 +194,11 @@ class PackedM3Experts(nn.Module):
         # original FP16 scales avoids recasting every full expert bank per token.
         int8_layouts = getattr(self, "_m3_int8_layouts", ())
         scales = {
-            name: getattr(self, f"{name}_scales") if name in int8_layouts else getattr(self, f"{name}_scales").float()
+            name: (
+                getattr(self, f"{name}_scales")
+                if name in int8_layouts or getattr(self, "source_nvfp4", False)
+                else getattr(self, f"{name}_scales").float()
+            )
             for name in ("w1", "w2", "w3")
         }
         outputs = []

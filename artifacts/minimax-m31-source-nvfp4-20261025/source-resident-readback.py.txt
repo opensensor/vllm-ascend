@@ -1,0 +1,53 @@
+import dataclasses,fcntl,inspect,json,uuid
+from pathlib import Path
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+
+def replacements(native_resources):
+ import json,time
+ from pathlib import Path
+ import torch
+ from tools.minimax_m3.checkpoint import LAYER_NAME
+ from tools.minimax_m3.nvfp4_checkpoint import source_bank
+ from vllm_ascend._310p.ops.minimax_m3 import PackedM3Experts
+ def capture(self):
+  self._m3_idle();started=time.monotonic();banks=0;tensors=0;failures=[]
+  root=Path('/srv/ai/minimax-source-trial/MiniMax-M3.1-Flash-NVFP4-experts')
+  manifest=json.loads((root/'nvfp4_experts.json').read_text())
+  for module in self.model_runner.model.modules():
+   if not isinstance(module,PackedM3Experts):continue
+   layer=int(LAYER_NAME.search(module.prefix)[1]);ep=module.local_expert_offset//module.num_local_experts
+   for projection in ('w1','w3','w2'):
+    key=f'layer-{layer:02d}-ep-{ep}-{projection}';record=manifest['banks'][key]
+    try:
+     for kind,expected in source_bank(root,record):
+      actual=getattr(module,projection+'_'+kind).detach().cpu()
+      if actual.dtype!=expected.dtype or not torch.equal(actual,expected):failures.append({'bank':key,'tensor':kind,'error':'device readback differs from source bundle'})
+      tensors+=1
+      del actual,expected
+     banks+=1
+    except Exception as e:failures.append({'bank':key,'error':repr(e)})
+  return {**self.resident_status(),'audit':{'banks':banks,'tensors':tensors,'failures':failures,'seconds':time.monotonic()-started}}
+ return {'vllm_ascend._310p.worker_310p:NPUWorker310.resident_capture':capture}
+
+c=ResidentClient('http://127.0.0.1:8000',6,timeout=3600);result={}
+def identity(rows):return [(x['rank'],x['pid'],x['weight_storage_digest']) for x in rows]
+with Path('/tmp/minimax-m31-resident.lock').open('w') as lock:
+ fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+ assert not c.request('/is_paused',method='GET')['is_paused']
+ assert not c.request('/resident/maintenance',method='GET')['maintenance']
+ c.request('/resident/maintenance')
+ try:
+  result['before']=c.rpc('resident_status')
+  c.request('/pause?mode=wait&clear_cache=true');c.rpc('resident_reset')
+  ctl=Control(uuid.uuid4().hex,'direct-target','source_device_audit',inspect.getsource(replacements))
+  c.rpc('resident_prepare',json.dumps(dataclasses.asdict(ctl)));c.rpc('resident_apply',ctl.generation)
+  result['readback']=c.rpc('resident_capture')
+  result['passed']=sum(r['audit']['banks'] for r in result['readback'])==342 and all(not r['audit']['failures'] for r in result['readback'])
+  result['after']=c.switch(Control(uuid.uuid4().hex,'direct-target','baseline',''))
+  assert identity(result['before'])==identity(result['after'])
+  c.resume()
+ finally:
+  Path('/workspace/m31-source-resident-audit.json').write_text(json.dumps(result,indent=2)+'\n')
+  if not c.request('/is_paused',method='GET')['is_paused']:c.request('/resident/maintenance',method='DELETE')
+print('passed',result.get('passed'),[(r['rank'],r['audit']) for r in result.get('readback',[])],flush=True)
