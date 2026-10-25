@@ -71,6 +71,7 @@ def main():
             canonical, scales = canonical[0], scales[0]
         codes = pack_w4_nz256(canonical).unsqueeze(0).to(device)
         candidate_codes = pack_int8_layout(codes) if getattr(candidate, "requires_int8_layout", False) else codes
+        baseline_codes = pack_int8_layout(codes) if getattr(baseline, "requires_int8_layout", False) else codes
         device_scales = scales.float().unsqueeze(0).to(device)
         reference_weight = unpack_w4(canonical, scales).half().float()
         for rows in (1, 4, 64, 128):
@@ -80,7 +81,7 @@ def main():
             ends = torch.tensor([rows], dtype=torch.int64, device=device)
             result = {"projection": projection, "rows": rows, "shape": list(reference_weight.shape), "variants": {}}
             for name, kernel in (("baseline", baseline), ("candidate", candidate)):
-                packed = codes if name == "baseline" else candidate_codes
+                packed = baseline_codes if name == "baseline" else candidate_codes
                 actual, timing = timed(partial(kernel, x, packed, device_scales, ends), args.iterations)
                 if name == "baseline":
                     baseline_output = actual
@@ -94,11 +95,12 @@ def main():
             report["cases"].append(result)
             args.output.write_text(json.dumps(report, indent=2) + "\n")
             print(json.dumps(result), flush=True)
-        if hasattr(candidate, "scales"):
-            candidate.scales.clear()
-        if hasattr(candidate, "banks"):
-            candidate.banks.clear()
-        del codes, candidate_codes, device_scales, x, ends
+        for kernel in (baseline, candidate):
+            if hasattr(kernel, "scales"):
+                kernel.scales.clear()
+            if hasattr(kernel, "banks"):
+                kernel.banks.clear()
+        del codes, candidate_codes, baseline_codes, device_scales, x, ends
         torch.npu.empty_cache()
 
 

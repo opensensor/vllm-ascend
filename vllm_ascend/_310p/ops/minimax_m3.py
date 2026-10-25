@@ -200,7 +200,16 @@ class PackedM3Experts(nn.Module):
             rows = token_ids.index_select(0, order)
             sorted_x = x.index_select(0, rows).to(torch.float16).contiguous()
             expert_ids = torch.arange(self.num_local_experts, device=x.device)
-            ends = (local_ids[:, None] == expert_ids).sum(0).cumsum(0).to(torch.int64).contiguous()
+            # 310P INT64 reductions use slow AI-CPU casts/cumsum. Route counts
+            # are bounded; retain INT64 only at the native kernel boundary.
+            count_dtype = torch.int32 if local_ids.numel() <= torch.iinfo(torch.int32).max else torch.int64
+            ends = (
+                (local_ids[:, None] == expert_ids)
+                .sum(0, dtype=count_dtype)
+                .cumsum(0, dtype=count_dtype)
+                .to(torch.int64)
+                .contiguous()
+            )
             gate = op(sorted_x, self.w1_codes, scales["w1"], ends)
             up = op(sorted_x, self.w3_codes, scales["w3"], ends)
             act = clipped_swiglu(gate, up, self.alpha, self.beta, self.limit).to(torch.float16)
@@ -286,8 +295,9 @@ def paged_sparse_attention(
             visible = positions[None, :] <= qpos[:, None]
             scores = scores.masked_fill(~visible[:, None, :], -torch.inf)
             scores = scores.view(end - begin, index_query.shape[1], num_blocks, block_size).amax(-1)
-            causal_blocks = block_ids[None, :] <= qpos[:, None] // block_size
-            forced_local = block_ids[None, :] > qpos[:, None] // block_size - local_blocks
+            query_blocks = qpos[:, None] // block_size
+            causal_blocks = block_ids[None, :] <= query_blocks
+            forced_local = block_ids[None, :] > query_blocks - local_blocks
             for head in range(index_query.shape[1]):
                 head_scores = torch.where(forced_local & causal_blocks, 1e29, scores[:, head])
                 head_scores = torch.where((block_ids[None, :] < init_blocks) & causal_blocks, 1e30, head_scores)

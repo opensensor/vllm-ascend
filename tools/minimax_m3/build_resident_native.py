@@ -42,8 +42,8 @@ def build(
         raise ValueError("INT8 original layout requires INT8 compute")
     if byte_unpack and (rint_unpack or int8_compute):
         raise ValueError("byte unpack is a separate FP16 candidate")
-    if int8_compute and (singleton_l1 or scale_cache or expert_lanes or not wide_l1 or not rint_unpack):
-        raise ValueError("INT8 prototype requires wide L1 and RINT, without other candidate options")
+    if int8_compute and (singleton_l1 or expert_lanes or not wide_l1 or not rint_unpack):
+        raise ValueError("INT8 prototype requires wide L1 and RINT, with optional scale cache only")
     output, source_root, cann = output.resolve(), source_root.resolve(strict=True), cann.resolve(strict=True)
     output.mkdir(parents=True, exist_ok=False)
     sources = output / "sources"

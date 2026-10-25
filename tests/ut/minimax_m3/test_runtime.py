@@ -109,6 +109,23 @@ def test_no_local_routes_and_empty_groups():
     assert torch.count_nonzero(make_bank(2, 1)(x, logits)) == 0
 
 
+@pytest.mark.parametrize("rank", [0, 1])
+def test_route_count_reductions_preserve_int64_native_boundaries(rank):
+    bank = make_bank(2, rank)
+    bank.max_grouped_routes = 2048
+    boundaries = []
+
+    def project(x, codes, scales, ends):
+        assert ends.dtype == torch.int64 and ends.is_contiguous()
+        boundaries.append(ends.tolist())
+        return x.new_zeros((x.shape[0], codes.shape[1]))
+
+    bank.projector = project
+    logits = torch.tensor([[10.0, 9.0, -10.0, -9.0]]).expand(1025, -1)
+    bank(torch.zeros(1025, 32).half(), logits)
+    assert boundaries == ([[1024, 2048]] * 3 + [[1, 2]] * 3 if rank == 0 else [[0, 0]] * 6)
+
+
 def attention_oracle(q, k, v, iq, ik, *, prefix, block_size, topk, local, init):
     """Independent scalar token/head implementation, no paged runtime helpers."""
     result = torch.empty_like(q)

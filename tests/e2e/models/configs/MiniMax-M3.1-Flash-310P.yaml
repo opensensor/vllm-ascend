@@ -26,7 +26,7 @@ serve:
   enable_auto_tool_choice: true
   tool_call_parser: minimax_m3
   reasoning_parser: minimax_m31
-  native_kernel: minimax_w4_int8_v13
+  native_kernel: minimax_w4_int8_v14
   native_activation: minimax_activation_v2
   partial_decode_graphs: true
   expert_scale_metadata: reuse_immutable_int8_bank
@@ -111,7 +111,8 @@ long_context_quality: 48k_bounded_retrieval_only_160k_full_test_deferred_to_user
 notes: >-
   All cases before int8_v13 are historical FP16 diagnostics, not INT8
   quality qualification. Current INT8, direct gather, scale reuse and fused activation
-  plus shared-pool partial graphs reach 3.462 tokens/s median short decode.
+  plus shared-pool partial graphs, INT32 route counts and native scale-row reuse
+  reach 3.698 tokens/s median short decode.
   Real-weight greedy HTTP/SSE diagnostics; the sparse retrieval prompt has
   3443 tokens and exceeds the 16-block attention budget. These small checks
   do not establish broad model accuracy or native-release quantization parity.

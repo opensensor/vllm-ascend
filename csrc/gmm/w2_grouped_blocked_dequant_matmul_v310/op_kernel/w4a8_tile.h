@@ -84,15 +84,20 @@ public:
         // These buffers are unused by the parent's NZ decoder.
         auto quantized = nzTileUB_.ReinterpretCast<int8_t>();
         for (uint32_t rowBase = 0; rowBase < nActual; rowBase += 16) {
+#ifdef GLM_W2_GROUPED_L1_SCALE_CACHE
+            const int64_t scaleBufferBase = rowBase / W2_BLOCK_SIZE * kbCount_;
+#else
             const int64_t scaleRow = (n0 + rowBase) / 32;
             DataCopy(scaleUB_, scaleGm_[scaleRow * kbCount_], (int32_t)kbCount_);
             SetFlag<HardEvent::MTE2_S>(EVENT_ID3);
             WaitFlag<HardEvent::MTE2_S>(EVENT_ID3);
+            const int64_t scaleBufferBase = 0;
+#endif
             for (uint32_t k0 = kStart; k0 < kStart + W2_L1_WIDE_K; k0 += 256) {
                 const int64_t codeOffset = ((int64_t)(n0 + rowBase) / 16 * (K_ / 256) + k0 / 256) * 2048;
                 DecodePackedInt8(codeOffset);
                 for (uint32_t block = 0; block < 8; ++block) {
-                    const half ratio = static_cast<half>(scaleUB_.GetValue(k0 / 32 + block));
+                    const half ratio = static_cast<half>(scaleUB_.GetValue(scaleBufferBase + k0 / 32 + block));
                     Muls(signedHalfUB_[block * 512], signedHalfUB_[block * 512], ratio, 512);
                     PipeBarrier<PIPE_V>();
                 }
@@ -235,6 +240,12 @@ public:
         }
         if (debugDecode_) {
             for (uint32_t n0 = tileLane_ * W2_L1_WIDE_TILE_N; n0 < N_; n0 += tileLanes_ * W2_L1_WIDE_TILE_N) {
+#ifdef GLM_W2_GROUPED_L1_SCALE_CACHE
+                DataCopy(scaleUB_, scaleGm_[static_cast<int64_t>(n0) / W2_BLOCK_SIZE * kbCount_],
+                         static_cast<int32_t>(W2_SCALE_BUFFER_ROWS * kbCount_));
+                SetFlag<HardEvent::MTE2_S>(EVENT_ID3);
+                WaitFlag<HardEvent::MTE2_S>(EVENT_ID3);
+#endif
                 for (uint32_t k0 = 0; k0 < K_; k0 += W2_L1_WIDE_K) {
                     DecodeInt8Tile(n0, W2_L1_WIDE_TILE_N, k0);
                 }

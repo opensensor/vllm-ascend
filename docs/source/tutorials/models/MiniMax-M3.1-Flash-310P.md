@@ -557,3 +557,36 @@ check hit an unsupported 310P compatibility wrapper; both failures required
 restarts. The shared pool and FP32 summed vote fix those failures. Receipts,
 failure logs and executable experiment snapshots are in
 `artifacts/minimax-m31-piecewise-forward-20261025/`.
+
+### Integer routing and INT8 scale-row reuse
+
+Route counts now reduce and accumulate in INT32 before conversion to the
+native kernel's INT64 boundary format. Counts fit INT32 within the supported
+2048-route limit; larger theoretical inputs retain INT64. This removes slow
+AI-CPU integer work. Attention also reuses its block quotient instead of
+computing it twice. The serving median increased from 3.462 to 3.595 tokens/s,
+with all three response messages unchanged.
+
+The retained `minimax_w4_int8_v14` kernel loads four scale rows once per output
+tile and reuses them through its K slices. Previously it loaded a scale row
+for each N16 slice and K1024 chunk. This changes data movement, not arithmetic.
+All twelve isolated real-weight projection cases matched v13 exactly. Three
+serving requests measured **3.698, 3.700 and 3.691 tokens/s**, with identical
+messages. The CPU suite passed 223 tests with 24 hardware skips.
+
+Build v14 with `--wide-l1 --rint-unpack --int8-compute --scale-cache` and load
+its manifest using the existing append-only native loader. Compose the current
+Python implementation, activation and graph path when switching:
+
+```bash
+python -m tools.minimax_m3.resident switch \
+  --module-file /vllm-workspace/vllm-ascend/vllm_ascend/_310p/ops/minimax_m3.py \
+  --native-name minimax_w4_int8_v14 --activation-name minimax_activation_v2 \
+  --partial-graphs
+```
+
+The post-start script still converts checkpoint bytes using the v13 layout
+controller, then loads and selects the compatible v14 kernel. These iterations
+retained worker PIDs and weight storage. Context capacity remains 163840.
+Evidence is in `artifacts/minimax-m31-integer-perf-20261025/` and
+`artifacts/minimax-m31-int8-scale-cache-20261025/`.

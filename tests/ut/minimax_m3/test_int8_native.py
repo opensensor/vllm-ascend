@@ -30,9 +30,7 @@ def test_int8_b_tile_gather_maps_k32_n16_without_dropping_values():
     assert torch.equal(actual, source.reshape(8, 32, 16).transpose(1, 2))
 
 
-@pytest.mark.parametrize(
-    "options", [{}, {"wide_l1": True}, {"wide_l1": True, "rint_unpack": True, "scale_cache": True}]
-)
+@pytest.mark.parametrize("options", [{}, {"wide_l1": True}, {"wide_l1": True, "rint_unpack": True, "expert_lanes": 1}])
 def test_int8_build_rejects_incompatible_options(tmp_path, options):
     output = tmp_path / "build"
     with pytest.raises(ValueError, match="INT8 prototype"):

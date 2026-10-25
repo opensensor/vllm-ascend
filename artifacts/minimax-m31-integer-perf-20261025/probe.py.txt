@@ -1,0 +1,38 @@
+import json,time
+from pathlib import Path
+import torch,torch_npu
+
+torch.npu.set_device(5);torch.npu.set_compile_mode(jit_compile=False)
+torch.set_num_threads(2)
+reports=[]
+with torch.inference_mode():
+ ids=torch.tensor([4,23,61,64],device='npu:5');experts=torch.arange(64,device='npu:5')
+ funcs={
+  'ends_int64':lambda:(ids[:,None]==experts).sum(0).cumsum(0).to(torch.int64),
+  'ends_int32':lambda:(ids[:,None]==experts).sum(0,dtype=torch.int32).cumsum(0,dtype=torch.int32).to(torch.int64),
+  'ends_float32':lambda:(ids[:,None]==experts).sum(0,dtype=torch.float32).cumsum(0).to(torch.int64),
+ }
+ expected=funcs['ends_int64']().cpu()
+ qpos=torch.tensor([163839],device='npu:5')
+ funcs.update({
+  'div_int64_twice':lambda:(qpos//128,qpos//128-1),
+  'div_int64_once':lambda:(lambda v:(v,v-1))(qpos//128),
+  'div_int32_once':lambda:(lambda v:(v,v-1))(qpos.int()//128),
+  'div_float32_once':lambda:(lambda v:(v,v-1))(torch.div(qpos.float(),128,rounding_mode='floor')),
+ })
+ for name,fn in funcs.items():
+  out=fn()
+  if name.startswith('ends'):assert torch.equal(out.cpu(),expected)
+  stream=torch.npu.Stream();stream.wait_stream(torch.npu.current_stream())
+  with torch.npu.stream(stream):
+   fn();stream.synchronize();graph=torch.npu.NPUGraph()
+   with torch.npu.graph(graph,stream=stream):out=fn()
+  torch.npu.current_stream().wait_stream(stream)
+  for _ in range(5):graph.replay()
+  torch.npu.synchronize();start=time.perf_counter()
+  for _ in range(200):graph.replay()
+  torch.npu.synchronize();ms=(time.perf_counter()-start)*5
+  report={'name':name,'replay_ms':ms};reports.append(report);print(report,flush=True);graph.reset()
+ p=torch.arange(163840,device='npu:5')
+ assert torch.equal((p//128).float().cpu(),torch.div(p.float(),128,rounding_mode='floor').cpu())
+Path('/workspace/m31-integer-probe.json').write_text(json.dumps(reports,indent=2)+'\n')
