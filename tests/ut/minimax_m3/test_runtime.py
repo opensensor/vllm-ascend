@@ -510,3 +510,46 @@ def test_int8_scale_metadata_reuses_original_buffers_without_changing_other_kern
         assert dtype == (torch.float16 if name in int8_layouts else torch.float32)
         if name in int8_layouts:
             assert pointer == getattr(bank, name + "_scales").data_ptr()
+
+
+@pytest.mark.parametrize("value", [1, "true", None])
+def test_activation_warmup_option_requires_boolean(value):
+    with pytest.raises(ValueError, match="must be a boolean"):
+        MiniMaxM3W4Loader(
+            LoadConfig(load_format="minimax_m3_w4", model_loader_extra_config={"activation_reference_warmup": value})
+        )
+
+
+def test_activation_warmup_requires_source_weights():
+    with pytest.raises(ValueError, match="requires source"):
+        MiniMaxM3W4Loader(
+            LoadConfig(load_format="minimax_m3_w4", model_loader_extra_config={"activation_reference_warmup": True})
+        )
+
+
+def test_failed_activation_warmup_prevents_source_bank_loading(monkeypatch, tmp_path):
+    class MiniMaxM3Model(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.zeros(1))
+
+    def failed_warmup(device):
+        raise RuntimeError("Device cast corrupted during activation warmup")
+
+    module = "vllm_ascend.model_loader.minimax_m3_w4"
+    monkeypatch.setattr(module + ".read_manifest", lambda folder: {})
+    monkeypatch.setattr(module + ".warmup_activation_reference", failed_warmup)
+    monkeypatch.setattr(module + ".load_source_banks", lambda *a: pytest.fail("Weights loaded after failed warmup"))
+    loader = MiniMaxM3W4Loader(
+        LoadConfig(
+            load_format="minimax_m3_w4",
+            model_loader_extra_config={
+                "expert_layout": "nz256",
+                "source_nvfp4": str(tmp_path / "banks"),
+                "source_nvfp4_kernel": str(tmp_path / "kernel.json"),
+                "activation_reference_warmup": True,
+            },
+        )
+    )
+    with pytest.raises(RuntimeError, match="Device cast corrupted"):
+        loader.load_weights(MiniMaxM3Model(), SimpleNamespace(model=str(tmp_path)))

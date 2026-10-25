@@ -1,0 +1,12 @@
+import json,sys,urllib.request,time
+payload=json.loads(sys.stdin.buffer.readline())
+started=time.monotonic();count=0
+try:
+ req=urllib.request.Request('http://127.0.0.1:8000/v1/chat/completions',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
+ with urllib.request.urlopen(req,timeout=7200) as r:
+  print(json.dumps({'status':r.status,'headers':dict(r.headers)}),flush=True)
+  for line in r:
+   count+=1;sys.stdout.buffer.write(line);sys.stdout.buffer.flush()
+ print(json.dumps({'lines':count,'elapsed':time.monotonic()-started}),file=sys.stderr,flush=True)
+except Exception as e:
+ print(repr(e),file=sys.stderr,flush=True);raise

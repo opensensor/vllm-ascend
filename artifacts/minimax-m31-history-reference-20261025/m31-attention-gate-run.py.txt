@@ -1,0 +1,27 @@
+import fcntl,json,uuid
+from pathlib import Path
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+c=ResidentClient('http://127.0.0.1:8000',6,timeout=600)
+with Path('/tmp/minimax-m31-resident.lock').open('w') as lock:
+ fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+ assert not c.request('/is_paused',method='GET')['is_paused']
+ assert not c.request('/resident/maintenance',method='GET')['maintenance']
+ before=c.rpc('resident_status');c.request('/resident/maintenance')
+ try:
+  c.switch(Control(uuid.uuid4().hex,'direct-target','attention_gate',Path('/workspace/m31-attention-gate-hooks.py').read_text()))
+  nonce=uuid.uuid4().hex
+  for attempt in range(12):
+   result=c.rpc('resident_capture',nonce)
+   if all(r.get('nonce')==nonce for r in result):break
+  else:raise RuntimeError('unmatched capture acknowledgments')
+  Path('/workspace/m31-attention-npu-gate.json').write_text(json.dumps(result,indent=2));print([{k:v for k,v in r.items() if k in ('rank','attention_gate')} for r in result],flush=True)
+ except Exception as exc:
+  cause=exc
+  while cause is not None:
+   if hasattr(cause,'read'):print('HTTP error body',cause.read().decode(),flush=True)
+   cause=cause.__cause__
+  raise
+ finally:
+  c.switch(Control(uuid.uuid4().hex,'direct-target','baseline',''));c.resume();c.request('/resident/maintenance',method='DELETE')
+ after=c.rpc('resident_status');assert [(x['rank'],x['pid'],x['weight_storage_digest']) for x in before]==[(x['rank'],x['pid'],x['weight_storage_digest']) for x in after]

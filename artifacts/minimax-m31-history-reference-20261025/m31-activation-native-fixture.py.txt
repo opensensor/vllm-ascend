@@ -1,0 +1,18 @@
+import torch,json
+from pathlib import Path
+from flashinfer import nvfp4_quantize,mxfp8_quantize
+from flashinfer.tllm_enums import SfLayout
+from tools.minimax_m3.activation_reference import nvfp4_roundtrip,mxfp8_roundtrip
+
+gen=torch.Generator(device='cuda').manual_seed(73)
+rows=[(torch.randn(8,6144,generator=gen,device='cuda')*a).half() for a in (.001,.01,.1,1.,10.,100.)]
+for rank in range(6):
+ trace=torch.load(f'/tmp/m31-production-all-trace/rank{rank}.pt',weights_only=True)
+ rows.extend(r['moe_input'].cuda() for r in trace.values() if 'moe_input' in r)
+x=torch.cat(rows);g=torch.ones(1,device='cuda');p,s=nvfp4_quantize(x,g,sfLayout=SfLayout.layout_linear)
+lut=torch.tensor([0,.5,1,1.5,2,3,4,6,0,-.5,-1,-1.5,-2,-3,-4,-6],device='cuda');c=torch.stack((p&15,p>>4),-1).flatten(-2)
+native_nv=(lut[c.long()].unflatten(-1,(-1,16))*s.view(torch.float8_e4m3fn).float()[...,None]).flatten(-2).half()
+q,ms=mxfp8_quantize(x,is_sf_swizzled_layout=False);native_mx=(q.float().unflatten(-1,(-1,32))*torch.exp2(ms.float().reshape(len(x),-1)-127)[...,None]).flatten(-2).half()
+report={'shape':list(x.shape),'nvfp4_different':int((native_nv!=nvfp4_roundtrip(x)).sum()),'mxfp8_different':int((native_mx!=mxfp8_roundtrip(x)).sum())};print(report)
+torch.save({'input':x.cpu(),'nvfp4':native_nv.cpu(),'mxfp8':native_mx.cpu()},'/tmp/m31-activation-native-fixture.pt')
+Path('/tmp/m31-activation-native-fixture.json').write_text(json.dumps(report,indent=2)+'\n')

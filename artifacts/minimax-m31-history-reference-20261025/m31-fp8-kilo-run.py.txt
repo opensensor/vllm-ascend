@@ -1,0 +1,20 @@
+import subprocess,sys
+from pathlib import Path
+root=Path('/var/tmp/m31-fp8-kilo-20261025');root.mkdir(exist_ok=True)
+command=['ssh','-o','ServerAliveInterval=15','-o','ServerAliveCountMax=4','threadripper','cd /vllm-workspace/vllm-ascend && source /workspace/minimax-m31-env.sh && /srv/ai/venvs/minimax-m31/bin/python /workspace/m31-fp8-kilo-controller.py']
+with (root/'controller.log').open('w') as log:
+ controller=subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=log,text=True)
+ try:
+  while True:
+   line=controller.stdout.readline();log.write(line);log.flush()
+   if line.strip()=='READY':break
+   if not line:raise RuntimeError('Controller exited before READY')
+  print('FP8 attention candidate ready',flush=True)
+  result=subprocess.run([sys.executable,'/tmp/m31-kilo-raw-stream-trial.py',str(root/'session'),'--max-requests','8'],timeout=10800)
+  print('Kilo completed',result.returncode,flush=True)
+ finally:
+  if controller.poll() is None:
+   controller.stdin.write('done\n');controller.stdin.flush()
+   for line in controller.stdout:log.write(line);log.flush()
+   controller.wait(timeout=600)
+  print('controller exit',controller.returncode,flush=True)

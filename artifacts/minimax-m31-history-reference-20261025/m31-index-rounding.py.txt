@@ -1,0 +1,20 @@
+import json,math
+from pathlib import Path
+import torch
+torch.set_num_threads(4)
+records=[]
+for rank in range(6):
+ trace=torch.load(f'/tmp/m31-production-all-trace/rank{rank}.pt',map_location='cpu',weights_only=True)
+ for (layer,phase),row in trace.items():
+  if phase!='prefill':continue
+  iq=row['qkv']['index_q'].reshape(-1,128).float();ik=row['index_history'].float();blocks=math.ceil(len(ik)/128)
+  def choose(q,k):
+   scores=q@k.T;scores=torch.nn.functional.pad(scores,(0,blocks*128-len(ik)),value=-torch.inf).reshape(len(q),blocks,128).amax(-1);scores[:,-1]=1e29
+   return scores.topk(16,-1).indices.sort().values
+  original=choose(iq,ik);expected=torch.cat([row['selection'][head]['selected'] for head in sorted(row['selection'])]).sort().values
+  assert torch.equal(original,expected),(rank,layer)
+  quantized=choose(iq.clamp(-448,448).to(torch.float8_e4m3fn).float(),ik.clamp(-448,448).to(torch.float8_e4m3fn).float())
+  for head,(a,b) in enumerate(zip(original.tolist(),quantized.tolist())):records.append({'layer':layer,'rank':rank,'local_head':head,'replaced_blocks':16-len(set(a)&set(b))})
+summary={'scope':'Counterfactual FP8 index Q/K rounding on observed FP16 histories, not independently propagated source attention or a behavior test. Original sets exactly revalidated before comparison.','sets':len(records),'changed_sets':sum(r['replaced_blocks']>0 for r in records),'replaced_blocks':sum(r['replaced_blocks'] for r in records),'total_selected_blocks':16*len(records),'maximum_replaced_in_one_set':max(r['replaced_blocks'] for r in records),'rows':records}
+Path('artifacts/minimax-m31-history-reference-20261025/index-fp8-rounding.json').write_text(json.dumps(summary,indent=2)+'\n')
+print(json.dumps({k:v for k,v in summary.items() if k!='rows'},indent=2))

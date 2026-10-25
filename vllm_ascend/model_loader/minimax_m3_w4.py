@@ -9,6 +9,7 @@ from vllm.distributed import get_pp_group, get_tp_group
 from vllm.model_executor.model_loader import register_model_loader
 from vllm.model_executor.model_loader.default_loader import DefaultModelLoader
 
+from tools.minimax_m3.activation_reference import warmup_activation_reference
 from tools.minimax_m3.checkpoint import dense_weights, load_expert_banks, read_manifest
 from tools.minimax_m3.nvfp4_checkpoint import load_source_banks
 
@@ -17,12 +18,23 @@ from tools.minimax_m3.nvfp4_checkpoint import load_source_banks
 class MiniMaxM3W4Loader(DefaultModelLoader):
     def __init__(self, load_config):
         options = load_config.model_loader_extra_config or {}
-        if set(options) - {"expert_layout", "max_grouped_routes", "source_nvfp4", "source_nvfp4_kernel"}:
+        if set(options) - {
+            "expert_layout",
+            "max_grouped_routes",
+            "source_nvfp4",
+            "source_nvfp4_kernel",
+            "activation_reference_warmup",
+        }:
             raise ValueError("Unknown M3 W4 loader options")
         self.expert_layout = options.get("expert_layout", "canonical")
         self.max_grouped_routes = options.get("max_grouped_routes", 128)
         self.source_nvfp4 = options.get("source_nvfp4")
         self.source_nvfp4_kernel = options.get("source_nvfp4_kernel")
+        self.activation_reference_warmup = options.get("activation_reference_warmup", False)
+        if type(self.activation_reference_warmup) is not bool:
+            raise ValueError("activation_reference_warmup must be a boolean")
+        if self.activation_reference_warmup and not self.source_nvfp4:
+            raise ValueError("Activation reference warmup requires source NVFP4 banks")
         if bool(self.source_nvfp4) != bool(self.source_nvfp4_kernel):
             raise ValueError("Source NVFP4 requires both expert bundle and native kernel manifest")
         if self.source_nvfp4 and self.expert_layout != "nz256":
@@ -48,6 +60,8 @@ class MiniMaxM3W4Loader(DefaultModelLoader):
             # HCCL allocates from the driver, outside PyTorch's cache. Reserve
             # its TP channels before source scales expand the resident banks.
             device = next(model.parameters()).device
+            if self.activation_reference_warmup:
+                warmup_activation_reference(device)
             if device.type == "npu":
                 torch.npu.synchronize()
                 torch.npu.empty_cache()

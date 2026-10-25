@@ -1,0 +1,155 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Resident diagnostic for fused FP32 QK math and identity-scaled FP8 history.
+
+Emulates rounding in FP16 storage; it does not compress the cache or reproduce
+the complete Hopper BF16/Marlin execution path.
+"""
+
+from types import FunctionType
+
+import torch
+
+
+
+def round_e4m3(value, power=torch.exp2):
+    absolute = value.float().abs()
+    step = power((torch.floor(torch.log2(absolute.clamp_min(2**-24))) - 3).clamp_min(-9))
+    return (torch.round(absolute / step) * step).clamp_max(448) * value.sign()
+
+
+
+DENSE_ABLATION_QUERY_TILE = 8
+
+
+def normalized_rotary(value, norm, cosine, sine, head_size, rotary_dim):
+    shaped = value.float().reshape(len(value), -1, head_size)
+    shaped = shaped * torch.rsqrt((shaped * shaped).mean(-1, keepdim=True) + norm.variance_epsilon)
+    shaped = shaped * (1 + norm.weight.float())
+    half = rotary_dim // 2
+    left, right = shaped[..., :half], shaped[..., half:rotary_dim]
+    return torch.cat(
+        (left * cosine - right * sine, right * cosine + left * sine, shaped[..., rotary_dim:]), -1
+    ).reshape(value.shape)
+
+
+def prepare(self, positions, hidden_states, quantize):
+    qkv, _ = self.qkv_proj(hidden_states)
+    main_size = self.q_size + 2 * self.kv_size
+    if self.indexer_proj is None:
+        q, k, v, iq, ik = qkv.split([self.q_size, self.kv_size, self.kv_size, self.index_q_size, self.idx_head_dim], -1)
+    else:
+        q, k, v = qkv[..., :main_size].split([self.q_size, self.kv_size, self.kv_size], -1)
+        indexed, _ = self.indexer_proj(hidden_states)
+        iq, ik = indexed.split([self.index_q_size, self.idx_head_dim], -1)
+    if not self.rotary_emb.is_neox_style:
+        raise ValueError("Attention candidate requires NeoX rotary")
+    cosine, sine = self.rotary_emb.cos_sin_cache.index_select(0, positions).float().chunk(2, -1)
+    cosine, sine = cosine[:, None], sine[:, None]
+
+    def transform(value, norm, head_size):
+        return normalized_rotary(value, norm, cosine, sine, head_size, self.rotary_emb.rotary_dim)
+
+    q = transform(q, self.q_norm, self.head_dim).to(qkv.dtype)
+    k = quantize(transform(k, self.k_norm, self.head_dim)).to(qkv.dtype)
+    iq = quantize(transform(iq, self.index_q_norm, self.idx_head_dim)).to(qkv.dtype)
+    ik = quantize(transform(ik, self.index_k_norm, self.idx_head_dim)).to(qkv.dtype)
+    return q, k, quantize(v.float()).to(qkv.dtype).contiguous(), iq, ik
+
+
+def replacements(native_resources):
+    # Reuse exact powers without introducing a late CANN Pow allocation.
+    owned = torch.tensor([2.0**i for i in range(-126, 128)], dtype=torch.float32)
+    table = owned.to("npu")
+    torch.npu.synchronize()
+
+    def power(exponents):
+        return table.index_select(0, (exponents.clamp(-126, 127) + 126).long().flatten()).reshape(exponents.shape)
+
+    def candidate(self, positions, hidden_states):
+        return prepare(self, positions, hidden_states, lambda value: round_e4m3(value, power))
+
+    return {"vllm_ascend.models.minimax_m3.minimax_m3:MiniMaxM3SparseAttention._sparse_prepare": candidate}
+
+
+def dense_replacements(native_resources):
+    """Diagnostic ablation only: retain every visible block instead of top 16.
+
+    Smaller query tiles bound gather scratch. This changes the model's trained
+    attention pattern and must not be promoted as a source-equivalent fix.
+    """
+    # Lazy import keeps the reference helpers usable without serving dependencies.
+    from vllm_ascend._310p.ops.minimax_m3 import paged_sparse_attention
+
+    tiled = FunctionType(
+        paged_sparse_attention.__code__,
+        {**paged_sparse_attention.__globals__, "ATTENTION_QUERY_TILE": DENSE_ABLATION_QUERY_TILE},
+        argdefs=paged_sparse_attention.__defaults__,
+        closure=paged_sparse_attention.__closure__,
+    )
+    tiled.__kwdefaults__ = paged_sparse_attention.__kwdefaults__
+
+    def all_blocks(*args, **kwargs):
+        block_size = args[5].shape[1]
+        kwargs["topk_blocks"] = (kwargs["max_seq_len"] + block_size - 1) // block_size
+        return tiled(*args, **kwargs)
+
+    return {"vllm_ascend.models.minimax_m3.minimax_m3:paged_sparse_attention": all_blocks}
+
+
+def fused_gemma_forward(self, x, residual=None):
+    """Normalize the FP32 residual sum, matching FlashInfer's fused convention.
+
+    The stored residual is rounded separately; it must not become the input
+    to normalization. Keep this distinct from the earlier FP16-oracle trial.
+    """
+    values = x.float()
+    if residual is not None:
+        values = values + residual.float()
+        residual = values.to(residual.dtype)
+    inverse = torch.rsqrt((values * values).mean(-1, keepdim=True) + self.variance_epsilon)
+    output = (values * inverse * (1 + self.weight.float())).to(x.dtype)
+    return output if residual is None else (output, residual)
+
+
+
+def replacements(native_resources):
+    from types import SimpleNamespace
+    def capture(self,nonce=None):
+        self._m3_idle()
+        if nonce is None:return self.resident_status()
+        try:
+            generator=torch.Generator().manual_seed(5613)
+            host=torch.randn(4,4992,generator=generator).half()
+            weights=[(torch.randn(128,generator=generator)*.2).half() for _ in range(4)]
+            angles=torch.arange(512).float()[:,None]/(10000.0**(torch.arange(32).float()/32))
+            cache=torch.cat((angles.cos(),angles.sin()),-1).half()
+            positions=torch.tensor([0,17,128,511])
+            def layer(device):
+                qkv=host.clone().to(device)
+                norms=[SimpleNamespace(weight=w.clone().to(device),variance_epsilon=1e-6) for w in weights]
+                return SimpleNamespace(q_size=4096,kv_size=256,index_q_size=256,idx_head_dim=128,head_dim=128,qkv_proj=lambda x:(qkv,None),indexer_proj=None,q_norm=norms[0],k_norm=norms[1],index_q_norm=norms[2],index_k_norm=norms[3],rotary_emb=SimpleNamespace(is_neox_style=True,rotary_dim=64,cos_sin_cache=cache.clone().to(device)))
+            expected=prepare(layer('cpu'),positions,None,lambda v:v.clamp(-448,448).to(torch.float8_e4m3fn).float())
+            owned=torch.tensor([2.0**i for i in range(-126,128)],dtype=torch.float32)
+            table=owned.to('npu');torch.npu.synchronize()
+            def power(e):return table.index_select(0,(e.clamp(-126,127)+126).long().flatten()).reshape(e.shape)
+            actual=prepare(layer('npu'),positions.to('npu'),None,lambda v:round_e4m3(v,power))
+            report={}
+            for name,a,b in zip(('q','k','v','index_q','index_k'),actual,expected):
+                a=a.cpu();diff=a.float()-b.float()
+                report[name]={'nonfinite':int((~torch.isfinite(a)).sum()),'different':int((a!=b).sum()),'elements':a.numel(),'nrmse':float(torch.nan_to_num(diff,nan=0.,posinf=0.,neginf=0.).norm()/b.float().norm()),'max_abs':float(torch.nan_to_num(diff.abs(),nan=0.,posinf=0.,neginf=0.).max())}
+            from vllm_ascend._310p.ops.minimax_m3 import paged_sparse_attention
+            q=torch.zeros(1,4,128,device='npu',dtype=torch.float16);key=torch.zeros(1,2,128,device='npu',dtype=torch.float16);value=torch.full_like(key,383)
+            iq=torch.zeros(1,2,128,device='npu',dtype=torch.float16);ik=torch.zeros(1,128,device='npu',dtype=torch.float16)
+            kc=torch.zeros(3,128,2,128,device='npu',dtype=torch.float16);vc=torch.arange(384).half().reshape(3,128,1,1).expand(3,128,2,128).clone().to('npu');ic=torch.zeros(3,128,128,device='npu',dtype=torch.float16)
+            arguments=(q,key,value,iq,ik,kc,vc,ic)
+            meta=dict(query_starts=(0,1),seq_lens=torch.tensor([384],device='npu'),block_table=torch.tensor([[0,1,2]],device='npu'),index_block_table=torch.tensor([[0,1,2]],device='npu'),slot_mapping=torch.tensor([383],device='npu'),index_slot_mapping=torch.tensor([383],device='npu'),max_seq_len=384,topk_blocks=1,scale=128**-.5)
+            sparse=paged_sparse_attention(*arguments,**meta).cpu();dense=next(iter(dense_replacements(None).values()))(*arguments,**meta).cpu()
+            fixture=torch.load('/workspace/m31-fused-norm-fixture.pt',map_location='cpu',weights_only=True)
+            norm=SimpleNamespace(weight=fixture['weight'].to('npu'),variance_epsilon=1e-6)
+            normalized,residual=fused_gemma_forward(norm,fixture['x'].to('npu'),fixture['residual'].to('npu'))
+            normalized=normalized.cpu();residual=residual.cpu();target=fixture['expected'];diff=normalized.float()-target.float()
+            report['fused_residual_norm']={'elements':target.numel(),'different':int((normalized!=target).sum()),'nrmse':float(diff.norm()/target.float().norm()),'max_abs':float(diff.abs().max()),'nonfinite':int((~torch.isfinite(normalized)).sum()),'residual_exact':torch.equal(residual,fixture['stored'])}
+            report['dense_ablation']={'sparse_exact':torch.equal(sparse,torch.full_like(sparse,319.5)),'dense_exact':torch.equal(dense,torch.full_like(dense,191.5))}
+            return {**self.resident_status(),'attention_gate':report,'nonce':nonce}
+        except Exception as e:return {**self.resident_status(),'error':repr(e),'nonce':nonce}
+    return {'vllm_ascend._310p.worker_310p:NPUWorker310.resident_capture':capture}

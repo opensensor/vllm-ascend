@@ -1,0 +1,32 @@
+import sys,json
+from pathlib import Path
+from types import SimpleNamespace
+sys.path.insert(0,str(Path.cwd()))
+import torch
+from flashinfer.norm import gemma_fused_add_rmsnorm
+from tools.minimax_m3.history_reference import SourceWeights
+from tools.minimax_m3.precision_candidate import fused_gemma_forward,gemma_forward
+root=Path('/tmp/m31-fused-norm');root.mkdir(exist_ok=True)
+torch.cuda.set_per_process_memory_fraction(2*(1<<30)/torch.cuda.get_device_properties(0).total_memory)
+source=SourceWeights('/run/media/matteius/20TB-drive/models/MiniMax-M3.1-Flash','cpu')
+rows=[]
+for rank in (0,2,4):
+ trace=torch.load(f'/tmp/m31-production-all-trace/rank{rank}.pt',map_location='cpu',weights_only=True)
+ for (layer,phase),r in trace.items():
+  prefix=f'language_model.model.layers.{layer}.'
+  if r['residual_in'] is not None:
+   rows.append((r['hidden_in'],r['residual_in'],source.weight(prefix+'input_layernorm.weight'),f'{layer}:{phase}:input'))
+  residual=r['hidden_in'] if r['residual_in'] is None else (r['hidden_in']+r['residual_in']).half()
+  rows.append((r['attention_projected'],residual,source.weight(prefix+'post_attention_layernorm.weight'),f'{layer}:{phase}:post'))
+expected=[];stored=[];xs=[];rs=[];ws=[];labels=[];report=[]
+for x,r,w,label in rows:
+ a,b=x.cuda(),r.cuda();weight=w.cuda();gemma_fused_add_rmsnorm(a,b,weight,eps=1e-6)
+ module=SimpleNamespace(weight=weight,variance_epsilon=1e-6)
+ candidate,candidate_r=fused_gemma_forward(module,x.cuda(),r.cuda())
+ previous,previous_r=gemma_forward(module,x.cuda(),r.cuda())
+ def metric(v):return {'different':int((v!=a).sum()),'nrmse':float((v.float()-a.float()).norm()/a.float().norm()),'max_abs':float((v.float()-a.float()).abs().max())}
+ report.append({'label':label,'fused':metric(candidate),'previous':metric(previous),'stored_residual_exact':torch.equal(candidate_r,b)})
+ expected.append(a.cpu());stored.append(b.cpu());xs.append(x);rs.append(r);ws.append(w[None]);labels.append(label)
+torch.save(dict(x=torch.cat(xs),residual=torch.cat(rs),weight=torch.cat(ws),expected=torch.cat(expected),stored=torch.cat(stored),labels=labels),root/'fixture.pt')
+summary={'rows':len(rows),'elements':sum(x.numel() for x in xs),'fused_different':sum(r['fused']['different'] for r in report),'previous_different':sum(r['previous']['different'] for r in report),'fused_peak_nrmse':max(r['fused']['nrmse'] for r in report),'previous_peak_nrmse':max(r['previous']['nrmse'] for r in report),'residual_all_exact':all(r['stored_residual_exact'] for r in report),'rows_detail':report}
+(root/'cuda-gate.json').write_text(json.dumps(summary,indent=2));print({k:v for k,v in summary.items() if k!='rows_detail'})

@@ -1,0 +1,381 @@
+{
+  "candidate": "Source-preserving experts + NVFP4/MXFP8 activation round trips + FP32 Gamma+1 normalization / explicit FP16 rotary; residual addition and KV/index history still FP16",
+  "temperature": 1,
+  "top_p": 0.95,
+  "seed": 71,
+  "served_responses": 8,
+  "completed_tool_calls": 16,
+  "final_answer_received": false,
+  "stop": "External eight-response guard rejected request nine; no forced final answer",
+  "elapsed_seconds": 4066.3747029304504,
+  "responses": [
+    {
+      "response": "response-01.sse",
+      "content": "I'll examine the project structure and key files to describe it accurately.",
+      "reasoning": "",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "arguments": {
+            "command": "ls -la",
+            "description": "List project root contents"
+          }
+        },
+        {
+          "name": "read",
+          "arguments": {
+            "filePath": "/run/media/matteius/20TB-drive/vllm-ascend/README.md"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls",
+      "usage": {
+        "prompt_tokens": 7739,
+        "total_tokens": 7831,
+        "completion_tokens": 92,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    },
+    {
+      "response": "response-02.sse",
+      "content": "",
+      "reasoning": "Let me explore the code structure further.",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "arguments": {
+            "command": "ls vllm_ascend/ && echo \"---CSRC---\" && ls csrc/ && echo \"---TESTS---\" && ls tests/ && echo \"---DOCS---\" && ls docs/source/ && echo \"---TOOLS---\" && ls tools/",
+            "description": "List main package and directory structure"
+          }
+        },
+        {
+          "name": "bash",
+          "arguments": {
+            "command": "git log --oneline -15 && echo \"---BRANCH---\" && git branch -a | head -20 && echo \"---STATUS---\" && git status --short | head -30",
+            "description": "Check git history and branch state"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls",
+      "usage": {
+        "prompt_tokens": 13768,
+        "total_tokens": 13948,
+        "completion_tokens": 180,
+        "completion_tokens_details": {
+          "reasoning_tokens": 8
+        }
+      }
+    },
+    {
+      "response": "response-03.sse",
+      "content": "",
+      "reasoning": "Let me dig into the core architecture of vllm_ascend package.",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "arguments": {
+            "command": "ls vllm_ascend/worker/ vllm_ascend/ops/ vllm_ascend/attention/ vllm_ascend/quantization/ vllm_ascend/model_executor/ 2>/dev/null",
+            "description": "List core subpackage contents"
+          }
+        },
+        {
+          "name": "bash",
+          "arguments": {
+            "command": "cat pyproject.toml && echo \"=== requirements ===\" && cat requirements.txt && echo \"=== setup.py head ===\" && head -60 setup.py",
+            "description": "Read project config and dependencies"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls",
+      "usage": {
+        "prompt_tokens": 15672,
+        "total_tokens": 15843,
+        "completion_tokens": 171,
+        "completion_tokens_details": {
+          "reasoning_tokens": 16
+        }
+      }
+    },
+    {
+      "response": "response-04.sse",
+      "content": "",
+      "reasoning": "Let me look at the platform.py, worker.py, and other core pieces to understand the architecture. Also check the fork-specific features (310p, system_one, etc.)",
+      "tool_calls": [
+        {
+          "name": "read",
+          "arguments": {
+            "filePath": "/run/media/matteius/20TB-drive/vllm-ascend/vllm_ascend/platform.py",
+            "limit": 80
+          }
+        },
+        {
+          "name": "bash",
+          "arguments": {
+            "command": "ls vllm_ascend/_310p/ vllm_ascend/system_one/ vllm_ascend/quantization/methods/ vllm_ascend/patch/ 2>/dev/null",
+            "description": "List fork-specific subpackage dirs"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls",
+      "usage": {
+        "prompt_tokens": 17669,
+        "total_tokens": 17844,
+        "completion_tokens": 175,
+        "completion_tokens_details": {
+          "reasoning_tokens": 35
+        }
+      }
+    },
+    {
+      "response": "response-05.sse",
+      "content": "",
+      "reasoning": "",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "arguments": {
+            "command": "wc -l vllm_ascend/**/*.py 2>/dev/null | tail -3; echo \"--- python file count ---\"; find vllm_ascend -name \"*.py\" | wc -l; echo \"--- csrc files ---\"; find csrc -name \"*.cpp\" -o -name \"*.h\" -o -name \"*.c\" | wc -l; echo \"--- test files ---\"; find tests -name \"*.py\" | wc -l; echo \"--- total LOC py in vllm_ascend ---\"; find vllm_ascend -name \"*.py\" -exec cat {} + | wc -l",
+            "description": "Count source files and lines"
+          }
+        },
+        {
+          "name": "bash",
+          "arguments": {
+            "command": "ls docs/source/user_guide/ docs/source/developer_guide/ && echo \"=== mkdocs nav top ===\" && head -60 mkdocs.yml",
+            "description": "Inspect docs structure"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls",
+      "usage": {
+        "prompt_tokens": 18997,
+        "total_tokens": 19237,
+        "completion_tokens": 240,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    },
+    {
+      "response": "response-06.sse",
+      "content": "",
+      "reasoning": "Let me check the fork-specific features and understand what differentiates this fork (it appears to be a fork with 310P support, MiniMax M3 work, Qwen3.8 work, etc.). Let me look at the _310p module and the docs runbook mentioned in AGENTS.md.\n\nAlso check the CLAUDE.md and .agents directory.",
+      "tool_calls": [
+        {
+          "name": "read",
+          "arguments": {
+            "filePath": "/run/media/matteius/20TB-drive/vllm-ascend/CLAUDE.md"
+          }
+        },
+        {
+          "name": "bash",
+          "arguments": {
+            "command": "ls docs/source/developer_guide/performance_and_debug/ && echo \"=== features ===\" && ls docs/source/user_guide/feature_guide/ && echo \"=== e2e ===\" && ls tests/e2e/ && echo \"=== ut ===\" && ls tests/ut/",
+            "description": "Inspect docs and tests layout"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls",
+      "usage": {
+        "prompt_tokens": 20013,
+        "total_tokens": 20222,
+        "completion_tokens": 209,
+        "completion_tokens_details": {
+          "reasoning_tokens": 72
+        }
+      }
+    },
+    {
+      "response": "response-07.sse",
+      "content": "",
+      "reasoning": "Let me check the fork's distinguishing features \u2014 the `_310p` module (Ascend 310P support), `system_one`, `sidecard`, and the plan docs at the root. Also check the git remotes to know this is a fork.",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "arguments": {
+            "command": "git remote -v && echo \"=== last commit date ===\" && git log -1 --format=\"%H %ad %an\" && echo \"=== count commits ===\" && git rev-list --count HEAD",
+            "description": "Check remotes and repo stats"
+          }
+        },
+        {
+          "name": "bash",
+          "arguments": {
+            "command": "ls vllm_ascend/spec_decode/ vllm_ascend/distributed/ vllm_ascend/compilation/ vllm_ascend/ec_manager/ 2>/dev/null && echo \"=== csrc subdirs ===\" && ls csrc/kernels csrc/attention csrc/moe 2>/dev/null | head -40",
+            "description": "List more core subpackages"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls",
+      "usage": {
+        "prompt_tokens": 20972,
+        "total_tokens": 21216,
+        "completion_tokens": 244,
+        "completion_tokens_details": {
+          "reasoning_tokens": 52
+        }
+      }
+    },
+    {
+      "response": "response-08.sse",
+      "content": "",
+      "reasoning": "Now I have a good picture. Let me check the `_310p` fork-specific features and `system_one` briefly, plus check what the fork uniquely adds. Let me look at the `docs/source/developer_guide/performance_and_debug/qwen38_310p_runtime_runbook.md` header briefly and the `system_one` module.\n\nActually, I have enough. But let me check a couple more things: the `vllm_ascend/envs.py` for env var conventions and `ascend_config.py` for configuration, and the `_310p` README-ish.\n\nLet me also verify the repo is a fork of vllm-project/vllm-ascend \u2014 yes, remote is opensensor/vllm-ascend.\n\nLet me check what models are supported and the support matrix briefly.",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "arguments": {
+            "command": "ls docs/source/user_guide/support_matrix/ && echo \"=== models dir ===\" && ls vllm_ascend/models/ && echo \"=== quantization methods ===\" && ls vllm_ascend/quantization/methods/*/ 2>/dev/null | head -30",
+            "description": "Inspect support matrix and model modules"
+          }
+        },
+        {
+          "name": "bash",
+          "arguments": {
+            "command": "head -60 vllm_ascend/_310p/model_runner_310p.py && echo \"=== SYSTEM_ONE ===\" && head -40 vllm_ascend/system_one/serve.py",
+            "description": "Inspect 310p runner and system_one serve"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls",
+      "usage": {
+        "prompt_tokens": 21877,
+        "total_tokens": 22219,
+        "completion_tokens": 342,
+        "completion_tokens_details": {
+          "reasoning_tokens": 166
+        }
+      }
+    }
+  ],
+  "tool_results": [
+    {
+      "tool": "bash",
+      "status": "completed",
+      "exit": 0,
+      "output_characters": 5125,
+      "output_sha256": "0a858957dc35a5f38af4b66a125a203b082b862f3ddc12644ac7fc718cc00c56"
+    },
+    {
+      "tool": "read",
+      "status": "completed",
+      "exit": null,
+      "output_characters": 11526,
+      "output_sha256": "1f6b0853f519c36082abb94b7b033d2f83afd36f993c507586b644acc163b7a4"
+    },
+    {
+      "tool": "bash",
+      "status": "completed",
+      "exit": 0,
+      "output_characters": 1751,
+      "output_sha256": "439406b57807b3503fbbea9a8a576c5001ed7de9f3e810821733f1b8d40185e4"
+    },
+    {
+      "tool": "bash",
+      "status": "completed",
+      "exit": 0,
+      "output_characters": 4126,
+      "output_sha256": "fe3d5d451a5877ffd48023558a113084575035c5193d0a85c51c1c53d9a8f999"
+    },
+    {
+      "tool": "bash",
+      "status": "completed",
+      "exit": 0,
+      "output_characters": 1084,
+      "output_sha256": "df591a263c33571c2d477500d4e61bed4a98c3667fe25a5918bc95b55d9a2405"
+    },
+    {
+      "tool": "bash",
+      "status": "completed",
+      "exit": 0,
+      "output_characters": 5081,
+      "output_sha256": "613c03468b30c1013c7bc946053bb95e00ea208e699d64f282114beb58566549"
+    },
+    {
+      "tool": "read",
+      "status": "completed",
+      "exit": null,
+      "output_characters": 2928,
+      "output_sha256": "611695c185b1c845b217c34be76738caaf8a06e5c9cb60a6bb6a330f8b7a4d1e"
+    },
+    {
+      "tool": "bash",
+      "status": "completed",
+      "exit": 0,
+      "output_characters": 762,
+      "output_sha256": "848dc28f369bf6c4405ea0fe11b1f32d0a5eb1c34c5485b57faf1f345c7b8423"
+    },
+    {
+      "tool": "bash",
+      "status": "completed",
+      "exit": 0,
+      "output_characters": 225,
+      "output_sha256": "5dea25b735e9ba34ca5c412577ee8f641e0f851640dc3c1abe0596ae43b3cb92"
+    },
+    {
+      "tool": "bash",
+      "status": "completed",
+      "exit": 0,
+      "output_characters": 2421,
+      "output_sha256": "ceb0f5721ffe096e903c945f7fd9b5a32662f6219b5ccb440bc7bdcfa333b049"
+    },
+    {
+      "tool": "read",
+      "status": "completed",
+      "exit": null,
+      "output_characters": 242,
+      "output_sha256": "b6feeb300cb4e28d077bd4ef2eb4f6a3b69f5372cff6e067f13bd80c0892bd38"
+    },
+    {
+      "tool": "bash",
+      "status": "completed",
+      "exit": 0,
+      "output_characters": 2214,
+      "output_sha256": "5775a891db304fddf30b6e53167f6917526b69200d1447c1dd83c20c75be9aaf"
+    },
+    {
+      "tool": "bash",
+      "status": "completed",
+      "exit": 0,
+      "output_characters": 248,
+      "output_sha256": "e84169efa0af5ef8fd0030c13d7f581ebea067786886e949fe646aa7f620fc44"
+    },
+    {
+      "tool": "bash",
+      "status": "completed",
+      "exit": 0,
+      "output_characters": 1692,
+      "output_sha256": "62326eda48209065bf95748f9a23b77d3cb266566ea54fc44b03d38ffa73f754"
+    },
+    {
+      "tool": "bash",
+      "status": "completed",
+      "exit": 0,
+      "output_characters": 904,
+      "output_sha256": "584f39593b42c21db1559ec6363780d47b2e30826b0168b3240b05c2ad699afd"
+    },
+    {
+      "tool": "bash",
+      "status": "completed",
+      "exit": 0,
+      "output_characters": 4675,
+      "output_sha256": "1e8be079561a0e362262961655a5ee31e5cdab845cd5c51b64d56da916ef52e7"
+    }
+  ],
+  "stable_workers_and_weights": true,
+  "worker_pids": [
+    1639036,
+    1639037,
+    1639038,
+    1639039,
+    1639040,
+    1639041
+  ],
+  "baseline_restored": true,
+  "limitations": [
+    "One seed and one task; continued novel discovery is not an exact repeated-call loop.",
+    "The first request reused the stalled trial payload; the global config path and user environment timestamp changed at request two. The task and actual tool history were preserved.",
+    "Three earlier attempts had transport delivery failures; they are excluded from model behavior results.",
+    "This diagnostic used 32K context and the original pre-mitigation Kilo prompt, which still mentions 16K."
+  ]
+}

@@ -1,0 +1,248 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Resident-only experiment aligning normalization/rotary with the FP16 oracle."""
+
+import torch
+
+
+def gemma_forward(self, x, residual=None):
+    if residual is not None:
+        residual_dtype = residual.dtype
+        x = x + residual.to(x.dtype)
+        residual = x.to(residual_dtype)
+    values = x.float()
+    inverse = torch.rsqrt((values * values).mean(-1, keepdim=True) + self.variance_epsilon)
+    # Preserve 1 + weight in FP32 until the normalized output is rounded.
+    output = (values * inverse * (1 + self.weight.float())).to(x.dtype)
+    return output if residual is None else (output, residual)
+
+
+def fused_gemma_forward(self, x, residual=None):
+    """Normalize the FP32 residual sum, matching FlashInfer's fused convention.
+
+    The stored residual is rounded separately; it must not become the input
+    to normalization. Keep this distinct from the earlier FP16-oracle trial.
+    """
+    values = x.float()
+    if residual is not None:
+        values = values + residual.float()
+        residual = values.to(residual.dtype)
+    inverse = torch.rsqrt((values * values).mean(-1, keepdim=True) + self.variance_epsilon)
+    output = (values * inverse * (1 + self.weight.float())).to(x.dtype)
+    return output if residual is None else (output, residual)
+
+
+def fused_replacements(native_resources):
+    return {"vllm_ascend._310p.ops.layernorm:AscendGemmaRMSNorm310.forward": fused_gemma_forward}
+
+
+def rotary_forward(self, positions, query, key, is_neox_style, offsets=None):
+    if offsets is not None or not is_neox_style:
+        raise ValueError("M3 precision candidate requires offset-free NeoX rotary")
+    cache = self.cos_sin_cache.to(device=query.device, dtype=query.dtype)
+    cosine, sine = cache.index_select(0, positions).chunk(2, -1)
+    cosine, sine = cosine[:, None], sine[:, None]
+
+    def rotate(value):
+        shaped = value.view(len(positions), -1, self.head_size)
+        half = self.rotary_dim // 2
+        left, right = shaped[..., :half], shaped[..., half : self.rotary_dim]
+        return torch.cat(
+            (left * cosine - right * sine, right * cosine + left * sine, shaped[..., self.rotary_dim :]), -1
+        ).reshape(value.shape)
+
+    return rotate(query), rotate(key)
+
+
+def prior_precision_replacements(native_resources):
+    return {
+        "vllm_ascend._310p.ops.layernorm:AscendGemmaRMSNorm310.forward": gemma_forward,
+        "vllm_ascend._310p.ops.rotary_embedding:_rope_forward_oot": rotary_forward,
+    }
+
+# SPDX-License-Identifier: Apache-2.0
+"""Portable activation round trips for controlled M3.1 QAT experiments.
+
+These deliberately slow tensor references are not production quantized GEMMs.
+Native NVIDIA quantizers provide independent expected outputs for device gates.
+"""
+
+import torch
+
+
+def round_e4m3(value, power=torch.exp2):
+    absolute = value.float().abs()
+    step = power((torch.floor(torch.log2(absolute.clamp_min(2**-24))) - 3).clamp_min(-9))
+    return (torch.round(absolute / step) * step).clamp_max(448) * value.sign()
+
+
+def nvfp4_roundtrip(value, power=torch.exp2):
+    """E2M1 with E4M3 scales per 16 values; requires unit input global scale."""
+    groups = value.float().unflatten(-1, (-1, 16))
+    scale = round_e4m3(groups.abs().amax(-1) / 6, power)
+    # Reciprocal then multiply is intentional: division changes boundary ties
+    # compared with the native NVIDIA quantizer, even on the same GPU.
+    normalized = groups * torch.reciprocal(torch.where(scale > 0, scale, 1.0))[..., None]
+    absolute = normalized.abs()
+    step = power(torch.floor(torch.log2(absolute.clamp_min(1e-30))).clamp_min(0) - 1)
+    quantized = (torch.round(absolute / step) * step).clamp_max(6) * normalized.sign()
+    return (quantized * scale[..., None]).flatten(-2).to(value.dtype)
+
+
+def mxfp8_roundtrip(value, power=torch.exp2):
+    """E4M3 with ceiling-rounded power-of-two scales per 32 values."""
+    groups = value.float().unflatten(-1, (-1, 32))
+    scale = power(torch.ceil(torch.log2(torch.where(groups.abs().amax(-1) > 0, groups.abs().amax(-1), 1.0) / 448)))
+    quantized = round_e4m3(groups / scale[..., None], power)
+    return (quantized * scale[..., None]).flatten(-2).to(value.dtype)
+
+
+def quantized_dense_projection(prefix):
+    return ".layers." in prefix and prefix.endswith(
+        (
+            ".qkv_proj",
+            ".q_proj",
+            ".k_proj",
+            ".v_proj",
+            ".index_q_proj",
+            ".index_k_proj",
+            ".indexer_proj",
+            ".o_proj",
+            ".gate_up_proj",
+            ".down_proj",
+        )
+    )
+
+
+def warmup_activation_reference(device):
+    """Reserve CANN operator resources before source banks occupy device memory."""
+    host = torch.linspace(-6, 6, 512, dtype=torch.float16).reshape(8, 64)
+    value = host.to(device)
+    for function in (nvfp4_roundtrip, mxfp8_roundtrip):
+        actual = function(value).cpu()
+        expected = function(host)
+        if not torch.equal(actual, expected):
+            raise RuntimeError("Activation warmup disagrees with CPU; refusing to load the model")
+    if not torch.equal(value.float().cpu(), host.float()):
+        raise RuntimeError("Device cast corrupted during activation warmup")
+
+
+def activation_replacements(native_resources):
+    from pathlib import Path
+    import json
+    from vllm_ascend._310p.ops.minimax_m3 import SourceProjector
+    from vllm_ascend.ops.linear import AscendUnquantizedLinearMethod
+    audit=json.loads(Path('/workspace/m31-input-global-audit.json').read_text())
+    assert audit['banks']==342 and audit['counts']=={'1.0':21888} and not audit['nonunit_banks']
+    owned=torch.tensor([2.0**i for i in range(-126,128)],dtype=torch.float32)
+    table=owned.to('npu');torch.npu.synchronize()
+    def power(exponents):
+        return table.index_select(0,(exponents.clamp(-126,127)+126).long().flatten()).reshape(exponents.shape)
+    def quantize(x,fn):
+        return torch.cat([fn(chunk,power) for chunk in x.split(64)],0).contiguous()
+    original_project=SourceProjector.__call__
+    original_dense=AscendUnquantizedLinearMethod.apply
+    def project(self,x,codes,scales,ends):
+        return original_project(self,quantize(x,nvfp4_roundtrip),codes,scales,ends)
+    def dense(self,layer,x,bias=None):
+        if quantized_dense_projection(getattr(layer,'prefix','')):
+            x=quantize(x,mxfp8_roundtrip)
+        return original_dense(self,layer,x,bias)
+    return {'vllm_ascend._310p.ops.minimax_m3:SourceProjector.__call__':project,
+            'vllm_ascend.ops.linear:AscendUnquantizedLinearMethod.apply':dense}
+
+# SPDX-License-Identifier: Apache-2.0
+"""Resident diagnostic for fused FP32 QK math and identity-scaled FP8 history.
+
+Emulates rounding in FP16 storage; it does not compress the cache or reproduce
+the complete Hopper BF16/Marlin execution path.
+"""
+
+from types import FunctionType
+
+import torch
+
+
+
+DENSE_ABLATION_QUERY_TILE = 8
+
+
+def normalized_rotary(value, norm, cosine, sine, head_size, rotary_dim):
+    shaped = value.float().reshape(len(value), -1, head_size)
+    shaped = shaped * torch.rsqrt((shaped * shaped).mean(-1, keepdim=True) + norm.variance_epsilon)
+    shaped = shaped * (1 + norm.weight.float())
+    half = rotary_dim // 2
+    left, right = shaped[..., :half], shaped[..., half:rotary_dim]
+    return torch.cat(
+        (left * cosine - right * sine, right * cosine + left * sine, shaped[..., rotary_dim:]), -1
+    ).reshape(value.shape)
+
+
+def prepare(self, positions, hidden_states, quantize):
+    qkv, _ = self.qkv_proj(hidden_states)
+    main_size = self.q_size + 2 * self.kv_size
+    if self.indexer_proj is None:
+        q, k, v, iq, ik = qkv.split([self.q_size, self.kv_size, self.kv_size, self.index_q_size, self.idx_head_dim], -1)
+    else:
+        q, k, v = qkv[..., :main_size].split([self.q_size, self.kv_size, self.kv_size], -1)
+        indexed, _ = self.indexer_proj(hidden_states)
+        iq, ik = indexed.split([self.index_q_size, self.idx_head_dim], -1)
+    if not self.rotary_emb.is_neox_style:
+        raise ValueError("Attention candidate requires NeoX rotary")
+    cosine, sine = self.rotary_emb.cos_sin_cache.index_select(0, positions).float().chunk(2, -1)
+    cosine, sine = cosine[:, None], sine[:, None]
+
+    def transform(value, norm, head_size):
+        return normalized_rotary(value, norm, cosine, sine, head_size, self.rotary_emb.rotary_dim)
+
+    q = transform(q, self.q_norm, self.head_dim).to(qkv.dtype)
+    k = quantize(transform(k, self.k_norm, self.head_dim)).to(qkv.dtype)
+    iq = quantize(transform(iq, self.index_q_norm, self.idx_head_dim)).to(qkv.dtype)
+    ik = quantize(transform(ik, self.index_k_norm, self.idx_head_dim)).to(qkv.dtype)
+    return q, k, quantize(v.float()).to(qkv.dtype).contiguous(), iq, ik
+
+
+def attention_replacements(native_resources):
+    # Reuse exact powers without introducing a late CANN Pow allocation.
+    owned = torch.tensor([2.0**i for i in range(-126, 128)], dtype=torch.float32)
+    table = owned.to("npu")
+    torch.npu.synchronize()
+
+    def power(exponents):
+        return table.index_select(0, (exponents.clamp(-126, 127) + 126).long().flatten()).reshape(exponents.shape)
+
+    def candidate(self, positions, hidden_states):
+        return prepare(self, positions, hidden_states, lambda value: round_e4m3(value, power))
+
+    return {"vllm_ascend.models.minimax_m3.minimax_m3:MiniMaxM3SparseAttention._sparse_prepare": candidate}
+
+
+def dense_replacements(native_resources):
+    """Diagnostic ablation only: retain every visible block instead of top 16.
+
+    Smaller query tiles bound gather scratch. This changes the model's trained
+    attention pattern and must not be promoted as a source-equivalent fix.
+    """
+    # Lazy import keeps the reference helpers usable without serving dependencies.
+    from vllm_ascend._310p.ops.minimax_m3 import paged_sparse_attention
+
+    tiled = FunctionType(
+        paged_sparse_attention.__code__,
+        {**paged_sparse_attention.__globals__, "ATTENTION_QUERY_TILE": DENSE_ABLATION_QUERY_TILE},
+        argdefs=paged_sparse_attention.__defaults__,
+        closure=paged_sparse_attention.__closure__,
+    )
+    tiled.__kwdefaults__ = paged_sparse_attention.__kwdefaults__
+
+    def all_blocks(*args, **kwargs):
+        block_size = args[5].shape[1]
+        kwargs["topk_blocks"] = (kwargs["max_seq_len"] + block_size - 1) // block_size
+        return tiled(*args, **kwargs)
+
+    return {"vllm_ascend.models.minimax_m3.minimax_m3:paged_sparse_attention": all_blocks}
+
+def replacements(native_resources):
+    return {**fused_replacements(native_resources), **activation_replacements(native_resources), **attention_replacements(native_resources)}
+
+source_replacements=replacements
+def replacements(native_resources):
+    return {**source_replacements(native_resources), **dense_replacements(native_resources)}

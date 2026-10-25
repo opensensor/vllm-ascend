@@ -1,0 +1,37 @@
+{
+  "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "I have a good picture. Let me summarize the project.\n\nLet me check the README briefly for the official description and the fork relationship.",
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-b067f5bc284f6a3a",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\":\"head -60 README.md\",\"description\":\"Read README header\"}"
+        }
+      },
+      {
+        "id": "chatcmpl-tool-a542e8378f8d998c",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\":\"git remote -v; echo \\\"---\\\"; git log --oneline -3\",\"description\":\"Show remotes and recent commits\"}"
+        }
+      }
+    ]
+  },
+  "finish_reason": "tool_calls",
+  "usage": {
+    "prompt_tokens": 5549,
+    "total_tokens": 5668,
+    "completion_tokens": 119,
+    "completion_tokens_details": {
+      "reasoning_tokens": 27
+    }
+  },
+  "first_output_seconds": 258.63796055997955,
+  "elapsed_seconds": 460.56117999600247,
+  "status": 200
+}

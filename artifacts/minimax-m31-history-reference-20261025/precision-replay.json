@@ -1,0 +1,39 @@
+{
+  "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "I have a good picture. Let me summarize the project.\n\nLet me check the README briefly for the official description and the fork relationship.",
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-91e447b5f81da35c",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\":\"head -60 README.md\",\"description\":\"Read README head\"}"
+        }
+      },
+      {
+        "id": "chatcmpl-tool-8972e241326e2144",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\":\"git remote -v; echo \\\"---\\\"; git branch -a | head -20\",\"description\":\"Show remotes and branches\"}"
+        }
+      }
+    ]
+  },
+  "finish_reason": "tool_calls",
+  "usage": {
+    "prompt_tokens": 5549,
+    "total_tokens": 5668,
+    "completion_tokens": 119,
+    "completion_tokens_details": {
+      "reasoning_tokens": 27
+    }
+  },
+  "first_output_seconds": 172.90904814196983,
+  "elapsed_seconds": 355.1297148860176,
+  "status": 200,
+  "raw_generated_text": "<mm:think>I have a good picture. Let me summarize the project.\n\nLet me check the README briefly for the official description and the fork relationship.</mm:think>]<]minimax[>[<tool_call>\n]<]minimax[>[<invoke name=\"bash\">]<]minimax[>[<command>head -60 README.md]<]minimax[>[</command>]<]minimax[>[<description>Read README head]<]minimax[>[</description>]<]minimax[>[</invoke>\n]<]minimax[>[<invoke name=\"bash\">]<]minimax[>[<command>git remote -v; echo \"---\"; git branch -a | head -20]<]minimax[>[</command>]<]minimax[>[<description>Show remotes and branches]<]minimax[>[</description>]<]minimax[>[</invoke>\n]<]minimax[>[</tool_call>[e~[",
+  "raw_token_count": 119
+}

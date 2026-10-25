@@ -1,0 +1,17 @@
+import json
+from pathlib import Path
+import torch
+from tokenizers import Tokenizer
+initial=torch.load('/tmp/m31-independent-canonical/logits.pt',weights_only=True)
+following=torch.load('/tmp/m31-independent-teacher/logits.pt',weights_only=True)
+logits=torch.cat([initial,following]);targets=torch.tensor(json.loads(Path('/tmp/m31-teacher-targets.json').read_text())['tokens'])
+predicted=logits.argmax(-1);match=predicted==targets
+bad=torch.where(~match)[0].tolist();common=bad[0] if bad else len(targets)
+t=Tokenizer.from_file('/run/media/matteius/20TB-drive/models/MiniMax-M3.1-Flash/tokenizer.json')
+records=[]
+for i in bad:
+ probabilities=logits[i].softmax(-1);values,ids=probabilities.topk(3)
+ records.append({'offset':i,'target_token':t.decode([int(targets[i])],skip_special_tokens=False),'reference_token':t.decode([int(predicted[i])],skip_special_tokens=False),'target_probability':float(probabilities[targets[i]]),'reference_probability':float(probabilities[predicted[i]]),'top_ids':ids.tolist(),'top_probabilities':values.tolist()})
+result={'tokens':len(targets),'greedy_matches':int(match.sum()),'first_mismatch':None if not bad else common,'greedy_prefix_text':t.decode(targets[:common].tolist(),skip_special_tokens=False),'mismatches':records,'scope':'Teacher-forced captured precision-candidate continuation, independent full prefix/KV and independently propagated suffix. After the first mismatch, later rows are conditional comparisons, not an independently generated trajectory.'}
+Path('artifacts/minimax-m31-history-reference-20261025/teacher-comparison.json').write_text(json.dumps(result,indent=2)+'\n')
+print(json.dumps({k:v for k,v in result.items() if k!='mismatches'},indent=2));print(json.dumps(records[:8],indent=2))

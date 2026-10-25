@@ -1,0 +1,39 @@
+{
+  "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "I have a good picture. Let me summarize the project.\n\nLet me check the README briefly for the official description and the fork relationship.",
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-ba0ad2433900bc3c",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\":\"head -60 README.md\",\"description\":\"Read README header\"}"
+        }
+      },
+      {
+        "id": "chatcmpl-tool-b29579b21466de50",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\":\"git remote -v; echo \\\"---\\\"; git log --oneline -3\",\"description\":\"Show remotes and recent commits\"}"
+        }
+      }
+    ]
+  },
+  "finish_reason": "tool_calls",
+  "usage": {
+    "prompt_tokens": 5549,
+    "total_tokens": 5668,
+    "completion_tokens": 119,
+    "completion_tokens_details": {
+      "reasoning_tokens": 27
+    }
+  },
+  "first_output_seconds": 260.15401118795853,
+  "elapsed_seconds": 468.81619809998665,
+  "status": 200,
+  "stable_workers_and_weights": true,
+  "scope": "Held-history continuation with activation quantization, fused FP32 residual normalization and FP8-rounded history; still FP16 storage"
+}

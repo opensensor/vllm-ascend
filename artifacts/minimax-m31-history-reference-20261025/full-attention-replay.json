@@ -1,0 +1,39 @@
+{
+  "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "I have a good picture. Let me summarize the project.\n\nLet me check the README briefly for the official description and the fork relationship.",
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-b641266207ed59c9",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\":\"head -60 README.md\",\"description\":\"Read README head\"}"
+        }
+      },
+      {
+        "id": "chatcmpl-tool-b96d180933b080af",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\":\"git log --oneline -1; git branch -a | head; echo \\\"---\\\"; git remote -v\",\"description\":\"Show repo state and remotes\"}"
+        }
+      }
+    ]
+  },
+  "finish_reason": "tool_calls",
+  "usage": {
+    "prompt_tokens": 5549,
+    "total_tokens": 5675,
+    "completion_tokens": 126,
+    "completion_tokens_details": {
+      "reasoning_tokens": 27
+    }
+  },
+  "first_output_seconds": 283.4899256009958,
+  "elapsed_seconds": 507.405865652021,
+  "status": 200,
+  "stable_workers_and_weights": true,
+  "scope": "Held-history continuation; full attention is an ablation of the trained sparse pattern"
+}

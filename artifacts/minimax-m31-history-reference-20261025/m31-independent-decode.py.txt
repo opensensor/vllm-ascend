@@ -1,0 +1,28 @@
+import contextlib,json,time
+from argparse import Namespace
+from pathlib import Path
+import torch
+from tokenizers import Tokenizer
+from tools.minimax_m3.history_reference import run
+root=Path('/tmp/m31-independent-decode');root.mkdir(exist_ok=True)
+model=Path('/run/media/matteius/20TB-drive/models/MiniMax-M3.1-Flash')
+prefix=Path('/tmp/m31-independent-canonical')
+ids=json.loads(Path('/tmp/m31-production-all-trace/tokenize.json').read_text())['tokens']
+tokenizer=Tokenizer.from_file(str(model/"tokenizer.json"))
+generated=[];records=[];started=time.monotonic()
+torch.set_num_threads(4)
+for step in range(48):
+ logits=torch.load(prefix/'logits.pt',weights_only=True)
+ token=int(logits.argmax(-1));generated.append(token);ids.append(token)
+ records.append({'step':step,'token_id':token,'seconds':time.monotonic()-started})
+ text=tokenizer.decode(generated,skip_special_tokens=False)
+ (root/'generation.json').write_text(json.dumps({'records':records,'text':text},indent=2))
+ print(step,repr(tokenizer.decode([token],skip_special_tokens=False)),round(time.monotonic()-started,2),flush=True)
+ if token in (tokenizer.token_to_id("]~e]"),): break
+ output=root/f'step-{step:03d}';output.mkdir(exist_ok=True)
+ tokens=output/'tokens.json';tokens.write_text(json.dumps({'tokens':ids}))
+ args=Namespace(model=model,tokens=tokens,output=output,observed=None,device='cuda:0',cuda_memory_gib=8,tp=2,layers=60,resume=False,activation_format='fp16',save_kv=True,prefix_cache=prefix)
+ with (output/'layers.log').open('w') as log,contextlib.redirect_stdout(log),torch.inference_mode():run(args)
+ if prefix.parent==root:
+  for kv in prefix.glob("kv-*.pt"):kv.unlink()
+ prefix=output
