@@ -1,0 +1,103 @@
+import json,math,time
+from functools import lru_cache
+from pathlib import Path
+import torch
+from safetensors import safe_open
+
+torch.set_num_threads(8)
+root=Path('/run/media/matteius/20TB-drive/models/MiniMax-M3.1-Flash');trace=Path('/tmp/m31-production-all-trace')
+config=json.loads((root/'config.json').read_text())['text_config'];index=json.loads((root/'model.safetensors.index.json').read_text())['weight_map']
+
+def tensor(name):
+ with safe_open(root/index[name],framework='pt',device='cpu') as f:return f.get_tensor(name).clone()
+@lru_cache(maxsize=None)
+def weight(name):
+ base=name.removesuffix('.weight')
+ if base+'.weight_packed' in index:
+  p=tensor(base+'.weight_packed');s=tensor(base+'.weight_scale').float();g=tensor(base+'.weight_global_scale').float()
+  c=torch.stack((p&15,p>>4),-1).flatten(-2).long();lut=torch.tensor([0,.5,1,1.5,2,3,4,6,0,-.5,-1,-1.5,-2,-3,-4,-6])
+  return (lut[c]*(s/g).repeat_interleave(16,-1)).half()
+ w=tensor(name)
+ if base+'.weight_scale_inv' in index:w=w.float()*torch.pow(2.,tensor(base+'.weight_scale_inv').float()-127).repeat_interleave(32,-1)
+ return w.float() if w.dtype==torch.float32 and not base+'.weight_scale_inv' in index else w.half()
+def linear(x,w):return (x.float()@w.float().T).half()
+def norm(x,w):
+ f=x.float();return (f*torch.rsqrt(f.square().mean(-1,keepdim=True)+config['rms_norm_eps'])*(1+w.float())).half()
+def rope(x,pos):
+ dim=config['rotary_dim'];half=dim//2;inv=1/(config['rope_theta']**(torch.arange(0,dim,2).float()/dim));a=pos.float()[:,None]*inv
+ c,s=a.cos().half()[:,None],a.sin().half()[:,None];l,r=x[...,:half],x[...,half:dim]
+ return torch.cat((l*c-r*s,r*c+l*s,x[...,dim:]),-1)
+def activation(g,u):return (g.float().clamp(max=7)*torch.sigmoid(config['swiglu_alpha']*g.float().clamp(max=7))*(u.float().clamp(-7,7)+1)).half()
+def metrics(actual,expected):
+ a,e=actual.float().flatten(),expected.float().flatten();finite=torch.isfinite(a)&torch.isfinite(e)
+ if not finite.all():
+  if not torch.equal(torch.isfinite(a),torch.isfinite(e)):return {'finite_pattern_equal':False}
+  a,e=a[finite],e[finite]
+ diff=a-e
+ return {'nrmse':float(diff.norm()/e.norm().clamp_min(1e-20)),'max_abs':float(diff.abs().max()),'cosine':float(torch.nn.functional.cosine_similarity(a[None],e[None])[0])}
+rows={rank:torch.load(trace/f'rank{rank}.pt',map_location='cpu',weights_only=True) for rank in range(6)}
+reports=json.loads((trace/'resume.json').read_text()) if (trace/'resume.json').exists() else [];done={(r['layer'],r['phase']) for r in reports};started=time.time();previous_layer=None
+for identity in sorted(set(k for v in rows.values() for k in v)):
+ if identity in done:continue
+ layer,phase=identity
+ if layer!=previous_layer:weight.cache_clear();previous_layer=layer
+ ranks=[rank for rank in rows if identity in rows[rank]];assert len(ranks)==2
+ prefix=f'language_model.model.layers.{layer}.';parts=[];report={'layer':layer,'phase':phase,'ranks':ranks,'checks':{}};moe_refs=[];dense_refs=[]
+ for rank in ranks:
+  record=rows[rank][identity];tp=rank%2;checks={};base=record['hidden_in'] if record['residual_in'] is None else (record['hidden_in']+record['residual_in']).half()
+  x=norm(base,weight(prefix+'input_layernorm.weight'));checks['input_norm']=metrics(record['attention_input'],x)
+  # Use observed normalized input to isolate downstream arithmetic/layout.
+  x=record['attention_input'];qkv={}
+  for name in ('q','k','v','index_q','index_k'):
+   w=weight(prefix+'self_attn.'+name+'_proj.weight')
+   if name!='index_k':w=w.chunk(2,0)[tp]
+   y=linear(x,w).view(1,-1,128)
+   if name!='v':y=rope(norm(y,weight(prefix+'self_attn.'+name+'_norm.weight')),record['positions'])
+   qkv[name]=y;checks['projection_norm_rope_'+name]=metrics(record['qkv'][name],y.flatten(1))
+  for cache_name,qkv_name in (('key_history','k'),('value_history','v'),('index_history','index_k')):
+   checks['cache_last_'+qkv_name+'_exact']=torch.equal(record[cache_name][-1:].flatten(1),record['qkv'][qkv_name])
+   if phase=='decode':
+    old=rows[rank][(layer,'prefill')][cache_name];checks['cache_prefix_'+qkv_name+'_exact']=torch.equal(record[cache_name][:len(old)],old)
+  length=record['length'];blocks=math.ceil(length/128);ik=record['index_history'];iq=record['qkv']['index_q'].view(1,-1,128)
+  scores=(iq.float()@ik.float().T);scores=torch.nn.functional.pad(scores,(0,blocks*128-length),value=-torch.inf).view(1,-1,blocks,128).amax(-1);scores[...,-1]=1e29
+  output=[]
+  for head,observed in sorted(record['selection'].items()):
+   selected=scores[:,head].topk(min(16,blocks),-1).indices;actual_ids=observed['selected']
+   checks['index_scores_'+str(head)]=metrics(observed['scores'][:,:-1],scores[:,head,:-1]);checks['selected_blocks_equal_'+str(head)]=torch.equal(selected.sort().values,actual_ids.sort().values)
+   # Actual selected blocks isolate attention arithmetic from any selection difference.
+   positions=(actual_ids[...,None]*128+torch.arange(128)).flatten();positions=positions[positions<length]
+   k=record['key_history'][positions,head].float();v=record['value_history'][positions,head].float()
+   q=record['qkv']['q'].view(1,32,128)[0,head*16:(head+1)*16].float()
+   output.append(((q@k.T/math.sqrt(128)).softmax(-1)@v).half())
+  attention=torch.cat(output,0).reshape(1,-1);checks['sparse_attention_actual_selection']=metrics(record['attention_raw'],attention)
+  o=weight(prefix+'self_attn.o_proj.weight').chunk(2,-1)[tp];parts.append(linear(record['attention_raw'],o))
+  post=norm((base+record['attention_projected']).half(),weight(prefix+'post_attention_layernorm.weight'))
+  if 'mlp_input' in record:
+   checks['post_attention_norm']=metrics(record['mlp_input'],post);x=record['mlp_input'];mp=prefix+'mlp.'
+   g=linear(x,weight(mp+'gate_proj.weight').chunk(2,0)[tp]);u=linear(x,weight(mp+'up_proj.weight').chunk(2,0)[tp]);dense_refs.append(linear(activation(g,u),weight(mp+'down_proj.weight').chunk(2,-1)[tp]))
+  if layer==59 and 'final_norm' in record:
+   checks['final_norm']=metrics(record['final_norm'],norm((record['hidden_out']+record['residual_out']).half(),weight('language_model.model.norm.weight')))
+   if record.get('logits') is not None:
+    head=weight('language_model.lm_head.weight');expected=linear(record['final_norm'],head).float();checks['logits']=metrics(record['logits'],expected);checks['logits_top10_equal']=torch.equal(record['logits'].topk(10).indices,expected.topk(10).indices)
+  if layer>0:
+   previous=next(v[(layer-1,phase)] for rr,v in rows.items() if rr%2==tp and (layer-1,phase) in v)
+   checks['previous_hidden_exact']=torch.equal(record['hidden_in'],previous['hidden_out']);checks['previous_residual_exact']=torch.equal(record['residual_in'],previous['residual_out'])
+  if 'moe_input' in record:
+   checks['post_attention_norm']=metrics(record['moe_input'],post);moep=prefix+'block_sparse_moe.';x=record['moe_input']
+   logits=x.float()@weight(moep+'gate.weight').float().T;scores_router=logits.sigmoid();ids=(scores_router+weight(moep+'e_score_correction_bias')).topk(4,-1).indices;probs=scores_router.gather(-1,ids);probs/=probs.sum(-1,keepdim=True)
+   checks['router_logits']=metrics(record['router_logits'],logits);checks['router_ids_equal']=torch.equal(ids,record['routing_ids']);checks['router_weights']=metrics(record['routing_weights'],probs)
+   # Compare actual routed IDs independently from possible selection errors.
+   local=torch.zeros_like(x,dtype=torch.float32)
+   for route,expert in enumerate(record['routing_ids'][0].tolist()):
+    if expert//64!=tp:continue
+    ep=moep+f'experts.{expert}.';g=linear(x,weight(ep+'w1.weight'));u=linear(x,weight(ep+'w3.weight'));y=linear(activation(g,u),weight(ep+'w2.weight'))
+    local+=y.float()*record['routing_weights'][0,route]
+   local*=config['routed_scaling_factor'];checks['source_experts_local']=metrics(record['routed_local_output'],local)
+   g=linear(x,weight(moep+'shared_experts.gate_proj.weight').chunk(2,0)[tp]);u=linear(x,weight(moep+'shared_experts.up_proj.weight').chunk(2,0)[tp]);shared=linear(activation(g,u),weight(moep+'shared_experts.down_proj.weight').chunk(2,-1)[tp]);moe_refs.append(local+shared.float())
+  report['checks'][str(rank)]=checks
+ projected=torch.stack(parts).sum(0).half();report['attention_projection_tp_sum']=metrics(rows[ranks[0]][identity]['attention_projected'],projected)
+ report['tp_attention_output_equal']=torch.equal(rows[ranks[0]][identity]['attention_projected'],rows[ranks[1]][identity]['attention_projected'])
+ if dense_refs:report['complete_dense_mlp']=metrics(rows[ranks[0]][identity]['hidden_out'],sum(dense_refs).half())
+ if moe_refs:report['complete_moe']=metrics(rows[ranks[0]][identity]['hidden_out'],sum(moe_refs).half())
+ reports.append(report);print(json.dumps(report),flush=True)
+result={'scope':'Actual final prefill token and first decode step of failing 5549-token history, production ops; CPU source-weight references with FP16 activations. Cached historical K/V are captured device values, not independently recomputed history.','layers':reports,'seconds_this_invocation':time.time()-started,'resumed_records':len(done)};(trace/'comparison.json').write_text(json.dumps(result,indent=2)+'\n')

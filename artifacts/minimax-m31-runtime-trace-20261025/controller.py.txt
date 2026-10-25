@@ -1,0 +1,23 @@
+import fcntl,json,uuid,time
+from pathlib import Path
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.minimax_m3.tool_probe import chat_request
+c=ResidentClient('http://127.0.0.1:8000',6,timeout=3600);out=Path('/workspace/m31-production-all-trace');out.mkdir(exist_ok=True)
+with Path('/tmp/minimax-m31-resident.lock').open('w') as lock:
+ fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+ assert not c.request('/is_paused',method='GET')['is_paused']
+ assert not c.request('/resident/maintenance',method='GET')['maintenance']
+ before=c.rpc('resident_status');c.request('/resident/maintenance')
+ try:
+  source=Path('/workspace/m31-production-all-hooks.py').read_text()
+  c.switch(Control(uuid.uuid4().hex,'direct-target','production_trace',source));c.resume();c.rpc('resident_capture','arm')
+  p=json.loads(Path('/workspace/m31-loop-replay-payload.json').read_text());p.update(temperature=0,seed=71,max_tokens=2)
+  print('starting',time.time(),flush=True);r=chat_request(c.base_url,p,timeout=3600)
+  (out/'response.json').write_text(json.dumps(r,indent=2)+'\n');print('response',r.get('status'),r.get('usage'),flush=True)
+  status=c.rpc('resident_capture','save');(out/'status.json').write_text(json.dumps(status,indent=2)+'\n')
+  assert sum(len(x['trace_layers']) for x in status)==240,status
+ finally:
+  c.switch(Control(uuid.uuid4().hex,'direct-target','baseline',''));c.resume();c.request('/resident/maintenance',method='DELETE')
+ after=c.rpc('resident_status');assert [(x['rank'],x['pid'],x['weight_storage_digest']) for x in before]==[(x['rank'],x['pid'],x['weight_storage_digest']) for x in after]
+ print('trace complete; workers and weight storage preserved',flush=True)

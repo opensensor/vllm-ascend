@@ -1,0 +1,104 @@
+def replacements(native_resources):
+    import ast
+    import inspect
+    from pathlib import Path
+    import torch
+    from vllm.forward_context import get_forward_context
+    from vllm_ascend._310p.ops import minimax_m3 as ops
+    from vllm_ascend.models.minimax_m3.minimax_m3 import MiniMaxM3DecoderLayer, MiniMaxM3SparseAttention, MiniMaxM3SparseForCausalLM, MiniMaxM3MLP
+    state={'armed':False,'active':None,'records':{}}
+    targets=set(range(60))
+    original_layer=inspect.unwrap(MiniMaxM3DecoderLayer.forward)
+    original_prepare=MiniMaxM3SparseAttention._sparse_prepare
+    original_attention=MiniMaxM3SparseAttention.forward
+    original_run=MiniMaxM3SparseAttention._run_sparse_attention
+    original_experts=ops.PackedM3Experts.forward
+    original_logits=MiniMaxM3SparseForCausalLM.compute_logits
+    original_mlp=MiniMaxM3MLP.forward
+    def mlp(self,hidden_states):
+        if state["active"] is not None and state["active"]["layer"]<3:
+            state["active"]["mlp_input"]=cpu(hidden_states[-1:])
+        return original_mlp(self,hidden_states)
+    def logits(self,hidden_states):
+        result=original_logits(self,hidden_states)
+        if state["armed"]:
+            phase="decode" if (59,"decode") in state["records"] else "prefill"
+            record=state["records"].get((59,phase))
+            if record is not None:
+                record["final_norm"]=cpu(hidden_states[-1:])
+                record["logits"]=cpu(result[-1:]) if result is not None else None
+        return result
+    def cpu(x):return x.detach().cpu().clone() if x is not None else None
+    def observe(head,scores,selected):
+        record=state['active']
+        if record is not None:
+            record.setdefault('selection',{})[head]={'head':head,'scores':cpu(scores[-1:]),'selected':cpu(selected[-1:])}
+    module_text=Path(ops.__file__).read_text()
+    node=next(n for n in ast.parse(module_text).body if isinstance(n,ast.FunctionDef) and n.name=='paged_sparse_attention')
+    text=ast.get_source_segment(module_text,node)
+    marker='selected = head_scores.topk(min(topk_blocks, num_blocks), -1).indices'
+    assert text.count(marker)==1
+    text=text.replace(marker,marker+'\n                observe(head, head_scores, selected)')
+    namespace={'torch':torch,'ATTENTION_QUERY_TILE':ops.ATTENTION_QUERY_TILE,'observe':observe}
+    exec(text,namespace)
+    def layer(self,positions,hidden_states,residual):
+        phase='decode' if hidden_states.shape[0]==1 else 'prefill'
+        identity=(self.layer_idx,phase)
+        enabled=state['armed'] and self.layer_idx in targets and identity not in state['records'] and int(positions[-1].cpu()) in (5548,5549)
+        if enabled:
+            record={'layer':self.layer_idx,'phase':phase,'batch_tokens':hidden_states.shape[0],'positions':cpu(positions[-1:]),'hidden_in':cpu(hidden_states[-1:]),'residual_in':cpu(residual[-1:]) if residual is not None else None}
+            state['active']=record
+        try:
+            result=original_layer(self,positions,hidden_states,residual)
+            if enabled:
+                record.update(hidden_out=cpu(result[0][-1:]),residual_out=cpu(result[1][-1:]))
+                state['records'][identity]=record
+            return result
+        finally:
+            if enabled:state['active']=None
+    def prepare(self,positions,hidden_states):
+        result=original_prepare(self,positions,hidden_states)
+        if state['active'] is not None:
+            state['active']['attention_input']=cpu(hidden_states[-1:])
+            state['active']['qkv']={name:cpu(x[-1:]) for name,x in zip(('q','k','v','index_q','index_k'),result)}
+        return result
+    def attention(self,positions,hidden_states):
+        result=original_attention(self,positions,hidden_states)
+        if state['active'] is not None:state['active']['attention_projected']=cpu(result[-1:])
+        return result
+    def run(self,query,key,value,index_query,index_key,attn_output):
+        result=original_run(self,query,key,value,index_query,index_key,attn_output)
+        record=state['active']
+        if record is not None:
+            metadata=get_forward_context().attn_metadata
+            main,index=metadata[self.layer_name],metadata[self.indexer.index_cache.prefix]
+            length=int(main.seq_lens[0].cpu());blocks=(length+127)//128
+            record['length']=length;record['query_starts']=main.query_starts
+            for kind,cache in (('key_history',self.kv_cache[0]),('value_history',self.kv_cache[1])):
+                record[kind]=cpu(cache.index_select(0,main.block_table[0,:blocks].long())).flatten(0,1)[:length].clone()
+            cache=self.indexer.index_cache.kv_cache
+            if isinstance(cache,(tuple,list)):cache=cache[0]
+            record['index_history']=cpu(cache.index_select(0,index.block_table[0,:blocks].long())).flatten(0,1)[:length].clone()
+            record['attention_raw']=cpu(attn_output[-1:])
+        return result
+    def experts(self,hidden_states,router_logits,correction_bias=None):
+        result=original_experts(self,hidden_states,router_logits,correction_bias)
+        record=state['active']
+        if record is not None:
+            weights,ids=ops.route_experts(router_logits,correction_bias,self.top_k)
+            record.update(moe_input=cpu(hidden_states[-1:]),router_logits=cpu(router_logits[-1:]),routing_weights=cpu(weights[-1:]),routing_ids=cpu(ids[-1:]),routed_local_output=cpu(result[-1:]))
+        return result
+    def capture(self,action=None):
+        self._m3_idle()
+        if action=='arm':state.update(armed=True,active=None,records={})
+        elif action=='save':
+            state['armed']=False
+            path=Path('/workspace/m31-production-all-trace')/f'rank{self.rank}.pt'
+            torch.save(state['records'],path)
+        return {**self.resident_status(),'trace_layers':list(state['records'])}
+    model='vllm_ascend.models.minimax_m3.minimax_m3:'
+    return {model+'MiniMaxM3SparseForCausalLM.compute_logits':logits,model+'MiniMaxM3MLP.forward':mlp,model+'MiniMaxM3DecoderLayer.forward':layer,model+'MiniMaxM3SparseAttention._sparse_prepare':prepare,model+'MiniMaxM3SparseAttention.forward':attention,model+'MiniMaxM3SparseAttention._run_sparse_attention':run,
+            model+'paged_sparse_attention':namespace['paged_sparse_attention'],
+            'vllm_ascend._310p.ops.minimax_m3:paged_sparse_attention':namespace['paged_sparse_attention'],
+            'vllm_ascend._310p.ops.minimax_m3:PackedM3Experts.forward':experts,
+            'vllm_ascend._310p.worker_310p:NPUWorker310.resident_capture':capture}

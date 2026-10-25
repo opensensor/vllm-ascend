@@ -1,0 +1,44 @@
+import json,math,time
+from pathlib import Path
+import torch
+from safetensors import safe_open
+
+torch.set_num_threads(8)
+root=Path('/run/media/matteius/20TB-drive/models/MiniMax-M3.1-Flash');trace=Path('/tmp/m31-production-all-trace')
+config=json.loads((root/'config.json').read_text())['text_config'];index=json.loads((root/'model.safetensors.index.json').read_text())['weight_map']
+
+def tensor(name):
+ with safe_open(root/index[name],framework='pt',device='cpu') as f:return f.get_tensor(name).clone()
+def weight(name):
+ base=name.removesuffix('.weight')
+ if base+'.weight_packed' in index:
+  p=tensor(base+'.weight_packed');s=tensor(base+'.weight_scale').float();g=tensor(base+'.weight_global_scale').float()
+  c=torch.stack((p&15,p>>4),-1).flatten(-2).long();lut=torch.tensor([0,.5,1,1.5,2,3,4,6,0,-.5,-1,-1.5,-2,-3,-4,-6])
+  return (lut[c]*(s/g).repeat_interleave(16,-1)).half()
+ w=tensor(name)
+ if base+'.weight_scale_inv' in index:w=w.float()*torch.pow(2.,tensor(base+'.weight_scale_inv').float()-127).repeat_interleave(32,-1)
+ return w.float() if w.dtype==torch.float32 and not base+'.weight_scale_inv' in index else w.half()
+def linear(x,w):return (x.float()@w.float().T).half()
+def norm(x,w):
+ f=x.float();return (f*torch.rsqrt(f.square().mean(-1,keepdim=True)+config['rms_norm_eps'])*(1+w.float())).half()
+def rope(x,pos):
+ dim=config['rotary_dim'];half=dim//2;inv=1/(config['rope_theta']**(torch.arange(0,dim,2).float()/dim));a=pos.float()[:,None]*inv
+ c,s=a.cos().half()[:,None],a.sin().half()[:,None];l,r=x[...,:half],x[...,half:dim]
+ return torch.cat((l*c-r*s,r*c+l*s,x[...,dim:]),-1)
+def activation(g,u):return (g.float().clamp(max=7)*torch.sigmoid(config['swiglu_alpha']*g.float().clamp(max=7))*(u.float().clamp(-7,7)+1)).half()
+def metrics(actual,expected):
+ a,e=actual.float().flatten(),expected.float().flatten();finite=torch.isfinite(a)&torch.isfinite(e)
+ if not finite.all():
+  if not torch.equal(torch.isfinite(a),torch.isfinite(e)):return {'finite_pattern_equal':False}
+  a,e=a[finite],e[finite]
+ diff=a-e
+ return {'nrmse':float(diff.norm()/e.norm().clamp_min(1e-20)),'max_abs':float(diff.abs().max()),'cosine':float(torch.nn.functional.cosine_similarity(a[None],e[None])[0])}
+rows={rank:torch.load(trace/f'rank{rank}.pt',map_location='cpu',weights_only=True) for rank in range(6)}
+
+ids=json.loads((trace/'tokenize.json').read_text())['tokens'];assert len(ids)==5549
+embed=weight('language_model.model.embed_tokens.weight')
+checks={}
+checks['prefill_embedding_exact']=torch.equal(rows[0][(0,'prefill')]['hidden_in'],embed[ids[-1]][None])
+logits=next(v[(59,'prefill')]['logits'] for v in rows.values() if (59,'prefill') in v and v[(59,'prefill')].get('logits') is not None)
+token=int(logits.argmax(-1)[0]);checks['greedy_decode_embedding_exact']=torch.equal(rows[0][(0,'decode')]['hidden_in'],embed[token][None]);checks['prompt_tokens']=len(ids)
+(trace/'embedding-comparison.json').write_text(json.dumps(checks,indent=2)+'\n');print(checks)
