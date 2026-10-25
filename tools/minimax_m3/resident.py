@@ -12,9 +12,9 @@ from tools.glm_perf.resident_harness import ResidentClient
 from tools.glm_perf.resident_native import NativeManifest
 
 
-def candidate_source(module_source=None, native_name=None, activation_name=None):
+def candidate_source(module_source=None, native_name=None, activation_name=None, graph_source=None):
     """Compose a complete generation; switching restores the prior generation."""
-    if module_source is None and native_name is None and activation_name is None:
+    if module_source is None and native_name is None and activation_name is None and graph_source is None:
         return ""
     source = "import types\n\ndef replacements(native_resources):\n    changes = {}\n"
     if module_source is not None:
@@ -45,6 +45,13 @@ def candidate_source(module_source=None, native_name=None, activation_name=None)
         )
         if module_source is not None:
             source += "    module.clipped_swiglu = activation\n"
+    if graph_source is not None:
+        source += (
+            "    graph = types.ModuleType('m31_graph_candidate')\n"
+            f"    exec(compile({graph_source!r}, '<graph_candidate>', 'exec'), graph.__dict__)\n"
+            "    return graph.add_replacements(changes)\n"
+        )
+        return source
     return source + "    return changes\n"
 
 
@@ -56,6 +63,9 @@ def main():
     parser.add_argument("--module-file", type=Path)
     parser.add_argument("--native-name")
     parser.add_argument("--activation-name")
+    parser.add_argument(
+        "--partial-graphs", action="store_true", help="Capture decode pieces around eager sparse attention"
+    )
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -74,6 +84,7 @@ def main():
                         args.module_file.read_text() if args.module_file else None,
                         args.native_name,
                         args.activation_name,
+                        Path(__file__).with_name("partial_graph.py").read_text() if args.partial_graphs else None,
                     )
                     result = client.switch(
                         Control(uuid.uuid4().hex, "direct-target", "m3_candidate" if source else "baseline", source)

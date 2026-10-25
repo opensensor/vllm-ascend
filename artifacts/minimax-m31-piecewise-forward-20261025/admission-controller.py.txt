@@ -1,0 +1,36 @@
+import dataclasses,fcntl,json,uuid
+from pathlib import Path
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.minimax_m3.resident import candidate_source
+base=candidate_source(None,'minimax_w4_int8_v13','minimax_activation_v2')
+source=base.replace('def replacements(', 'def native_replacements(')+'''
+def replacements(native_resources):
+    import torch
+    from vllm.distributed import get_tp_group
+    changes=native_replacements(native_resources)
+    def capture(self):
+        self._m3_idle()
+        group=get_tp_group()
+        checks=[]
+        for ready in (True, group.rank_in_group==0, False):
+            vote=torch.tensor([float(ready)],dtype=torch.float32)
+            torch.distributed.all_reduce(vote,op=torch.distributed.ReduceOp.SUM,group=group.cpu_group)
+            checks.append(float(vote[0]))
+        return {**self.resident_status(),'votes':checks,'passed':checks==[2.0,1.0,0.0],
+                'free':torch.npu.mem_get_info()[0],'allocated':torch.npu.memory_allocated()}
+    changes['vllm_ascend._310p.worker_310p:NPUWorker310.resident_capture']=capture
+    return changes
+'''
+c=ResidentClient('http://127.0.0.1:8000',6)
+def apply(source):
+ control=Control(uuid.uuid4().hex,'direct-target','m3_candidate',source)
+ c.rpc('resident_prepare',json.dumps(dataclasses.asdict(control)));return c.rpc('resident_apply',control.generation)
+with Path('/tmp/minimax-m31-resident.lock').open('w') as lock:
+ fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+ assert not c.request('/is_paused',method='GET')['is_paused']
+ c.request('/resident/maintenance');c.request('/pause?mode=wait&clear_cache=false')
+ try:
+  apply(source);r=c.rpc('resident_capture');Path('/workspace/m31-piecewise-admission-probe.json').write_text(json.dumps(r,indent=2)+'\n');print([(x['rank'],x['passed']) for x in r],flush=True)
+ finally:
+  apply(base);c.request('/resume');c.request('/resident/maintenance',method='DELETE')

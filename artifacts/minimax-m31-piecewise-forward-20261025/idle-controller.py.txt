@@ -1,0 +1,19 @@
+import dataclasses,fcntl,json,uuid
+from pathlib import Path
+from tools.glm_perf.resident_control import Control
+from tools.glm_perf.resident_harness import ResidentClient
+from tools.minimax_m3.resident import candidate_source
+base=candidate_source(None,'minimax_w4_int8_v13','minimax_activation_v2')
+source=base.replace("    return changes\n", "    graph = types.ModuleType('m31_graph_candidate')\n" + f"    exec(compile({Path('/workspace/m31_piecewise_idle_probe_module.py').read_text()!r}, '<graph_candidate>', 'exec'), graph.__dict__)\n" + "    return graph.add_replacements(changes)\n")
+c=ResidentClient('http://127.0.0.1:8000',6)
+def apply(source):
+ control=Control(uuid.uuid4().hex,'direct-target','m3_candidate',source)
+ c.rpc('resident_prepare',json.dumps(dataclasses.asdict(control)));return c.rpc('resident_apply',control.generation)
+with Path('/tmp/minimax-m31-resident.lock').open('w') as lock:
+ fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+ assert not c.request('/is_paused',method='GET')['is_paused']
+ c.request('/resident/maintenance');c.request('/pause?mode=wait&clear_cache=false')
+ try:
+  apply(source);r=c.rpc('resident_capture');Path('/workspace/m31-piecewise-idle-probe.json').write_text(json.dumps(r,indent=2)+'\n');print([(x['rank'],x['checks'],x['memory']) for x in r],flush=True)
+ finally:
+  apply(base);c.request('/resume');c.request('/resident/maintenance',method='DELETE')

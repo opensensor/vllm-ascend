@@ -1,0 +1,46 @@
+import torch
+
+def add_replacements(changes):
+    from vllm_ascend.models.minimax_m3.minimax_m3 import MiniMaxM3DecoderLayer
+    from vllm.forward_context import set_forward_context
+    def diagnostic(self):
+        self._m3_idle()
+        layers=[m for m in self.model_runner.model.modules() if isinstance(m,MiniMaxM3DecoderLayer)][:2]
+        pool=torch.npu.graph_pool_handle();stream=torch.npu.Stream();owners=[];checks=[]
+        allocated=torch.npu.memory_allocated();reserved=torch.npu.memory_reserved()
+        with torch.inference_mode(),set_forward_context(None,self.model_runner.vllm_config,num_tokens=1):
+            positions=torch.tensor([7],device=self.device)
+            for layer in layers:
+                hidden=torch.randn((1,layer.hidden_size),dtype=torch.float16,device=self.device)
+                residual=hidden.clone()
+                def pre():
+                    h,r=layer.input_layernorm(hidden,residual)
+                    return layer.self_attn._sparse_prepare(positions,h),r
+                expected_pre=pre()
+                expected_pre=tuple(t.clone() for t in expected_pre[0])+(expected_pre[1].clone(),)
+                stream.wait_stream(torch.npu.current_stream())
+                with torch.npu.stream(stream):
+                    pre();stream.synchronize();pg=torch.npu.NPUGraph()
+                    with torch.npu.graph(pg,pool=pool,stream=stream):qkv,r=pre()
+                torch.npu.current_stream().wait_stream(stream)
+                pg.replay()
+                attn_out=torch.randn_like(qkv[0])
+                def post(r):
+                    h,_=layer.self_attn.o_proj(attn_out)
+                    h,r=layer.post_attention_layernorm(h,r)
+                    return (layer.block_sparse_moe(h) if layer.is_layer_sparse else layer.mlp(h)),r
+                expected_post=tuple(t.clone() for t in post(expected_pre[-1]))
+                stream.wait_stream(torch.npu.current_stream())
+                with torch.npu.stream(stream):
+                    post(r);stream.synchronize();qg=torch.npu.NPUGraph()
+                    with torch.npu.graph(qg,pool=pool,stream=stream):result=post(r)
+                torch.npu.current_stream().wait_stream(stream);qg.replay()
+                actual=tuple(qkv)+(r,)+tuple(result);expected=expected_pre+expected_post
+                checks.append({'layer':layer.layer_idx,'max_abs':[float((a.float()-e.float()).abs().max()) for a,e in zip(actual,expected)],'exact':[torch.equal(a,e) for a,e in zip(actual,expected)]})
+                owners.append((pg,qg,hidden,residual,qkv,r,result,attn_out))
+            torch.npu.synchronize()
+            delta={'allocated':torch.npu.memory_allocated()-allocated,'reserved':torch.npu.memory_reserved()-reserved,'free':torch.npu.mem_get_info()[0]}
+            for o in owners:o[0].reset();o[1].reset()
+        return {**self.resident_status(),'checks':checks,'memory':delta}
+    changes['vllm_ascend._310p.worker_310p:NPUWorker310.resident_capture']=diagnostic
+    return changes

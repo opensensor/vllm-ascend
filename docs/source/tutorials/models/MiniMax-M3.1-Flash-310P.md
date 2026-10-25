@@ -33,7 +33,7 @@ in 490.13 s; the current capacity profile allows 163840 tokens.
 | Attention | Eager FP16 paged KV with FP32 sparse scoring/softmax |
 | Images | One image, maximum long side 448 pixels in this profile |
 | Video | Disabled in this profile |
-| ACLGraph | Unsupported by the current eager adapter; rejected explicitly |
+| ACLGraph | Resident partial decode graphs around eager sparse attention; full-model graph mode unsupported |
 | FlashComm1 | Sequence-parallel MoE unsupported by this adapter |
 | MTP/DSpark | Separate draft checkpoint not converted; speculation rejected |
 | Context/concurrency | 163840 tokens, one sequence |
@@ -323,7 +323,8 @@ until process exit; rollback changes dispatch and never unloads live code.
 Native registration/device failures keep serving paused and require inspection;
 a poisoned worker needs restart. Ordinary Python preparation failures leave
 existing dispatch intact. Layout, topology, model-construction and allocation
-changes still require startup. This path currently requires eager execution.
+changes still require startup. Keep `--enforce-eager`; the optional resident
+partial graphs manage their own buffers and captures.
 
 Every switch replaces the entire prior candidate. To keep both a Python module
 and native kernel active, supply both `--module-file` and `--native-name` in the
@@ -519,3 +520,40 @@ To disable only the activation, switch to native-only `minimax_w4_int8_v13`.
 Evidence and the post-start script are in
 `artifacts/minimax-m31-fused-activation-20261025/`; scale-reuse evidence is in
 `artifacts/minimax-m31-scale-reuse-20261025/`.
+
+### Partial decode graphs with shared device buffers
+
+The retained decode path captures preparation and feed-forward work separately
+for each layer, with sparse attention between them. Adjacent graph pieces bind
+directly to persistent device outputs. A stage copies only its hidden input,
+optional residual and positions: two copies on the first stage and three on
+the other stages, all device-to-device. Sparse metadata stays outside capture,
+so crossing a context-block boundary does not recapture graphs.
+
+All pieces share one pool and stream per worker. A cold CPU FP32 SUM vote admits
+capture only when both TP ranks report at least 768 MiB free. Prefill and layers
+that fail admission stay eager. These votes and memory checks are not in replay.
+The next drained resident switch synchronizes and releases the old graphs before
+replacing implementations; it retains the loaded weight shards.
+
+Three matched 64-token requests measured **3.462, 3.461 and 3.463 tokens/s**,
+versus 3.429 median with fused eager execution. All messages matched exactly.
+All layers captured, with 240 total graph pieces across six workers and no
+memory-admission fallbacks. The lowest reported free memory at capture admission
+was 1.235 GiB. A four-token layer shadow had maximum output differences of
+0.001953, 0.003906 and 0.015625 across the three stages; it was not bitwise exact.
+No broad quality evaluation or full 160K prompt was run.
+
+```bash
+python -m tools.minimax_m3.resident switch \
+  --native-name minimax_w4_int8_v13 --activation-name minimax_activation_v2 \
+  --partial-graphs
+```
+
+The installed post-start script includes this option. Omitting `--partial-graphs`
+on a later complete switch disables graphs without reloading weights. The
+initial per-piece pool design exhausted memory, and an int64 MIN admission
+check hit an unsupported 310P compatibility wrapper; both failures required
+restarts. The shared pool and FP32 summed vote fix those failures. Receipts,
+failure logs and executable experiment snapshots are in
+`artifacts/minimax-m31-piecewise-forward-20261025/`.

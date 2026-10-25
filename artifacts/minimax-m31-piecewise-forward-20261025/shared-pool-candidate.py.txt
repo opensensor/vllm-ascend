@@ -1,0 +1,100 @@
+import functools
+import torch
+import torch.distributed as dist
+
+VERIFY = False
+
+def add_replacements(changes):
+    from vllm_ascend.models.minimax_m3.minimax_m3 import MiniMaxM3Model,MiniMaxM3DecoderLayer,MiniMaxM3SparseAttention
+    from vllm_ascend._310p.worker_310p import NPUWorker310
+    from vllm.distributed import get_tp_group
+    original=MiniMaxM3DecoderLayer.forward
+    model_forward=MiniMaxM3Model.forward
+    apply=NPUWorker310.resident_apply
+    state={'owners':{},'positions':None,'captures':0,'replays':0,'copies':0,'checks':[],'fallbacks':0,'pool':torch.npu.graph_pool_handle(),'stream':None,'memory':[],'disabled':set()}
+    def release():
+        torch.npu.synchronize()
+        for owner in state['owners'].values():
+            for name in ('pre_graph','post_graph'):
+                if name in owner:owner[name].reset()
+        state['owners'].clear();state['positions']=None
+    def before(self,owner):
+        hidden,residual=owner['hidden'],owner['residual']
+        if residual is None:residual=hidden;hidden=self.input_layernorm(hidden)
+        else:hidden,residual=self.input_layernorm(hidden,residual)
+        return self.self_attn._sparse_prepare(state['positions'],hidden),residual
+    def after(self,owner):
+        hidden,_=self.self_attn.o_proj(owner['attn_out'])
+        hidden,residual=self.post_attention_layernorm(hidden,owner['pre_output'][1])
+        hidden=self.block_sparse_moe(hidden) if self.is_layer_sparse else self.mlp(hidden)
+        return hidden,residual
+    def capture(owner,name,call):
+        stream=owner['stream'];stream.wait_stream(torch.npu.current_stream())
+        with torch.npu.stream(stream):
+            call();stream.synchronize()
+            graph=torch.npu.NPUGraph();owner[name+'_graph']=graph
+            with torch.npu.graph(graph,pool=state['pool'],stream=stream):owner[name+'_output']=call()
+        torch.npu.current_stream().wait_stream(stream);state['captures']+=1
+    @functools.wraps(model_forward)
+    def model(self,input_ids,positions,intermediate_tensors,inputs_embeds=None):
+        if positions.numel()==1 and not torch.is_grad_enabled():
+            if state['positions'] is None:
+                torch.npu.empty_cache()
+                state['positions']=positions.clone()
+            else:state['positions'].copy_(positions)
+            state['copies']+=1
+        return model_forward(self,input_ids,positions,intermediate_tensors,inputs_embeds)
+    @functools.wraps(original)
+    def layer(self,positions,hidden_states,residual):
+        if hidden_states.shape[0]!=1 or torch.is_grad_enabled() or not isinstance(self.self_attn,MiniMaxM3SparseAttention):
+            state['fallbacks']+=1;return original(self,positions,hidden_states,residual)
+        expected=None
+        if VERIFY:
+            expected=tuple(t.clone() for t in original(self,positions,hidden_states.clone(),None if residual is None else residual.clone()))
+        if id(self) in state['disabled']:
+            state['fallbacks']+=1;return expected if VERIFY else original(self,positions,hidden_states,residual)
+        owner=state['owners'].get(id(self))
+        if owner is None:
+            torch.npu.synchronize()
+            free,total=torch.npu.mem_get_info(hidden_states.device)
+            room=torch.tensor([float(free >= 768*1024**2)],dtype=torch.float32)
+            dist.all_reduce(room,op=dist.ReduceOp.SUM,group=get_tp_group().cpu_group)
+            state['memory'].append({'layer':self.layer_idx,'free':free,'pair_ready_votes':int(room[0]),'allocated':torch.npu.memory_allocated(),'reserved':torch.npu.memory_reserved()})
+            if int(room[0]) != get_tp_group().world_size:
+                state['disabled'].add(id(self));state['fallbacks']+=1
+                return expected if VERIFY else original(self,positions,hidden_states,residual)
+            if state['stream'] is None:state['stream']=torch.npu.Stream(device=hidden_states.device)
+            previous_outputs={t.data_ptr() for o in state['owners'].values() for t in o.get('post_output',())}
+            direct=not VERIFY and hidden_states.data_ptr() in previous_outputs and (residual is None or residual.data_ptr() in previous_outputs)
+            owner={'hidden':hidden_states if direct else hidden_states.clone(),
+                   'residual':residual if direct or residual is None else residual.clone(),
+                   'direct':direct,'stream':state['stream']}
+            state['owners'][id(self)]=owner
+            capture(owner,'pre',lambda:before(self,owner))
+            owner['attn_out']=torch.empty_like(owner['pre_output'][0][0])
+        if owner['direct']:
+            assert hidden_states.data_ptr()==owner['hidden'].data_ptr()
+            assert residual is None or residual.data_ptr()==owner['residual'].data_ptr()
+        else:
+            owner['hidden'].copy_(hidden_states);state['copies']+=1
+            if residual is not None:owner['residual'].copy_(residual);state['copies']+=1
+        owner['pre_graph'].replay();state['replays']+=1
+        self.self_attn._run_sparse_attention(*owner['pre_output'][0],owner['attn_out'])
+        if 'post_graph' not in owner:capture(owner,'post',lambda:after(self,owner))
+        owner['post_graph'].replay();state['replays']+=1
+        if VERIFY:
+            actual=owner['post_output']
+            errors=[float((a.float()-e.float()).abs().max()) for a,e in zip(actual,expected)]
+            state['checks'].append({'layer':self.layer_idx,'exact':all(torch.equal(a,e) for a,e in zip(actual,expected)),'max_abs':errors})
+            return expected
+        return owner['post_output']
+    def resident_apply(self,generation):
+        self._m3_idle();release();return apply(self,generation)
+    def diagnostic(self):
+        return {**self.resident_status(),'piecewise_graph':{k:v for k,v in state.items() if k not in ('owners','positions','stream','pool','disabled')},
+                'disabled_layers':len(state['disabled']),'direct_layers':sum(o['direct'] for o in state['owners'].values())}
+    changes['vllm_ascend.models.minimax_m3.minimax_m3:MiniMaxM3DecoderLayer.forward']=layer
+    changes['vllm_ascend.models.minimax_m3.minimax_m3:MiniMaxM3Model.forward']=model
+    changes['vllm_ascend._310p.worker_310p:NPUWorker310.resident_apply']=resident_apply
+    changes['vllm_ascend._310p.worker_310p:NPUWorker310.resident_capture']=diagnostic
+    return changes
