@@ -381,6 +381,30 @@ qualification before promotion.
 
 The scale-cache v8 candidate passed all 90 bitwise comparisons across six ranks,
 but measured gains were only about 0–2% and concentrated-route cases slightly
-regressed. It remains unpromoted; v7 serves requests. All worker identities,
+regressed. It remains unpromoted; the subsequent v9 unpacking kernel now serves requests. All worker identities,
 weights and KV storage survived the benchmark unchanged. See `v8-summary.json`
 and the full resident receipt in the context/performance evidence directory.
+
+### Current decode kernel: v9
+
+The biased-RINT unpacking schedule is now active with the same 160K cache and
+512-token prefill profile. Three matched 64-token counting requests improved
+from a median 1.746 to 1.830 tokens/s after first output (4.8%); all three messages
+matched exactly. The 90 real-projection comparisons and 144 byte-reuse checks
+were bit-identical. Full coherence/tool reruns were explicitly skipped at the
+user's request; these short diagnostics do not establish broad quality.
+
+Build with `--wide-l1 --rint-unpack` and a fresh namespace. After a resident
+benchmark, activate with `python -m tools.minimax_m3.activate_equivalent`, passing
+its `--manifest`, `--evidence` and `--output` paths. This requires matching binary
+hashes and evidence for the current worker generation, and preserves request
+caches. The installed post-start script now selects `minimax_w4_v9`.
+
+The four-core team candidate regressed concentrated routing and was rejected.
+Experimental batched-head attention and direct FP16 scales each caused device
+failures during component checks and required recovery restarts; neither serves
+requests. A separate-process INT8 projection probe measured 1.17–1.19x speedup
+including activation quantization, with about 1.1% normalized RMS output error.
+It uses expanded weights and excludes packed-W4 conversion; INT8 serving is
+still unimplemented. Detailed results and failure evidence are in
+`artifacts/minimax-m31-unpack-perf-20261025/`.

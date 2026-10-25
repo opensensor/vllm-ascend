@@ -1,0 +1,21 @@
+Traceback (most recent call last):
+  File "/vllm-workspace/vllm-ascend/tools/minimax_m3/resident_benchmark.py", line 151, in run_benchmark
+    loaded = client.rpc("resident_native_load", manifest.digest)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/vllm-workspace/vllm-ascend/tools/glm_perf/resident_harness.py", line 46, in rpc
+    raise RuntimeError(f"{method}: worker errors after collecting all acknowledgments: {errors}")
+RuntimeError: resident_native_load: worker errors after collecting all acknowledgments: [(0, 'RuntimeError: ACL stream synchronize failed, error code:507015'), (1, 'RuntimeError: ACL stream synchronize failed, error code:507015'), (2, 'RuntimeError: ACL stream synchronize failed, error code:507015'), (3, 'RuntimeError: ACL stream synchronize failed, error code:507015'), (4, 'RuntimeError: ACL stream synchronize failed, error code:507015'), (5, 'RuntimeError: ACL stream synchronize failed, error code:507015')]
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/vllm-workspace/vllm-ascend/tools/minimax_m3/resident_benchmark.py", line 212, in <module>
+    main()
+  File "/vllm-workspace/vllm-ascend/tools/minimax_m3/resident_benchmark.py", line 198, in main
+    report = run_benchmark(
+             ^^^^^^^^^^^^^^
+  File "/vllm-workspace/vllm-ascend/tools/minimax_m3/resident_benchmark.py", line 171, in run_benchmark
+    raise RuntimeError("worker native state is unhealthy; leaving the server paused")
+RuntimeError: worker native state is unhealthy; leaving the server paused

@@ -10,6 +10,7 @@ import torch
 from safetensors.torch import save_file
 from vllm.config.load import LoadConfig
 
+from tools.minimax_m3.attention_candidate import paged_sparse_attention_batched_heads
 from tools.minimax_m3.checkpoint import dense_weights, load_expert_banks, read_manifest
 from tools.minimax_m3.export_w4 import MANIFEST, export_checkpoint
 from tools.minimax_m3.probe_w4 import quantize_chunk
@@ -147,7 +148,8 @@ def attention_oracle(q, k, v, iq, ik, *, prefix, block_size, topk, local, init):
         (19, 129, 4, 1, 1),
     ],
 )
-def test_paged_sparse_attention_causality_and_head_selection(prefix, length, topk, local, init):
+@pytest.mark.parametrize("attention_impl", [paged_sparse_attention, paged_sparse_attention_batched_heads])
+def test_paged_sparse_attention_causality_and_head_selection(prefix, length, topk, local, init, attention_impl):
     torch.manual_seed(44)
     block, dim, heads = 4, 8, 2
     total = prefix + length
@@ -166,7 +168,7 @@ def test_paged_sparse_attention_causality_and_head_selection(prefix, length, top
     kc.flatten(0, 1)[slots[:prefix]] = k[:prefix]
     vc.flatten(0, 1)[slots[:prefix]] = v[:prefix]
     ic.flatten(0, 1)[islots[:prefix]] = ik[:prefix]
-    actual = paged_sparse_attention(
+    actual = attention_impl(
         q,
         k[prefix:],
         v[prefix:],
@@ -196,7 +198,8 @@ def test_paged_sparse_attention_causality_and_head_selection(prefix, length, top
     torch.testing.assert_close(ic.flatten(0, 1)[islots], ik)
 
 
-def test_mixed_decode_prefill_batch_has_no_cross_request_cache_leak():
+@pytest.mark.parametrize("attention_impl", [paged_sparse_attention, paged_sparse_attention_batched_heads])
+def test_mixed_decode_prefill_batch_has_no_cross_request_cache_leak(attention_impl):
     torch.manual_seed(18)
     block, dim = 4, 8
     lengths, prefixes = (6, 7), (5, 0)

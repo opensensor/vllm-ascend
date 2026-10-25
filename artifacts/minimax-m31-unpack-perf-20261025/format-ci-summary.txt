@@ -1,0 +1,29 @@
+Command: bash format.sh ci
+Baseline: b6943a6db in isolated /tmp/minimax-m31-lint-unpack-20261025
+Exit: 1 (existing repository-wide failures)
+ruff check..................................................................Failed
+- hook id: ruff-check
+ruff format.................................................................Failed
+- hook id: ruff-format
+codespell...................................................................Failed
+- hook id: codespell
+typos.......................................................................Failed
+- hook id: typos
+clang-format................................................................Failed
+- hook id: clang-format
+markdownlint................................................................Failed
+- hook id: markdownlint
+Lint GitHub Actions workflow files..........................................Passed
+Gitleaks Secret Scan(Local Binary)..........................................Passed
+Lint shell scripts..........................................................Passed
+Lint PNG exports from excalidraw............................................Passed
+Check for spaces in all filenames...........................................Passed
+Enforce __init__.py in Python packages......................................Passed
+Forbid init_logger(__name__) in vllm_ascend modules.........................Passed
+Check for forbidden imports.................................................Failed
+- hook id: check-forbidden-imports
+Check for boolean ops in with-statements....................................Passed
+Check that new functions over 100 lines have comments.......................Passed
+Check symbolic shapes in meta kernels.......................................Passed
+Suggestion..................................................................Passed
+- hook id: suggestion

@@ -25,7 +25,7 @@ serve:
   enable_auto_tool_choice: true
   tool_call_parser: minimax_m3
   reasoning_parser: minimax_m31
-  native_kernel: minimax_w4_v7
+  native_kernel: minimax_w4_v9
   attention_query_tile: 64
 tasks:
   - name: greeting_fact_arithmetic_copy_red_image
@@ -88,6 +88,12 @@ tasks:
         value: 1.0
     sample_count: 4
     evidence: artifacts/minimax-m31-context-perf-20261025/short-160k/report.json
+  - name: native_v9_projection_and_byte_reuse
+    metrics:
+      - name: passed_fraction
+        value: 1.0
+    sample_count: 234
+    evidence: artifacts/minimax-m31-unpack-perf-20261025/m31-v9-fresh-benchmark.json
 num_fewshot: 0
 validation_runner: tools/minimax_m3/coherence_probe.py
 long_context_quality: 48k_bounded_retrieval_only_160k_full_test_deferred_to_user

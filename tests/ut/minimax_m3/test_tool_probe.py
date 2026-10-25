@@ -112,3 +112,11 @@ def test_native_build_rejects_scale_cache_without_wide_l1(tmp_path):
     with pytest.raises(ValueError, match="scale cache requires wide L1"):
         build(output, tmp_path, "minimax_w4_test", tmp_path, scale_cache=True)
     assert not output.exists()
+
+
+@pytest.mark.parametrize("lanes,wide", [(3, True), (16, True), (4, False)])
+def test_native_build_rejects_invalid_expert_teams(tmp_path, lanes, wide):
+    output = tmp_path / "build"
+    with pytest.raises(ValueError, match="expert lanes"):
+        build(output, tmp_path, "minimax_w4_test", tmp_path, expert_lanes=lanes, wide_l1=wide)
+    assert not output.exists()

@@ -12,7 +12,19 @@ from tools.glm_perf.build_query_bf16_vector import compile_bridge
 from tools.glm_perf.resident_native import file_digest
 
 
-def build(output, source_root, namespace, cann, *, singleton_l1=False, l1_max_k=4096, wide_l1=False, scale_cache=False):
+def build(
+    output,
+    source_root,
+    namespace,
+    cann,
+    *,
+    singleton_l1=False,
+    l1_max_k=4096,
+    wide_l1=False,
+    scale_cache=False,
+    rint_unpack=False,
+    expert_lanes=0,
+):
     if not namespace.isidentifier() or not namespace.startswith("minimax_w4_"):
         raise ValueError("use a unique minimax_w4_ namespace for each build")
     if l1_max_k not in (4096, 6144) or (l1_max_k != 4096 and not singleton_l1):
@@ -21,6 +33,8 @@ def build(output, source_root, namespace, cann, *, singleton_l1=False, l1_max_k=
         raise ValueError("choose singleton L1 or wide L1, not both")
     if scale_cache and not wide_l1:
         raise ValueError("scale cache requires wide L1")
+    if expert_lanes not in (0, 1, 2, 4, 8) or (expert_lanes and not wide_l1):
+        raise ValueError("expert lanes must be 0, 1, 2, 4 or 8 and require wide L1")
     output, source_root, cann = output.resolve(), source_root.resolve(strict=True), cann.resolve(strict=True)
     output.mkdir(parents=True, exist_ok=False)
     sources = output / "sources"
@@ -94,6 +108,8 @@ def build(output, source_root, namespace, cann, *, singleton_l1=False, l1_max_k=
             *(["-DGLM_W2_GROUPED_CANDIDATE"] if singleton_l1 else []),
             *(["-DGLM_W2_GROUPED_L1_WIDE", "-DGLM_W2_GROUPED_L1_WIDE_PIPELINED"] if wide_l1 else []),
             *(["-DGLM_W2_GROUPED_L1_SCALE_CACHE"] if scale_cache else []),
+            *(["-DGLM_W2_GROUPED_RINT_UNPACK"] if rint_unpack else []),
+            *([f"-DGLM_W2_GROUPED_EXPERT_LANES={expert_lanes}"] if expert_lanes else []),
         ],
         check=True,
     )
@@ -104,7 +120,14 @@ def build(output, source_root, namespace, cann, *, singleton_l1=False, l1_max_k=
     shutil.copy2(Path(__file__).with_name("resident_native.py"), helper)
     (output / "build-options.json").write_text(
         json.dumps(
-            {"singleton_l1": singleton_l1, "l1_max_k": l1_max_k, "wide_l1": wide_l1, "scale_cache": scale_cache},
+            {
+                "singleton_l1": singleton_l1,
+                "l1_max_k": l1_max_k,
+                "wide_l1": wide_l1,
+                "scale_cache": scale_cache,
+                "rint_unpack": rint_unpack,
+                "expert_lanes": expert_lanes,
+            },
             indent=2,
         )
         + "\n"
@@ -150,6 +173,14 @@ def main():
     parser.add_argument("--l1-max-k", type=int, choices=(4096, 6144), default=4096)
     parser.add_argument("--wide-l1", action="store_true", help="Pipeline 128x1024 L1 tiles for small expert groups")
     parser.add_argument("--scale-cache", action="store_true", help="Reuse scale rows across wide-L1 K tiles")
+    parser.add_argument("--rint-unpack", action="store_true", help="Use exact biased-RINT W4 field extraction")
+    parser.add_argument(
+        "--expert-lanes",
+        type=int,
+        default=0,
+        choices=(0, 1, 2, 4, 8),
+        help="Cores per expert team for prefill; 0 retains all-core scheduling",
+    )
     args = parser.parse_args()
     print(
         build(
@@ -161,6 +192,8 @@ def main():
             l1_max_k=args.l1_max_k,
             wide_l1=args.wide_l1,
             scale_cache=args.scale_cache,
+            rint_unpack=args.rint_unpack,
+            expert_lanes=args.expert_lanes,
         )
     )
 
