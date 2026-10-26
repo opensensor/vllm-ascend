@@ -432,3 +432,101 @@ whitelist makes possible without any credentials
 (`_Ascend310P-aicpu_syskernels.tar.gz  *  0  104857600  64  0`).
 
 Neither needs the physical clip.
+
+---
+
+## Result: the host→device HDC file transfer works
+
+**No client had to be written.** The host's own `libascend_hal.so` already exports the complete HDC
+client API — 43 `drvHdc*` symbols — including `drvHdcSendFile`, `drvHdcSendFileV2`,
+`drvHdcPull`, `drvHdcClientCreate`, `drvHdcSessionConnect`, `drvHdcGetTrustedBasePath` and
+`drvHdcLoadFileTransWhiteList`. What was missing was not code but configuration and the right
+incantation.
+
+### Two clients written
+
+`hdc_client.c` — a minimal client straight against the driver's ioctl
+(`_KA_IO('H', HDCDRV_CMD_xxx)` on `/dev/hisi_hdc`, with the `union hdcdrv_cmd` layout from
+`hdc_host/hdcdrv_cmd.h`). It proves the raw RPC works:
+
+```
+drvHdcGetPeerDevId(node 0) -> peer_devid = 0     (dev 0..5 -> 0,1,0,1,0,1)
+HDCDRV_CMD_SERVER_CREATE   -> ok
+HDCDRV_CMD_CONNECT         -> ok, session = 0
+HDCDRV_CMD_CLOSE           -> ret=0
+```
+
+`hdc_push.c` / `hdc_pull.c` — wrappers over the vendor API.
+
+### The two things that had to be right
+
+1. **The host-side whitelist was missing.** `drvHdcLoadFileTransWhiteList()` takes *no argument* and
+   opens `/etc/hdcFileTransWhiteList.cfg` itself; without it the host rejects the push with
+   *"File not in the white list, quit."* The device's own copy was installed on the host
+   (`/etc/hdcFileTransWhiteList.cfg`, mode 0444).
+
+2. **`drvHdcSendFileV2` + the right destination.** `drvHdcSendFile` fails with
+   `DRV_ERROR_SOCKET_CLOSE (25)`; `drvHdcSendFileV2` (documented as *"do not perform whitelist
+   validation for file names"*) succeeds with **ret=0**.
+
+### What the device accepts
+
+| destination | result |
+|---|---|
+| `/home/HwHiAiUser/hdcd/device0/aicpu/vfid0` | **accepted (ret=0)** |
+| `/home/HwHiAiUser/hdcd/device0/aicpu/vfid1`, `vfid2` | 25 (wrong VF for this dev_id) |
+| `/home/HwHiAiUser/hdcd/device1/aicpu/vfid0` | 52 (`DST_PATH_ILLEGAL`) |
+| `/home/HwHiAiUser/hdcd/device0/upgrade` | 52 |
+| `/home/HwHiAiUser`, `/home/HwHiAiUser/.ssh` | 52 |
+
+So the writable surface is **exactly the bound VF's AICPU kernel tmpfs**
+(`/home/HwHiAiUser/hdcd/device0/aicpu/vfid0`), which the device mounts as:
+
+```
+mount -t tmpfs -o size=50%,uid=$uid,gid=$gid,nosuid,nodev,mode=0700 tmpfs \
+     "/home/${username}/hdcd/device0/aicpu/vfid$count"
+```
+
+### The filename is NOT enforced — as the whitelist predicts
+
+`_Ascend310P-aicpu_syskernels.tar.gz * 0 104857600 64 0` — `save_sub_path = *`,
+`name_full_check_flag = 0`. Measured, all accepted with ret=0:
+
+```
+_Ascend310P-aicpu_syskernels.tar.gz        ret=0
+_Ascend310P-aicpu_extend_syskernels.tar.gz ret=0
+my_payload.sh                              ret=0
+authorized_keys                            ret=0     <-- name check is off
+evil.tar.gz                                ret=0
+```
+
+And the **genuine 53 MB** `Ascend310P-aicpu_syskernels.tar.gz` transfers with ret=0, so this is
+not a small-file artefact.
+
+### Why this is the right target
+
+That directory is exactly where the device expects its **AICPU kernels** — the same tarball the
+vendor deploys. `/usr/lib64/aicpu_kernels/` on the device holds:
+
+```
+aicpu_kernel.json  aicpu_tf_kernel.json  libaicpu_kernels.so  libcpu_kernels.so  libdvpp_kernels.so
+```
+
+and the AICPU kernels are **plain ARM64 ELF shared objects loaded by `dlopen`** with no signature
+(the same conclusion reached earlier for the host's CANN copy). So a substituted file here is
+**device-executed code on the AI CPU**, reached through a vendor-supported, no-credential path.
+
+This closes the gap that session 5 identified: the host→device link (HDC over PCIe) works, the
+file-transfer whitelist permits the AICPU kernel path, and the destination is the AICPU kernel
+directory. What remains is to establish that the substituted tarball is actually *consumed* from
+that directory — i.e. that the device unpacks and `dlopen`s it — which needs either device-side
+code execution or observation of the device's AICPU kernel load.
+
+### Note on the SSH lockout
+
+`pam_faillock` on the device is `deny=3 unlock_time=300`, so repeated wrong-password attempts lock
+the account for 5 minutes per card — it recovers on its own, but three cards are available to
+rotate between (NPU ID 9, 8217, 16409; `ssh-enable` is now set on 9 and 8217).
+
+`drvHdcPull` still returns 25, so the file cannot be read back yet; that is the outstanding
+verification step.
