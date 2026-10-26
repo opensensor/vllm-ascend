@@ -2049,3 +2049,164 @@ the number comes back to us over the normal op path, so it needs no cooperation 
 log collector — which is exactly the thing that was blocking the constructor approach
 (`msnpureport` collects logs and `system_info`, not arbitrary device files, and only captures
 *ended* scheduler sessions).
+
+---
+
+## Follow-up: the tar CVEs, the check-code gate, and the SSH surface
+
+### GNU tar on the device: 1.35, and all the listed vectors are blocked
+
+The device's tar is **GNU tar 1.35** (`tar-1.35-2.h21510.3.eulerosv2r15.aarch64`), and it has the
+expected guards compiled in (`Member name contains '..'`, `Removing leading '%s' from member names`,
+`Removing leading '%s' from hard link targets`). I tested every vector from the list against the
+exact options the device uses, locally:
+
+| vector | device's flags | result |
+|---|---|---|
+| absolute member path | `--no-same-owner -ozxf` | stripped to the extract dir |
+| `../` traversal | same | **refused** — `Member name contains '..'`, rc=2 |
+| symlink then write through it (single archive) | same | **refused** — `Cannot open: Not a directory` |
+| **two-step** (CVE-2025-45582): archive 1 makes the symlink, archive 2 writes through it | same | **refused** — `Cannot open: Invalid cross-device link` |
+| two-step, relative symlink `x -> ../victim` | same | **refused** — write did not land |
+| two-step, absolute symlink, same filesystem | same | write did not land |
+| symlink + dir created in the *same* archive | same | **refused** — `Cannot open: Not a directory` |
+| hardlink escaping the archive (CVE-2026-18508) | same | **refused** — `Removing leading '/' from hard link targets`, then `Cannot hard link to ...` |
+| same, with `--one-top-level` | n/a | **refused** — `Cannot open: Not a directory` |
+| all of the above | `--same-owner --same-permissions` (the device-sw-plugin path) | **refused** — same guards |
+
+So although the device *does* extract our tar, and although it extracts **multiple packages
+sequentially into shared paths** (which is CVE-2025-45582's precondition), tar 1.35's protections
+defeat the attack. The `--one-top-level` and incremental-restore preconditions in the CVE
+descriptions are not present in the device's extraction commands, and the TOCTOU one needs a local
+writer racing the restore.
+
+**The tar vector is closed.** Not because of the CVEs being inapplicable — the preconditions are
+nearly all met — but because tar 1.35 already refuses.
+
+### The real gate on the AICPU path: the check code
+
+The device's own logs show exactly what stops our modified library from being installed. The
+install is gated on a **checksum handshake**, not a signature:
+
+```
+[ProcessCommonSinkPkgCheckCode] host hash code[d1715cdf7a69f6f6a...], device hash code[]
+[ProcessCommonSinkPkgCheckCode] host hash code[a05f87a6700d9634...], device hash code[a05f87a6700d9634...]
+[TsdClient] hostCheckCode[%u] no equal to deviceCheckCode[%u], begin send file[%s] to [%s], packageType[%u]
+[TSDaemon]  Check sum, curCode=%lu, checkCode=%lu, deviceId=%u, vfId=%u
+[TSDaemon]  Check sum wait %u second timeout.
+[TSDaemon]  'Get shared check code failed, will not decompress package'
+```
+
+Note the two-phase structure: the first pass shows `device hash code[]` **empty** (the device has
+nothing installed for that package yet), and the second shows it **matching** — the device
+computed the hash of what it received and echoed it back.
+
+The device-side functions are:
+
+```
+tsd::BasePackageWorker::GetPackageCheckCode()
+tsd::ProcessModeManager::GetDeviceCheckCodeOnce()  /  GetDeviceCheckCodeRetry()
+tsd::ProcessModeManager::SetHostAicpuCheckCode()  /  SetHostExtendCheckCode()
+tsd::ProcessModeManager::SaveDeviceCheckCode()
+'tdt::CalCheckCode(const std::string &)'                    <- in libhdcserver.so
+'tdt::CalFileSha256HashValue(const std::string &)'          <- in libtsdclient.so (host side)
+```
+
+`tsd::CalFileSha256HashValue(const std::string &path)` is **exported by the host's
+`libtsdclient.so`**, so the host does not have to guess the algorithm — it can be called directly on
+our rebuilt package. That is the clean way to satisfy the gate: compute the check code with the
+vendor's own function for *our* file, and supply it.
+
+And the device-side algorithm is MD5-based, from `libhdcserver.so`:
+
+```
+'fail to generate md5 of data'  'md5_init failed'  'md5_update failed'  'md5_final failed'
+'tdt crc32 of size mismatch'    'tdt crc32 of data mismatch'
+'head_md5'  'tail_md5'  'check_code'
+```
+
+so the check code is a **head-MD5 + tail-MD5** pair, i.e. a plain checksum over the package —
+**no key, no signature**.
+
+### What the device did with our package (measured)
+
+The device received and decompressed it:
+
+```
+[recv_data] Create file. (dstpth="/home/HwHiAiUser/hdcd/device0/aicpu/8001_Ascend310P-aicpu_syskernels.tar.gz";
+                         file_size=53559460; send_bytes=53559460)
+[inotify_watcher.cpp:362][LoadPackage] Begin to load package, type=0,
+    path=/home/HwHiAiUser/hdcd/device0/aicpu/, fileName=8001_Ascend310P-aicpu_syskernels.tar.gz
+[aicpu_process_package_worker.cpp:92][LoadPackage] Load package success,
+    decomPkg=/home/HwHiAiUser/aicpu_kernels/vf0_8001_...
+[tsd_hash_verify.cpp:66][InsertOrUpdateHashValue] update hash value key:libcpu_kernels.so,
+    value:596121f4443904b834d22dc88f7555aa1d278c548d7626bf69b102d013b074a3, hashMapType:1
+```
+
+**but the recorded hash is the STOCK one.** Our modified library's sha256 is
+`d9775eae00f3dd5258169302628a93fea9885fee3eb4876a388f13777914383a` and it appears **nowhere** in
+the device log; every recorded value is the stock `bin_hash.cfg` value
+(`596121f4…`, `74f888c0…`, `63eb2f59…`, `8d0eb713…`, `ffe08454…`).
+
+So the device's hash registry is its **own** `bin_hash.cfg` (installed at
+`/usr/lib64/aicpu_kernels/`), not the one in our package — and our package's `bin_hash.cfg` never
+replaced it. The extraction path also differs per package type:
+`MoveSoToSandBox` moves only `libtensorflow.so`; the rest are handled by
+`tsd_hash_verify.cpp`.
+
+### The device SSH surface, fully mapped
+
+```
+Include /etc/ssh/sshd_config.d/*.conf
+PermitRootLogin no
+AuthorizedKeysFile .ssh/authorized_keys
+PasswordAuthentication no
+KbdInteractiveAuthentication yes
+ChallengeResponseAuthentication yes
+GSSAPIAuthentication yes
+UsePAM yes
+PubkeyAuthentication yes
+PermitEmptyPasswords no
+MaxAuthTries 3
+LogLevel VERBOSE
+Protocol 2
+```
+
+So on the device: **no root, no password auth, but keyboard-interactive via PAM** (which is where
+`pam_unix.so nullok` lives), plus **pubkey** with `AuthorizedKeysFile .ssh/authorized_keys`
+relative to the home directory, and GSSAPI.
+
+`HwHiAiUser` is uid 1000, home `/home/HwHiAiUser`, shell `/bin/bash`, and its shadow entry is a real
+SHA-512 crypt (`$6$BOrWuUA3AuseKqT.…`) — so `nullok` does not help, and 87 common/vendor-default
+passwords did not match. The account's sudo rights are only `/bin/ls`, but `tc-config` adds it to
+`wheel`, and `pam_wheel.so` gates `su-local` (whose stack includes `system-auth` → the same
+`pam_unix nullok` path).
+
+**The most promising SSH angle is therefore the pubkey path, not the password path**: if we can
+write `/home/HwHiAiUser/.ssh/authorized_keys` on the device, we get in as uid 1000 — and uid 1000
+is exactly the uid that runs the AICPU scheduler and owns `/dev/hisi_hdc` and
+`/dev/davinci_manager` on the device.
+
+And there is a route to that file: the device **decompresses our tar**, and the extracted tree lands
+under `/home/HwHiAiUser/…` (the decompress root for the AICPU package is
+`/home/HwHiAiUser/aicpu_kernels/vf0_<pid>_…`). If the extraction root can be made to cover
+`/home/HwHiAiUser/.ssh/`, an `authorized_keys` inside our tar would be installed by the device
+itself — no password needed, because the device does the writing.
+
+That is the concrete next experiment: put `.ssh/authorized_keys` (or a path relative to the
+decompress root that resolves to `.ssh/`) into our package, and check whether the device creates
+it — observable from the host by attempting a pubkey login.
+
+### The escalation chain this opens
+
+```
+1. Build an AICPU package containing .ssh/authorized_keys (and/or a constructor)
+2. Push it; the device decompresses it into /home/HwHiAiUser/...
+3. ssh -6 matteius@fe80::2e0:fcff:fefc:d302%endvnic   -> shell on the device OS, uid 1000
+4. From inside the device: read /etc/shadow (loaded from flash by save_shadow -r),
+   or drive /dev/spi_smbus / /dev/drv_smbus_intf to reach the MCU's CRC-only regions
+```
+
+Step 4 is where the MCU's `usershadow` config item, the community/user-certificate plugin, and the
+`spi_mcu` transport all become reachable — the three things that have been closed to us so far
+because they live inside the device.
