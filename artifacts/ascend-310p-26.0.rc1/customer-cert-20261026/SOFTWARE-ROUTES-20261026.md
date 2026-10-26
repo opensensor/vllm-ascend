@@ -1483,3 +1483,146 @@ forward, both now concrete:
    is currently blocked.
 
 Option 1 is the smallest step that could change the outcome, and it is entirely in code we own.
+
+---
+
+## BREAKTHROUGH: the SoC version shim works, and the loader now takes the per-SOC path
+
+Picking up the "modify the host driver" idea — but in the cheapest possible form first.
+
+### What the loader was missing
+
+`GetShortSocVersion` resolves like this:
+
+```
+halGetSocVersion(devId, buf, len)                    -> 0xfffe
+fe::PlatformInfoManager::Instance()
+fe::PlatformInfoManager::InitializePlatformInfo()
+fe::PlatformInfoManager::GetPlatformInfos(...)
+```
+
+and `halGetSocVersion` in the host's `libascend_hal.so` is a **6-byte stub**:
+
+```
+halGetSocVersion:
+    mov  %edi,-0x4(%rbp)
+    mov  %rsi,-0x10(%rbp)
+    mov  %edx,-0x8(%rbp)
+    mov  $0xfffe,%eax
+    pop  %rbp
+    ret
+```
+
+The runtime symbol resolves to file offset **0x29a42** — the stub — confirmed at runtime with
+`dlsym` + `link_map`. There is a *second* entry point at 0x29a57 that contains the real
+implementation (issue dev-manager command **0x4d97**, the SoC version query), but nothing reaches
+it. The driver *does* handle 0x4d97 — `drv_devmng_host.ko` contains `cmp $0x4d97,%esi` twice — so
+the query exists on the device side of the ioctl; the HAL simply never asks.
+
+(Correction to an earlier note in this session: the *device* HAL's `halGetSocVersion` is also a
+stub — `mov w0,#0xfffe; add sp,sp,#0x10; ret` — my first stub-detector matched the wrong byte
+pattern for aarch64. The host/device asymmetry I described was wrong; the real story is that
+**both** are stubbed and the working implementation is the dead code at 0x29a57 in the host HAL.)
+
+### The shim
+
+`socver_shim.c` — an `LD_PRELOAD` library that defines `halGetSocVersion` and answers with the
+card's own platform identity, read from CANN's platform config:
+
+```
+x86_64-linux/data/platform_config/Ascend310P3.ini
+    [version]
+    SoC_version=Ascend310P3
+    Short_SoC_version=Ascend310P
+```
+
+Before:
+
+```
+[GetShortSocVersion] get soc_version by halGetSocVersion failed
+[GetShortSocVersion] get short_soc_version by fe::PlatFormInfos::GetPlatformRes failed.
+[LoadSinglePackageToDevice] cannot find package:Ascend-aicpu_legacy.tar.gz, optional is true skip
+[LoadSinglePackageToDevice] cannot find package:Ascend910-aicpu_legacy.tar.gz, optional is true skip
+```
+
+After:
+
+```
+[socver_shim] halGetSocVersion(dev=0) -> "Ascend310P3"
+[GetShortSocVersion] get short_soc_version:Ascend310P
+[SendAICPUPackageSimple] hdc send file[.../Ascend310P/aicpu/Ascend310P-aicpu_legacy.tar.gz]
+                              to [/home/HwHiAiUser/hdcd/device0/aicpu/520013_Ascend310P-aicpu_legacy.tar.gz] success
+```
+
+**The per-SOC package name is now correct** (`Ascend310P-aicpu_legacy.tar.gz`, not `Ascend-...`),
+so the loader takes the per-SOC path.
+
+### A second, separate gap: the package location
+
+`conf/ascend_package_load.ini` lists per-SOC packages with `package_path:opp`:
+
+```
+name:Ascend310P-aicpu_legacy.tar.gz
+install_path:2
+optional:true
+package_path:opp
+```
+
+but the files actually live at `opp/Ascend310P/aicpu/`. So the loader looks for
+`opp/Ascend310P-aicpu_legacy.tar.gz` and does not find it. Symlinks in `opp/` fix that, and the
+loader then finds and sends the per-SOC package.
+
+### Where it still stops, and the evidence
+
+The log now runs:
+
+```
+[IsOkToLoadFileToDevice] loadfile name:Ascend310P-aicpu_syskernels.tar.gz
+[LoadFileToDevice] begin load file:Ascend310P-aicpu_syskernels.tar.gz
+[LoadOmFileToDevice] file path is:/usr/local/Ascend/cann-9.1.0/opp/Ascend310P/aicpu
+[SendFileToDevice] hdc send file[...] success
+```
+
+and then stops — no `Load om file name:`, no `TSD_OM_PKG_DECOMPRESS_STATUS`. The thread state
+says exactly where:
+
+```
+pid 522819: hdcdrv_recv_peek.part.0
+             hdcdrv_ioctl_com
+             hdcdrv_ioctl
+```
+
+**the client is blocked in `hdcdrv_recv_peek`, waiting for a message from the device.** The
+transfer itself is fast — a 53 MB push to the same destination takes **3.2 s** via our own
+`drvHdcSendFileV2` — so this is not throughput.
+
+So the sequence is now: the file arrives on the device, and the device never sends the
+`TSD_OM_PKG_DECOMPRESS_STATUS` reply that the client is blocked on. The device-side code for that
+reply exists — `TSDaemon::GetOmFileDecompressStatus` and
+`TSDaemon::ProcessOmFileDecompressStatus` in the device's `libtsdaemon.so` — but the device's
+`hdcd` service for type 3 (file transfer, uid 1000) is a *different* agent from `tsdaemon`, and
+the AICPU install is driven by `tsdaemon`'s own inotify/epoll watcher on
+`/home/HwHiAiUser/hdcd/device<N>/Ascend310P/aicpu/vfid<N>`.
+
+**The most likely remaining cause is the file name/location.** The device's watcher looks for
+`^[0-9]+_Ascend([0-9]{3}(P)?)?-aicpu_syskernels\.tar\.gz$` in a directory reached as
+`<base>/Ascend310P/aicpu/vfid<N>`. The vendor client sends to
+`hdcd/device0/aicpu/<pid>_<name>` — i.e. `hdcd/device0/aicpu/`, **not**
+`hdcd/device0/Ascend310P/aicpu/vfid0/`. The client's own destination may not be where the device
+watches.
+
+That is a concrete, testable difference, and it is the next thing to try: push to
+`hdcd/device0/Ascend310P/aicpu/vfid0/` (which the host-side path check rejected earlier) and see
+whether the device reacts.
+
+### Card state
+
+Healthy: 6/6 chips OK, 6 davinci nodes, 0 phy_startup errors, bringup active. The AICPU container
+is stock (`663e3dcc…`), device images stock (`e1e75ec2…`).
+
+Changes made on the host (all reversible, and none of them touch the card's firmware):
+- `/usr/local/Ascend/latest` → `cann-9.1.0` symlink — the driver install should have created it;
+  without it the client cannot find the package tree at all.
+- `opp/Ascend310P-aicpu_{legacy,syskernels,extend_syskernels}.tar.gz` symlinks into
+  `opp/Ascend310P/aicpu/` — matching what `conf/ascend_package_load.ini` expects.
+- `socver_shim.so` in `/var/local/ascend-work/tools/` — loaded only with `LD_PRELOAD`.
