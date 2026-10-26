@@ -7007,3 +7007,96 @@ substituted app region is bootable and the whole boot chain collapses to CRC str
 Tooling: `customer-cert-20261026/mcu_elabel.py` implements the full elabel parse + CRC
 verification against the 16 MB dump (`21/21 items validate`).
 
+
+### Addendum 3 (same session): the A/B boot-selection path is SIGNED — hypothesis disproven
+
+The single concrete next step from addendum 2 was to find out whether `boot_valid_check` gates on
+the **signature** or only on the **checksum**. Answered, and it goes against the hypothesis.
+
+**The boot parameters are stored raw in flash and read back raw:**
+
+```
+set_boot_param_to_flash (0x0805b466):
+    r4 = (index << 2) + 0x8000000 + 0x7800        => flash 0x78000 + index*4
+    ReadFlashWord(0x78000 + 4*i) -> value
+    compare with what we wanted to write; mismatch -> "param check failed"
+
+WriteBackBootParam (0x0805b858):
+    for r4 = 0x08007800 .. 0x08007840:
+        ReadFlashWord(r4) -> RAM table at 0x200029b8
+```
+
+So the boot-param table (16 u32 at flash `0x78000..0x78040`, loaded into RAM at `0x200029b8`) is
+**not signed and not CRC'd** — it is raw flash. On this card the whole area is `0xffffffff`
+(never written; the MCU uses defaults).
+
+**But the `bootNvalid` flags are only set behind a signature check.** Tracing every caller of
+`set_boot_param`:
+
+| caller | index | meaning |
+|---|---|---|
+| `copy_upgrade_file_to_flash` 0x0804b6ca | 2 | `boot1valid` |
+| `switch_mcu_image` 0x0804bc7c/0x0804bc96/0x0804bca8/0x0804bd08 | 1, 2, 3 | `boot0valid`, `boot1valid`, `apprefreshflag`, `bootorder` |
+| `validate_mcu_image` 0x0804be10 | 2 | `boot1valid` |
+| `update_boot_param` 0x0804be3c/0x0804be5c/0x0804be7c | 2, 3, 2 | |
+| `sync_app_master_slave` 0x0804b9e4 | — | |
+
+and in `copy_upgrade_file_to_flash`:
+
+```
+0x0804b640  bl  verify_firmware_file
+0x0804b64e  bl  0x0804afb0          ; RsaSignatureVerify
+0x0804b652  cmp  r0, #0
+0x0804b654  bne  -> "verify firmware failed"     <- signature must pass FIRST
+...
+0x0804b6ca  bl  set_boot_param(2, ...)            <- only then boot1valid is set
+```
+
+and `RsaSignatureVerify` (0x0804afb0) calls `McuSignatureVerify` (0x0805bbe4) — the full mbedTLS
+chain, ending at `CheckPubKeyHash` against the hardcoded `sha256(vendor_pubkey)`.
+
+`switch_mcu_image` then reads those flags back with **no re-verification**
+(`get_boot_param(1)` / `get_boot_param(2)`), but that is not exploitable by itself: the only way
+to *set* them is through a path that already passed the signature check.
+
+**Conclusion: the boot path is signed end-to-end.** The A/B redundancy is not a way around the
+signature — the flags are only reachable behind it. This kills the most promising of the four
+"next steps" listed earlier. The boot chain is closed, consistent with the six independent
+negative results already in this log.
+
+### Where the hole actually is — final statement
+
+The trust boundary that is genuinely weak is **not** the boot chain. It is the set of **MCU data
+regions the host is meant to write**, which the vendor protects with a **16-bit CRC** instead of
+a signature, while reserving signatures for their own firmware:
+
+| region | flash | integrity | reachable from host on this build? |
+|---|---|---|---|
+| MCU firmware (App0/App1) | 0x220000 / 0x260000 | RSA signature (`McuSignatureVerify`) + `sha256(vendor_pubkey)` anchor | upgrade path is signed; blocked |
+| bootloader copy | — | `bootloader_upgrade_validete_api`, sha256 | signed |
+| **electronic label** (`BALE`) | 0x2c0000 | **CRC-16/XMODEM only** (21/21 items verified) | `dsmi_dft_get_elable` is a **stub**; `drv_devmng_host.ko` has no elabel handler |
+| **customer certificate** (`PPPP`) | 0x780000 | **CRC-16 only** | `dsmi_get_custom_op_secverify_cert_show_info` is a **stub** |
+| trust records A/B | 0x237800 / 0x277800 | CRC-16 only | same |
+
+And the write path actively un-protects the sectors to do it
+(`SPI_FLASH_WritElectronicLabel` disables the write-protect, writes, re-enables it), and the
+firmware's own protection pass covers only `0x800000..0x1000000`, leaving all of the above
+unprotected.
+
+So the remaining question is exactly one thing, and it is a **reachability** question, not a
+crypto one:
+
+> **Is there any host path that can drive the MCU's board-comm opcodes, or write the MCU's SPI
+> flash, on this card?**
+
+Concretely still to check:
+1. Whether a raw DMP command can carry opcode `0x14` (`DEV_MON_CMD_WRITE_CLEAR_LABEL_DATA`) /
+   `0x15` (`DEV_MON_CMD_READ_LABEL_DATA`) without going through the stubbed public API — the MCU
+   *does* implement `board_read_elable_response_callback` (0x08053552) and the write/clear
+   handlers; the question is whether the 310P kernel module forwards them at all.
+2. Whether the SoC can reach the MCU's SPI bus by another route (the MCU also drives the VRD/MPS
+   over I2C and SPI — `i2c_bus_read`, `mps_write_vrd_chip_cfg`, `store_data_into_mtp` — so the
+   SoC↔MCU coupling may exist even though the host↔MCU door is stubbed).
+3. Whether the `traversal_data_update` / `board_opcode_data_update` path in the MCU can be
+   driven by a SoC-side command that *is* implemented in the driver.
+
