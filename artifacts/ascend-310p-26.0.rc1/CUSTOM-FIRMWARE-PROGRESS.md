@@ -7100,3 +7100,166 @@ Concretely still to check:
 3. Whether the `traversal_data_update` / `board_opcode_data_update` path in the MCU can be
    driven by a SoC-side command that *is* implemented in the driver.
 
+
+### Addendum 4 (same session): the host→MCU channel does not exist in this driver build
+
+The last open item was whether any host path can reach the MCU. Answered, and it is closed.
+
+**There is exactly one generic MCU message channel in the driver, and it is not built for the
+310P.** `dms/lpm/dms_lpm_pass_through_mcu.c` implements `CMD_IMU_MCU_MSG` (a pass-through of
+arbitrary MCU messages via IMU), and `dms/lpm/dms_lpm.mk` gates it:
+
+```make
+ifeq ($(PRODUCT_SIDE), host)
+else
+    ifneq ($(filter $(PRODUCT), ascend910 ascend910B),)
+        $(MODULE_NAME)-y += lpm/dms_lpm_pass_through_mcu.o
+        ccflags-y += -DCFG_FEATURE_PASS_THROUGH_MCU_BY_IMU
+    endif
+endif
+```
+
+`ascend910`/`ascend910B` only. Confirmed against the **installed** module:
+
+```
+nm drv_devmng_host.ko | grep -i "pass_through_mcu\|imu_mcu"   ->  (no symbols)
+```
+
+So on this card there is **no host→MCU message path at all**:
+
+| candidate route | status on the 310P build |
+|---|---|
+| `dsmi_dft_get_elable` (MCU opcode 0x15, read label) | 7-byte **stub**, returns 0xfffe |
+| `dsmi_get_custom_op_secverify_cert_show_info` | 7-byte **stub**, returns 0xfffe |
+| `dsmi_cmd_dft_get_elabel` / `dsmi_cmd_get_sign_cert` | real cmd functions, but the kernel module has no handler — the call fails inside `dsmi_check_device_id` after the DMP message with opcode 0x15 is built |
+| `DEV_MON_CMD_READ_LABEL_DATA (0x15)` / `WRITE_CLEAR_LABEL_DATA (0x14)` | **defined** in `dev_mon_cmd_def.h`, **not implemented** in the 310P module |
+| `drv_devmng_host.ko` MCU comm handler | **absent** — no `mcu`/`board`/`label` strings in the module at all |
+| IMU MCU pass-through | `ascend910`/`ascend910B` only, **not compiled** |
+| board info | comes from the **SoC** (`DMS_MAIN_CMD_SOC`/`DMS_SUBCMD_GET_SOC_INFO`), not the MCU |
+
+### Final state of the investigation
+
+**Closed by evidence (boot and runtime firmware trust):**
+
+- MCU firmware (App0/App1) and bootloader upgrades: RSA signature via `McuSignatureVerify`,
+  pinned by `sha256(vendor_pubkey)` = `ab510f4a…c5074` hardcoded at `0x08032be4` and compared
+  with `memcmp`. We hold no matching key (74 certs/keys checked across five encodings).
+  The A/B `bootNvalid` flags are only settable behind that signature check, so the redundancy is
+  not a bypass.
+- SoC boot (BL31) and the SoC runtime CMS (`/var/asdrv/.../verify/<type>`): closed by six
+  independent negative results plus the source-level `dms_custom` gating (the mechanism is
+  910B-only).
+- MCU → host reachability for every trust-bearing record: **no channel exists** in this driver
+  build.
+
+**Open, and now precisely characterised:**
+
+The MCU's *data* records — the ones the host is meant to write — are protected by a **16-bit
+CRC** rather than a signature, sit outside the firmware's own write-protect range
+(`0x800000..0x1000000`), and the elabel write path deliberately un-protects the sectors first:
+
+| region | flash | integrity |
+|---|---|---|
+| electronic label (`BALE`) | 0x2c0000 | CRC-16/XMODEM only — **21/21 items verified** |
+| customer certificate (`PPPP`) | 0x780000 | CRC-16 only (`customized_verify`) |
+| trust records A/B | 0x237800 / 0x277800 | CRC-16 only |
+| boot params | 0x78000..0x78040 | raw, no CRC/signature (but only settable behind the signature path) |
+
+So the manufacturer's implementation hole is real and now precisely located: **they used
+signatures for their own firmware and a CRC for everything else.** The crypto side of that hole
+is trivially exploitable — recompute a 16-bit checksum. What remains is purely physical
+reachability, and on this driver build the host↔MCU door does not exist.
+
+That leaves two genuinely open avenues, both outside the driver:
+
+1. **Out-of-band SPI access to the MCU flash.** The MCU's SPI is a private bus; the only way in
+   is the MCU itself *or* a flash programmer on the board. If the board exposes the MCU's SPI
+   lines (or a test point), the elabel and the customer-certificate region are writable with a
+   CRC recomputation. This is a hardware-access question, not a software one.
+2. **Rebuilding the host driver to add the missing handler.** We already build our own driver
+   fork (`ascend-310p-host-driver-spin-20261015`). The `dev_mon_cmd_def.h` opcodes 0x14/0x15
+   exist, and the MCU implements the handlers — but the 310P module has no dispatch table for
+   them, so adding one (or enabling the IMU MCU pass-through, which is a one-line `PRODUCT`
+   filter change) would open the door. That is entirely within our control, and it is the
+   natural next step.
+
+
+### Addendum 5 (same session): the MCU transport, and a note on the `hboot1` lead
+
+Two loose ends closed.
+
+**The MCU's host transport is not IPC.** `MCU_COMM_Init` (0x0804e402) only allocates a 0x208-byte
+receive buffer; the actual transport is set up elsewhere in the message task. The message framing
+in `comm_distribute_handle` (0x0804e458) is:
+
+```
+0x0804e478  ldrb r3, [r0] ; and r3, #0xc0 ; cmp r3, #0x40   ; header check
+0x0804e482  ldrb r3, [r2, #3] ; and r3, #0xe ; cmp r3, #2     ; message type
+0x0804e4a0  ldrh r3, [r2]   ; strh r3, [r1, #3]              ; length
+0x0804e4a6  movs r3, #0xc ; strb r3, [r1]                    ; opcode class
+```
+
+i.e. a fixed 12-byte header carrying a length and an opcode class, delivered over a peripheral
+the MCU owns (no UART/LIN/CAN strings are present in the image beyond unrelated hits, and the
+SoC has no `imu` device node on this card). The MCU's comm is wired to the SoC through a
+dedicated peripheral the 310P driver does not expose.
+
+**A note on the `hboot1a`/`hboot1b` lead from the very first session.** That lead was about the
+*SoC* bootloader components. The MCU has its own bootloader, and the two are distinct:
+`copy_bootloader_from_flash1_to_inner` (0x0805f4e2) copies the MCU's bootloader from SPI flash
+region 3 into **inner flash** at `0x08000000`:
+
+```
+0x0805f50e  mov.w r6, #0x8000000        ; inner flash base
+0x0805f512  mov.w r3, #0x100            ; 256-byte block
+0x0805f51c  bl   0x805d73c              ; SPI_FLASH_1_Read(region 3, ...)
+0x0805f536  ldr  r3, [r7], #4           ; then program into inner flash
+```
+
+and it is gated by `bootloader_upgrade_validete_api` (0x0804bfea), which does a **sha256** check
+of the bootloader ("check bootloader sha256 OK"). So the MCU bootloader is sha256-gated, not
+signature-gated — but the sha256 is over a file the vendor ships, and the bootloader copy is
+performed by the MCU itself from its own flash, not by the host. Nothing here is host-writable.
+
+### Final assessment
+
+Across the MCU, the SoC bootloader, the SoC runtime CMS, the host driver, the AI Core kernels
+and the AICPU kernels, the picture is now:
+
+| boundary | mechanism | status |
+|---|---|---|
+| SoC boot (BL31) | payload self-authentication, `Huawei Integrity Root CA - G2` | closed |
+| SoC runtime CMS | `ccpu_usr_cert_hash`, mechanism is 910B-only | closed |
+| MCU firmware + bootloader | RSA signature / sha256, anchored on `sha256(vendor_pubkey)` = `ab510f4a…c5074` at 0x08032be4 | closed — we hold no matching key |
+| MCU A/B boot selection | `bootNvalid` only settable behind the signature check | closed |
+| MCU data records: elabel, customer cert, trust records | **CRC-16 only** | **weak — but no host channel exists on this build** |
+| host driver | our own fork, installed, unsigned | **open** |
+| AI Core device kernels | plain SHA-256 in the op descriptor | **open, and proven executing** |
+| AICPU device kernels | plain `dlopen` of an ELF | **open** |
+
+The manufacturer's implementation hole is real and now precisely characterised: **they protect
+their own firmware with RSA signatures and everything the host writes with a 16-bit CRC.** The
+crypto weakness is trivial to exploit; what is missing is a transport.
+
+That transport, concretely, would be one of:
+
+1. **The MCU's SPI flash out-of-band** — a programmer on the board. Hardware access, not
+   software. The elabel (0x2c0000) and the customer-cert region (0x780000) would then be
+   writable with a recomputed CRC-16.
+2. **A driver that actually dispatches the board opcodes.** We build our own driver fork
+   (`ascend-310p-host-driver-spin-20261015`). `dev_mon_cmd_def.h` defines
+   `DEV_MON_CMD_WRITE_CLEAR_LABEL_DATA (0x14)` and `DEV_MON_CMD_READ_LABEL_DATA (0x15)`, and the
+   MCU implements the handlers (`board_read_elable_response_callback` at 0x08053552,
+   `write_customized_info_callback` at 0x08053e52, `clear_customized_info_callback` at 0x08053eac).
+   The 310P module has no dispatch table for them. Adding one is real driver work, but it is
+   entirely within our control — and the *driver* is already a proven-open boundary.
+3. **A different transport the SoC uses to reach the MCU.** The MCU also drives the VRD/MPS over
+   I2C (`i2c_bus_read`, `mps_write_vrd_chip_cfg`, `store_data_into_mtp`, `switch_vrd_page`) and
+   those are reachable from the SoC side. Worth checking whether any of them can be coerced into
+   carrying a flash write.
+
+Option 2 is the most promising *because the host driver is already an open boundary we own* —
+the AI Core proof showed we can replace the driver and have it take effect. A driver that
+dispatches opcode 0x14 to the MCU would turn the CRC weakness into a working
+customer-certificate installation path.
+
