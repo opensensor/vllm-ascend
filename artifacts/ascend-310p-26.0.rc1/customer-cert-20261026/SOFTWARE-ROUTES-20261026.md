@@ -2524,3 +2524,82 @@ that is the check our exact-size package reached, and `sign=1` is the value the 
 
 Healthy: 6/6 chips OK, 6 davinci nodes, 0 phy_startup errors, stock AICPU container restored on
 the host.
+
+---
+
+## The host controls where the device loads its AICPU kernels from
+
+The device's `tsdaemon` builds the environment for the AICPU scheduler, and one of those
+variables decides which directory the scheduler's libraries come from:
+
+```
+/usr/lib64/aicpu_kernels/0/aicpu_kernels_device/sand_box/:
+/home/HwHiAiUser/hs/0/runtime/lib64/:
+/usr/lib64/device-compat-plugin/0/:
+/usr/lib64/device-sw-plugin/0/device-sw-plugin/: DATAMASTER_RUN_MODE= ASCEND_AICPU_PATH=... 
+```
+
+and `libtsdaemon.so` carries:
+
+```
+'ASCEND_AICPU_PATH='
+'[TsdClient][logicDeviceId_=%u] environment variable ASCEND_AICPU_PATH is not set,use default'
+'tsd.AscendAicpuPath.ascend_aicpu_path'
+```
+
+The **host** puts `ascend_aicpu_path` into the HDC message that opens the session -- and the host
+side is `libtsdclient.so`, which reads it from the **environment**:
+
+```
+[TsdClient][deviceId=%u] environment variable ASCEND_AICPU_PATH is not set, use default value[%s]
+```
+
+So `ASCEND_AICPU_PATH` on the *host* decides where the *device* loads AICPU kernels from. That
+is a lever the host already holds.
+
+### And the device's own cleanup command names the accepted package names
+
+From the device's log:
+
+```
+File remove success. Cmd=rm -rf /home/HwHiAiUser/hdcd/device0/*_Ascend*-aicpu_syskernels.tar.gz
+    && rm -rf /home/HwHiAiUser/hdcd/device0/*_Ascend-device-sw-plugin.tar.gz
+```
+
+So the device accepts, under `hdcd/device0/`:
+
+- `<pid>_Ascend*-aicpu_syskernels.tar.gz`     (the AICPU kernels)
+- `<pid>_Ascend-device-sw-plugin.tar.gz`      (the plugin, which is where verify/flag lives)
+
+### Why this is the way in
+
+`/usr/lib64/device-sw-plugin/0/device-sw-plugin/` is on the scheduler's library path, and the
+device reads its signature policy from `/device-sw-plugin/verify/flag`. The `device-sw-plugin`
+package is extracted with `tar --same-owner --same-permissions -ozxf` into
+`/usr/lib64/device-sw-plugin/`.
+
+So a `device-sw-plugin` package carrying `verify/flag` with `verify_flag=0`
+(`SIGN_FLAG_DISABLED`) would switch the AICPU signature requirement off -- and that package can be
+delivered over the same HDC file transfer that already works, with no credential.
+
+The open problems, in order:
+
+1. the package must match the size the device has saved for the `device-sw-plugin` class (the same
+   size gate the AICPU packages are subject to);
+2. the host-side `dms_custom` module that would set the flag directly is **not compiled into the
+   310P driver** (`dms_custom.mk` builds it only for `hi1980b` / `ascend910B`), so the
+   device-sw-plugin route is the way rather than the command.
+
+### What the device already runs with
+
+```
+ASCEND_AICPU_PATH=/usr/local/Ascend/cann-9.1.0
+```
+
+on the device -- which is the *device's* view of the CANN tree, so the device has the AICPU kernels
+installed at `/usr/lib64/aicpu_kernels/` already and loads them from there.
+
+### Card state
+
+Healthy: 6/6 chips OK, 6 davinci nodes, 0 phy_startup errors, stock AICPU container restored on
+the host.
