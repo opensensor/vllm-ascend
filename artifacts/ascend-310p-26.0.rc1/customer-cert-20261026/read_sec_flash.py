@@ -160,7 +160,8 @@ def main():
 
     data = bytes(data)
     if outfile:
-        open(outfile, "wb").write(data)
+        with open(outfile, "wb") as fh:
+            fh.write(data)
         print(f"wrote {len(data)} bytes to {outfile}")
     else:
         for i in range(0, len(data), 16):
