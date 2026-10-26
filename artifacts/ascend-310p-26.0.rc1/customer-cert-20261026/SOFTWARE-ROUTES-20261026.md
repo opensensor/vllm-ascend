@@ -530,3 +530,125 @@ rotate between (NPU ID 9, 8217, 16409; `ssh-enable` is now set on 9 and 8217).
 
 `drvHdcPull` still returns 25, so the file cannot be read back yet; that is the outstanding
 verification step.
+
+---
+
+## The AICPU kernels container is rebuildable — the substitution chain closes
+
+The HDC push lands in exactly the directory the device expects its AICPU kernels in. So the
+question becomes: can a substituted AICPU kernel be produced that the device will accept?
+
+### The AICPU kernels container has no signature
+
+```
+/usr/local/Ascend/cann-9.1.0/opp/Ascend310P/aicpu/Ascend310P-aicpu_syskernels.tar.gz
+  esbc container: magic 0x55aa55aa, head_len 0x4dc, cert_type 0xffffffff
+  payload at 0x2000: "3\xaa::aicpu_kernels" + gzip(tar)
+    aicpu_kernels_device/
+      libaicpu_kernels.so    8267928
+      libcpu_kernels.so     30251592
+      libpt_kernels.so      20470976
+      libtensorflow.so      105180752
+      libtf_kernels.so       3635704
+      bin_hash.cfg              414
+      version.info             1056
+```
+
+`cert_type` is `0xffffffff` and the CMS section start lies past EOF — **there is no certificate and
+nothing to forge**. The container's entire integrity mechanism is three plain SHA-256 digests:
+
+```
++0x02C  u8[32]  payload_sha256 = SHA-256(payload)
++0x45C  u32      code_len        = payload length
++0x4BC  u8[32]  head_sha0       = SHA-256(container[0:0x4BC])
++0x14BC u8[32]  head_sha1       = SHA-256(container[0x1000:0x14BC])
+```
+
+and inside the payload, `bin_hash.cfg` holds one SHA-256 per library. Verified to be exactly
+`sha256(file)`:
+
+```
+libtensorflow.so     cfg=63eb2f59735075fe... sha256=63eb2f59735075fe... MATCH
+libtf_kernels.so     cfg=8d0eb7134077d853... sha256=8d0eb7134077d853... MATCH
+libaicpu_kernels.so  cfg=74f888c0cb887efc... sha256=74f888c0cb887efc... MATCH
+libcpu_kernels.so    cfg=596121f4443904b8... sha256=596121f4443904b8... MATCH
+libpt_kernels.so     cfg=ffe084547d2c703c... sha256=ffe084547d2c703c... MATCH
+```
+
+The libraries themselves are **plain unsigned ARM64 ELF shared objects** (`libaicpu_kernels.so`:
+`ELF 64-bit LSB shared object, ARM aarch64, stripped`, exporting `Cast`, `CropAndResize`, `CTCLoss`,
+`DataEnqueue`, …). `version.info` carries a `Trustlist=` naming the libraries the device will load.
+
+### The substitution chain, proven end to end
+
+`rebuild_aicpu_kernels.py` substitutes a library and rebuilds the container:
+
+1. replace the member in the tar;
+2. recompute `bin_hash.cfg`;
+3. re-gzip into the `3\xaa::aicpu_kernels` payload;
+4. rewrite `code_len`;
+5. recompute `payload_sha256`, `head_sha0`, `head_sha1`.
+
+The test substituted `libaicpu_kernels.so` with a copy carrying an equal-length marker
+(`construct null not valid` → `AICPUPROOF-AX-0000000XXX`, same 24 bytes at the same offset, so the
+library stays structurally valid):
+
+```
+=== original container ===
+  payload sha256                             OK
+  head sha c0                                OK
+  head sha c1                                OK
+  bin_hash.cfg (per-library sha256)          OK
+  cert_type == 0xffffffff (unsigned)         OK
+
+=== rebuilt container ===
+  payload sha256                             OK
+  head sha c0                                OK
+  head sha c1                                OK
+  bin_hash.cfg (per-library sha256)          OK
+  cert_type == 0xffffffff (unsigned)         OK
+
+  libaicpu_kernels.so in the rebuilt tar: 8267928 bytes,
+    sha256=a98a83664963c6d36feef574ef9b69c6c153fb5fc4585577d665034e7423c6a1
+  marker_present=True
+```
+
+and independently re-verified with the pre-existing `esbc_info.py`:
+
+```
+=== /tmp/kilo/aicpu_proof.tar.gz  (53572732 bytes) ===
+  code_len     : 0x331547c (53564540)
+  payload sha  : OK
+  head sha c0  : OK
+  head sha c1  : OK
+  cert_type    : 0xffffffff
+```
+
+**A substituted AICPU kernel produces a container that passes every integrity check the vendor
+defines.** This is the same conclusion the AI Core work reached from the other side — but here it
+needs no key, no certificate and no privileged access: the whole trust anchor is a checksum we
+recompute.
+
+### The chain, complete
+
+```
+host (ours)                          device (EulerOS aarch64)            AI CPU (Cortex-A55)
+---------                            -------------------------            ------------------
+HDC over PCIe (ours)                 hdcd, service 3 (file trans)
+  drvHdcSendFileV2  ret=0               whitelist: *_aicpu_*_syskernels.tar.gz
+  dst = .../aicpu/vfid0                  save_sub_path=*, name_full_check=0
+                                         -> file lands in the AICPU tmpfs
+                                                                       AICPU kernel
+rebuild_aicpu_kernels.py                 unpacked to /usr/lib64/aicpu_kernels/   dlopen'd,
+  bin_hash.cfg recomputed                   libaicpu_kernels.so, ...           no signature
+  container digests recomputed          bin_hash.cfg checked: sha256 only
+```
+
+**Everything needed is in our hands**: the transport (our driver, the vendor's own API, the
+whitelist), the payload format (public), the integrity check (a checksum), and the destination (the
+directory the device reads). The one step not yet observed is the device *consuming* the
+substituted tarball — that needs either device-side execution or a load-time observation, and
+`drvHdcPull` still returns 25 so the file cannot be read back yet.
+
+Note the credential situation is no longer a blocker for this chain: the HDC path needs no
+password at all.
