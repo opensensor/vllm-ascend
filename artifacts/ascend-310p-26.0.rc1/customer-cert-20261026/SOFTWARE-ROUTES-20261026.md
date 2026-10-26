@@ -944,3 +944,155 @@ The device's certificate-plugin paths are in the same binary:
 So the device OS *does* implement the runtime customer-certificate mechanism that the host-side
 `dms_custom` code was 910B-gated away from. Reaching it needs code execution on the device,
 which is exactly what this route is for.
+
+---
+
+## The AICPU install handshake, fully traced — and why the tar-slip idea is a dead end
+
+### The tar-slip idea: tested and closed
+
+The device's extraction command (from `libtsdaemon.so`, the device-side TSD daemon) is:
+
+```
+mkdir -p <dir> ; tar --no-same-owner -ozxf <file> -C <dir> ; rm -f *.tar.gz
+```
+
+with the sibling form `cp '<src>' '<dst>'` for the move step, executed via **popen**
+(`Popen execute cmd[%s]`). Since the tarball is ours, a tar-slip (writing outside the extraction
+directory) looked attractive.
+
+**It does not work.** GNU tar's default protections apply, and I confirmed all three variants
+against the exact options the device uses:
+
+| technique | result |
+|---|---|
+| absolute member path | `tar: Removing leading '/' from member names` — lands inside the extract dir |
+| `../` traversal | `tar: ../escaped.txt: Member name contains '..'` — **refused, rc=2** |
+| symlink then write through it | `tar: esc/planted.txt: Cannot open: Not a directory` — even when the symlink target **exists** |
+
+The third was the serious one and it still fails: GNU tar refuses to follow a symlink that was
+itself just extracted, so the write cannot be redirected. `--no-same-owner` only affects
+ownership, not path handling. **Closed.**
+
+### The real handshake, and why it does not complete
+
+Reading both sides of the protocol (`libtsdclient.so` on the host, `libtsdaemon.so` on the
+device — same code, different build) gives the complete sequence:
+
+1. **host** opens the session: `TsdOpenAicpuSd` → 0, `TsdOpen` → 0, sessionId=1.
+2. **host** sends the package: `hdc send file[.../Ascend310P-aicpu_syskernels.tar.gz] to
+   [/home/HwHiAiUser/hdcd/device0/<pid>_Ascend310P-aicpu_syskernels.tar.gz] success`.
+3. **host** must then send `tsd.HDCMessage.omfile_name` — the device logs
+   `omfileName[%s], deviceId[%u], vfId[%u], hostPid[%u].`
+4. **device** moves and extracts it:
+   `Move origin package to decompress path` → `Start decompress package, cmd=%s` →
+   `Post process of aicpu process package success` → `Load om package success, originPkg=%s,
+   decomPkg=%s, verifyName=%s, checkCode=%lu`.
+5. **device** reports back: `Send GetOmFileDecompressStatus success, sessionId[%u] rspCode:%u`.
+
+The device's filename matcher is a regex, and our name satisfies it:
+
+```
+^[0-9]+_Ascend([0-9]{3}(P)?)?-aicpu_syskernels\.tar\.gz$
+^[0-9]+_Ascend([0-9]{3}(P)?)?-aicpu_extend_syskernels\.tar\.gz$
+```
+
+and the device watches, via inotify + epoll:
+
+```
+/home/HwHiAiUser/hdcd/device<N>/Ascend310P/aicpu/vfid<N>
+```
+
+The **host** is the side that assembles the device-side path and issues the extraction command
+(host `libascend_hal.so` carries `/aicpu`, `/home/HwHiAiUser/hdcd/`, `/home/HwHiAiUser/hdcd/device`,
+`/var/hdcd`; the device carries `Ascend310P/aicpu/`, `/aicpu/vfid`, `aicpu_kernels_device/`,
+`/usr/lib64/aicpu_kernels/`).
+
+**Step 3 is where it stops.** The client sends the file and then waits for
+`TSD_OM_PKG_DECOMPRESS_STATUS`; the device never answers, so `TsdFileLoad` blocks until the
+3-minute timeout and the client gives up.
+
+### The control result that isolates the cause
+
+This was tested with the **vendor's own stock package** through the identical path:
+
+```
+[TsdClient][deviceId=0] hdc send file[.../Ascend310P-aicpu_syskernels.tar.gz]
+    to [/home/HwHiAiUser/hdcd/device0/340736_Ascend310P-aicpu_syskernels.tar.gz] success
+```
+
+and it behaves **identically** — sent successfully, then the device never replies. It was also
+tested with a deliberately broken package (`RunCpuKernel` patched to `mov x0,#0 ; ret`), with the
+same result.
+
+**So the device-side install step does not fire for the vendor's own package either.** This is a
+property of this card/device configuration, not a consequence of our substitution. That rules out
+the whole "our payload is malformed" family of explanations.
+
+### The one thing that would settle it
+
+The device's own log names the failing step precisely —
+
+```
+[TSDaemon] Checksum aicpu package failed, ret=%u
+[TSDaemon] Check aicpu package in os[%u] vfId[%d] checkCode[%lu]
+Load om package success, originPkg=%s, decomPkg=%s, verifyName=%s, checkCode=%lu
+```
+
+— but the device's log is **not visible from the host**. The host syslog only carries host-side
+messages; the device's journal is a separate filesystem. Reading it requires device-side access,
+which is exactly what the SSH credential would provide.
+
+### Host-path rules learned from the driver's own log
+
+The host HAL's `drvHdcSendFileParaCheck` (hdc_file.c:1416) enforces:
+
+```
+Calling strstr failed. (dev_id=0; file="..."; dst_path="/home/HwHiAiUser/hdcd/device0/omfile";
+                        base_path="/home/HwHiAiUser/hdcd/device0/aicpu")
+```
+
+i.e. **`dst_path` must contain the trusted base path `/home/HwHiUser/hdcd/device0/aicpu`**.
+Measured acceptance:
+
+| dst_path | result |
+|---|---|
+| `/home/HwHiAiUser/hdcd/device0/aicpu` | accepted |
+| `/home/HwHiAiUser/hdcd/device0/aicpu/vfid0` | accepted |
+| `/home/HwHiAiUser/hdcd/device0/Ascend310P/aicpu/vfid0` | rejected (52) |
+| `/home/HwHiAiUser/hdcd/device0/omfile` | rejected (52) |
+| `/var/hdcd/...` | rejected (52) |
+| `/home/HwDmUser/hdcd/device0/upgrade` | rejected (52) |
+
+So `/var/hdcd` is **not** an alternative landing zone on this platform — it is a fallback
+*base* string in the HAL, and the whitelist's `save_sub_path = *` means "into the base path",
+not "anywhere".
+
+Also established: the filename is **not** checked (`name_full_check_flag = 0`); `_Ascend310P-
+aicpu_syskernels.tar.gz`, `my_payload.sh`, `authorized_keys` and `evil.tar.gz` were all accepted
+with ret=0.
+
+### Where this leaves the two open questions
+
+1. **Why does the device not reply?** The device log would say (`Checksum aicpu package failed`
+   vs `Move origin package to decompress path failed` vs `Decompress om pkg failed`). Needs
+   device-side visibility.
+2. **Does our library get executed if the install succeeds?** Not testable until (1) is answered;
+   the numeric oracle also turned out to be wrong, because the AICPU op dispatch goes through
+   `opKernelLib: AICPUKernel` in the CANN op master rather than the `RunCpuKernel` entry point
+   in the kernel library.
+
+### A note on the dev_id failures in the log
+
+The `Convert virtual id to physical id failed` / `uda_devid_to_phy_devid` errors in the host
+kernel log are **not** a bug in our pushes — they are the *other cards*. `npu-smi info -m` gives the
+mapping:
+
+```
+NPU ID 9     Chip 0,1  -> Chip Logic ID 0,1
+NPU ID 8217  Chip 0,1  -> Chip Logic ID 2,3
+NPU ID 16409 Chip 0,1  -> Chip Logic ID 4,5
+```
+
+so `dev 2`/`dev 4` address cards 1 and 2, whose HDC sessions are not up in the same way. Card 0
+(`dev 0`) is the one that works.
