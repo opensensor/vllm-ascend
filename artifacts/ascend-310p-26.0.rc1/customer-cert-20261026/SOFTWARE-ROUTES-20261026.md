@@ -2316,3 +2316,98 @@ through ctypes so the exact implementation can be tried, and a strategy/memLevel
   `dst_path = .../hdcd/device0/aicpu/<anything>` returns 0 for `dw.txt`, `probe`, `x.tar.gz` and
   `9999_probe`. Only the *path* is constrained (it must contain the trusted base
   `/home/HwHiAiUser/hdcd/device0/aicpu`); path traversal is rejected.
+
+---
+
+## The size gate is beaten: our patched package now reaches the device's signature check
+
+The container was rebuilt so that it lands on **exactly 53559460 bytes** — the size the device has
+saved — while carrying our patched `libcpu_kernels.so` (`sha256 0162a62c2fc8f2a7…`) and an updated
+`bin_hash.cfg`.
+
+How the exact size was reached:
+
+1. The **tar** was reproduced byte-for-byte (167,823,360 bytes, 0 differing bytes) by using GNU
+   tar format -- Python's default POSIX format writes `"00"` in the version field where the
+   original has GNU's `" \0"`, and the checksums differ.
+2. The **gzip member** had to come out *smaller* than the target, because the vendor's own
+   compressor produced a stream ~13 KiB shorter than any zlib on this host manages (the
+   *unmodified* tar re-compresses to 53,564,302 against the vendor's 53,551,012, with zlib 1.2.11
+   and 1.3.1 alike -- so the vendor built it with a different deflate implementation).
+   `zlib.compressobj` at **memLevel 7** gives 53,453,095, comfortably under.
+3. The container is then assembled at exactly the target length, with the padding after the gzip
+   member, and the three digests recomputed.
+
+Container layout, confirmed against the stock container:
+
+```
+0x0000  esbc header
+0x2000  inner header (0x100 bytes) + gzip member + padding
+0x02C   u8[32]  sha256 of the payload
+0x45C   u32      payload length      (0x2000 + code_len == file length)
+0x4BC   u8[32]  sha256 of container[0:0x4BC]
+0x14BC  u8[32]  sha256 of container[0x1000:0x14BC]
+```
+
+### The device's reaction to our exact-size package
+
+```
+[recv_data] Create file. (dstpth=".../hdcd/device0/8300_Ascend310P-aicpu_syskernels.tar.gz";
+                         file_size=53559460; send_bytes=53559460)
+[inotify_watcher.cpp:362][LoadPackage] Begin to load package, type=0,
+    path=/home/HwHiAiUser/hdcd/device0/, fileName=8300_Ascend310P-aicpu_syskernels.tar.gz
+[aicpu_process_package_worker.cpp:58][LoadPackage] Start load package,
+    originPkg=.../8300_...tar.gz, decomPkg=/home/HwHiAiUser/aicpu_kernels/vf0_8300_...,
+    checkCode=0, pkgSize=53559460
+[KERNEL] [ascend] [user_cfg_drv] [devdrv_config_get_pss_cfg 4343] <tsdaemon:2861,3048>
+    The sign details. (sign=1)
+```
+
+Compare with the earlier attempts, which stopped at:
+
+```
+[TSDaemon] 'Check sum wait %u second timeout. ... curCode=%lu, checkCode=%lu'
+[TSDaemon] 'Get shared check code failed, will not decompress package'
+```
+
+**The size gate is passed.** The device now gets past the check-code comparison and proceeds to
+the **PSS signature check** (`devdrv_config_get_pss_cfg ... sign=1`), and the load does not
+complete. That is the next gate, and it is the vendor's actual signature verification -- the
+first one on this path that is cryptographically enforced rather than a checksum.
+
+The relevant device-side setting is `sign_type` in the user-config store, and the host driver
+exposes it as `devdrv_config_set_pss_cfg(dev_id, sign)` with
+`PKCS_SIGN_TYPE_OFF = 1` / `PKCS_SIGN_TYPE_ON = 0` (from `inc/driver/dsmi_common_interface.h`).
+So the *policy* for whether the AICPU package must be signed is a runtime setting.
+
+### The full picture of the AICPU install path
+
+```
+hdcd file transfer  ->  inotify watcher  ->  check code == package size
+                     ->  devdrv_config_get_pss_cfg (sign=1)
+                     ->  tar --no-same-owner -ozxf   (the device extracts)
+                     ->  tsd_hash_verify: record each library's sha256
+                     ->  install into /usr/lib64/aicpu_kernels/
+```
+
+The size gate is defeated; the signature gate is now the obstacle; and the signature policy is
+configurable via `devdrv_config_set_pss_cfg`.
+
+### What is left to try
+
+1. **`devdrv_config_set_pss_cfg`** -- if the host can set `sign=0` (PKCS_SIGN_TYPE_OFF) the device
+   would accept an unsigned package. The API is exported by the *host* HAL's
+   `dsmi_common_interface.h`, so it may be reachable through the DMP command set even though the
+   direct `devdrv_set_config` symbol is not exported by the host libraries.
+2. **The OM inner-package path** -- the device also supports `' ; tar -xf '` (a *non-gzip* tar) via
+   `/var/tsdaemon_decompress_om_inner_pkg.sh`, and a separate `'Package [%s] is not a gzip type
+   file.'` check. Different code path, possibly a different signature policy.
+3. **The `aicpu_hcomm.tar.gz` / `aicpu_legacy.tar.gz` packages** are much smaller (64 MB and
+   smaller) and went through the *same* successful path, so they are a cheaper thing to iterate on
+   while looking for a route that skips or weakens the signature check.
+
+### Card state
+
+Healthy: 6/6 chips OK, 6 davinci nodes, 0 phy_startup errors. The device's installed AICPU
+kernels are still the stock ones (the device recorded the stock hash `596121f4…`, not ours), and
+the host's `Ascend310P-aicpu_syskernels.tar.gz` is back to the stock container.
