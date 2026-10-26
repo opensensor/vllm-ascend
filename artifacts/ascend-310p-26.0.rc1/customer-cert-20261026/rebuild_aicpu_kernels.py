@@ -81,9 +81,14 @@ def build_payload(tar_bytes):
 
 def repack_tar(original_tar, replace_name, new_bytes):
     """Return a new tar with one member replaced, preserving the others."""
-    src = tarfile.open(fileobj=io.BytesIO(original_tar), mode="r:")
     out = io.BytesIO()
-    dst = tarfile.open(fileobj=out, mode="w:", format=src.format)
+    with tarfile.open(fileobj=io.BytesIO(original_tar), mode="r:") as src, \
+            tarfile.open(fileobj=out, mode="w:", format=src.format) as dst:
+        _repack_members(src, dst, replace_name, new_bytes)
+    return out.getvalue()
+
+
+def _repack_members(src, dst, replace_name, new_bytes):
     for member in src.getmembers():
         data = src.extractfile(member).read() if member.isfile() else b""
         if member.name == replace_name:
@@ -102,22 +107,25 @@ def repack_tar(original_tar, replace_name, new_bytes):
             dst.addfile(member, io.BytesIO(data))
         else:
             dst.addfile(member)
-    dst.close()
-    return out.getvalue()
 
 
 def rewrite_bin_hash(tar_bytes, prefix):
     """Recompute bin_hash.cfg from the libraries present in the tar."""
-    src = tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:")
     cfg_name = prefix + "/bin_hash.cfg"
-    entries = []
-    for member in src.getmembers():
-        if not member.isfile() or not member.name.endswith(".so"):
-            continue
-        blob = src.extractfile(member).read()
-        entries.append((member.name[len(prefix) + 1:], hashlib.sha256(blob).hexdigest()))
     out = io.BytesIO()
-    dst = tarfile.open(fileobj=out, mode="w:", format=src.format)
+    with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:") as src:
+        entries = []
+        for member in src.getmembers():
+            if not member.isfile() or not member.name.endswith(".so"):
+                continue
+            blob = src.extractfile(member).read()
+            entries.append((member.name[len(prefix) + 1:], hashlib.sha256(blob).hexdigest()))
+        with tarfile.open(fileobj=out, mode="w:", format=src.format) as dst:
+            _rewrite_members(src, dst, cfg_name, entries)
+    return out.getvalue()
+
+
+def _rewrite_members(src, dst, cfg_name, entries):
     for member in src.getmembers():
         if member.name == cfg_name:
             body = "".join(f"{n}={h}\n" for n, h in entries).encode()
@@ -136,8 +144,6 @@ def rewrite_bin_hash(tar_bytes, prefix):
             dst.addfile(member, io.BytesIO(data))
         else:
             dst.addfile(member)
-    dst.close()
-    return out.getvalue()
 
 
 def rebuild(container, replace_name, new_bytes):
@@ -165,9 +171,6 @@ def verify(container):
     """Re-verify every digest in a container; return (ok, report)."""
     report = []
     payload = bytes(container[PAYLOAD_OFF:])
-    ln = struct.unpack_from("<I", container, 4)[0]
-    off = PAYLOAD_OFF
-    slot = 0x20 - (ln & 0xF)
 
     stored = container[PAYLOAD_SHA_OFF:PAYLOAD_SHA_OFF + 32]
     actual = sha256(payload)
@@ -183,20 +186,20 @@ def verify(container):
 
     gz = payload.find(b"\x1f\x8b\x08")
     tar_bytes = gzip.decompress(payload[gz:])
-    src = tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:")
-    cfg = src.extractfile("aicpu_kernels_device/bin_hash.cfg").read().decode()
     lib_ok = True
-    for line in cfg.splitlines():
-        if "=" not in line:
-            continue
-        name, expect = line.split("=", 1)
-        try:
-            blob = src.extractfile("aicpu_kernels_device/" + name.strip()).read()
-        except Exception:
-            lib_ok = False
-            continue
-        if hashlib.sha256(blob).hexdigest() != expect.strip():
-            lib_ok = False
+    with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:") as src:
+        cfg = src.extractfile("aicpu_kernels_device/bin_hash.cfg").read().decode()
+        for line in cfg.splitlines():
+            if "=" not in line:
+                continue
+            name, expect = line.split("=", 1)
+            try:
+                blob = src.extractfile("aicpu_kernels_device/" + name.strip()).read()
+            except Exception:
+                lib_ok = False
+                continue
+            if hashlib.sha256(blob).hexdigest() != expect.strip():
+                lib_ok = False
     report.append(("bin_hash.cfg (per-library sha256)", lib_ok))
     report.append(("cert_type == 0xffffffff (unsigned)",
                    struct.unpack_from("<I", container, 8)[0] == 0xFFFFFFFF))
@@ -236,8 +239,8 @@ def main():
     payload = rebuilt[PAYLOAD_OFF:]
     gz = payload.find(b"\x1f\x8b\x08")
     tar_bytes = gzip.decompress(payload[gz:])
-    tf = tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:")
-    blob = tf.extractfile("aicpu_kernels_device/" + lib_name).read()
+    with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:") as tf:
+        blob = tf.extractfile("aicpu_kernels_device/" + lib_name).read()
     print(f"  {lib_name} in the rebuilt tar: {len(blob)} bytes, "
           f"sha256={hashlib.sha256(blob).hexdigest()}")
     return 0 if ok2 else 1
