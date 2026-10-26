@@ -7388,3 +7388,141 @@ implement the board-comm opcodes `0x14`/`0x15` that the MCU already handles.
 
 Full detail: `customer-cert-20261026/SINGLE-CARD-TEST-20261026.md`.
 
+
+---
+
+## 2026-10-26 (session 5) — software-only routes to the MCU, and the SSH angle
+
+The clip requires taking the heatsink off, so this session looked for a purely software route, and
+in parallel examined the device-side SSH implementation.
+
+### The card is reachable over the PCIe vNIC (not the LAN)
+
+`npu-smi set -t ssh-enable -i 9 -d 1` succeeds — the host log records
+`Set the SSH function for card9 success. enable_flag=1.`
+
+The device is **not** reachable at `192.168.50.1` (that route goes via the router and is blocked by
+the VLAN policy). It **is** reachable over the direct PCIe vNIC:
+
+```
+ssh -6 matteius@'fe80::2e0:fcff:fefc:d302%endvnic'
+  -> Authorized users only. All activities may be monitored and reported.   (device /etc/issue.net)
+  -> Permission denied (publickey,gssapi-keyex,gssapi-with-mic,keyboard-interactive)
+```
+
+The card-side vNIC addresses are `fe80::2e0:fcff:fefc:d30{2..5}`; d302 is the SSH-enabled card
+(NPU ID 9). The link is IPv6 link-local only — the host's `endvnic` has no IPv4, and the device's
+own `pcivnic_set_default_ip` gives it `192.168.3.199` with no host-side counterpart.
+
+### The device OS, extracted and read
+
+`Ascend310P.cpio.gz` is an esbc container; the payload is a gzip stream at `0x2100` holding a
+**364 MB newc CPIO**. `customer-cert-20261026/extract_devrootfs.py` unpacks it (byte-identical to
+system `cpio`).
+
+Device facts:
+- EulerOS aarch64, kernel `6.6.0-72.0.0.76.h21510.1170.eulerosv2r15.ascend.aarch64`.
+- **OpenSSH 9.6p1**, stock — no vendor patch, no known CVE in the SSH implementation.
+- `sshd_config`: `PasswordAuthentication no`, but `KbdInteractiveAuthentication yes` and
+  `ChallengeResponseAuthentication yes` — passwords authenticate via PAM keyboard-interactive.
+- PAM stack (`sshd` → `password-auth` → `password-auth-local`):
+
+  ```
+  auth  required      pam_env.so
+  auth  required      pam_faillock.so preauth audit deny=3 even_deny_root unlock_time=300
+  auth  sufficient    pam_unix.so nullok try_first_pass
+  auth  [default=die] pam_faillock.so authfail audit deny=3 ...
+  auth  sufficient    pam_faillock.so authsucc audit ...
+  auth  requisite     pam_succeed_if.so uid >= 1000 quiet_success
+  auth  required      pam_deny.so
+  ```
+
+  `pam_unix.so` is invoked with **`nullok`**, so an empty shadow hash would authenticate — but
+  `HwHiAiUser`'s hash is a real SHA-512 crypt
+  (`$6$BOrWuUA3AuseKqT.$DCnzXrNod3qQ.…`), as is root's. 87 common/vendor-default passwords tested
+  against both — no match. `pam_sss.so` is referenced with a `-` prefix (continue-if-absent) and is
+  absent from the image, which is harmless.
+
+- `HwHiAiUser` (uid 1000) is restricted by sudoers to `/bin/ls`, but `tc-config` adds it to `wheel`,
+  and `pam_wheel.so` gates `su-local` — which stacks `system-auth`. `bin/passwd` is setuid-root
+  (normal). `/etc/shadow` is `----------` root-only.
+- The device SSH switch is read from
+  `/sys/class/devdrv_manager/davinci_manager/devdrv_manager/devdrv_ssh_config` == `ssh-on`, and
+  that node is not present in this build.
+
+**Verdict on the SSH angle: no software vulnerability found.** It is a credential problem, not an
+exploit. The `upgrade-tool --component -9` path ("all components and reset password") needs more
+arguments than `--device_index`/`--component`; with `--path` it runs but fails
+(`result(7)`, `{"device": 0, "failed"}`) and the password is unchanged.
+
+### The real device→MCU transport is SPI, and it is present
+
+Decompiled from `Ascend310P_dt.img`:
+
+```dts
+spi@A44B0000 {
+    compatible = "hisi-spi";  reg = <0x00 0xa44b0000 0x00 0x10000>;
+    num-cs = <0x01>;  id = <0x06>;  status = "ok";
+    spi_smbus@0 { compatible = "spi_mcu"; reg = <0x00>;
+                  spi-max-frequency = <0xf4240>;  mode = <0x00>; };
+};
+spi@A44A0000 { compatible = "spi_slave_mcu"; ... };   /* MCU -> SoC */
+```
+
+and the device carries the matching drivers:
+
+```
+drv_spi_smbus.ko   spi_mcu_reg_read / spi_mcu_reg_write / spi_smbus_send_req_crc
+ipc_drv.ko         hisi-mailbox / mdev_send_msg / mdev_receive_msg
+drv_smbus_intf.ko  smbus_secure_boot_init / _query / _get_cert
+```
+
+**This corrects the previous session's conclusion.** The vendor's *libdcmi* elabel path is I2C-based
+and looks for an Intel `"SMBus I801 adapter"` that does not exist on this AMD host — so *that*
+host-side path is dead. But the actual device→MCU link is this **SPI** link at `0xA44B0000`, driven
+from the **device's** kernel, and it works.
+
+### The chain, and the two gaps
+
+```
+host (ours)                device (EulerOS aarch64)            MCU (Cortex-M)
+npu-smi set -t ssh-enable   sshd 9.6p1                         SPI flash
+   | HDC (PCIe) drv_pcie_hdc_host (OURS)                        elabel / PPPP / trustlist
+   |   hdcd (device agent)    ipc_drv.ko (hisi-mailbox)          (all CRC-16 only)
+   |                          drv_spi_smbus.ko (spi_mcu)  --->  SPI @0xA44B0000
+```
+
+Two gaps, both ours to close:
+1. **A host HDC client** — the host driver we already rebuild exposes the whole RPC
+   (`HDCDRV_SERVICE_TYPE_FILE_TRANS 3`, `HDCDRV_CMD_SERVER_CREATE/CONNECT/SEND/RECV` in
+   `hdc_host/hdcdrv_cmd.h`), the device agent `/var/hdcd` runs (uid 1000, `restart: on-forever`),
+   and the device's file-transfer whitelist is permissive for the AICPU kernel tarballs
+   (`_Ascend310P-aicpu_syskernels.tar.gz  *  0  104857600  64  0` — any path, **no name check**,
+   no root privilege required). There is simply no host HDC *client* installed.
+2. **Device-side code to drive `spi_mcu`** — reachable once (1) is done, with no credentials needed
+   thanks to the whitelist.
+
+### Closed this session
+
+- **GPIO bit-bang**: the host driver *does* register a GPIO command
+  (`DMS_GET_GET_GPIO_STATUS_CMD`, `DMS_SUPPORT_ROOT_ONLY`) with `DIRECT_OUTPUT`/`DIRECT_INPUT`
+  sub-commands — exactly what a software I2C would need. But `dsmi_get_gpio_status` returns
+  `0xfffe` on the 310P (0/16 pins readable); the only GPIO consumers in the source are in
+  `res_drv_mdc_v2.c` (the MDC platform), and there is no exported `set_gpio`. The device has no
+  GPIO or i2c-gpio modules either. **Closed.**
+- **SoC customer cert**: the earlier session's `--user_cert` path already *succeeded* on all six
+  device indices today ("Set user cert, device_index[0], file path is /usr/local/Ascend/CMS/user.xer").
+  `npu-smi set -t custom-op-secverify-cert` reports "This device does not support setting
+  custom-op-secverify-cert." — the SoC CMS path is 910B-gated in the driver
+  (`dms_custom.mk` gates on `hi1980b`/`ascend910B`), so `dms_custom_device.o` is not compiled for
+  the 310P.
+
+### Next step
+
+Write the host-side HDC client against our own `hdcdrv_cmd.h`. It needs no new mechanism on either
+side, and it is the same "we own the driver" position that made the AI Core proof possible. From
+there, the device's own `spi_mcu` driver becomes the MCU transport, and the CRC-only integrity
+becomes the only barrier.
+
+Full detail: `customer-cert-20261026/SOFTWARE-ROUTES-20261026.md`.
+
