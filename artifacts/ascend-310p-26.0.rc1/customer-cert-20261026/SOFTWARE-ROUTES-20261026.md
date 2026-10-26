@@ -1251,3 +1251,134 @@ The device never replies. Two candidate reasons, both now testable:
 file the installer creates. The device reads it to learn what to install. The client log's
 `cannot get package path:/usr/local/Ascend/latest///conf/` and `Opening file: was not successful`
 point straight at it: the config directory is empty of what the client needs.
+
+---
+
+## The install descriptor, the package-name derivation, and why the device stays silent
+
+Picking up the `aicpu_package_install.info` lead paid off — it revealed the whole configuration
+surface the client uses.
+
+### The package descriptor format (found: `conf/ascend_package_load.ini`)
+
+The CANN ships it at `cann-9.1.0/conf/ascend_package_load.ini`, and it is a block-structured ini
+with five keys per package:
+
+```
+name:mc2_server.tar.gz
+install_path:2
+optional:true
+package_path:opp/built-in/op_impl/aicpu/kernel
+load_as_per_soc:false
+```
+
+`install_path` is a **numeric code**, and `PackageProcessConfig::ParseInstallPath` maps it:
+
+| code | directory |
+|---|---|
+| 0 | `aicpu_kernels_device/` |
+| 1 | `aicpu_extend_syskernels/` |
+| 2 | `/usr/lib64/aicpu_kernels/` |
+| 3 | `/home/HwHiAiUser/inuse/` |
+
+The shipped file has **no entry for `Ascend310P-aicpu_syskernels.tar.gz`** — only for
+`aicpu_hccl`, `mc2_server`, `aicpu_hcomm` and the `cann-*-compat` packages. That is why the client
+logs `can not find aicpu packages` and then sends the AICPU syskernels through a *different* code
+path (`SendFileToDevice` rather than `LoadSinglePackageToDevice`).
+
+### The package names are derived from the SoC version — and that lookup fails
+
+The client builds per-SOC package names from a **short SoC version** string. Its literals are
+`Ascend310P` (our card), `Ascend310`, `Ascend910`, `Ascend310RC`, `Ascend`, plus the short versions
+`E39009` / `E39005`. It obtains that from `halGetSocVersion()` and from
+`fe::PlatFormInfos::GetPlatformRes`, and on this host **both fail**:
+
+```
+[GetShortSocVersion] get soc_version by halGetSocVersion failed
+[GetShortSocVersion] get short_soc_version by fe::PlatFormInfos::GetPlatformRes failed.
+```
+
+The visible symptom is that the client looks for the wrong filenames:
+
+```
+[LoadSinglePackageToDevice] cannot find package:Ascend-aicpu_legacy.tar.gz, optional is true skip
+[LoadSinglePackageToDevice] cannot find package:Ascend910-aicpu_legacy.tar.gz, optional is true skip
+```
+
+— `Ascend-...` and `Ascend910-...` rather than `Ascend310P-...`. The real file on disk is
+`Ascend310P-aicpu_legacy.tar.gz`. So the fallback path names are wrong for this card, and the
+packages that *do* get sent (`Ascend310P-aicpu_legacy.tar.gz`, `aicpu_hcomm.tar.gz`,
+`Ascend310P-aicpu_syskernels.tar.gz`) go out via `SendAICPUPackageSimple` /
+`SendFileToDevice` without the matching `omfile_name` bookkeeping.
+
+**This is the most likely reason the device never replies.** The client is running the *generic*
+AICPU path, not the per-SOC path, because it cannot determine the SoC version.
+
+### What the client reads to build these
+
+From the library's literals, the inputs are:
+
+| input | purpose |
+|---|---|
+| `ASCEND_LATEST_INSTALL_PATH` | the install tree root (default `/usr/local/Ascend/latest/`) |
+| `ASCEND_HOME_PATH` | the CANN root |
+| `ASCEND_AICPU_PATH` | where the AICPU packages live |
+| `ASCEND_RT_VISIBLE_DEVICES` | which cards to talk to |
+| `PROCESS_MODE` / `THREAD_MODE` / `AICPU_PROFILING_MODE` | run mode |
+| `/opp/` + `/aicpu/` + `/opp/built-in/` | package path prefixes |
+| `conf/ascend_package_load.ini` | the package descriptor |
+| `aicpu_package_install.info` | the per-device install record (`deviceId=`, `vfId=`) |
+
+`aicpu_package_install.info` is the *runtime* record of what is installed on a given device and
+VF — written by the installer, read by the device. It does not exist on this host, and the
+device-side equivalents (`/device-sw-plugin/verify/*`) are likewise absent from the extracted
+device image.
+
+### The device-side CMS verifier (confirmed, with the OpenSSL version)
+
+The device's `libtsdaemon.so` embeds a full OpenSSL **3.0.12** (24 Oct 2023) with PKCS#7/CMS
+support, and the runtime certificate plugin paths:
+
+```
+/device-sw-plugin/verify/community-certificate
+/device-sw-plugin/verify/user-certificate
+/device-sw-plugin/verify/vendor-certificate
+```
+
+with `[CMSCBB_VERIFY]` logging (`cmsLen[%u], iniLen[%u], crlLen[%u]`, `Add config certificate not
+pass ret[0x%x]`, `add crl not pass, ret[0x%x]`) and the constraint
+`only support signed type package by cms`. It is reached through `halVerifyImg` and the package
+types `Ascend-device-sw-plugin.tar.gz` / `Ascend-runtime_device-minios.tar.gz`.
+
+OpenSSL 3.0.12 is a 2023 release, so the usual 3.0.x CVEs are patched; the interesting question is
+the *policy* in the CMS chain check rather than a parsing bug. The host driver's own header
+points at exactly these paths:
+
+```
+CUSTOM_SIGN_CONF_USER_CERT_PATH "/var/asdrv/dev%u/device-sw-plugin/verify/user-certificate"
+DSMI_SEC_SUB_CMD_CUST_SIGN_USER_CERT 3
+```
+
+so the device implements the runtime customer-certificate installation that the host-side
+`dms_custom` code was 910B-gated away from — and the certificate chain check
+(`Add config certificate not pass ret[0x%x]`) is where a self-signed or otherwise acceptable
+chain would have to be judged.
+
+### Next step, and it is a small one
+
+The client cannot determine the SoC version. That is worth chasing directly: `halGetSocVersion`
+is in the host's `libascend_hal.so`, and the driver knows the platform. If the SoC version resolves
+to `Ascend310P`, the client takes the **per-SOC path** — which is the path that also sends the
+`omfile_name` message and waits for the device's `TSD_OM_PKG_DECOMPRESS_STATUS` reply.
+
+Concretely: find why `halGetSocVersion` fails on this host (it is used by plenty of other tools
+too, so it is likely a missing driver symbol rather than a card quirk), and see whether
+`ASCEND_LATEST_INSTALL_PATH` + a populated `conf/` is enough to make it resolve.
+
+### Card state
+
+Stock everywhere: AICPU container `663e3dcc…`, host AICPU library `ec28199e…`, device images
+`e1e75ec2…`, `conf/ascend_package_load.ini` untouched (it was read-only), the temporary install
+tree removed. The `/usr/local/Ascend/latest -> cann-9.1.0` symlink is left in place — it is
+correct (the driver install should have created it) and `npu-smi info` plus a torch op both work
+with it.
