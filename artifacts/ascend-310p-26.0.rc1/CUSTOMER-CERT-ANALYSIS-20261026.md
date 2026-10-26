@@ -64,7 +64,7 @@ returns **zero** hits.
 `Ascend310P.cpio.gz` esbc trailer, extracted at the verified offsets
 (`cms_start = 0x684d260`, `ini_start = cms+0x4000`, `crl_start = ini+0x800`):
 
-```
+```text
 cms  len 9201   ini len 76   crl len 3522
 ini  = "initrd,   39634b3e512d477fcc1b7280de792fcc450dfeca2d1d135fb4231d23c8ba0ff3;"
 ```
@@ -92,7 +92,7 @@ are signed independently.
 
 Reverse-engineered from `upgrade-tool` (x86-64, `0x68a09`):
 
-```
+```text
 0x692e7  calc_pub_hash(buf, len, out[32]):
            EVP_DigestInit_ex(ctx, EVP_sha256())
            EVP_DigestUpdate(ctx, buf, len)
@@ -107,7 +107,7 @@ The input to the hash is the **esbc payload region** `file[0x2000 : 0x2000 + cod
 
 Verified against our archived `user.der`:
 
-```
+```text
 code_len            = 1721
 header digest@0x2c  = 7fb03430761fd43a26e90000c4592838b3746ce8d1fb895c8fa124c9bab63e53
 SHA256(body)        = 7fb03430761fd43a26e90000c4592838b3746ce8d1fb895c8fa124c9bab63e53   ✅ match
@@ -120,7 +120,7 @@ cert                = rootcaG2.der (self-signed, CN=RootCA G2, C=CN, O=Test)
 `drv_user_cfg.ko` is the only driver module containing the string `ccpu_usr_cert_hash`
 (other hits: `libdrvdsmi.so`, `libascend_hal.so` — host-side libraries). It exposes:
 
-```
+```text
 sec_flash_read      / sec_flash_write        (exported)
 devdrv_config_sync_data_to_flash
 devdrv_config_write_flash_head_content
@@ -134,7 +134,7 @@ certificate. The certificate itself is never transferred.
 
 BL31 (`AS610_HBOOT2_UEFI.fd`, FIP@0x132100) carries the customer-cert path:
 
-```
+```text
 21a6a  "usr cert hash cal fail!0x%x"
 2171d9 "Secure Boot: customer efuse Solution"
 21c86  "usr cert hash cpy fail."
@@ -200,7 +200,7 @@ and the 2026-10-21 build may have conflated them.
 This is the part that was previously guessed at, and it is now exact. The 9201-byte stock CMS is a
 `pkcs7-signedData` with **three** signers and a **nested RFC-3161 timestamp token**.
 
-```
+```text
 ContentInfo
 └─ signedData (version 1)
    ├─ digestAlgorithms: [sha256]
@@ -249,7 +249,7 @@ a single-signer plain signedData with none of that.
 
 ### 5.2 Why `openssl cms -verify` fails on the stock CMS (expected, not a defect)
 
-```
+```text
 $ openssl cms -verify -inform DER -in stock_cms.der -content initrd.ini \
       -CAfile <Huawei Integrity Root CA - G2> -certfile chain.pem -purpose any
 CMS Verification failure
@@ -290,7 +290,7 @@ there is no path from a public-root compromise to a firmware signature on this h
 Tested directly on `emSign Root CA - G1` (RSA-2048, e=65537), pulled from the card's own
 `/etc/ssl/certs/`:
 
-```
+```text
 d= 2: m^(d·e−1) ≡ 1 (mod n)  for 0/11 random m
 d= 3: 0/10      d= 4: 0/10      d= 5: 0/11
 d= 8: 0/7       d=16: 0/9
@@ -308,7 +308,7 @@ Separately: a scan of **all 120 roots** in the card's `/etc/ssl/certs/ca-certifi
 The compromised intermediates are `EM {DV,OV,EV} TLS CA - G3B/G3C` (cross-signed to
 `emSign Root TLS CA - G3` and `AAA Certificate Services`). On the card host:
 
-```
+```text
 emSign Root CA - G1        PRESENT   (in ca-certificates.crt)
 emSign Root CA - C1        PRESENT
 emSign Root TLS CA - G3    ABSENT

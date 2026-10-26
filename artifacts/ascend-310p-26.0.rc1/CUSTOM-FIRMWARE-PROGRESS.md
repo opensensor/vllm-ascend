@@ -31,7 +31,7 @@
 
 Results:
 
-```
+```text
 STOCK  → ALL SIGNERINFOS VALID
         PSS SIG VALID (CN=Computing PL Code-Signing Authority 2 - G2, salt=32)
         messageDigest 2934ff7d… == SHA-256(initrd.ini body)      ✅
@@ -45,7 +45,7 @@ OURS   → ALL SIGNERINFOS VALID
 The stock container's `crl` section is **3 concatenated DER objects**, and the middle one is a
 **certificate**, not a CRL:
 
-```
+```text
 STOCK container 'crl' section:
   [0] CRL   issuer = Huawei Integrity Root CA - G2     (also in CMS crls[0])
   [1] CERT  subject = Huawei Integrity CA 1 - G2       <-- a CERT, not a CRL
@@ -65,13 +65,13 @@ inside the CMS `certificates[0]` set.
 
 Every prior attempt (`modified5..modified9`, `stock-resigned`) shipped:
 
-```
+```text
 certtype (both header copies) = 0xFFFFFFFF
 ```
 
 `rebuild_esbc.py`'s own docstring records the values from Huawei's `image_pack.py`:
 
-```
+```text
 certtype: 0x1 = community, 0x2 = client, 0xFFFFFFFF = Huawei
 ```
 
@@ -88,7 +88,7 @@ changed in any attempt.
 `drv_pkicms.ko` exports `pkicms_get_name_by_cert_type` / `pkicms_get_real_cert_type` and contains
 the literal table:
 
-```
+```text
 vendor-certificate
 community-certificate
 user-certificate
@@ -126,7 +126,7 @@ pattern.
 
 `drv_pkicms.ko` exports `pkicms_get_name_by_cert_type` (AArch64, text+0x3fa4):
 
-```
+```text
 0x3fbc: add  w0, w19, #1          ; w0 = cert_type + 1
 0x3fc0: cmp  w0, #3
 0x3fc4: b.hi #0x3fe8              ; out of range -> default (vendor-certificate)
@@ -165,7 +165,7 @@ user-certificate path.
 Stock container `crl` section = **3 concatenated DER objects**, and the middle one is a
 **certificate**:
 
-```
+```text
 [0] CRL   issuer = Huawei Integrity Root CA - G2   (also in CMS crls[0])
 [1] CERT  subject = Huawei Integrity CA 1 - G2     <-- a CERT, not a CRL
 [2] CRL   issuer = Huawei Integrity CA 1 - G2      (also in CMS crls[1])
@@ -179,7 +179,7 @@ Ours was 5 objects (3 CRLs then 2 certs) — wrong content and wrong order for t
 The prior `full/initrd.ini.p7s` (built by Huawei's `cmssign`) is **structurally identical** to the
 stock container CMS and **cryptographically valid**:
 
-```
+```text
 version 1 · digestAlgorithms {sha256 + NULL params} · detached pkcs7-data
 [0] certificates: 2   [1] crls: 2   signerInfos: 1
 signedAttrs: contentType, signingTime, messageDigest, signingCertificateV2
@@ -211,7 +211,7 @@ content.
 | `B-stock-ct2.cpio.gz` | **stock** | `0x2` | A/B control — isolates the payload |
 | `C-modified-ct1.cpio.gz` | modified9 | `0x1` | community-type variant |
 
-```
+```text
 A  sha256 5a67f78c4bf4bb1c18a90fd8042a2275de2076052c91ae2e84c6354a74e3426f  (110543928 B)
 B  sha256 5038197f5b71d3463af031934997771edea2190015d997659c234fcf775d4df2  (109389448 B)
 C  sha256 95a5ea883af3c051fd6202815e80a35b54b0f8e14939c5fedca55b388a668442  (110543928 B)
@@ -242,10 +242,10 @@ Deploy to **one card** at a time, with the stock file preserved and a `revert` c
 
 `stock-ourcms2-ct2.cpio.gz` (built by the 2026-10-21 session, never actually tested):
 
-* **payload: byte-identical to stock** (`39634b3e…`)
-* `certtype = 0x2` (user-certificate path)
-* CMS = our chain (Huawei `cmssign`, 9644 B, PSS + `signingCertificateV2` + RFC-3161 TST)
-* `crl` section = 3 objects, stock shape, our chain's certs/CRLs
+- **payload: byte-identical to stock** (`39634b3e…`)
+- `certtype = 0x2` (user-certificate path)
+- CMS = our chain (Huawei `cmssign`, 9644 B, PSS + `signingCertificateV2` + RFC-3161 TST)
+- `crl` section = 3 objects, stock shape, our chain's certs/CRLs
 
 ### Result
 
@@ -279,7 +279,7 @@ never initialised). Use `systemctl status ascend-310p-bringup` and
 
 Reverted to stock immediately:
 
-```
+```text
 sudo cp /usr/local/Ascend/driver/device/Ascend310P.cpio.gz.orig \
         /usr/local/Ascend/driver/device/Ascend310P.cpio.gz
 sha256 = 12975a9d7e9345255eccc0d97475082ec96ebab69324070f2246604dac8c0cc2   ✅
@@ -340,13 +340,13 @@ under test, not by the tooling.
 
 Run order: **B3** (must boot — proves recovery works) → **B1** → **B2**.
 
-* If **B1 boots** → `certtype = 0x2` is correct and accepted; the problem is our CMS/CRL chain.
-* If **B1 fails** → `certtype = 0x2` is wrong or the customer path is closed (efuse) → investigate
+- If **B1 boots** → `certtype = 0x2` is correct and accepted; the problem is our CMS/CRL chain.
+- If **B1 fails** → `certtype = 0x2` is wrong or the customer path is closed (efuse) → investigate
   `certtype` semantics further; the `drv_pkicms` table maps `0x2`→`user-certificate`, but the
   **BL31** consumer may use a different encoding than the runtime module.
-* If **B2 boots** → our CMS+CRL are accepted as a "Huawei" image (i.e. the runtime ignores the
+- If **B2 boots** → our CMS+CRL are accepted as a "Huawei" image (i.e. the runtime ignores the
   cert chain) → then the failure in test B was certtype alone.
-* If **B2 fails** → our chain is rejected, as expected, and `certtype`/`certtype`+chain both need
+- If **B2 fails** → our chain is rejected, as expected, and `certtype`/`certtype`+chain both need
   the customer path to work together.
 
 ---
@@ -356,7 +356,7 @@ Run order: **B3** (must boot — proves recovery works) → **B1** → **B2**.
 `/usr/local/Ascend/driver/tools/Ascend_310P_check.bin` is Huawei's own CHECK_TOOL. It logs to
 `/var/log/upgradetool/upgrade_crl.log`. Modes:
 
-```
+```text
 0 [image] [out.crl]        extract the CRL section from an image
 1 [crl1] [crl2]            compare CRL timestamps
 2 [crl]                    check CRL integrity
@@ -442,12 +442,12 @@ certtype handling instead.
 
 ---
 
-## 2026-10-26 — ✅ B1 BOOTED. `certtype = 0x2` is confirmed live on the device.
+## 2026-10-26 — ✅ B1 BOOTED. `certtype = 0x2` is confirmed live on the device
 
 Cold power cycle with `B1` (stock payload, stock Huawei CMS, stock CRL section, **certtype = 0x2**)
 in place:
 
-```
+```text
 rootfs on card : d6495c413082914cd87f0f928fe034816075b2ec877bef8892fc094a99e83e35  (== B1)
 phy_startup errs: 0
 bringup service : active (exited), code=0/SUCCESS
@@ -509,7 +509,7 @@ followed by a cold power cycle.
 `/var/log/upgradetool/upgrade.log` records every `--user_cert` enrollment. The **last** one
 (2026-10-21 11:23:51) was:
 
-```
+```text
 Firmware Set user cert, device_index[-1], file path is /home/matteius/usercert-test/user-signcert-ct1.der
 ```
 
@@ -539,7 +539,7 @@ a trust-chain problem: the chain was fine, the *identity* was wrong.
 
 ### The `usrcert` tag-block format (decoded)
 
-```
+```text
 +0x00  12 bytes  magic  "3\xaa::usrcert\x00"
 +0x10   8 bytes  zero
 +0x18   u32      = 9
@@ -573,7 +573,7 @@ for the boot-time comparison.
 
 D-series CMS shape (mirrors stock exactly for a 2-level chain):
 
-```
+```text
 certs set : [ RootCA G2 , Test Signing Cert ]
 crls set  : [ rootG2.crl ]
 crl section: [ rootG2.crl , rootcaG2.der , rootG2.crl ]     (stock shape: [CRL, CA cert, CRL])
@@ -594,7 +594,7 @@ enrolled), or that the CMS must also carry the timestamp chain under the enrolle
 
 ### D1 result
 
-```
+```text
 rootfs on card : 0210d5fcce1cd6d4…  (== D1)
 phy_startup errs: 1
 davinci nodes   : 0
@@ -620,9 +620,9 @@ So B1 booted because the image verified against the **built-in Huawei root** —
 
 What we actually know now:
 
-* `certtype = 0x2` is **accepted** (offline oracle + device boot with the stock CMS) — it is not
+- `certtype = 0x2` is **accepted** (offline oracle + device boot with the stock CMS) — it is not
   rejected, but it is not sufficient either.
-* An image signed by **our** chain is **rejected**, because the verifier resolves trust through
+- An image signed by **our** chain is **rejected**, because the verifier resolves trust through
   the built-in roots. The customer path was never engaged by any test so far.
 
 ### The runtime trust store — found in `drv_upgrade.ko`
@@ -646,7 +646,7 @@ fail`, `sec_flash_read_mtd_nums failed!`, `get boot area failed`.
 
 ### What BL31 does with the user cert (string-driven reconstruction)
 
-```
+```text
 'usr cert address check fail, result = 0x%x!'   -> obtains an ADDRESS for the cert
 'usr cert 0x%lx oversize!'                      -> size check on that region
 'usr cert copy fail!0x%x' / 'usr cert copy fail.' -> copies it into a buffer
@@ -715,7 +715,7 @@ sudo cp /usr/local/Ascend/driver/device/Ascend310P.cpio.gz.orig \
 
 `upgrade-tool`'s component-name table (`.rodata` 0x24a360–0x24a580, 16-byte slots) is:
 
-```
+```text
 nve  xloader  m3fw  uefi  tee  kernel  dtb  rootfs  imu  imp  aicpu
 hboot1a  hboot1b  hboot2  ddr  lp  hsm  sil  hlink  RAWData
 RO_SysDrv  RO_ADSApp  RO_ComIsolator  RO_Cluster  RO_Customized
@@ -747,7 +747,7 @@ these cards** — which is consistent with the customer path never having been e
 
 `user-signcert-ct1.der` is exactly a `usrcert` container:
 
-```
+```text
 magic "3\xaa::usrcert\x00" | 8 zero bytes | u32 9 | 0 | 0 | u32 517 | u32 4
 | u32 0x20000 | u32 total_len | u32 0x100 (tag block size) | zero padding to 0x100
 | payload = the DER certificate
@@ -853,7 +853,7 @@ container: magic `3\xaa::usrcert`, a fixed 0x100-byte header, then the DER certi
 Per the operator's caution, this was tested directly rather than inferred. `--user_cert` on a
 **single** device (dev0) with two *different* certificates:
 
-```
+```text
 $ upgrade-tool --device_index 0 --user_cert --path .../user-signcert-ct1.der
 Device[0] set user certificate info success.
 $ upgrade-tool --device_index 0 --user_cert --path .../user-rootcaG2-ct1.der
@@ -862,7 +862,7 @@ Device[0] set user certificate info success.
 
 Both succeeded, and the log confirms the write:
 
-```
+```text
 Firmware Set user cert, device_index[0], file path is .../user-rootcaG2-ct1.der.
 Firmware User cert file_size=9913.
 Firmware Set user cfg, device_index[0], size=0x20.      <-- 32-byte SHA-256 written
@@ -915,7 +915,7 @@ the customer chain and falls back to `no usr, hw vef fail` (i.e. stock behaviour
 
 ### What is now on the card
 
-```
+```text
 /usr/local/Ascend/CMS/user.xer   9833 bytes   SHA-256(tag‖cert) = b932bb15ac0cc925…
 /usr/local/Ascend/CMS/user.crl   3045 bytes   [ rootG2.crl , rootcaG2.der , rootG2.crl ]
 /usr/local/Ascend/driver/device/Ascend310P.cpio.gz = F1 (952423c1b00d914…)
@@ -923,7 +923,7 @@ the customer chain and falls back to `no usr, hw vef fail` (i.e. stock behaviour
 
 All six devices re-enrolled with **the exact deployed file**:
 
-```
+```text
 $ upgrade-tool --device_index <i> --user_cert --path /usr/local/Ascend/CMS/user.xer
 Device[i] set user certificate info success.
 ```
@@ -941,9 +941,9 @@ Both use the chain `RootCA G2 → Test Signing Cert` (the enrolled cert), `certt
 
 F1 is deployed and awaiting a cold power cycle. F1 answers one question cleanly:
 
-* **F1 boots** → the customer path is live end to end (cert delivered, hash matched, image verified
+- **F1 boots** → the customer path is live end to end (cert delivered, hash matched, image verified
   against our chain). Then **F2 is the goal** — custom firmware.
-* **F1 fails** → the customer path still is not engaging, and the remaining candidates are:
+- **F1 fails** → the customer path still is not engaging, and the remaining candidates are:
   1. the `usrcert` image needs its own CMS/`cms` slot (the stock images are all signed containers —
      `user.xer` currently has no `cms` section, only the raw cert);
   2. the `certtype` in the *rootfs* container must be something else (the `usrcert` type id found
@@ -964,7 +964,7 @@ keeping in mind if F1 fails.
 
 ### Result
 
-```
+```text
 rootfs on card : 952423c1b00d9149…  (== F1)
 phy_startup errs: 1
 davinci nodes   : 0
@@ -1074,7 +1074,7 @@ Stock rootfs restored (`12975a9d…`). `/usr/local/Ascend/CMS/{user.xer,user.crl
 
 ### G1 result (stock rootfs + `/CMS/{user.xer,user.crl}` present)
 
-```
+```text
 rootfs on card : 12975a9d7e934525…  (stock)
 phy_startup errs: 0
 davinci nodes   : 6
@@ -1083,23 +1083,23 @@ npu-smi         : all 6 chips 310P3 OK
 
 **G1 boots cleanly.** So:
 
-* The `/CMS/user.xrl` + `/CMS/user.xer` files do **not** upset a stock boot — the BIOS accepts
+- The `/CMS/user.xrl` + `/CMS/user.xer` files do **not** upset a stock boot — the BIOS accepts
   them and ignores them as expected for a stock-signed image.
-* Therefore **F1's failure was caused purely by our rootfs signature**, not by the presence of the
+- Therefore **F1's failure was caused purely by our rootfs signature**, not by the presence of the
   CMS files, and not by the CMS files' format.
-* The remaining problem is narrow and specific: the BIOS rejected our customer-signed rootfs.
+- The remaining problem is narrow and specific: the BIOS rejected our customer-signed rootfs.
 
 ### ⚠️ Correction: my earlier atime inference was unsound
 
 I previously concluded from atimes that "`user.crl` was read but `user.xer` never was". Testing the
 filesystem behaviour directly shows that conclusion was **not** sound:
 
-* `/usr/local` is ext4 with `relatime`. Under relatime, atime is updated only if
+- `/usr/local` is ext4 with `relatime`. Under relatime, atime is updated only if
   `atime <= mtime` **or** `atime <= ctime`.
-* When I copied the files in at 01:59:13 and then computed `user.xer`'s hash myself, that read
+- When I copied the files in at 01:59:13 and then computed `user.xer`'s hash myself, that read
   pushed `user.xer`'s atime to 01:59:13.505 — **above** its mtime of 01:59:13.472. From then on
   no read could advance it. So "atime unchanged" proved nothing about whether the driver read it.
-* `user.crl`'s atime *did* advance to 02:02:36 during the F1 boot — that one is meaningful,
+- `user.crl`'s atime *did* advance to 02:02:36 during the F1 boot — that one is meaningful,
   because its atime was still below its mtime at that point.
 
 Verified empirically on the card (both the `atime < mtime` and `atime == mtime` cases update on
@@ -1109,7 +1109,7 @@ read; only `atime > mtime` does not).
 
 All three relevant files had their atimes forced back to `2026-10-26 00:00:00`:
 
-```
+```text
 /usr/local/Ascend/CMS/user.xer              atime = 00:00:00
 /usr/local/Ascend/CMS/user.crl              atime = 00:00:00
 /usr/local/Ascend/driver/device/Ascend310P.cpio.gz   atime = 00:00:00
@@ -1119,9 +1119,9 @@ The next power cycle (stock rootfs, cards currently healthy and up) will therefo
 **exact** read time of each file, and answer definitively: does the driver open `user.xer`, and in
 what order relative to the rootfs?
 
-* `user.crl` read + `user.xer` read → both are delivered to the BIOS; the customer path is armed
+- `user.crl` read + `user.xer` read → both are delivered to the BIOS; the customer path is armed
   and F1 failed for a signature reason.
-* `user.crl` read + `user.xer` **not** read → the driver stops at `user.crl`, and something about
+- `user.crl` read + `user.xer` **not** read → the driver stops at `user.crl`, and something about
   `user.xer` (size? format? the `usrcert` tag?) makes the driver or BIOS skip it.
 
 ### Why the ring buffer could not be read
@@ -1142,17 +1142,6 @@ load timer expires — i.e. the BIOS never sent `DEVDRV_RECV_FINISH` (0x8888…)
 explicit failure flags. That is a **timeout**, which is consistent with the BIOS rejecting the
 image and simply not completing the handshake.
 
-
-
-
-
-
-
-
-
-
-
-
 ### Remaining unknowns
 
 - Whether the `customer efuse` bit is provisioned on these cards. `npu-smi info -t
@@ -1168,7 +1157,7 @@ image and simply not completing the handshake.
 
 ### Stock container geometry (verified byte-exact)
 
-```
+```text
 file 0x0000 / 0x1000   two 0x1000 header copies
 0x2000                 payload, code_len bytes   (tag block 0x100 + data)
 cms_start = 0x2000 + code_len + (32 - code_len % 16)
@@ -1183,7 +1172,7 @@ Header fields (per copy): `certtype` @+0x08, payload digest @+0x2C, `img_offset`
 
 ### Stock signing chain
 
-```
+```text
 Huawei Root CA                              (RSA-4096, self, PKCS#1 v1.5)
 └─ Huawei Integrity Root CA - G2            (RSA-4096, PSS/MGF1-SHA256, self)
    ├─ Huawei Integrity CA 1 - G2            (intermediate)
@@ -1223,7 +1212,7 @@ not an anomaly. (Rank-3/U-D from `SECUREBOOT-WEAKNESSES.md` resolved.)
 
 `upgrade-tool --user_cert --path <file>` does **not** install a certificate:
 
-```
+```text
 0x692e7  calc_pub_hash: EVP_DigestInit_ex(SHA256) → Update → Final  (32 bytes)
 0x692c9  buffer = file + 0x2000
 0x69281  length = u32(file + 0x45c)          # code_len
@@ -1309,7 +1298,7 @@ that would each cause a rejection:
 
 After both fixes the SignerInfo structure is **identical to stock**, verified by DER tree diff:
 
-```
+```text
 STOCK                              I3
 signedAttrs[0]                     signedAttrs[0]
   [0] 30 len=24                      [0] 30 len=24
@@ -1333,7 +1322,7 @@ stock (`3035 3033303130 0d 0609 608648016503040201 05 00 0420 <32-byte sha256>`)
 
 Stock uses **one intermediate issuing both leaves**:
 
-```
+```text
 Huawei Integrity Root CA - G2
  └─ Huawei Integrity CA 1 - G2          <-- ONE CA
     ├─ Computing PL Code-Signing Authority 2 - G2
@@ -1349,7 +1338,7 @@ structural reason F1 failed, independent of the encoding bugs.
 
 ### The coherent setup now deployed
 
-```
+```text
 user.xer  = user-signca.der   (Signing Certificate CA G2 — the INTERMEDIATE anchor)
             certtype=0xFFFFFFFF, code_len=1756
 user.crl  = [ RootCA G2 CRL , signca.der , signCA CRL ]   (3096 B, stock shape)
@@ -1368,9 +1357,9 @@ beneath the single enrolled anchor** — exactly the stock topology.
 
 ### What each outcome means
 
-* **I3 boots** -> the customer path works end to end. Then `I4-modpayload.cpio.gz`
+- **I3 boots** -> the customer path works end to end. Then `I4-modpayload.cpio.gz`
   (`e17cbc82ea64a670...`, same setup but the **modified** payload) is custom firmware.
-* **I3 fails** -> the customer path is gated on something else (eFuse customer-mode bit, or the
+- **I3 fails** -> the customer path is gated on something else (eFuse customer-mode bit, or the
   exact anchor semantics), and we would need the device-side log to see the BIOS's verdict.
 
 ### Current card state
@@ -1416,7 +1405,7 @@ Stock's `rsassaPss` parameters **omit** `trailerField` (they end at `saltLength`
 `[3] trailerField = 1`. Semantically identical, but the AlgorithmIdentifier DER now matches stock
 byte-for-byte:
 
-```
+```text
 304106092a864886f70d01010a3034a00f300d06096086480165030402010500
     a11c301a06092a864886f70d010108300d06096086480165030402010500
     a203020120
@@ -1424,7 +1413,7 @@ byte-for-byte:
 
 ### Verification after the fixes — M1
 
-```
+```text
 STOCK  si.children: 0x02,0x30,0x30,0xa0,0x30,0x04,0xa1
 M1     si.children: 0x02,0x30,0x30,0xa0,0x30,0x04,0xa1     ✅ identical
 STOCK  sd.children: 0x02,0x31,0x30,0xa0,0xa1,0x31
@@ -1466,7 +1455,7 @@ M1 deployed, cards down from the failed I3 boot. **Cold power cycle (≥30 s)** 
 
 ### M1 result
 
-```
+```text
 rootfs on card : b711403522395656…  (== M1)
 phy_startup errs: 1
 davinci nodes   : 0
@@ -1480,7 +1469,7 @@ cryptographically valid, yet the device still rejected the image. So the fault m
 
 ### The check tool is not an oracle for customer-signed images — proven
 
-```
+```text
 STOCK .orig                     rc=0
 B1 (stock Huawei CMS, ct=2)     rc=0      <- passes because it chains to the BUILT-IN root
 P2 (our CMS, ct=2)              rc=6      <- fails: no built-in root for RootCA G2
@@ -1526,7 +1515,7 @@ from the pristine local copy taken at the start of this investigation
 (`027f4d22762ef0644…`, verified byte-identical) and now stored as
 `/usr/local/Ascend/driver/device/Ascend310P.image.orig`. Full recovery set on the card:
 
-```
+```text
 Ascend310P.image.orig             027f4d22762ef0644…   (pristine boot package)
 Ascend310P.cpio.gz.orig           12975a9d7e934525…   (pristine rootfs)
 Ascend310P.cpio.gz.bak-20261021   12975a9d7e934525…
@@ -1557,7 +1546,7 @@ The remaining candidates, in order:
 
 ### P-series result (both containers customer-signed, intermediate anchor)
 
-```
+```text
 Ascend310P.image   b5c3005f24a3938c…
 Ascend310P.cpio.gz 6f4b6ecdcb8b796b…
 phy_startup errs: 1     davinci nodes: 0     bringup: FAILED
@@ -1567,7 +1556,8 @@ Still rejected, even with **both** signed containers (uimage *and* initrd) custo
 "only the rootfs was signed" theory is not sufficient either.
 
 Card restored to stock immediately afterwards:
-```
+
+```text
 Ascend310P.image.orig   027f4d22762ef0644…
 Ascend310P.cpio.gz.orig 12975a9d7e934525…
 ```
@@ -1576,7 +1566,7 @@ Ascend310P.cpio.gz.orig 12975a9d7e934525…
 
 From the BL31 string set:
 
-```
+```text
 'usr cert address check fail, result = 0x%x!'   -> obtain an ADDRESS for the cert
 'usr cert 0x%lx oversize!'                      -> size check
 'usr cert copy fail!0x%x' / 'usr cert copy fail.' -> copy it
@@ -1604,7 +1594,8 @@ Two independent choices, each of which we have varied:
 identical to the stock container's.
 
 R's CMS:
-```
+
+```text
 certs         : [ RootCA G2 , Test Signing Cert ]
 crls          : [ rootG2.crl ]              (one CRL - the anchor's issuer)
 crl section   : [ rootG2.crl , rootcaG2.der , rootG2.crl ]   (stock shape, 2-level chain)
@@ -1613,11 +1604,12 @@ signAlg       : rsassaPss sha256 / mgf1-sha256 / salt 32, NO trailerField  (stoc
 si.children   : 0x02,0x30,0x30,0xa0,0x30,0x04   (stock-identical)
 sd.children   : 0x02,0x31,0x30,0xa0,0xa1,0x31   (stock-identical)
 ```
+
 **No timestamp token** — a TSA leaf cannot chain to a leaf anchor, so it is omitted.
 
 Deployed on the card:
 
-```
+```text
 Ascend310P.image    4d35211f3f7a91e4…   (uimage,  leaf-signed, certtype 0x2)
 Ascend310P.cpio.gz  ec960b4546727d97…   (initrd,  leaf-signed, certtype 0x2)
 /usr/local/Ascend/CMS/user.xer  9833 B  (leaf container, hash b932bb15…)
@@ -1651,7 +1643,7 @@ Card restored to pristine stock and `/usr/local/Ascend/CMS/` removed.
 
 `drv_user_cfg.ko` (in the card rootfs `/var/`, 183777 bytes) contains:
 
-```
+```text
 ccpu_usr_cert_hash
 sec_flash_read / sec_flash_write
 "The sec_flash_write failed. (device_id=%u; ret=%d)"
@@ -1689,7 +1681,7 @@ the **built-in Huawei roots only**. There is no hook for a customer CA there.
 
 The four files in the stock rootfs `/var/` (`<uuid>.sec`, `5a5aa5a5` magic) each contain:
 
-```
+```text
 0x00  magic 5a5aa5a5
 0x08  u32 = 38783   size of the certs block
 0x28  u32 = 3522    size of the CRL section
@@ -1776,7 +1768,7 @@ with the errors `sprintf_s cert path failed.` and `Read cert path file failed. (
 
 The module's **exported** API is the contract we care about:
 
-```
+```text
 pkicms_get_sec_check_enable_flag   pkicms_read_efuse_reg     pkicms_nvcnt_read
 pkicms_custom_verify_cms           pkicms_verify_cms         pkicms_verify_cms_data
 pkicms_verify_cms_inner            pkicms_compare_crl        pkicms_hw_crl_compare
@@ -1817,11 +1809,12 @@ There are now two clearly separated mechanisms:
 | **runtime** (`drv_pkicms` on the card) | runtime CMS verification | the cert at `/var/asdrv/dev%d/device-sw-plugin/verify/<type>` + `ccpu_usr_cert_hash` | **yes** — this is what `--user_cert` drives |
 
 The runtime path is the one we control end-to-end:
-* `/var/asdrv/dev%d/device-sw-plugin/verify/user-certificate` is a **file on the card's rootfs**,
+
+- `/var/asdrv/dev%d/device-sw-plugin/verify/user-certificate` is a **file on the card's rootfs**,
   which we can write into a rebuilt rootfs;
-* the check is gated by `pkicms_get_sec_check_enable_flag` (an eFuse bit we can now read);
-* `pkicms_custom_verify_cms` exists specifically for the custom/customer case;
-* and `drv_pkicms.ko` itself lives in the rootfs, so it is **modifiable and rebuildable** — we
+- the check is gated by `pkicms_get_sec_check_enable_flag` (an eFuse bit we can now read);
+- `pkicms_custom_verify_cms` exists specifically for the custom/customer case;
+- and `drv_pkicms.ko` itself lives in the rootfs, so it is **modifiable and rebuildable** — we
   already have `rebuild_esbc.py` reproducing the stock rootfs byte-for-byte.
 
 ### Next step (concrete)
@@ -1852,7 +1845,7 @@ repack tool exists.
 
 ### The rootfs is a doubly-nested container
 
-```
+```text
 Ascend310P.cpio.gz  (outer esbc container)
 ├─ 0x0000 / 0x1000  two 0x1000 header copies (preamble 0x55aa55aa, head_len 0x4dc,
 │                     certtype @+0x08, payload SHA-256 @+0x2C, code_len @+0x45C)
@@ -1871,7 +1864,7 @@ trust containers in `/var/`.
 
 ### `repack_rootfs.py` — the tool
 
-```
+```text
 repack_rootfs.py --container <Ascend310P.cpio.gz> --out <new.cpio.gz>
                  [--set path=localfile]... [--add path=localfile]... [--delete path]...
                  [--certtype 0xN]
@@ -1885,7 +1878,7 @@ rebuilds the outer container with correct geometry and digests.
 sections are **byte-identical to stock** (9201 / 76 / 3522) and whose header digests match
 `SHA-256(payload)`.
 
-```
+```text
 cms bytes identical to stock: True
 ini bytes identical to stock: True
 crl bytes identical to stock: True
@@ -1917,11 +1910,11 @@ which **does not exist in any reachable artifact** (verified exhaustively).
 Unless the runtime verifier can be made to accept our chain, the only way to run modified code is
 to modify code the device already trusts. Two candidate routes:
 
-* **The `.sec` trust containers and the runtime cert path** are *data*, and they live in the rootfs.
+- **The `.sec` trust containers and the runtime cert path** are *data*, and they live in the rootfs.
   If the runtime's trust decision can be steered by the `verify/%s` file plus
   `ccpu_usr_cert_hash`, we may be able to run a customer-signed module without touching the boot
   signature at all.
-* **The instrumented `drv_pkicms.ko`** will tell us exactly which of these the runtime consults.
+- **The instrumented `drv_pkicms.ko`** will tell us exactly which of these the runtime consults.
 
 ### State
 
@@ -1937,7 +1930,7 @@ at `/home/matteius/repack_rootfs.py`.
 I claimed the three bugs I found in my own CMS builder (`pss_sign.py`) explained the 2026-10-21
 failure. **That was wrong.** Verified directly:
 
-```
+```text
 STOCK                   si.children: 0x02,0x30,0x30,0xa0,0x30,0x04,0xa1
 2026-10-21 (cmssign)    si.children: 0x02,0x30,0x30,0xa0,0x30,0x04,0xa1   <- identical
 2026-10-21 PSS verify  : VALID (signer CN=Signing Certificate G2, salt=32)
@@ -1955,7 +1948,7 @@ diagnose the original failure. The M/R-series failures remain unexplained by pac
 
 ### The complete boot chain (decoded)
 
-```
+```text
 [BIOS / hboot2 fd]  AS610_HBOOT2_UEFI.fd
    └── BL31 (secure boot)  verifies images against 2 built-in Huawei roots
         └── hboot1a / hboot1b / hlink   (the only flashable components)
@@ -1973,13 +1966,13 @@ starts with the ARM64 Image header; `text_off=0`, `image_size=0x1fc0000`).
 **`Ascend310P.cpio.gz` is the rootfs** — inner esbc header, then gzip at +0x100, then an SVR4 cpio
 with 2574 entries (1332 regular files) containing:
 
-* the card-side kernel modules (`drv_pkicms.ko`, `drv_user_cfg.ko`, `drv_upgrade.ko`,
+- the card-side kernel modules (`drv_pkicms.ko`, `drv_user_cfg.ko`, `drv_upgrade.ko`,
   `drv_devmng.ko`, …)
-* the four `.sec` trust containers in `/var/`
-* `var/tsch_fw.bin` (23 MB — the **AI Core / TSC firmware**)
-* `usr/lib64/aicpu_kernels/libcpu_kernels.so` (27 MB) and `libtensorflow.so` (105 MB) — the
+- the four `.sec` trust containers in `/var/`
+- `var/tsch_fw.bin` (23 MB — the **AI Core / TSC firmware**)
+- `usr/lib64/aicpu_kernels/libcpu_kernels.so` (27 MB) and `libtensorflow.so` (105 MB) — the
   **AI CPU kernels**
-* `/boot/` with `System.map`, `config`, DTBs and the kernel `.hmac` signature (the kernel image
+- `/boot/` with `System.map`, `config`, DTBs and the kernel `.hmac` signature (the kernel image
   itself lives in `Ascend310P.image`, not the rootfs)
 
 So "custom Linux and firmware on the cards" is concretely: **replace the kernel**
@@ -1990,7 +1983,7 @@ and the AI Core firmware), and optionally the TSC firmware.
 
 From the card's own `config-6.6.0-72.0.0.76.…`:
 
-```
+```text
 CONFIG_MODULES=y
 CONFIG_MODULE_SIG=y
 CONFIG_MODULE_SIG_SHA256=y
@@ -2027,7 +2020,7 @@ The driver's `devdrv_info`/`devdrv_err` messages (boot mode, file-load decisions
 image failed", "Skip file") go to a **ring buffer** (`log_save_to_ringbuf`), not to dmesg. The
 userspace reader is the DMS feature command:
 
-```
+```text
 ioctl(fd, ('S' << 8) | 0, &dms_ioctl_arg)     # DMS_MAIN_CMD_LOG / DMS_SUBCMD_GET_LOG_INFO
 ```
 
@@ -2066,7 +2059,7 @@ ioctl(fd, _IO('Z', 1), &close_arg);         /* CLOSE */
 
 ### The baseline: a *successful* stock boot, in the driver's own words
 
-```
+```text
 Get block size. (dev_id=0; block_num=48; size=0x3000000)
 Get file size. (dev_id=0; file_name=".../Ascend310P_ddr.image"; size=197396)
 Notice BIOS to Load file. (dev_id=0; file_name=".../Ascend310P_ddr.image"; size=1; flag=0x6666666666666666)
@@ -2093,17 +2086,17 @@ Skip file. (dev_id=0; file=10; name="/usr/local/Ascend/CMS/user.xer")
 
 **Reading the protocol:**
 
-* `flag=0x6666666666666666` = `DEVDRV_SEND_FINISH` — the driver handing the BIOS a file.
-* `flag=0x7777777777777777` = `DEVDRV_SEND_PATT_FINISH` — used for the **large** `cpio.gz`
+- `flag=0x6666666666666666` = `DEVDRV_SEND_FINISH` — the driver handing the BIOS a file.
+- `flag=0x7777777777777777` = `DEVDRV_SEND_PATT_FINISH` — used for the **large** `cpio.gz`
   (48 blocks × 3 MB = 144 MB of DMA window).
-* `Receive BIOS flag. (dev_id=0; flag=0x8888888888888888; count=N)` — the BIOS acknowledging with
+- `Receive BIOS flag. (dev_id=0; flag=0x8888888888888888; count=N)` — the BIOS acknowledging with
   `DEVDRV_RECV_FINISH`. **On this successful boot every single flag is `0x8888…` (success)**;
   there is not one `0x5A5AA5A5…` failure flag.
-* `Skip file.` is the driver telling the BIOS "this optional file does not exist" — it is emitted
+- `Skip file.` is the driver telling the BIOS "this optional file does not exist" — it is emitted
   for `Ascend310P.crl`, `/CMS/user.crl` and `/CMS/user.xer` **on a stock boot where none of them
   exist**. This is exactly the path our earlier `/CMS/user.{xer,crl}` deployment took.
 
-* The `size=` field in "Notice BIOS to Load file" is the **block count**, not bytes:
+- The `size=` field in "Notice BIOS to Load file" is the **block count**, not bytes:
   `ddr.image` 197396 B → 1 block, `Ascend310P.fd` 1.7 MB → 2 blocks, `Ascend310P.image` 31.3 MB → 30
   blocks, `Ascend310P.cpio.gz` 109.4 MB → 48 blocks (and the 0x7777 pattern because it exceeds the
   48-block static window).
@@ -2112,7 +2105,7 @@ Skip file. (dev_id=0; file=10; name="/usr/local/Ascend/CMS/user.xer")
 
 Deployed and awaiting a cold power cycle:
 
-```
+```text
 Ascend310P.image    4d35211f3f7a91e4…   (uimage, leaf-signed, certtype 0x2)
 Ascend310P.cpio.gz  ec960b4546727d97…   (initrd, leaf-signed, certtype 0x2)
 /usr/local/Ascend/CMS/user.xer  9833 B  (leaf container, hash b932bb15…)
@@ -2121,12 +2114,12 @@ Ascend310P.cpio.gz  ec960b4546727d97…   (initrd, leaf-signed, certtype 0x2)
 
 With the log reader working, this run will show **exactly** which of these happens:
 
-* `Skip file` for `user.xer` → the driver did not find it → the path/name is wrong.
-* `Receive BIOS flag … 0x5A5AA5A55A5AA5A1` → the BIOS **rejected the image signature**
+- `Skip file` for `user.xer` → the driver did not find it → the path/name is wrong.
+- `Receive BIOS flag … 0x5A5AA5A55A5AA5A1` → the BIOS **rejected the image signature**
   (`DEVDRV_IMAGE_CHECK_FAIL`) → the customer path did not engage.
-* `Receive BIOS flag … 0x5A5AA5A55A5AA5A0` → TEE check failure.
-* no `Receive BIOS flag` for the rejected file, then a timeout → the BIOS aborted the load.
-* `Skip file` absent for `user.xer` and a normal `0x8888…` ack → the customer image **was**
+- `Receive BIOS flag … 0x5A5AA5A55A5AA5A0` → TEE check failure.
+- no `Receive BIOS flag` for the rejected file, then a timeout → the BIOS aborted the load.
+- `Skip file` absent for `user.xer` and a normal `0x8888…` ack → the customer image **was**
   delivered and accepted, and the failure is elsewhere.
 
 This is the first run in this whole investigation where we will see the device's own verdict
@@ -2141,7 +2134,7 @@ captured with the working log reader. The result is **not** what the failure sig
 
 ### The driver delivered every file, and the BIOS acknowledged every one
 
-```
+```text
 Get file size. (dev_id=0; file_name=".../Ascend310P.image"; size=31350293)
 Notice BIOS to Load file. (…Ascend310P.image; size=30; flag=0x6666666666666666)
 Receive BIOS flag. (dev_id=0; flag=0x8888888888888888; count=19)     <- ACK, success
@@ -2177,7 +2170,7 @@ and handed to the BIOS.
 
 The good boot continues:
 
-```
+```text
 devdrv_load_half_probe start. (dev_id=5)
 devdrv_msg_init statr. (msix_irq_num=256; irq_num=58; ...)
 devdrv_dev_online 3408  Device online. (dev_id=5; chip_type=2)
@@ -2190,17 +2183,19 @@ files and then simply never booted the OS.
 ### What this rules in and out
 
 **Ruled OUT:**
-* ❌ "the BIOS rejected our image signature" — every ack was `0x8888…` success.
-* ❌ "the CMS format is malformed" — the container was accepted and the payload read.
-* ❌ "`/CMS/user.xer` was never delivered" — it was delivered and acknowledged.
-* ❌ "the customer path didn't engage" — the customer files *were* presented to the BIOS.
+
+- ❌ "the BIOS rejected our image signature" — every ack was `0x8888…` success.
+- ❌ "the CMS format is malformed" — the container was accepted and the payload read.
+- ❌ "`/CMS/user.xer` was never delivered" — it was delivered and acknowledged.
+- ❌ "the customer path didn't engage" — the customer files *were* presented to the BIOS.
 
 **Still consistent with:**
-* the device booting the OS and then **failing to start** — a *runtime* failure, not a load failure.
-* the `Ascend310P.image` (kernel) and `Ascend310P.cpio.gz` (rootfs) being accepted by the loader
+
+- the device booting the OS and then **failing to start** — a *runtime* failure, not a load failure.
+- the `Ascend310P.image` (kernel) and `Ascend310P.cpio.gz` (rootfs) being accepted by the loader
   but the **kernel itself refusing to run** them (e.g. the customer path changed how the kernel
   image is validated, and the kernel then failed its own signature check or its own relocations).
-* the OS-level `phy_startup` timeout being the *symptom* of a kernel that loaded but hung.
+- the OS-level `phy_startup` timeout being the *symptom* of a kernel that loaded but hung.
 
 ### The key realisation
 
@@ -2240,14 +2235,15 @@ R-series `user.xer` / `user.crl`.
 ## 2026-10-26 — S-series: localizing the fault by varying one container at a time
 
 Stock restored and verified:
-```
+
+```text
 Ascend310P.image.orig   027f4d22762ef0644…   (pristine kernel container)
 Ascend310P.cpio.gz.orig 12975a9d7e934525…   (pristine rootfs container)
 ```
 
 ### S1 — deployed, awaiting cold power cycle
 
-```
+```text
 Ascend310P.image    027f4d22762ef0644…   STOCK kernel container
 Ascend310P.cpio.gz  7c1805b5168171854…   customer-signed rootfs (leaf anchor, certtype 0x2)
 /usr/local/Ascend/CMS/user.xer  9833 B  (leaf container, hash b932bb15…)
@@ -2258,14 +2254,14 @@ Ascend310P.cpio.gz  7c1805b5168171854…   customer-signed rootfs (leaf anchor, 
 with both containers customer-signed, and that the device then never comes online. With the stock
 kernel and only the rootfs customer-signed:
 
-* **S1 boots** → the fault is in the **kernel container**; the rootfs can be customer-signed
+- **S1 boots** → the fault is in the **kernel container**; the rootfs can be customer-signed
   successfully, and the kernel is the next thing to work on.
-* **S1 loads but doesn't boot** → the fault is in the **rootfs content** (our CMS is fine, but
+- **S1 loads but doesn't boot** → the fault is in the **rootfs content** (our CMS is fine, but
   something about the rootfs being customer-signed breaks the OS start).
 
 ### S2 — built, ready
 
-```
+```text
 S2-our-uimage.image  45189ed1ed1a1de0…   customer-signed kernel + STOCK rootfs
 ```
 
@@ -2290,7 +2286,7 @@ Expected outcomes and what each means:
 
 ### S1 = stock kernel + customer-signed rootfs (leaf anchor)
 
-```
+```text
 Ascend310P.image    027f4d22762ef0644…   STOCK kernel container
 Ascend310P.cpio.gz  7c1805b5168171854…   customer-signed rootfs
 /usr/local/Ascend/CMS/user.xer  9833 B, /CMS/user.crl  3045 B
@@ -2310,7 +2306,7 @@ Ascend310P.cpio.gz  7c1805b5168171854…   customer-signed rootfs
 
 Message shapes present in the good boot but **absent** from S1:
 
-```
+```text
 Set device boot finish. (dev_id=N)
 Device ready work start. (dev_id=N)
 dms chip info dev init success. (dev_id=N)
@@ -2335,10 +2331,10 @@ card's own boot sequence — after it has the customer material — not in the t
 
 ### What this means for the goal
 
-* ✅ The customer-certificate **delivery** path works: the driver finds `/CMS/user.xer` and
+- ✅ The customer-certificate **delivery** path works: the driver finds `/CMS/user.xer` and
   `/CMS/user.crl`, and the BIOS accepts them.
-* ✅ The esbc containers with our CMS are accepted by the loader (both `uimage` and `initrd`).
-* ❌ The card does not then boot the OS.
+- ✅ The esbc containers with our CMS are accepted by the loader (both `uimage` and `initrd`).
+- ❌ The card does not then boot the OS.
 
 The most probable remaining cause is that the **customer path changes how the card validates the
 OS image**, and our chain is not what the card expects at that stage — e.g. BL31's
@@ -2376,7 +2372,7 @@ S1 deployed; cards down (device never came online). Stock originals intact:
 
 ### T2 — deployed, awaiting cold power cycle
 
-```
+```text
 Ascend310P.image    027f4d22762ef0644…   STOCK kernel container
 Ascend310P.cpio.gz  ecde4ee4fd07e4c6…   customer-signed rootfs
 /usr/local/Ascend/CMS/user.xer  9833 B  (leaf container, Test Signing Cert, hash b932bb15…)
@@ -2418,10 +2414,10 @@ that has never actually been tested.
 
 One cold power cycle, then `dms_log.py` gives a precise verdict with no ambiguity:
 
-* `Set device boot finish` + `Device online` + `Add dev success` → success
-* all flags `0x8888…` but no `Receive device ready notify` → load clean, OS did not start (current
+- `Set device boot finish` + `Device online` + `Add dev success` → success
+- all flags `0x8888…` but no `Receive device ready notify` → load clean, OS did not start (current
   failure mode)
-* `0x5A5AA5A55A5AA5A1` → the BIOS rejected the image signature outright
+- `0x5A5AA5A55A5AA5A1` → the BIOS rejected the image signature outright
 
 ### Card state
 
@@ -2436,7 +2432,7 @@ T2 deployed; cards down. Stock originals intact (`Ascend310P.image.orig`, `Ascen
 `user.crl = [root.crl, signca.der, sign.crl]`, image CMS `crls = [rootG2.crl, sign.crl]`, leaf anchor,
 stock kernel, customer-signed rootfs.
 
-```
+```text
 Device online           0
 Set device boot finish  0
 device ready notify     0
@@ -2461,7 +2457,7 @@ If the device only checks the CMS signature over the `ini` and never recomputes
 Built by surgically injecting a single file into the stock cpio so that **every other entry is
 byte-identical**:
 
-```
+```text
 V1-modpayload-stockcms.cpio.gz   108,824,962 B
   cms      : byte-identical to stock (9201 B, Huawei-signed)
   ini      : byte-identical to stock  -> "initrd,   39634b3e512d477fcc1b7280de792fcc450dfeca2d1d135fb4231d23c8ba0ff3;"
@@ -2499,17 +2495,17 @@ V1 deployed; cards down (T2 boot never completed). Stock originals intact:
 
 ---
 
-## 2026-10-26 — ❌ V1 FAILED: the payload IS bound to the signature. Boot-time signing is closed.
+## 2026-10-26 — ❌ V1 FAILED: the payload IS bound to the signature. Boot-time signing is closed
 
 ### V1 result
 
-```
+```text
 Ascend310P.image    stock (027f4d22…)
 Ascend310P.cpio.gz  V1 — payload modified, cms/ini/crl byte-identical to stock
 /usr/local/Ascend/CMS/  removed
 ```
 
-```
+```text
 Device online           0
 Set device boot finish  0
 device ready notify     0
@@ -2525,7 +2521,7 @@ stock signature" shortcut does not exist.
 
 `AS610_HBOOT2_UEFI.fd` (the BL31 bootloader) contains exactly one certificate subject:
 
-```
+```text
 Huawei Integrity Root CA - G2            present
 Huawei Integrity CA 1 - G2               absent
 Huawei CSI RSA-PSS Code-Signing Auth 2   absent
@@ -2576,11 +2572,11 @@ signed. Replacing them changes the payload → rejected (V1).
 
 ### The host side is where the remaining leverage is
 
-* The **host driver** (`/usr/src/davinci_ascend-1.0`, already our OpenSensor fork, already
+- The **host driver** (`/usr/src/davinci_ascend-1.0`, already our OpenSensor fork, already
   installed) is loaded into the host kernel — **not** covered by any card signature.
-* The host driver owns the PCIe/DMA path, the image load protocol, the card-side module loading,
+- The host driver owns the PCIe/DMA path, the image load protocol, the card-side module loading,
   and the `dms`/`pkicms` userspace interfaces.
-* The card-side modules are loaded by the host driver over PCIe.
+- The card-side modules are loaded by the host driver over PCIe.
 
 That gives a concrete, legitimate route to "custom firmware" on these cards:
 
@@ -2621,7 +2617,7 @@ wiped on every reboot. That is why files kept vanishing between power cycles (V1
 
 ### New persistent workspace on the card
 
-```
+```text
 /var/local/ascend-work/
 ├── images/   all candidate images (A/B/C/D/E/F/I/M/P/R/S/T/V series, stock backups)
 ├── tools/    dms_log.py, repack_rootfs.py, cpio_inject.py, cmsverify2.py, der.py,
@@ -2642,7 +2638,7 @@ scratch inside a single session.
 
 ### V1 verdict, for the record
 
-```
+```text
 Ascend310P.image    stock (027f4d22…)
 Ascend310P.cpio.gz  V1 — payload modified, cms/ini/crl byte-identical to stock
 /usr/local/Ascend/CMS/  removed
@@ -2661,7 +2657,7 @@ Huawei's signature does not work.
 
 `AS610_HBOOT2_UEFI.fd` contains exactly one certificate subject:
 
-```
+```text
 Huawei Integrity Root CA - G2            present
 Huawei Integrity CA 1 - G2               absent
 Huawei CSI RSA-PSS Code-Signing Auth 2   absent
@@ -2674,11 +2670,13 @@ closed for a modified `Ascend310P.image` or `Ascend310P.cpio.gz`.
 ### Card state
 
 Stock restored and verified:
-```
+
+```text
 Ascend310P.image    027f4d22762ef0644ad82816c29f0cb67e27118b229a792afbe04347b59a7663
 Ascend310P.cpio.gz  12975a9d7e9345255eccc0d97475082ec96ebab69324070f2246604dac8c0cc2
 /usr/local/Ascend/CMS/  removed
 ```
+
 Cards are down from the V1 run and need a cold power cycle to come back up.
 
 ### Working-directory convention (post-correction)
@@ -2700,7 +2698,7 @@ The card's `/var/log/upgradetool/upgrade.log` is also rotated/truncated by the t
 The bootloader `Ascend310P.fd` (identical to `AS610_HBOOT2_UEFI.fd`, sha256 `e1e75ec2…`) is itself an
 esbc container:
 
-```
+```text
 magic 33aa3a3a, tag "hboot2"
 +0x18 = 9, +0x24 = 0x205, +0x28 = 4, +0x2c = 0x20000, +0x30 = 0x564d, +0x34 = 0x100
 payload = the UEFI/BL31 image (1.6 MB)
@@ -2712,7 +2710,7 @@ esbc-signed**.
 
 What it *does* contain:
 
-```
+```text
 CERT @0x1552e9  CN=Huawei Root CA
 CERT @0x155841  CN=Huawei Integrity Root CA - G2     <-- the single trust anchor
 ```
@@ -2722,7 +2720,7 @@ and **only** those two — `Huawei Integrity CA 1 - G2` and
 
 ### The bootloader's verification strings (complete set)
 
-```
+```text
 hw_cms_image_verify_simple stop!                     <- the ordinary path
 hw_cms_ctrl_cpu_verify failed, ctrl_flag = 0x%x, result = 0x%x
 support usr cert vef                                 <- capability query
@@ -2760,9 +2758,9 @@ AOID_KP_CODESIGNING / AOID_PKCS7_SIGNEDDATA / AOID_HW_KP_{VOUCHER,RELEASE}SIGNIN
 
 Boot-time firmware replacement requires **both**:
 
-* a signature the bootloader accepts — i.e. the Huawei root private key, which does not exist in
+- a signature the bootloader accepts — i.e. the Huawei root private key, which does not exist in
   any reachable artifact; **and**
-* an nvcnt value at or below the eFuse counter.
+- an nvcnt value at or below the eFuse counter.
 
 We have neither, and there is no partial credit: the loader accepts the files (we proved this) but
 the card refuses to boot. **The card-side boot path is closed to us.**
@@ -2799,11 +2797,11 @@ Stock restored, 6 chips up and healthy (verified 10:23). Host driver source mirr
 
 ---
 
-## 2026-10-26 — ★★★ YES, WE CAN PATCH THE BOOTLOADER. The Oct 21 session already did it.
+## 2026-10-26 — ★★★ YES, WE CAN PATCH THE BOOTLOADER. The Oct 21 session already did it
 
 ### The prior patch exists on the card — and was never installed
 
-```
+```text
 /home/matteius/AS610_HBOOT2_UEFI.fd.stock    e1e75ec2103a9526…   (== the installed one)
 /home/matteius/AS610_HBOOT2_UEFI.fd.patched  89cd382879dd3406…
 /usr/local/Ascend/driver/device/Ascend310P.fd  e1e75ec2103a9526…  (STOCK — the patch was never applied)
@@ -2830,7 +2828,7 @@ instruction. It was never installed, and its checksum fix-up was incomplete.
 `cms` / `ini` / `crl` sections** (the slots would be past EOF). Nothing external signs it. It is
 protected only by its own self-consistency:
 
-```
+```text
 0x0000  header copy 0
 0x1000  header copy 1
 0x2000  payload (code_len bytes)  = inner esbc(0x100 hdr + body)
@@ -2854,7 +2852,7 @@ been installed and the session moving on to the customer-certificate route.
 
 `customer-cert-20261026/patch_bootloader.py` applies byte patches and reseals in the correct order:
 
-```
+```text
 1. apply the byte changes
 2. payload_digest = SHA-256(payload)      -> write to @0x02C and @0x102C
 3. hdr0_check = SHA-256(header[0:0x4BC])  -> write to @0x04BC
@@ -2864,7 +2862,7 @@ been installed and the session moving on to the customer-certificate route.
 Verified on the stock image: `payload_digest_ok`, `hdr0_check_ok`, `hdr1_check_ok` all **True**
 after patching (the Oct 21 file had one of them False).
 
-```
+```text
 $ python3 patch_bootloader.py AS610_HBOOT2_UEFI.fd.stock out.fd \
       --set-byte 0x2024:20 --set-byte 0x2026:09 \
       --set-byte 0x13dc59:12 --set-byte 0x13dc5a:00 --set-byte 0x13dc5c:14
@@ -2877,22 +2875,22 @@ $ python3 patch_bootloader.py AS610_HBOOT2_UEFI.fd.stock out.fd \
 
 **The bootloader is modifiable without any key.** That changes the trust model completely:
 
-* The boot-time trust anchor (`Huawei Integrity Root CA - G2`) lives **in the bootloader image**.
+- The boot-time trust anchor (`Huawei Integrity Root CA - G2`) lives **in the bootloader image**.
   If the bootloader is ours to change, the anchor is ours to change.
-* The nvcnt/anti-rollback gate compares the esbc header's nvcnt against an **eFuse** counter — the
+- The nvcnt/anti-rollback gate compares the esbc header's nvcnt against an **eFuse** counter — the
   eFuse is still read-only, but the *image-side* value is in a header we can edit, so the check
   becomes a comparison we can satisfy.
-* `usr cert cms vef` / `no usr, hw vef fail` / `hw_cms_ctrl_cpu_verify` are all **code in the
+- `usr cert cms vef` / `no usr, hw vef fail` / `hw_cms_ctrl_cpu_verify` are all **code in the
   bootloader**, and the prior session's 5-byte patch was aimed at exactly this area.
 
 **The remaining unknown is what the prior patch was trying to do** — which BL31 instruction was
 being changed, and what the `+0x24` header field means. Both are recoverable:
 
-* the AArch64 instruction at file `0x13dc59` sits in the BL31 payload (file `0x13dc59` is inside
+- the AArch64 instruction at file `0x13dc59` sits in the BL31 payload (file `0x13dc59` is inside
   the payload region, which starts at `0x2000` and is the BL31 image at payload offset
   `0x13bc59`). With the BL31 base resolved (`runtime = file − 0x5BC`) the instruction can be
   disassembled and its branch target identified;
-* the `+0x24` word (`0x205` → `0x90220`) is an esbc header field — bit 2 cleared, bits 3/4 set —
+- the `+0x24` word (`0x205` → `0x90220`) is an esbc header field — bit 2 cleared, bits 3/4 set —
   most likely a **cert-type / image-type selector**, which would be consistent with a patch that
   switches the image into the customer path.
 
@@ -2927,7 +2925,7 @@ first, minimal-risk experiment.
 `AS610_HBOOT2_UEFI.fd` (= `Ascend310P.fd`, sha256 `e1e75ec2…`) is an esbc container with **no
 `cms` / `ini` / `crl` sections**. It is protected only by its own self-consistency:
 
-```
+```text
 0x0000  header copy 0
 0x1000  header copy 1
 0x2000  payload (code_len bytes)
@@ -2968,7 +2966,7 @@ Problems with it:
 
 The fd payload is a **sparse flash image** (58% `0xff`) with eight non-erased regions:
 
-```
+```text
 0x002000..0x002100   256 B    inner esbc header
 0x003100..0x00b100    32 KB
 0x023100..0x076b00   335 KB    <-- 0.99 valid AArch64  => plaintext code
@@ -2985,7 +2983,7 @@ be applied to **both**, and the two copies differ at the patch site
 
 Within each FIP, the layout is:
 
-```
+```text
 +0x00000  header/TOC     (no readable strings -> obfuscated)
 +0x04000 .. +0x20000    code     (capstone-valid fraction 0.20-0.34 -> OBFUSCATED)
 +0x20000 .. +0x2C000    strings  ('usr cert cms vef fail' @+0x24C2E,
@@ -3000,12 +2998,12 @@ automated tool that had no idea what it was editing.
 
 ### What this means
 
-* ✅ **Bootloader modification is mechanically possible with no key.** Re-checksumming is solved and
+- ✅ **Bootloader modification is mechanically possible with no key.** Re-checksumming is solved and
   `patch_bootloader.py` does it correctly.
-* ❌ **Targeting the verification logic requires understanding the obfuscation.** The obfuscated
+- ❌ **Targeting the verification logic requires understanding the obfuscation.** The obfuscated
   region (capstone-valid ~0.2) is Huawei's secure-boot code protection. Patching it blind is what
   the Oct 21 session attempted, and it produced an undefined instruction.
-* ⚠️ **The `+0x24` header field is the more promising target.** It sits in the *plaintext* inner
+- ⚠️ **The `+0x24` header field is the more promising target.** It sits in the *plaintext* inner
   esbc header and the prior patch changed it `0x205` → `0x90220`. A header field is far easier to
   reason about than obfuscated code, and the string `certtype` / the image-type dispatch suggests
   this word selects the verification mode. **This is where the next experiment should go.**
@@ -3031,7 +3029,7 @@ Stock, 6 chips healthy (verified 10:23). The bootloader copies are preserved on 
 
 ### `+0x24` is uniform across every esbc container
 
-```
+```text
 container                     outer certtype   inner +0x18  inner +0x24   inner +0x28
 rootfs    (initrd)           0xFFFFFFFF       0x9           0x00000205   0x4
 kernel    (uimage)           0xFFFFFFFF       0x9           0x00000205   0x4
@@ -3044,7 +3042,7 @@ outer `certtype` at `+0x08`, where `user.xer` uniquely carries `0x1`).
 
 The Oct 21 patch changed the **bootloader's** inner `+0x24` from `0x205` to `0x90220`:
 
-```
+```text
 0x205   = 0b00_0000_0010_0001   bits 0, 2, 9
 0x90220 = 0b10_0100_0000_0010   bits 4, 5, 9
 => bits 0 and 2 CLEARED, bits 3 and 5 SET; bit 9 unchanged
@@ -3058,7 +3056,7 @@ images it verifies. That is a coherent hypothesis for what the prior session was
 
 The four `/var/*.sec` files in the rootfs are **not** esbc containers:
 
-```
+```text
 +0x00  5a5aa5a5  aa550300   magic
 +0x08  u32       certs-region size   (differs per file: 0x977f, 0x1b75d, 0x21a05, 0x10e945)
 +0x18  0x1820c000
@@ -3118,7 +3116,7 @@ reseals all three digests correctly, unlike the prior patcher — install it, an
 
 Surveyed the inner esbc header of **every image the loader ships**, plus ours:
 
-```
+```text
 file                       tag        +0x18  +0x1c  +0x20      +0x24  +0x28      +0x2c    +0x30  +0x34
 Ascend310P_ddr.image       lpddr        0x9    0x0    0x0      0x205    0x4    0x20000   0x564d  0x100
 Ascend310P_lowpwr.image    lperika      0x9    0x0    0x0      0x205    0x4    0x20000   0x564d  0x100
@@ -3147,8 +3145,8 @@ The only thing that *does* vary per image is the **outer** `certtype` at `+0x08`
 The bootloader is modifiable with no key, and its *secure-boot code* is obfuscated. To change
 verification behaviour we would have to either:
 
-* patch **obfuscated** code (what the Oct 21 session tried, producing an undefined instruction), or
-* flip a **header field** whose meaning is unknown (`0x90220`), with no reference example.
+- patch **obfuscated** code (what the Oct 21 session tried, producing an undefined instruction), or
+- flip a **header field** whose meaning is unknown (`0x90220`), with no reference example.
 
 Neither is yet a supported change. Before either, the useful step is to find what the
 bootloader's verifier actually does — and the most direct route to that is the **obfuscation
@@ -3173,7 +3171,7 @@ trust domain and out of scope for the first bootloader experiment.
 
 Two tiny reader functions, decoded 100%:
 
-```
+```text
 0x140f85:  mov x0, #0xfff8 ; movk x0, #0x8000, lsl #16 ; ldr w0,[x0] ; and w0,w0,#0xf ; ret
            -> MODE A = (*(u32*)0x8000fff8) & 0xf          (values 0..3)
 
@@ -3208,7 +3206,7 @@ sub-boot images. All except the bootloader are esbc-signed and thus payload-boun
 
 ### The two FIP copies are DIFFERENT BUILDS — this is new and important
 
-```
+```text
 FIP #1 @ 0x132100 : code 0x136101..0x152100 | strings 0x154100..0x15a100 | code 0x15a100..0x15e100
                     HAS: 'usr cert cms vef fail', 'no usr, hw vef fail',
                          'support usr cert vef', 'Secure Boot: customer efuse Solution',
@@ -3231,7 +3229,7 @@ secure-boot strings is a separate image inside the same FIP that we have not yet
 The BL31 code region is **not encrypted and not obfuscated** — it is simply **shifted by one
 byte** relative to a 4-byte instruction grid:
 
-```
+```text
 decode from file 0x136101  ->  28671/28671 instructions valid (100.0%)
 ```
 
@@ -3239,7 +3237,7 @@ Random data scores 0.35 on the same metric, and a 4-byte XOR key that looked pro
 just chance alignment on opcode-biased bytes. Once aligned correctly, the code is fully readable:
 the Oct 21 patch site decodes as
 
-```
+```text
 0x13dc41: stp x29, x30, [sp, #-0x20]!     ; prologue
 0x13dc51: bl  0x140f85                     ; -> MODE A = (*(0x8000fff8)) & 0xf
 0x13dc55: cmp w0, #1
@@ -3272,7 +3270,7 @@ failure return inside whichever it picks.
 
 Decoding the region `file 0x136101 .. 0x152100` from offset `0x136101` gives:
 
-```
+```text
 28671 / 28671 instructions valid  (100.0%)
 ```
 
@@ -3283,7 +3281,7 @@ decodes at phase **+1** consistently.
 
 ### The verification chain (decoded)
 
-```
+```text
 0x14df81  dispatcher
             adrp x2,#0x1d5000 ; ldr w2,[x2,#0x5f0]   <- bitmask of ENABLED image types
             lsl w0,w0,w5 ; tst w0,w2 ; b.eq -> skip this image type
@@ -3319,7 +3317,7 @@ inside the verify wrapper and its callees.
 
 ### The mode readers (device MMIO)
 
-```
+```text
 0x140f85:  mov x0,#0xfff8 ; movk x0,#0x8000,lsl#16 ; ldr w0,[x0] ; and w0,w0,#0xf ; ret
            -> MODE A = (*(u32*)0x8000fff8) & 0xf      (values 0..3)
 
@@ -3339,9 +3337,9 @@ anywhere in the image).
 The code and the string table are **separate FIP entries with different load bases**, so no single
 offset resolves both. Two anchors were confirmed:
 
-* `adrp x0,#0x159000 ; add x0,x0,#0x456` at file `0x1484c1` → `hw_cms_ctrl_cpu_verify failed`
+- `adrp x0,#0x159000 ; add x0,x0,#0x456` at file `0x1484c1` → `hw_cms_ctrl_cpu_verify failed`
   (file `0x159456`) — **S = 0**, i.e. file offset == runtime address for this component.
-* 9 references to `usr cert cms vef fail` (file `0x156d2e`) resolve to runtime `0x1d2e38`, i.e.
+- 9 references to `usr cert cms vef fail` (file `0x156d2e`) resolve to runtime `0x1d2e38`, i.e.
   **S = 0x7c10a** for that component.
 
 The consistent offset between the two component bases (0x7c10a vs 0) is the gap between the two FIP
@@ -3352,7 +3350,7 @@ entries, and it also confirms the two are separate components.
 The decision point is the branch that chooses between the built-in path and the customer path. Given
 the chain above, the **cleanest single-byte patch** is at the image-verify entry:
 
-```
+```text
 0x14dbd1: tst  w0, #0xff        ; header-check result
 0x14dbd5: b.eq 0x14dc09        ; -> return -2
 0x14dbd9: e20315aa  mov x2, x21
@@ -3404,35 +3402,35 @@ what is not.
 
 ### Solid (verified)
 
-* The BL31 code region `file 0x136101..0x152100` decodes at **100%** valid AArch64 instructions
+- The BL31 code region `file 0x136101..0x152100` decodes at **100%** valid AArch64 instructions
   when started at `0x136101` — every 4 KB page uses phase **+1**. It is a one-byte misalignment,
   not encryption or obfuscation. (Random baseline 0.35; the earlier apparent 0.79 XOR "result" was
   chance alignment on opcode-biased bytes.)
-* The **verification chain** is mapped by control flow:
+- The **verification chain** is mapped by control flow:
   `0x14df81` dispatcher (bitmask of enabled image types, 21-entry jump table by type)
   → `0x14dc11` image-verify entry → `0x14dbb1` (`hw_cms_image_verify_simple`)
   → `0x14e2a9` **the CMS verify wrapper** (this is where `usr cert cms vef fail` is logged).
-* The **two mode registers** are device MMIO (`0x8000fff8 & 0xf`, `0x8000fffc >> 16`), read at
+- The **two mode registers** are device MMIO (`0x8000fff8 & 0xf`, `0x8000fffc >> 16`), read at
   48 call sites. **There is no host-side switch and no BIOS setup menu** — the string table has no
   `Setup`/`Menu`/`Boot Order`/`HII`/`Form` entries, and `hboot1a`/`hboot1b`/`hlink` do not occur
   anywhere in the image.
-* The **bootloader image needs no key to modify** — it has no `cms`/`ini`/`crl` sections, only
+- The **bootloader image needs no key to modify** — it has no `cms`/`ini`/`crl` sections, only
   self-consistency (`@0x2C` = SHA-256(payload), `@0x4BC`/`@0x14BC` = SHA-256 of each header copy).
   `patch_bootloader.py` reseals all three correctly (verified) where the Oct 21 patcher left
   `@0x4BC` stale.
-* The **two FIP copies are different builds**: `0x132100` is the secure-boot BL31 (has every
+- The **two FIP copies are different builds**: `0x132100` is the secure-boot BL31 (has every
   secure-boot string), `0x172100` is a RAS/error-block build (`GhesV2*`). A patch must target the
   right one — and they differ, so both copies cannot be patched identically.
 
 ### Not solid (blocking)
 
-* **Which instruction decides customer-vs-builtin.** The `adrp+add` → string mapping is
+- **Which instruction decides customer-vs-builtin.** The `adrp+add` → string mapping is
   inconsistent: the code appears to use a per-component load base, and I have two conflicting
   anchors (`S = 0` from `hw_cms_ctrl_cpu_verify failed`, `S = 0x8610a` from the nine
   `usr cert cms vef fail` sites). Both cannot be right, and `usr cert cms vef fail` is referenced by
   **no** `adrp+add` pair under `S = 0`. So the string is reached by some mechanism I have not
   identified — most likely a **pointer table** or an indirect load — and I have not found it.
-* Consequently I **cannot yet name the single instruction** to patch, and I am not going to
+- Consequently I **cannot yet name the single instruction** to patch, and I am not going to
   guess. Patching the wrong branch in the card's root of trust is a brick, and "make the CMS verify
   return success" would also disable the **nvcnt anti-rollback** and **payload-digest binding** if
   they sit behind the same call. V1 proved the digest gate is real.
@@ -3477,7 +3475,7 @@ Stock images restored; cards up and healthy.
 This is the key that finally made everything consistent. At the nine `usr cert cms vef fail` sites the
 code does:
 
-```
+```text
 0x14d541:  adrp x0, #0x1d2000
 0x14d545:  add  x0, x0, #0xe38      <- offset of a field in a runtime structure
 0x14d549:  add  x0, x0, x1          <- + per-CPU index
@@ -3489,13 +3487,13 @@ code does:
 are **initialised at boot** from the string table. That is why no single file-offset base resolves
 both the code and the strings — and it also means:
 
-* the string table (file `0x152100..0x15e153`) is reachable by the loader,
-* every secure-boot message is referenced through a `0x1d2000 + 0xe38 + cpu*stride` slot,
-* and **the structure at runtime `0x1d2000` is writable BSS**.
+- the string table (file `0x152100..0x15e153`) is reachable by the loader,
+- every secure-boot message is referenced through a `0x1d2000 + 0xe38 + cpu*stride` slot,
+- and **the structure at runtime `0x1d2000` is writable BSS**.
 
 ### The complete verification decision path
 
-```
+```text
 0x14df81  dispatcher
             ldr w2,[x2,#0x5f0]         <- bitmask of ENABLED image types (runtime 0x1d5000+0x5f0)
             tst w0,w2 ; b.eq -> skip   <- image type disabled -> skip
@@ -3526,7 +3524,7 @@ both the code and the strings — and it also means:
 
 ### The `no usr, hw vef fail` fallback is a SEPARATE branch
 
-```
+```text
 0x14da51:  ldr  w0,[x0,#0x18]
 0x14da55:  cmp  w0,#1 ; b.ne 0x14da71        <- if state != 1, skip the "no usr" log
 0x14da81:  cmp  w19,#3 ; csel w19,w19,w0,ne  <- state 3 -> use 2
@@ -3546,7 +3544,7 @@ built-in path.
 
 **`0x14dab9` is the single instruction to change.** It currently is:
 
-```
+```text
 0x14dab9:  cmp  w0, #2      ; 1f080071
 0x14dabd:  mov  w0, w20     ; e003142a
 0x14dac1:  b.ne 0x14daed    ; 61010054
@@ -3555,7 +3553,7 @@ built-in path.
 Patching `b.ne 0x14daed` → `b.ne 0x14dac9` (i.e. fall through to the success path regardless of
 the state) is a **4-byte change**:
 
-```
+```text
 0x14dac1:  61 01 00 54   b.ne 0x14daed     ->  61 00 00 54   b.ne 0x14dac9
 ```
 
@@ -3606,9 +3604,9 @@ Stock images restored; cards up and healthy (G1 baseline).
 We know the verification chain now. The open question is what the branch at **`0x14dab9`**
 (`cmp w0,#2 ; b.ne 0x14daed`) actually selects:
 
-* **Reading A** — it selects *customer verification* vs *built-in verification*. Forcing the
+- **Reading A** — it selects *customer verification* vs *built-in verification*. Forcing the
   success path would mean "skip the CMS signature check".
-* **Reading B** — it selects *which branch of the customer path to take* (e.g. present vs absent
+- **Reading B** — it selects *which branch of the customer path to take* (e.g. present vs absent
   user cert). Forcing the success path would mean "use the customer chain".
 
 The two readings predict **the same** observable for a stock image, so a stock boot cannot
@@ -3616,7 +3614,7 @@ distinguish them. But they predict **different** observables if we break the cus
 
 ### G2 — the discriminating test, armed
 
-```
+```text
 /usr/local/Ascend/CMS/user.xer   9833 B   usrcert container holding 'Test Signing Cert'
                                          payload hash = b932bb15ac0cc925…
 /usr/local/Ascend/CMS/user.crl   3045 B   [ rootG2.crl , rootcaG2.der , rootG2.crl ]
@@ -3628,9 +3626,9 @@ enrolled on dev0                  7fb03430…  (the ROOT's hash — deliberately
 compares with the enrolled value, the compare **fails** (`usr cert hash cmp fail.`), and the card
 **does not boot** — even though the image is stock and perfectly valid.
 
-* **Card does not boot** → the customer path IS reachable and IS consulted. That is the single
+- **Card does not boot** → the customer path IS reachable and IS consulted. That is the single
   most important fact we still lack, and it is proven *without* touching the bootloader.
-* **Card boots fine** → the customer path is NOT consulted for a stock image (either it is gated on
+- **Card boots fine** → the customer path is NOT consulted for a stock image (either it is gated on
   the image's own `certtype`, or the `usrcert` image is not being loaded at all). That would mean
   the whole customer-certificate avenue is inert on this hardware and we should stop pursuing it.
 
@@ -3641,9 +3639,9 @@ Either outcome is decisive, and the test costs **one power cycle and no patching
 Then the follow-up is the real test: **matching** hash + a **customer-signed** rootfs, i.e. exactly
 the D-series but with the hash correctly aligned. That combination has never been tried:
 
-* every prior attempt had either a mismatched hash or a malformed CMS,
-* D1 had the right idea (leaf anchor) but the CMS was built before the three encoding fixes,
-* the CMS fixes are now in place (`pss_sign.py` produces a CMS structurally identical to stock —
+- every prior attempt had either a mismatched hash or a malformed CMS,
+- D1 had the right idea (leaf anchor) but the CMS was built before the three encoding fixes,
+- the CMS fixes are now in place (`pss_sign.py` produces a CMS structurally identical to stock —
   `si.children: 0x02,0x30,0x30,0xa0,0x30,0x04,0xa1` in both).
 
 ### If G2 shows the customer path is inert
@@ -3663,7 +3661,7 @@ G2 armed. Cards are up and healthy on stock firmware. **Cold power cycle needed 
 
 ### G2 setup
 
-```
+```text
 /usr/local/Ascend/CMS/user.xer   9833 B   usrcert container, payload hash b932bb15ac0cc925…
 /usr/local/Ascend/CMS/user.crl   3045 B   [ rootG2.crl , rootcaG2.der , rootG2.crl ]
 rootfs                            12975a9d…  STOCK
@@ -3672,7 +3670,7 @@ dev0 enrolled hash                7fb03430…  (the ROOT's) — deliberately MIS
 
 ### G2 outcome — the card booted perfectly
 
-```
+```text
 davinci nodes : 6
 phy_startup   : 0
 npu-smi       : all 6 chips OK
@@ -3680,7 +3678,7 @@ npu-smi       : all 6 chips OK
 
 ### What the driver log shows (877 lines)
 
-```
+```text
 Get file size.   (dev_id=0; file_name="/usr/local/Ascend/CMS/user.crl"; size=3045)
 Notice BIOS to Load file. (dev_id=0; …/CMS/user.crl; size=1; flag=0x6666666666666666)
 Get file size.   (dev_id=0; file_name="/usr/local/Ascend/CMS/user.xer"; size=9833)
@@ -3688,10 +3686,10 @@ Notice BIOS to Load file. (dev_id=0; …/CMS/user.xer; size=1; flag=0x6666666666
 Receive BIOS flag. (dev_id=4; flag=0x8888888888888888; count=1)
 ```
 
-* `user.crl` and `user.xer` were **read, transferred and acknowledged** (`0x8888…` = success) —
+- `user.crl` and `user.xer` were **read, transferred and acknowledged** (`0x8888…` = success) —
   **the customer-certificate delivery path works end to end.** That was the open question.
-* **Every** flag in the whole boot was `0x8888…` — no failure flags at all.
-* `Skip file.` appeared only for `Ascend310P.crl` (which genuinely does not exist).
+- **Every** flag in the whole boot was `0x8888…` — no failure flags at all.
+- `Skip file.` appeared only for `Ascend310P.crl` (which genuinely does not exist).
 
 ### ⚠️ The critical negative: a mismatched hash did NOT stop the boot
 
@@ -3714,7 +3712,7 @@ could be reached merely by delivering `user.xer` + `user.crl` and enrolling the 
 Instead of "does a bad hash break a stock boot?" (it doesn't), ask the question that actually
 discriminates the two readings of the branch at `0x14dab9`:
 
-```
+```text
 dev0   enrolled hash = 7fb03430…  (MISMATCH)   <-- rootfs is STOCK
 dev1-5 enrolled hash = b932bb15…  (MATCH)
 rootfs                = STOCK (12975a9d…)
@@ -3741,11 +3739,11 @@ G3 armed (dev0 mismatched, dev1–5 matched, stock rootfs). Cards are up and hea
 
 ---
 
-## 2026-10-26 — G3 result: the boot path does NOT consult the enrolled hash. Definitive.
+## 2026-10-26 — G3 result: the boot path does NOT consult the enrolled hash. Definitive
 
 ### G3 setup
 
-```
+```text
 /usr/local/Ascend/CMS/user.xer   9833 B   payload hash b932bb15ac0cc925…
 rootfs                            12975a9d…  STOCK (valid image)
 dev0 enrolled hash                7fb03430…  (the ROOT's)  => MISMATCH
@@ -3754,7 +3752,7 @@ dev1-5 enrolled hash              b932bb15…  (the LEAF's)  => MATCH
 
 ### G3 outcome
 
-```
+```text
 davinci nodes : 6
 phy_startup   : 0
 Device online : dev0, dev1, dev2, dev3, dev4, dev5   <- ALL SIX
@@ -3788,8 +3786,8 @@ There are now only two possible routes, and one of them is ruled out:
 
 The distinction is now crisp, and it is not a subtlety:
 
-* **boot** → built-in Huawei root only.
-* **runtime** → the `usrcert`/`user-certificate` material, gated by `ccpu_usr_cert_hash`.
+- **boot** → built-in Huawei root only.
+- **runtime** → the `usrcert`/`user-certificate` material, gated by `ccpu_usr_cert_hash`.
 
 So the customer certificate is a **runtime** credential. That reframes the goal: custom *runtime*
 code and data on the card, verified against our own CA.
@@ -3798,7 +3796,7 @@ code and data on the card, verified against our own CA.
 
 The runtime chain is:
 
-```
+```text
 drv_user_cfg.ko   ccpu_usr_cert_hash  +  sec_flash_read/write
 drv_pkicms.ko      pkicms_get_cert_data -> /var/asdrv/dev%d/device-sw-plugin/verify/{vendor,community,user}-certificate
                    pkicms_custom_verify_cms
@@ -3807,10 +3805,10 @@ drv_pkicms.ko      pkicms_get_cert_data -> /var/asdrv/dev%d/device-sw-plugin/ver
 
 Two of these live **inside the rootfs** (signature-locked), and two are host-side paths:
 
-* `/usr/local/Ascend/CMS/user.xer` → the customer certificate — **host-side, writable** ✅
-* `ccpu_usr_cert_hash` in secure flash — **host-side, writable** ✅ (proven: `--user_cert` writes it)
-* `/var/asdrv/dev%d/device-sw-plugin/verify/user-certificate` — **host-side, writable** ✅
-* `pkicms_get_sec_check_enable_flag` (eFuse bit) — **not writable**, but *readable* by us
+- `/usr/local/Ascend/CMS/user.xer` → the customer certificate — **host-side, writable** ✅
+- `ccpu_usr_cert_hash` in secure flash — **host-side, writable** ✅ (proven: `--user_cert` writes it)
+- `/var/asdrv/dev%d/device-sw-plugin/verify/user-certificate` — **host-side, writable** ✅
+- `pkicms_get_sec_check_enable_flag` (eFuse bit) — **not writable**, but *readable* by us
 
 **All three host-controllable inputs are already in place.** The remaining question is whether the
 *card-side* `drv_pkicms.ko` will actually use them — and that module is inside the rootfs, so we
@@ -3848,7 +3846,7 @@ further work.
 `res_drv.c` selects the platform image table by `chip_type`; our cards are `chip_type=2` →
 `res_drv_mini_v2.c`:
 
-```
+```text
 /driver/device/Ascend310P_ddr.image     CRITICAL
 /driver/device/Ascend310P_lowpwr.image  CRITICAL
 /driver/device/Ascend310P_hsm.image     CRITICAL
@@ -3874,7 +3872,7 @@ is optional (`NON_CRITICAL`).
 
 ### The chain, and where the anchor lives
 
-```
+```text
 card BootROM  --(trust anchor in on-die ROM)-->  hboot1a/hboot1b  (flash-only, NOT host-delivered)
                                               -->  Ascend310P.fd (BL31)  <-- contains the root CA
                                                    -->  Ascend310P.image (kernel)   [esbc-signed]
@@ -3887,9 +3885,10 @@ against its own copy of the root.
 
 **Therefore: if we can replace `Ascend310P.fd`, we replace the trust anchor.** And `Ascend310P.fd`
 is:
-* delivered by the **host** (not flash-only),
-* an esbc container with **no `cms`/`ini`/`crl` sections** → **not signed by anyone**,
-* protected only by its own self-consistency (`@0x2C` = SHA-256(payload), `@0x4BC`/`@0x14BC` =
+
+- delivered by the **host** (not flash-only),
+- an esbc container with **no `cms`/`ini`/`crl` sections** → **not signed by anyone**,
+- protected only by its own self-consistency (`@0x2C` = SHA-256(payload), `@0x4BC`/`@0x14BC` =
   SHA-256 of each header copy) — all of which `patch_bootloader.py` recomputes correctly.
 
 ### P1 — the pre-condition probe (deployed)
@@ -3900,7 +3899,7 @@ a host-delivered bootloader that differs from the stock one at all?**
 The probe flips **a single byte** (`0xff` → `0x00`) at file offset `0x2149` — inside an **erased
 region** of the payload, far from the two embedded certificates — and reseals all three digests:
 
-```
+```text
 payload digest @0x2C   : OK
 header check  @0x4BC   : OK
 header check  @0x14BC  : OK
@@ -3931,11 +3930,11 @@ P1 deployed: `Ascend310P.fd` = probe (`09ce43ac…`), kernel and rootfs stock.
 
 ---
 
-## 2026-10-26 — ★ P1 PROBE RESULT: the bootloader IS replaceable. The card stopped AFTER loading it.
+## 2026-10-26 — ★ P1 PROBE RESULT: the bootloader IS replaceable. The card stopped AFTER loading it
 
 ### P1 outcome
 
-```
+```text
 davinci nodes : 0        (did not boot)
 phy_startup   : 0
 Ascend310P.fd  : 09ce43ac…  (the probe)
@@ -3945,7 +3944,7 @@ Ascend310P.fd  : 09ce43ac…  (the probe)
 
 dev_id=0 file sequence in the **probe** boot:
 
-```
+```text
 Ascend310P_ddr.image     size=1   flag=0x6666…   → acked 0x8888… (count=1)
 Ascend310P_lowpwr.image  size=1   flag=0x6666…   → acked 0x8888… (count=71)
 Ascend310P_hsm.image     size=1   flag=0x6666…   → acked 0x8888… (count=1)
@@ -3956,7 +3955,7 @@ Ascend310P_dt.img        size=2   flag=0x6666…   → acked 0x8888… (count=1)
 
 dev_id=0 file sequence in a **good** boot:
 
-```
+```text
 … identical through Ascend310P_dt.img …
 Ascend310P.image         size=30  flag=0x6666…      ← the kernel
 Ascend310P.cpio.gz       size=48  flag=0x7777…  (x2)
@@ -3976,11 +3975,11 @@ The card then stopped at the point where it would have taken the **kernel** (`As
 
 Two readings, and the second is the important one:
 
-* **Reading 1 (benign):** the single flipped byte at `0x2149` happened to land in executed code or in
+- **Reading 1 (benign):** the single flipped byte at `0x2149` happened to land in executed code or in
   a structure the bootloader parses, so the modified BL31 misbehaved *after* it was loaded — e.g.
   it read a bad length and refused to continue. **The bootloader was still accepted**, which is the
   finding we wanted.
-* **Reading 2 (important):** the bootloader *did* start and then **failed its own self-verification
+- **Reading 2 (important):** the bootloader *did* start and then **failed its own self-verification
   of the kernel**, because the flipped byte corrupted something it uses to validate
   `Ascend310P.image`.
 
@@ -3991,7 +3990,7 @@ still passes the card's subsequent checks.
 
 ### What the flip at 0x2149 actually was
 
-```
+```text
 file 0x2130: 00 00 00 00 10 00 00 00 00 00 00 00 00 00 00 00
 file 0x2140: ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
 file 0x2150: ff ff ff ff ff ff ff ff ff 71 ...
@@ -4060,8 +4059,9 @@ But the **Oct 21 chain is already slot-compatible** — it was built for exactly
 And the **Huawei `cmssign` tool is on the card** at
 `/home/matteius/cmsenv/lib/python3.14/site-packages/cmssign/cmssign-1.0-SNAPSHOT.jar` — the very
 tool that produced the known-good `full/initrd.ini.p7s`. Its Java signer:
-* **always emits PSS** (matching the stock container), and
-* **always requires `--tssigner`/`--tskey`** (i.e. always produces the RFC-3161 timestamp token,
+
+- **always emits PSS** (matching the stock container), and
+- **always requires `--tssigner`/`--tskey`** (i.e. always produces the RFC-3161 timestamp token,
   matching the stock container's `unsignedAttrs`).
 
 Two gotchas found the hard way: the CRLs must be **DER** (`openssl ca -gencrl` emits PEM, and the
@@ -4076,7 +4076,7 @@ certificate the card will use to verify the image's CMS.
 
 So the correct end-goal deployment is:
 
-```
+```text
 Ascend310P.fd        stock, but with our root spliced in at 0x155841 (1606 B, byte-exact)
 Ascend310P.image     re-signed by cmssign with OUR chain, certtype 0x2
 Ascend310P.cpio.gz   re-signed by cmssign with OUR chain, certtype 0x2
@@ -4129,14 +4129,14 @@ Signed with **Huawei's own tool** — `cmssign-1.0-SNAPSHOT.jar` (found at
 produced the Oct 21 `full/initrd.ini.p7s`. It always emits PSS and always attaches the RFC-3161
 timestamp token, matching the stock container exactly.
 
-```
+```text
 goal-uimage.image   31,350,192 B   sha256 c67e8bad731ed5490…
 goal-initrd.cpio.gz 109,389,296 B sha256 a02cf0552f746a19…
 ```
 
 Our verifier (calibrated on the stock container) confirms:
 
-```
+```text
 embedded certificates: 4
    CN=Signing Cert G2, CN=Signing Certificate CA G2,
    CN=Huawei Time-Stamping Authority 2 - G2YYYYYYYYYY, CN=Signing Certificate CA G2
@@ -4154,7 +4154,7 @@ in place: `our root present at 0x155841: True`.
 
 ### Deployed on the card
 
-```
+```text
 /usr/local/Ascend/driver/device/Ascend310P.fd         8e0e06945852afc0…
 /usr/local/Ascend/driver/device/Ascend310P.image      c67e8bad731ed5490…
 /usr/local/Ascend/driver/device/Ascend310P.cpio.gz    a02cf0552f746a19…
@@ -4175,7 +4175,8 @@ possible at all.
 ### Recovery
 
 Full stock set preserved on the card:
-```
+
+```text
 /var/local/ascend-work/images/Ascend310P.fd.stock     e1e75ec2103a9526…
 /usr/local/Ascend/driver/device/Ascend310P.image.orig 027f4d22762ef0644…
 /usr/local/Ascend/driver/device/Ascend310P.cpio.gz.orig 12975a9d7e934525…
@@ -4198,7 +4199,7 @@ instrumented end to end.
 
 ### Goal boot result
 
-```
+```text
 Ascend310P.fd         8e0e0694…  (our root spliced in)
 Ascend310P.image      c67e8bad…  (our CMS)
 Ascend310P.cpio.gz    a02cf055…  (our CMS)
@@ -4207,7 +4208,7 @@ davinci nodes: 0       phy_startup: 0
 
 The driver log shows the load stopping at exactly the same point as the P1 probe:
 
-```
+```text
 good boot:  ddr → lowpwr → hsm → .fd → dt.img → image → cpio.gz → tee → user.crl → user.xer
 goal boot:  ddr → lowpwr → hsm → .fd → dt.img          ← stops; the KERNEL is never delivered
 P1 probe :  ddr → lowpwr → hsm → .fd → dt.img          ← identical
@@ -4220,7 +4221,7 @@ before the kernel.
 
 The `hboot2` payload is an **EDK2 firmware volume**, not a flat image:
 
-```
+```text
 payload+0x000  inner esbc header: magic 33aa3a3a, tag "hboot2", +0x24=0x205, +0x30=0x564d, +0x34=0x100
 payload+0x100  09 19 00 14 | 12 zero bytes
 payload+0x118  99 35 89 61 85 c3 2d d3 | 00 00 02 00 | 00 00 00 00
@@ -4245,6 +4246,7 @@ payload, regardless of where.**
 ### The isolation experiment (V2, deployed)
 
 The goal boot cannot distinguish two causes:
+
 1. *the bootloader rejects a payload it did not sign itself* (an integrity/authenticity check on
    the FFS volume), versus
 2. *the bootloader rejects our root* (trust-anchor mismatch).
@@ -4253,14 +4255,14 @@ V2 separates them: **one `0xff` byte flipped at file `0x20000`** (payload `+0x1e
 volume, far from the FFS descriptor and from the certs), digests resealed, **Huawei's root left
 completely untouched**.
 
-```
+```text
 V2 = c321687b93212b5025d8e9057156319f739a748d0cdf6764489ff30e681e8b3b
 ```
 
-* **V2 boots** → the bootloader accepts arbitrary payload edits; the failure is our **root splice**
+- **V2 boots** → the bootloader accepts arbitrary payload edits; the failure is our **root splice**
   (trust-anchor mismatch). That is a *semantic* problem: the bootloader would need to accept a
   non-Huawei root, which is exactly what the `usrcert` / `customer efuse` mechanism is for.
-* **V2 fails identically** → the bootloader authenticates its own payload (the FFS volume carries
+- **V2 fails identically** → the bootloader authenticates its own payload (the FFS volume carries
   a signature over itself, verified with the embedded root). Then **no payload edit is possible**,
   the trust anchor is genuinely immutable, and the only remaining route is the customer-certificate
   mechanism the vendor provides for exactly this purpose (`AOID_HW_KP_VOUCHERSIGNING`,
@@ -4288,11 +4290,11 @@ kernel and rootfs in place. Cards are down and need a cold power cycle.
 
 ---
 
-## 2026-10-26 — ★★★ V2 RESULT: the bootloader authenticates its own payload. Boot-time signing is definitively closed.
+## 2026-10-26 — ★★★ V2 RESULT: the bootloader authenticates its own payload. Boot-time signing is definitively closed
 
 ### V2 outcome
 
-```
+```text
 V2 = one 0xff byte flipped at file 0x20000 (payload+0x1e000, deep in the volume,
      far from the FFS descriptor and from the certificates)
      digests resealed, HUAWEI'S ROOT COMPLETELY UNTOUCHED
@@ -4328,7 +4330,7 @@ independent lines of evidence rather than inference.
 
 The bootloader's OID table contains:
 
-```
+```text
 AOID_CT_ANIMAJSONVOUCHER      <- a JSON "voucher"
 AOID_HW_KP_VOUCHERSIGNING      <- a HARDWARE key purpose for voucher signatures
 AOID_HW_KP_RELEASESIGNING      <- a HARDWARE key purpose for release signatures
@@ -4346,10 +4348,10 @@ rooted feature.
 
 ### Revised end-goal assessment
 
-* **Custom boot firmware (modified kernel / rootfs, signed by us): CLOSED.**
-* **Custom runtime firmware:** the card-side `drv_pkicms.ko` / `drv_user_cfg.ko` are inside the
+- **Custom boot firmware (modified kernel / rootfs, signed by us): CLOSED.**
+- **Custom runtime firmware:** the card-side `drv_pkicms.ko` / `drv_user_cfg.ko` are inside the
   rootfs — which is signed by Huawei, so we cannot ship a modified rootfs either.
-* **Therefore the only way to run our own code on the card is the voucher path** (vendor-signed,
+- **Therefore the only way to run our own code on the card is the voucher path** (vendor-signed,
   hardware-rooted), **or** the host side: the **host driver** (`/usr/src/davinci_ascend-1.0`, our
   OpenSensor fork, already installed) plus **host-side tooling** — which is where the DMA work and
   the `DEVICE_DMA.md` profiling already live.
@@ -4358,6 +4360,7 @@ rooted feature.
 
 Concretely, the next investigation is to determine what the bootloader looks for when deciding
 whether to accept a non-Huawei root:
+
 1. Search the decoded BL31 for the voucher-verification path (`AOID_HW_KP_VOUCHERSIGNING` usage) and
    find the **input format** — is it a file in the esbc container? a device MMIO/secure-storage
    region? an `EFI_SIGNATURE_LIST`?
@@ -4384,7 +4387,7 @@ Good call on not ruling out vulns — and the payload map shows the code is righ
 
 ### The full `hboot2` payload map (file offsets)
 
-```
+```text
 file 0x002000  esbc inner header (tag "hboot2")
 file 0x006000  AArch64 0.91 valid          <- BL31 / UEFI early code
 file 0x00a000  partially populated
@@ -4408,18 +4411,18 @@ measuring the wrong byte range (an off-by-`0x10000` in my region indexing).
 
 We have already been reading it:
 
-* `file 0x136101..0x152100` — the BL31 that owns the secure-boot strings, decoded at
+- `file 0x136101..0x152100` — the BL31 that owns the secure-boot strings, decoded at
   **28418/28671 = 99% valid instructions**, with **377 string references** and 44 resolved
   cross-references (e.g. `hw_cms_image_verify_simple stop!`, `usr cert cms vef fail`,
   `support usr cert vef`, `Secure Boot: customer efuse Solution`).
-* The **full OID table**: `AOID_PKCS7_SIGNEDDATA`, `AOID_KP_CODESIGNING`, `AOID_KP_TIMESTAMPING`,
+- The **full OID table**: `AOID_PKCS7_SIGNEDDATA`, `AOID_KP_CODESIGNING`, `AOID_KP_TIMESTAMPING`,
   `AOID_CT_ANIMAJSONVOUCHER`, `AOID_HW_KP_VOUCHERSIGNING`, `AOID_HW_KP_RELEASESIGNING`,
   `AOID_CE_ISSUINGDISTRIBUTIONPOINT`, `AOID_CE_CRLNUMBER`, … — the verifier's complete rule set.
-* The **mode registers** (`0x8000fff8 & 0xf`, `0x8000fffc >> 16`) and the **image-type dispatch**
+- The **mode registers** (`0x8000fff8 & 0xf`, `0x8000fffc >> 16`) and the **image-type dispatch**
   (21-entry jump table keyed by `type + 0x7c000000`).
-* The **verification chain**: `0x14df81` dispatcher → `0x14dc11` → `0x14dbb1`
+- The **verification chain**: `0x14df81` dispatcher → `0x14dc11` → `0x14dbb1`
   (`hw_cms_image_verify_simple`) → `0x14e2a9` (the CMS verify) → `0x14cc3d` (success).
-* The **decision branch** at `0x14dab9` (`cmp w0,#2 ; b.ne 0x14daed`).
+- The **decision branch** at `0x14dab9` (`cmp w0,#2 ; b.ne 0x14daed`).
 
 That is roughly **115 KB of cleanly decoded BL31** plus a second FIP of similar size at
 `0x162000..0x18e000` — so ~250 KB of bootloader code in hand, with the secure-boot logic fully
@@ -4444,10 +4447,10 @@ reading it tells us:
 
 Reverse the **voucher path** in the decoded BL31:
 
-* find the code that references `AOID_HW_KP_VOUCHERSIGNING` / the JSON voucher OID,
-* determine the input channel (an esbc section? a secure-storage/OTP read? a file in the
+- find the code that references `AOID_HW_KP_VOUCHERSIGNING` / the JSON voucher OID,
+- determine the input channel (an esbc section? a secure-storage/OTP read? a file in the
   container?) and the schema,
-* and separately, audit `hw_cms_image_verify_simple` for a logic flaw that would let an
+- and separately, audit `hw_cms_image_verify_simple` for a logic flaw that would let an
   attacker-supplied root be accepted.
 
 Both are pure static analysis of material we already hold — no card risk, no power cycles.
@@ -4466,7 +4469,7 @@ I suggested the "voucher" route on the strength of three OID *names* in the boot
 Having now searched the **entire** bootloader image for anything voucher-related, that suggestion
 does not hold up:
 
-```
+```text
 0x15644b  'AOID_CT_ANIMAJSONVOUCHER'
 0x1564e5  'AOID_HW_KP_VOUCHERSIGNING'
 0x15650c  'AOID_HW_KP_RELEASESIGNING'
@@ -4478,10 +4481,10 @@ Those four strings are the **only** matches for `voucher|anima|release.?sign|jso
 `AOID_PKCS7_SIGNEDDATA`, `AOID_KP_CODESIGNING`, `AOID_CE_CRLNUMBER`, …) — it is a vocabulary for
 parsing certificates, not evidence of a voucher subsystem. There is:
 
-* **no** voucher verification code,
-* **no** JSON parsing,
-* **no** customer-root installation path,
-* **no** code that references those three OIDs for anything.
+- **no** voucher verification code,
+- **no** JSON parsing,
+- **no** customer-root installation path,
+- **no** code that references those three OIDs for anything.
 
 So the "hardware voucher" is **not** a route into this bootloader. I should not have presented it as
 one; it was an inference from a name, and the name is a red herring.
@@ -4509,17 +4512,18 @@ Per your point, the analysis was not wasted. The `hboot2` payload contains **~25
 AArch64** across two FIP copies (file `0x006000`, `0x122000`, `0x132000..0x152000`, `0x15a000`,
 `0x162000..0x18e000`), decoding at 99–100% valid instructions. We already hold:
 
-* the complete verification chain (`0x14df81` → `0x14dc11` → `0x14dbb1` → `0x14e2a9` → `0x14cc3d`),
-* the **decision branch** at `0x14dab9` (`cmp w0,#2 ; b.ne 0x14daed`),
-* the mode registers (`0x8000fff8 & 0xf`, `0x8000fffc >> 16`),
-* the 21-entry image-type dispatch table,
-* the full OID vocabulary the verifier accepts,
-* 377 string references and 44 resolved cross-references.
+- the complete verification chain (`0x14df81` → `0x14dc11` → `0x14dbb1` → `0x14e2a9` → `0x14cc3d`),
+- the **decision branch** at `0x14dab9` (`cmp w0,#2 ; b.ne 0x14daed`),
+- the mode registers (`0x8000fff8 & 0xf`, `0x8000fffc >> 16`),
+- the 21-entry image-type dispatch table,
+- the full OID vocabulary the verifier accepts,
+- 377 string references and 44 resolved cross-references.
 
 This is enough to **audit the verification logic for a flaw** — the "don't rule out vulns" case. It is
 now a bounded, static exercise on material in hand, with no card risk.
 
 Two concrete questions the code can answer:
+
 1. **What exactly does `cmp w0,#2` at `0x14dab9` select?** If it is "customer vs built-in"
    rather than "present vs absent", then patching *that single branch* (in a copy of the bootloader we
    could sign — which we cannot) — but more importantly, understanding it tells us whether the
@@ -4544,9 +4548,10 @@ Given boot-time is closed, the honest assessment of "custom Linux and firmware o
 ### Proposed next step
 
 **Audit the bootloader's verification logic for a flaw** (static, free, no card risk), focused on:
-* `hw_cms_image_verify_simple` (0x14dbb1) and the branch at 0x14dab9,
-* the anchor selection: where does the "built-in root" come from, and is it attacker-controllable?
-* the `nvcnt` check and whether the eFuse comparison can be satisfied.
+
+- `hw_cms_image_verify_simple` (0x14dbb1) and the branch at 0x14dab9,
+- the anchor selection: where does the "built-in root" come from, and is it attacker-controllable?
+- the `nvcnt` check and whether the eFuse comparison can be satisfied.
 
 If that finds nothing, the answer for the card side is definitive, and I would put the remaining
 effort into the host driver + runtime path, where the DMA work already lives.
@@ -4565,14 +4570,14 @@ driver's own code and string table**, and it names the secure-boot trust mechani
 
 ### What the dump contains
 
-```
+```text
 0x00000..0x1ffff   the flash driver's code + strings (entropy 5.78, plaintext)
 0x20000..0x3ffff   ENCRYPTED region (entropy 7.0, 8147 distinct 16-byte blocks, no plaintext)
 ```
 
 The plaintext region contains the flash-driver API — and among ~1170 strings:
 
-```
+```text
 0x09592  'trustlist'
 0x0959c  'blocklist'
 0x0957b  'https'
@@ -4618,7 +4623,7 @@ The plaintext region contains the flash-driver API — and among ~1170 strings:
 
 plus the verification primitives:
 
-```
+```text
 0x048f5  'RsaSignatureVerify'
 0x0abae  'McuSignatureVerify'
 0x0abc1  'CheckPubKeyHash'
@@ -4657,6 +4662,7 @@ The next step is to find the **region ID of the trustlist** and the layout of a 
 then write our own root into it — i.e. use the vendor's own API rather than fighting BL31.
 
 Concretely:
+
 1. Locate `get_cert_region_id` and the region-ID enum in the flash driver.
 2. Determine the on-flash layout of the trustlist region (the `0x20000+` encrypted region is likely
    exactly this).
@@ -4677,7 +4683,7 @@ Restored to full stock; `/usr/local/Ascend/CMS/{user.xer,user.crl}` staged (Oct 
 
 From the card-side `drv_user_cfg.ko` (86 modules extracted from the rootfs):
 
-```
+```text
 b3a0  devdrv_config_get_item_blk_info
 b680  devdrv_config_init_block
 b6a0  devdrv_calculate_block_sha256
@@ -4702,7 +4708,7 @@ ba78  devdrv_config_get_valid_block
 
 with the error strings:
 
-```
+```text
 d5d1  The block offset is error. (blk_offset=%u)
 d689  The item offset is error. (item_offset=%u)
 d6e1  The total offset is error. (offset=%u)
@@ -4713,7 +4719,7 @@ f501  Write item info. (dev_id=%u; item_name=%s; item_offset=%u; item_bytes=%u)
 
 ### The item table (in `.rodata.str1.8`, file 0x128c0)
 
-```
+```text
 p2p_mem_cfg        0x0400
 ddr_ecc_enable     0x01
 ccpu_usr_cert_hash 0x00
@@ -4724,7 +4730,7 @@ whitelist
 
 and the corresponding `R_AARCH64_ABS64` relocations that build the descriptor array:
 
-```
+```text
 0x005b0  -> .rodata.str1.8+0x6360   p2p_mem_cfg
 0x005d8  -> .rodata.str1.8+0x6378   ddr_ecc_enable
 0x00600  -> .rodata.str1.8+0x6390   ccpu_usr_cert_hash
@@ -4740,7 +4746,7 @@ with the *values* interleaved as separate strings (`0x0400`, `0x01`, `0x00`) —
 The dump is the **MCU's** flash (`MCU START.`, `Begin to running LiteOS.`, `MainTask`,
 `OpFlashTask`) and contains the secure-boot trust subsystem:
 
-```
+```text
 trustlist / blocklist / https / https crl      <- the trust store contents
 mps_ver_check / get_mps_ver                    <- MPS policy version gate
 switch_vrd_page / check_vrd_chip_cfg            <- A/B page switching for certs
@@ -4760,7 +4766,7 @@ card's flash, written with `WriteCertToFlash`, plus a `customized_verify` check.
 
 ### Revised picture of the customer-cert mechanism
 
-```
+```text
 host                                   card
 ----                                   ----
 upgrade-tool --user_cert  ---->  drv_user_cfg.ko (card-side)
@@ -4805,7 +4811,7 @@ Restored to full stock; `/usr/local/Ascend/CMS/{user.xer,user.crl}` staged (Oct 
 
 From the tool's own strings (in order):
 
-```
+```text
 Device[%u] alloc memory for user cert item fail.
 Device[%u] copy user cert item fail, ret=%d.
 %s MINOR %s %s %s Firmware Set user cfg, device_index[%d], size=0x%x.
@@ -4817,7 +4823,7 @@ Device[%u] set user certificate info success.
 
 and it calls the exported library symbol:
 
-```
+```text
 dsmi_set_user_config     (libdrvdsmi_host.so)
 ```
 
@@ -4840,7 +4846,7 @@ API to write it is a plain, publicly-exported call.** `upgrade-tool` passes
 
 The card-side `drv_user_cfg.ko` has a **static** item table (not arbitrary names):
 
-```
+```text
 p2p_mem_cfg        0x0400
 ddr_ecc_enable     0x01
 ccpu_usr_cert_hash 0x00
@@ -4879,10 +4885,11 @@ path refuses.
 
 So we are back to one dependency: **the rootfs signature**. Everything else is now understood and
 open:
-* the bootloader is self-authenticated (V2),
-* the boot path trusts only the built-in Huawei root (D/R/S/T/V series),
-* the runtime path *is* writable and *is* reachable by us,
-* the card-side modules are inside the rootfs.
+
+- the bootloader is self-authenticated (V2),
+- the boot path trusts only the built-in Huawei root (D/R/S/T/V series),
+- the runtime path *is* writable and *is* reachable by us,
+- the card-side modules are inside the rootfs.
 
 The one thing that would break the deadlock: **a way to get the rootfs signed.** Which is either the
 Huawei key (absent) or the MCU's `trustlist`/`customized_verify` path — the one place where the
@@ -4893,6 +4900,7 @@ input format is unknown and it lives on the MCU.
 ### Proposed next step
 
 Work the **MCU trustlist**:
+
 1. Find who writes the MCU's `trustlist` — the `elabel` / `customized_info` writers. If the MCU
    accepts a certificate for the SoC's boot chain, that is the vendor's supported way to trust a
    customer CA, and it is the only remaining route to a signed custom rootfs.
@@ -4916,7 +4924,7 @@ Restored to full stock; `/usr/local/Ascend/CMS/{user.xer,user.crl}` staged (Oct 
 The card-side `drv_pkicms.ko` is the runtime CMS verifier, and its error strings map the whole
 flow:
 
-```
+```text
 cms verify succeed. (cert_type=%d)
 cms info verify failed, check state = 0x%x
 cms_src_crl data verify failed! state = 0x%x
@@ -4951,7 +4959,7 @@ pkicms_get_name_by_cert_type
 
 So the runtime chain is:
 
-```
+```text
 eFuse (rotpk + hash)  ->  cert_type -> /var/asdrv/.../verify/<type>  ->  ini + hash  ->  CRL  ->  CMS sig
 ```
 
@@ -4983,6 +4991,7 @@ verifies the card-side modules *independently* of the container signature — wh
 `cert_type` / `/var/asdrv/.../verify/<type>` suggests, and would be the loophole.
 
 **That is the experiment to run next**, and it is cheap:
+
 1. Put our leaf cert at `/var/asdrv/dev0/device-sw-plugin/verify/user-certificate` on the card.
 2. Enroll its hash via `dsmi_set_user_config(dev_id, "ccpu_usr_cert_hash", 32, hash)`.
 3. Deliver a rootfs whose `drv_pkicms.ko` is **signed by our CA** (the rest of the rootfs
@@ -5034,7 +5043,7 @@ community — i.e. **our own certificate would be trusted**.
 
 ### The flow (`dms/custom/dms_custom_device.c` + `dms_custom_host.c`)
 
-```
+```text
 host:  read /var/asdrv/dev%u/device-sw-plugin/verify/flag
          -> dms_custom_send_cert_flag_to_device(dev_id, buf, size)     ==> CARD
 host:  read .../verify/user-certificate
@@ -5046,11 +5055,11 @@ card:  drv_user_cfg / drv_pkicms consume them
 
 `dms_custom_set_default_cert_info()` writes, at init:
 
-* `flag` = `"verify_flag=5"` (vendor OR community)
-* `vendor-certificate` = `g_pbRootCert` (the built-in Huawei root, as a **byte array in the
+- `flag` = `"verify_flag=5"` (vendor OR community)
+- `vendor-certificate` = `g_pbRootCert` (the built-in Huawei root, as a **byte array in the
   driver source** — we have it in the source tree!)
-* `user-certificate` = `'0'` (one byte — i.e. *unset*)
-* `community-certificate` = `g_community_certificate` (another embedded byte array)
+- `user-certificate` = `'0'` (one byte — i.e. *unset*)
+- `community-certificate` = `g_community_certificate` (another embedded byte array)
 
 ### ★ The gap that matters
 
@@ -5084,8 +5093,9 @@ Note the driver reads these files at **init** (`dms_custom_dev_init`), so a **re
 or a power cycle** is needed for them to take effect — a power cycle is fine.
 
 The flags:
-* `dms_custom_init_device_cert_flag` → `dms_custom_send_cert_flag_to_device`
-* `dms_custom_init_device_cert_file` → `dms_custom_send_cert_to_device`
+
+- `dms_custom_init_device_cert_flag` → `dms_custom_send_cert_flag_to_device`
+- `dms_custom_init_device_cert_file` → `dms_custom_send_cert_to_device`
 
 ### Card state
 
@@ -5131,7 +5141,7 @@ empty by default (`'0'`), and it is the one `verify_flag` can enable.
 
 ### The experiment is now fully specified and needs no new code
 
-```
+```text
 /var/asdrv/dev{0..5}/device-sw-plugin/verify/
 ├── flag                  ->  "verify_flag=7"        (vendor OR user OR community)
 ├── vendor-certificate    ->  the built-in g_pbRootCert (or cleared)
@@ -5187,7 +5197,7 @@ only for `hi1980b` (Ascend 910B).** Our card is Ascend **310P**, a different chi
 
 Verified on the installed driver:
 
-```
+```text
 $ zstd -dc drv_devmng_host.ko.zst | strings | grep -ciE 'dms_custom|verify_flag'
 0
 ```
@@ -5210,7 +5220,7 @@ The `dms_custom` source tree in *our* driver is the **910B** implementation of e
 the 310P lacks. Reading it told us the 310P's card-side `drv_pkicms.ko` has a *different* path — and
 we already decoded its error strings:
 
-```
+```text
 cms verify succeed. (cert_type=%d)
 get real cert type failed. (cert_type=%d)
 Soc verify fail, get ef info error / image check error / image sec auth error / pre pak check error
@@ -5261,12 +5271,12 @@ four NPUs), and we can:
 
 Given the above, the highest-value work for "custom firmware that runs on the cards" is:
 
-* **(a)** Check whether the **AI CPU syskernels** (`/usr/local/Ascend/cann-9.1.0/opp/Ascend310P/aicpu/Ascend310P-aicpu_syskernels.tar.gz`,
+- **(a)** Check whether the **AI CPU syskernels** (`/usr/local/Ascend/cann-9.1.0/opp/Ascend310P/aicpu/Ascend310P-aicpu_syskernels.tar.gz`,
   23 MB) are signature-verified at load. If not, they are a genuine device-side kernel delivery
   channel, and replacing them is real custom device firmware.
-* **(b)** Instrument the **host** driver to log the card-side `pkicms` decisions (we can add a small
+- **(b)** Instrument the **host** driver to log the card-side `pkicms` decisions (we can add a small
   patch to our own driver tree), so we learn what the runtime actually accepts.
-* **(c)** Continue the DMA performance work, which is where measurable gains are.
+- **(c)** Continue the DMA performance work, which is where measurable gains are.
 
 ### Card state
 
@@ -5284,7 +5294,7 @@ signature-verified**. This is the vendor's supported mechanism for custom device
 
 **1. The AICPU syskernel containers are esbc-framed but have NO cms/ini/crl sections.**
 
-```
+```text
 /usr/local/Ascend/cann-9.1.0/opp/Ascend310P/aicpu/
   Ascend310P-aicpu_syskernels.tar.gz       53,559,460 B   tag "aicpu_ke[rnel]"
   Ascend310P-aicpu_extend_syskernels.tar.gz 12,068,187 B
@@ -5304,7 +5314,7 @@ signed section), and `certtype = 0xFFFFFFFF`.
 
 **2. The AICPU custom kernel library is a plain ELF, and the loader has no integrity check.**
 
-```
+```text
 /usr/local/Ascend/cann-9.1.0/opp/built-in/op_impl/aicpu/kernel/
   libaicpu_custom.so      24,157,704 B    <- ELF (7f 45 4c 46), NOT esbc
   libaicpu_custom.json        9,261 B
@@ -5314,7 +5324,7 @@ signed section), and `certtype = 0xFFFFFFFF`.
 
 `libaicpu_custom.so` contains the AICPU load/verify entry points:
 
-```
+```text
 hccl::HcclCommAicpu::InitAndVerifySingleSignal<LocalNotify>
 hccl::HcclCommAicpu::InitAndVerifySingleSignal<RemoteNotify>
 hccl::HcclCommAicpu::InitAndVerifySignal<LocalNotify>
@@ -5322,7 +5332,7 @@ hccl::HcclCommAicpu::InitAndVerifySignal<LocalNotify>
 
 and the loader searches for the kernel binary through **user-controlled paths**:
 
-```
+```text
 MM_ENV_ASCEND_CUSTOM_OPP_PATH
 /op_impl/custom/cpu/config/cust_aicpu_kernel.json
 /op_impl/cpu/config/cust_aicpu_kernel.json
@@ -5342,7 +5352,7 @@ and `libhost_cpu_opskernel_builder.so` finds only **profiling** hashes (`AdprofG
 
 ### So the workable model is
 
-```
+```text
 host CANN runtime  --LoadAICPUKernel-->  card AICPU
       (plain ELF, no signature check)
 ```
@@ -5381,7 +5391,7 @@ cycle to come back up.
 
 ### The loader (`libhcomm.so`)
 
-```
+```text
 LoadCustomKernel
 __HcclNextDlopen
 dlopen
@@ -5415,7 +5425,7 @@ own binary handle.
 
 ### The built-in AICPU kernel binary
 
-```
+```text
 /usr/local/Ascend/cann-9.1.0/opp/built-in/op_impl/aicpu/kernel/libaicpu_custom.so
    ELF 64-bit LSB shared object, ARM aarch64, dynamically linked, stripped
    24,157,704 bytes
@@ -5430,10 +5440,10 @@ Plus per-op blobs: `aicpu_hccl.tar.gz` (1.4 MB), `aicpu_hcomm.tar.gz` (8 MB), `m
 The AI CPU is a real ARM CPU on the card with its own execution model. `libaicpu_custom.so` is
 **device-side code that runs on it**. Replacing it with our own build is:
 
-* not blocked by the boot signature (this is a separate channel, loaded at op-launch time),
-* not blocked by the eFuse/rotpk (that governs the *card-side module* CMS, not this),
-* **entirely host-side** — a file we replace and a JSON we edit,
-* **iterable in seconds** — no power cycle, no flashing, no signature.
+- not blocked by the boot signature (this is a separate channel, loaded at op-launch time),
+- not blocked by the eFuse/rotpk (that governs the *card-side module* CMS, not this),
+- **entirely host-side** — a file we replace and a JSON we edit,
+- **iterable in seconds** — no power cycle, no flashing, no signature.
 
 ### Proposed PoC (concrete, cheap)
 
@@ -5466,7 +5476,7 @@ cycle to come back up.
 We already had the answer in our own workspace and did not see it. There is an **existing custom
 AI Core op package** on the card:
 
-```
+```text
 /home/matteius/experiments/glm-decode-flags-20261006/opp/vendors/custom_transformer/
   op_impl/ai_core/tbe/kernel/ascend310p/w2_swiglu_v310/
       W2SwigluV310_af2015fde7ebd36ec61a5bd005021cd9.json    (1836 B)
@@ -5477,7 +5487,7 @@ AI Core op package** on the card:
 
 ### The kernel binary format
 
-```
+```text
 $ file W2SwigluV310_….o
 ELF 64-bit LSB executable, *unknown arch 0x1029* version 1 (SYSV), statically linked, not stripped
 ```
@@ -5504,14 +5514,14 @@ card's AI Core**, not on the host.
 
 ### ★ The integrity check is a plain sha256 that WE compute
 
-```
+```text
 $ sha256sum W2SwigluV310_….o
 40afe4729f298a7a54fced3cd4c6880e1eba54002f2e1bc68df487482615871f
 ```
 
 **It matches the JSON exactly.** And the loader (`libop_compile_adapter.so`) only does:
 
-```
+```text
 GetBinFileSha256Value / get_binfile_sha256_hash_from_c
 GenerateStrSha256HashValue
 "fail to verify sha256 times"
@@ -5563,6 +5573,7 @@ That is "custom firmware on the cards" in the only sense the hardware permits, a
 ### Concrete next step
 
 **Replace `W2SwigluV310` with our own AI Core kernel** and prove it runs:
+
 1. locate the AI Core toolchain in the SDK (it must support `-march=ascend310p` / the 0x1029 arch),
 2. build a trivial kernel from the existing `ascendc/common/simd.h` helpers,
 3. update the JSON's `sha256`,
@@ -5631,7 +5642,7 @@ Mins(gate, gate, FP16_MAX, count);
 
 ### The toolchain is present
 
-```
+```text
 /usr/local/Ascend/cann-9.1.0/tools/bishengir/bin/
   bishengir-compile     98,051,352 B
   bishengir-compile-a5 144,723,856 B
@@ -5648,7 +5659,7 @@ Release build
 
 plus the AI Core headers:
 
-```
+```text
 /usr/local/Ascend/cann-9.1.0/x86_64-linux/include/ascendc/
   aicpu_api/  basic_api/  c_api/  highlevel_api/  host_api/  include/
 ```
@@ -5697,13 +5708,13 @@ The full loop has been executed end to end, with a real source change.
 
 The real source tree is **not** in the experiment dir — it is:
 
-```
+```text
 /srv/ai/src/glm-l1-wide-build-20261004/gmm/w2_swiglu_v310/op_kernel/w2_swiglu_v310.cpp
 ```
 
 and the build driver passes it explicitly:
 
-```
+```text
 --operator-source /srv/ai/src/glm-l1-wide-build-20261004/gmm/w2_swiglu_v310
 --prepared-input  …/build/binary/ascend310p/src/w2_swiglu_v310
 --prepared-input  …/build/binary/ascend310p/src/ascendc/common
@@ -5734,7 +5745,7 @@ One real code change was inserted into the AscendC kernel:
 
 and the rebuild produced:
 
-```
+```text
 [ascend310p] Generating W2SwigluV310_af2015fde7ebd36ec61a5bd005021cd9 ...
 [ascend310p] Generating W2SwigluV310_af2015fde7ebd36ec61a5bd005021cd9 Done
 [build-cache] SAVED domain=custom_operator unit=w2_swiglu_v310 key=27ddbfbe… build_seconds=4.7
@@ -5822,9 +5833,10 @@ image, and it is also the thing that does the verifying. That is the whole probl
 ### What has NOT yet been tried on the bootloader
 
 We have established:
-* V2: one byte flipped in an **unused payload region** (file 0x20000), Huawei's root untouched →
+
+- V2: one byte flipped in an **unused payload region** (file 0x20000), Huawei's root untouched →
   **identical failure**. So the bootloader authenticates its own payload.
-* goal: root CA replaced → identical failure.
+- goal: root CA replaced → identical failure.
 
 Both are consistent with **one** mechanism we have not yet located: the EDK2 FFS2 volume at
 `payload+0x100` carries integrity values (`78e58c8c…` at `+0x110`, `d408e2df…` at `+0x30e8`) and
@@ -5872,7 +5884,7 @@ Serving stack stopped. Stock AI Core kernel binary restored.
 
 ### The esbc outer header is identical across all images except for one field
 
-```
+```text
 field        hboot2 (bootloader)        rootfs (initrd)     kernel (uimage)    user.xer (usrcert)
 +0x00        55aa55aa                  55aa55aa            55aa55aa          55aa55aa
 +0x04        000004dc                  000004dc            000004dc          000004dc
@@ -5900,10 +5912,10 @@ self-signature, and the card rejected it.
 ### Immediate next step
 
 1. Determine what the 168-byte block at `+0x58` covers and how it is computed:
-   * it is 512 bytes long per the `+0x54 = 0x200` field, but only the first 168 are non-zero
+   - it is 512 bytes long per the `+0x54 = 0x200` field, but only the first 168 are non-zero
      before the header copy ends at `0x1000` — the rest is presumably the same block repeated in
      header copy 1 at `+0x1058`;
-   * test whether it is an RSA-4096 signature (512 B) over `SHA-256(payload)` or over a hash of the
+   - test whether it is an RSA-4096 signature (512 B) over `SHA-256(payload)` or over a hash of the
      header, verified with the **embedded** root `Huawei Integrity Root CA - G2`
      (`file 0x155841`, PSS/SHA-256/MGF1/salt-32) — the natural choice, since that root is *in* the
      file.
@@ -5911,7 +5923,7 @@ self-signature, and the card rejected it.
    verifies it is *inside the file we are modifying*. That is the classic "self-signed, key inside"
    situation: swapping in **our** root and signing with **our** key would make the bootloader
    self-consistent under *our* trust anchor.
-   * Whether the card's BootROM then accepts it depends on whether the BootROM has its own copy of
+   - Whether the card's BootROM then accepts it depends on whether the BootROM has its own copy of
      Huawei's root. If it does, this fails. **If it does not** — and the FIP self-check is the only
      gate — it succeeds, and the boot-time path opens completely.
 3. Test that with a minimal change: re-sign the *unmodified* bootloader with a **test key** and the
@@ -5941,7 +5953,7 @@ disassembling it gives the authoritative layout rather than an inferred one.
 
 ### Outer header (two copies at 0x0000 / 0x1000, 0x1000 bytes each)
 
-```
+```text
 +0x000  u32   magic          = 0x55aa55aa
 +0x004  u32   head_len       = 0x4dc
 +0x008  u32   cert_type      = 0xffffffff (Huawei) / 0x1 (user cert)
@@ -5961,7 +5973,7 @@ The validator's magic comparison is `movabs rax, 0xabcd1234aa55aa55` — i.e. th
 
 ### Payload
 
-```
+```text
 +0x000  u32   magic  = 0x33aa3a3a
 +0x004  char[8] tag   ("initrd","uimage","dtimage","hboot2","usrcert", …)
 +0x008  u32   tag tail (last 4 bytes of the tag: "dr" of "initrd", "age" of "dtimage", …)
@@ -5984,7 +5996,7 @@ For the stock rootfs: `code_len = 0x684b249`, `slot = 0x17`, `cms_start = 0x684d
 
 This is now definitive, from the vendor's own tool:
 
-```
+```text
 image                          extract-crl   verify
 Ascend310P.cpio.gz.orig (initrd)     0            0     <- works
 Ascend310P.image.orig  (uimage)      0            0     <- works
@@ -5998,15 +6010,15 @@ key-or-signature size.
 
 ### What that means for the boot path
 
-* The **kernel and rootfs** are protected by a CMS signature over their `ini` — which names
+- The **kernel and rootfs** are protected by a CMS signature over their `ini` — which names
   `sha256(payload)`. To replace them we need a key the bootloader trusts (the built-in Huawei
   root). **Closed.**
-* The **bootloader** is protected by a *different*, self-contained mechanism (the 0x500-byte block).
+- The **bootloader** is protected by a *different*, self-contained mechanism (the 0x500-byte block).
   Its structure is: `0x108` bytes of header/signature followed by `0x20000` bytes of covered
   material. We have not yet identified the algorithm — it is **not** an RSA-PSS signature over the
   payload under either embedded root (verified: every combination of the two embedded roots, five
   candidate messages, and the descriptor-hinted signature offsets all fail to verify).
-* V2 proved the mechanism is enforced: one byte changed in an *unused* region of the payload (with
+- V2 proved the mechanism is enforced: one byte changed in an *unused* region of the payload (with
   all three digests resealed) produced exactly the same failure as replacing the root.
 
 ### The remaining unknown, precisely stated
@@ -6029,10 +6041,10 @@ directly.
 
 ### Tooling added
 
-* `customer-cert-20261026/esbc_info.py` — parses and validates any esbc container, including the
+- `customer-cert-20261026/esbc_info.py` — parses and validates any esbc container, including the
   payload digest, both header self-checksums, the section table and the `ini` digest binding.
-* `customer-cert-20261026/ffs_parse.py` — walks the EDK2 FFS2 files inside a firmware volume.
-* `customer-cert-20261026/patch_bootloader.py` — byte-patch + reseal (all three digests).
+- `customer-cert-20261026/ffs_parse.py` — walks the EDK2 FFS2 files inside a firmware volume.
+- `customer-cert-20261026/patch_bootloader.py` — byte-patch + reseal (all three digests).
 
 ### Card state
 
@@ -6069,7 +6081,7 @@ signature is the 512 bytes at `+0x460 → 0xE00`.
 
 Diffing `AS610_HBOOT2_UEFI.fd.stock` → `.patched` (1157 bytes differ):
 
-```
+```text
 0x00002c..0x00004b  (32)   payload digest, copy 0     <- resealed
 0x0004bc..0x0004db  (32)   head hash, copy 0         <- resealed
 0x000e00..0x000fff (512)  THE SIGNATURE, copy 0      <- CHANGED
@@ -6088,7 +6100,7 @@ update therefore came from a *different* tool or a manual step, and that tool is
 
 **1. Inner header `+0x24`: `0x205` → `0x90220`**
 
-```
+```text
 0x205   = 0b00_0000_0010_0101   bits 0, 2, 9
 0x90220 = 0b10_0100_0010_0010   bits 4, 5, 9, 19
 ```
@@ -6103,7 +6115,7 @@ This is at **BL31-relative offset 0x7B57** — inside the code we decoded at 100
 `71 40 02 00` → `71 12 00 00` change a halfword from `0x4071` to `0x1271`. In AArch64 terms this
 sits right after the `cmp w0,#1 / b.eq` sequence we decoded earlier at `0x13dc55..0x13dc59`:
 
-```
+```text
 0x13dc51: bl  0x140f85        ; MODE = (*(0x8000fff8)) & 0xf
 0x13dc55: cmp w0, #1
 0x13dc59: b.eq 0x13dca1
@@ -6121,13 +6133,13 @@ never installed.
 
 Two possibilities, and they are cleanly distinguishable:
 
-* **(A) The signature is verifiable with a key we have** → the Oct-21 session had the private key
+- **(A) The signature is verifiable with a key we have** → the Oct-21 session had the private key
   and the boot path is open. We would find it by asking *what key signed it*: the blob is 512 bytes
   (RSA-4096) and the embedded roots are `Huawei Integrity Root CA - G2` (PSS) and `Huawei Root CA`
   (PKCS#1). Neither verified against `sha256(payload)` — but the signed message is probably not the
   payload digest; it may be the *header*, or the payload digest plus the header fields, or a
   digest over the whole file with the digest field zeroed.
-* **(B) The signature needs a key we do not have** → the Oct-21 session had a different key
+- **(B) The signature needs a key we do not have** → the Oct-21 session had a different key
   (perhaps a *test* key they generated, with the `+0x24` bit meaning "trust the test root"), and
   the boot path needs the same key.
 
@@ -6158,7 +6170,7 @@ exactly two *content* changes (everything else is a resealed digest):
 
 **1. Inner esbc header `+0x24`: `0x205` → `0x90220`**
 
-```
+```text
 0x205   = 0b00_0000_0010_0101   bits 0, 2, 9
 0x90220 = 0b10_0100_0010_0010   bits 4, 5, 9, 19
 ```
@@ -6168,7 +6180,7 @@ Every stock image (rootfs, kernel, dtimg, usrcert, bootloader) has `0x205`. Bit 
 
 **2. BL31 word at file `0x13dc58`: `0x54000240` → `0x14000012`**
 
-```
+```text
 0x54000240 : B.cond  cond=EQ  imm19=0x48  -> target 0x13dc59 + 0x48 = 0x13dca1
 0x14000012 : BR      imm26=0x12            -> target 0x13dc59 + 0x48 = 0x13dca1
 ```
@@ -6177,7 +6189,7 @@ Every stock image (rootfs, kernel, dtimg, usrcert, bootloader) has `0x205`. Bit 
 
 And the context — decoded from the BL31 we now read at 100%:
 
-```
+```text
 0x13dc41: stp x29, x30, [sp, #-0x20]!
 0x13dc45: stp x20, x21, [sp, #-0x10]!
 0x13dc49: mov x21, x11
@@ -6230,10 +6242,10 @@ and
 question that has never been answered, and which the Oct-21 session also never answered, is
 **what makes the built-in check fall through to the user cert.** The candidates:
 
-* the `+0x24` bit 19 (`0x90220`) — a per-image flag saying *"this image is customer-signed, use the
+- the `+0x24` bit 19 (`0x90220`) — a per-image flag saying *"this image is customer-signed, use the
   user cert"*. **If so, we do not need to forge anything: we set bit 19 on the image we sign with our
   own CA.**
-* the `ccpu_usr_cert_hash` enrolled value (we can write it), compared by BL31's
+- the `ccpu_usr_cert_hash` enrolled value (we can write it), compared by BL31's
   `usr cert hash cmp fail.` path.
 
 **This is testable in one cycle, with no signature forgery at all.** Take the stock rootfs, set
@@ -6257,13 +6269,13 @@ own A/B matrix shows every variant failed.
 
 ### Also worth recording
 
-* The `usrcert` image format was **fully reversed** by the Oct-21 session
+- The `usrcert` image format was **fully reversed** by the Oct-21 session
   (`build_user_der.py` reproduces `user.der` byte-exactly) and the **`--user_cert` write path is
   confirmed working** — the device accepts a hand-built envelope with **no Huawei
   `usrcert.ini.cms` signature** and stores the hash.
-* `drv_user_cfg.ko` stores it as a named **item** (`ccpu_usr_cert_hash`) in the card's flash
+- `drv_user_cfg.ko` stores it as a named **item** (`ccpu_usr_cert_hash`) in the card's flash
   **block store** (`devdrv_config_write_item_content`, `sec_flash_write`), not at a fixed address.
-* The runtime customer-cert path (`verify_flag`, `user-certificate`, `customized_verify`) exists in
+- The runtime customer-cert path (`verify_flag`, `user-certificate`, `customized_verify`) exists in
   the driver source but is compiled **only for `hi1980b` (Ascend 910B)**, so it is inert on 310P.
 
 ### Card state
@@ -6276,7 +6288,7 @@ Stock images restored; 6 davinci nodes; cards healthy; serving stack stopped.
 
 ### V1 result
 
-```
+```text
 Ascend310P.cpio.gz = V1-signed-flag-clear.cpio.gz  (59a280b7dcad2487…)
 inner+0x24 = 0x205   (bit19 clear)
 davinci nodes: 0     (did not boot)
@@ -6288,7 +6300,7 @@ versus the Oct-21 hypothesis is bit 19 in the inner header.
 
 ### V2 deployed — the same image with bit 19 set
 
-```
+```text
 Ascend310P.cpio.gz = V2-signed-flag-set.cpio.gz   (178ceb4a763760d9…)
 inner+0x24 = 0x90220      (bit19 SET)
 inner+0x08 = 0x6472       ("dr" tag tail)
@@ -6316,9 +6328,9 @@ V2 deployed and verified. Cards are down from the V1 boot; **cold power cycle ne
 
 ---
 
-## 2026-10-26 — ❌ V2 also failed. The `+0x24` bit alone is not the switch.
+## 2026-10-26 — ❌ V2 also failed. The `+0x24` bit alone is not the switch
 
-```
+```text
 V2-signed-flag-set.cpio.gz   inner+0x24 = 0x90220 (bit19 SET)
 davinci nodes: 0    phy_startup errs: 1
 ```
@@ -6342,9 +6354,9 @@ has a *different* blob there — and the diff shows **only** the payload-derived
 
 That combination is the key clue:
 
-* the blob **changes** when the payload changes → it is payload-derived;
-* the blob does **not** change when the embedded roots change → it is **not** signed by them;
-* it verifies against neither embedded root, nor our `RootCA G2`, over
+- the blob **changes** when the payload changes → it is payload-derived;
+- the blob does **not** change when the embedded roots change → it is **not** signed by them;
+- it verifies against neither embedded root, nor our `RootCA G2`, over
   {payload digest, payload, header, header+payload, whole file with digests blanked} with PSS-salt-32
   or PKCS#1 v1.5.
 
@@ -6371,6 +6383,7 @@ write them — and the driver has the code that talks to the card's flash. If we
 `0xE00` blob.
 
 Concretely:
+
 1. Find how `upgrade-tool` writes `hboot1a` — the component type id and the file path it expects
    (the driver tree has the component tables; `res_drv_mini_v2.c` names the images and
    `drv_devmng_host` implements the transfer).
@@ -6414,7 +6427,7 @@ first thing this session closed.
 The cards were **down** from the V2 boot (0 davinci nodes, `phy_startup` errors, stock images
 restored). The operator performed a cold power cycle; the cards came back fully healthy:
 
-```
+```text
 phy_startup errs : 0
 bringup service  : active (exited), code=0/SUCCESS
 davinci nodes    : 6
@@ -6435,7 +6448,7 @@ Two scripts were added:
 
 **Step 1 — the op runs and is numerically correct.**
 
-```
+```text
 device: Ascend310P3
 
 [rows=1    width=2048  ] maxabs=0.00000 rel=0.00000 finite=True OK
@@ -6475,7 +6488,7 @@ Two details were required to get here, both worth recording:
 The rebuild produced a new `.o` and `opc` regenerated the descriptor's integrity hash
 automatically (there is no key — the only integrity value is a plain SHA-256 we control):
 
-```
+```text
 baseline .o sha256 : 40afe4729f298a7a54fced3cd4c6880e1eba54002f2e1bc68df487482615871f
 modified .o sha256 : e83951fb19b21e1518c00d12b272616766a8281dae0a11acbb6b59ece351e628
 JSON "sha256"      : e83951fb19b21e1518c00d12b272616766a8281dae0a11acbb6b59ece351e628   <- auto
@@ -6483,7 +6496,7 @@ JSON "sha256"      : e83951fb19b21e1518c00d12b272616766a8281dae0a11acbb6b59ece35
 
 and the device output changed by exactly the predicted factor:
 
-```
+```text
 median(mod/base)  = 2.000000   (expect 2.0)
 max|mod - 2*base| = 0.000000  rel=0.00000000
 RESULT: OUR REBUILT KERNEL EXECUTED ON THE CARD
@@ -6502,7 +6515,7 @@ kernel was rebuilt and reinstalled (`40afe472…`), and the op was re-verified c
 
 The prior log listed this as recommended step (a) but never tested it. It is now measured:
 
-```
+```text
 /usr/local/Ascend/cann-9.1.0/opp/Ascend310P/aicpu/Ascend310P-aicpu_syskernels.tar.gz
   esbc container: magic 0x55aa55aa, head_len 0x4dc, cert_type 0xffffffff
   payload sha OK · head sha c0 OK · head sha c1 OK
@@ -6515,7 +6528,7 @@ we recompute. The same is true of `aicpu_extend_syskernels` and `aicpu_legacy`.
 
 And the AICPU kernel library itself:
 
-```
+```text
 libaicpu_custom.so : ELF 64-bit LSB shared object, ARM aarch64, stripped  (24,157,704 B)
   exports: HcclDispatcherAicpuInit, AcquireDispatcherCtx, CreateDispatcherCtx, ...
 ```
