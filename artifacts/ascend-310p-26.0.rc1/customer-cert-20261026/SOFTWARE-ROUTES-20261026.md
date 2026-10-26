@@ -1382,3 +1382,104 @@ Stock everywhere: AICPU container `663e3dcc…`, host AICPU library `ec28199e…
 tree removed. The `/usr/local/Ascend/latest -> cann-9.1.0` symlink is left in place — it is
 correct (the driver install should have created it) and `npu-smi info` plus a torch op both work
 with it.
+
+---
+
+## The host/device HAL asymmetry — the root cause of the silent device
+
+This is the finding that explains why the device never answers.
+
+### `halGetSocVersion` is a stub on the host, and real on the device
+
+```
+host   libascend_hal.so:  halGetSocVersion @ 0x29a42
+       mov $0xfffe,%eax ; pop rbp ; ret          <- 6-byte stub, returns NOT_SUPPORT
+
+device libascend_hal.so:  halGetSocVersion @ 0x8a348   REAL implementation
+                          drvGetPlatformInfo @ 0x856d8 REAL
+```
+
+and the platform side agrees:
+
+```
+drvGetPlatformInfo -> 0, info=1   (HOST side)
+```
+
+Measured on the card host with the real signatures from `ascend_hal.h`:
+
+```
+halGetSocVersion(dev=0) -> 65534 (0xfffe)  buf=""
+halGetSocVersion(dev=1) -> 65534 (0xfffe)  buf=""
+drvGetPlatformInfo -> 0 info=1 (HOST side)
+```
+
+So **the host HAL physically cannot report the SoC version on the 310P**, while the device HAL
+can. The AICPU loader runs on the host, derives its per-SOC package names from that version, and
+gets nothing — so it falls back to generic names:
+
+```
+[LoadSinglePackageToDevice] cannot find package:Ascend-aicpu_legacy.tar.gz, optional is true skip
+[LoadSinglePackageToDevice] cannot find package:Ascend910-aicpu_legacy.tar.gz, optional is true skip
+```
+
+while the file on disk is `Ascend310P-aicpu_legacy.tar.gz`. The loader therefore never takes the
+per-SOC path, never builds the `omfile_name` bookkeeping, and never gets the device's
+`TSD_OM_PKG_DECOMPRESS_STATUS` reply.
+
+### The user-config store is device-side too
+
+The device's `/var/save_shadow` stores the device's `/etc/shadow` into the user-config store as the
+item `usershadow`, via `halGetUserConfig` / `halSetUserConfig` /
+`halClearUserConfig`. The host's HAL exports the same three symbols, but they are **stubs on the
+host** as well:
+
+```
+halGetUserConfig(dev=0, "usershadow")       -> 65534 (0xfffe)
+halGetUserConfig(dev=0, "ccpu_usr_cert_hash") -> 65534 (0xfffe)
+halGetUserConfig(dev=0, "sign_type")         -> 65534 (0xfffe)
+halGetUserConfig(dev=0, "cpu_num_cfg")       -> 65534 (0xfffe)
+```
+
+Consistent with `drvGetPlatformInfo` saying we are on the **host** side: the device's user-config
+store (which holds `usershadow`, `ccpu_usr_cert_hash`, `sign_type`, `cpu_num_cfg`, …) lives on the
+**device**, and the host HAL cannot read or write it. The device-side HAL is a different build
+with real implementations.
+
+### The seven stubs in the host HAL
+
+For reference, the host `libascend_hal.so` has exactly seven functions that return 0xfffe
+immediately:
+
+```
+drvUnbindHostPid      halBuffPoolGet         halBuffPoolPut
+halDrvEventThreadInit halDrvEventThreadUninit
+halMbufGetMbufInfo    halQueueGetMaxNum
+```
+
+plus `halGetSocVersion` and the user-config trio in the same category.
+
+### What this means for the plan
+
+The AICPU package load is **host-driven and the host half is compiled out on the 310P**. Two ways
+forward, both now concrete:
+
+1. **Make the host HAL able to report the SoC version.** `halGetSocVersion` is a stub that returns
+   0xfffe; the real implementation exists in the *device* HAL. Since we already rebuild the host
+   driver, the cleanest fix is to provide the missing host-side implementation — the SoC version
+   is a static property of the card and the host *does* know it (`npu-smi info` reports
+   `Product Type: Atlas 300I Duo`, and the driver has `drvGetPhyChipType` as a named entry point
+   that the HAL looks up at runtime). If the HAL's table lookup for `drvGetPhyChipType` is the only
+   thing missing, supplying it in our driver fork would unblock the per-SOC package path — and
+   with it the `omfile_name` message and the device's install.
+
+   Concretely: `halGetSocVersion` calls a function pointer that is supposed to be
+   `drvGetPhyChipType`, and **no driver module exports that symbol** — `nm -D` over
+   `drv_devmng_host.ko` finds nothing. Adding it to our fork is a small, well-scoped change, and
+   it is the same kind of change that already worked for the AI Core proof.
+
+2. **Do it from the device side.** With the AICPU library landing on the device's
+   `/usr/lib64/aicpu_kernels/`, the device's own `tsdaemon` (which has a real `halGetSocVersion`)
+   would handle it — but getting there still needs the package to land, which is the thing that
+   is currently blocked.
+
+Option 1 is the smallest step that could change the outcome, and it is entirely in code we own.
