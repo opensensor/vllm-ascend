@@ -1831,3 +1831,131 @@ effect. The `RunCpuKernel` no-op broke the ABI; instead:
 Once that marker exists, the escalation path is: device-side code as uid 1000 → read the device's
 `/etc/shadow` (which the device loads from flash via `save_shadow -r`) → or drive `spi_mcu` to the
 MCU's CRC-only regions.
+
+---
+
+## Single-card test results: the device installs our package — and what the CVE list changes
+
+### The mechanism, confirmed from the device's own logs
+
+`msnpureport -f` (the vendor's device-log collector) gives us the device OS's logs, and they
+show the whole chain working against **card 9** (NPU ID 9, bus `0000:01:00.0`, the card whose MCU
+flash we have). Our own file, end to end:
+
+```
+[DRV(2836,hdcd)] [hdc_file.c:2037][hdc] [recv_data] Create file.
+    (dstpth="/home/HwHiAiUser/hdcd/device0/611624_Ascend310P-aicpu_syskernels.tar.gz";
+     privilege=1; file_size=53572709; send_bytes=53572709)
+[TDT(2861,tsdaemon)] [inotify_watcher.cpp:362][LoadPackage] Begin to load package,
+    type=0, path=/home/HwHiAiUser/hdcd/device0/, fileName=611624_Ascend310P-aicpu_syskernels.tar.gz
+[TDT(2861,tsdaemon)] [aicpu_process_package_worker.cpp:92][LoadPackage] Load package success,
+    originPkg=..., decomPkg=/home/HwHiAiUser/aicpu_kernels/vf0_611624_..., checkCode=53572709
+```
+
+and then the device launched the AICPU scheduler against the installed path:
+
+```
+[tsd_common.cpp:1470][ForkSubProcess] envPath:LD_LIBRARY_PATH=/usr/lib64/aicpu_kernels/0/aicpu_kernels_device/:
+    .../sand_box/:/home/HwHiAiUser/hs/0/runtime/lib64/:/usr/lib64/device-compat-plugin/0/:
+    /usr/lib64/device-sw-plugin/0/device-sw-plugin/:
+[launch_strategy_fork.cpp:105][DoLaunch] Name=aicpu_scheduler, binPath=/var/aicpu_scheduler,
+    args=[aicpu_scheduler --deviceId=0 --pid=611624 --pidSign=... --vfId=0 ...]
+```
+
+### The filename must match a pattern, or the device deletes the file
+
+This cost an hour and is worth recording:
+
+```
+[TDT(2861,tsdaemon)] [inotify_watcher.cpp:349][HandleEvent] remove file:probe_pkg.tar.gz
+    in path:/home/HwHiAiUser/hdcd/device0/aicpu, cmd:rm -rf /home/HwHiAiUser/...
+```
+
+The device matches `^[0-9]+_Ascend([0-9]{3}(P)?)?-aicpu_syskernels\.tar\.gz$` and **deletes**
+anything else. `7001_Ascend310P-aicpu_syskernels.tar.gz` and `7002_...` were both accepted and
+installed.
+
+### The ordering constraint
+
+The scheduler loads the libraries at startup, so the package must be installed **before** the
+scheduler forks. Our first attempt was 200 ms too late:
+
+```
+21:19:25.482  ForkSubProcess  (scheduler starts)
+21:19:25.836  LoadKernelSo   (libraries loaded)
+21:19:26.051  recv_data      (our file arrives -- too late)
+```
+
+Push first, then start the host session.
+
+### `load tensorflow so failed, ret is[11002]` is pre-existing, not our doing
+
+That warning appears in **every** device session, including the ones where we pushed the *stock*
+package:
+
+```
+device-app-392961   ret is[11002]
+device-app-396013   ret is[11002]
+device-app-443641   ret is[11002]
+device-app-461292   ret is[11002]
+device-app-520013   ret is[11002]
+device-app-522819   ret is[11002]
+device-app-536733   ret is[11002]
+device-app-611624   ret is[11002]
+```
+
+so it is the device's own missing `libtensorflow.so`, not a consequence of our substitution. The
+`libcpu_kernels.so` load itself succeeds (`LoadKernelSo ... End to preload aicpu so`).
+
+### On the tmpfs CVE list
+
+The device's AICPU kernel directory is a tmpfs:
+
+```
+mount -t tmpfs -o size=50%,uid=$uid,gid=$gid,nosuid,nodev,mode=0700 tmpfs \
+     "/home/${username}/hdcd/device0/aicpu/vfid$count"
+```
+
+and the device kernel is:
+
+```
+Linux version 6.6.0-72.0.0.76.h21510.1170.eulerosv2r15.ascend.aarch64
+    (abuild@szxrtosci10000) (gcc_old (GCC) 12.3.1 (openEuler 12.3.1-62.h21510.1.eulerosv2r15),
+    GNU ld (GNU Binutils) 2.41) #1 SMP Fri Mar 20 18:12:34 UTC 2026
+```
+
+a **6.6** kernel with openEuler/vendor patches, built March 2026. Against the list:
+
+| CVE | relevance here |
+|---|---|
+| **CVE-2022-2590** (shmem/tmpfs write-bypass) | **most relevant.** A MAP_SHARED tmpfs write can modify a file without write permission. The AICPU kernel dir is `mode=0700` owned by uid 1000 — but the *device* has other uids (`HwDmUser` 1101, `CustAiCpuUser` 1001), and `HwDmUser` already holds `NOPASSWD` sudo entries. If 6.6.0-72 carries this bug, a uid-1001 process could write into uid-1000's tmpfs — i.e. replace the AICPU kernel library without owning the directory. Worth checking whether openEuler's 6.6.0-72 backported the fix. |
+| **CVE-2017-5551** (setgid not cleared on setxattr) | relevant to the same tmpfs: `setxattr` on a tmpfs file failing to clear setgid can leave unexpected group inheritance. Combined with `mode=0700` dirs this is a privilege-inheritance primitive. |
+| **CVE-2018-18397** (userfaultfd + tmpfs permission bypass) | relevant if `userfaultfd` is enabled on the device — it lets a process write a tmpfs file it has no write permission on. |
+| CVE-2026-89987, CVE-2024-27058, CVE-2023-53391 | DoS/data-loss only; no privilege gain. Not useful here. |
+
+These are **kernel-side** bugs in the device OS, so they would be reached from device-side code —
+which is exactly what the AICPU library gives us, at uid 1000, inside the device OS. That makes
+the CVE list relevant *after* we get code execution there, not instead of it.
+
+### Honest status of the marker
+
+The constructor-bearing library was installed on the device, but I have **not yet observed the
+marker**. Reasons, in order of likelihood:
+
+1. The per-session directory `/usr/lib64/aicpu_kernels/0/aicpu_kernels_device/<pid>_0` is never
+   populated — the device logs `DirPath[...] can not access, skip clean` for every session — so the
+   scheduler may load from a path our package never replaced.
+2. The scheduler process's own log (`device-app-<pid>`) is not included in the `msnpureport`
+   collection for the newest sessions, so the `dlopen` result for those sessions is unobserved.
+3. `msnpureport` collects logs and `system_info`, **not arbitrary device files** — so a marker
+   file at `/var/log/npu/...` or `/home/HwHiAiUser/...` would not appear even if it was written.
+
+The next measurement is to put the oracle somewhere the collection *does* reach — the device's own
+slog — or to make the constructor's effect visible in the AICPU op's numeric result.
+
+### Card state
+
+Healthy: 6/6 chips OK, 6 davinci nodes, 0 `phy_startup` errors. Stock AICPU container restored
+(`663e3dcc…`) on the host. The device's installed AICPU kernel set currently holds our modified
+`libcpu_kernels.so` (installed 21:26:36) — worth restoring by pushing the stock package again,
+which is one `hdc_push` away and needs no physical access.
