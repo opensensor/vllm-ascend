@@ -2411,3 +2411,116 @@ configurable via `devdrv_config_set_pss_cfg`.
 Healthy: 6/6 chips OK, 6 davinci nodes, 0 phy_startup errors. The device's installed AICPU
 kernels are still the stock ones (the device recorded the stock hash `596121f4…`, not ours), and
 the host's `Ascend310P-aicpu_syskernels.tar.gz` is back to the stock container.
+
+---
+
+## The complete AICPU / device-sw-plugin install protocol, and the signature switch
+
+The device's `tsdaemon` implements the whole thing, and the strings give the protocol exactly.
+
+### The descriptor
+
+The device parses a descriptor (`aicpu_package_install.info`, `extend_aicpu_package_install.info`, or
+`ascend_package_load.ini`) with these keys per package:
+
+```
+name:<file>
+install_path:<code>
+optional:<flag>
+package_path:<dir>
+load_as_per_soc:<flag>
+```
+
+with the log line:
+
+```
+package:%s, decDstDir:%u, findPath:%s, hostTruePath:%s, optionalFlag:%u, validFlag:%u
+```
+
+`decDstDir` (the destination code) selects the install directory:
+
+- `/home/HwHiAiUser/aicpu_kernels/`
+- `/usr/lib64/aicpu_kernels/`
+- `/home/HwHiAiUser/device-sw-plugin/`
+- `/usr/lib64/device-sw-plugin/`
+- `/home/HwHiAiUser/device-compat-plugin/`
+- `/usr/lib64/device-compat-plugin/`
+
+and the extract command differs per package class:
+
+```
+' ; tar --no-same-owner -ozxf '                    <- the AICPU packages
+' ; tar --same-owner --same-permissions -ozxf '     <- the device-sw-plugin / compat packages
+' ; tar -xf '                                     <- the OM inner package (non-gzip)
+```
+
+### The signature switch — the important part
+
+The device's signature policy is a **runtime setting**, read from a `verify/flag` file:
+
+```
+/device-sw-plugin/verify/flag                       <- the device's copy
+/home/HwHiAiUser/device-sw-plugin/                 <- the device's plugin dir
+/usr/lib64/device-sw-plugin/                       <- where it is installed
+```
+
+and on the host the same path is:
+
+```
+#define CUSTOM_SIGN_CONF_FLAG_PATH        "/var/asdrv/dev%u/device-sw-plugin/verify/flag"
+#define CUSTOM_SIGN_CONF_VENDOR_CERT_PATH "/var/asdrv/dev%u/device-sw-plugin/verify/vendor-certificate"
+#define CUSTOM_SIGN_CONF_USER_CERT_PATH   "/var/asdrv/dev%u/device-sw-plugin/verify/user-certificate"
+```
+
+The file holds one line, `verify_flag=<N>`, where N is:
+
+```c
+SIGN_FLAG_DISABLED      = 0,
+SIGN_FLAG_ONLY_VENDOR   = 1,
+SIGN_FLAG_ONLY_USER     = 2,
+SIGN_FLAG_VENDOR_OR_USER = 3,
+SIGN_FLAG_ONLY_CMTY     = 4,
+SIGN_FLAG_VENDOR_OR_CMTY= 5,     <- the default the driver writes
+SIGN_FLAG_USER_OR_CMTY  = 6,
+SIGN_FLAG_ALL           = 7,
+```
+
+The host driver can set it through the DMP command set:
+
+```
+ADD_FEATURE_COMMAND(DMS_MODULE_CUSTOM_INFO, DMS_GET_SET_DEVICE_INFO_CMD, ZERO_CMD,
+    "main_cmd=0x35,sub_cmd=0x2", "dmp_daemon", DMS_ACC_ROOT | ..., dms_set_custom_sign_flag_dsmi)
+```
+
+with `PKCS_SIGN_TYPE_OFF 1` / `PKCS_SIGN_TYPE_ON 0`, and the exported wrappers
+`dsmi_cmd_set_custom_sign_flag` / `dsmi_cmd_get_custom_sign_flag` in
+`libdrvdsmi_host.so`.
+
+Two caveats that keep this from being a one-liner:
+
+1. `dms_set_custom_sign_flag` first calls `dms_check_sign_auth_enble(dev_id)` and refuses if that
+   fails — so there is an authorisation precondition on setting the flag at all.
+2. The `dms_custom` module that implements all of this is **gated out of the 310P driver build**
+   (`dms_custom.mk` builds it only for `hi1980b` / `ascend910B`). The *device* has the logic; the
+   *host* driver on the 310P does not.
+
+But the device side is reachable: the device accepts a package named
+`Ascend-device-sw-plugin.tar.gz` (regex `^[0-9]+_Ascend-device-sw-plugin\.tar\.gz$`), extracts it
+with `tar --same-owner --same-permissions -ozxf` into `/usr/lib64/device-sw-plugin/`, and then
+reads `/device-sw-plugin/verify/flag`. So a `device-sw-plugin` package carrying
+`verify/flag` containing `verify_flag=0` would switch the AICPU signature requirement off — from
+the host, with no credential.
+
+That is the concrete next experiment, and it needs the same size gate solved for that package
+class (the `device-sw-plugin` package has its own expected size, which the device's saved package
+record will reveal).
+
+### Also note
+
+The device logs `devdrv_config_get_pss_cfg ... The sign details. (sign=1)` on every AICPU load —
+that is the check our exact-size package reached, and `sign=1` is the value the device has stored.
+
+### Card state
+
+Healthy: 6/6 chips OK, 6 davinci nodes, 0 phy_startup errors, stock AICPU container restored on
+the host.
