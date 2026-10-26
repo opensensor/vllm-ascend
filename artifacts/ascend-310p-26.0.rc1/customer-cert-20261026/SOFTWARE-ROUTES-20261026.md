@@ -2210,3 +2210,109 @@ it — observable from the host by attempting a pubkey login.
 Step 4 is where the MCU's `usershadow` config item, the community/user-certificate plugin, and the
 `spi_mcu` transport all become reachable — the three things that have been closed to us so far
 because they live inside the device.
+
+---
+
+## The AICPU install gate is the package SIZE — confirmed with a control
+
+This is the concrete result of this session's testing, and it is worth stating precisely.
+
+The device's `tsdaemon` keeps the installed package's size saved and compares the size of the
+file it receives against it. From the device's own log (`slog/dev-os-0/run/device_os.log`):
+
+```
+[TSDaemon] No need load package, packageSize=53559460, checkCode=53559460
+[TSDaemon] Start load package, originPkg=..., checkCode=%lu, pkgSize=%lu
+[TSDaemon] Load package success, ..., checkCode=%lu
+```
+
+The "check code" is simply the package size, and the device's saved value is **53559460** — the size
+of the stock `Ascend310P-aicpu_syskernels.tar.gz`.
+
+Every package we sent is in the log with its size and outcome:
+
+| package | path | pkgSize | outcome |
+|---|---|---|---|
+| 520013 / 522819 / 536733 (vendor client, stock) | `hdcd/device0/` | 53559460 | **loaded** |
+| 8001 (our raw push, stock) | `hdcd/device0/aicpu/` | 53559460 | **loaded** |
+| 8100 (our raw push, stock) | `hdcd/device0/` | 53559460 | **loaded** |
+| 7001 (ours, modified) | `hdcd/device0/aicpu/` | 53572709 | stalled |
+| 7002 / 7003 (ours, modified) | `hdcd/device0/aicpu/` | 53572718 | stalled |
+| 7004 (ours, modified) | `hdcd/device0/aicpu/` | 53572675 | stalled |
+| 7005 (ours, modified) | `hdcd/device0/aicpu/` | 53572695 | stalled |
+| 7007 (ours, + .ssh/authorized_keys) | `hdcd/device0/aicpu/` | 53572899 | stalled |
+| 801016 (ours, via the vendor client) | `hdcd/device0/` | 53572695 | stalled |
+
+**The control is decisive**: the *stock* package pushed through our own raw `drvHdcSendFileV2` — no
+vendor client, no check-code message — **loads fine**, because its size matches. Every package with
+a modified size stalls at:
+
+```
+[TSDaemon] 'Check sum wait %u second timeout. ... curCode=%lu, checkCode=%lu'
+[TSDaemon] 'Get shared check code failed, will not decompress package'
+```
+
+So the transport is solved and the gate is a single number: **the package must be exactly
+53559460 bytes.**
+
+### Where the trust anchor actually sits
+
+The device's `tsdaemon` maintains a hash registry (`tsd_hash_verify.cpp`):
+
+```
+[InsertOrUpdateHashValue] update hash value key:libcpu_kernels.so,   value:596121f4...
+[InsertOrUpdateHashValue] update hash value key:libaicpu_kernels.so, value:74f888c0...
+```
+
+Those are the **stock** values from the package's own `bin_hash.cfg`, so the registry follows the
+package — which is why our rebuilt `bin_hash.cfg` is the right thing to update.
+
+Separately, the device's own binaries are pinned by a file we have never been able to touch:
+
+```
+/etc/mdc/base-plat/process-manager/bin_hash.cfg
+    proc_launcher=c5040ccc0e4f24f4...
+    aicpu_scheduler=beb57bfc5840408176a2f3d58855ec9d449c783540e22c046dbb7a6483c84ebb
+    tsdaemon=060935c536ac176829015612c71e03e4b0a6b8531c2fa142914ab8ce89efaee1
+    hdcd=95f3cf635c59668f28890559e8075a502e2614b27179c052a5b89d4f0c8e5802
+    ...
+```
+
+This is the device's real trust anchor for its *own* binaries, and it is a plain SHA-256 list. It
+is **not** the gate on the AICPU libraries (those come from the package's `bin_hash.cfg`), but it is
+where a device-side foothold would have to start.
+
+### The size problem, precisely
+
+Rebuilding the container changes the compressed length, and the container has to land on an exact
+byte count. The obstacle:
+
+```
+original gzip member                    : 53551012
+gzip.compress(tar, 9) on the SAME tar   : 53564302   (+13300)
+gzip.compress(tar, 9) with zlib 1.2.11   : 53740604   (same as 1.3.1)
+```
+
+So the *unmodified* tar re-compresses 13,300 bytes longer than the vendor's member, regardless of
+zlib version — the vendor's stream was produced by a different deflate implementation (or a
+different tar byte-for-byte). Since the tar itself is reproduced exactly (167,823,360 bytes in and
+out), the difference is purely in the compressor.
+
+gzip members tolerate trailing NUL bytes, so the container *can* be padded to an exact length —
+what is needed is a compressor whose output is <= the target. `zcompress.py` loads a chosen zlib
+through ctypes so the exact implementation can be tried, and a strategy/memLevel sweep is running.
+
+### Also settled this session
+
+- **The device SSH surface** (from the extracted rootfs): OpenSSH 9.6p1, stock, `PermitRootLogin no`,
+  `PasswordAuthentication no`, `KbdInteractiveAuthentication yes` (PAM), `PubkeyAuthentication yes`
+  with `AuthorizedKeysFile .ssh/authorized_keys`, `PermitEmptyPasswords no`, `MaxAuthTries 3`.
+- **The device password mechanism**: `/usr/bin/passwd` is replaced by a wrapper that runs
+  `/usr/bin/passwd_orign` and then `sudo /var/save_shadow -w`, which stores `/etc/shadow` into the
+  user-config store as the item **`usershadow`** via `halSetUserConfig`. At boot, `save_shadow -r`
+  loads it back. So writing that one config item would set the device password — but the API
+  (`halSetUserConfig`) is exported only by the *device-side* HAL, not the host's.
+- **`hdcd` accepts arbitrary filenames**, not just packages: `drvHdcSendFileV2` with
+  `dst_path = .../hdcd/device0/aicpu/<anything>` returns 0 for `dw.txt`, `probe`, `x.tar.gz` and
+  `9999_probe`. Only the *path* is constrained (it must contain the trusted base
+  `/home/HwHiAiUser/hdcd/device0/aicpu`); path traversal is rejected.
