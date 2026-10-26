@@ -1096,3 +1096,158 @@ NPU ID 16409 Chip 0,1  -> Chip Logic ID 4,5
 
 so `dev 2`/`dev 4` address cards 1 and 2, whose HDC sessions are not up in the same way. Card 0
 (`dev 0`) is the one that works.
+
+---
+
+## Breakthrough: the `latest` symlink, and what it unlocked
+
+The client log had a warning I had read past twice:
+
+```
+[package_process_config.cpp:106][GetHostFilePath] cannot get package path:/usr/local/Ascend/latest///conf/,
+    reason:No such file or directory
+[TsdClient][logicDeviceId_=0] can not find aicpu packages
+```
+
+**`/usr/local/Ascend/latest` did not exist on the host.** The driver install creates
+`cann -> cann-9.1.0` and `cann-9.1.0/conf -> x86_64-linux/conf`, but no `latest`. Creating the
+symlink changes the client's behaviour materially:
+
+```
+$ sudo ln -sfn /usr/local/Ascend/cann-9.1.0 /usr/local/Ascend/latest
+```
+
+and the same `TsdFileLoad` call now sends **three** packages instead of one:
+
+```
+[SendAICPUPackageSimple] hdc send file[/usr/local/Ascend/latest//opp/Ascend310P/aicpu/Ascend310P-aicpu_legacy.tar.gz]
+                              to [/home/HwHiAiUser/hdcd/device0/aicpu/443641_Ascend310P-aicpu_legacy.tar.gz] success
+[SendAICPUPackageSimple] hdc send file[/usr/local/Ascend/latest//opp/built-in/op_impl/aicpu/kernel/aicpu_hcomm.tar.gz]
+                              to [/home/HwHiAiUser/hdcd/device0/aicpu/443641_aicpu_hcomm.tar.gz] success
+[SendFileToDevice]        hdc send file[/usr/local/Ascend/cann-9.1.0/opp/Ascend310P/aicpu/Ascend310P-aicpu_syskernels.tar.gz]
+                              to [/home/HwHiAiUser/hdcd/device0/443641_Ascend310P-aicpu_syskernels.tar.gz] success
+```
+
+The symlink is safe: `npu-smi info` and a torch op both still work, and it is a symlink to the
+already-current CANN.
+
+### The exact host-side path rule (from `drvHdcSendFileParaCheck`)
+
+The check is `strstr(base_path, dst_path)` — **`dst_path` must be a substring of `base_path`**, where
+`base_path = <root>/hdcd/device<id><sub_path>` and `sub_path` comes from the whitelist.
+Measured:
+
+| dst_path | result |
+|---|---|
+| `/home/HwHiAiUser/hdcd/device0/aicpu` | accepted |
+| `/home/HwHiAiUser/hdcd/device0/aicpu/vfid0` | accepted |
+| `/home/HwHiAiUser/hdcd/device0` | rejected (52) |
+| `/home/HwHiAiUser/hdcd/device0/omfile` | rejected (52) |
+| `/home/HwHiAiUser/hdcd/device0/Ascend310P/aicpu/vfid0` | rejected (52) |
+| `/home/HwHiAiUser/hdcd/device0/../` | rejected (52) |
+| `/home/HwHiAiUser/hdcd/device0/x/../../../../tmp` | rejected (52) |
+| `/var/hdcd/...` | rejected (52) |
+| `/home/HwDmUser/hdcd/device0/upgrade` | rejected (52) |
+
+So `/var/hdcd` is **not** an alternative landing zone — it is a fallback *base* string in the HAL,
+and the whitelist's `save_sub_path = *` means "into the base path", i.e. `.../hdcd/device0/aicpu`.
+Path traversal is rejected because `dst_path` must be a literal substring of the base.
+
+### What the device does with the file
+
+The device-side `libascend_hal.so` saves it as:
+
+```
+Invalid len to save file. (len=%u, path=%s)
+Format full path failed. (dir=%s, fileName=%s)      <- the device derives dir + fileName
+Open failed. (errno=%s, path=%s)
+Write failed. (errno=%s, path=%s)
+Write file return bad write length. (path=%s, ret=%d, len=%u)
+Sync failed. (errno=%s, path=%s)
+```
+
+with roots `/home/HwHiAiUser/hdcd/device` and `/home/HwDmUser/hdcd/device`.
+
+And the device's TSD daemon (`libtsdaemon.so`) does the extraction and the install:
+
+```
+Move origin package to decompress path      (cp '<src>' '<dst>')
+Start decompress package, cmd=%s            (mkdir -p <dir> ; tar --no-same-owner -ozxf <f> -C <dir>)
+Post process of aicpu process package success
+Load om package success, originPkg=%s, decomPkg=%s, verifyName=%s, checkCode=%lu
+```
+
+and it matches filenames against:
+
+```
+^[0-9]+_Ascend([0-9]{3}(P)?)?-aicpu_syskernels\.tar\.gz$
+^[0-9]+_Ascend([0-9]{3}(P)?)?-aicpu_extend_syskernels\.tar\.gz$
+^[0-9]+_Ascend-runtime_device-minios\.tar\.gz$
+^[0-9]+_Ascend-device-sw-plugin\.tar\.gz$
+```
+
+watching `/home/HwHiAiUser/hdcd/device<N>/Ascend310P/aicpu/vfid<N>` via inotify + epoll.
+
+### The device-side customer-certificate mechanism (new)
+
+The device daemon also contains a **complete CMS/PKCS#7 verifier** (OpenSSL 3.0.12) and the
+runtime certificate plugin paths:
+
+```
+/device-sw-plugin/verify/community-certificate
+/device-sw-plugin/verify/user-certificate
+/device-sw-plugin/verify/vendor-certificate
+```
+
+with `[CMSCBB_VERIFY]` logging (`cmsLen[%u], iniLen[%u], crlLen[%u]`, `Add config certificate not
+pass ret[0x%x]`, `add crl not pass, ret[0x%x]`) and `only support signed type package by cms`.
+
+So the **device** implements the runtime customer-certificate installation that the host-side
+`dms_custom` code was 910B-gated away from — and the host's own driver header points at exactly
+these paths:
+
+```
+CUSTOM_SIGN_CONF_USER_CERT_PATH "/var/asdrv/dev%u/device-sw-plugin/verify/user-certificate"
+DSMI_SEC_SUB_CMD_CUST_SIGN_USER_CERT 3
+```
+
+The device-side handler is reached through `halVerifyImg` and the package types
+`Ascend-device-sw-plugin.tar.gz` / `Ascend-runtime_device-minios.tar.gz`.
+
+**That is the path to the customer certificate**: it is installed by delivering a **CMS-signed**
+device-sw-plugin package, and the device verifies it with OpenSSL. The signature is checked
+against the vendor's trust root — but note it is the *device's* OpenSSL, and the certificate
+chain check is the thing to examine (`Add config certificate not pass ret[0x%x]`).
+
+### Where the install still stops
+
+Even with the `latest` symlink, the three packages are sent successfully and the device still does
+not answer the `TSD_OM_PKG_DECOMPRESS_STATUS` request, so `TsdFileLoad` blocks. The host's
+`LoadOmFileToDevice` log sequence shows the intended order:
+
+```
+Load om file name:%s to device logic device id:%u
+send TSD_OM_PKG_DECOMPRESS_STATUS msg failed.
+Wait TSD_OM_PKG_DECOMPRESS_STATUS response from device failed.
+```
+
+The device-side counterpart is `GetOmFileDecompressStatus` (device asks the host) and
+`ProcessOmFileDecompressStatus` (device replies), with the filename carried in
+`tsd.HDCMessage.omfile_name`. The public header
+`pkg_inc/aicpu/tsd/tsd.h` documents the TSD event ids (0..44) but **not** the OM-package ones —
+they are internal, so the ids have to come from the library.
+
+### The remaining question, sharply
+
+The device never replies. Two candidate reasons, both now testable:
+
+1. the device's `hdcd` service for type 3 (file transfer) is not the service that owns the
+   AICPU tmpfs on this card, so the file lands but nobody acts on it; or
+2. the `omfile_name` message is never sent because the host's package-config step still cannot
+   find the descriptor it needs (`aicpu_package_install.info` — which the vendor's own installer
+   writes and which does not exist here).
+
+**That second one is the most concrete lead**, and it is *not* on the device — it is a host-side
+file the installer creates. The device reads it to learn what to install. The client log's
+`cannot get package path:/usr/local/Ascend/latest///conf/` and `Opening file: was not successful`
+point straight at it: the config directory is empty of what the client needs.
