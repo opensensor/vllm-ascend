@@ -1959,3 +1959,93 @@ Healthy: 6/6 chips OK, 6 davinci nodes, 0 `phy_startup` errors. Stock AICPU cont
 (`663e3dcc…`) on the host. The device's installed AICPU kernel set currently holds our modified
 `libcpu_kernels.so` (installed 21:26:36) — worth restoring by pushing the stock package again,
 which is one `hdc_push` away and needs no physical access.
+
+---
+
+## Clarification: how the AICPU work differs from the AI Core work (which was already done)
+
+This is worth stating precisely, because the two are easy to conflate and I did conflate them.
+
+### The AI Core work (session 2, already complete)
+
+The custom AscendC kernel was written on the host, and the **host's CANN shipped it to the card**
+as part of normal op dispatch:
+
+```
+/home/matteius/experiments/glm-decode-flags-20261006/opp/vendors/custom_transformer/
+    op_impl/ai_core/tbe/kernel/ascend310p/w2_swiglu_v310/W2SwigluV310_<sha>.o
+```
+
+selected with `ASCEND_CUSTOM_OPP_PATH`. The device's AI Core executed it, and the proof was
+numeric: `median(mod/base) = 2.000000`, `max|mod - 2*base| = 0.000000` after injecting
+`Muls(gate, gate, 2.0f)`.
+
+So for the AI Core: **write kernel → host CANN ships it → card runs it → we read the result.**
+All four legs proven.
+
+### The AICPU work (this session)
+
+Same kernel-writing model, same integrity model (a plain SHA-256 we recompute, no key), same
+"device executes it" goal. The difference is in **who does the shipping and how we observe it**:
+
+| | AI Core | AICPU |
+|---|---|---|
+| kernel lives on | host filesystem | host filesystem |
+| shipped by | **host CANN**, inside op dispatch | **us**, via HDC file transfer |
+| integrity | plain SHA-256 in the op descriptor | plain SHA-256 in `bin_hash.cfg` + container digests |
+| executes on | device AI Core | device **AI CPU** (7 per card) |
+| delivery proven | yes | **yes** |
+| installation proven | n/a (CANN does it) | **yes** |
+| **execution proven** | **yes** | **not yet** |
+
+### The structural difference I had wrong
+
+I earlier wrote that the AICPU route "does not change the boot chain, it adds post-boot code
+execution" as though that were a *difference* from the AI Core route. It is not: **both** are
+post-boot. The real difference in value is:
+
+- **AI Core** → faster kernels on a stock card. That was the goal, and it is met.
+- **AICPU** → *arbitrary code execution inside the device OS* (uid 1000, with
+  `/dev/drv_smbus_intf`, `/dev/spi_smbus`, `/dev/ascend_manager` reachable) — which is a
+  different and much larger prize, and the one that could reach the MCU's CRC-only regions.
+
+That is the honest framing. The AICPU route is not "the AI Core route again"; it is the AI Core
+route's *delivery* problem, solved, plus an unproven execution step.
+
+### What the AICPU kernel dispatch actually looks like
+
+The op kernels live **only on the device**. The host CANN has
+`opp/built-in/op_impl/aicpu/kernel/libaicpu_custom.so` (24 MB) but that is the **HCCL
+dispatcher** (`AcquireDispatcherCtx`, `CommFence`, `CreateDispatcherCtx`, …), not the op kernels,
+and there is no `aicpu_kernel.json` on the host.
+
+The device's `libcpu_kernels.so` exports exactly **14** symbols, and all 176 ops that use it
+(`Acos`, `Acosh`, `Add`, `AffineGrid`, `Asin`, `Atan`, `AvgPool1DAvgMatrix`, …) go through one
+entry point:
+
+```
+cblas_sgemm            sgemm_beta              sgemm_kernel
+CustSetCpuKernelContext  RunCpuKernel          RunCpuKernelWithBlock
+sgemm_kernel  sgemm_small_kernel_b0_{nn,nt,tn,tt}  sgemm_small_kernel_nn  ...  sgemm_small_kernel_tt
+```
+
+`RunCpuKernel` (vaddr 0x13e00f0) dispatches on the op type from the argument struct
+(`[x0]` = op type; `cmp w1, #0x13` / `cmp w1, #0x2e` style tests) and reaches the per-op handlers
+through an indirect call. So there is **one** patch point that covers every AICPU op.
+
+### The oracle, done properly this time
+
+The AI Core proof worked because the *number* changed and we read the number from the host. The
+same oracle works for AICPU: patch `libcpu_kernels.so` so one op returns a different value, then
+check that op's output from the host. `torch.acos` is an AICPU op (`Acos` is in the 176), so:
+
+```
+baseline : torch.acos(x)  -> value V
+patched  : same op, output scaled by 2  -> 2V
+```
+
+is exactly the `median(mod/base) = 2.000000` proof, but for the AICPU path. Unlike a marker file,
+the number comes back to us over the normal op path, so it needs no cooperation from the device's
+log collector — which is exactly the thing that was blocking the constructor approach
+(`msnpureport` collects logs and `system_info`, not arbitrary device files, and only captures
+*ended* scheduler sessions).
