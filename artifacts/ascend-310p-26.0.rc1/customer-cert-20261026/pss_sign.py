@@ -27,6 +27,7 @@ Stock structure (verified from stock_cms.der):
 The timestamp token is optional here (the verifier does not require it); it is
 included only if a pre-built TST is supplied.
 """
+
 import hashlib
 import sys
 from datetime import datetime, timezone
@@ -124,9 +125,9 @@ def strip_tlv_header(t):
     i += 1
     if ln & 0x80:
         nb = ln & 0x7F
-        ln = int.from_bytes(b[i:i + nb], "big")
+        ln = int.from_bytes(b[i : i + nb], "big")
         i += nb
-    return b[i:i + ln]
+    return b[i : i + ln]
 
 
 def gentime(dt):
@@ -147,8 +148,9 @@ def attr_raw(oid_str, value_der):
 # ---- main ----
 
 
-def main(ini_path, out_path, signer_pem, key_pem, cacert_pem, crl_files=(),
-         tst_der=None, ts_cert_pem=None, ts_key_pem=None):
+def main(
+    ini_path, out_path, signer_pem, key_pem, cacert_pem, crl_files=(), tst_der=None, ts_cert_pem=None, ts_key_pem=None
+):
     with open(ini_path, "rb") as fh:
         content = fh.read()
     digest = hashlib.sha256(content).digest()
@@ -169,10 +171,19 @@ def main(ini_path, out_path, signer_pem, key_pem, cacert_pem, crl_files=(),
         # signingCertificateV2: SEQUENCE { SEQUENCE { SEQUENCE {
         #   digestAlgorithm AlgorithmIdentifier, digest OCTET STRING } } }
         # (three levels, matching the stock container exactly)
-        attr("1.2.840.113549.1.9.16.2.47",
-             [seq(seq(seq(algid_sha256(),
-                          octetstring(hashlib.sha256(signer.public_bytes(
-                              serialization.Encoding.DER)).digest()))))]),
+        attr(
+            "1.2.840.113549.1.9.16.2.47",
+            [
+                seq(
+                    seq(
+                        seq(
+                            algid_sha256(),
+                            octetstring(hashlib.sha256(signer.public_bytes(serialization.Encoding.DER)).digest()),
+                        )
+                    )
+                )
+            ],
+        ),
     )
 
     # The signature covers the DER encoding of signedAttrs with the
@@ -204,8 +215,9 @@ def main(ini_path, out_path, signer_pem, key_pem, cacert_pem, crl_files=(),
         octetstring(sig),
     )
 
-    certs = implicit_set(0, ca.public_bytes(serialization.Encoding.DER) +
-                         signer.public_bytes(serialization.Encoding.DER))
+    certs = implicit_set(
+        0, ca.public_bytes(serialization.Encoding.DER) + signer.public_bytes(serialization.Encoding.DER)
+    )
     crls = b""
     if crl_files:
         blobs = []
@@ -242,8 +254,7 @@ def main(ini_path, out_path, signer_pem, key_pem, cacert_pem, crl_files=(),
             attr("1.2.840.113549.1.9.4", [octetstring(hashlib.sha256(tst_info).digest())]),
         )
         tst_sig = ts_key.sign(
-            (bytes([0x31, len(strip_tlv_header(tst_attrs))])
-             + strip_tlv_header(tst_attrs)),
+            (bytes([0x31, len(strip_tlv_header(tst_attrs))]) + strip_tlv_header(tst_attrs)),
             padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=32),
             hashes.SHA256(),
         )
@@ -275,19 +286,16 @@ def main(ini_path, out_path, signer_pem, key_pem, cacert_pem, crl_files=(),
     )
     if unsigned:
         # rebuild signerInfo with unsigned attrs
-        si = seq(integer(1),
-                 issuer_and_serial,
-                 algid_sha256(),
-                 implicit_set(0, strip_tlv_header(signed_attrs)),
-                 algid_pss(),
-                 octetstring(sig),
-                 unsigned)
-        signed_data = seq(integer(1),
-                          setof(algid_sha256()),
-                          seq(oid("1.2.840.113549.1.7.1")),
-                          certs,
-                          crls,
-                          setof(si))
+        si = seq(
+            integer(1),
+            issuer_and_serial,
+            algid_sha256(),
+            implicit_set(0, strip_tlv_header(signed_attrs)),
+            algid_pss(),
+            octetstring(sig),
+            unsigned,
+        )
+        signed_data = seq(integer(1), setof(algid_sha256()), seq(oid("1.2.840.113549.1.7.1")), certs, crls, setof(si))
 
     content_info = seq(oid("1.2.840.113549.1.7.2"), ctx(0, signed_data))
     with open(out_path, "wb") as fh:
@@ -297,12 +305,16 @@ def main(ini_path, out_path, signer_pem, key_pem, cacert_pem, crl_files=(),
 
 
 if __name__ == "__main__":
-    FULL = ('/run/media/matteius/20TB-drive/vllm-ascend/artifacts/'
-            'ascend-310p-usercert-backup-20261021/full')
+    FULL = "/run/media/matteius/20TB-drive/vllm-ascend/artifacts/ascend-310p-usercert-backup-20261021/full"
     ini, out = sys.argv[1], sys.argv[2]
     use_tst = "--tst" in sys.argv
-    main(ini, out,
-         f"{FULL}/signcert.pem", f"{FULL}/signcert_pri.pem", f"{FULL}/signca.pem",
-         crl_files=[f"{FULL}/rootG2.crl", f"{FULL}/sign.crl"],
-         ts_cert_pem=f"{FULL}/ts.pem" if use_tst else None,
-         ts_key_pem=f"{FULL}/ts_pri.pem" if use_tst else None)
+    main(
+        ini,
+        out,
+        f"{FULL}/signcert.pem",
+        f"{FULL}/signcert_pri.pem",
+        f"{FULL}/signca.pem",
+        crl_files=[f"{FULL}/rootG2.crl", f"{FULL}/sign.crl"],
+        ts_cert_pem=f"{FULL}/ts.pem" if use_tst else None,
+        ts_key_pem=f"{FULL}/ts_pri.pem" if use_tst else None,
+    )

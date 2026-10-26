@@ -42,6 +42,7 @@ SECTION TABLE  (immediately after the payload)
 Usage:
   esbc_info.py <image>            # dump the structure
 """
+
 import hashlib
 import re
 import struct
@@ -69,7 +70,7 @@ def parse(path):
     info["sec_blk"] = (u32(d, 0x4C), u32(d, 0x50), u32(d, 0x54))
 
     off, ln = info["img_offset"], info["code_len"]
-    payload = d[off:off + ln]
+    payload = d[off : off + ln]
     info["payload_sha_stored"] = d[0x2C:0x4C].hex()
     info["payload_sha_actual"] = hashlib.sha256(payload).hexdigest()
     info["head_sha0_stored"] = d[0x4BC:0x4DC].hex()
@@ -77,7 +78,7 @@ def parse(path):
     info["head_sha1_stored"] = d[0x14BC:0x14DC].hex()
     info["head_sha1_actual"] = hashlib.sha256(d[0x1000:0x14BC]).hexdigest()
 
-    info["inner_magic_ok"] = (u32(payload, 0) == INNER_MAGIC)
+    info["inner_magic_ok"] = u32(payload, 0) == INNER_MAGIC
     info["inner_tag"] = payload[4:12].rstrip(b"\x00").decode("ascii", "replace")
     info["inner_08"] = u32(payload, 8)
     info["inner_tag_tail"] = payload[8:12].rstrip(b"\x00").decode("ascii", "replace")
@@ -92,7 +93,7 @@ def parse(path):
     for _ in range(4):
         if p + 16 > len(d):
             break
-        tag = d[p:p + 12].rstrip(b"\x00").decode("ascii", "replace")
+        tag = d[p : p + 12].rstrip(b"\x00").decode("ascii", "replace")
         length = u32(d, p + 12)
         if not tag:
             break
@@ -100,7 +101,7 @@ def parse(path):
         p += 16 + length
     info["sections"] = secs
     if "ini" in secs:
-        info["ini_body"] = d[secs["ini"]["off"]:secs["ini"]["off"] + secs["ini"]["len"]]
+        info["ini_body"] = d[secs["ini"]["off"] : secs["ini"]["off"] + secs["ini"]["len"]]
     return info, d
 
 
@@ -122,8 +123,7 @@ def main():
     print(f"  head sha c0  : {ok(info['head_sha0_stored'], info['head_sha0_actual'])}")
     print(f"  head sha c1  : {ok(info['head_sha1_stored'], info['head_sha1_actual'])}")
     magic_ok = "OK" if info["inner_magic_ok"] else "BAD"
-    print(f"  inner magic  : {magic_ok}  tag={info['inner_tag']!r}  "
-          f"tail={info['inner_tag_tail']!r}")
+    print(f"  inner magic  : {magic_ok}  tag={info['inner_tag']!r}  tail={info['inner_tag_tail']!r}")
     print(f"  slot         : 0x{info['slot']:x}   cms_start = 0x{info['cms_start']:x}")
     for n, s in info["sections"].items():
         print(f"    {n:4s} len={s['len']:8d} @0x{s['off']:x}")

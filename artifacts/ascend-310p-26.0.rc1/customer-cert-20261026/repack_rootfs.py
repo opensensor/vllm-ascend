@@ -20,6 +20,7 @@ Usage:
                     [--set path=localfile]... [--add path=localfile]...
                     [--del path]...
 """
+
 import argparse
 import gzip
 import hashlib
@@ -55,7 +56,7 @@ def read_container(path):
     code_len = u32(data, CODE_LEN_OFF)
     if len(data) < IMG_OFF + code_len:
         raise ValueError("container truncated")
-    payload = data[IMG_OFF:IMG_OFF + code_len]
+    payload = data[IMG_OFF : IMG_OFF + code_len]
     # The three tagged slots sit at fixed offsets after the payload:
     #   cms @ cms_start, ini @ cms_start+0x4000, crl @ cms_start+0x4800
     # Each slot is: 12-byte tag, 4-byte length, then the body.
@@ -64,11 +65,11 @@ def read_container(path):
     def section(start, name):
         if start + 16 > len(data):
             return b""
-        tag = data[start:start + 12].rstrip(b"\0")
+        tag = data[start : start + 12].rstrip(b"\0")
         if tag != name:
             return b""
         length = u32(data, start + 12)
-        return data[start + 16:start + 16 + length]
+        return data[start + 16 : start + 16 + length]
 
     return {
         "data": data,
@@ -105,15 +106,13 @@ def build_container(header, payload, cms, ini, crl, certtype):
         out += b"\0" * (slot_end - len(out))
 
     put_slot(cms_start + 0x10, b"cms", cms, cms_start + CMS_SLOT)
-    put_slot(cms_start + CMS_SLOT + 0x10, b"ini", ini,
-             cms_start + CMS_SLOT + INI_SLOT)
-    put_slot(cms_start + CMS_SLOT + INI_SLOT + 0x10, b"crl", crl,
-             cms_start + CMS_SLOT + INI_SLOT + 0x20 + len(crl))
+    put_slot(cms_start + CMS_SLOT + 0x10, b"ini", ini, cms_start + CMS_SLOT + INI_SLOT)
+    put_slot(cms_start + CMS_SLOT + INI_SLOT + 0x10, b"crl", crl, cms_start + CMS_SLOT + INI_SLOT + 0x20 + len(crl))
 
     # header copies: both must carry the new payload digest
     digest = hashlib.sha256(payload).digest()
     for copy in (0, COPY_SIZE):
-        out[copy + DIGEST_OFF:copy + DIGEST_OFF + 32] = digest
+        out[copy + DIGEST_OFF : copy + DIGEST_OFF + 32] = digest
         struct.pack_into("<I", out, copy + CODE_LEN_OFF, len(payload))
         struct.pack_into("<I", out, copy + IMG_OFF_FIELD, IMG_OFF)
         struct.pack_into("<I", out, copy + CERT_TYPE_OFF, certtype)
@@ -129,36 +128,37 @@ def cpio_extract(blob, dest):
     os.makedirs(dest, exist_ok=True)
     # NOTE: -idm (preserve mode) is required, but it must NOT be combined with
     # --no-preserve-owner, which makes cpio skip entries it cannot chown.
-    p = subprocess.run(["cpio", "-idm", "--quiet", "--no-absolute-filenames"],
-                       cwd=dest, input=blob, capture_output=True)
+    p = subprocess.run(
+        ["cpio", "-idm", "--quiet", "--no-absolute-filenames"], cwd=dest, input=blob, capture_output=True
+    )
     if p.returncode != 0:
         sys.stderr.write(p.stderr.decode()[:400] + "\n")
         return False
     # walk the archive and restore modes
     pos = 0
     while pos < len(blob):
-        if blob[pos:pos + 6] != b"070701":
+        if blob[pos : pos + 6] != b"070701":
             break
-        f = [int(blob[pos + 6 + i * 8:pos + 14 + i * 8], 16) for i in range(13)]
+        f = [int(blob[pos + 6 + i * 8 : pos + 14 + i * 8], 16) for i in range(13)]
         mode, namesize, filesize = f[1], f[11], f[6]
-        name = blob[pos + 110:pos + 110 + namesize - 1].decode("utf-8", "replace")
+        name = blob[pos + 110 : pos + 110 + namesize - 1].decode("utf-8", "replace")
         pos += 110 + namesize
         pos += (-pos) % 4
-        data = blob[pos:pos + filesize]
+        data = blob[pos : pos + filesize]
         pos += filesize
         pos += (-pos) % 4
         if name == "TRAILER!!!":
             break
         target = os.path.join(dest, name.lstrip("/"))
         try:
-            if (mode & 0o170000) == 0o120000:      # symlink
+            if (mode & 0o170000) == 0o120000:  # symlink
                 if os.path.lexists(target):
                     os.remove(target)
                 os.symlink(data.decode("utf-8", "replace"), target)
-            elif (mode & 0o170000) == 0o040000:    # dir
+            elif (mode & 0o170000) == 0o040000:  # dir
                 os.makedirs(target, exist_ok=True)
                 os.chmod(target, mode & 0o7777)
-            elif (mode & 0o170000) == 0o100000:    # regular
+            elif (mode & 0o170000) == 0o100000:  # regular
                 os.makedirs(os.path.dirname(target), exist_ok=True)
                 with open(target, "wb") as fh:
                     fh.write(data)
@@ -179,13 +179,14 @@ def cpio_pack(root):
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames.sort()
         for n in sorted(dirnames) + sorted(filenames):
-            rel = os.path.join(dirpath, n)[len(root):]
+            rel = os.path.join(dirpath, n)[len(root) :]
             if os.path.lexists(os.path.join(root, rel)):
                 listing.append(rel)
     listing.sort()
     stdin = ("\n".join(listing) + "\n").encode()
-    p = subprocess.run(["cpio", "-o", "-H", "newc", "--quiet", "--owner=0:0"],
-                       cwd=root, input=stdin, capture_output=True)
+    p = subprocess.run(
+        ["cpio", "-o", "-H", "newc", "--quiet", "--owner=0:0"], cwd=root, input=stdin, capture_output=True
+    )
     if p.returncode != 0:
         raise RuntimeError("cpio pack failed: {}".format(p.stderr.decode()[:400]))
     return p.stdout
@@ -195,10 +196,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--container", required=True)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--set", action="append", default=[],
-                    help="path=localfile (replace an existing file in the archive)")
-    ap.add_argument("--add", action="append", default=[],
-                    help="path=localfile (add a new file)")
+    ap.add_argument(
+        "--set", action="append", default=[], help="path=localfile (replace an existing file in the archive)"
+    )
+    ap.add_argument("--add", action="append", default=[], help="path=localfile (add a new file)")
     ap.add_argument("--delete", action="append", default=[], help="delete a path")
     ap.add_argument("--certtype", type=lambda s: int(s, 0))
     args = ap.parse_args()
@@ -210,8 +211,7 @@ def main():
         # The inner header starts with magic 33aa3a3a and the tag at +0x04.
         inner = img["payload"]
         if inner[:4] != b"\x33\xaa\x3a\x3a":
-            print("unexpected inner magic {!r} - not an esbc-wrapped rootfs".format(inner[:4]),
-                  file=sys.stderr)
+            print("unexpected inner magic {!r} - not an esbc-wrapped rootfs".format(inner[:4]), file=sys.stderr)
             return 1
         gz = inner[0x100:]
         dobj = zlib.decompressobj(16 + zlib.MAX_WBITS)
@@ -240,15 +240,13 @@ def main():
         newpayload = bytes(inner_hdr) + newgz
 
     certtype = args.certtype if args.certtype is not None else img["certtype"]
-    out = build_container(img["header"], newpayload, img["cms"], img["ini"],
-                          img["crl"], certtype)
+    out = build_container(img["header"], newpayload, img["cms"], img["ini"], img["crl"], certtype)
     with open(args.out, "wb") as fh:
         fh.write(out)
     print(f"wrote {args.out} ({len(out)} bytes)")
     print(f"  payload: {len(img['payload'])} -> {len(newpayload)} bytes")
     print(f"  certtype: 0x{certtype:08x}")
-    print(f"  cms/ini/crl carried over unchanged "
-          f"({len(img['cms'])}/{len(img['ini'])}/{len(img['crl'])})")
+    print(f"  cms/ini/crl carried over unchanged ({len(img['cms'])}/{len(img['ini'])}/{len(img['crl'])})")
     return 0
 
 

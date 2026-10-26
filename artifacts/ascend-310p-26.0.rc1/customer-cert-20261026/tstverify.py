@@ -17,6 +17,7 @@ Structure of the token, as walked by `der.walk` (paths are child indices):
     TST/1/0/1/0/3      [0]        -- unsignedAttrs of the nested SignerInfo
     TST/1/0/1/0/3/0/0/3/1  SET    -- the nested signerInfos
 """
+
 import contextlib
 import hashlib
 import sys
@@ -80,8 +81,13 @@ def collect_certs(sd):
     """
     certs = []
     for _path, node in walk(sd):
-        if (node.cls == 0 and node.num == TAG_SEQUENCE and node.constructed
-                and node.children and node.children[0].num == TAG_SEQUENCE):
+        if (
+            node.cls == 0
+            and node.num == TAG_SEQUENCE
+            and node.constructed
+            and node.children
+            and node.children[0].num == TAG_SEQUENCE
+        ):
             with contextlib.suppress(Exception):
                 certs.append((x509.load_der_x509_certificate(node.raw), node.raw))
     return certs
@@ -116,8 +122,7 @@ def tst_info_bytes(sd):
                 if parent.children[0] is not node:
                     continue
                 for _p3, wrapper in walk(parent):
-                    if (wrapper.cls == CLASS_CONTEXT and wrapper.num == 0
-                            and wrapper.children):
+                    if wrapper.cls == CLASS_CONTEXT and wrapper.num == 0 and wrapper.children:
                         inner = wrapper.children[0]
                         if inner.cls == 0 and inner.num == 4:
                             return inner.content
@@ -132,11 +137,11 @@ def find_signer_infos(sd):
     digestAlgorithms and signerInfos -- and only the latter holds SignerInfos,
     which are recognised by carrying version + digestAlgorithm + the rest.
     """
-    sets = [node for node in sd.children
-            if node.cls == 0 and node.num == TAG_SET and node.constructed]
+    sets = [node for node in sd.children if node.cls == 0 and node.num == TAG_SET and node.constructed]
     for node in sets:
-        candidates = [child for child in node.children
-                      if child.cls == 0 and child.num == TAG_SEQUENCE and child.constructed]
+        candidates = [
+            child for child in node.children if child.cls == 0 and child.num == TAG_SEQUENCE and child.constructed
+        ]
         # a SignerInfo starts with an INTEGER version and an AlgorithmIdentifier
         if candidates and candidates[0].children:
             first = candidates[0].children[0]
@@ -203,8 +208,7 @@ def main():
 
     certs = collect_certs(sd)
     for cert, raw in certs:
-        print("  cert:", cert.subject.rfc4514_string(),
-              hashlib.sha256(raw).hexdigest()[:16])
+        print("  cert:", cert.subject.rfc4514_string(), hashlib.sha256(raw).hexdigest()[:16])
 
     tstinfo = tst_info_bytes(sd)
     if tstinfo is not None:

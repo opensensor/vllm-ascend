@@ -25,16 +25,17 @@ Usage:
       size     bytes to read (default 1024, the driver maximum per call)
       outfile  optional; writes the raw bytes
 """
+
 import ctypes
 import os
 import sys
 
-DMS_MAIN_CMD_FLASH = ord('V')
+DMS_MAIN_CMD_FLASH = ord("V")
 DMS_SUBCMD_GET_FLASH_CONTENT = 0
 DMS_CONTENT_RTC_CONFIG = 0
 NODE = "/dev/davinci_manager"
 
-DAVINCI_INTF_IOC_MAGIC = ord('Z')
+DAVINCI_INTF_IOC_MAGIC = ord("Z")
 DAVINCI_INTF_IOCTL_OPEN = (DAVINCI_INTF_IOC_MAGIC << 8) | 0
 DAVINCI_INTF_IOCTL_CLOSE = (DAVINCI_INTF_IOC_MAGIC << 8) | 1
 DAVINCI_INTF_MODULE_DMS = "DMS"
@@ -46,8 +47,7 @@ MAX_CHUNK = 1024
 
 
 class DavinciIntfOpenArg(ctypes.Structure):
-    _fields_ = [("module_name", ctypes.c_char * DAVINIC_MODULE_NAME_MAX),
-                ("device_id", ctypes.c_int)]
+    _fields_ = [("module_name", ctypes.c_char * DAVINIC_MODULE_NAME_MAX), ("device_id", ctypes.c_int)]
 
 
 class DmsIoctlArg(ctypes.Structure):
@@ -108,8 +108,7 @@ def read_chunk(fd, dev_id, offset, size):
     cmd = (DMS_MAIN_CMD_FLASH << 8) | DMS_SUBCMD_GET_FLASH_CONTENT
     ret, err = ioctl(fd, cmd, arg)
     if ret != 0:
-        raise OSError(err, f"flash ioctl failed at offset 0x{offset:x}: "
-                           f"{os.strerror(err) if err else '-'}")
+        raise OSError(err, f"flash ioctl failed at offset 0x{offset:x}: {os.strerror(err) if err else '-'}")
     return buf.raw[:size]
 
 
@@ -120,8 +119,7 @@ def main():
     outfile = sys.argv[4] if len(sys.argv) > 4 else None
 
     if offset + size > RTC_FLASH_SIZE:
-        print(f"refusing: offset+size exceeds the {RTC_FLASH_SIZE}-byte RTC flash region",
-              file=sys.stderr)
+        print(f"refusing: offset+size exceeds the {RTC_FLASH_SIZE}-byte RTC flash region", file=sys.stderr)
         return 2
 
     fd = os.open(NODE, os.O_RDONLY)
@@ -131,8 +129,7 @@ def main():
     open_arg.device_id = -1
     ret, err = ioctl(fd, DAVINCI_INTF_IOCTL_OPEN, open_arg)
     if ret != 0:
-        print(f"OPEN DMS module failed: ret={ret} errno={err} "
-              f"({os.strerror(err) if err else '-'})", file=sys.stderr)
+        print(f"OPEN DMS module failed: ret={ret} errno={err} ({os.strerror(err) if err else '-'})", file=sys.stderr)
         os.close(fd)
         return 1
 
@@ -165,7 +162,7 @@ def main():
         print(f"wrote {len(data)} bytes to {outfile}")
     else:
         for i in range(0, len(data), 16):
-            row = data[i:i + 16]
+            row = data[i : i + 16]
             txt = "".join(chr(b) if 32 <= b < 127 else "." for b in row)
             print(f"  +0x{i:06x}: {row.hex():32s}  {txt}")
     return 0

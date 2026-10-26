@@ -48,5 +48,4 @@ out = bytearray(hdr) + body
 struct.pack_into("<QI", out, 0x4E0, MAGIC_EXTERN, len(out))
 with open(out_path, "wb") as fh:
     fh.write(out)
-print(f"wrote {out_path} ({len(out)} bytes, certtype 0x{certtype:x}, "
-      f"digest {digest.hex()}, size {len(out)})")
+print(f"wrote {out_path} ({len(out)} bytes, certtype 0x{certtype:x}, digest {digest.hex()}, size {len(out)})")

@@ -19,16 +19,17 @@ the davinci_manager interface:
 
 Usage: python3 dms_log.py [device-node] [grep-pattern]
 """
+
 import ctypes
 import os
 import re
 import sys
 
-DAVINCI_INTF_IOC_MAGIC = ord('Z')
+DAVINCI_INTF_IOC_MAGIC = ord("Z")
 DAVINCI_INTF_IOCTL_OPEN = (DAVINCI_INTF_IOC_MAGIC << 8) | 0
 DAVINCI_INTF_IOCTL_CLOSE = (DAVINCI_INTF_IOC_MAGIC << 8) | 1
 
-DMS_MAIN_CMD_LOG = ord('S')
+DMS_MAIN_CMD_LOG = ord("S")
 DMS_SUBCMD_GET_LOG_INFO = 0
 DMS_LOG_CMD = (DMS_MAIN_CMD_LOG << 8) | DMS_SUBCMD_GET_LOG_INFO
 DMS_LOG_BUF_SIZE = 0x1400000
@@ -37,8 +38,7 @@ DAVINIC_MODULE_NAME_MAX = 256
 
 
 class DavinciIntfOpenArg(ctypes.Structure):
-    _fields_ = [("module_name", ctypes.c_char * DAVINIC_MODULE_NAME_MAX),
-                ("device_id", ctypes.c_int)]
+    _fields_ = [("module_name", ctypes.c_char * DAVINIC_MODULE_NAME_MAX), ("device_id", ctypes.c_int)]
 
 
 class DmsIoctlArg(ctypes.Structure):
@@ -56,8 +56,7 @@ class DmsIoctlArg(ctypes.Structure):
 
 
 class LogInfo(ctypes.Structure):
-    _fields_ = [("buffer", ctypes.c_void_p), ("length", ctypes.c_uint32),
-                ("buf_len", ctypes.c_uint32)]
+    _fields_ = [("buffer", ctypes.c_void_p), ("length", ctypes.c_uint32), ("buf_len", ctypes.c_uint32)]
 
 
 libc = ctypes.CDLL("libc.so.6", use_errno=True)
@@ -84,8 +83,7 @@ def main():
     open_arg.device_id = -1
     ret, err = ioctl(fd, DAVINCI_INTF_IOCTL_OPEN, open_arg)
     if ret != 0:
-        print(f"OPEN DMS module failed: ret={ret} errno={err} "
-              f"({os.strerror(err) if err else '-'})", file=sys.stderr)
+        print(f"OPEN DMS module failed: ret={ret} errno={err} ({os.strerror(err) if err else '-'})", file=sys.stderr)
         os.close(fd)
         return 1
 
@@ -107,8 +105,7 @@ def main():
 
     ret, err = ioctl(fd, DMS_LOG_CMD, arg)
     if ret != 0:
-        print(f"LOG command failed: ret={ret} errno={err} "
-              f"({os.strerror(err) if err else '-'})", file=sys.stderr)
+        print(f"LOG command failed: ret={ret} errno={err} ({os.strerror(err) if err else '-'})", file=sys.stderr)
         os.close(fd)
         return 1
 

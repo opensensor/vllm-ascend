@@ -20,6 +20,7 @@ The op is a SwiGLU over a [rows, 2*width] fp16 input:
 If the device-side result matches the reference, our own AscendC binary --
 compiled for the card's AI Core ISA (arch 0x1029) -- executed on the card.
 """
+
 import sys
 
 import torch
@@ -57,8 +58,7 @@ def run_case(rows, width):
     finite = bool(torch.isfinite(out).all())
 
     status = "OK" if rel < 0.02 and finite else "MISMATCH"
-    print(f"[rows={rows:<4d} width={width:<6d}] maxabs={err:.5f} rel={rel:.5f} "
-          f"finite={finite} {status}")
+    print(f"[rows={rows:<4d} width={width:<6d}] maxabs={err:.5f} rel={rel:.5f} finite={finite} {status}")
     return status == "OK"
 
 
@@ -79,8 +79,12 @@ def main():
         ok &= run_case(rows, width)
 
     print()
-    print("RESULT:", "AI Core custom kernel EXECUTED on the card" if ok
-          else "FAILED -- custom kernel did not produce matching results")
+    print(
+        "RESULT:",
+        "AI Core custom kernel EXECUTED on the card"
+        if ok
+        else "FAILED -- custom kernel did not produce matching results",
+    )
     return 0 if ok else 1
 
 

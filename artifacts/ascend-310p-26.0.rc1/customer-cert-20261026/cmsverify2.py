@@ -7,6 +7,7 @@ For every SignerInfo:
     signer's certificate
   * signingCertificateV2 attr == SHA-256(signer cert DER)
 """
+
 import hashlib
 import sys
 
@@ -125,7 +126,7 @@ def main(cms_path, content_path, verbose=True):
                 sa_der = c.raw
         if sig and sa_der:
             # signature is over the SET OF encoding (0x31) of the [0] IMPLICIT block
-            sa_der[sa_der[0] & 0x1F and 0 or 0:]
+            sa_der[sa_der[0] & 0x1F and 0 or 0 :]
             # rebuild: header of [0] replaced by SET tag, length preserved
             len(sa_der) - sa_der.__len__()  # placeholder
             # simpler: construct from content
@@ -150,10 +151,12 @@ def main(cms_path, content_path, verbose=True):
                     continue
                 for salt in (32, 20, 48):
                     try:
-                        pub.verify(sig, to_verify,
-                                   padding.PSS(mgf=padding.MGF1(hashes.SHA256()),
-                                               salt_length=salt),
-                                   hashes.SHA256())
+                        pub.verify(
+                            sig,
+                            to_verify,
+                            padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=salt),
+                            hashes.SHA256(),
+                        )
                         hit = (cert, salt)
                         break
                     except Exception:
@@ -161,8 +164,7 @@ def main(cms_path, content_path, verbose=True):
                 if hit:
                     break
             if hit:
-                print(f"  PSS SIG            : VALID "
-                      f"(signer {hit[0].subject.rfc4514_string()}, salt={hit[1]})")
+                print(f"  PSS SIG            : VALID (signer {hit[0].subject.rfc4514_string()}, salt={hit[1]})")
             else:
                 print("  PSS SIG            : NO VALID MATCH")
                 allok = False

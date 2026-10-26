@@ -50,11 +50,11 @@ def parse(buf, off=0, end=None):
     p += 1
     if ln & 0x80:
         nb = ln & 0x7F
-        ln = int.from_bytes(buf[p:p + nb], "big")
+        ln = int.from_bytes(buf[p : p + nb], "big")
         p += nb
     hdr = p - off
-    content = buf[p:p + ln]
-    t = TLV(b0, cls, constructed, num, hdr, content, buf[off:p + ln])
+    content = buf[p : p + ln]
+    t = TLV(b0, cls, constructed, num, hdr, content, buf[off : p + ln])
     if constructed:
         q = 0
         while q < len(content):

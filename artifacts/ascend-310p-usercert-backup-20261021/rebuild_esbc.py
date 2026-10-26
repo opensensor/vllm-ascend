@@ -232,10 +232,7 @@ def main():
     out, digest = build(image, payload, cms, ini, crl, a.certtype)
     code_len = image["code_len"] if payload is None else len(payload)
     certtype = a.certtype if a.certtype is not None else image["certtype"]
-    print(
-        f"code_len {code_len} (0x{code_len:x}), digest {digest.hex()}, "
-        f"certtype 0x{certtype:x}, size {len(out)}"
-    )
+    print(f"code_len {code_len} (0x{code_len:x}), digest {digest.hex()}, certtype 0x{certtype:x}, size {len(out)}")
 
     if a.out:
         with open(a.out, "wb") as f:

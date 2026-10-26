@@ -25,6 +25,7 @@ Usage:
 Offsets are absolute file offsets.  Dumps the digest self-check before and
 after.
 """
+
 import argparse
 import hashlib
 import struct
@@ -47,15 +48,11 @@ def checks(data):
     return {
         "img_off": off,
         "code_len": ln,
-        "payload_digest_ok":
-            data[DIGEST_FIELD:DIGEST_FIELD + 32] ==
-            hashlib.sha256(data[off:off + ln]).digest(),
-        "hdr0_check_ok":
-            data[HDR_CHECK_FIELD:HDR_CHECK_FIELD + 32] ==
-            hashlib.sha256(data[0:HDR_CHECK_FIELD]).digest(),
-        "hdr1_check_ok":
-            data[COPY_SIZE + HDR_CHECK_FIELD:COPY_SIZE + HDR_CHECK_FIELD + 32] ==
-            hashlib.sha256(data[COPY_SIZE:COPY_SIZE + HDR_CHECK_FIELD]).digest(),
+        "payload_digest_ok": data[DIGEST_FIELD : DIGEST_FIELD + 32] == hashlib.sha256(data[off : off + ln]).digest(),
+        "hdr0_check_ok": data[HDR_CHECK_FIELD : HDR_CHECK_FIELD + 32]
+        == hashlib.sha256(data[0:HDR_CHECK_FIELD]).digest(),
+        "hdr1_check_ok": data[COPY_SIZE + HDR_CHECK_FIELD : COPY_SIZE + HDR_CHECK_FIELD + 32]
+        == hashlib.sha256(data[COPY_SIZE : COPY_SIZE + HDR_CHECK_FIELD]).digest(),
     }
 
 
@@ -63,14 +60,14 @@ def reseal(data):
     """Recompute the payload digest and both header self-checksums, in order."""
     off = u32(data, IMG_OFF_FIELD)
     ln = u32(data, CODE_LEN_FIELD)
-    payload_digest = hashlib.sha256(data[off:off + ln]).digest()
+    payload_digest = hashlib.sha256(data[off : off + ln]).digest()
     for copy in (0, COPY_SIZE):
-        data[copy + DIGEST_FIELD:copy + DIGEST_FIELD + 32] = payload_digest
+        data[copy + DIGEST_FIELD : copy + DIGEST_FIELD + 32] = payload_digest
     # the header checksum covers the header up to (but not including) its own
     # field, and therefore includes the payload digest we just wrote
     for copy in (0, COPY_SIZE):
         base = copy + HDR_CHECK_FIELD
-        data[base:base + 32] = hashlib.sha256(data[copy:copy + HDR_CHECK_FIELD]).digest()
+        data[base : base + 32] = hashlib.sha256(data[copy : copy + HDR_CHECK_FIELD]).digest()
     return data
 
 
@@ -78,9 +75,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("infile")
     ap.add_argument("outfile")
-    ap.add_argument("--set-byte", action="append", default=[],
-                    metavar="OFF:HEX",
-                    help="set a byte: OFF (decimal or 0xHEX) : HEX byte value")
+    ap.add_argument(
+        "--set-byte",
+        action="append",
+        default=[],
+        metavar="OFF:HEX",
+        help="set a byte: OFF (decimal or 0xHEX) : HEX byte value",
+    )
     ap.add_argument("--dump", action="store_true", help="print the structure and exit")
     args = ap.parse_args()
 
@@ -97,7 +98,7 @@ def main():
         print(f"certtype    : 0x{u32(data, 8):08x}")
         print(f"img_off     : 0x{off:x}")
         print(f"code_len    : 0x{ln:x} ({ln})")
-        print(f"payload[0:16]: {bytes(data[off:off+16]).hex()}")
+        print(f"payload[0:16]: {bytes(data[off : off + 16]).hex()}")
         print("checks      :")
         for k, v in c.items():
             print(f"   {k:20s} {v}")
