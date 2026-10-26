@@ -7263,3 +7263,128 @@ the AI Core proof showed we can replace the driver and have it take effect. A dr
 dispatches opcode 0x14 to the MCU would turn the CRC weakness into a working
 customer-certificate installation path.
 
+
+---
+
+## 2026-10-26 (session 4) — SINGLE-CARD TEST: forgery accepted, transport absent
+
+The previous session ended with an open question: *is there any host path to the MCU?* This
+session tested it against **one card** rather than the whole set.
+
+### Target card identified exactly
+
+| | |
+|---|---|
+| Card | **NPU ID 9**, bus `0000:01:00.0`, davinci 0/1 |
+| Product | `IT21PD2G10` |
+| Serial (SoC) | `2106030737ZERC001310` |
+| Serial (MCU elabel, decoded from our dump) | `2106030737ZERC001310` — **byte-identical** |
+| Other cards' serials | `…ZERB002529`, `…ZERB000091` — **absent from the dump** |
+
+The dump is therefore confirmed to belong to card 9. (Also: `ascend_A.bin` and `ascend_B.bin` are
+byte-identical — `9fd4cc63…` — so the two dumps taken two weeks ago were the same flash content.)
+
+### ✅ PROVEN: a forged elabel passes the firmware's own verification
+
+`mcu_elabel_forge.py` modifies the real board-model item and recomputes its CRC:
+
+```
+baseline verification  : ALL OK (21/21 items)
+  id=0x0020 off=0x009c crc=0x888e len=  3 b'\xecy\xf0'
+  id=0x0021 off=0x00e4 crc=0x222d len=  6 b'Huawei'
+  id=0x0022 off=0x012c crc=0x5efb len= 10 b'IT21PD2G10'
+  id=0x0023 off=0x0174 crc=0x9411 len= 20 b'2106030737ZERC001310'
+
+forging item id=0x0022 at 0x2c012c
+    forged payload   : b'IT21PD2G11'
+    new CRC-16/XMODEM: 0x4eda
+    re-verify whole record: ALL OK (21/21 items)
+```
+
+Using the firmware's own verification routine (`elabel_init`, 0x08049b8a). **A modified board
+identity passes.** The MCU's electronic label is protected by a 16-bit checksum, not a signature.
+
+### The transport: present in both halves, absent in the middle
+
+The vendor elabel path is **I2C**, not PCIe:
+
+```
+dcmi_flash_read_elabel(buf, len)               libdcmi @ 0x168b0
+    call dcmi_board_chip_type_is_ascend_310b   ; 1 iff chip type == 4 (910B)
+    sbb  %rdx,%rdx ; and $0xfffffffffffffe80,%rdx ; add $0x200,%rdx   ; 310P -> reg 0x200
+    call dcmi_i2c_get_data(g_i2c_dev_name, 0x50, buf, len, reg)
+```
+
+and the HAL selects the bus **by adapter name**, looking for `"SMBus I801 adapter"` — an *Intel*
+chipset string:
+
+```
+libascend_hal.so: "SMBus I801 adapter"
+libascend_hal.so: "/sys/bus/i2c/devices/"
+libascend_hal.so: "read [%s], find i2c-%d name dev_name:%s"
+```
+
+Measured on the card host:
+
+| bus | adapter | contents |
+|---|---|---|
+| i2c-0 | `Synopsys DesignWare I2C adapter` (`i2c_designware AMDI0010:00`) | **nothing** — "controller timed out" |
+| i2c-1 | `SMBus PIIX4 adapter port 0 at 0b00` | host **DDR4 SPD** EEPROMs (ee1004) 0x50–0x57 |
+| i2c-2 / i2c-3 | `SMBus PIIX4` | empty |
+
+Two independent reasons it cannot work here:
+
+1. The name `"SMBus I801 adapter"` does not exist on this **AMD** host, so the HAL falls back to
+   i2c-0 — the *chipset's* empty DesignWire controller, not the NPU's.
+2. **The card's MCU is on no host I2C bus.** Its flash is on the MCU's own SPI bus; the host I2C
+   buses carry only host DDR SPDs.
+
+`strace` of `npu-smi info -l` confirms the working identity path never touches I2C — it opens
+`/dev/davinci_manager` and `/dev/hisi_hdc` only. **The SoC-reported serial is a SoC-side copy of
+the board identity, not a read of the MCU elabel.**
+
+### Every host entry point measured
+
+| API | result |
+|---|---|
+| `dsmi_get_flash_content` / `dsmi_set_flash_content` | `0xfffe` NOT_SUPPORT |
+| `dsmi_dft_get_elable` | `0xfffe` — 7-byte stub (`mov eax,0xfffe; pop rbp; ret`) |
+| `dsmi_cmd_dft_get_elabel` (MCU opcode 0x15) | `0xfffe` — builds the command, no driver handler |
+| `dsmi_get_custom_op_secverify_cert_show_info` | `0xfffe` — 7-byte stub |
+| `dsmi_get_rootkey_status` | real, returns 17 (EEXIST) |
+| `libdcmi` `dcmi_get_card_elabel_v2` | `-8001` |
+| `libdcmi` `dcmi_flash_read_elabel` → `dcmi_i2c_get_data` | `I2C_RDWR` → **ETIMEDOUT** |
+| direct I2C write probe, slave 0x50 reg 0x200 | `EINVAL` (no responder) |
+| `npu-smi info -l` | **works** — SoC-side serial, no I2C |
+
+### Both halves of the write path exist
+
+```
+libdcmi:   dcmi_flash_write_elabel @ 0x16a20  -> dcmi_i2c_set_data(dev, 0x50, buf, size, 0x200)
+           dcmi_flash_erase_elabel @ 0x16960
+           dcmi_elabel_set_data    @ 0x173c0
+           dcmi_elabel_clear       @ 0x17200
+MCU fw:    board_read_elable_response_callback   0x08053552
+           write_customized_info_callback       0x08053e52
+           clear_customized_info_callback       0x08053eac
+```
+
+The link between them is the missing I2C bus. The same holds for the customer-certificate region
+(`customized_verify` / `WriteCertToFlash` / `customized_info_write`), likewise CRC-16 protected.
+
+### Card state
+
+Untouched and healthy: 6 davinci nodes, 6/6 chips `OK`, 0 `phy_startup` errors, stock images
+intact (`e1e75ec2…`, `12975a9d…`), identity unchanged. Only read-only operations were performed,
+plus one **identical-bytes** write attempt that never reached the bus.
+
+### What would work
+
+Given the CRC-only integrity, the **SPI clip** (`scriba -W`, CH341A/EZP2019) is sufficient: it
+produced the dump, it supports write and erase, and a forged elabel with a recomputed CRC-16 is
+accepted by the firmware. The alternatives are a host I2C adapter on the NPU's I2C pins (needs the
+bus brought out, plus a patched HAL name match or an Intel-named adapter), or driver work to
+implement the board-comm opcodes `0x14`/`0x15` that the MCU already handles.
+
+Full detail: `customer-cert-20261026/SINGLE-CARD-TEST-20261026.md`.
+
