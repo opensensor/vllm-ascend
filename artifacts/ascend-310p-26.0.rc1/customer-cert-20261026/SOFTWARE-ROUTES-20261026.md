@@ -1626,3 +1626,98 @@ Changes made on the host (all reversible, and none of them touch the card's firm
 - `opp/Ascend310P-aicpu_{legacy,syskernels,extend_syskernels}.tar.gz` symlinks into
   `opp/Ascend310P/aicpu/` — matching what `conf/ascend_package_load.ini` expects.
 - `socver_shim.so` in `/var/local/ascend-work/tools/` — loaded only with `LD_PRELOAD`.
+
+---
+
+## The device's watch path, and the mismatch that explains the silence
+
+### The device's directory layout (from `device_sys_init.sh`)
+
+```
+/home/HwHiAiUser/hdcd/device0/                       mode 750
+/home/HwHiAiUser/hdcd/device0/aicpu/                 mode 750
+/home/HwHiAiUser/hdcd/device0/vfid1..16              mode 700
+/home/HwHiAiUser/hdcd/device0/aicpu/vfid1..16        mode 700, tmpfs (size=50%,nosuid,nodev)
+```
+
+(`hdcd_aicpu_dir_mount` mounts a tmpfs per VF, and only for `device0` when the box has ≤ 8 AI
+CPUs — ours has 7, so only `device0` gets the AICPU vfid tmpfs.)
+
+### The device's inotify watcher
+
+`libtsdaemon.so` builds the watch path from three fragments:
+
+```
+'Ascend310P/aicpu/'      0x3a66c8
+'/aicpu'                 0x3a6d60
+'/aicpu/vfid'            0x3a6d68
+```
+
+so the watcher path is
+
+```
+/home/HwHiAiUser/hdcd/device0/Ascend310P/aicpu/vfid<N>
+```
+
+and on a matching event it does:
+
+```
+rm -rf /usr/lib64/aicpu_kernels/
+rm -rf /home/HwHiAiUser/aicpu_kernels/
+Move origin package to decompress path      (cp '<src>' '<dst>')
+Start decompress package, cmd=%s            (mkdir -p <dir> ; tar --no-same-owner -ozxf <f> -C <dir>)
+Post process of aicpu process package success
+Load om package success, originPkg=%s, decomPkg=%s, verifyName=%s, checkCode=%lu
+```
+
+installing to `/usr/lib64/aicpu_kernels/{libaicpu_kernels,libcpu_kernels,libtensorflow,libtf_kernels}.so`.
+
+### The mismatch
+
+| | path |
+|---|---|
+| device **watches** | `hdcd/device0/Ascend310P/aicpu/vfid<N>/` |
+| vendor client **sends** | `hdcd/device0/aicpu/<pid>_<name>` (AICPU packages) and `hdcd/device0/<pid>_<name>` (the syskernels package) |
+| our raw `drvHdcSendFileV2` | accepts `hdcd/device0/aicpu` and `hdcd/device0/aicpu/vfid0`; rejects `hdcd/device0/Ascend310P/aicpu/vfid0` with 52 |
+
+So the file lands in a directory the device is **not** watching, and the device never sees it —
+which is exactly why it never replies and the client sits in `hdcdrv_recv_peek`.
+
+The host-side path rule that rejects `.../Ascend310P/aicpu/vfid0` is `strstr(base_path, dst_path)`
+with `base_path = <root>/hdcd/device<id><sub_path>` and `sub_path` from the whitelist. With
+`save_sub_path = *` the base becomes `/home/HwHiAiUser/hdcd/device0*` — and `dst_path` must be a
+literal substring of it, so `/home/HwHiAiUser/hdcd/device0/Ascend310P/aicpu/vfid0` *is* a substring
+of that base and should be accepted. It was rejected, so the effective base for that entry is
+narrower than `*` — worth pinning down, since it is the last piece.
+
+### Also established: the device's hdcd does answer file transfers
+
+The device's `libascend_hal.so` has a full receive path with replies:
+
+```
+'Destination path is not exist. (dstpth="%s")'
+'Calculate the total hdcd file size failed. (ret=%d)'
+'HDCD device has no enough space.'
+'Files count too much. (count=%d)'
+'Got session root_privilege failed. (ret=%d)'
+'Calling validate_free_space failed.'
+'Calling send_reply error.'
+'Calling send_reply FILE_OPT_NOSPC error.'
+'Calling send_reply FILE_OPT_PERDE error.'
+```
+
+and it saves with `dir` + `fileName` → `Format full path failed. (dir=%s, fileName=%s)` → open →
+write → sync. So a file transfer gets a reply; the silence we see is the *AICPU install* watcher
+never firing, not a failed transfer.
+
+### The next test, precisely
+
+Push the package to the path the device actually watches —
+`/home/HwHiAiUser/hdcd/device0/Ascend310P/aicpu/vfid0/` — and watch for the device's
+`TSD_OM_PKG_DECOMPRESS_STATUS` reply. Two ways to get there:
+
+1. make the host-side whitelist's `save_sub_path` cover that path (it is a host file,
+   `/etc/hdcFileTransWhiteList.cfg`, and `save_sub_path` is exactly the field that selects it), or
+2. create the directory on the device and let the device's own `hdcd` place the file there.
+
+Option 1 is the smaller change and is entirely on the host.
