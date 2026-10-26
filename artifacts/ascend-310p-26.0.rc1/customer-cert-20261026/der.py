@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Minimal DER reader for CMS SignedData, sufficient to verify SignerInfos."""
-import hashlib
 
 
 class TLV:

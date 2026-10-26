@@ -11,10 +11,9 @@ import hashlib
 import sys
 
 from cryptography import x509
-from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
-
-from der import parse, walk, oid_str
+from der import oid_str, parse, walk
 
 
 def collect_certs(node, out):
@@ -62,7 +61,8 @@ def attrs_of(si):
 
 
 def main(cms_path, content_path, verbose=True):
-    buf = open(cms_path, "rb").read()
+    with open(cms_path, "rb") as fh:
+        buf = fh.read()
     top, _ = parse(buf)
     # Outer SignedData is ContentInfo.content[0] -> [0] IMPLICIT -> signedData
     sd = None
@@ -83,7 +83,8 @@ def main(cms_path, content_path, verbose=True):
     for cert, raw in certs:
         print(f"   {cert.subject.rfc4514_string()}  sha256={hashlib.sha256(raw).hexdigest()[:16]}")
 
-    content = open(content_path, "rb").read()
+    with open(content_path, "rb") as fh:
+        content = fh.read()
     cd = hashlib.sha256(content).digest()
 
     sis = find_signer_infos(sd)
@@ -124,9 +125,9 @@ def main(cms_path, content_path, verbose=True):
                 sa_der = c.raw
         if sig and sa_der:
             # signature is over the SET OF encoding (0x31) of the [0] IMPLICIT block
-            body = sa_der[sa_der[0] & 0x1F and 0 or 0:]
+            sa_der[sa_der[0] & 0x1F and 0 or 0:]
             # rebuild: header of [0] replaced by SET tag, length preserved
-            ln = len(sa_der) - sa_der.__len__()  # placeholder
+            len(sa_der) - sa_der.__len__()  # placeholder
             # simpler: construct from content
             t = None
             for c in si.children:

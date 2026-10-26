@@ -124,7 +124,7 @@ def main():
     lines = text.splitlines()
     if pattern:
         rx = re.compile(pattern, re.I)
-        lines = [l for l in lines if rx.search(l)]
+        lines = [line for line in lines if rx.search(line)]
     for line in lines:
         print(line)
     return 0

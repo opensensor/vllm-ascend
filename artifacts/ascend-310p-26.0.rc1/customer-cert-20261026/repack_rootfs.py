@@ -23,14 +23,13 @@ Usage:
 import argparse
 import gzip
 import hashlib
-import zlib
-import io
 import os
 import shutil
 import struct
 import subprocess
 import sys
 import tempfile
+import zlib
 
 IMG_OFF = 0x2000
 CODE_LEN_OFF = 0x45C
@@ -51,7 +50,8 @@ def align(n, a):
 
 
 def read_container(path):
-    data = open(path, "rb").read()
+    with open(path, "rb") as fh:
+        data = fh.read()
     code_len = u32(data, CODE_LEN_OFF)
     if len(data) < IMG_OFF + code_len:
         raise ValueError("container truncated")
@@ -187,7 +187,7 @@ def cpio_pack(root):
     p = subprocess.run(["cpio", "-o", "-H", "newc", "--quiet", "--owner=0:0"],
                        cwd=root, input=stdin, capture_output=True)
     if p.returncode != 0:
-        raise RuntimeError("cpio pack failed: %s" % p.stderr.decode()[:400])
+        raise RuntimeError("cpio pack failed: {}".format(p.stderr.decode()[:400]))
     return p.stdout
 
 
@@ -210,7 +210,7 @@ def main():
         # The inner header starts with magic 33aa3a3a and the tag at +0x04.
         inner = img["payload"]
         if inner[:4] != b"\x33\xaa\x3a\x3a":
-            print("unexpected inner magic %r - not an esbc-wrapped rootfs" % inner[:4],
+            print("unexpected inner magic {!r} - not an esbc-wrapped rootfs".format(inner[:4]),
                   file=sys.stderr)
             return 1
         gz = inner[0x100:]
@@ -242,7 +242,8 @@ def main():
     certtype = args.certtype if args.certtype is not None else img["certtype"]
     out = build_container(img["header"], newpayload, img["cms"], img["ini"],
                           img["crl"], certtype)
-    open(args.out, "wb").write(out)
+    with open(args.out, "wb") as fh:
+        fh.write(out)
     print(f"wrote {args.out} ({len(out)} bytes)")
     print(f"  payload: {len(img['payload'])} -> {len(newpayload)} bytes")
     print(f"  certtype: 0x{certtype:08x}")

@@ -56,7 +56,8 @@ def u32(b, o):
 
 
 def parse(path):
-    d = open(path, "rb").read()
+    with open(path, "rb") as fh:
+        d = fh.read()
     info = {"file": path, "size": len(d)}
     if len(d) < 0x2000 or u32(d, 0) != OUTER_MAGIC:
         info["error"] = "not an esbc container"
@@ -115,11 +116,14 @@ def main():
     print(f"  cert_type    : 0x{info['cert_type']:08x}")
     print(f"  img_offset   : 0x{info['img_offset']:x}")
     print(f"  code_len     : 0x{info['code_len']:x} ({info['code_len']})")
-    print(f"  sec_blk      : size=0x{info['sec_blk'][0]:x} hdr_off=0x{info['sec_blk'][1]:x} key_size=0x{info['sec_blk'][2]:x}")
+    blk = info["sec_blk"]
+    print(f"  sec_blk      : size=0x{blk[0]:x} hdr_off=0x{blk[1]:x} key_size=0x{blk[2]:x}")
     print(f"  payload sha  : {ok(info['payload_sha_stored'], info['payload_sha_actual'])}")
     print(f"  head sha c0  : {ok(info['head_sha0_stored'], info['head_sha0_actual'])}")
     print(f"  head sha c1  : {ok(info['head_sha1_stored'], info['head_sha1_actual'])}")
-    print(f"  inner magic  : {'OK' if info['inner_magic_ok'] else 'BAD'}  tag={info['inner_tag']!r}  tail={info['inner_tag_tail']!r}")
+    magic_ok = "OK" if info["inner_magic_ok"] else "BAD"
+    print(f"  inner magic  : {magic_ok}  tag={info['inner_tag']!r}  "
+          f"tail={info['inner_tag_tail']!r}")
     print(f"  slot         : 0x{info['slot']:x}   cms_start = 0x{info['cms_start']:x}")
     for n, s in info["sections"].items():
         print(f"    {n:4s} len={s['len']:8d} @0x{s['off']:x}")

@@ -96,7 +96,8 @@ def crc_check(body, attrs, integrity, data_off, size):
 
 def main():
     path = sys.argv[1]
-    data = open(path, "rb").read()
+    with open(path, "rb") as fh:
+        data = fh.read()
     # detect: is this an esbc container, or a raw payload?
     payload = data
     try:

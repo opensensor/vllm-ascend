@@ -28,13 +28,12 @@ The timestamp token is optional here (the verifier does not require it); it is
 included only if a pre-built TST is supplied.
 """
 import hashlib
-import os
 import sys
 from datetime import datetime, timezone
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.hazmat.primitives.asymmetric import padding
 
 # ---- minimal DER writer ----
 
@@ -150,12 +149,16 @@ def attr_raw(oid_str, value_der):
 
 def main(ini_path, out_path, signer_pem, key_pem, cacert_pem, crl_files=(),
          tst_der=None, ts_cert_pem=None, ts_key_pem=None):
-    content = open(ini_path, "rb").read()
+    with open(ini_path, "rb") as fh:
+        content = fh.read()
     digest = hashlib.sha256(content).digest()
 
-    signer = x509.load_pem_x509_certificate(open(signer_pem, "rb").read())
-    ca = x509.load_pem_x509_certificate(open(cacert_pem, "rb").read())
-    key = serialization.load_pem_private_key(open(key_pem, "rb").read(), None)
+    with open(signer_pem, "rb") as fh:
+        signer = x509.load_pem_x509_certificate(fh.read())
+    with open(cacert_pem, "rb") as fh:
+        ca = x509.load_pem_x509_certificate(fh.read())
+    with open(key_pem, "rb") as fh:
+        key = serialization.load_pem_private_key(fh.read(), None)
 
     now = datetime.now(timezone.utc).replace(microsecond=0)
 
@@ -205,7 +208,11 @@ def main(ini_path, out_path, signer_pem, key_pem, cacert_pem, crl_files=(),
                          signer.public_bytes(serialization.Encoding.DER))
     crls = b""
     if crl_files:
-        blob = b"".join(open(f, "rb").read() for f in crl_files)
+        blobs = []
+        for f in crl_files:
+            with open(f, "rb") as fh:
+                blobs.append(fh.read())
+        blob = b"".join(blobs)
         crls = implicit_set(1, blob)
 
     unsigned = b""
@@ -213,8 +220,10 @@ def main(ini_path, out_path, signer_pem, key_pem, cacert_pem, crl_files=(),
         unsigned = implicit_set(1, attr_raw("1.2.840.113549.1.9.16.2.14", tst_der))
     elif ts_cert_pem and ts_key_pem:
         # Build an RFC-3161 timestamp token over the signature value.
-        ts_cert = x509.load_pem_x509_certificate(open(ts_cert_pem, "rb").read())
-        ts_key = serialization.load_pem_private_key(open(ts_key_pem, "rb").read(), None)
+        with open(ts_cert_pem, "rb") as fh:
+            ts_cert = x509.load_pem_x509_certificate(fh.read())
+        with open(ts_key_pem, "rb") as fh:
+            ts_key = serialization.load_pem_private_key(fh.read(), None)
         # RFC3161 TSTInfo, exactly the stock shape:
         #   version INTEGER(1)
         #   policy  OID
@@ -233,7 +242,8 @@ def main(ini_path, out_path, signer_pem, key_pem, cacert_pem, crl_files=(),
             attr("1.2.840.113549.1.9.4", [octetstring(hashlib.sha256(tst_info).digest())]),
         )
         tst_sig = ts_key.sign(
-            strip_tlv_header(tst_attrs) and (bytes([0x31, len(strip_tlv_header(tst_attrs))]) + strip_tlv_header(tst_attrs)),
+            (bytes([0x31, len(strip_tlv_header(tst_attrs))])
+             + strip_tlv_header(tst_attrs)),
             padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=32),
             hashes.SHA256(),
         )
@@ -280,7 +290,8 @@ def main(ini_path, out_path, signer_pem, key_pem, cacert_pem, crl_files=(),
                           setof(si))
 
     content_info = seq(oid("1.2.840.113549.1.7.2"), ctx(0, signed_data))
-    open(out_path, "wb").write(content_info)
+    with open(out_path, "wb") as fh:
+        fh.write(content_info)
     print(f"wrote {out_path} ({len(content_info)} bytes)")
     print(f"  messageDigest = {digest.hex()}")
 

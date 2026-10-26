@@ -84,7 +84,8 @@ def main():
     ap.add_argument("--dump", action="store_true", help="print the structure and exit")
     args = ap.parse_args()
 
-    data = bytearray(open(args.infile, "rb").read())
+    with open(args.infile, "rb") as fh:
+        data = bytearray(fh.read())
 
     if args.dump:
         c = checks(data)
@@ -127,7 +128,8 @@ def main():
         print("SELF-CHECK FAILED", file=sys.stderr)
         return 1
 
-    open(args.outfile, "wb").write(bytes(data))
+    with open(args.outfile, "wb") as fh:
+        fh.write(bytes(data))
     print(f"wrote {args.outfile} ({len(data)} bytes)")
     print(f"sha256: {hashlib.sha256(bytes(data)).hexdigest()}")
     return 0
