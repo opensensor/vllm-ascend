@@ -13,6 +13,7 @@ Layout (verified against the stock 310P images):
 Usage:
     python3 build_user_der.py [template] [cert.der] [out.der] [certtype]
 """
+
 import hashlib
 import struct
 import sys
@@ -25,8 +26,10 @@ cert_path = sys.argv[2] if len(sys.argv) > 2 else "rootcaG2.der"
 out_path = sys.argv[3] if len(sys.argv) > 3 else "user.der"
 certtype = int(sys.argv[4], 0) if len(sys.argv) > 4 else 0x1
 
-d = open(template, "rb").read()
-cert = open(cert_path, "rb").read()
+with open(template, "rb") as fh:
+    d = fh.read()
+with open(cert_path, "rb") as fh:
+    cert = fh.read()
 
 hdr = bytearray(d[:0x2000])
 tag = bytearray(d[0x2000:0x2100])
@@ -37,13 +40,13 @@ digest = hashlib.sha256(body).digest()
 for base in (0, 0x1000):
     struct.pack_into("<I", hdr, base + 0x08, certtype)
     struct.pack_into("<I", hdr, base + 0x45C, len(body))
-    hdr[base + 0x2C:base + 0x4C] = digest
+    hdr[base + 0x2C : base + 0x4C] = digest
 for base in (0, 0x1000):
-    hdr[base + 0x4BC:base + 0x4DC] = hashlib.sha256(
-        bytes(hdr[base:base + 0x4BC])).digest()
+    hdr[base + 0x4BC : base + 0x4DC] = hashlib.sha256(bytes(hdr[base : base + 0x4BC])).digest()
 
 out = bytearray(hdr) + body
 struct.pack_into("<QI", out, 0x4E0, MAGIC_EXTERN, len(out))
-open(out_path, "wb").write(out)
-print("wrote %s (%d bytes, certtype 0x%x, digest %s, size %d)" % (
-    out_path, len(out), certtype, digest.hex(), len(out)))
+with open(out_path, "wb") as fh:
+    fh.write(out)
+print(f"wrote {out_path} ({len(out)} bytes, certtype 0x{certtype:x}, "
+      f"digest {digest.hex()}, size {len(out)})")

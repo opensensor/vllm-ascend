@@ -26,6 +26,7 @@ Integrity fields:
 certtype values from image_pack.py: 0x1 community, 0x2 client,
 0xFFFFFFFF Huawei.
 """
+
 import argparse
 import hashlib
 import struct
@@ -50,7 +51,7 @@ def sha256(data):
 def section_header(tag, length):
     raw = tag.encode("ascii")
     if len(raw) > 12:
-        raise ValueError("tag too long: %r" % tag)
+        raise ValueError(f"tag too long: {tag!r}")
     return raw.ljust(12, b"\0") + struct.pack("<I", length)
 
 
@@ -59,7 +60,8 @@ def align(c):
 
 
 def parse(path):
-    data = open(path, "rb").read()
+    with open(path, "rb") as fh:
+        data = fh.read()
     if len(data) < IMG_OFF:
         raise ValueError("file too short")
     code_len = struct.unpack_from("<I", data, CODE_LEN_OFF)[0]
@@ -68,20 +70,19 @@ def parse(path):
     crl_start = ini_start + INI_SLOT
 
     def section(start, name):
-        tag = data[start:start + 12].rstrip(b"\0")
+        tag = data[start : start + 12].rstrip(b"\0")
         if tag != name.encode():
-            raise ValueError(
-                "%s expected at 0x%x, found %r" % (name, start, tag))
+            raise ValueError(f"{name} expected at 0x{start:x}, found {tag!r}")
         length = struct.unpack_from("<I", data, start + 12)[0]
-        body = data[start + 16:start + 16 + length]
+        body = data[start + 16 : start + 16 + length]
         if len(body) != length:
-            raise ValueError("%s truncated at 0x%x" % (name, start))
+            raise ValueError(f"{name} truncated at 0x{start:x}")
         return body
 
     return {
         "data": data,
         "header": data[:IMG_OFF],
-        "payload": data[IMG_OFF:IMG_OFF + code_len],
+        "payload": data[IMG_OFF : IMG_OFF + code_len],
         "code_len": code_len,
         "certtype": struct.unpack_from("<I", data, CERTTYPE_OFF)[0],
         "cms": section(cms_start, "cms"),
@@ -99,9 +100,10 @@ def parse_salvage(path):
     Locates the cms/ini/crl section headers by tag instead of trusting the
     derived offset, then rebuilds the geometry from the real payload length.
     """
-    data = open(path, "rb").read()
+    with open(path, "rb") as fh:
+        data = fh.read()
     code_len = struct.unpack_from("<I", data, CODE_LEN_OFF)[0]
-    payload = data[IMG_OFF:IMG_OFF + code_len]
+    payload = data[IMG_OFF : IMG_OFF + code_len]
     if len(payload) != code_len:
         raise ValueError("payload truncated")
 
@@ -111,8 +113,7 @@ def parse_salvage(path):
     while pos != -1:
         ini_start = pos + CMS_SLOT
         crl_start = ini_start + INI_SLOT
-        if data[ini_start:ini_start + 4] == b"ini\0" and \
-                data[crl_start:crl_start + 4] == b"crl\0":
+        if data[ini_start : ini_start + 4] == b"ini\0" and data[crl_start : crl_start + 4] == b"crl\0":
             cms_start = pos
             break
         pos = data.find(b"cms\0", pos + 1)
@@ -121,9 +122,9 @@ def parse_salvage(path):
 
     def section(start):
         length = struct.unpack_from("<I", data, start + 12)[0]
-        body = data[start + 16:start + 16 + length]
+        body = data[start + 16 : start + 16 + length]
         if len(body) != length:
-            raise ValueError("section at 0x%x truncated" % start)
+            raise ValueError(f"section at 0x{start:x} truncated")
         return body
 
     ini_start = cms_start + CMS_SLOT
@@ -176,11 +177,10 @@ def build(image, payload=None, cms=None, ini=None, crl=None, certtype=None):
     digest = sha256(payload)
     for base in (0, 0x1000):
         struct.pack_into("<I", out, base + CERTTYPE_OFF, certtype)
-        out[base + DIGEST_OFF:base + DIGEST_OFF + 32] = digest
+        out[base + DIGEST_OFF : base + DIGEST_OFF + 32] = digest
         struct.pack_into("<I", out, base + CODE_LEN_OFF, code_len)
     for base in (0, 0x1000):
-        out[base + HEAD_HASH_OFF:base + HEAD_HASH_END] = sha256(
-            bytes(out[base:base + HEAD_HASH_OFF]))
+        out[base + HEAD_HASH_OFF : base + HEAD_HASH_END] = sha256(bytes(out[base : base + HEAD_HASH_OFF]))
     struct.pack_into("<QI", out, EXTERN_OFF, MAGIC_EXTERN, len(out))
     return bytes(out), digest
 
@@ -194,34 +194,48 @@ def main():
     ap.add_argument("--ini")
     ap.add_argument("--crl")
     ap.add_argument("--certtype", type=lambda s: int(s, 0))
-    ap.add_argument("--salvage", action="store_true",
-                    help="locate the trailer by tag instead of the derived offset")
-    ap.add_argument("--header-from",
-                    help="take the 4 KiB header template from another image")
-    ap.add_argument("--tag", default="initrd",
-                    help="container tag for --regen-ini")
-    ap.add_argument("--regen-ini", action="store_true",
-                    help="regenerate ini as '<tag>,   <sha256>;\\n'")
+    ap.add_argument("--salvage", action="store_true", help="locate the trailer by tag instead of the derived offset")
+    ap.add_argument("--header-from", help="take the 4 KiB header template from another image")
+    ap.add_argument("--tag", default="initrd", help="container tag for --regen-ini")
+    ap.add_argument("--regen-ini", action="store_true", help="regenerate ini as '<tag>,   <sha256>;\\n'")
     a = ap.parse_args()
 
     image = parse_salvage(a.src) if a.salvage else parse(a.src)
     if a.header_from:
-        image["header"] = open(a.header_from, "rb").read()[:IMG_OFF]
-    payload = open(a.payload, "rb").read() if a.payload else None
+        with open(a.header_from, "rb") as fh:
+            image["header"] = fh.read()[:IMG_OFF]
+    if a.payload:
+        with open(a.payload, "rb") as fh:
+            payload = fh.read()
+    else:
+        payload = None
     if a.regen_ini:
         base = payload if payload is not None else image["payload"]
-        ini = ("%s,   %s;\n" % (a.tag, hashlib.sha256(base).hexdigest())).encode()
+        ini = f"{a.tag},   {hashlib.sha256(base).hexdigest()};\n".encode()
     else:
-        ini = open(a.ini, "rb").read() if a.ini else None
-    cms = open(a.cms, "rb").read() if a.cms else None
-    crl = open(a.crl, "rb").read() if a.crl else None
+        if a.ini:
+            with open(a.ini, "rb") as fh:
+                ini = fh.read()
+        else:
+            ini = None
+    if a.cms:
+        with open(a.cms, "rb") as fh:
+            cms = fh.read()
+    else:
+        cms = None
+    if a.crl:
+        with open(a.crl, "rb") as fh:
+            crl = fh.read()
+    else:
+        crl = None
 
     out, digest = build(image, payload, cms, ini, crl, a.certtype)
-    print("code_len %d (0x%x), digest %s, certtype 0x%x, size %d" % (
-        image["code_len"] if payload is None else len(payload),
-        image["code_len"] if payload is None else len(payload),
-        digest.hex(), a.certtype if a.certtype is not None else image["certtype"],
-        len(out)))
+    code_len = image["code_len"] if payload is None else len(payload)
+    certtype = a.certtype if a.certtype is not None else image["certtype"]
+    print(
+        f"code_len {code_len} (0x{code_len:x}), digest {digest.hex()}, "
+        f"certtype 0x{certtype:x}, size {len(out)}"
+    )
 
     if a.out:
         with open(a.out, "wb") as f:
@@ -231,10 +245,10 @@ def main():
         ok = out == image["data"]
         print("verify:", "byte-identical" if ok else "MISMATCH")
         if not ok:
-            diffs = [i for i, (x, y) in enumerate(zip(out, image["data"]))
-                     if x != y]
-            print("first diffs", [hex(i) for i in diffs[:16]],
-                  "count", len(diffs), "size", len(out), len(image["data"]))
+            diffs = [i for i, (x, y) in enumerate(zip(out, image["data"])) if x != y]
+            print(
+                "first diffs", [hex(i) for i in diffs[:16]], "count", len(diffs), "size", len(out), len(image["data"])
+            )
             sys.exit(1)
 
 

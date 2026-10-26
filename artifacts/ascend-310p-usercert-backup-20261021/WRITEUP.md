@@ -109,13 +109,13 @@ No Huawei CMS, no `usrcert.ini` round-trip.
 ### 3.3 Re-sign of the modified rootfs
 
 - Base: `modified5-filesystem-le.cpio.gz` (110,544,347 B).
-  - header digest `38092b04…` **correct**
-  - `ini` = `initrd,   38092b04…;` **correct**
-  - CMS = **stock Huawei** (signs the *old* digest) → invalid.
+    - header digest `38092b04…` **correct**
+    - `ini` = `initrd,   38092b04…;` **correct**
+    - CMS = **stock Huawei** (signs the *old* digest) → invalid.
 - New CMS: `cmssign sign --signer signcert.der --key signcert_pri.pem
   --signerCA rootcaG2.der --in initrd.ini --out initrd.ini.p7s` → 2183 B.
-  - Verified: `openssl cms -verify … -purpose any` → **successful**.
-  - `cmssign 0.0.5` bug patched: `args.tsca` → `args.tsCA`.
+    - Verified: `openssl cms -verify … -purpose any` → **successful**.
+    - `cmssign 0.0.5` bug patched: `args.tsca` → `args.tsCA`.
 - Spliced into the `cms` slot (0x6967019, len 9201), zero-padded.
 - Output `modified6-resigned.cpio.gz`, sha256 `93c587cf…`, installed at
   `/usr/local/Ascend/driver/device/Ascend310P.cpio.gz`.
@@ -126,6 +126,7 @@ No Huawei CMS, no `usrcert.ini` round-trip.
 ## 4. Keys & artefacts
 
 ### 4.1 Live copies (threadripper)
+
 ```
 /home/matteius/usercert-test/
   rootcaG2.der  rootcaG2.pem  rootca_priG2_pri.pem
@@ -158,6 +159,7 @@ c7806bb6c8c863f668ee414f43111293a0ae61c95a3579f26768ac805b553c48  user.der
 > If the chip efuse now pins this CA, losing them means only the stock rootfs will ever boot.
 
 ### 4.4 Stock backups
+
 ```
 /home/matteius/Ascend310P.cpio.gz.stock-backup-20261021   (109,389,874 B)
 ```
@@ -171,6 +173,7 @@ sudo cp /home/matteius/Ascend310P.cpio.gz.stock-backup-20261021 \
         /usr/local/Ascend/driver/device/Ascend310P.cpio.gz
 sudo reboot
 ```
+
 The user cert (our CA) remains enrolled but is unused once the stock (Huawei-signed) rootfs
 passes the built-in cert again.
 
@@ -225,7 +228,9 @@ Ordered by likelihood:
 ## 9. Update — 2026-10-21 07:41 (full chain + stock-payload A/B)
 
 ### 9.1 Full chain built (per `instgopen_0051.html`)
+
 Backed up under `full/` on all three drives:
+
 - `signca` (intermediate, codeSigning) ← root
 - `signcert` (leaf, codeSigning) ← signca
 - `tsca` (timestamp intermediate) ← root
@@ -233,6 +238,7 @@ Backed up under `full/` on all three drives:
 - `rootG2.crl`, `sign.crl`, `ts.crl`; `initrd.ini.crl = cat rootG2.crl sign.crl ts.crl signca.der tsca.der`
 
 SHA-256:
+
 ```
 f31ad1c4e9c9db76df1264243f274e5018b59357fad10a6c7aa3457107d77d8f  signca.der
 03016c7268975a78079f44f69f79d229332c0914961b710c73bb490e23bde204  signcert.der
@@ -245,6 +251,7 @@ ccf605f7820522bb0ff43cafb4d673f0df161423099b65093ed7035f712f604a  signcert_pri.p
 ```
 
 ### 9.2 A/B results
+
 | image | payload | CMS | result |
 |---|---|---|---|
 | `modified5` | modified | stock Huawei | fail |
@@ -258,10 +265,12 @@ usr-cert hash target is **not** the cause. Remaining fault domain: the **CMS/tra
 as constructed by hand (the `image_pack.py` layout), not the payload or the cert choice.
 
 ### 9.3 Debug status
+
 - **No UART on the card.** BL31 error not observable; host dmesg only shows the host side.
 - `npu-smi` / `upgrade-tool --boot_status` hang whenever the device is down (expected).
 
 ### 9.4 Remaining suspects (ranked)
+
 1. **Usr-cert hash target** — BL31 may hash the CMS **signerCA** (`signca`), not the root CA.
    Enroll a `user.der` built from `signca.der` and retry the stock-resigned image.
 2. **CMS/trailer byte-exactness** — the hand-rolled trailer may differ from `image_pack.py`
@@ -270,6 +279,7 @@ as constructed by hand (the `image_pack.py` layout), not the payload or the cert
 3. **Image-ID path** — customer fallback may apply only to the FS/rootfs container, not initrd.
 
 ### 9.5 Next
+
 1. Restore stock, reboot, confirm 6 chips.
 2. Blind A/B #1: enroll `user-signca.der`, deploy `stock-resigned`, reboot.
 3. If that fails, obtain the CtrlCPU Open SDK and rebuild the trailer with `image_pack.py`.
@@ -348,6 +358,7 @@ the extern magic and the real size; all fields validate.
 | stock + 426 zero bytes, size updated | stock | stock | HW | – | **boot** |
 
 Conclusions:
+
 - Total file size and trailing bytes are **not** checked.
 - CRL shape, order, and even presence are not the gate (empty CRL still fails).
 - Cert choice (root, intermediate, leaf) and certtype (HW, 0x1, 0x2) are not the gate.
