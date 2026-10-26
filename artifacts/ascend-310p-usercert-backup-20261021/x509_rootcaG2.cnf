@@ -1,0 +1,15 @@
+[ req ]
+default_bits = 4096
+distinguished_name = req_distinguished_name
+prompt = no
+string_mask = utf8only
+x509_extensions = extensions
+[ req_distinguished_name ]
+C = CN
+O = Test
+CN = RootCA G2
+[ extensions ]
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always, issuer
+basicConstraints = CA:TRUE
+keyUsage = cRLSign, keyCertSign
