@@ -6604,3 +6604,406 @@ images in place, stock AI Core kernel binary reinstalled, source tree restored b
 | `customer-cert-20261026/prove_aicore_ownership.sh` | proves the executed binary is *ours* (build → inject → rebuild → compare) |
 | `customer-cert-20261026/read_sec_flash.py` | fixed: opens the DMS sub-module before the feature-command ioctl |
 | `customer-cert-20261026/esbc_info.py` | copied to the card; parses any esbc container (used to show the AICPU syskernels carry no signature sections) |
+
+---
+
+## 2026-10-26 (session 3) — the MCU flash was never analysed; now it has been
+
+The previous session's note about `ascend_220000_verified.bin` was accurate about *what* the file
+contains but the file was never disassembled. It is not an SoC secure-flash dump at all — it is the
+**card's MCU flash**: the board-management-controller firmware that implements the manufacturer's
+own customer-certificate machinery. This session decoded it.
+
+### What the file actually is
+
+```
+size    : 262144 bytes (256 KB), a WINDOW of the card's 16 MB MCU SPI flash
+sha256  : (window) at offset 0x220000 of artifacts/npu-collective-qfn-20261014-024609/
+          spi-dump-ascend-verified-9fd4cc63.bin   <- the full 16 MB dump we already had
+arch    : ARM Cortex-M, Thumb-2  (not RISC-V; confirmed by prologue decoding)
+OS      : LiteOS  ("MCU START.", "Begin to running LiteOS.", "MCU Version is V23.2.6")
+crypto  : mbedTLS (mbedtls_sha256_*, mbedtls_rsa_pkcs1_verify, mbedtls_mpi_read_binary)
+base    : 0x08028000 (file offset + 0x28000 = flash 0x220000)
+```
+
+**Two corrections to earlier notes in this log:**
+
+1. The claim that `0x20000+` is *encrypted* is wrong. It is **plaintext ARM Thumb-2 code**
+   (0x24000..0x28000 decodes at ~1650 instructions per 4 KB, the density of real code; entropy
+   6.6 bits/byte, which is code, not ciphertext). The whole 256 KB window is code + rodata.
+2. `0x55aa55aa` in this file is **not** the SoC esbc container format. The SoC esbc header is
+   `{magic, head_len=0x4dc, certtype=0xffffffff, ...}`; the MCU's records are
+   `{magic, 1, 0, 0x14, 0x1f, 0x100, 0x200, 0x1cd9dead, ...}` — a different structure.
+
+### ✅ The MCU trust machinery is fully recovered
+
+The firmware's log macro passes `__func__` as a string, so every named function has a code site
+that loads its own name. That yields a **232-symbol map**, and the trust path disassembles
+cleanly:
+
+| function | code address | role |
+|---|---|---|
+| `customized_verify` | `0x0804940c` | verify the "customized" (customer) region |
+| `customized_msg_check` | `0x080495f0` | per-frame message check |
+| `customized_info_read/write/clear` | `0x080496aa` / `0x080494cc` / `0x08049710` | region accessors |
+| `WriteCertToFlash` | `0x080560e8` | **write a certificate into MCU flash** |
+| `ClearCertToFlash` | `0x08055f98` | erase it |
+| `get_cert_region_id` | `0x08055972` | map region name → flash region id |
+| `write_cert_info` / `renew_cert_info` | `0x08056284` / `0x08055bbe` | certificate write/renew |
+| `set_switch_state` / `UpdateCertSwitchState` | `0x08056416` / `0x0805b5aa` | A/B switch state |
+| `SaveCertRandom` / `UpdateCertRandom` | `0x0805b718` / `0x0805b656` | anti-rollback random |
+| `McuSignatureVerify` | `0x0805bc18` | verify a signed header |
+| **`CheckPubKeyHash`** | `0x0805bb5a` | **the trust anchor check** |
+| `RsaVerify` / `VerifySig` | `0x0805be76` / `0x0805bdc6` | mbedTLS RSA verify |
+| `CalHash` / `read_rsa_head_item` | `0x0805b9c0` / `0x0805ba36` | read+hash the pubkey from a signed header |
+| `elabel_init/read/update/exit` | `0x08049aa4` / `0x08049862` / `0x080498fa` / `0x08049800` | electronic label |
+| `board_read_elable_response_callback` | `0x08053552` | answers host opcode 0x15 |
+| `comm_distribute_handle` | `0x0804e572` | MCU command dispatcher |
+
+### The trust anchor, located exactly
+
+`CheckPubKeyHash` (0x0805bb5a) does:
+
+```
+sha256_init(ctx)                       ; mbedtls_sha256_init
+sha256_update(ctx, pubkey, 32)         ; the 32-byte public key from the signed header
+sha256_finish(ctx, out)                ; 32-byte digest
+memcmp(out, CONST, 32)                 ; <-- 0x0805bbae
+```
+
+The constant it compares against is **a 32-byte value baked into the MCU firmware** at
+address `0x08032be4`:
+
+```
+ab510f4a10966739bbd5f96ecf6b69b61de9bc39f6b9429b21a8db90e20c5074
+```
+
+So the MCU's trust root is `sha256(vendor_public_key)`, hardcoded in the firmware, with an exact
+32-byte comparison. **No key we hold hashes to it** — checked 74 certs/keys we have (rootcaG2,
+signcert, ts, tsca, our Oct-21 PKI) across SPKI, PKCS#1, whole-file and raw-modulus encodings:
+no match. The anchor is the vendor's own.
+
+### The "customized" region is protected by CRC16 only — this is the weak link
+
+`customized_verify` (0x08049424):
+
+```
+r0 = *r6                     ; pointer to the customized region
+r5 = u16(r0[0x0a])           ; expected CRC16, from the region header
+r1 = u16(r0[0x08])           ; length
+r0 = r0 + 0x0c               ; payload
+crc16_ccitt(r0, r1)          ; table at 0x0805b2ec: 0x2338,0x0803,0x2300,... = CRC-16/CCITT-FALSE
+cmp r5, r0
+beq -> success ; else "[%s:%d] failed to crc16." / "data crc error."
+```
+
+The integrity of the customer-certificate region is a **CRC-16**, not a signature. I verified the
+algorithm by reimplementing it and matching the firmware's own table. `customized_info_init`
+additionally checks the region magic `0x50505050` ("PPPP") and, if the region is unwritten, logs
+*"data not exists, set default."* and falls back to defaults.
+
+`McuSignatureVerify`/`VerifySig` (RSA over the signed header) protect the **MCU's own upgrade
+files**, not the trust store the host writes.
+
+### Flash layout of the trust regions (from the full 16 MB dump)
+
+```
+0x220000  MCU image (App)         <- the 256 KB window we have
+0x237800  trust record            } A/B duplicated, byte-identical
+0x277800  trust record            }
+0x8c0000  trust record (3rd copy, 49008 bytes)
+0x780000  "customized" region: 50505050 00000001 00000000 ffffffff
+          -> magic present, len/crc slots 0xffffffff => NEVER WRITTEN on this card
+0x2c0000  "BALE" log region       0x300000  "GAMF" region      0x7c0000  zeroed region
+```
+
+Region ids are assigned in `get_cert_region_id` (0x08055946):
+
+```
+sp+0xc = 9    sp+0xd = 10   sp+0xe = 14   sp+0xf = 11   sp+0x10 = 12 (only if id > 4)
+```
+
+against the region-name table at file 0x02794:
+
+```
+[0] https   [1] https crl   [2] switch   [3] trustlist   [4] blocklist   [5] null
+```
+
+**So the MCU holds a `trustlist`, a `blocklist`, an `https` cert region and an `https crl`
+region — and the customer's own certificate goes into the `trustlist` region via
+`WriteCertToFlash`.**
+
+### Host reachability of that path — measured, not assumed
+
+The MCU channel is **alive** on the card:
+
+```
+dsmi_get_board_id(0)  ret=0 board_id=0x97
+dsmi_get_system_time  ret=0
+dsmi_get_board_info   ret=0
+```
+
+but the entry points are **not wired up** in this driver build:
+
+| symbol | status |
+|---|---|
+| `dsmi_dft_get_elable` | **stub** — `mov eax,0xfffe; pop rbp; ret` (returns INVALID_VALUE) |
+| `dsmi_get_custom_op_secverify_cert_show_info` | **stub** — same 7-byte pattern |
+| `dsmi_cmd_dft_get_elabel` | real: builds MCU opcode **0x15** = `DEV_MON_CMD_READ_LABEL_DATA` |
+| `dsmi_cmd_get_sign_cert` | real |
+| `dsmi_get_rootkey_status` | real (validates `item_type <= 0x3f`; returns 17 `EEXIST` here) |
+| `dsmi_get_board_id` / `_info` / `_system_time` | real, working |
+
+Calling `dsmi_cmd_dft_get_elabel` directly (after `dsmi_init`) still returns `0xfffe` — the
+failure is inside the driver, not in my call: the cmd builds the DMP message with opcode 0x15 and
+then fails `dsmi_check_device_id`, i.e. the 310P kernel module has no handler for it. Confirmed
+against the module itself: `drv_devmng_host.ko` contains **no** `label`/`elabel` strings and no
+MCU/board comm handler at all — board info actually comes from the **SoC**
+(`DMS_MAIN_CMD_SOC` / `DMS_SUBCMD_GET_SOC_INFO`), not from the MCU.
+
+`DEV_MON_CMD_READ_LABEL_DATA (0x15)` and `DEV_MON_CMD_WRITE_CLEAR_LABEL_DATA (0x14)` **are
+defined** in the driver's `dev_mon_cmd_def.h`, but are not implemented in the shipped 310P build.
+
+### Where this leaves the "hole in the implementation"
+
+The MCU's own certificate trust store is CRC-16 protected, and its signature verification
+(`McuSignatureVerify`) only covers **MCU firmware upgrades**. The crypto anchor for the trust
+store is the firmware-embedded `sha256(vendor_pubkey)`.
+
+The realistic attack surface this opens is *not* forging the vendor's signature — that anchor is
+firmware-embedded and we hold no matching key. It is:
+
+1. **The CRC-16 on the `trustlist` region is not a cryptographic integrity check.** Anything that
+   can write the region can install a customer certificate by recomputing a 16-bit checksum.
+   Whether that matters depends on who can reach `WriteCertToFlash`.
+2. **`WriteCertToFlash` / `ClearCertToFlash` / `customized_info_write` exist in the MCU firmware**
+   and are reached through the board comm channel. On *this* driver build the host-side door is
+   closed (stubbed/unimplemented), but the MCU-side handler is present in the shipped firmware —
+   so the question becomes whether any *other* host path can drive board opcodes 0x14/0x15, or
+   whether the SPI flash is writable directly (the region is plain SPI flash, and
+   `SPI_FLASH1_Elabel_Write_Protect` / `SPI_FLASH1_FW_Write_Protect` exist as write-protect
+   helpers whose coverage needs checking).
+3. **The MCU image itself is upgradeable** via `copy_upgrade_file_to_flash`, gated by
+   `verify_firmware_file` → `read_cms_file_info` → `RsaSignatureVerify`, i.e. it *is* signed. But
+   the **app region's checksum** path (`flash_sha256_check`, `sha256_check`) is a separate,
+   weaker mechanism than the signature path, and `boot_valid_check` / `sync_app_master_slave`
+   choose between App0/App1 — worth checking whether a checksum-valid-but-unsigned app is ever
+   booted.
+
+### Next steps, in priority order
+
+1. **Determine the write-protect coverage of the trust regions.** `SPI_FLASH1_Elabel_Write_Protect`
+   (0x0805c4b8) and `SPI_FLASH1_FW_Write_Protect` (0x0805c6ea) decide which sectors are locked.
+   Read them and map the protection onto the region table — this decides whether the trustlist is
+   physically writable.
+2. **Check whether the host can reach board opcodes 0x14/0x15 by any other route** (e.g. the
+   `board_common_response_callback` / `traversal_data_update` path, or a raw DMP command), since
+   the dedicated API is stubbed but the MCU-side handlers are present.
+3. **Test the A/B redundancy logic.** `boot_valid_check` + `sync_app_master_slave` choose between
+   App0 and App1; `set_boot_param`/`WriteBackBootParam` select them. If a checksum-valid region can
+   be swapped in, that is a much cheaper lever than the signature path.
+4. **Check `flash_sha256_check` vs `RsaSignatureVerify` asymmetry** — specifically whether
+   `_app_check` (0x0804c6aa) can be satisfied by an unsigned image whose checksum matches.
+
+### Tooling added this session
+
+| file | purpose |
+|---|---|
+| `customer-cert-20261026/mcu_disasm.py` | recovers the MCU symbol map and disassembles named functions |
+| `customer-cert-20261026/mcu_annotated.py` | annotated disassembly: resolves each PC-relative literal to its string |
+| `customer-cert-20261026/mcu_findfuncs.py` | string→code-site index for the whole image |
+| `customer-cert-20261026/mcu_symbols.py` | extracts the `(log-msg, __func__)` name table |
+| `customer-cert-20261026/mcu_refs.py` | resolves PC-relative string references |
+| `customer-cert-20261026/cert_api_survey.py` | classifies DSMI exports as STUB vs real, by ELF symbol address |
+| `customer-cert-20261026/elabel_probe.c`, `mcu_probe.c`, `mcu_trust_probe.c`, `rootkey_probe.c` | live probes of the MCU channel and cert APIs |
+
+### Addendum (same session): write-protect coverage and the elabel, resolved
+
+Continuing the "next steps" list above, item 1 (write-protect coverage) is now answered.
+
+**`SPI_FLASH1_Init` (0x0805c6a2) computes the firmware write-protect range as:**
+
+```
+r4 = ldrh [chipinfo,#2] << 17      ; total flash size
+r7 = ldrh [chipinfo,#4] << 10      ; sector size
+r4 = (r4 - 0x800000) / r7          ; number of sectors to protect
+sb = 0x800000                      ; <-- protect from 8 MB upward
+loop: issue sector write-protect on each sector from 0x800000
+```
+
+For this card's 16 MB flash (`blocks=128`, so `128 << 17 = 0x1000000`), the protected range is
+**0x800000 .. 0x1000000 (8 MB .. 16 MB)**.
+
+Mapping the regions we found against that:
+
+| region | flash offset | protected? |
+|---|---|---|
+| MCU app image (App0) | `0x220000` | **no** |
+| trust record A | `0x237800` | **no** |
+| MCU app image (App1) | `0x260000` | **no** |
+| trust record B | `0x277800` | **no** |
+| "PPPP" customized region | `0x780000` | **no** |
+| trust record (3rd copy) | `0x8c0000` | yes |
+
+So **only the third copy** of the trust record is inside the firmware write-protected range. The
+two A/B copies at `0x237800`/`0x277800` and the "customized" (customer-certificate) region at
+`0x780000` are **not** write-protected by the firmware's own protection pass.
+
+**The elabel is a separate, explicitly-managed area.** `SPI_FLASH_WritElectronicLabel`
+(0x0805d088) bounds the write:
+
+```
+r3 = offset + length
+cmp r3, #0x40000          ; 256 KB ceiling
+bls -> ok
+else -> "input length or offset wrong error."
+```
+
+and it **disables the write protect before writing** ("failed to disable write protect elabel
+area"), re-enabling it afterwards — via `SPI_FLASH_EraseElectronicLabel` /
+`SPI_FLASH_WritElectronicLabel` / `SPI_FLASH1_Elabel_Write_Protect`. So the MCU *deliberately*
+un-protects the elabel to write it, then re-protects.
+
+**The card's electronic label is now readable.** It lives in the `BALE` region and is plaintext:
+
+```
+flash 0x2c00e4 : u32 length = 0x6222d (401,965)
+flash 0x2c00e8 : magic "Huawei"
+flash 0x2c0130 : "IT21PD2G10"        <- board model
+flash 0x2c0178 : "2106030737ZERC001310"  <- serial number
+flash 0x2c0250 : second "Huawei" record (A/B copy)
+```
+
+Two identical records exist (0x2c00e4 and 0x2c0244) — the same A/B redundancy as the trust
+records. The elabel is a **length-prefixed, magic-tagged, CRC/plaintext record**: no signature.
+
+The MCU's own `elabel_init` logs *"magic number is valid."* and *"fail to read and verify
+elabel."* — so elabel integrity is checked, but by what mechanism needs confirming against
+`elabel_init` (0x08049aa4). The elabel region is the one place where the MCU both writes and
+verifies a structured, non-firmware record with a `Huawei` magic, and where the write path
+explicitly un-protects the sectors. **That is the most promising target for the "hole" the
+hypothesis suggests** — a structured record with a magic, a length, and an un-protected window,
+written through a documented un-protect → write → re-protect sequence.
+
+### Refined assessment of the "implementation hole"
+
+Three concrete findings, in decreasing order of promise:
+
+1. **The elabel is written through an un-protect/write/re-protect sequence and verified only by
+   magic + length** (the `Huawei` magic and the `0x6222d` length are plain, unsigned fields).
+   If `elabel_init`'s verification turns out to be a CRC rather than a signature, the elabel is
+   forgeable by anyone who can reach the SPI flash.
+2. **The customer-certificate region (`PPPP`, `0x780000`) is protected by CRC-16 only** and is
+   **not** in the firmware's write-protected range. `WriteCertToFlash` exists to write it.
+   The blocker is reachability, not cryptography.
+3. **The trust records at `0x237800`/`0x277800` are also outside the write-protected range.**
+
+The cryptographic anchor for the *signature* path is `sha256(vendor_pubkey)` hardcoded at
+`0x08032be4` — we hold no matching key, and that is a genuine hard stop for forging the
+vendor's signature over an MCU upgrade.
+
+The remaining open question is now narrow and testable: **can the SPI flash be written directly?**
+The MCU's SPI is a separate bus (not PCIe), so it is only reachable through the MCU itself
+unless the board exposes the flash some other way. That is the thing to check next, together
+with `elabel_init`'s verification algorithm.
+
+
+### Addendum 2 (same session): the elabel integrity mechanism — CONFIRMED CRC-only, no signature
+
+The last open question — "is the elabel verified by a signature or a CRC?" — is now answered, and
+the answer is the hole.
+
+**The elabel record layout** (from `elabel_init`, 0x08049aa4, and the item table at 0x0802aed8):
+
+```
+record base r8        = the 'BALE' region (flash 0x2c0000)
+item table            = 21 entries x 0x10 bytes at 0x0802aed8
+                         u32 flags|item_id | u32 maxlen | u32 offset | u32 label-ptr
+per item at r8+offset:
+    u16  crc16        <- CRC-16/XMODEM of the item payload
+    u16  length
+    u8   data[length]
+```
+
+**The verification** (elabel_init, 0x08049b8a):
+
+```
+0x08049b8a  ldrh sl, [r8, r3]     ; expected CRC from the item header
+0x08049b8e  bl   0x805b2c0        ; crc16 over (r8+r3+4), length r1
+0x08049b92  cmp  sl, r0
+0x08049b94  bne -> "fail to read and verify elabel."
+```
+
+The CRC table at `0x08032338` is the standard **CRC-16/CCITT-FALSE** table
+(`0000,1021,2042,3063,4084,50a5,60c6,70e7,...`) — i.e. **CRC-16/XMODEM**
+(poly 0x1021, init 0x0000, no reflection, no final xor).
+
+I verified this against the real card data — **21/21 items validate with CRC-16/XMODEM alone**:
+
+```
+idx     id  max     off    crc   len   calc  status value
+  3 0x0020    68 0x00009c 0x888e     3 0x888e  OK     b'\xecy\xf0'
+  4 0x0021    68 0x0000e4 0x222d     6 0x222d  OK     b'Huawei'
+  5 0x0022    68 0x00012c 0x5efb    10 0x5efb  OK     b'IT21PD2G10'
+  6 0x0023    68 0x000174 0x9411    20 0x9411  OK     b'2106030737ZERC001310'
+  9 0x0030    68 0x00024c 0x222d     6 0x222d  OK     b'Huawei'
+ ... (16 further items, all len=0 / empty on this card)
+```
+
+So the card's electronic label — the record carrying the board model and serial number — is
+protected by a **16-bit checksum and nothing else**. There is no signature, no public key, no
+MAC over this path. The same is true of the customer-certificate region (`PPPP` at 0x780000,
+`customized_verify`, CRC-16 via the same routine).
+
+**And the write path deliberately un-protects the sectors first:**
+
+```
+SPI_FLASH_WritElectronicLabel (0x0805d088):
+    cmp (offset+length), #0x40000     ; 256 KB ceiling
+    bl  0x805c4a4                     ; -> SPI_FLASH1_Elabel_Write_Protect  (UNPROTECT)
+    ...
+    "failed to disable write protect elabel area."   <- if the unprotect fails
+SPI_FLASH_EraseElectronicLabel / SPI_FLASH1_Elabel_Write_Protect  (re-protect afterwards)
+```
+
+### The "implementation hole" — stated precisely
+
+The manufacturer's design separates two things:
+
+| what | how it is protected | can we do it? |
+|---|---|---|
+| MCU **firmware upgrade** (`copy_upgrade_file_to_flash`) | `RsaSignatureVerify` over a signed header, key pinned by `CheckPubKeyHash` against `sha256(vendor_pubkey)` = `ab510f4a…c5074` hardcoded at 0x08032be4 | **no** — we hold no matching key; a genuine hard stop |
+| MCU **data regions**: elabel (`BALE`), customer cert (`PPPP`), trust records | **CRC-16 only**, no signature, sectors not in the firmware write-protected range | **cryptographically yes**; blocked only by reachability |
+
+So the hole is real and it is exactly where the hypothesis said: **every non-firmware record on
+the MCU is integrity-checked with a 16-bit checksum rather than a signature.** The vendor's
+signature machinery is used only for their own firmware, while the regions the *host* is
+supposed to write — the customer certificate, the electronic label, the trust records — are
+protected by a CRC.
+
+The remaining obstacle is therefore **not** cryptographic, it is **reachability**: the MCU's SPI
+flash is on the MCU's own SPI bus, not the PCIe bus, so writing it requires either
+
+1. driving the MCU's board-comm opcodes (`WriteCertToFlash` / `customized_info_write` /
+   `elabel_update`) — the MCU-side handlers exist in the shipped firmware, but on this driver
+   build the host entry points are stubbed (`dsmi_dft_get_elable` returns 0xfffe) and
+   `drv_devmng_host.ko` implements no label/elabel or MCU-comm handler at all; **or**
+2. writing the SPI flash out-of-band (a flash programmer on the board, or any host path that
+   exposes the MCU's SPI bus); **or**
+3. exploiting the A/B redundancy — `boot_valid_check` + `sync_app_master_slave` choose between
+   App0/App1, and `set_boot_param`/`WriteBackBootParam` select them. If a CRC-valid but
+   unsigned app region can be selected, the signature check on the firmware path is bypassed
+   entirely. **This is the most promising avenue and it is still untested.**
+
+### Next step (single, concrete)
+
+Test the A/B selection path: determine whether `boot_valid_check` gates on the *signature*
+(`RsaSignatureVerify`) or merely on the *checksum* (`flash_sha256_check` / `_app_check`). The
+disassembly shows both mechanisms exist and `boot_valid_check` logs
+`"Boot param error : boot0valid = %d, boot1valid = %d"` — the question is what sets those
+`bootNvalid` flags. If it is the checksum rather than the signature, then a CRC-valid
+substituted app region is bootable and the whole boot chain collapses to CRC strength.
+
+Tooling: `customer-cert-20261026/mcu_elabel.py` implements the full elabel parse + CRC
+verification against the 16 MB dump (`21/21 items validate`).
+
