@@ -847,3 +847,100 @@ The aarch64 toolchain needed to build the payload is present on the host
 the constructor is written in assembly.
 
 Card state: stock AICPU container restored, 6 davinci nodes, 6/6 chips OK.
+
+---
+
+## Where the AICPU op actually runs — a locality test that changed the picture
+
+The obvious oracle for "did the device install our library?" is an AICPU op's numeric output.
+`aicpu_kernel.json` lists 233 ops with `"kernelSo": "libcpu_kernels.so"`, and the card has
+**7 AI CPUs active** (`npu-smi info -t cpu-num-cfg`: `Current AI CPU number: 7`).
+
+Test plan: replace `libcpu_kernels.so` with a copy whose exported `RunCpuKernel` is patched to
+`mov x0, #0 ; ret` — every AICPU op would then return nothing. If the op's result changes, the
+library in question is the one being executed.
+
+But first, a control: **is the AICPU op even running on the device?** The host has its own copy:
+
+```
+/usr/local/Ascend/cann-9.1.0/opp/built-in/op_impl/host_aicpu/libcpu_kernels.so
+    RunCpuKernel @ 0x1844630
+```
+
+So the same library exists on both sides. I patched the **host** copy's `RunCpuKernel` to the same
+no-op and re-ran `torch.acos`:
+
+```
+host library patched  ->  acos got: [1.047197699546814, 1.3181161880493164]
+                         acos expected: [1.0471975511965979, 1.318116071652818]
+                         MATCHES STOCK: True
+```
+
+**The result did not change.** So `torch.acos` is *not* using the host's
+`libcpu_kernels.so` — and by the same token, the fact that it also did not change when the
+*device's* copy was patched to a no-op means **the op did not go through `RunCpuKernel` at all**
+in that path, or the device-side library was never installed.
+
+Both patches were reverted immediately and verified:
+
+```
+host libcpu_kernels.so   ec28199efe1a5060a73ca951663be6f546e403c7a  (restored)
+AICPU container          663e3dcc22b9e8a5d4c7884ebafb87987bb4f0d6  (stock)
+acos                    stock-ok: True
+```
+
+### What this establishes
+
+The AICPU *op dispatch* on this stack does not go through the `RunCpuKernel` entry point in
+either library, so patching it was the wrong oracle. The op is likely dispatched through the
+CANN op master (`AICPUKernel` / `libopmaster`) rather than the raw kernel library, or the
+AICPU path in this configuration is served by a different mechanism (the `opKernelLib` field in
+the JSON points at `AICPUKernel`, not at `RunCpuKernel` directly).
+
+### The state of the AICPU route, stated plainly
+
+| step | status |
+|---|---|
+| rebuild the container with a substituted library, every vendor digest recomputes and validates | **done** |
+| the vendor's own client accepts our container and sends it to the device | **done** (`hdc send file ... success`) |
+| the raw HDC push accepts it into the device's AICPU tmpfs | **done** (`drvHdcSendFileV2 ret=0`) |
+| the device *installs* it (decompress → `aicpu_kernels_device/` → `/usr/lib64/aicpu_kernels/`) | **not observed** |
+| the device *executes* our code | **not observed** |
+
+The blocker is now specific and not a transport problem: **the device-side install step does not
+fire.** And the control test proves this is *not* caused by our substitution — the vendor's own
+**stock** package behaves identically (sent successfully, then the device never replies; the
+client waits ~3 minutes and gives up).
+
+The device-side code path is known from the strings and it is not being entered:
+
+```
+Move om package to decompress dir failed, ret=%d
+Decompress om pkg failed, ret=%d
+Post process om pkg failed, ret=%d
+Load om package success, originPkg=%s, decomPkg=%s, verifyName=%s, checkCode=%lu
+```
+
+plus the matching pattern it looks for: `/*_Ascend*-aicpu_syskernels.tar.gz`, and the
+destination it installs to: `aicpu_kernels_device/` → `/usr/lib64/aicpu_kernels/`.
+
+The remaining unknown is *which* step fails first on the device, and the device's own log
+(`[TSDaemon] Checksum aicpu package failed, ret=%u` / `Check aicpu package in os[%u] vfId[%d]
+checkCode[...]`) is not visible from the host. **Reading the device's log is now the blocking
+requirement**, and that is what the SSH credential would give us — which makes the SSH angle the
+practical unblocker rather than a parallel curiosity.
+
+### A side finding worth keeping
+
+The device's certificate-plugin paths are in the same binary:
+
+```
+/device-sw-plugin/verify/community-certificate
+/device-sw-plugin/verify/user-certificate
+/device-sw-plugin/verify/vendor-certificate
+/device-sw-plugin/verify/flag
+```
+
+So the device OS *does* implement the runtime customer-certificate mechanism that the host-side
+`dms_custom` code was 910B-gated away from. Reaching it needs code execution on the device,
+which is exactly what this route is for.
