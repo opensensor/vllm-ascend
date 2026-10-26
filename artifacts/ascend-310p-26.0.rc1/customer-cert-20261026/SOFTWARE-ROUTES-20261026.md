@@ -652,3 +652,100 @@ substituted tarball — that needs either device-side execution or a load-time o
 
 Note the credential situation is no longer a blocker for this chain: the HDC path needs no
 password at all.
+
+---
+
+## The AICPU package deployment path, end to end
+
+The goal is to place something on the card that we can execute, so that we get device-side code
+execution (and from there, SSH and the MCU). The vendor's own mechanism for delivering AICPU
+kernels turns out to be exactly this, and it is **not key-protected**.
+
+### What the vendor does, traced through the code
+
+**Host side** — `CANN/x86_64-linux/lib64/libtsdclient.so` (`tsd::PackageWorker`):
+
+```
+[TsdClient][deviceId=%u] can not find aicpu packages
+[TsdClient][deviceId=%u] aicpu package is not existed, skip send package
+[ProcessModeManager][deviceId=%u] aicpu package already exist in device
+[ProcessModeManager][deviceId=%u] init failed for send aicpu package
+[TsdClient][deviceId=%u] send aicpu package to device failed
+[TsdClient] after lock, the checksum of aicpu package[%u] is same as device[%u], skip send
+[TsdClient][deviceId_=%u] the checksum of host package[%u] is the same as device[%u], skip send package.
+[TsdSha256] Using x86 SSSE3+BMI2 accelerated path.
+```
+
+`tsd::ProcessModeManager` sends the AICPU package, the "check code" is a **SHA-256** (`tsd_sha256.cpp`),
+and the host **skips the send if the device's checksum already matches**.
+
+**Device side** — `/usr/lib64/libtsdaemon.so` (`tsd::TSDaemon`):
+
+```
+sessionId[%u], msgType[%u], host hash code[%s], device hash code[%s], package name[%s], rspCode[%u]
+```
+
+The device receives the host's hash code, recomputes its own over the received file, and compares.
+**There is no certificate, no vendor key and no signature in this path** — the integrity of the
+AICPU package is a SHA-256 that the host supplies and the device recomputes.
+
+The device then decompresses and loads it:
+
+```
+tsd::TsdPathMgr::BuildAicpuPackageRootPath
+tsd::AicpuProcessPackageWorker::CopyExtendSoToCommonSoPath
+tsd::AicpuPackageProcess::CopyExtendSoToCommonSoPath
+tsd::BasePackageWorker::DecompressPackage / MoveOriginPackageToDecompressDir
+TSDaemon::ProcessOmFileDecompressStatus
+```
+
+and the resulting libraries are `dlopen`ed:
+
+```
+/usr/lib64/libtsdaemon.so : /usr/lib64/aicpu_kernels/libaicpu_kernels.so
+                              /usr/lib64/aicpu_kernels/libcpu_kernels.so
+                              /usr/lib64/aicpu_kernels/libtensorflow.so
+/usr/lib64/libtdtserver.so : /aicpu_kernels_device/libaicpu_kernels.so
+```
+
+The op dispatcher names the kernel shared object explicitly — `aicpu_kernel.json`:
+
+```json
+"Acos": { "opInfo": { "engine": "DNN_VM_AICPU", "functionName": "RunCpuKernel",
+                      "kernelSo": "libcpu_kernels.so", "opKernelLib": "AICPUKernel" } }
+```
+
+### The whole chain, and where each piece stands
+
+| step | status |
+|---|---|
+| rebuild the AICPU container with our library | **done** — every vendor digest recomputes and validates |
+| push it to the card's AICPU kernel directory | **done** — `drvHdcSendFileV2` ret=0 into `.../hdcd/device0/aicpu/vfid0` |
+| make the device decompress + load it | **the open step** |
+
+The device decompresses on receipt of the package message, so the remaining question is how to
+make it take the package we pushed. The vendor's own sender does this; we can either drive the
+same host-side library (`libtsdclient.so` is present in CANN and exports the whole `tsd::`
+API) or reproduce its message.
+
+### What we would need our payload to do
+
+`libcpu_kernels.so` and `libaicpu_kernels.so` export ordinary kernel entry points
+(`Cast`, `CropAndResize`, `CTCLoss`, `DataEnqueue`, …) loaded by `dlopen` into the device's
+EulerOS user space as uid 1000. A substituted library therefore runs as **uid 1000 in the device
+OS**, which is exactly `HwHiAiUser`'s privilege level — the account that owns `/dev/hisi_hdc` and
+`/dev/davinci_manager` on the *host*.
+
+So the goal the user described — "put something there we could execute that would elevate our
+access to have like ssh basically" — is reachable by this route: a library that runs at AICPU
+kernel-load time in the device OS, with uid 1000 and access to the device's `/dev` nodes.
+
+Two things to note honestly:
+
+1. **This does not change the boot chain.** The SoC bootloader and the MCU firmware remain
+   RSA-signed against a vendor key we do not hold, so the card still boots the vendor's firmware.
+   What this route adds is *post-boot code execution on the device OS* — which is a different and
+   useful thing, and is the step that would let us drive `spi_mcu` and reach the CRC-only MCU
+   regions.
+2. **An aarch64 toolchain is needed** to build the payload, and the host has no cross-compiler
+   (`aarch64-linux-gnu-gcc` absent). That is a tooling gap to fill, not a blocker in principle.
