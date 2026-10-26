@@ -749,3 +749,101 @@ Two things to note honestly:
    regions.
 2. **An aarch64 toolchain is needed** to build the payload, and the host has no cross-compiler
    (`aarch64-linux-gnu-gcc` absent). That is a tooling gap to fill, not a blocker in principle.
+
+---
+
+## The vendor's own AICPU load path, driven end to end
+
+Rather than reimplement the protocol, the vendor's own client in CANN can be driven directly.
+`CANN/x86_64-linux/lib64/libtsdclient.so` exports the whole supported API, and its header
+`x86_64-linux/pkg_inc/aicpu/tsd/tsd_client.h` documents it:
+
+```c
+uint32_t TsdOpenAicpuSd(const uint32_t logicDeviceId);
+uint32_t TsdOpen(const uint32_t logicDeviceId, const uint32_t rankSize);
+uint32_t TsdFileLoad(const uint32_t logicDeviceId,
+                     const char *filePath, const uint64_t pathLen,
+                     const char *fileName, const uint64_t fileNameLen);
+uint32_t TsdClose(const uint32_t logicDeviceId);
+```
+
+### What actually happens, from the client's own log
+
+`tsd_load` logs to `/root/ascend/log/run/plog/` (it runs as root). The run:
+
+```
+[TsdClient][deviceId=0] begin to init hdc client
+VersionVerify: send client version to server
+device plugin info rsp, pkgCount:0
+[TsdClient][deviceId=0] [sessionId=1] start hccp and computer process success,
+    phase1:[1]ms load sink package config to device, phase2:[0]ms load opkernel to device,
+    phase3:[0]ms load sink package to device, phase4:[0]ms send open message to device,
+    phase5:[558]ms receive open message to device, whole duration:[559]ms
+loadfile name:Ascend310P-aicpu_syskernels.tar.gz
+begin load file:Ascend310P-aicpu_syskernels.tar.gz
+file path is:/usr/local/Ascend/cann-9.1.0/opp/Ascend310P/aicpu
+[TsdClient][deviceId=0][pathLen=49] SendFileToDevice enter
+[TsdClient][deviceId=0] hdc send file[/usr/local/.../Ascend310P-aicpu_syskernels.tar.gz]
+    to [/home/HwHiAiUser/hdcd/device0/307644_Ascend310P-aicpu_syskernels.tar.gz] success
+[TsdClient][deviceId=0] [sessionId=1] close hccp and computer process success
+```
+
+**Our rebuilt container was accepted and sent to the device**, using the vendor's own client,
+with no credential. Note the destination: `hdcd/device0/<pid>_<name>` — the device's `tsdaemon`
+then decompresses that file into `aicpu_kernels_device/` and installs it.
+
+### The device answers the capability query
+
+`ProcessModeManager::IsOkToLoadFileToDevice()` consults `IsSupportHeterogeneousInterface()`,
+a device-side capability bitmask. Queried directly with `TsdCapabilityGet`:
+
+```
+type 0 (PIDQOS)         : ret=0 value=0x0
+type 1 (LEVEL)          : ret=0 value=0x13f
+type 2 (OM_INNER_DEC)   : ret=0 value=0x1     <-- OM inner decompression: supported
+type 3 (BUILTIN_UDF)    : ret=0 value=0x1
+type 4 (DRIVER_VERSION) : ret=0 value=0x0
+type 5 (ADPROF)         : ret=0 value=0x1
+type 6 (MUTIPLE_HCCP)   : ret=0 value=0x1
+```
+
+So the device supports the OM inner-decompression capability the AICPU package load needs.
+
+### The remaining gap
+
+The client sent the file and then **waited ~3 minutes for the device's reply and got none** —
+no `host hash code` / `device hash code` comparison ever appeared, and the device-side
+`ProcessOmFileDecompressStatus` never ran. So the file *arrived* but the device did not *act* on it.
+
+Two candidate reasons, both testable:
+
+1. **The device-side handler expects a different file name.** The vendor client names the file
+   `<pid>_<packagename>`, and the device's `hdcd` service (service type 3, `arguments: [3]` in
+   `hdcd.yaml`) matches on that name. Our manual `hdc_push` used the bare name, which the
+   whitelist permits but the *device-side* matcher may not.
+2. **The device-side `hdcd` needs to be in the right state.** The client's own log shows
+   `can not find aicpu packages` and `Opening file: was not successful` for the *host-side*
+   `aicpu_package_install.info`, which is a separate descriptor the device reads to know what
+   to install. That file does not exist on the host either — it is written by the install
+   tooling, not by the runtime.
+
+Neither has been excluded yet, so the honest status is: **the package is delivered and
+accepted by the transport; the device-side install step has not been observed to run.**
+
+### What was built for this
+
+| file | purpose |
+|---|---|
+| `rebuild_aicpu_kernels.py` | substitutes a library and rebuilds the container so every vendor digest validates |
+| `inject_ctor.py` | injects an ELF `.init_array` constructor into a stripped shared object without relinking it (extends the RX segment, patches `DT_INIT_ARRAY`/`DT_INIT_ARRAYSZ`) |
+| `probe_init.s` | an ARM64 constructor that writes a marker file, so a loaded library is provably executed |
+| `tsd_load.c` | drives the vendor client (`TsdOpenAicpuSd` / `TsdOpen` / `TsdFileLoad`) |
+| `cap_probe.c` | queries the device's TSD capability set |
+| `hdc_push.c` / `hdc_pull.c` | raw HDC file transfer against `/dev/hisi_hdc` |
+| `hdc_client.c` | a minimal client straight against the driver's ioctl, proving the RPC independently |
+
+The aarch64 toolchain needed to build the payload is present on the host
+(`aarch64-linux-gnu-as` / `-ld` / `-objcopy` / `-readelf`); there is no aarch64 gcc, which is why
+the constructor is written in assembly.
+
+Card state: stock AICPU container restored, 6 davinci nodes, 6/6 chips OK.
