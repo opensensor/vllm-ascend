@@ -20,13 +20,13 @@ Artifacts analysed:
 
 ## 1. The answer to the open question
 
-`BuildDriverExtendPackageRootPath` returns **two** candidate roots, and picks
-between them. The member table was recovered from the `TsdPathMgr` constructor (each member is
+`BuildDriverExtendPackageRootPath` reads one member and returns one root.
+The member table was recovered from the `TsdPathMgr` constructor (each member is
 a `std::string` assigned one literal). The constructor is the function at
 `libtsdaemon.so+0xd16c8`; it sets `x19 = 0x4b2d50` and stores into
 `x19 + <offset>`:
 
-```
+```text
   member +0x020 = 'aicpuExtend_bin_hash.cfg'
   member +0x080 = '/usr/lib64/device-compat-plugin/'
   member +0x0a0 = '/home/HwHiAiUser/hs/'
@@ -62,7 +62,7 @@ caller-supplied base and appends `"aicpu_kernels/"` to it.)
 **member +0x1a0 = `/home/HwHiAiUser/device-sw-plugin/`**, appends `<devId>` and
 `/`:
 
-```
+```asm
   ldp  x2, x3, [x1, #0x1a0]      ; member +0x1a0  -> "/home/HwHiAiUser/device-sw-plugin/"
   ...
   __to_xstring("%u", devId)
@@ -72,14 +72,14 @@ caller-supplied base and appends `"aicpu_kernels/"` to it.)
 
 so it returns:
 
-```
+```text
 /home/HwHiAiUser/device-sw-plugin/<devId>/
 ```
 
 **It is writable by tsdaemon.** `tsdaemon` runs as uid 1000 / gid 1000
 (`/var/tsdaemon.yaml`: `uid: 1000, gid: 1000`), and in the device rootfs:
 
-```
+```text
 home/HwHiAiUser   dir  mode=0750 uid=1000 gid=1000
 ```
 
@@ -112,55 +112,84 @@ exist at all** in the device rootfs — there is no `device-sw-plugin` entry
 under `usr/lib64/`. `+0x1a0` is under `home/HwHiAiUser` (mode `0750 uid=1000
 gid=1000`), which is writable by tsdaemon.
 
-Now the part that actually explains the empty strings. In
-`DriverExtendPackageWorker`:
+Now the part that actually explains the empty strings. The workers have a
+common vtable (`BasePackageWorker`, 176 bytes, 22 slots). Two slots matter:
 
-- `originPkg` is member `+0x58`, `decomPkg` is member `+0xb8` (confirmed from
-  the log call site at `+0x135580`: `ldr x7, [x20, #0x58]` is the `originPkg=%s`
-  argument, `ldr x1, [x20, #0xb8]` is `decomPkg=%s`).
+| Slot | Method |
+|---|---|
+| +0x20 | `LoadPackage` |
+| +0x60 | `PreProcessPackage` |
+| +0x68 | `SetDecompressPackagePath` |
+
+The `originPkg` member is `+0x58` and `decomPkg` is `+0xb8` (confirmed from
+the log call site at `+0x135580`: `ldr x7, [x20, #0x58]` is the `originPkg=%s`
+argument, `ldr x1, [x20, #0xb8]` is `decomPkg=%s`).
+
 - `+0x58` is written **only** by `BasePackageWorker::DefaultPreProcessPackage`
   (`stp x3, x2, [x19, #88]` at `+0x12dfb4`; 88 == 0x58).
 - `+0xb8` is written by each worker's own `SetDecompressPackagePath()`.
 
+Now compare how each worker is driven:
+
+**`AicpuProcessPackageWorker::LoadPackage`** (`+0x138820`) makes three
+virtual calls, in this order:
+
+```text
+  0x1388dc  slot 0x60  -> blr   PreProcessPackage
+  0x1389f0  slot 0x68  -> blr   SetDecompressPackagePath
+  0x138ae0  slot 0x88  -> blr   DecompressPackage
+```
+
 `AicpuProcessPackageWorker::PreProcessPackage` calls
-`BasePackageWorker::DefaultPreProcessPackage` (at `+0x139740`) — so the AICPU
-worker fills `+0x58` and its `originPkg` is populated.
+`BasePackageWorker::DefaultPreProcessPackage` (at `+0x139740`), which fills
+`+0x58`. So the AICPU worker's `originPkg` **is** populated, and its
+`SetDecompressPackagePath` fills `+0xb8`.
 
-`DriverExtendPackageWorker::PreProcessPackage` **does not call it**. It calls
-`BuildDriverExtendPackageDecRootPath` (the `+0x180` root) and writes the result
-into members `+0x128`/`+0x148`/`+0x168` — none of which is `+0x58`. Its
-`LoadPackage` (`+0x135530`) only *reads* `+0x58` and `+0xb8` to build the log
-line; it never populates them.
+**The driver-extend path** is driven by a local function at `+0x1375d8`
+(anonymous namespace, so no symbol). It constructs a `DriverExtendPackageWorker`
+and makes exactly **one** virtual call:
 
-**So `originPkg` is empty because the driver-extend worker overrides
-`PreProcessPackage` without chaining to the base implementation that fills it.**
-That is the actual defect, and it is a device-binary behaviour, not a
-permissions problem and not a missing-directory problem.
+```text
+  0x1377b8  ldr x2, [x2, #0x20]   -> blr x2   LoadPackage
+```
 
-`SetDecompressPackagePath()` does populate `+0xb8` — but from `+0x128`
-(the value `PreProcessPackage` wrote from the `+0x180` root) and from the
-package name. Since `+0x128` is rooted at the non-existent
-`/usr/lib64/device-sw-plugin/`, `decomPkg` ends up empty too.
+There is no `slot 0x60` and no `slot 0x68` anywhere in that function — the
+only `blr` in the whole body is the `LoadPackage` call. So for driver-extend
+packages, **neither `PreProcessPackage` nor `SetDecompressPackagePath` is ever
+invoked**.
+
+**Therefore `originPkg` is empty because the driver-extend path never calls
+the code that fills it.** The two members are only ever written from those two
+vtable slots, and the driver-extend driver skips both. The worker's own
+`LoadPackage` (`+0x135530`) only *reads* `+0x58` and `+0xb8` to build its log
+line — it never populates them.
+
+This is a device-binary behaviour, not a permissions problem, not a missing
+directory, and not a delivery problem. `DriverExtendPackageWorker::PreProcessPackage`
+and `SetDecompressPackagePath` are fully implemented and would work (the
+former chains to `BuildDriverExtendPackageDecRootPath` → the `+0x180` root;
+the latter calls `BuildDriverExtendPackageRootPath` → the correct `+0x1a0`
+root). They are simply never called on this path.
 
 The practical consequence: **the driver-extend (device-sw-plugin) install path
-on this device build cannot work as shipped.** Getting a package into
-`/home/HwHiAiUser/device-sw-plugin/<devId>/` is necessary but, on this
-analysis, not sufficient — the `originPkg` member is never filled by this
-worker at all.
+on this device build cannot work as shipped**, no matter what we deliver and no
+matter what the signature policy says. Getting a package into
+`/home/HwHiAiUser/device-sw-plugin/<devId>/` is necessary but not sufficient —
+the path-computation code is never reached.
 
 ---
 
-## 2. The more important discovery: the signature policy file path
+## 2. The signature policy file path — and why the host cannot help
 
 The previous session assumed the policy file lives at
 `/device-sw-plugin/verify/flag` relative to the install root, and that the
-host's `/var/asdrv/.../verify/flag` was a *different* file. **That is wrong —
-they are the same file.**
+host's `/var/asdrv/.../verify/flag` was a *different* file. The first part is
+wrong, and the second part turns out to be right for the wrong reason.
 
 `CmsCbbVerifyPkg::GetVerifyFlagFilePath()` (at `libtsdaemon.so+0x18c358`)
 builds:
 
-```
+```text
   "/var/asdrv/dev"  +  <devId as %u>  +  "/device-sw-plugin/verify/flag"
 ```
 
@@ -177,22 +206,37 @@ And the host driver writes **exactly the same path**:
 
 and `dms_custom_device.c` writes `verify_flag=%u\n` there.
 
-**So `/var/asdrv` is a shared mount between host and device.** The host's
-`/var/asdrv/dev<N>/device-sw-plugin/verify/flag` *is* the device's
-`/var/asdrv/dev<N>/device-sw-plugin/verify/flag`. The device's own
-`drv_pkicms.ko` confirms it independently:
+**Important correction to the previous session's framing.** The host and the
+device use the same *path string*, but they are **not the same file**, and
+`/var/asdrv` is **not** a host↔device mount. The device-side module
+(`dms_custom_device.c`, the one that owns the writer) reads and writes the
+file with kernel file operations:
 
+```c
+  filp = filp_open(file_name, KA_O_RDONLY, 0);
+  ...
+  result = kernel_read(filp, buf, size, &offset_tmp);
 ```
+
+`filp_open`/`kernel_read` resolve against the **device's own** filesystem. So
+`/var/asdrv/dev<N>/device-sw-plugin/verify/flag` lives on the device, and the
+host-side `dms_custom_host.c` writes the same path on the *host's* filesystem —
+two independent copies of the same relative path, one per side.
+
+This is consistent with `/var/asdrv` being absent from the device rootfs image
+(a runtime mount point, like `/proc` and `/sys`) and with the device's
+`drv_pkicms.ko` independently containing:
+
+```text
 /var/asdrv/dev%d/device-sw-plugin/verify/%s
 flag
 verify_flag=%d
 "Package verify flag is 0, needn't verify."
 ```
 
-`/var/asdrv` does not exist in the device rootfs image, which is consistent
-with it being a runtime mount (like `/proc`, `/sys`, `/dev`), not a baked-in
-directory. This is why the device-side `GetVerifyFlagFilePath()` has a
-`/var/asdrv/dev` prefix at all — it is reaching into host-provided storage.
+So there are **two** policy files with the same path, one on each side, and
+both the device's crypto module and the host's `dms_custom` code read their own
+side's copy. Writing the host's copy would not change the device's behaviour.
 
 ### The host is gated out on 310P
 
@@ -200,24 +244,27 @@ directory. This is why the device-side `GetVerifyFlagFilePath()` has a
 
 ```make
 ifeq ($(TOP_DIR),)
-	ifeq ($(DAVINCI_HIAI_DKMS),y)      # DKMS
+    ifeq ($(DAVINCI_HIAI_DKMS),y)      # DKMS
         ifneq ($(filter $(TARGET_CHIP_ID), hi1980b),)
-		    drv_devmng_host-y += custom/dms_custom_host.o
-		    drv_devmng_host-y += custom/dms_custom_common.o
-		endif
-	...
+            drv_devmng_host-y += custom/dms_custom_host.o
+            drv_devmng_host-y += custom/dms_custom_common.o
+        endif
+        ...
 else # for CMake & ctrl cpu open
     ifneq ($(filter $(PRODUCT), ascend910B),)
-		ifeq ($(PRODUCT_SIDE), host)
-			drv_devmng_host-y += custom/dms_custom_host.o
-			drv_devmng_host-y += custom/dms_custom_common.o
-		else
-			$(MODULE_NAME)-y += custom/dms_custom_common.o
-			$(MODULE_NAME)-y += custom/dms_custom_device.o
-		endif
-	...
+        ifeq ($(PRODUCT_SIDE), host)
+            drv_devmng_host-y += custom/dms_custom_host.o
+            drv_devmng_host-y += custom/dms_custom_common.o
+        else
+            $(MODULE_NAME)-y += custom/dms_custom_common.o
+            $(MODULE_NAME)-y += custom/dms_custom_device.o
+        endif
+        ...
 endif
 ```
+
+(The original uses tabs for indentation; they are spaces here to satisfy the
+repository's markdownlint `MD010` rule.)
 
 The 310P build is neither `hi1980b` (DKMS path) nor `ascend910B` (CMake path),
 so **neither the host-side nor the device-side `dms_custom` objects are
@@ -230,8 +277,11 @@ also excluded. The 310P device's `drv_devmng.ko` has **no** `custom_sign`
 symbols and no `asdrv` strings, confirming the device-side writer is absent
 from this build too.
 
-Net effect on the 310P: nothing can write the policy file, and nothing reads
-it from the `/var/asdrv` path.
+Net effect on the 310P: **nothing on either side can write the policy file.**
+The device's `drv_pkicms.ko` still *reads* it, so the read path is live — but
+with no writer, the file simply does not exist on the device, and the read
+fails. That is a further reason the "turn the signature off" plan was never
+going to work: it needed a writer that this build does not contain.
 
 ---
 
@@ -239,7 +289,7 @@ it from the `/var/asdrv` path.
 
 The device log line was:
 
-```
+```text
 [KERNEL] [ascend] [user_cfg_drv] [devdrv_config_get_pss_cfg 4343] <tsdaemon:2861,3048>
     The sign details. (sign=1)
 ```
@@ -263,15 +313,46 @@ signature blocked us. The actual stop was elsewhere.
 
 ### Where `sign` is consumed
 
-`drv_pkicms.ko:soc_verify()` calls `devdrv_config_get_pss_cfg()` at
-`+0x55c4` and passes the result into `image_secure_auth()` at `+0x55d8`.
-`devdrv_config_pss_cfg_init()` stores the boot-time value into the global
-`g_sign_type` (`drv_user_cfg.ko+0x956c`).
+`drv_pkicms.ko:soc_verify()` (at `+0x54b4`) calls
+`devdrv_config_get_pss_cfg()` at `+0x55c4`:
 
-`devdrv_config_get_pss_cfg()` is also called from `pkicms_verify_pkg_cms` path
-via `soc_verify`. The `SIGN_FLAG_*` enum in `dms_custom_common.h` is a
-*different* thing — it is the **certificate trust policy** (`verify_flag`),
-which selects which of vendor/user/community certificates are acceptable.
+```asm
+  55c0:  sub   x1, x29, #0x3c       ; out-param slot
+  55c4:  bl    devdrv_config_get_pss_cfg
+  55c8:  cbnz  w0, 57e0             ; tests the RETURN CODE, not the sign value
+  55cc:  ldur  w2, [x29, #-60]
+  55d8:  bl    image_secure_auth
+```
+
+Two things follow.
+
+First, `cbnz w0` at `+0x55c8` tests the **return status**
+(`devdrv_config_get_pss_cfg` returns 0 on success, `-EINVAL` if the out-param
+pointer is null — see `drv_user_cfg.ko+0x21e0`), not the sign value.
+
+Second, and more decisive: **the sign value written to `[x29, #-0x3c]` is never
+read.** A full scan of `drv_pkicms.ko` finds zero reads of that stack slot.
+The value is fetched, stored, and discarded.
+
+`devdrv_config_pss_cfg_init()` (`drv_user_cfg.ko+0x956c`) stores the boot-time
+value into the module global `g_sign_type` (`drv_user_cfg.ko+0x956c`, called
+from `init_module` with `w0 = 1`), and `devdrv_config_get_pss_cfg()`
+(`drv_user_cfg.ko+0x2144`) returns a copy of it under a mutex.
+`devdrv_config_set_pss_cfg()` (`+0x2228`) accepts only 0 or 1 — exactly the
+`PKCS_SIGN_TYPE_ON`/`OFF` domain.
+
+Across the whole device driver set, the sign value is read in exactly one
+place that does anything with it: `drv_devmng.ko`'s
+`devdrv_manager_ioctl_get_sign_type`, which copies it to userspace via
+`copy_to_user_safe`. `drv_upgrade.ko` fetches it and passes it to
+`sec_img_verify` as `w3` — but inside `sec_img_verify`
+(`hsm_firmware_update.ko+0x15c0`) it is stored into `w26` and then into a
+frame slot that is never read either. So on this platform the sign type is
+**reported, not enforced**.
+
+The `SIGN_FLAG_*` enum in `dms_custom_common.h` is a *different* thing
+entirely — it is the **certificate trust policy** (`verify_flag`), which
+selects which of vendor/user/community certificates are acceptable.
 `SIGN_FLAG_DISABLED = 0` there means "no certificate required".
 
 So there are two separate mechanisms, and they were conflated:
@@ -291,7 +372,7 @@ the CMS/certificate path, but it is **not** the knob that produced `sign=1`.
 
 Re-reading the device log chain with the corrected understanding:
 
-```
+```text
 hdcd file transfer        OK
 inotify watcher sees it   OK
 check code == size        OK
@@ -324,11 +405,14 @@ is almost certainly in them.
 
 | | `AicpuProcessPackageWorker` | `DriverExtendPackageWorker` |
 |---|---|---|
-| root path builder | `BuildAicpuPackageRootPath` → member `+0x1c0` = `/home/HwHiAiUser/aicpu_kernels/` | `SetDecompressPackagePath` → member `+0x1a0` = `/home/HwHiAiUser/device-sw-plugin/`; `PreProcessPackage` → member `+0x180` = `/usr/lib64/device-sw-plugin/` |
-| root exists? | yes (`home/HwHiAiUser` mode 0750 uid 1000) | `+0x180` root **does not exist**; `+0x1a0` root exists |
-| chains to `DefaultPreProcessPackage`? | **yes** (`+0x139740`) | **no** |
-| `originPkg` populated? | yes | **no — never filled** |
-| `decomPkg` populated? | yes | empty (rooted at non-existent `+0x180`) |
+| driven by | `AicpuProcessPackageWorker::LoadPackage` (3 virtual calls) | local fn at `+0x1375d8` (**1** virtual call: `LoadPackage` only) |
+| `PreProcessPackage` (slot 0x60) called? | **yes** | **no** |
+| `SetDecompressPackagePath` (slot 0x68) called? | **yes** | **no** |
+| root path builder reached | `BuildAicpuPackageRootPath` → member `+0x1c0` = `/home/HwHiAiUser/aicpu_kernels/` | never reached |
+| root exists? | yes (`home/HwHiAiUser` mode 0750 uid 1000) | n/a |
+| chains to `DefaultPreProcessPackage`? | **yes** (`+0x139740`) | n/a (never called) |
+| `originPkg` populated? | yes | **no** |
+| `decomPkg` populated? | yes | **no** |
 
 ---
 
@@ -341,22 +425,36 @@ is almost certainly in them.
    because it is cheap and it may make the rest of this moot.
 
 2. **Stop treating the driver-extend (device-sw-plugin) path as the delivery
-   mechanism for AICPU.** The driver-extend worker on this device build never
-   fills its `originPkg` member (it overrides `PreProcessPackage` without
-   chaining to the base implementation). That path is broken independently of
-   signatures and of what we deliver. The AICPU path does not go through it.
+   mechanism for AICPU.** On this device build that path is dead: its driver
+   makes a single virtual call (`LoadPackage`) and never reaches
+   `PreProcessPackage` or `SetDecompressPackagePath`, so `originPkg` and
+   `decomPkg` are always empty. This is broken independently of signatures and
+   of what we deliver. The AICPU path does not go through it and is sound.
 
 3. **The `ASCEND_AICPU_PATH` route (from the previous session's notes) remains
    valid and is independent of all of the above.** It does not touch the
    signature policy at all.
 
-4. **If the policy file is still needed: determine whether `/var/asdrv` is
-   actually a host↔device mount on this platform.** The path match between the
-   host writer and the device reader is exact, and `/var/asdrv` is absent from
-   the device rootfs. If it is shared, the host *could* write the policy file
-   directly — but only if the 310P host driver had `dms_custom_host.o`, which
-   the gating excludes. Building that object for the 310P is a small host-side
-   change and is the only route to the policy file on this platform.
+4. **The policy file is now the wrong target.** `verify_flag` lives on the
+   device's own filesystem and is read by `drv_pkicms.ko` on the device side.
+   The only way to write it is device-side code execution — which is the
+   thing we are trying to achieve. Writing the host's copy does nothing for
+   the device. The 310P build also gates out `dms_custom_device.o`, so the
+   device has no writer for it either.
+
+### What this analysis does *not* establish
+
+The AICPU install failure is still unexplained. We know:
+
+- the package reached the device, and the AICPU worker's path handling is
+  correct (`originPkg`/`decomPkg` both populated);
+- `sign=1` is PSS-OFF and is not consumed by anything on this path;
+- the driver-extend path is separately broken, but that is a different worker.
+
+So the stop is somewhere we have not read yet. The device log lines **after**
+the `sign=1` line were not captured in the previous session, and they are
+where the answer is. Re-running the transfer with a fuller log capture is
+the cheapest next step, and it needs no new theory.
 
 ### Corrections to the previous session's notes
 
@@ -365,14 +463,18 @@ is almost certainly in them.
   `/device-sw-plugin/verify/flag` relative to an install root. The previous
   session's `/usr/lib64/device-sw-plugin/verify/flag` guess was wrong.
 - The host's `/var/asdrv/.../verify/flag` and the device's are the **same
-  file**, not parallel ones.
-- `sign=1` means PSS signing is **OFF**, not ON. The stop was mis-attributed.
-- The empty `originPkg`/`decomPkg` is a device-side defect in
-  `DriverExtendPackageWorker::PreProcessPackage` (it does not chain to
-  `BasePackageWorker::DefaultPreProcessPackage`, which is the only writer of
-  the `originPkg` member), compounded by the worker rooting its decompress path
-  at the non-existent `/usr/lib64/device-sw-plugin/` instead of
-  `/home/HwHiAiUser/device-sw-plugin/`. It is **not** caused by a missing
+  path string on two different filesystems**, not one shared file. The
+  device-side code opens it with `filp_open`/`kernel_read`, so it resolves on
+  the device. Writing the host's copy would not change device behaviour.
+- `sign=1` means PSS signing is **OFF**, not ON — and the value is not read
+  by any module on the AICPU path at all. The stop was misread.
+- The empty `originPkg`/`decomPkg` is a device-side defect in the
+  driver-extend **driver** (the local function at `libtsdaemon.so+0x1375d8`),
+  not in the worker: it makes exactly one virtual call, `LoadPackage` (vtable
+  slot 0x20), and never dispatches `PreProcessPackage` (0x60) or
+  `SetDecompressPackagePath` (0x68) — the only two slots that ever populate
+  those members. The worker's own implementations of both methods are
+  present and correct but unreachable. It is **not** caused by a missing
   directory, not by permissions, and not by the `ascend_install_path`
   advertising failure.
 
