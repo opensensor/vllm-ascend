@@ -2603,3 +2603,153 @@ installed at `/usr/lib64/aicpu_kernels/` already and loads them from there.
 
 Healthy: 6/6 chips OK, 6 davinci nodes, 0 phy_startup errors, stock AICPU container restored on
 the host.
+
+---
+
+## Delivering a `device-sw-plugin` package — and what it revealed
+
+The AICPU signature policy lives in a file the device reads at runtime:
+`/device-sw-plugin/verify/flag`, containing one line `verify_flag=<N>`. The host's copy of the
+same path is `/var/asdrv/dev%u/device-sw-plugin/verify/flag`, and the host driver can write it
+through the DMP command set (`main_cmd=0x35,sub_cmd=0x2`, `DMS_ACC_ROOT`, wrappers
+`dsmi_cmd_set_custom_sign_flag` / `dsmi_cmd_get_custom_sign_flag`).
+
+But the *device* can also be handed the file directly, because the device accepts a package named
+`Ascend-device-sw-plugin.tar.gz` (regex `^[0-9]+_Ascend-device-sw-plugin\.tar\.gz$`) and extracts
+it with `tar --same-owner --same-permissions -ozxf` into `/usr/lib64/device-sw-plugin/`.
+
+### What was delivered
+
+A package was built containing exactly what the device's post-processing looks for:
+
+```
+device-sw-plugin/verify/flag        -> "verify_flag=0"      (SIGN_FLAG_DISABLED)
+device-sw-plugin/version.info      -> "Version=9.1.T11.0.B110"
+device-sw-plugin/omfileflag.info   -> "check_code=0"
+```
+
+and delivered over the working HDC file transfer. The device's own log shows it accepted the
+package:
+
+```
+[inotify_watcher.cpp:362][LoadPackage] Begin to load package, type=7,
+    path=/home/HwHiAiUser/hdcd/device0/aicpu/, fileName=8401_Ascend-device-sw-plugin.tar.gz
+[inotify_watcher.cpp:372][LoadPackage] Load package success, type=7, ...
+[driver_extend_package_worker.cpp:33][LoadPackage] Start load driver extend package,
+    originPkg=, decomPkg=
+... set verion info success version:%s
+```
+
+So the device *did* take the package, parsed our `version.info`, and reached the driver-extend
+worker. But the install did not complete:
+
+- `originPkg=` and `decomPkg=` come out **empty**, so the worker never resolved the package path;
+- the sign detail stays `sign=1`.
+
+### Why the path is empty
+
+`DriverExtendPackageWorker::SetDecompressPackagePath()` fills `originPkg`/`decomPkg`, and the
+device-side path manager builds it from:
+
+```
+TsdPathMgr::BuildDriverExtendPackageRootPath(int)
+TsdPathMgr::BuildDriverExtendPackageDecRootPath(int)
+TsdPathMgr::BuildDriverExtendKernelSoRootPath(int)
+```
+
+which use the roots:
+
+```
+/home/HwHiAiUser/device-sw-plugin/    /usr/lib64/device-sw-plugin/
+/home/HwHiAiUser/device-compat-plugin/ /usr/lib64/device-compat-plugin/
+```
+
+The path those builders produce comes from the **host's HDC message**, not from where the file
+landed. The host side sends, in one message:
+
+```
+tsd.HDCMessage.ascend_install_path
+tsd.HDCMessage.omfile_name
+tsd.HDCMessage.remove_file_path
+tsd.HDCMessage.host_lib_path
+tsd.HDCMessage.package_config_hash_code
+```
+
+and `ascend_install_path` comes from the host's `ASCEND_LATEST_INSTALL_PATH` environment variable
+(`libtsdclient.so`: `[TsdClient][deviceId=%u] environment variable ASCEND_LATEST_INSTALL_PATH is not
+set, use default value[%s]`).
+
+Both the vendor client and our raw push produced an empty `originPkg`, which says the install path
+the device builds for the *driver-extend* class does not line up with either the directory the
+file landed in or the path the host advertised. The device's own cleanup command shows where it
+expects files of each class:
+
+```
+rm -rf /home/HwHiAiUser/hdcd/device0/*_Ascend*-aicpu_syskernels.tar.gz
+    && rm -rf /home/HwHiAiUser/hdcd/device0/*_Ascend-device-sw-plugin.tar.gz
+```
+
+— i.e. the plugin class is expected directly under `hdcd/device0/`, while the AICPU class is
+expected under `hdcd/device0/aicpu/`. The host's whitelist is what decides which of those the
+host will send to, via the `save_sub_path` column:
+
+```
+_Ascend310P-aicpu_syskernels.tar.gz        *  0  104857600  64  0
+_Ascend310P-aicpu_extend_syskernels.tar.gz *  0  104857600  64  0
+_Ascend-device-sw-plugin.tar.gz            /  0  104857600  64  0     <- added
+```
+
+With `save_sub_path = *` the host's trusted base becomes `/home/HwHiAiUser/hdcd/device0` and any
+destination containing it is accepted; with `/` the same. Measured behaviour of the host's path
+check (`strstr(base_path, dst_path)`, plus "White list mode not support directory send."):
+
+| destination | result |
+|---|---|
+| `hdcd/device0/aicpu` | accepted (ret=0) |
+| `hdcd/device0` | rejected (ret=52) with `save_sub_path=*` |
+| `hdcd/device0` | rejected (ret=52) with `save_sub_path=/` |
+
+So the host path check is not the blocker for the plugin class; the **device-side install path
+resolution** is, and it depends on the `ascend_install_path` the host advertises.
+
+### What this leaves
+
+The signature switch is real and reachable in principle -- the device reads `verify/flag`, and the
+device will accept a `device-sw-plugin` package -- but the install path plumbing has to line up:
+the host must advertise an `ascend_install_path` from which the device derives
+`/usr/lib64/device-sw-plugin/`, and the file must land where the device's inotify watcher for
+that class is looking.
+
+The pieces that are now known and each individually solved:
+
+| piece | state |
+|---|---|
+| deliver a file to the device over HDC | **working** (`drvHdcSendFileV2` ret=0) |
+| the file must be named to match the device's regex | **working** (`8401_Ascend-device-sw-plugin.tar.gz`) |
+| the host must allow the filename | **working** (whitelist entry added) |
+| the package must contain `verify/flag` with `verify_flag=0` | **built** |
+| the device must extract it into `/usr/lib64/device-sw-plugin/` | **not achieved** -- `originPkg` empty |
+
+### The other lever this session turned up
+
+The host tells the device where to load AICPU kernels from:
+
+```
+LD_LIBRARY_PATH=/usr/lib64/aicpu_kernels/0/aicpu_kernels_device/sand_box/:
+    /home/HwHiAiUser/hs/0/runtime/lib64/:
+    /usr/lib64/device-compat-plugin/0/:
+    /usr/lib64/device-sw-plugin/0/device-sw-plugin/:
+    DATAMASTER_RUN_MODE= ASCEND_AICPU_PATH=...
+```
+
+and `ASCEND_AICPU_PATH` is carried in the HDC message
+(`tsd.HDCMessage.ascend_aicpu_path`), sourced on the host from the **environment variable of the
+same name** (`libtsdclient.so`). So the host already controls the directory the device's AICPU
+scheduler loads libraries from -- a lever that does not depend on the signature switch at all.
+
+### Card state
+
+Healthy: 6/6 chips OK, 6 davinci nodes, 0 phy_startup errors. The host's
+`Ascend310P-aicpu_syskernels.tar.gz` is the stock container; the host whitelist has one extra
+entry (`_Ascend-device-sw-plugin.tar.gz`) which can be reverted by restoring
+`/var/local/ascend-work/tools/hdcFileTransWhiteList.cfg.bak`.
