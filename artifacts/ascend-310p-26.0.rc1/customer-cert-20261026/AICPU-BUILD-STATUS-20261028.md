@@ -127,7 +127,7 @@ the "put our library in the package" approach for the *signed* package types.
 ## 4. The way around it: the unsigned package type
 
 The device also loads a **type 9** package — the `aicpu/` subdirectory — and
-that one is *not* signed and *not* esbc-wrapped:
+that one uses a *different container format*:
 
 ```text
 [inotify_watcher.cpp:362][LoadPackage] Begin to load package, type=9,
@@ -137,50 +137,133 @@ that one is *not* signed and *not* esbc-wrapped:
     originPkg=/home/HwHiAiUser/hdcd/device0/aicpu/1792568_Ascend310P-aicpu_legacy.tar.gz,
     decomPkg=/home/HwHiAiUser/device-compat-plugin/...
 [cmscbb_verify_pkg.cpp:195][VerifyAicpuPkgByCms] [CMSCBB_VERIFY] verify package[...] by cms start, isMix[0]
-[cmscbb_verify_pkg.cpp:231][VerifyAicpuPkgByCms] [CMSCBB_VERIFY] verify pkg[...] by cms end
 [common_sink_package_worker.cpp:291][StartLoadCommonSinkPackage] Load common sink package success
 [inotify_watcher.cpp:372][LoadPackage] Load package success, type=9
 ```
 
-`Ascend310P-aicpu_legacy.tar.gz` is:
+`Ascend310P-aicpu_legacy.tar.gz` is handled by `CommonSinkPackageWorker`, not
+`AicpuProcessPackageWorker`, and it uses the `ascend_aicpu` container format
+rather than esbc:
 
-- a **plain tar.gz** — no esbc container, so `dev_upgrade_verify_image` and
-  `soc_verify` never run on it (the container layout differs: `hdrlen` field
-  is `0x0`, and the gzip member starts at file offset `0x2100` rather than
-  `0x2100` inside an esbc frame);
-- handled by `CommonSinkPackageWorker`, not `AicpuProcessPackageWorker`;
-- verified only by the **tsdaemon-level CMS name check**, which it passes
-  because `Ascend310P-aicpu_legacy.tar.gz` does not contain any of the six
-  CMS-triggering substrings;
-- gated by a **hash-code handshake** instead — the log shows
-  `host hash code[d1715cdf...] device hash code[d1715cdf...]`, i.e. the host
-  and device agree on a hash, and there is no vendor signature;
-- already carrying a populated sandbox:
-  `aicpu_kernels_device/sand_box/libtensorflow.so` is a member of its tar.
+```text
+  0x0000  outer header, 0x2000 bytes (mostly zero)
+  0x2000  "ascend_aicpu" header, 0x100 bytes
+  0x2100  gzip member   (length in header +0x5c = 64415294)
+  0x3d7073e  18 zero bytes + "cms\0" + 8 zero + u32 LE length (9201)
+             + 9201 bytes of DER PKCS#7 (30 82 23 ed ... 1.2.840.113549.1.7.2)
+```
 
-**That last point is the whole opportunity.** The type-9 package's tar
-already contains `aicpu_kernels_device/sand_box/<lib>.so`, and
-`version.info` names it with `SandBoxSo=`. If the type-9 install path copies
-the tar's `sand_box/` contents into the device's
-`/usr/lib64/aicpu_kernels/0/aicpu_kernels_device/sand_box/`, then a modified
-type-9 package carrying our library gets it into the sandbox with no signature
-involved.
+The `ascend_aicpu` header fields:
 
-Two things to check before that can be relied on:
+| Offset | Value | Meaning |
+|---|---|---|
+| +0x18 | 32 bytes | digest |
+| +0x58 | 256 | header size |
+| +0x5c | 64415294 | gzip member length |
+| +0x68 | **9** | package type |
+| +0x78 | `0x3a3aaa33` | the `3\xaa::` magic |
+| +0x88 | `0x564d` | the "MD" marker |
 
-1. **Where does the type-9 path put the sandbox?** Its `decomPkg` is
-   `/home/HwHiAiUser/device-compat-plugin/...`, not
-   `aicpu_kernels_device/`. So the type-9 worker may not populate the
-   AICPU scheduler's `sand_box/` at all — it installs into the
-   *compat-plugin* tree instead. If so, the type-9 route gives us a
-   different (also interesting) primitive but not the AICPU scheduler's
-   library path.
-2. **The hash-code handshake.** The device compares a host-supplied hash
-   against its own. We need to know what is hashed — the whole file, or the
-   payload — and whether the host's value is what the device computes or
-   merely what it is told.
+So the type-9 package **is** signed too, with a PKCS#7/CMS blob, and the
+kernel verifies it: the device log shows `soc_verify success` for the type-9
+loads (11:38, 11:44, 11:45, 11:46, 11:57).
 
-Both are answerable from the code, and both are the next step.
+**The type-9 route is therefore also closed for the same reason.** The
+difference is only which signature scheme carries the payload digest:
+
+| | type 1 (`aicpu_syskernels`) | type 9 (`aicpu/`) |
+|---|---|---|
+| container | esbc, header at 0x0000 and 0x1000 | `ascend_aicpu` header at 0x2000 |
+| signature | RSA-PSS, 512 bytes at 0x1E00, Huawei CSI CA | PKCS#7, 9201 bytes, `cms\0` block |
+| verified by | `rsa_verify_soc` | `soc_verify` → CMS |
+| host/device check | size gate | **plain SHA-256 handshake** (the legacy package's sha256 is `d1715cdf...`, and the device log shows exactly that value) |
+
+The type-9 hash check is *not* a signature: `CommonSinkPackageWorker` compares
+`host hash code[d1715cdf...]` with `device hash code[d1715cdf...]`, and
+`d1715cdf7a69f6f6aa8df237f18cc0535f3b8bcb0bcae4067123a5f817f45477` is
+precisely `sha256(Ascend310P-aicpu_legacy.tar.gz)` — verifiable on the host with
+`sha256sum`. So the *hash handshake* is forgeable; the *CMS signature* is not.
+
+## 5. What that leaves
+
+Both package routes are signed by the vendor, and both are verified by the
+kernel before the payload is accepted. There is no unsigned route into
+`aicpu_kernels_device/`.
+
+Where the host *does* have control, though:
+
+- **`ascend_package_load.ini`** at
+  `/usr/local/Ascend/cann-9.1.0/conf/ascend_package_load.ini` (mode
+  `0444`, root-owned, modified Oct 26 by the previous session). The host
+  library reads it (`PackageProcessConfig::SetConfigDataOnHost`) and sends the
+  parsed config to the device (`SetConfigDataOnServer`), where
+  `PackageProcessConfig::ParseConfigDataFromFile` consumes it. Its entries
+  drive which package is looked for, where it is found, and where it is
+  installed:
+
+  ```text
+  name:Ascend310P-aicpu_legacy.tar.gz
+  install_path:2
+  optional:true
+  package_path:opp
+  load_as_per_soc:false
+  ```
+
+  `install_path:2` maps to `TsdPathMgr::BuildKernelSoRootPath(devId, ...)`,
+  i.e. the AICPU kernel root. `install_path:3` maps to the compat-plugin tree
+  and `1` to the `omfile/` tree.
+
+  **This file is the one place where the host names what the device installs
+  and where.** It cannot remove the signature check, but it decides the
+  install destination — and the destination is what determines whether the
+  AICPU scheduler's `LD_LIBRARY_PATH` finds a file we control.
+
+- **`ASCEND_AICPU_PATH`** (host → device, protobuf `ascend_aicpu_path`),
+  which sets the directory the device watches for AICPU packages.
+
+Both are levers on *where* things go, not on *whether a signature is checked*.
+
+## 6. The honest summary of the obstacle
+
+The device verifies the AICPU package payload's signature with the vendor's
+CA before it will install it. The `SandBoxSo=` channel is real, the sandbox
+directory is on the AICPU scheduler's `LD_LIBRARY_PATH`, the hash map does not
+cover `version.info`, and `MoveSoToSandBox` does a plain unchecked `rename()` —
+but all of that is downstream of a signature check we cannot pass, because
+the payload we want to change is the payload that is signed.
+
+So the remaining routes are:
+
+1. **Find a package the device accepts that is not vendor-signed.** The
+   `ascend_aicpu`+CMS format suggests the signature scheme is chosen per
+   container, so a container with a *valid* CMS block over *our* payload would
+   need a signing key we do not have. Unless some package type on this
+   platform is accepted without any signature at all — worth enumerating:
+   the device loaded `aicpu_hcomm.tar.gz` and `mc2_server.tar.gz` too, and
+   `PackageWorkerUtils::IsGzipPackage` and `VerifyPackage` suggest a
+   plain-gzip path exists.
+
+2. **Change the install destination rather than the package.** `version.info`
+   is not hash-checked, but it is inside the signed payload. The
+   `ascend_package_load.ini` is *not* signed and *is* host-controlled — it
+   names the package and the install path. If an entry could be added that
+   points the device at a path we can write to (e.g. `install_path:3`, the
+   compat-plugin tree, which is on the scheduler's `LD_LIBRARY_PATH` at
+   position 4), and the *content* of the compat-plugin tree could then be
+   influenced...
+
+3. **Get the payload onto the device by a route that is not the package
+   installer.** The HDC file channel (`drvHdcSendFile`) writes to the
+   device's filesystem, but the docs say "Only files in the trustlist can be
+   sent using this interface" — and the `Trustlist=` key in `version.info` is
+   exactly that list, which the device reads from
+   `/home/HwHiAiUser/inuse/aicpu_kernels/`. Worth checking whether the trust
+   list is a device-side file we can influence, or whether the host's
+   `Trustlist=` entry is what gates it.
+
+Option 3 is the most promising: the HDC file-write path is a *different*
+channel from the package installer, and the trust list it consults is a
+device-side file, not part of the signed payload.
 
 ## 5. Tooling produced
 
