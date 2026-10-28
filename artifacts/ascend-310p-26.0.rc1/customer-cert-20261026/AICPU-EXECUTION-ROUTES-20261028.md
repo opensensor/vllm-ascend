@@ -5,6 +5,14 @@
 card was attached to this host, so nothing here is hardware-validated. Every
 offset is given so it can be re-checked.
 
+> **Superseded in part.** `AICPU-INSTALL-VALIDATED-20261028.md` follows this up
+> with hardware evidence and corrects two things here: the AICPU install was
+> never failing (`fl=31` is a host-side timeout; the device logged
+> `Load package success`), and the `version.info` hash-map question is now
+> answered — the map covers only `.so` files, so `version.info` is
+> unverified. §4 below ("The AICPU install actually stopped") is wrong and is
+> superseded by that document.
+
 This supersedes the "the signature blocked us" reading in the previous
 session's notes. **The signature did not block us, and the previous session's
 plan to disable it was aimed at the wrong knob.** The gate is a package
