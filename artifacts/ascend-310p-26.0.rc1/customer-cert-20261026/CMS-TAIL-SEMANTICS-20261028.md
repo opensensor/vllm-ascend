@@ -206,22 +206,46 @@ device, and the only file-write primitive we have is the package installer,
 which is behind the check we are trying to skip.**
 
 That is a genuine circularity, and it is the honest state of the problem.
-The ways out are:
 
-1. a writer for `verify_flag` on the device (the 310P build lacks
-   `dms_custom_device.o`, but the *device* module list may contain an
-   equivalent ioctl that the previous session did not find — worth one
-   check);
-2. a device-side code-execution path that is not the package installer —
-   which is the `usershadow` route from `USERSSHADOW-ROUTE-20261028.md`, and
-   which also needs a foothold;
-3. the `drvHdcSendFile`-style channel writing *directly* to
-   `/var/asdrv/dev0/device-sw-plugin/verify/flag` — the HDC file channel
-   reaches the device's staging directory, and the whitelist is
-   root-editable, so whether it can be pointed at `/var/asrv` is the one
-   concrete thing left to try. It was refused for every path outside the
-   trusted base, but the trusted base is now known to be extensible
-   (`save_sub_path`), so this is worth one experiment.
+## 5a. The one escape route, tested and closed
+
+The obvious way to break the circularity is to write the policy file
+directly, over the HDC channel, by making the destination escape the trusted
+base. The driver's own check is a `strstr` that requires the `dst_path` to
+*contain* the trusted base path, so a `..` traversal looks promising.
+
+**Tested.** With `dst_path = /home/HwHiAiUser/hdcd/device0/../../../../var/asdrv/dev0/device-sw-plugin/verify`:
+
+```text
+  rc = 25     (the path check PASSED -- the transport then failed)
+```
+
+and the device's own log shows where the file actually went:
+
+```text
+[recv_data] Create file. (dstpth="/home/HwHiAiUser/hdcd/device0/9999_Ascend310P-aicpu_syskernels.tar.gz";
+                          privilege=0; file_size=14; send_bytes=14)
+```
+
+**The device normalises the path.** The `..` components were resolved away
+and the file landed in the staging directory. The policy file was not
+touched, and the device's log continues to show
+
+```text
+[cmscbb_verify_pkg.cpp:800][SetVerifyFlag] update verify flag old:1, new:1
+```
+
+— unchanged, still the default `1`.
+
+The same was true for the V2 base and for the `save_sub_path` field of the
+whitelist entry: every variation returned 52 (path illegal) or, once the
+`strstr` was satisfied, 25 with the file landing back inside the staging
+tree. The device's file receiver resolves the path before opening it, so
+there is no traversal.
+
+That closes the last host-side route I could construct, and it means the
+circularity above is real rather than an artefact of not having tried hard
+enough.
 
 ## 6. Method note
 
@@ -236,8 +260,14 @@ four bytes of the file, resolved it in one pass.
 ## 7. Card state
 
 - device log level INFO; `/etc/hdcFileTransWhiteList.cfg` and
-  `ascend_package_load.ini` restored to their original md5s;
-- host AICPU package still stock; 6/6 chips OK; no NPU processes;
+  `ascend_package_load.ini` restored to their original md5s
+  (`7baeaca596f22c7ddb711ba91b2bdb2b` and
+  `baca3a99c7034f140c2e7ce89d42b4c0`);
+- host AICPU package still stock (md5 `ccf7ed4c6cef44e7e0dac5c2708cf849`);
+- 6/6 chips OK, 0 errors, no NPU processes;
 - the device was sent several non-stock packages during this experiment, all
   of which the device rejected before installing anything. The only
   packages that installed were byte-identical to the stock legacy package.
+  Two 14-byte test files were left in the device's staging directories; the
+  stock package was re-delivered afterwards so the device's check-code state
+  for that name is consistent.
