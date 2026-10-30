@@ -7709,9 +7709,19 @@ Clean 16MB clip read of net-new 4th card (SN `2106030737ZERC001417`), stock scri
   (card 9's rings are erased-FF; card 4 still holds its factory logs of 2025-12-18).
 - **Flash map** (16MB): app banks `0x200000–0x27FFFF` · elabel `BALE` @`0x2c0000`
   (serial @+0x178) · runtime params `GAMF` @`0x300000` · MCU log rings @`0x340000/0x3c0000/0x440000` ·
-  **card-invariant descriptor @`0x8c0000`** with `AA55AA55` esbc-family magic + version 1,
-  content = raw hash/signature-shaped bytes (no DER) — prime candidate for MCU trust anchor
-  / trustlist / `secureboot_info` storage. Rest of the 16MB: erased FF (97.7%).
+   **card-invariant descriptor @`0x8c0000`** with `AA55AA55` esbc-family magic + version 1,
+   content = raw hash/signature-shaped bytes (no DER) — prime candidate for MCU trust anchor
+   / trustlist / `secureboot_info` storage. Rest of the 16MB: erased FF (97.7%).
+   - STRUCTURE (parsed 30 Oct night, card-4 golden): 0x530 bytes total.
+     Header `0x8c0000..0x1f`: magic `55AA55AA`, version 1, `0x14`, `0x1F`, sizes
+     `0x100`/`0x200`, sentinel `0x1CD9DEAD` @+0x1C (earlier ASCII read "added91c" was
+     this sentinel's LE bytes — misread, corrected). Body = **three high-entropy blobs**
+     (A: 256 B @+0x20 — exactly RSA-2048 signature sized; B: ~480 B @+0x224 with small
+     header word `E71E2DBB`-style @0x8c021c; C: ~260 B @+0x41c) + zero padding, closed by
+     trailer `0x0000b770` + `0xCC33CC33` marker @0x8c0520. No DER, no ASCII strings.
+     Interpretation: encrypted or raw key/signature trust material, card-invariant —
+     consistent with a factory MCU trust anchor/trustlist. Deep parse parked (needs MCU
+    -side consumer RE or the console reading of `secureboot_info`).
 - **Factory log (ring3) — the upgrade/verify sequence, verbatim evidence**:
   OOB `transfer upgrade package` → `upgrade_slave_app` → `verify_flash_info:
   flash_id(0xc818) match success` → `RsaSignatureVerify: MCU verify APP sign successfully`
