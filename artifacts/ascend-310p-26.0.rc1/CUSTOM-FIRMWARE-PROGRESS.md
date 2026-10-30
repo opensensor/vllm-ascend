@@ -7901,8 +7901,10 @@ Clean 16MB clip read of net-new 4th card (SN `2106030737ZERC001417`), stock scri
   `a8475646…b392d45` appears NOWHERE in the FD/HBOOT2 image (both byte orders, 8/12/16-B
   prefixes) → the external anchor is not a constant stored in the HBOOT payload.
   Remaining hypotheses: efuse/OTP on the SoC; another region of the 32MB SoC NOR outside
-  the FD payload; or derived (e.g., digest OF an embedded root public key — computable
-  offline if the DER key is located in FD). NOTE: help confirms write form is
+  the FD payload; or derived. UPDATE (same night, negative): the derived-hash variant was
+  tested — `a8475646…` is NOT SHA-256 of the root CA (DER, SPKI, nor modulus tested; see
+  `work/rootca/Huawei-Integrity-Root-CA-G2.der`), so a root-hash-pinning coincidence is
+  unsupported. NOTE: help confirms write form is
   `--component <type> --path <firmware_path>` (no literal --upload verb); `--mini_devices`
   lists MINI devices (`-1` = all MINI); `--user_cert --path` remains a potential own-cert
   lever for the ctrl-cpu scenario.
@@ -7941,7 +7943,8 @@ Clean 16MB clip read of net-new 4th card (SN `2106030737ZERC001417`), stock scri
   - TEE co-processor: `tspd setup failed`, `tee cms verify failed`, `tee decrypt fail`
     (EL3 TSP daemon present).
 - **Embedded root certificate extracted** (DER @FD `0x155841`, 1606 B, saved
-  `/tmp/kilo/rootca.der`): `CN=Huawei Integrity Root CA - G2` (O=Huawei Technologies,
+  `/tmp/kilo/rootca.der`, now persisted in-repo at
+  `work/rootca/Huawei-Integrity-Root-CA-G2.der`): `CN=Huawei Integrity Root CA - G2` (O=Huawei Technologies,
   OU=Huawei Certification Authority), self-signed, **RSA-4096**, cert signed RSA-PSS,
   serial 0x3C3ADB, validity 2021-02-07 → 2051-05-07.
 - **New lead on the old `0xE00` signature mystery** (Oct-26: the 512-byte signature at
