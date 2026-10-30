@@ -294,3 +294,15 @@ The syskernels container uses the rootfs esbc geometry. `dsmi_cmd_get_custom_sig
 returns `rc=8` (compiled-out stub, re-validated post-reboot). All host-pushable channels
 now confirmed signature-pinned at flag=1; device left healthy on stock (6/6), opp slot
 restored, modified package staged at `/tmp/Ascend310P-aicpu_syskernels.tar.gz`.
+
+## 12. 2026-10-30 afternoon — pkcs-enable eliminated; plugin (type-7) vehicle stalls on delivery
+
+See `card_root_verify_flag_20261030.md` §8 for detail. Both `pkcs-enable` states run the
+kernel `rsa_verify_soc` for type-0 pushes — the switch does not gate the package wall.
+The `device-sw-plugin` (type-7) vehicle registers cleanly via a host-`ascend_package_load.ini`
+stanza (device logs the config insert), but no delivery path landed the plugin file: the
+device-side hdcd base-directory whitelist rejects plugin names regardless of host cfg
+edits, and the device rootfs ships no whitelist file at all. `verify_flag` remains 1.
+Rig restored (`pkcs Disable`, 6/6, stock), ini backup at `~/exp-20261030/package_load.ini.pre7.bak`.
+Next: reproduce the Oct-27 type-7 success recipe; the `aicpu/` sink (whitelist-free,
+name-routed) is the prime suspect, and `tsd_load` (v1) merits a closer look.

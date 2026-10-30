@@ -164,6 +164,57 @@ signature-pinned at the default flag, and no host-visible writer exists for eith
 question are now the same question, which is precisely plan S3/S4 territory: a payload
 that boots *before* the flag is needed (kexec / re-signed CMS with our own CA).
 
+## 8. Second-leg session (afternoon) — pkcs-enable is not the lever; the plugin vehicle stalls on delivery **[HW-validated]**
+
+### 8a. `pkcs-enable` toggled and eliminated
+
+`npu-smi set -t pkcs-enable -i 9 -d 0` flipped the kernel `g_sign_type` (confirmed in
+device log: `The sign details. (sign=0)` during verification) and a re-push of the same
+modified syskernels package still ran the **full** `rsa_verify_soc` and failed
+(`sig_len 512, src_len 53740977`, ret 270). Explicit `-d 1` (Restore) behaves the same.
+So the Oct-28 prediction that the two states would separate the kernel PSS path from the
+tsdaemon CMS path does **not** hold for type-0: the verify-image ioctl runs
+`pkicms → image_secure_auth → rsa_verify_soc` in **both** states. The switch is a lever
+for something else (boot-time scheme selection), not for the package wall.
+Restored to `Disable` (ship default) at session end; RAM-only, self-clears on boot anyway.
+
+### 8b. The type-7 `device-sw-plugin` vehicle: registered, not delivered
+
+The Oct-26 routes doc identified type 7 (`^[0-9]+_Ascend-device-sw-plugin\.tar\.gz$`) as
+the *intended* carrier of `verify/flag`. Today's live findings:
+
+- `ascend_package_load.ini` (host, unsigned) is a working registration hook: adding a
+  `name:Ascend-device-sw-plugin.tar.gz / package_path:opp` stanza made the device's
+  config domain log `insert package:Ascend-device-sw-plugin.tar.gz config`. **(stanza
+  persists in the ini on the rig; file backed up at
+  `/home/matteius/exp-20261030/package_load.ini.pre7.bak`)**
+- But the sweep pushes only the legacy/hcomm files; the plugin *file* never reached the
+  device, and every base-directory send of a plugin-named file failed on the **device
+  side** with `hdc_whitelist_file_check ... miss the white list` — even after editing the
+  host `/etc/hdcFileTransWhiteList.cfg` **and** registering it via
+  `drvHdcLoadFileTransWhiteList` (rc=0) in the plant tool's process.
+- The device rootfs contains **no whitelist file at all** (full `cpio -t` scan: zero
+  matches for `*whitelist*`/`hdcFile*`). The device's check list lives in hdcd's boot
+  state; its source is still unidentified. Host-side send rc map confirmed still:
+  v1→25 (device reject), v2→52, Ex→24 for out-of-list names/paths.
+- Net: the flag file still reads 1 on every push (`update verify flag old:1, new:1`), and
+  the only known writer of the `/var/asdrv/dev<N>/device-sw-plugin/` tree — the type-7
+  worker — has not yet been fed a package on this build.
+
+### 8c. What that leaves for the next attempt
+
+The Oct-27 session recorded one `Load package success, type=7` (8401, path `aicpu/`) that
+today's tooling did not reproduce; the exact Oct-27 invocation is the first thing to
+chase (candidates: a sink-directory delivery that skips the base whitelist — the `aicpu/`
+sink demonstrably ignores name checks for legacy/hcomm — combined with name-based type
+routing, which would need only a way to place an arbitrary-named file into `aicpu/`).
+Secondary: the `tsd_load` (v1) tool accepted the plugin file (`TsdClose=0`) with **zero**
+device-side trace — worth one more careful look at which directory v1 actually targets.
+
+Housekeeping: host reboot clears `/tmp` (the staged package must be re-restaged from
+`~/exp-20261030/kilo_pay.tar.gz` — it is the fully patched 53,749,169-byte build, and a
+re-push after reboot reproduced the PSS rejection verbatim, push id 34903).
+
 ---
 
 *One-sentence summary: the flag is a file on device tmpfs that nothing host-side has
