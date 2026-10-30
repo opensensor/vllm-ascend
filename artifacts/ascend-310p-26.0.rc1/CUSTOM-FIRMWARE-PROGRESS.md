@@ -7526,3 +7526,501 @@ becomes the only barrier.
 
 Full detail: `customer-cert-20261026/SOFTWARE-ROUTES-20261026.md`.
 
+---
+
+## 2026-10-30 session — kernel/DDR slot binding probes + host-side test loop
+
+All experiments on card **NPU 16409 (`0000:49:00.0`)** only; NPU 9/8217 served as untouched
+controls throughout. End state: **all host-served images stock, card healthy 6/6 OK.**
+
+### Test loop (validated, use this going forward)
+
+- Swap file in `/usr/local/Ascend/driver/device/` (needs `sudo cp` — root-owned), then
+  `echo 1 > .../49:00.0/remove; sleep 3-5; echo 1 > /sys/bus/pci/rescan`. Driver re-probes,
+  re-downloads the chain, 6/6 OK in ~30 s. No host reboot.
+- **Recovery from a failed boot needs the `reset` write**: after a boot stall the *first* bare
+  remove/rescan retry fails again (`Wait boot mode from bios time out (flag_r=0x40000080)`,
+  probe ret=-19). The recipe `echo 1 > 49:00.0/reset` → remove → rescan recovered the card in
+  ~30 s on both occasions (proven twice, no power cycle needed).
+- Note: after all this rescan churn the test card's link runs **8GT/s (downgraded)** while the
+  healthy card trains 16GT/s — factor into any perf comparison on 16409.
+
+### Kernel-slot binding (K1) — FAILED to boot ⇒ kernel payload IS bound
+
+Stock kernel container (`md5 8969017d…`, identical across `.image`/`.orig`/`Image`) modified:
+4096 zero bytes appended to the payload, `code_len` @0x45c/0x145c and SHA-256 digest
+@0x2c/0x102c updated, **cms/ini/crl tail copied verbatim (ini digest left stale = the probe)**.
+Result: card never reached kernel (OK stuck at 4). Conclusion: the kernel slot behaves like the
+rootfs (V1) — **content changes with stock signature are rejected**; a custom payload there
+(e.g. U-Boot) needs the customer-cert chain, not just header hygiene.
+*Caveat:* the inner container header inside the payload still declared the old length, so K1
+proves "something binds the kernel slot", not precisely which digest.
+
+### Container-geometry finding (applies to all host-served esbc files)
+
+- `@0x4BC/0x14BC` header self-hash rule (true for the syskernels *package* container) does
+  **not** hold for stock kernel nor ddr containers — leave those fields untouched.
+- Kernel header copy-0 ≠ copy-1 over `[0x40:0x4bc]` (they differ by more than the checksum).
+- Proven-safe edit set: `code_len` @0x45c/0x145c + digest @0x2c/0x102c only.
+
+### DDR-slot probes (D1/D2) — both failed, interpretation OPEN
+
+Structural discovery: `Ascend310P_ddr.image` (the Ingenic-style **init-table** analogue) is
+header+payload **only** — the file ends exactly at payload end (`0x2000+code_len == EOF`),
+**no cms/ini/crl sections at all**; its @0x2c digest matches the payload (self-consistent,
+unsigned). Payload ends with a `55AA55AA 'SCHV' <ver>` footer + 5 trailing zero bytes.
+
+- **D1**: last payload byte 0x00→0x01, digest left stale → boot failed (OK stuck at 4).
+- **D2**: same flip **plus** recomputed @0x2c/0x102c digests → boot *still* failed.
+- Unresolved fork: either (a) the DDR table's integrity is anchored *externally* (efuse/nvm or
+  a hash burned into the SPI boot chain — our re-sealed digest wouldn't match either), or
+  (b) the flip site wasn't inert — the byte sits in the SCHV footer padding and the DDR
+  firmware's own parser rejected it (verification never consulted).
+- **D3 (next cheap cycle, disambiguates)**: append a full 4096-zero block at EOF with
+  `code_len`+digest updated — content added *past* the footer as zero padding. Boots ⇒
+  self-certifiable window (fix your own digest, content runs) — the Ingenic-style exploit
+  survives. Fails ⇒ DDR table is externally anchored ⇒ everything host-served needs the
+  cert/efuse route.
+
+### DTB facts extracted from `Ascend310P_dt.img` (context for U-Boot planning)
+
+16 DTB slots (first @0x2900); `compatible = "hisilicon,hi1910p-evb", "hisilicon,ascend610"`
+(Huawei-internal names for this silicon; AS610 in the UEFI filename; user's "it's a 310P card"
+noted — same family). `chosen` bootargs: `initrd=0x880002100,200M cma=256M
+ascend_log_redirect=0x1fc000@0xb101000 module.sig_enforce=1`, `kaslr-seed = <0 0xdeadc0de>`
+(fixed). 8 masked `arm,armv8` CPUs in 2 clusters, GICv3+ITS, PSCI-0.2, sbsa-uart. Which slot
+BL31 selects is still unverified.
+
+### BAR telemetry (host-side visibility idea — partially validated)
+
+BAR layout identical on healthy and test cards: BAR0 16M + BAR2 256M + **BAR4 8G prefetchable**.
+Device stays PCIe-responsive even while boot is stalled (why rescan-recovery works). sysfs
+`read()` on `resourceN` returns EIO while the driver is bound; **mmap works but offsets must be
+page-aligned**. BAR4+0x0 reads `AA55AA55 DC04…` (esbc magic in device-side memory — mailbox
+descriptor vs DRAM window base `0x80000000` not yet established; `code_len` field there is
+`0x684b249`, matching none of the stock files; offset `0x3101000` reads 0xCC poison). Byte-wise
+scans of the full window are too slow over PCIe MMIO — use chunked block reads. If the BAR4↔DRAM
+map is pinned down, the device console (`0x1fc000@0xb101000`) and initrd become host-readable
+without any device-shell credentials.
+
+### DDR binding completed: D4/D5 close the model
+
+- **D4** (stock payload, header digest byte corrupted in *both* copies): boot FAILED.
+  Proves independently of content effects: the header digest is validated against
+  something **external to the file's own consistency**.
+- **D5** (identical content flip + resealed digest applied to *both* `Ascend310P_ddr.image`
+  and its byte-identical twin `lpddr_mcu.bin`): boot FAILED. Kills the last
+  relative-check theory (MCU comparing its copy against the SoC's).
+- **Model that fits D1–D5**: the DDR payload must hash to one specific
+  externally-held expected digest (efuse/OTP or SPL-side constant). Any content change
+  without a matching re-anchored expectation fails ⇒ **no Ingenic-style free
+  init-table window in the current configuration.**
+- `lpddr_mcu.bin` discovery: byte-identical second copy of the DDR table served to the
+  MCU (driver loads both from `device/`). Custom DDR tables must patch both files.
+- Boot-handshake semantics from `devdrv_device_load.h`: SRAM flag word
+  `NORMAL=0x2222…22`, `SLOW=0x3333…33`, `ABNORMAL=0xFFFF…FF`. Observed failure value
+  `flag_r=0x40000080` is a **non-mode partial write — the verify-fail fingerprint**
+  (driver waits at `res_drv_mini_v2.c` L669-682 / `devdrv_device_load.c` L431-446).
+
+### The seller's "disable cert verification in BIOS" — located (mostly)
+
+MCU LiteOS image (16 MB dump, window @0x220000) contains an MCU-side secure-boot
+command interface, i.e. the "BIOS" is the **card's MCU board firmware**, not host BIOS:
+
+- `set_secureboot_info_callback`, `set_secureboot_param_check`,
+  `get_secureboot_info_callback`, `get_secureboot_data`, `check_input_secureboot_param`
+  (strings @0x228a48-0x228d60) — a get/set pair with parameter validation, i.e. an
+  interactive MCU-console command like `set_secureboot_info <param>`.
+- Persistent config = "customized info" dual-bank region (`write/read/clear_customized_info`,
+  "read bak", "update cert bak"); `chip_cfg` items include literal `switch`, `trustlist`,
+  `blocklist`, `https crl`; `TrustList` string appears at `0x229592` with a **mirror at
+  `0x269592`** (exactly 0x40000 apart — dual-banked).
+- Host reachability on 310P is gated: `info -t rootkey|boot-select|tls-cert|nve-level|
+  mcu-monitor` all answer "does not support"; only `flash` and `board` respond.
+  `set` surface exposes `boot-area`/`boot-select` (A/B MCU image switch — matches
+  "switch image to " strings) but no secureboot verb. Consistent with the
+  `dms_custom.mk` hi1980b-gating found 2026-10-26.
+- **Flash size note**: `npu-smi info -t flash` reports **32 MB (GigaDevice 0xC8)** while
+  our verified MCU dump is 16 MB — half the flash may be unexamined (second image bank?).
+
+### MCU flash structure (30 Oct RE pass, from existing 16MB dump)
+
+- The MCU app is **128KB exactly, dual-banked**: `0x220000` and `0x260000` are byte-identical
+  for `0x20000` bytes and diverge immediately after. (The earlier "256KB verified window"
+  actually spanned image+adjacent-data.) Patching code should patch **both banks**.
+- **No RSA-2048 key is embedded anywhere in the 16MB dump** — consistent with
+  `CheckPubKeyHash` (hash-only anchor) and EC strings present (`id-ecPublicKey`).
+- **Boot gate vs update gate** (string-clustering evidence): `MCU START`/`Begin to running
+  LiteOS` (0x2233d7) share their code neighborhood with `verify firmware info failed` /
+  `Read checksum_info error` (0x223d26, same TU ≈0x950 apart), while mbedTLS
+  RSA machinery (`RsaVerify`, `McuSignatureVerify`, `CheckFileHead`, `read_rsa_head_item`)
+  clusters with the CMS/cert strings near the command callbacks (0x22a-b region).
+  ⇒ **boot verification = checksum/CRC; RSA signature = update/cert path.**
+  Practical: direct flash code-patches boot without Huawei's signing key — recompute the
+  checksum. Confidence: high but string-position-based; a caller-level disassembly pass
+  (image runtime base not yet pinned — no MOVT found, unknown link base) would nail it.
+- **Manipulation verdict**: data/flag rewrite free (CRC-16 regions, MCU rewrites them
+  itself); MCU code rewrite likely free (checksum-gated boot, dual bank + clip = recovery);
+  physical write = standard GigaDevice/flashrom with 4-byte addressing >16MB.
+
+**Verdict on the seller's claim**: not a false flag — a real, implemented mechanism
+exists in MCU firmware (`secureboot_info`), but on this platform the host cannot read
+or set it via npu-smi; access path is the MCU console (serial) or vendor provisioning
+tool. If it can be switched off, D1–D5/K1 failures were *policy*, not architecture — a
+disabled state would re-open the whole host-patchable-chain thesis (and the custom
+U-Boot PoC). **Decisive cheap sequence**: get MCU console → `get_secureboot_info` →
+(if toggleable) disable → re-run D2-equivalent (modified DDR content, self-consistent
+digest) → boot ⇒ everything is patchable.
+
+### Flash capacity saga (30 Oct evening) — 16MB vs 32MB on the card MCU flash
+
+- `npu-smi info -t flash`: **32MB, Manufacturer 0xC8, Flash ID 1664968 = 0x1967C8 → raw `c8 67 19`**.
+- CH341A/scriba at the clip: `c8 40 18` (GD25Q128, 128Mbit = 16MB) — stable across repeated reads
+  when contact was good (intermittent all-`FF` ID reads = marginal clip, nothing to do with capacity).
+- Scriba experiment (forced 32MB profile + `addr4b=1`): read clocked all 32MB in 528s but came back
+  **100.00% `0xFF`** — chip answered nothing. Mechanism: after `0xB7` the chip expects 4-byte
+  addressing for all commands while the CH341A command interface is 24-bit native → misframed
+  reads, MISO high-Z. ⇒ **Experiment inconclusive on capacity; the scriba forcing was the failure,
+  not evidence about the die.** Change stashed; scriba back to plain 16MB profile.
+- Live hypotheses: (a) true 16MB part and npu-smi's table fibs; (b) 32MB die (e.g. GD25Q256-class)
+  in **3-byte legacy mode** — some such parts report capacity `0x18` until 4B mode is entered
+  (ID-then-`0xB7`-then-ID trick settles it; flashrom on the same CH341A handles 4B-mode chips
+  better and would be the one-command decisive probe); (c) npu-smi is describing a *different*
+  chip than the one clipped. Chip marking is not GigaDevice-branded per bench — a photo would
+  help.
+- Useful by-product — **card-9 flash content map** (16MB dump): 97.7% erased `FF`. Content:
+  two banked blobs ≈`0x200000..0x26de34` (MCU image banks + surrounding data, mirrored `0x20000`
+  apart, code-window mirror confirmed at `+0x40000`), small islands at `0x2c0000` (~1.6KB),
+  `0x7c0000` (256B), `0x8c0000..0x8c0528` (~1.3KB) plus sub-256B fragments. Everything else
+  erased. ⇒ future per-card diff (4th card vs card 9, both 16MB reads with the stock profile)
+  will localize the per-card data regions (elabel/serial/trustlist candidates) directly.
+- **4th card note**: brand-new card, identical hardware; its 16MB read (stock profile) has not
+  yet been captured — that read is the useful next bench artifact (diff vs card 9 → per-card
+  data-region map + independent confirmation of code-bank versions).
+
+### Card-4 dump (atlas_310P3B.bin) — per-card diff map + factory MCU log settle several questions
+
+Clean 16MB clip read of net-new 4th card (SN `2106030737ZERC001417`), stock scriba profile.
+
+- **MCU app banks (0x200000–0x27FFFF) byte-identical to card 9**; bank mirror holds
+  (`0x220000 == 0x260000`). Whole-flash diff vs card 9 = **4.6KB in 6 clusters**:
+  `0x2c009c` (5B) + `0x2c0174..` (elabel serial + CRC-ish fields; serial at `0x2c0178`),
+  `0x300004` (GAMF counters), and the three log rings `0x340000/0x3c0000/0x440000`
+  (card 9's rings are erased-FF; card 4 still holds its factory logs of 2025-12-18).
+- **Flash map** (16MB): app banks `0x200000–0x27FFFF` · elabel `BALE` @`0x2c0000`
+  (serial @+0x178) · runtime params `GAMF` @`0x300000` · MCU log rings @`0x340000/0x3c0000/0x440000` ·
+  **card-invariant descriptor @`0x8c0000`** with `AA55AA55` esbc-family magic + version 1,
+  content = raw hash/signature-shaped bytes (no DER) — prime candidate for MCU trust anchor
+  / trustlist / `secureboot_info` storage. Rest of the 16MB: erased FF (97.7%).
+- **Factory log (ring3) — the upgrade/verify sequence, verbatim evidence**:
+  OOB `transfer upgrade package` → `upgrade_slave_app` → `verify_flash_info:
+  flash_id(0xc818) match success` → `RsaSignatureVerify: MCU verify APP sign successfully`
+  + `MCU verify vrd sign successfully` → copy → `Upgrade MCU from version(V0.4.6) to
+  version(23.2.6)` → `update_boot_param` → reset; then `validate_mcu_image: Reset MCU to
+  validate image successfully`; `customized_info_init: data not exists, set default`.
+  ⇒ RSA verify is definitively on the **upgrade path** (APP + VRD); boot-side gate is
+  `validate_mcu_image` (checksum vs RSA at boot still to be pinned from disassembly);
+  customized-info is a defaults-on-blank data region — writable-by-design, consistent
+  with the CRC-only model.
+- **Capacity**: the MCU itself validates `flash_id 0xc818` = GD 128Mbit = **16MB** — the
+  MCU treats the clipped flash as 16MB. npu-smi's "32MB / c8 67 19" remains unexplained by
+  this chip (other flash on card, or table artifact). Scriba's forced-32MB read failing
+  all-FF is now fully consistent: true geometry is 16MB.
+
+### Flash topology resolved (30 Oct, evening): TWO SoC flashes + one MCU flash
+
+- `npu-smi info -t flash -i 9`: **two flash chips reported** (Chip ID 0 and 1), both
+  `Manufacturer 0xC8, Flash ID 1664968 = c8 67 19, Capacity 32MB` → GD25Q256E/257D class.
+  These are the **SoC-side** flashes (not yet clipped). The clipped/dumped 16MB `c8 40 18`
+  part is the **MCU's own flash** and is not in npu-smi's view. The long 16-vs-32MB
+  contradiction was two parties describing different chips. MCU-side truth stands:
+  `verify_flash_info: flash_id(0xc818)` — MCU expects its own 16MB part.
+- `npu-smi set -t` item inventory (root) relevant to board policy:
+  `customized-info`, `boot-area`, `boot-select`, `mcu-monitor`, `revocate`, `key-manage`,
+  `pkcs-enable` — matches MCU log hooks `customized_info_init` (defaults-on-blank) and
+  `update_boot_param`. No plain `secureboot` set type exists on 310P.
+- MCU image RE status: Cortex-M Thumb-2, code starts flash `0x220000` (bank B at `0x240000`,
+  full 128KB banks are exact mirrors at `+0x40000`; 256KB total MCU app incl. rodata).
+  Linear disassembly coverage only ~44% (interleaved literal pools/jump tables) — string
+  xref hunt needs function-level RE (proper recursive descent), not linear scanning.
+  **100%-correct patch doctrine before any flash write**: (1) locate exact flag bytes,
+  (2) know the integrity scheme covering them (CRC region boundaries), (3) patch bank B
+  only, keep bank A golden, (4) recovery = clip rewrite from golden dump.
+- Differential-probe idea for the exact flag byte: toggle a host-visible set item
+  (`customized-info`/`boot-select`) on the bench card once it can run host driver, re-read
+  clip, diff → byte offset observed, not guessed.
+
+### MCU app architecture (corrected, 30 Oct late session)
+
+- **App image = 256KB, banked at flash `0x200000` (A) / `0x240000` (B)**, exact mirrors.
+  (Earlier "banks at 0x220000" was wrong — that was mid-bank content.) Used content ends
+  ~`0x22de34`; remainder FF. XIP base `0x08000000` (VA = file − 0x200000 + 0x08000000);
+  initial-SP field `0x20010000` (64KB RAM); handler-pointer fields `0x0802xxxx` monotonic
+  (stub spacing 0x18) — Cortex-M Thumb2, but the reset field (`0x080241c9`) resolves into a
+  format-string zone, so naive vector-table reading fails; **proper recursive-descent RE is
+  the required next RE step**. Toolchain baseline proven: `rizin -a arm -b 16 -m 0x08000000`
+  on the `0x200000`-slice, `aa; aap` ⇒ 1318 functions found. Linear/capstone scans alone are
+  unreliable (interleaved inline strings defeat linear alignment).
+- **Flash-device support table @~`0x22db00–0x22dcc0`**: entries `{vendor-ID, capacity, config…, name}`
+  for SPANSION/MICRON/MACRONIX/WINBOND/GIGADEVICE/ISSI — **all capacity code `0x18` (16MB)**;
+  the GigaDevice entry is `c8 18` — exactly what `verify_flash_info: flash_id(0xc818)` logs
+  for our part (`c8 40 18` GD25Q128). ⇒ **The MCU firmware is built for 16MB parts by design**;
+  no 32MB (`0x19`) entry exists anywhere in the MCU database.
+- Log strings are inline with code (no separate rodata; pools for strings unfindable at any
+  link base; references appear to be near-PC ADR within mixed code/text blocks).
+
+### MCU RE round closed (static, offline) — accepted working model
+
+- Preamble `0x200000–0x21FFFF` behaves like an **initial-RAM image section** (vector-ish
+  header: SP `0x20010000`, but reset/default-handler fields resolve into *format strings*
+  at `0x2241c9`/`0x224239`; embedded structures carry both RAM ptrs (`0x2000xxxx`) and
+  XIP-code ptrs (`0x08xxxxxx`); 33% printable = RAM image with copied .text/.data, not
+  pure code). Flash-side app content (`0x220000–~0x22DE34`) = code blocks + inline string
+  blocks + tables (flash-device DB all-capacity-`0x18` at `0x22DB00+`).
+- Log strings have **no absolute address references anywhere** in the dump (no pools at any
+  link base, no ADR/MOVW pair within ±4KB, no offset encodings) ⇒ addressing is base-reg +
+  small-offset computed at runtime (or through RAM-image indirection). String xref tooling
+  is therefore blind; **call-graph RE (ghidra-grade, hours) is the offline path** — parked,
+  not blocking.
+- **Decision: resolve the boot-gate/flag questions EMPIRICALLY** via one physical bench↔host
+  cycle (MCU-EXP-1) instead of static RE:
+  1. (Bench) benign 1-byte CH341A write in bank A only: `"MCU START"`@`0x2233D7` → e.g.
+     `MCU XTART` (offset exact; bank B untouched as reference/copy).
+  2. (Host) seat card in spare slot, boot, confirm npu-smi OK; toggle
+     `npu-smi set -t customized-info` (and/or `boot-select`), record values; shutdown.
+  3. (Bench) clip, read E, diff vs golden `atlas_310P3B.bin`.
+  Yields: (a) CH341A write + recovery loop proven on real boot; (b) whether boot gate
+  content-checks the string area (boot-OK vs stall = CRC-coverage answer); (c) the exact
+  bytes customized-info/boot-select move (flag home, observed not guessed); (d) which bank
+  is active (rendered log line shows XTART vs START). Recovery safety net at every step:
+  golden dump re-write.
+
+### customized-info deep-dive + fleet state (30 Oct, end of day)
+
+- **Semantics** (from MCU string table + npu-smi/driver vocabulary): a vendor
+  **provisioning record store** — MCU API family `customized_info_{init,read,write,update,
+  clear,verify}` + OOB framing (`customized_msg_check`, `customized_last_frame_handle`),
+  same shape as the elabel family next to it in strings; host side `dcmi_mcu_set_customized_info`,
+  `dcmi_set_check_customized_is_exist` ⇒ the "already exists / cannot be set repeatedly"
+  gate is a **host/driver-layer pre-check**, not proven to be MCU/fuse-level
+  (`customized_info_clear` exists in MCU code; no CLI erase on 310P).
+  Descends from `DSMI_COMPONENT_TYPE_CUSTOMIZED` (an upgrade-tool component/partition on
+  full Atlas products). **Nothing in the boot chain observed to consult it**: two service
+  cards ran whole lives blank; factory "set default" was RAM-only.
+- **16409 incident record**: set `customized-info=1` via
+  `sudo npu-smi set -t customized-info -i 16409 -f 1` (write-once; `-f 0` and `-f erase`
+  retries rejected). Survives device `reset` + remove/rescan + driver reload (board-side).
+  Board-info diff vs twin 8217: **identical except serial/ID/bus** — zero observable
+  divergence; post-write boots incl. recovery cycle all OK (6/6). Value "1" semantics
+  undocumented on 310P; only untested consumer = future upgrade-tool ops → policy: no
+  upgrade-tool on 16409 unless decided consciously.
+- **Operational finding**: plain `remove`+`rescan` can stall even a healthy stock card —
+  run the **reset recipe** (`reset` → remove → rescan) on every cycle.
+- **Fleet**: 9 + 8217 = pristine references (blank provisioning); 16409 = risk-absorber
+  (provisioned `1`, boots-verified, future differential clip sample for locating the
+  record in flash); card 4 (bench, clipped) = virgin, golden dump `atlas_310P3B.bin`
+  double-read verified; **driver-boot only, no sets/flash** until first-server-life diff
+  (predict: log-ring + GAMF counter moves only). Server power-cycle during that cycle
+  gives the free zero-power test of 16409's record (still `1` ⇒ flash-burnt).
+
+### pkcs-enable crossover — verdict: it is a LOCK knob, not the unlock (30 Oct evening)
+
+- Semantics decoded empirically: `set -d 0` → **Enable** (with CLI warning *"Enabling pkcs
+  will raise safety risks"*), `set -d 1` → **Disable** (factory default; observed state on
+  all cards before this session). Writes are re-settable (not write-once). Per-chip (`-c 0/1`).
+- Experiment matrix on 16409 (both chips in each config):
+  | DDR payload | pkcs | result |
+  |---|---|---|
+  | stock | Disable | boots (baseline, many times) |
+  | **D2 (modified, resealed, unsigned)** | **Enable** | **STALL** (`flag_r=0x40000080` pattern) |
+  | stock | Enable | **STALL** |
+  | stock | Disable | **UP at 40s** after recovery recipe ✓ (card restored 6/6) |
+- ⇒ `pkcs=Enable` **arms stricter certificate enforcement that these cards cannot satisfy —
+  even Huawei-stock fails to boot**. `Disable` (the default) was already the lax posture;
+  enabling it does not bypass the D-series external-digest wall, it tightens past it.
+  The hoped-for "cert check off ⇒ modified payloads boot" hypothesis is **dead for pkcs**;
+  the external anchor remains the binding factor.
+- **Operational learnings:**
+  1. The **policy plane (dms→MCU) answers while the SoC is stalled in boot-wait** — pkcs
+     set/read worked with the card down; stalls are recoverable without opening anything:
+     set Disable (if armed), then reset recipe. `pkcs=Enable` carries real lockup risk on
+     this card/FW — verify boot before walking away.
+  2. Confirmed again: `remove`+`rescan` alone can stall even healthy cards; the reset
+     recipe (`reset` → remove → rescan) is the reliable bring-up; recovery boot showed no
+     new boot-timeout fingerprint.
+- Fleet back to baseline: 9, 8217 untouched/up; 16409 up 6/6 (stock files, pkcs Disable ×2,
+  customized-info=1 burnt); card 4 virgin on bench with golden dump.
+
+### upgrade-tool breakthrough: the card's real flash component map (30 Oct, late)
+
+- `sudo upgrade-tool --device_index 4 --components` → device 4 (16409) reports exactly:
+  **`hboot1a`, `hboot1b`, `hlink`** — SoC-side **A/B-redundant HBOOT** (HiSilicon boot
+  loader) + **HLINK** link-stack, all at version **7.5.0.5.220** (componentTypes 11/12/18).
+  Version queries read the CARD's flash metadata (the host FD file
+  `AS610_HBOOT2_UEFI.fd` contains no `7.5.0`/`hlink` strings) — i.e., there IS a local,
+  named, versioned, upgradeable SoC boot flash layer; the FD pushed by the host is its
+  payload source. This is the layer the D-series external-digest wall most likely lives in
+  (HBOOT validates the host-served payloads), and the layer a vendor "flash" rewrites.
+- upgrade-tool syntax now decoded: `--device_index <id> --components` (list),
+  `--component <name> --version` (query), `--component <name> --upload <file>` semantics
+  (write path — UNTESTED on our fleet; flashing remains deliberate).
+- Interpretation for the rooting model: SoC boot = on-chip ROM → **HBOOT (on-card flash,
+  A/B)** → host-served esbc payloads (ddr/FD/kernel/rootfs). The "external anchor" is
+  therefore most plausibly a constant/table inside HBOOT's flash region or its efuse-locked
+  config. `upgrade-tool --upload` (rewriting hboot1a/b from a vendor package) is the one
+  legitimate mechanism we have seen that moves that anchor coherently.
+- Open next probes: (1) FD container layout map around its header (`hboot` string at
+  `0x2004` in FD) vs the 3 component names; (2) whether `--upload` on 16409 would be
+  recoverable from stock FD; (3) does the 7.5.0.5.220 HBOOT match any file inside the
+  installed driver package tree (beyond `/usr/local/Ascend` find scope already done).
+
+#### upgrade-tool addendum (same evening, minutes later)
+- FD esbc header decoded: magic `0x3a3aaa33` at `0x2000`, name field **`hboot2`** (so the
+  host FD file IS the HBOOT2/UEFI payload whose destination is the card's `hboot1a/b`
+  flash partitions); words incl. `0x9`, `0x205`, `0x20000`, `MV` marker, `0x100`. The
+  version string `7.5.0.5.220` is NOT encoded anywhere in the FD file → it is
+  flash/tool-side metadata, not payload-embedded.
+- Fleet baseline: **card 9 (untouched) = card 16409**: same components
+  (`hboot1a,hboot1b,hlink`) @ `7.5.0.5.220`; `--boot_status` = **16** on both (identical
+  healthy signature); `--system_version` reads **26.0.rc1** from the card itself.
+- Full verb set captured: `--upload --path` (write), `--version`, `--boot_status`
+  (no `--component`), `--system_version`, `--hot_reset`/`--hot_reset_flag`,
+  **`--user_cert --path <cert>`** ("ctrl cpu scenario set user certificate info" — a
+  potential own-certificate injection lever, write-style), `--patch`/`--unload_patch`,
+  `--set_compat_list`, `--status`, `--async`, `--mini_devices`, `--phymachflag`.
+  **No download/dump verb** → flashed HBOOT cannot be read back off the card with this tool.
+- Working model refined: on-card flash holds HBOOT(A/B)+hlink; those validate the
+  per-boot host-served payloads (ddr/kernel/rootfs esbc chain — the D-series wall).
+  The host FD file is the *update source* for hboot flash, which plausibly explains the V2
+  "FD content change had no boot effect" result (boot reads flash copy, not host file).
+- Remaining host-side lever, one deliberate risk away: `upgrade-tool --device_index 4
+  --component hboot1a --path <file> --upload` on the guinea pig (write to the hboot1a
+  partition; recovery = re-upload + reset recipe). Whether `--path` takes the raw FD or a
+  packaged variant needs a dry check before committing.
+- Digest-in-HBOOT test (offline, negative): stock DDR payload digest
+  `a8475646…b392d45` appears NOWHERE in the FD/HBOOT2 image (both byte orders, 8/12/16-B
+  prefixes) → the external anchor is not a constant stored in the HBOOT payload.
+  Remaining hypotheses: efuse/OTP on the SoC; another region of the 32MB SoC NOR outside
+  the FD payload; or derived (e.g., digest OF an embedded root public key — computable
+  offline if the DER key is located in FD). NOTE: help confirms write form is
+  `--component <type> --path <firmware_path>` (no literal --upload verb); `--mini_devices`
+  lists MINI devices (`-1` = all MINI); `--user_cert --path` remains a potential own-cert
+  lever for the ctrl-cpu scenario.
+
+## HBOOT2 (FD) dissection — the validator identified (30 Oct night, offline RE)
+
+- FD file anatomy (`AS610_HBOOT2_UEFI.fd`, 0x1a2110 B):
+  - `0x0000` esbc-style header block #1 (magic `55AA55AA`, digest @+0x2c, hash region @0x40,
+    second copy @0x1000) over a small 8 KB preamble;
+  - `0x2000` esbc header magic `0x3a3aaa33`, name field **`hboot2`** (fields: 0x9, 0x205,
+    4, 0x20000, `MV` marker, 0x100; build-stamp word `14001909` + GUID-ish 16B @0x2118);
+  - `0x2100` **UEFI firmware volume** (`_FVH`, len 0x20000, attrs 0xCFEFF, 24-byte header);
+  - `0x22100` second **FV** (len 0xFF000, ends 0x121100);
+  - `0x121100+` **ARM Trusted Firmware image** with its own FIP TOCs at `0x132100` and
+    `0x172100` (magic `0xAA640001`, second word `0x12345678`; HiSilicon packed TOC entries
+    `[u16 id][u8 idx][u8 0xAA]`); AArch64 EL1/EL3 setup code right after the TOC (0x1321c0).
+  - NOTE: FV headers solid; FFS file-entry walk mis-aligned (Huawei 20-byte FFS variant?) —
+    module inventory deferred.
+- **The secure-boot validator lives in this ATF**: string cluster 0x155–0x158k exposes the
+  whole gate vocabulary:
+  - `Secure Boot: customer efuse Solution` — efuse-anchored, customer-capable scheme;
+  - **user-certificate trust domain**: `support usr cert vef`, `usr cert cms vef
+    success/fail`, `usr cert hash cal/cmp fail`, `usr cert address check fail`,
+    `no usr, hw vef fail, ctrl_flag = 0x%x` — matches the Oct-21/26 finding that a
+    `--user_cert` (signca) enrolment DID pass CMS verify on all chip devices;
+  - **anti-rollback**: `nvcnt cmp fail, nvCnt = 0x%x, efuse_bit_pos = 0x%x`,
+    `efuse_read_nvcnt fail`, `write nvcnt`, `Clean Ufs Nvcnt`, `no need nvcnt check` —
+    efuse bit-array version counters (burn-forward; downgrade burns irreversible);
+  - **hash-list/ini gate**: `hash list file num invalid`, `hash list num invalid!`,
+    `cur image hash not in list!`, `Store ini hash failed`, `preamble = 0x%x error!`,
+    `headMagic`, `code offset`, **`pss slen = 0x%x invalid!`** — the exact checks our
+    D-series payload edits tripped;
+  - crypto core: `hw_cms_image_verify_simple`, `hw_adapt_desc_fetch`,
+    `hw_normal_desc_fetch`, PKCS7/X.509 AOID table incl. `AOID_RSASSAPSS`,
+    `AOID_HW_KP_VOUCHERSIGNING`, `AOID_HW_KP_RELEASESIGNING` (two Huawei signing roles);
+  - TEE co-processor: `tspd setup failed`, `tee cms verify failed`, `tee decrypt fail`
+    (EL3 TSP daemon present).
+- **Embedded root certificate extracted** (DER @FD `0x155841`, 1606 B, saved
+  `/tmp/kilo/rootca.der`): `CN=Huawei Integrity Root CA - G2` (O=Huawei Technologies,
+  OU=Huawei Certification Authority), self-signed, **RSA-4096**, cert signed RSA-PSS,
+  serial 0x3C3ADB, validity 2021-02-07 → 2051-05-07.
+- **New lead on the old `0xE00` signature mystery** (Oct-26: the 512-byte signature at
+  inner header `+0x460` verified against neither root over any message tried):
+  1. 512 B = exactly an RSA-4096 signature size — consistent with RootCA G2 being the key;
+  2. `pss slen` + `AOID_RSASSAPSS` say the scheme is **RSA-PSS with explicit salt length** —
+     if the Oct-26 verification assumed PKCS#1 v1.5 or the wrong salt (32 vs auto/0x88 vs
+     0), verification would fail regardless of message content. Re-verify the `0xE00` blob
+     with PSS salt variants before concluding the key/message is wrong.
+  3. `Secure Boot: customer efuse Solution` raises the alternative: the header signature may
+     be checked against an **efuse-hashed key/customer state**, not the CA chain at all.
+- Standing from history (unchanged): user-cert enrolment works (Oct-21 signca, CMS passed);
+  V1/V2 showed header bit 19 insufficient alone; known residual blockers = BL31 branch at
+  `0x13dc58` + the `0xE00` header signature.
+- Next RE steps: (a) disassemble the `usr cert`/`ctrl_flag` decision path and
+  `hw_cms_image_verify_simple` caller to pin the message layout fed to the `0xE00` verify;
+  (b) retry `0xE00` verification offline with PSS salt variants (32/64/auto) over candidate
+  messages (header-minus-sig, digest fields); (c) FIP TOC entry decode (0x1321b0 region);
+  (d) FFS inventory re-walk with corrected header size.
+
+#### BL31 code-side recon (same night, capstone)
+- **Identity VA base works**: disassembling the FD at file offset == VA yields clean
+  AArch64 (`stp x29,x30` prologues, sane `bl` targets) from `0x1321c0` onward — the BL31
+  image sits at file `0x1321c0` with linked pages congruent to file offsets; capstone
+  needs `skipdata=True` due to dense data interludes.
+- **ATFimg1 (`0x132100`) and ATFimg2 (`0x172100`) are the same image duplicated**
+  (prologues exactly `0x40000` apart) — A/B redundancy inside the FD payload itself.
+- Entry-area code (`0x13235c+`): FIP TOC iteration + logging via `0x132ab0` (puts-like,
+  strings from image pages `0x134000-0x135xxx`); platform MMIO constants seen:
+  `0x310a0400/0x310a0550/0x310a0600` (FIFO-style regs with bit5 polling and bounds check
+  `0xcef5…/0x608..0x77f7`), `0x989680` (poll bit5), **`0x8000f030` ← byte 0x39** at a stage
+  transition (candidate boot-stage status byte visible to the MCU?).
+- **Genuine code sites referencing the validator string cluster (0x155-0x158k)**:
+  `0x13cd14`, `0x141948`, `0x14f780`; the window `0x13db54-0x13dcbc` decodes as DATA
+  (earlier raw ADRP hits there were table coincidences). These code sites are the anchors
+  for recursive-descent RE of the verify path.
+- **Discrepancy flag**: the Oct-26 note "BL31 branch at `0x13dc58` (b.eq)" lands inside
+  that DATA table in FD-file coordinates — the Oct-26 offset likely came from a separately
+  extracted BL31 blob with its own numbering. Re-derive it in FD coordinates before any
+  re-branch experiment.
+- Session status: hardware untouched tonight (fleet at baseline); all findings offline.
+
+#### String-ownership negative arc (later, same night) — important for the next RE round
+- Question: which code owns/references the validator string cluster (0x155-0x158k:
+  `cur image hash not in list!`, `usr cert…`, `nvcnt cmp fail`, `Secure Boot: customer
+  efuse Solution`, `hw_cms_image_verify_simple…`)?
+- Established (negative results, all reproducible):
+  1. **ATFimg1 (0x1321c0-0x1721c0) code does NOT reference these strings** — full-image
+     ADRP+ADD/LDR tracking (callee-saved-aware) finds zero exact references; the entry
+     function's own string refs resolve to the image's LOCAL pages `0x134-0x135xxx`
+     (e.g., logger args `0x134360/0x134371`). The loose page-level hits in `0x153-0x154`
+     were string-table data ("This is SMMU " descriptor table), not code.
+  2. **BL2/pre-TOC region (0x121100-0x132000): zero refs** (same tracking).
+  3. **Whole FV2 span (0x22100-0x121100, XIP hypothesis VA≡FD-offset): zero refs.**
+  4. **No 8-byte pointer tables** with entries in 0x155-0x159k anywhere in the FD.
+- Interpretation: the strings are reached by COMPUTED addressing (message-index/offset-base
+  tables whose entries are stored as runtime VAs or offsets, not raw file offsets), closely
+  paralleling the MCU app's message-index logging. Static ADRP xref hunting is exhausted;
+  the next pass should be **Ghidra headless full analysis** (language AARCH64LE, load base
+  TBD from BL2/BL31 FIP TOC entries) to recover the string table indirection and pin the
+  `0xE00` verify message builder.
+- Practical takeaway recorded: the validation *vocabulary* lives in the FD, but its code
+  owner is not statically obvious — do NOT re-derive it with shell heuristics again; go
+  straight to Ghidra with the seeded function list (211 prologues in ATFimg1; extraction:
+  FD[0x132000:0x172200] mapped at 0x132000 == identity, page-aligned ✓).
+- `--path` dry-probe (live, 30 Oct late, dev 4): nonexistent file → `{"device": 4,
+  "failed"}`; 64-B random junk → same instant failure; component version reads
+  `7.5.0.5.220` unchanged afterwards ⇒ **the tool validates input before writing** and
+  failure is clean/no-write. Size-format error strings in the binary
+  (`File size[0x%x] not valid.`, `File size[%ld] is out of range.`) suggest size sanity is
+  the first gate. The real write-test (`--path <stock FD>`) therefore fails safe if the
+  expected size differs from 0x1a2110 — the pending decision is whether to make it.
+
+### Host state after session
+
+`/var/local/ascend-work/images/`: `Ascend310P.image.bindtest`, `Ascend310P_ddr.image.D1/D2/D3/D4`
+(as named variants), `ddr.D5.bin`, backups `Ascend310P.image.pre-bindtest`,
+`Ascend310P_ddr.image.pre-D1`, `lpddr_mcu.bin.pre-D5`. Device dir: **stock kernel, stock ddr,
+stock lpddr_mcu.bin** — card 16409 healthy 6/6 after final recovery cycle. Locally:
+`/tmp/kilo/Ascend310P*.bindtest|.D1|.D2|.D3|.D4|ddr.D5.bin`, `Ascend310P_ddr.image`,
+`lpddr_mcu.bin`, `ascend310p.dtb/.dts`.
+
