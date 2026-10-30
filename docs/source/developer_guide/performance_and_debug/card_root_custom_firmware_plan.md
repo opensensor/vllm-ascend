@@ -306,3 +306,15 @@ edits, and the device rootfs ships no whitelist file at all. `verify_flag` remai
 Rig restored (`pkcs Disable`, 6/6, stock), ini backup at `~/exp-20261030/package_load.ini.pre7.bak`.
 Next: reproduce the Oct-27 type-7 success recipe; the `aicpu/` sink (whitelist-free,
 name-routed) is the prime suspect, and `tsd_load` (v1) merits a closer look.
+
+## 13. 2026-10-30 third session — type-7 delivery mechanized; worker install still opaque
+
+See `card_root_verify_flag_20261030.md` §9. The `aicpu/` sink ignores the device whitelist,
+and renaming the `ascend_package_load.ini` hcomm stanza makes the sweep deliver
+`<pid>_Ascend-device-sw-plugin.tar.gz` to the type-7 `DriverExtendPackageWorker` on demand
+— the Oct-27 "type=7 success" is now reproducible. However the worker is a no-op for stub
+packages (empty `originPkg=`, no extraction or flag change; the Oct-26 doc's `set verion
+info` line is a binary format string, not a live log), the pending plugin re-pulls every
+~2 min and starves `tsd_load2`'s file-load step, and `verify_flag` stays 1. Host reboot
+drains the queue. Next: disassemble the worker's install-complete path (esbc container
+requirement is the leading hypothesis).

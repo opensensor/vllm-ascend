@@ -215,6 +215,56 @@ Housekeeping: host reboot clears `/tmp` (the staged package must be re-restaged 
 `~/exp-20261030/kilo_pay.tar.gz` — it is the fully patched 53,749,169-byte build, and a
 re-push after reboot reproduced the PSS rejection verbatim, push id 34903).
 
+## 9. Third-leg session — the type-7 sink channel works; the stub package is a no-op **[HW-validated]**
+
+### 9a. The hcomm-slot trick delivers type-7 packages whitelist-free
+
+Renaming the `name:aicpu_hcomm.tar.gz` stanza (line 26 of `ascend_package_load.ini`) to
+`name:Ascend-device-sw-plugin.tar.gz` — with the 278 B stub staged at
+`opp/built-in/op_impl/aicpu/kernel/Ascend-device-sw-plugin.tar.gz` — made the sweep push
+`<pid>_Ascend-device-sw-plugin.tar.gz` into the whitelist-free `aicpu/` sink, and the
+device logged:
+
+```text
+Begin to load package, type=7, path=/home/HwHiAiUser/hdcd/device0/aicpu/,
+    fileName=20541_Ascend-device-sw-plugin.tar.gz
+[driver_extend_package_worker.cpp:26] Start init DriverExtendPackageWorker …
+[driver_extend_package_worker.cpp:33] Start load driver extend package, originPkg=, decomPkg=
+Load package success, type=7
+```
+
+So the Oct-27 "type=7 success" is now mechanized and reproducible on demand: **the ini
+hcomm slot is the type-7 delivery channel** (sink push → name routing).
+
+### 9b. But the worker installs nothing, and the flag never moves
+
+`DriverExtendPackageWorker::LoadPackage` enters with **empty** `originPkg=`/`decomPkg=`,
+and no downstream activity follows: no `set verion info` line, no extraction evidence, no
+`SetVerifyFlag new:8`, and the modified syskernels re-push still fails with `ret=103`
+(PSS) after several type-7 "successes". Notably, `set verion info success version:%s` in
+the Oct-26 routes doc is a **format string quoted from `libtsdaemon.so`** (3 occurrences),
+not a live log line — the Oct-27 install was likely never actually processed either.
+With a plugin package pending, the device re-pulls it every ~2 minutes (never ACK-ing
+install-complete), and while the retry loop is active `tsd_load2` silently skips its
+`TsdFileLoad` step (exits after `oa=1`) — a new operational pitfall; a host reboot drains
+the queue.
+
+### 9c. Current state and the next probe
+
+Rig restored: hcomm stanza back on line 26 (ini byte-identical to the pre-session backup
+except a trailing newline), `pkcs Disable`, 6/6, stock content, modified syskernels
+failing PSS as expected (push 33059). The plugin candidate (8402, `verify_flag=8` +
+fresh `Version=9.1.T11.0.KILO`) remains staged at the kernel opp directory.
+
+The open question about the worker: what does its install-complete path actually require?
+Hypotheses, cheapest first: (1) the package needs an esbc/CMS container head + tail like
+the other classes (the stub is a bare tar.gz — cmscbb's *"only support signed type package
+by cms"* may reject it while the inotify layer still reports success); (2) the worker's
+real install runs only when the watcher hands it a non-empty path (some other event class);
+(3) the check code in `omfileflag.info` must match something the worker computes.
+Disassembling `driver_extend_package_worker.cpp`'s frame in `libtsdaemon.so` (the
+`set verion info` callers) would answer this offline.
+
 ---
 
 *One-sentence summary: the flag is a file on device tmpfs that nothing host-side has
