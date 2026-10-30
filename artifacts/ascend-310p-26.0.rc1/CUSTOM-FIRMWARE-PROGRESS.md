@@ -8018,6 +8018,31 @@ Clean 16MB clip read of net-new 4th card (SN `2106030737ZERC001417`), stock scri
   the first gate. The real write-test (`--path <stock FD>`) therefore fails safe if the
   expected size differs from 0x1a2110 — the pending decision is whether to make it.
 
+#### Mechanism resolved: the images are NOT XIP — RAM execution explains every negative (offline RE focus round)
+- Built a working scripted-Ghidra pipeline on this machine: `~/ghidra/build/dist/ghidra_12.1_DEV`
+  (source-built 12.1 DEV) + PyGhidra in `/tmp/kilo/venv` (Jython is dead in 12.x headless;
+  gotchas: `-loader-BaseAddress` replaces `-base-addr`, `-processor` replaces `-language`,
+  `open_program(..., project_location=..., nested_project_location=False, analyze=False)`
+  reuses the saved project; iterate `listing.getInstructions(True)` + `getReferencesFrom`
+  to avoid JPype/RefType overload issues).
+- Full Ghidra analysis of `bl31_img1.bin` (197 functions): zero references into the
+  validator string pages — independently corroborating the capstone negatives. The ATFimg2
+  slice (77 functions) shows the same zero against its +0x40000 duplicates.
+- u32-absolute-VA scan across the FD: only 5 scattered hits — no pointer tables.
+- **Decisive: TE module headers (sig `0x5A56` + ARM64 machine `0xAA64`) at FD `0x3838` and
+  `0x23260` carry image bases `0x31701000` and `0x31721000`** — runtime VAs in the `0x31__`
+  DRAM region whose low bits mirror the FV file offsets. Modules load to high RAM and
+  execute there (non-XIP); their ADRP references resolve to RAM addresses, so
+  file-offset-space analysis is structurally blind to them. Mystery closed: the validator
+  strings are staged in FD for RAM-based consumers.
+- Next recipe (precise): import the TE module at `0x23260` into Ghidra at base
+  `0x31721000`, analyze, decompile the validator + the `0xE00` verify-message builder.
+  FFS inventory simplifies to walking FV2 for `5A56 AA64` TE headers (≥2 found); the
+  7.9-entropy zone is TE content/tables, not an LZ4/gzip/LZMA blob (all brute-forces
+  negative).
+- Slice note: ATFimg2 is a truncated second copy in the FD (~192KB of 256KB; file ends
+  `0x1a2110`).
+
 ### Host state after session
 
 `/var/local/ascend-work/images/`: `Ascend310P.image.bindtest`, `Ascend310P_ddr.image.D1/D2/D3/D4`
