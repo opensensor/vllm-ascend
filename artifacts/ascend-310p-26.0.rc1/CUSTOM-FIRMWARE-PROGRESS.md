@@ -8179,3 +8179,13 @@ Full offline validation of stock containers against the recovered validator mode
    `0x1A4A5252` (FUN_0000a0fc gate) and efuse nibble @0x8000FFF8.
 
 Artifacts: digest-consistency tables computed from `/tmp/kilo` copies + `work/*.image`.
+
+### Bench console path CLOSED by user decision (2026-10-31)
+All three bench prerequisites are unworkable on this rig: the MCU console UART is not
+reachable, the ESP32 serial unit on `ttyACM0` is not wired to the card, and the card cannot
+be powered in its bench state. No live-console reads will be attempted; the bench wish-list
+(`get_secureboot_info`, 0x8000FFF8 nibble, 0x1A4A5252 mailbox word, CORF) is dropped unless
+flash-based alternatives are pursued later (MCU log rings live in flash @0x340000+; a
+programmer re-dump can recover some of that state without any console). Forward path is
+**host-side only**: file-swap cycles on 16409 with the reset recipe, upgrade-tool knobs
+(customized_info, user-cert, component write test), and offline RE.
