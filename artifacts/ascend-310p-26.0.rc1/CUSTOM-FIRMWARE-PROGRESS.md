@@ -8189,3 +8189,38 @@ flash-based alternatives are pursued later (MCU log rings live in flash @0x34000
 programmer re-dump can recover some of that state without any console). Forward path is
 **host-side only**: file-swap cycles on 16409 with the reset recipe, upgrade-tool knobs
 (customized_info, user-cert, component write test), and offline RE.
+
+## Session 2026-10-31 — RE backlog pass (validator follow-ups, offline)
+
+1. **Embedded certs in e1 have no code xrefs** (same staging pattern as strings): the code
+   never ADRPs onto the DER bytes; they are opaque blobs handed to the parser by offset.
+   **The table after the certs (FD 0x155e88..) is a load-descriptor table**: u64 entries
+   `(tag 0x4 << 32 | RAM VA 0x3018_0000+)` — eight slots, five populated
+   (0x30180400, 0x301bb800, 0x301aa000, 0x301ae800, 0x3018bc00, 0x3019d000, 0x30199400,
+   0x30195800, 0x30184000 — some zeros) ⇒ **TEE/trusted-application load manifest** in the
+   `0x3018__` RAM window. Strings immediately before the certs: `_collect_error_type_tl/mac/dl`.
+2. **Header-tail offsets are NOT consumed by e1 code**: FD-wide ADD-imm scan found `+0x2C`
+   used 12 times (validator family incl. `0x1498BD` ✓ sanity), but `+0x458/+0x460/+0x4AC/
+   +0x4B8/+0x4BC` only via indexed loads in the header validator, and **`+0x518` appears
+   exactly once — a false positive (string pointer)**. ⇒ the 512-B header RSA blob is not
+   verified anywhere inside e1; consumer is an earlier stage (BL2/e0, SPL/ROM) or the MCU,
+   or nobody in shortcut mode. Stays open, but now *located*-negative, which matters for
+   re-signing strategy: changing the header tail (digest#2) may not break anything the SoC
+   checks — only the MCU/SPL could care.
+3. **Mailbox magic `0x1A4A5252` eliminated from static storage**: absent from driver source
+   (`ascend-310p-driver-20260911`), the 16 MB MCU dump (LE+BE), and the whole FD. It is a
+   runtime-only value — SoC ROM/SPL register state or efuse-derived — consumed by the
+   `FUN_0000a0fc` gate via mailbox cmd 0xB8. No host-side write lever exists.
+4. **Oct-26's `0x13dc58 b.eq` re-derived in FD coordinates**: it is the
+   `FUN_0000b834() != 1` mode check inside **FUN_000084F0 (file `0x13DC41`)** — a
+   stage-status flag writer (sets `=1` at `param_1+0x81f100c4/0xa0f100c4/0x81f200c4/
+   0x81f400c4` when mode != 1, logs `0x156b42`). Oct was already poking at the same
+   efuse-nibble mode check that today's model names as the verify-mode selector.
+5. **VCHS trailer is a constant stamp**: FD ends `55AA55AA 'VCHS' 0x000507E6 0` —
+   byte-identical to the ddr container's trailer ⇒ package-wide version tag, not per-file,
+   and included inside the hashed payload region (content-independent).
+6. Only two VZ containers exist in the FD (0x3838 FV1, 0x23260 FV2). Their content format
+   (header + inline section table + code at +0xB8) remains the main unanalyzed FD chunk.
+
+Tooling note: e1 constant scan done raw (Python over the carve), function attribution via
+`e1_proj`; cert/TEE-manifest region added to the map.
