@@ -8374,3 +8374,22 @@ projects `mcu_proj`/`mcu2_proj` (866 functions analyzed; index archived).
 Toolchain notes: 0-based import left all pool pointers external (values ≥0x08000000);
 fixed via a rebased byte copy (subtract 0x08000000 from in-window u32s, 2209 words).
 Ghidra language `ARM:LE:32:v8`. MCU dump = external 16 MB SPI; MCU-internal map mirrors it.
+
+### MCU follow-up probes (same session) — status and open puzzle
+
+- FD digest#1/#2 appear **nowhere** in the 16 MB MCU dump ⇒ the MCU does not pin an
+  expected FD hash; FD gating = signature/trust machinery, not stored-digest compare.
+- None of the 13×20-B trustlist entries matches any hash form (fullDER/SPKI/modBE/modLE;
+  SHA-256 and SHA-1) of *any* artifact key: legacy root, G2 root, signca, signcert,
+  tsca, ts ⇒ trustlist entries are product/per-card key material beyond our current
+  artifacts (no dead end for rooting — see below).
+- Vector-table base ambiguity left open deliberately: bank A's VT words (`0x0802xxxx`)
+  are consistent with either a 0x08020000 or 0x08000000 link base; no VTOR write
+  (0xE000ED08) exists in bank A ⇒ the bootloader remaps VTOR to the active bank at
+  runtime. String→code referencing in this build is table/framework-driven (no static
+  xrefs), so the call-graph walk needs the seller ELF/link map, or a patient manual
+  pass from the boot loader at file 0x0. Recommend parking MCU deep-RE until either
+  the seller's MCU ELF is available or a bench console session is on the table
+  (the MCU has `get_secureboot_info_callback` — a console command exists on-chip).
+
+End of FD/SoC-side and MCU-surface RE backlog. 12 commits this session (local).
