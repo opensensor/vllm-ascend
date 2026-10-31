@@ -8329,3 +8329,12 @@ offset math; decompiler import must be lazy (inside the open_program context).
 Toolchain note: for raw-digest RSA verification, `openssl pkeyutl -verify -in <digest>`
 assumes the *message*, not the digest, with -rawin; pure pow(s,e,n) padding inspection is
 the reliable method.
+
+### MCU trust store peek (0x8c0000, quick probe)
+
+Header `aa55aa55 01 00 00 0014 0000 1f00 0000 0100 0000 0200` then tag **0x1CD9DEAD**
+at +0x1C, followed by a 32-B high-entropy digest pool. Same `0x55AA55AA` container
+family as the FD/containers ⇒ the MCU keeps its own esbc-style trust list (candidate
+reading: 0x14=20 active / 0x1f=31 slots — key digest allowlist). Deep parse + consumer
+code belong to the pending **Thumb-2 MCU RE project** (app base 0x08020000, VTOR copy at
+0x200000; tooling note: Cortex-M, *not* RISC-V).
