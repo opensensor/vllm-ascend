@@ -8224,3 +8224,37 @@ programmer re-dump can recover some of that state without any console). Forward 
 
 Tooling note: e1 constant scan done raw (Python over the carve), function attribution via
 `e1_proj`; cert/TEE-manifest region added to the map.
+
+## Session 2026-10-31 (cont.) — TE modules cracked, FD top-level map completed
+
+1. **FD top-level map (new)**: header/SPL @0x0–0x3838 → **TE module 1 @0x3838** →
+   **TE module 2 @0x23260** → **UEFI (EDK2) firmware @0x2A000–0x125C00** (~1 MB, entropy
+   3.43, uncompressed; strings `[UEFI]`, `ArmPlatformInitialize`,
+   `Trusted Firmware not exist!`, DFX-DDR error formats) → small islands @0x126000/0x127400
+   → **FIP @0x132100** (e0 BL2-stub / e1 validator / e2 strings) → VCHS trailer @0x1A2100.
+2. **VZ container format**: header `0xAA645A56` magic, ver `0x07600B03`, total size @+0x8,
+   align @+0xC, **load VA @+0x10** (0x31701000 / 0x31721000), RAM size @+0x20; then
+   ELF-like section table with *inline* names (.text AX / .data WA / .reloc A); code starts
+   right after the table (mod1 +0xC8, mod2 +0x2A0). Both payloads begin with an identical
+   copy-loop prologue → same Huawei SDK linked objects. No rodata (string scan = garbage).
+3. **Module identities** (movz/movk constant scan):
+   - mod1 @0x3838 = **efuse/secure-state policy module**: touches `0x8000FFF8` (the verify-mode
+     nibble!), `0x8000E08C`, `0x8000F07C`, `0x8000FFFC`, `0x80003204`.
+   - mod2 @0x23260 = **crypto-engine driver**: register block `0x840C0024–0x840C0030` +
+     `0x8000FFFC`.
+   Neither references the 0x2C00000 mailbox. **Implication**: the mode nibble at 0x8000FFF8
+   is consumed by *both* the e1 gate (FUN_0000b834) and the TE efuse module — consistent
+   with one OTP/efuse knob gating the whole chain (the "seller cert-check-off" candidate).
+4. **No static consumer of the module load VAs** (0x31701000/0x31721000) in FD, MCU dump,
+   or driver → a generic loader reads the header load-VA field; fixed pre-FIP flash offsets
+   suggest the SPL/UEFI side loads them early. Trace = follow-up.
+5. **MCU ISA correction**: the MCU is **ARM Cortex-M (Thumb-2)**, not RISC-V — vector table
+   at dump 0x200000, initial SP `0x20010000`, handlers `0x0802xxxx` (flash base 0x08000000).
+   All prior RISC-V scans were void; future MCU RE needs Thumb tooling.
+6. **UEFI Secure Boot keys absent from captured regions**: PK/KEK/db/dbx GUID byte strings
+   not found in FD *or* MCU dumps ⇒ the SB variable store is outside the captured SPI
+   windows (or SB is unused at UEFI level). The esbc header/CMS chain remains the only
+   signature enforcement observed in-flash.
+
+Tooling notes: AArch64 mov-chain matcher needs hw-bit masking (`0xFFC0001F`, match Rd only);
+both 32/64-bit MOVZ/MOVK forms required.
