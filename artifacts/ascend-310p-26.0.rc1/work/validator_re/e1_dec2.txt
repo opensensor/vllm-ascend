@@ -1,0 +1,303 @@
+Module manifest file error on line 2 of file: /home/matteius/.config/ghidra/ghidra_12.1_DEV/Extensions/GhidraMCP/Module.manifest
+	-> Invalid line encountered: GHIDRA_MODULE_NAME=GhidraMCP
+Module manifest file error on line 3 of file: /home/matteius/.config/ghidra/ghidra_12.1_DEV/Extensions/GhidraMCP/Module.manifest
+	-> Invalid line encountered: GHIDRA_MODULE_DESC=An HTTP server plugin for Ghidra
+Module manifest file error on line 2 of file: /home/matteius/.config/ghidra/ghidra_12.1_DEV/Extensions/GhidraMCP/Module.manifest
+	-> Invalid line encountered: GHIDRA_MODULE_NAME=GhidraMCP
+Module manifest file error on line 3 of file: /home/matteius/.config/ghidra/ghidra_12.1_DEV/Extensions/GhidraMCP/Module.manifest
+	-> Invalid line encountered: GHIDRA_MODULE_DESC=An HTTP server plugin for Ghidra
+
+===== FUN_0001416c @file 1498bd =====
+
+uint FUN_0001416c(long param_1,undefined8 param_2,undefined4 param_3,undefined4 param_4)
+
+{
+  int iVar1;
+  uint uVar2;
+  undefined *puVar3;
+  undefined8 local_c0;
+  undefined8 uStack_b8;
+  undefined8 local_b0;
+  undefined8 uStack_a8;
+  undefined8 local_a0;
+  undefined8 uStack_98;
+  undefined1 local_90;
+  undefined1 auStack_88 [72];
+  undefined8 local_40;
+  undefined4 local_38;
+  
+  local_c0 = 0;
+  uStack_b8 = 0;
+  local_b0 = 0;
+  uStack_a8 = 0;
+  local_a0 = 0;
+  uStack_98 = 0;
+  local_90 = 0;
+  FUN_0001e1a8(auStack_88,0,0x88);
+  iVar1 = FUN_0000a740(param_1,param_3);
+  if (iVar1 == 0) {
+    iVar1 = FUN_0000a0fc(param_3);
+    if (iVar1 == -0x55555556) {
+      uVar2 = FUN_00014014(param_1 + 0x2c,0x4100100,0x20);
+      return uVar2;
+    }
+    if (iVar1 != 0x5a5acc33) {
+      uVar2 = FUN_0000ac1c(param_1,param_2,param_3,auStack_88);
+      if (uVar2 != 0) {
+        FUN_00015990(&DAT_00023b5d,param_2,param_3,uVar2);
+        return uVar2;
+      }
+      uVar2 = FUN_00013dfc(auStack_88,param_4);
+      if (uVar2 == 0) {
+        iVar1 = FUN_00014654(local_40,local_38,&local_c0);
+        if (iVar1 != 0) {
+          uVar2 = 0xaa10;
+          FUN_00015990(&DAT_00023bcc,local_38,iVar1);
+          goto LAB_000141d4;
+        }
+        uVar2 = FUN_00014090(auStack_88,&local_c0);
+        if (uVar2 == 0) {
+          uVar2 = FUN_0000ab20(param_1,param_3);
+          if (uVar2 != 0) {
+            FUN_00015990(&DAT_00023c2e,param_3,uVar2);
+            return uVar2;
+          }
+          FUN_00015990(&DAT_00023c66);
+          return 0;
+        }
+        puVar3 = &DAT_00023c07;
+      }
+      else {
+        puVar3 = &DAT_00023ba4;
+      }
+      FUN_00015990(puVar3,uVar2);
+      return uVar2;
+    }
+    uVar2 = 0xaa05;
+  }
+  else {
+    uVar2 = 0xaa0b;
+    FUN_00015990(&DAT_00023b3f,iVar1);
+  }
+LAB_000141d4:
+  return uVar2 | 0x50000000;
+}
+
+
+
+===== FUN_0000a740 @file 13fe91 =====
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+undefined4 FUN_0000a740(long param_1)
+
+{
+  undefined4 uVar1;
+  int iVar2;
+  long local_20;
+  undefined4 local_18;
+  undefined4 local_14;
+  undefined8 local_10;
+  undefined8 local_8;
+  
+  iVar2 = FUN_0000b834();
+  local_20 = param_1 + 0x2000;
+  if (iVar2 == 1) {
+    local_18 = *(undefined4 *)(param_1 + 0x45c);
+    local_14 = 0;
+    local_10 = 0x4100100;
+    local_8 = 0x4100000;
+    FUN_0000b350(0x84080000,1,&local_20);
+    iVar2 = FUN_0000b434(0x84080000,1);
+  }
+  else {
+    _DAT_02c00014 = 0x82;
+    _DAT_02c000b8 = (int)param_1 + 0x2000;
+    _DAT_02c000bc = (undefined4)((ulong)local_20 >> 0x20);
+    _DAT_02c000c0 = *(undefined4 *)(param_1 + 0x45c);
+    _DAT_02c000c4 = 0x4100100;
+    _DAT_02c00018 = 0x10;
+    FUN_0000b94c();
+    FUN_0000b39c(0x84080000,0,0x2c00000,200);
+    iVar2 = FUN_0000b648(0x84080000,0,&local_20);
+  }
+  uVar1 = 0;
+  if (iVar2 != 0) {
+    uVar1 = 0x5000aa1b;
+  }
+  return uVar1;
+}
+
+
+
+===== FUN_0000c294 @file 1419e5 =====
+
+undefined8 FUN_0000c294(undefined8 param_1,undefined8 param_2)
+
+{
+  int iVar1;
+  undefined8 uVar2;
+  char *pcVar3;
+  
+  iVar1 = FUN_0000a0fc(0);
+  if (iVar1 == -0x55555556) {
+LAB_0000c2bc:
+    uVar2 = 0;
+  }
+  else {
+    iVar1 = FUN_00000894(0x4100380,0x20,0x90a4001d);
+    if (iVar1 == 0) {
+      iVar1 = FUN_0001db3c(0x4100380,0x4100100,0x20);
+      if (iVar1 == 0) {
+        iVar1 = FUN_00000894(0x4010000,0x10000,param_1,param_2);
+        if (iVar1 == 0) goto LAB_0000c2bc;
+        pcVar3 = s_usr_cert_copy_fail__00021cb9;
+      }
+      else {
+        pcVar3 = s_usr_cert_hash_cmp_fail__00021c9f;
+      }
+    }
+    else {
+      pcVar3 = s_usr_cert_hash_cpy_fail__00021c85;
+    }
+    FUN_00015990(pcVar3);
+    uVar2 = 0xffffffff;
+  }
+  return uVar2;
+}
+
+
+
+===== FUN_0000bc40 @file 141391 =====
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+undefined8 FUN_0000bc40(long param_1,int param_2)
+
+{
+  if (param_2 == 0xbb) {
+    _DAT_c6f4d834 = *(undefined4 *)(param_1 + 0x2014);
+  }
+  else if (param_2 == 0xcc) {
+    _DAT_c6f4d838 = *(undefined4 *)(param_1 + 0x2014);
+  }
+  else if (param_2 == 0xaa) {
+    _DAT_c6f4d83c = *(undefined4 *)(param_1 + 0x2014);
+  }
+  else {
+    if (param_2 != 0xee) {
+      if (param_2 == 0xdd) {
+        return 0;
+      }
+      FUN_00015990(s_wrong_image_type___0x_x__00021b98);
+      return 0x5000aa00;
+    }
+    _DAT_c6f4d830 = *(undefined4 *)(param_1 + 0x2014);
+  }
+  _DAT_c6f4d80c = 0xa7e358fd;
+  return 0;
+}
+
+
+
+===== FUN_0000a4e8 @file 13fc39 =====
+
+int FUN_0000a4e8(undefined8 param_1,undefined4 param_2)
+
+{
+  int iVar1;
+  int iVar2;
+  int iVar3;
+  
+  iVar1 = FUN_0000b7ac();
+  iVar2 = FUN_0000b884();
+  iVar3 = FUN_0000b834();
+  if (iVar3 == 3) {
+    iVar1 = FUN_0000a350(param_1,param_2);
+  }
+  else if (iVar2 == 0xb2 && iVar1 == 1) {
+    iVar1 = FUN_0000a294(param_1);
+  }
+  else {
+    iVar1 = FUN_0000a214(param_1,param_2);
+  }
+  if (iVar1 != 0) {
+    FUN_00015990(s_image_addr_check_fail__ret___0x__00021792,iVar1);
+  }
+  return iVar1;
+}
+
+
+
+===== FUN_0000b8cc @file 14101d =====
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+bool FUN_0000b8cc(void)
+
+{
+  uint uVar1;
+  bool bVar2;
+  
+  uVar1 = _DAT_8000f0dc >> 8 & 0x1b;
+  if (uVar1 == 0x10) {
+    bVar2 = false;
+  }
+  else if (uVar1 == 0x18) {
+    bVar2 = true;
+  }
+  else {
+    bVar2 = (_DAT_90e40010 == 0x464f5243 || _DAT_90e50010 == 0x464f5243) ||
+            (_DAT_c6f4d890 & 0xf) - 8 < 8;
+  }
+  return bVar2;
+}
+
+
+
+===== FUN_0000b7ac @file 140efd =====
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+uint FUN_0000b7ac(void)
+
+{
+  uint uVar1;
+  
+  if ((_DAT_8000fff8 & 0xf) == 3) {
+    uVar1 = 1;
+  }
+  else {
+    uVar1 = _DAT_8000e08c >> 0xf & 1;
+  }
+  return uVar1;
+}
+
+
+
+===== FUN_0000a180 @file 13f8d1 =====
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+bool FUN_0000a180(void)
+
+{
+  int iVar1;
+  
+  iVar1 = FUN_0000b7ac();
+  return iVar1 != 1 && (_DAT_8007e2a4 & 0xc0000000) != 0;
+}
+
+
+
+===== FUN_0000b834 @file 140f85 =====
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+uint FUN_0000b834(void)
+
+{
+  return _DAT_8000fff8 & 0xf;
+}
+
+

@@ -1,0 +1,157 @@
+Module manifest file error on line 2 of file: /home/matteius/.config/ghidra/ghidra_12.1_DEV/Extensions/GhidraMCP/Module.manifest
+	-> Invalid line encountered: GHIDRA_MODULE_NAME=GhidraMCP
+Module manifest file error on line 3 of file: /home/matteius/.config/ghidra/ghidra_12.1_DEV/Extensions/GhidraMCP/Module.manifest
+	-> Invalid line encountered: GHIDRA_MODULE_DESC=An HTTP server plugin for Ghidra
+Module manifest file error on line 2 of file: /home/matteius/.config/ghidra/ghidra_12.1_DEV/Extensions/GhidraMCP/Module.manifest
+	-> Invalid line encountered: GHIDRA_MODULE_NAME=GhidraMCP
+Module manifest file error on line 3 of file: /home/matteius/.config/ghidra/ghidra_12.1_DEV/Extensions/GhidraMCP/Module.manifest
+	-> Invalid line encountered: GHIDRA_MODULE_DESC=An HTTP server plugin for Ghidra
+
+===== FUN_00014654 @file 149da5 =====
+
+int FUN_00014654(void)
+
+{
+  int iVar1;
+  
+  iVar1 = FUN_00014508();
+  if (iVar1 != 0) {
+    FUN_00015990(s_ini_init_failed__ret___0x_x__00023eae,iVar1);
+  }
+  return iVar1;
+}
+
+
+
+===== FUN_00013dfc @file 14954d =====
+
+int FUN_00013dfc(undefined8 param_1,undefined4 param_2)
+
+{
+  int iVar1;
+  int iVar2;
+  
+  iVar1 = FUN_00013a88(param_1,0);
+  iVar2 = 0;
+  if (iVar1 != 0) {
+    iVar2 = FUN_0000aef8(param_1,param_2);
+    if (iVar2 != 0) {
+      FUN_00015990(s_hw_cms_ctrl_cpu_verify_failed__c_00023d04,param_2,iVar2);
+    }
+  }
+  return iVar2;
+}
+
+
+
+===== FUN_00014090 @file 1497e1 =====
+
+ulong FUN_00014090(long param_1,long param_2)
+
+{
+  undefined4 uVar1;
+  undefined4 uVar2;
+  int iVar3;
+  uint uVar4;
+  ulong uVar5;
+  
+  if (param_1 == 0 || param_2 == 0) {
+    FUN_00015990(s_cms___ini_info_null__00023c84);
+    uVar5 = 0xffffffff;
+  }
+  else {
+    if (*(char *)(param_2 + 0x30) == '\0') {
+      FUN_00015990(s_ini_info_not_inited__00023ced);
+      uVar4 = 0xaa13;
+    }
+    else {
+      uVar1 = FUN_0001e18c(param_2);
+      uVar2 = FUN_0001e18c(param_1 + 0x14);
+      iVar3 = FUN_00013898(param_2,uVar1,param_1 + 0x14,uVar2);
+      if (iVar3 == 0) {
+        uVar5 = FUN_00014014(param_2 + 0x10,0x4100100,0x20);
+        if ((int)uVar5 == 0) {
+          return uVar5;
+        }
+        FUN_00015990(s_cms_hash_compare_error__result___00023cc4,uVar5 & 0xffffffff);
+        uVar4 = 0xaa12;
+      }
+      else {
+        FUN_00015990(s_cms_name_compare_error__result___00023c9b,iVar3);
+        uVar4 = 0xaa11;
+      }
+    }
+    uVar5 = (ulong)(uVar4 | 0x50000000);
+  }
+  return uVar5;
+}
+
+
+
+===== FUN_0000a0fc @file 13f84d =====
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+undefined8 FUN_0000a0fc(void)
+
+{
+  int iVar1;
+  int local_4;
+  
+  local_4 = 0;
+  iVar1 = FUN_0000b834();
+  if (iVar1 == 1) {
+    if (_DAT_8006e080 != 0) {
+      return 0x5a5a33cc;
+    }
+  }
+  else {
+    _DAT_02c00014 = 0x84;
+    _DAT_02c00018 = 0;
+    FUN_0000b39c(0x84080000,0,0x2c00000,0xb8);
+    iVar1 = FUN_0000b648(0x84080000,0,&local_4);
+    if (iVar1 != 0) {
+      return 0x5a5a33cc;
+    }
+    if (local_4 != 0x1a4a5252) {
+      return 0x5a5a33cc;
+    }
+  }
+  return 0xaaaaaaaa;
+}
+
+
+
+===== FUN_0000b884 @file 140fd5 =====
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+int FUN_0000b884(void)
+
+{
+  int iVar1;
+  
+  iVar1 = _DAT_c6f4d89c;
+  if (_DAT_c6f4d89c != 0xb2) {
+    iVar1 = 0xb1;
+  }
+  return iVar1;
+}
+
+
+
+===== FUN_00013898 @file 148fe9 =====
+
+int FUN_00013898(long param_1,int param_2,long param_3,int param_4)
+
+{
+  int iVar1;
+  
+  if ((param_1 != 0 && param_2 == param_4) && (param_3 != 0)) {
+    iVar1 = FUN_0001e160(param_1,param_3);
+    return -(uint)(iVar1 != 0);
+  }
+  return -1;
+}
+
+
