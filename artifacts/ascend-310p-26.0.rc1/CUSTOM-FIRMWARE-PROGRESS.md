@@ -8135,3 +8135,47 @@ no entry-point loader option (disassemble+createFunction in pyghidra instead); G
 extension manifest warnings are benign; pyghidra `open_program` DOES persist edits on context
 exit. Artifacts: `/tmp/kilo/e1.bin`, `/tmp/kilo/e1_out2.txt` (428-ref map),
 `e1_dec.txt`/`e1_dec2.txt`/`e1_dec3.txt` (decompiles), project `/tmp/kilo e1_proj`.
+
+## Session 2026-10-30 (late pm) — esbc header chain cracked: the "external anchor" is just SHA-256
+
+Full offline validation of stock containers against the recovered validator model:
+
+1. **Anchor = plain SHA-256 of the payload.** For the stock ddr container,
+   `header+0x2C == sha256(file[0x2000 : 0x2000+code_len@0x45C])` **in standard byte order**
+   (identical result for kernel, hsm, lowpwr). The "externally anchored constant"
+   `a8475646…2d45` was never external for the file itself — it is recomputable.
+2. **Header tail layout (stock ddr, identical family for all containers):**
+   - `+0x458` code_off `0x2000`; `+0x45C` code_len; `+0x460` u32 tag **`0xE00`** (the Oct-26
+     "0xE00" — a descriptor tag, NOT the signature itself); `+0x464` `0xFFFFFFFF`;
+   - `+0x4AC` magic `0xA5A55555`; `+0x4B8` headMagic `0x33CC33CC`;
+   - **`+0x4BC` digest#2 (32 B) = SHA-256(header[0x000:0x4BC])** — hash of the whole header
+     up to itself (brute-force proven: covers preamble incl. anchor);
+   - `+0x4E0` small fields; `+0x510` table `{0x14, 0x2, 0x200, 0x200}`;
+   - **`+0x518` 512-byte RSA-4096 blob** (the true "header signature"; Oct's +0x460 estimate
+     was the tag, not the blob).
+   - Chain: **payload → digest#1(+0x2C) → digest#2(+0x4BC) → RSA(+0x518)**.
+3. **D-series reframed:** D1/D2/D4/D5 failures all had stale/inconsistent digest#1 (checked
+   offline, self-consistency table: stock/D3/D5-file variants listed). **D3 was fully
+   self-consistent (payload+clen+digest#1) and still FAILED** ⇒ cards run **full mode**,
+   not the digest-only shortcut. Under full mode D3 also left digest#2 and the RSA stale —
+   consistent with failure. No D test ever re-signed the header chain end-to-end.
+4. **Container taxonomy:** only main `Ascend310P.image` (0x1DE5FF2) carries a trailing
+   region — tail begins at `payload_end+0x18` (matches the builder's `0x20-(cl&0xf)` align)
+   with the literal **`cms\0` tag** (this is where the Oct-26 user-cert CMS on rootfs lived).
+   **ddr/hsm/lowpwr have ZERO tail bytes** — they are header-signature-only: the RSA@+0x518
+   (or shortcut digest) is all that protects them.
+5. **Signature-key status:** raw RSA-recover with BOTH embedded roots (G2 @FD 0x155841 AND
+   the previously unnoticed **legacy `CN=Huawei Root CA` @FD 0x1552e9**) shows no PKCS1/PSS
+   structure match against digest#2/anchor candidates — the +0x518 signer is a **subkey we
+   don't hold** (or the enrolled-user key on enrolled cards, path-dependent).
+6. **Re-sign recipe for custom ddr/hsm/lowpwr content (next HW experiments):**
+   (a) rewrite payload; (b) digest#1 = sha256(payload) → +0x2C; (c) digest#2 =
+   sha256(header[0:0x4BC]) → +0x4BC; (d) RSA-sign digest#2 (or the covered header region,
+   per FUN_00013xxx semantics) with a trusted key → +0x518. On enrolled cards the user key
+   may suffice (ctrl_flag/usr-cert path); stock cards need the Huawei subkey.
+   **Cheapest decisive test remains: customized_info switch (seller's "cert check off") —
+   if it flips the card into the digest-only shortcut, steps (a)+(b) alone boot.**
+7. Bench-console wish-list unchanged plus: read the mailbox word that must equal
+   `0x1A4A5252` (FUN_0000a0fc gate) and efuse nibble @0x8000FFF8.
+
+Artifacts: digest-consistency tables computed from `/tmp/kilo` copies + `work/*.image`.
