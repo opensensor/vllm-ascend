@@ -8300,3 +8300,32 @@ Projects: `/tmp/kilo/te1_proj`, `/tmp/kilo/te2_proj` (AARCH64 0-based; VA = 0x31
 Toolchain notes: raw `.bin` imports need `language="AARCH64:LE:64:v8A"` (no load spec
 otherwise); pyghidra 3.2 `open_program` has no base-address option — 0-based frame +
 offset math; decompiler import must be lazy (inside the open_program context).
+
+## Session 2026-10-31 (cont.) — FD is an esbc-signed ATF image; +0x518 signer localized
+
+1. **The FD (`hboot2.fd`) carries its own esbc header at 0x0** — same format as the
+   containers: preamble 0x55AA55AA, head_len 0x4DC, pss salt 32, code_off 0x2000,
+   code_len 0x1A0110 (payload = to EOF incl. VCHS trailer), tag 0xE00, A5A5/headMagic,
+   digest#1 = sha256(payload) ✓, digest#2 = sha256(head[0:0x4BC]) ✓ (both validated
+   offline). Name string `::hboot2` at +0x1C region.
+2. **FD top-level map finalized** (completes the earlier partial map): outer esbc head
+   → TE1 @0x3838 → TE2 @0x23260 → UEFI @0x2A000–0x125C00 → **ATF BL1 rodata/code
+   @0x125C00–0x126C00** ("Booting Trusted Firmware", "BL1: Booting BL2",
+   "Failed to load BL2 firmware") → low-entropy table region @0x127400–0x132100
+   (entropy 0.11, ~11k nonzero words — likely vectors/tables) → FIP @0x132100 →
+   VCHS trailer. Boot chain = ROM → **ATF BL1** → BL2 (FIP e0) → e1 validator.
+3. **+0x518 RSA is NOT signed by either embedded root — confirmed on the FD itself**:
+   pure-RSA recovery (legacy root n, G2 root n × BE/byte-reversed/word-swapped sig
+   orderings) yields neither PKCS1# nor PSS padding ⇒ the FD header signature is verified
+   by the boot ROM against the OTP-pinned Huawei key, which appears in **no captured
+   artifact**. Rooting implication re-confirmed: our runtime-swapped containers are gated
+   by e1's digest chain only (e1 ignores +0x518), so re-signing digest#1+digest#2 suffices;
+   the outer FD (boot image itself) remains a seller-signed constant we don't need to touch.
+4. Legacy Huawei Root CA DER re-carved properly (1363 B incl. DER TLV) →
+   `work/validator_re/rootca_legacy.der`; earlier carve had been 4 bytes short, which had
+   masked openssl parses (the "root does not verify +0x518" finding stands, now with
+   correct inputs).
+
+Toolchain note: for raw-digest RSA verification, `openssl pkeyutl -verify -in <digest>`
+assumes the *message*, not the digest, with -rawin; pure pow(s,e,n) padding inspection is
+the reliable method.
