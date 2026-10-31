@@ -8062,3 +8062,76 @@ stock lpddr_mcu.bin** — card 16409 healthy 6/6 after final recovery cycle. Loc
 `/tmp/kilo/Ascend310P*.bindtest|.D1|.D2|.D3|.D4|ddr.D5.bin`, `Ascend310P_ddr.image`,
 `lpddr_mcu.bin`, `ascend310p.dtb/.dts`.
 
+
+## Session 2026-10-30 (pm) — Validator fully recovered from image-1 (FIP TOC decode → Ghidra)
+
+**The string-page mystery is CLOSED, and the prior "TE modules own it / RAM-staged" theory is
+superseded.** Chain of discovery:
+
+1. **FIP TOC decoded properly** (base `0x132100`, entries = UUID[16]+u64 off/size/flags):
+   three images, offsets contiguous relative to `0x132100`:
+   - img0 `0x1321b0` (0x35A1) — BL2/SEC stub (orr/msr prologue).
+   - img1 `0x135751` (0x28A02) — **the secure-boot validator image (BL31-hw_cms)**: code
+     0x135751–~0x153xxx + rodata incl. ALL validator strings (0x155–0x158k) + e2 string
+     blob at 0x15E153 (0x41F, "# Ignore…/ensas/rcar_layout_create" — R-Car leftovers!).
+   - img2/terminator entries contiguous: 0xb0+0x35A1=0x3651, +0x28A02=0x2C053 ✓.
+2. The earlier "zero refs from bl31_img1" negatives were explained: **auto-analysis never
+   explored 0x135xxxx** (no entry/symbol there — treated as data). Carving image-1
+   (`e1.bin` = FD[0x135751:0x15E154], base 0x0 after an ignored BaseAddress import; entry
+   disassembled manually) + `pyghidra.analyze()` → **828 functions, 428 data refs into the
+   string region**. Validator = image-1's own code; identity-relative ADRP works because the
+   image loads flat (relative addressing).
+3. The "TE" VZ-modules (`0x3838`/`0x23260`, bases `0x31701000`/`0x31721000`) are a different,
+   small (~32KB) code container with inline ELF-ish section tables (`.text/.data/.reloc`)
+   — NOT the validators (too small, wrong span).
+
+**Recovered architecture (file offsets; Ghidra project `/tmp/kilo e1_proj`):**
+- **Header validator `0x13FF75`**: preamble `0x55AA55AA`@hdr+0; head_len `0x4DC`@+4;
+  headMagic `0x33CC33CC`@+0x4B8; **nvcnt @+0x14** (<0x20); **code offset `0x2000` @+0x458**;
+  **pss slen field @+0x50 (`(u32>>22) < 0x21`)** ← salt-length gate (Oct-26 `pss slen` failure
+  candidate); error codes `0x5000_00xx` (aa03/04/18/19/07…).
+- **Digest binding `0x13FE91` (FUN_0000a740)**: SHA-256 over [image+0x2000, code_len@+0x45C]
+  → RAM `0x4100100` (SW engine via 0x84080000 when mode==1, else HW mailbox 0x2C00000 cmd
+  0x82/0x10). **Compare primitive `0x15328D` = plain byte memcmp**, but the enroll path
+  byte-swaps 32B before comparing against `0x4100100` → **HW SHA output is per-word
+  byte-swapped vs standard SHA-256** — prime suspect for the D1–D5 digest-binding failures
+  (rebuild_esbc wrote standard-order digests).
+- **Verify mode gate `0x13F84D` (FUN_0000a0fc)**: efuse nibble **@0x8000FFF8** (`mode`);
+  mode==1: `efuse[0x8006E080]!=0` → full-CMS, else **digest-only shortcut**; mode!=1: mailbox
+  read (0x2C00000 cmd 0xB8) must equal magic **`0x1A4A5252`** → digest-only shortcut, else
+  full-CMS. Shortcut path (`0xAAAAAAAA`) = `hw_cms_check_hash(image+0x2C, 0x4100100, 0x20)` —
+  **pure digest check, NO signature** (the Ingenic-style endgame equivalent!).
+- **Full-CMS path `0x1498BD` (FUN_0001416c)**: geometry builder `0x14036D` reproduces
+  rebuild_esbc constants exactly: cms after payload+code_len+`0x20-(cl&0xf)` align; ini at
+  cms+`0x2000|0x4000` (flag-switched); **crl at cms+0x800**; size gates (0xaa0e). Then
+  `hw_cms_data_verify 0x1491D9` (software CMS: cert add, CRL 100/200/300 modes, update/verify
+  via engine helpers, final==1) with ctrl-CPU usr-cert fallback `0x140649`; ini info
+  name+hash compare `0x1497E1`; nvcnt gate `0x140271` (header nvcnt ≥ efuse bitpos via
+  MMIO 0x84080000/0xB8; types 0xaa/bb/cc/ee registry @0xC6F4D8xx + sentinel 0xA7E358FD).
+- **INI parser `0x1406CD`**: comma/semicolon tag;text,hash list → **49-byte entries
+  {tag[16]@+4, sha[32]@+0x14, valid-flag@+0x34}**, max 32; gate loop `0x140861` =
+  "cur image hash not in list!" allowlist (name cmp + digest cmp vs `0x4100100`).
+- **Usr-cert enroll `0x141A9D` (ctrl_flag 0xdd)**: copy cert (<0xDF00) → `0x4012100`
+  (staging `0x4010000`+hdr), hash-cal (result cached 0x8007E3C8–E4), **32B byte-reversal**,
+  cmp vs stored (via 0x4100100), len recorded `0x401045C = len+0x100`; banner
+  "Secure Boot: customer efuse Solution". `usr-cert present` = efuse `0x8007E2A4` bits 30/31.
+- Boot-stage/force: `0x14101D` reads `0x8000F0DC>>8 & 0x1B` (0x10 pre-OS, 0x18 post) plus
+  **"CORF" force magic (`0x464F5243`)** at `0x90E40010/0x90E50010` — a debug override worth
+  probing.
+
+**Actionable consequences:**
+- The "external anchor constant" is **the header SHA-256 at image+0x2C compared against the
+  (word-swapped) HW-SHA of the payload in shortcut mode** — no unknown efuse hash needed.
+- Modified-payload strategy: **rewrite digest@+0x2C in word-byte-swapped order** to match the
+  new payload; if the chip is in shortcut mode, no RSA/CMS needed at all. D-series retry =
+  re-run with corrected byte order.
+- If stuck in full-CMS mode: the CMS (not header+0x460 sig) is what must verify; the
+  Oct-26 "0xE00 512B blob" question now maps to the CMS/engine territory of `0x1498BD`.
+- Hardware reads worth grabbing on the bench console: nibble @0x8000FFF8, efuses
+  0x8006E080 / 0x8007E2A4, and the mailbox word that must be `0x1A4A5252`.
+
+**Toolchain notes:** Ghidra 12 headless: `-create` removed → `-overwrite`; BinaryLoader has
+no entry-point loader option (disassemble+createFunction in pyghidra instead); GhidraMCP
+extension manifest warnings are benign; pyghidra `open_program` DOES persist edits on context
+exit. Artifacts: `/tmp/kilo/e1.bin`, `/tmp/kilo/e1_out2.txt` (428-ref map),
+`e1_dec.txt`/`e1_dec2.txt`/`e1_dec3.txt` (decompiles), project `/tmp/kilo e1_proj`.
