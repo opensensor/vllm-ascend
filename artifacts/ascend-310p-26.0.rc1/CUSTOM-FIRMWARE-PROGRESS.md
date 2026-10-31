@@ -8338,3 +8338,39 @@ family as the FD/containers ⇒ the MCU keeps its own esbc-style trust list (can
 reading: 0x14=20 active / 0x1f=31 slots — key digest allowlist). Deep parse + consumer
 code belong to the pending **Thumb-2 MCU RE project** (app base 0x08020000, VTOR copy at
 0x200000; tooling note: Cortex-M, *not* RISC-V).
+
+## Session 2026-10-31 (cont.) — MCU app: symbol-rich Cortex-M, verification chain named
+
+Carved bank A (file 0x200000–0x240000) → `/tmp/kilo/mcuA.bin`; rebased copy `mcuA_r.bin`;
+projects `mcu_proj`/`mcu2_proj` (866 functions analyzed; index archived).
+
+1. **Memory map**: STM32-class — flash VA 0x08000000 (bank A remapped at boot; vector
+   handler VAs `0x0802xxxx` ⇒ bank offset + 0x08000000), RAM `0x20010000`, peripherals
+   `0x400xxxxx` (7.3k pool words). A/B image banks at file 0x200000/0x240000 (identical
+   link VAs; `switch_mcu_image`, `App0/App1 invalid, can't switch`, boot0valid/boot1valid
+   boot-params).
+2. **App is symbol-rich** (embedded assert/log name tables): the verification chain is
+   fully named — `validate_mcu_image` → `read_sign_head`/`check sign head fail` →
+   `read_rsa_head_item` → `read_rsa_sign_info` → `CheckFileHead` → **`CheckPubKeyHash`**
+   → `CalHash`/`VerifySig`/`McuSignatureVerify`/`RsaVerify` → **`mbedtls_rsa_pkcs1_verify`**
+   (+`RSASSA-PSS`, `RSA with SHA-256`, `sha256WithRSAEncryption`, EC/ECDH present).
+   ⇒ the parked CRC-vs-RSA question is **settled: RSA PKCS#1 v1.5 via mbedtls is the
+   signature check**; crc16/checksum paths are integrity-only layers.
+3. **Security config KV framework** (key strings): `https` / `https crl` / `switch` /
+   **`trustlist`** / `blocklist` / `null` — a trust list + blocklist (CRL) with cert
+   random/switch-state management (`UpdateCertSwitchState`, `WriteCertToFlash`,
+   `ReadCertRandomData`). The truststore container at file 0x8c0000 is esbc-family
+   (`aa55aa55`, tag `0x1CD9DEAD`, ~13×20-B entries; none matched container/root hashes —
+   product key/entry hashes).
+4. **Boot-time enforcement named**: `Start to check bootloader sha256`/`OK` (the FD is
+   SHA-256-checked by the MCU), `MCU verify APP sign successfully`, `MCU verify vrd sign`,
+   `Reset MCU to validate image`. `get_secureboot_info_callback`/`set_secureboot_info_callback`
+   confirm secureboot state is a first-class MCU object (console-visible).
+5. **String-reference caveat**: target strings have *zero* static pool/ADRL/MOVW xrefs —
+   they're consumed by table-driven assert/config frameworks (runtime iteration), so
+   string→function attribution needs call-graph work from the entry point onward, not
+   xref lookup. Left as the open MCU follow-up (with `mcu2_proj` ready).
+
+Toolchain notes: 0-based import left all pool pointers external (values ≥0x08000000);
+fixed via a rebased byte copy (subtract 0x08000000 from in-window u32s, 2209 words).
+Ghidra language `ARM:LE:32:v8`. MCU dump = external 16 MB SPI; MCU-internal map mirrors it.
