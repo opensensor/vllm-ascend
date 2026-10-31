@@ -8258,3 +8258,45 @@ Tooling note: e1 constant scan done raw (Python over the carve), function attrib
 
 Tooling notes: AArch64 mov-chain matcher needs hw-bit masking (`0xFFC0001F`, match Rd only);
 both 32/64-bit MOVZ/MOVK forms required.
+
+## Session 2026-10-31 (cont.) — Ghidra deep-dive on the TE modules (te1_proj/te2_proj)
+
+Projects: `/tmp/kilo/te1_proj`, `/tmp/kilo/te2_proj` (AARCH64 0-based; VA = 0x31701000/
+0x31721000 + addr). 44 + 65 functions; full decompiles archived in `work/validator_re/`.
+
+1. **mod1 @0x3838 = board/init module that *consumes* security state** (refines the
+   same-day "efuse policy module" label). Helper family:
+   - `FUN_0000072c` = **get_sb_mode()** = `efuse_shadow[0x8000FFF8] & 0xF`
+   - `FUN_0000074c` = **is_full_secure()** = true iff mode==3, else `0x8000E08C>>15&1`
+   - `FUN_000007d4` = **lifecycle_state()** from `0x8000FFFC` (0→state1; hi-half 1→3; 2→2)
+   - `FUN_00000780` = trim read of `0x8000F07C`, masked by 74c()
+   `FUN_00002000` is the big init routine (clocks; link-port blocks 0x81F1/0x81F2/0x81F4/
+   0xA0F1; board table at RAM `0x2D00000`, magic `'PGIF'` 0x46494750; module registry at
+   `0xC6F00000` magic `0xEAEA2020`, variant-selected via byte `+0x800a==2`).
+   **Key cross-link:** when mode != 1 it writes `+0xC4 = 1` at 0x81f10000/0xa0f10000/
+   0x81f20000/0x81f40000 — the *same four registers* e1's FUN_000084F0 (Oct's 0x13dc58
+   branch) writes ⇒ shared SDK logic; the mode nibble gates protection flags at BOTH stages.
+2. **mod2 @0x23260 = early runtime init + crypto-engine bring-up, tail-jumps onward.**
+   - `FUN_00002ff0` = crypto handshake on block `0x840C0000`: requires `r0x30&1` with
+     config regs `r0x2c==0x70, r0x24==0x6c, r0x28==0x20`; else waits on `r0x18 bit7`,
+     writes 0x6c/0x20/0x70 then start `0x301`.
+   - `FUN_000053c8` = entry: alive marker `'I'`(0x49) to `0xC6F14004`; requires
+     **`"BIOS"`-tag struct at `0x312F1030` (magic u32 0x42494f53)**; builds the SoC
+     memory-map table (0x8000000, 0x88000000, 0xa4000000, 0xc5/0xc6/0xc7000000,
+     0x31300000, 0xa8000000, 0x800000000, … sizes/type-codes); MMU/TCR-style writes
+     (`…|0x3500` descriptors); ends with **indirect tail jump `(*pcVar3)()`** to the next
+     stage. Table walk references ID tags 0x4d544f43 / 0x52534453 / 0x4e423130 ("MOTC"/
+     "RSDS"/"NB10"-style).
+3. **e1 shares mod2's assets**: e1 references the same crypto regs `0x840C0024–30`, the
+   mailbox page `0x312F1000`, registry `0xC6F00000`, and window `0x31D00000` ⇒ mod2
+   initializes exactly what the e1 validator later uses; the e1 "SW SHA via 0x84080000"
+   window and mod2's 0x840C0000 are adjacent blocks of one crypto subsystem.
+4. **Rooting implication sharpened**: mode nibble (0x8000FFF8) is consumed by mod1
+   (protection flags) *and* e1 (FUN_0000b834 verify gate) — one efuse knob, two
+   enforcement points; shortcut mode must satisfy both (or the +0xC4 flag writes must be
+   benign). Neither mod validates the containers' `+0x518` RSA blob ⇒ its verifier stays
+   SPL/ROM (outside captured images).
+
+Toolchain notes: raw `.bin` imports need `language="AARCH64:LE:64:v8A"` (no load spec
+otherwise); pyghidra 3.2 `open_program` has no base-address option — 0-based frame +
+offset math; decompiler import must be lazy (inside the open_program context).
